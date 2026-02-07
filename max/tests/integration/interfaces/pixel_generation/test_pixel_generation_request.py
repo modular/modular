@@ -11,25 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import pytest
-from max.interfaces import (
-    PixelGenerationRequest,
-    RequestID,
-)
+from max.interfaces import RequestID
+from max.interfaces.request import OpenResponsesRequest
+from max.interfaces.request.open_responses import OpenResponsesRequestBody
 
 
 def test_pixel_generation_request_init() -> None:
     # Basic initialization.
-    _ = PixelGenerationRequest(
-        request_id=RequestID(),
-        model_name="test",
-        prompt="hello world",
+    body = OpenResponsesRequestBody(
+        model="test",
+        input="hello world",
     )
+    _ = OpenResponsesRequest(request_id=RequestID(), body=body)
 
-    # Empty prompt should raise ValueError.
-    with pytest.raises(ValueError):
-        _ = PixelGenerationRequest(
-            request_id=RequestID(),
-            model_name="test",
-            prompt="",
-        )
+    # Empty prompt should raise ValidationError (pydantic validation).
+    # OpenResponsesRequest accepts empty strings, but the tokenizer will validate
+    # For now, test that we can create the request object with empty input
+    body_empty = OpenResponsesRequestBody(
+        model="test",
+        input="",
+    )
+    _ = OpenResponsesRequest(request_id=RequestID(), body=body_empty)

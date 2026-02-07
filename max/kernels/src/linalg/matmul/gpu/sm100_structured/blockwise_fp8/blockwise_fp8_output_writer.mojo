@@ -20,15 +20,19 @@ reads from TMEM, blockwise FP8 accumulators are already in registers.
 from gpu import WARP_SIZE, lane_id
 from gpu import warp_id as get_warp_id
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu.memory import AddressSpace
 from gpu.sync import named_barrier
 from layout import Layout, LayoutTensor
-from layout.swizzle import Swizzle, make_swizzle
 from layout.tma_async import TMATensorTile
 from utils.index import IndexList
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
-from ..structured_kernels.tile_writer import store_fragment_to_smem
+from ..structured_kernels.epilogue_components import (
+    TMEMToSMemWriter,
+    TMAStoreCoords,
+    TMAStoreExecutor,
+    tma_wait_pipelined,
+)
 from linalg.structuring import SMemTileArray
 
 # TileTensor-based types for C tiles
@@ -95,15 +99,24 @@ struct BlockwiseFP8TileWriter[
     comptime stageN = Self.repeats * (Self.bits // 32)
     comptime fragments_per_stage = Self.fragment_size * Self.repeats
 
-    comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()
+    # Reuse TMEMToSMemWriter for fragment → SMEM path
+    comptime SMEMWriter = TMEMToSMemWriter[
+        Self.c_type,
+        Self.accum_type,
+        Self.c_smem_dim0,
+        Self.c_smem_dim1,
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.MMA_N,
+        Self.stageN,
+        Self.cta_group,
+        Int(Self.num_output_warps),
+        Self.c_swizzle,
+        False,  # transpose_c (blockwise FP8 never transposes)
+    ]
 
-    # TMA tile height calculation
-    comptime CG2_TMA_BM = Self.c_smem_dim0 if Self.MMA_M == 256 else Self.BM
-    comptime CG1_TMA_BM = Self.c_smem_dim0
-    comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
-
-    # ========== TileTensor Overload ==========
-    # Accepts TileTensor-based C tiles and converts to LayoutTensor internally.
+    # ========== Public Write Method ==========
 
     @staticmethod
     @always_inline
@@ -124,40 +137,11 @@ struct BlockwiseFP8TileWriter[
         c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
         c_coord: Tuple[UInt, UInt],
     ):
-        """Write accumulated register tiles to GMEM via double-buffered SMEM.
-
-        TileTensor overload - converts to LayoutTensor internally.
-        """
+        """Write accumulated register tiles to GMEM via double-buffered SMEM."""
         # Convert TileTensor array to LayoutTensor array via shared pointer
         var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
         Self._write_impl[c_layout, c_desc_layout, cluster_size](
             accum, c_tiles_lt, c_tma_op, c_coord
-        )
-
-    # ========== LayoutTensor Overload (Original) ==========
-
-    @staticmethod
-    @always_inline
-    fn write[
-        c_layout: Layout,
-        c_desc_layout: Layout,
-        cluster_size: Int,
-    ](
-        accum: BlockwiseFP8Accumulator[
-            Self.accum_type,
-            Self.accum_layout,
-            Self.is_lower_frag_required,
-            Self.block_tile_shape,
-            Self.mma_shape,
-            cluster_size,
-        ],
-        c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
-        c_coord: Tuple[UInt, UInt],
-    ):
-        """Write accumulated register tiles to GMEM via double-buffered SMEM."""
-        Self._write_impl[c_layout, c_desc_layout, cluster_size](
-            accum, c_tiles, c_tma_op, c_coord
         )
 
     # ========== Internal Implementation ==========
@@ -183,6 +167,7 @@ struct BlockwiseFP8TileWriter[
     ):
         """Internal implementation for writing accumulated register tiles."""
         var warp_id = get_warp_id()
+        var smem_writer = Self.SMEMWriter(UInt32(warp_id), UInt32(lane_id()))
 
         @parameter
         for stage in range(Self.num_stages):
@@ -195,82 +180,65 @@ struct BlockwiseFP8TileWriter[
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
 
-            comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Int(
-                Self.num_output_warps
+            # Cast from accum_type to c_type, then write to SMEM
+            comptime frag_size = Self.SMEMWriter.Config.fragment_size * Self.repeats
+            smem_writer.write_fragments[Self.repeats](
+                rebind[SIMD[Self.c_type, frag_size]](
+                    upper_frag.cast[Self.c_type]()
+                ),
+                rebind[SIMD[Self.c_type, frag_size]](
+                    lower_frag.cast[Self.c_type]()
+                ),
+                c_smem_tile,
             )
-            var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-                Int(warp_id), 0
-            )
-
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                Self.data_paths, Self.stageN
-            ](0, 0)
-            store_fragment_to_smem[Self.swizzle, Self.stageN](
-                upper_frag, c_smem_warp_tile_upper
-            )
-
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.data_paths, Self.stageN
-            ](1, 0)
-
-            @parameter
-            if Self.is_lower_frag_required:
-                store_fragment_to_smem[Self.swizzle, Self.stageN](
-                    lower_frag, c_smem_warp_tile_lower
-                )
 
             named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
 
             var lane = lane_id()
 
-            var cg2_elect_one_warp = (
-                warp_id == 0 if Self.MMA_M == 256 else warp_id % 2 == 0
-            )
-            var cg1_elect_one_warp = warp_id == 0
-            var elect_one_warp = (
-                cg2_elect_one_warp if Self.cta_group
-                == 2 else cg1_elect_one_warp
-            )
-
-            var coord_n_mma_m256 = c_coord[1] * UInt(Self.MMA_N) + UInt(
-                stage * Self.stageN
-            )
-            var coord_n_mma_m128 = (
-                c_coord[1] * UInt(Self.MMA_N)
-                + UInt(stage * Self.stageN)
-                + UInt(Self.BN * Int(warp_id // 2))
+            # Use shared TMA store components from epilogue_components
+            comptime StoreCoords = TMAStoreCoords[
+                Self.BM,
+                Self.BN,
+                Self.MMA_M,
+                Self.MMA_N,
+                Self.stageN,
+                Self.cta_group,
+                Self.c_smem_dim0,
+                stage,
+            ]
+            var store_coords = StoreCoords(
+                (UInt32(c_coord[0]), UInt32(c_coord[1])), UInt32(warp_id)
             )
 
-            var cg2_coord_n = (
-                coord_n_mma_m256 if Self.MMA_M == 256 else coord_n_mma_m128
+            comptime StoreExec = TMAStoreExecutor[
+                Self.c_type,
+                Self.c_smem_dim0,
+                Self.c_smem_dim1,
+                Self.BM,
+                Self.BN,
+                Self.MMA_M,
+                Self.MMA_N,
+                Self.stageN,
+                Self.stageN,  # stage_contiguous_size
+                Self.cta_group,
+                Self.c_swizzle,
+                False,  # transpose_c
+                Self.is_lower_frag_required,
+            ]
+            StoreExec.execute[c_layout, c_desc_layout](
+                c_smem_tile,
+                store_coords,
+                c_tma_op,
+                UInt32(warp_id),
+                UInt32(lane),
             )
-            var cg1_coord_n = coord_n_mma_m256
-            var coord_n = cg2_coord_n if Self.cta_group == 2 else cg1_coord_n
-            var coord_m = c_coord[0] * UInt(Self.BM)
-
-            var cg2_c_smem_coord_m = 0 if Self.MMA_M == 256 else (warp_id // 2)
-            var cg1_c_smem_coord_m = UInt(0)
-            var c_smem_coord_m = (
-                cg2_c_smem_coord_m if Self.cta_group
-                == 2 else cg1_c_smem_coord_m
-            )
-            var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
-                Int(c_smem_coord_m), 0
-            )
-
-            if elect_one_warp and lane == 0:
-                fence_async_view_proxy()
-                c_tma_op.async_store(
-                    c_smem_split,
-                    (coord_n, coord_m),
-                )
-                c_tma_op.commit_group()
-
-            @parameter
-            if stage < Self.num_stages - 1:
-                c_tma_op.wait_group[1]()  # keep one TMA in flight
-            else:
-                c_tma_op.wait_group[0]()
+            tma_wait_pipelined[
+                Self.c_type,
+                c_layout,
+                c_desc_layout,
+                stage == Self.num_stages - 1,
+            ](c_tma_op)
 
             @parameter
             if stage > 0 and stage < Self.num_stages - 1:

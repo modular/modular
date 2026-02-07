@@ -50,7 +50,13 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextTokenizer
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineConfig,
+    TextAndVisionContext,
+    TextContext,
+    TextTokenizer,
+)
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
@@ -351,7 +357,9 @@ async def run_max_async(
     pipeline_task: PipelineTask,
     top_k: int | None,
 ) -> tuple[float, list[int]]:
-    model_worker_interface = ZmqModelWorkerInterface(
+    model_worker_interface = ZmqModelWorkerInterface[
+        TextAndVisionContext | TextContext, TokenGeneratorOutput
+    ](
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(config),
     )
@@ -363,15 +371,15 @@ async def run_max_async(
             settings=Settings(),
             metric_client=NoopClient(),
             model_worker_interface=model_worker_interface,
-        ) as worker_monitor,
+        ) as model_worker,
+    ):
         # Create dynamic and continuous batching workers and associated queues
         # to feed the model worker process.
-        TokenGeneratorPipeline(
+        pipeline = TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
-            model_worker_interface=model_worker_interface,
-        ) as pipeline,
-    ):
+            model_worker=model_worker,
+        )
         # Start timing and create a progress bar.
         pbar = tqdm(total=len(requests))
 

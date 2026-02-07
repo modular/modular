@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""TileWriter components for SM100 matrix multiplication epilogue.
+"""Low-level epilogue components for SM100 matrix multiplication.
 
-This module provides modular components for the output pipeline:
+This module provides modular building blocks for the output pipeline:
 
 1. **store_fragment_to_smem**: Register to shared memory via st.matrix instructions
 2. **TMEMToSMemWriter**: Write TMEM accumulators to shared memory

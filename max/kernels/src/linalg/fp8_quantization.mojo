@@ -51,6 +51,7 @@ from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
+from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 
 comptime logger = Logger()
@@ -92,21 +93,11 @@ fn quantize_static_scaled_fp8[
 
         var idx = rebind[IndexList[2]](idx_arg)
         var in_vec_f32 = in_buffer.load[width=width](idx).cast[DType.float32]()
-
         var inversed_scale: Float32 = 1.0 / scale
-
-        @parameter
-        for i in range(width):
-            var scaled_input_f32: Float32
-
-            scaled_input_f32 = in_vec_f32[i] * inversed_scale
-            in_vec_f32[i] = max(
-                Float32(min_finite[out_dtype]()),
-                min(Float32(max_finite[out_dtype]()), scaled_input_f32),
-            )
-
-        var scaled_in_vec = in_vec_f32.cast[out_dtype]()
-        out_buffer.store(idx, rebind[SIMD[out_dtype, width]](scaled_in_vec))
+        out_buffer.store(
+            idx,
+            fp8_quantize[out_dtype, use_clamp=True](in_vec_f32, inversed_scale),
+        )
 
     comptime target_simd_width = simd_width_of[
         in_dtype, target = get_gpu_target()
@@ -240,6 +231,7 @@ fn quantize_fp8_kernel[
         )
 
         var scale_factor: Scalar[scales_type]
+        var scale_factor_recip: Scalar[accum_type]
 
         @parameter
         if scales_type == DType.float8_e8m0fnu:
@@ -247,20 +239,17 @@ fn quantize_fp8_kernel[
                 group_max / fp8_max.cast[accum_type](),
                 Scalar[accum_type](1e-10),
             ).cast[scales_type]()
-        else:
-            scale_factor = (
-                min(group_max.cast[scales_type](), scale_ub)
-                / fp8_max.cast[scales_type]()
+            scale_factor_recip = (
+                0.0 if group_max
+                == 0.0 else 1.0 / scale_factor.cast[accum_type]()
             )
+        else:
+            scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+                out_type
+            ](group_max, scale_ub)
 
         if tid == 0:
             scales.store(Index(group_idx, row), scale_factor)
-
-        # Don't use `math.recip` here to avoid using an reciprocal approximation
-        # that gives up too much precision.
-        var scale_factor_recip = (
-            0.0 if group_max == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-        )
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -273,9 +262,10 @@ fn quantize_fp8_kernel[
                     accum_type
                 ]()
 
-            var output_vec = input_vec * scale_factor_recip
-
-            output.store(Index(row, idx), output_vec.cast[out_type]())
+            output.store(
+                Index(row, idx),
+                fp8_quantize[out_type](input_vec, scale_factor_recip),
+            )
 
 
 @always_inline
@@ -361,7 +351,6 @@ fn batched_quantize_fp8_kernel[
     scale_ub: Scalar[scales_type],
 ):
     comptime use_warp_tiling = group_size <= num_threads * simd_width
-    comptime fp8_max = max_finite[out_type]()
     comptime accum_type = get_accum_type[in_type]()
 
     var input_vec = SIMD[accum_type, simd_width](0)
@@ -384,20 +373,12 @@ fn batched_quantize_fp8_kernel[
             thread_max
         )
 
-        var scale_factor = (
-            min(group_max.cast[scales_type](), scale_ub)
-            / fp8_max.cast[scales_type]()
-        )
+        var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+            out_type
+        ](group_max, scale_ub)
 
         if tid == 0:
             scales.store(Index(batch_idx, group_idx, row), scale_factor)
-
-        # Don't use `math.recip` here to avoid using an reciprocal approximation
-        # that gives up too much precision.
-        var scale_factor_recip = (
-            0.0 if scale_factor
-            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-        )
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -410,10 +391,9 @@ fn batched_quantize_fp8_kernel[
                     batch_idx, row, idx
                 ).cast[accum_type]()
 
-            var output_vec = input_vec * scale_factor_recip
-
             output.store(
-                Index(batch_idx, row, idx), output_vec.cast[out_type]()
+                Index(batch_idx, row, idx),
+                fp8_quantize[out_type](input_vec, scale_factor_recip),
             )
 
 

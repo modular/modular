@@ -36,7 +36,9 @@ def _build_ragged_increment_cache_lengths_graph(
     use_broadcast: bool,
 ) -> Graph:
     input_symbols = params.get_symbolic_inputs()
-    cache_lengths_types = [input_symbols[i][1] for i in range(len(devices))]
+    cache_lengths_types = [
+        input_symbols[i].cache_lengths for i in range(len(devices))
+    ]
     dp = params.data_parallel_degree
 
     devices_per_replica = split_into_groups(devices, dp)

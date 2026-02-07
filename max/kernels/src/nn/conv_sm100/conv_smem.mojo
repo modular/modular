@@ -30,19 +30,16 @@ from sys import align_of, size_of
 
 from gpu.memory import AddressSpace
 from layout import Layout
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import tile_layout_k_major
 
 # Import pipeline storage from matmul structured kernels
 from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage import (
-    InputPipelineStorage,
-    OutputPipelineStorage,
-    ClcPipelineStorage,
-    TmemDeallocStorage,
     StandardTileStorage,
     OutputTileStorage,
     SourceTileStorage,
     EpiLoadPipelineStorage,
     LoadOrderBarrierStorage,
+    SmemPipelineBundle,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
     StandardTilePayload,
@@ -182,9 +179,11 @@ struct Conv2dSmem[
         """Get source C tiles (for residual operations)."""
         return self.source_tiles.src_tiles()
 
-    # ========== Pipeline Storage ==========
-    comptime InputPipeline = InputPipelineStorage[
+    # ========== Pipeline Storage (Composed Bundle) ==========
+    comptime Pipelines = SmemPipelineBundle[
         Self.num_group_pipeline_stages,
+        Self.num_accum_pipeline_stages,
+        Self.num_clc_pipeline_stages,
         StandardTilePayload[
             Self.act_type,
             Self.filter_type,
@@ -195,12 +194,9 @@ struct Conv2dSmem[
             Self.num_pipeline_stages,
         ],
     ]
-    comptime OutputPipeline = OutputPipelineStorage[
-        Self.num_accum_pipeline_stages
-    ]
-    comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
-    comptime TmemDeallocPipeline = TmemDeallocStorage
+    var pipelines: Self.Pipelines
 
+    # ========== Conv2D-specific Pipeline Storage ==========
     # Epilogue load pipeline (EpilogueLoad warp → Epilogue warps)
     # Synchronizes source C loading with epilogue consumption
     comptime EpiLoadPipeline = EpiLoadPipelineStorage[Self.num_epi_load_stages]
@@ -209,59 +205,14 @@ struct Conv2dSmem[
     # Ensures epilogue loads don't start before mainloop prologue completes
     comptime LoadOrderBarrier = LoadOrderBarrierStorage
 
-    var input_pipeline: Self.InputPipeline
-    var output_pipeline: Self.OutputPipeline
-    var clc_pipeline: Self.ClcPipeline
-    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
     var epi_load_pipeline: Self.EpiLoadPipeline
     var load_order_barrier: Self.LoadOrderBarrier
 
-    # ========== Barrier Type Aliases ==========
-    comptime InputBarriers = Self.InputPipeline.BarrierArray
-    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
-    comptime ClcBarriers = Self.ClcPipeline.BarrierArray
-    comptime ClcThrottleBarriers = Self.ClcPipeline.ThrottleArray
-    comptime ClcResponse = Self.ClcPipeline.ResponseArray
-    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
-    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
-    # Epilogue load pipeline barriers
+    # ========== Conv2D-specific Barrier Type Aliases ==========
     comptime EpiLoadBarriers = Self.EpiLoadPipeline.BarrierArray
     comptime LoadOrderBarriers = Self.LoadOrderBarrier.BarrierArray
 
-    # ========== Barrier Accessors ==========
-    @always_inline
-    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
-        return self.input_pipeline.barriers.barriers()
-
-    @always_inline
-    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
-        return self.output_pipeline.barriers.barriers()
-
-    @always_inline
-    fn clc_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.full()
-
-    @always_inline
-    fn clc_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.empty()
-
-    @always_inline
-    fn clc_throttle(ref[AddressSpace.SHARED] self) -> Self.ClcThrottleBarriers:
-        return self.clc_pipeline.throttle()
-
-    @always_inline
-    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
-        return self.clc_pipeline.response()
-
-    @always_inline
-    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
-        return self.tmem_dealloc_pipeline.barrier()
-
-    @always_inline
-    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
-        return self.tmem_dealloc_pipeline.addr()
-
-    # ========== Epilogue Load Pipeline Accessors ==========
+    # ========== Conv2D-specific Barrier Accessors ==========
     @always_inline
     fn epi_load_barriers(ref[AddressSpace.SHARED] self) -> Self.EpiLoadBarriers:
         """Get epilogue load pipeline barriers.

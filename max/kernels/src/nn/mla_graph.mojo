@@ -31,7 +31,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
 from layout._layout import TensorLayout, Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
-from linalg.bmm import batched_matmul, batched_matmul_dynamic_scaled_fp8
+from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from utils.index import StaticTuple
 from utils.numerics import get_accum_type
@@ -339,77 +339,6 @@ fn mla_fused_rope_rmsnorm[
 # ===-----------------------------------------------------------------------===#
 # Shared helpers
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn concat_q_nope_proj_rope[
-    dtype: DType,
-    target: StaticString = "cpu",
-](
-    output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    q_nope_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    ctx: DeviceContext,
-) raises:
-    """Concatenate projected q_nope and q_rope into a single q tensor.
-
-    Expects q_nope_proj shape [H, S, D] and q_rope shape [S, H, D_rope], and
-    writes output shape [S, H, D_proj + D_rope].
-    """
-    comptime kv_latent_dim = q_nope_proj.static_shape[2]
-    comptime qk_rope_head_dim = q_rope.static_shape[2]
-
-    comptime assert q_nope_proj.rank == 3, "rank should be equal to 3"
-    comptime assert q_rope.rank == 3, "rank should be equal to 3"
-    comptime assert output.rank == 3, "rank should be equal to 3"
-
-    var seq_len = Int(q_rope.dim(0))
-    var num_heads = Int(q_rope.dim(1))
-
-    @always_inline
-    @parameter
-    @__copy_capture(q_nope_proj, q_rope, output)
-    fn concat_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        comptime assert rank == 3, "rank should be equal to 3"
-        var coord = Coord(idx)
-        comptime assert coord.rank == output.rank
-
-        var token_idx = idx[0]
-        var head_idx = idx[1]
-        var dim_idx = idx[2]
-
-        if dim_idx < kv_latent_dim:
-            var load_coord = Coord(Idx(head_idx), Idx(token_idx), Idx(dim_idx))
-            comptime assert load_coord.rank == q_nope_proj.rank
-            output.store[width=width](
-                coord,
-                q_nope_proj.load[width=width](load_coord),
-            )
-        else:
-            var load_coord = Coord(
-                Idx(token_idx),
-                Idx(head_idx),
-                Idx(dim_idx - kv_latent_dim),
-            )
-            comptime assert load_coord.rank == q_rope.rank
-            output.store[width=width](
-                coord,
-                q_rope.load[width=width](load_coord),
-            )
-
-    var concat_launch_shape = IndexList[3](
-        seq_len, num_heads, kv_latent_dim + qk_rope_head_dim
-    )
-    comptime concat_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
-    _elementwise_impl_gpu[func=concat_fn, simd_width = UInt(concat_simd_width)](
-        concat_launch_shape, ctx
-    )
 
 
 @always_inline
@@ -870,48 +799,6 @@ fn quantize_and_bmm_fp8_helper[
         b_scales.to_layout_tensor(),
         ctx,
     )
-
-
-@always_inline
-fn transpose_helper[
-    dtype: DType
-](
-    output_tensor: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    input_tensor: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    ctx: DeviceContext,
-) raises:
-    """
-    Helper function to transpose a tensor from [B, N, K] to [N, B, K] (or vice versa).
-    """
-
-    @always_inline
-    @parameter
-    @__copy_capture(input_tensor, output_tensor)
-    fn tranpose_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        comptime assert rank == 3, "rank should be equal to 3"
-        # Transpose by swapping first two dimensions: [B, N, K] -> [N, B, K]
-        var input_coord = Coord(idx)
-        var output_coord = Coord(Idx(idx[1]), Idx(idx[0]), Idx(idx[2]))
-        comptime assert input_coord.rank == input_tensor.rank
-        comptime assert output_coord.rank == output_tensor.rank
-
-        output_tensor.store[width=width](
-            output_coord, input_tensor.load[width=width](input_coord)
-        )
-
-    var launch_shape = Index(
-        input_tensor.dim(0), input_tensor.dim(1), input_tensor.dim(2)
-    )
-    comptime target_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
-    _elementwise_impl_gpu[
-        func=tranpose_fn, simd_width = UInt(target_simd_width)
-    ](launch_shape, ctx)
 
 
 fn mla_decode_branch_fp8[
@@ -1517,19 +1404,28 @@ fn mla_decode_branch_bf16[
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
     comptime assert (
-        w_uk.static_shape[1] == qk_nope_head_dim
-    ), "w_uk.static_shape[1] should be equal to qk_nope_head_dim"
-    comptime kv_latent_dim = w_uk.static_shape[2]
+        w_uk.static_shape[2] == qk_nope_head_dim
+    ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
+    comptime kv_latent_dim = w_uk.static_shape[1]
     comptime assert (
-        w_uv.static_shape[1] == kv_latent_dim
-    ), "w_uv.static_shape[1] should be equal to kv_latent_dim"
+        w_uv.static_shape[2] == kv_latent_dim
+    ), "w_uv.static_shape[2] should be equal to kv_latent_dim"
     comptime assert (
-        w_uv.static_shape[2] == v_head_dim
-    ), "w_uv.static_shape[2] should be equal to v_head_dim"
+        w_uv.static_shape[1] == v_head_dim
+    ), "w_uv.static_shape[1] should be equal to v_head_dim"
 
     var seq_len = Int(q.dim(0))
     if seq_len == 0:
         return
+
+    # First, create a input buffer for the mla decode kernel
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[dtype](
+        seq_len * num_heads * k_cache_dim
+    )
+    var mla_decode_input = TileTensor(
+        mla_decode_input_buf,
+        row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
+    )
 
     # =========================================================================#
     # QK RoPE and K cache RMSNorm                                              #
@@ -1545,17 +1441,18 @@ fn mla_decode_branch_bf16[
         ),
     )
 
-    # In-place update of the rope part of the `q` tensor
-    var q_rope_mut = TileTensor(
-        q_rope.ptr.mut_cast[True](),
+    # Create a view of the `mla_decode_input` tensor that only contains the last
+    # qk_rope_head_dim columns of each Q head.
+    var mla_decode_input_rope = TileTensor(
+        mla_decode_input.ptr + kv_latent_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx(1)),
         ),
     )
 
     mla_fused_rope_rmsnorm(
-        q_rope_mut,
+        mla_decode_input_rope,
         q_rope,
         input_row_offsets,
         freqs_cis,
@@ -1566,66 +1463,34 @@ fn mla_decode_branch_bf16[
         ctx,
     )
 
+    # =========================================================================#
+    # Project the non-rope part of each query head to kv_latent_dim            #
+    # =========================================================================#
+
     # Create a view of the `q` tensor that only contains the first
-    # qk_nope_head_dim columns of each Q head.
-    var q_nope = TileTensor(
+    # qk_nope_head_dim columns of each Q head. Also transposed to
+    # [num_heads, seq_len, qk_nope_head_dim].
+    var q_nope_t = TileTensor(
         q.ptr,
         TileLayout(
-            (Idx(seq_len), Idx[num_heads](), Idx[qk_nope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads](), Idx(seq_len), Idx[qk_nope_head_dim]()),
+            (Idx[q_head_dim](), Idx[num_heads * q_head_dim](), Idx(1)),
         ),
     )
 
-    # transpose q_nope to [num_heads, seq_len, qk_nope_head_dim]
-    var q_nope_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * qk_nope_head_dim
-    )
-    var q_nope_t = TileTensor(
-        q_nope_t_buf,
-        row_major((Idx[num_heads](), Idx(seq_len), Idx[qk_nope_head_dim]())),
-    )
-    transpose_helper[q_nope.dtype](q_nope_t, q_nope, ctx)
-
-    # project q_nope to kv_latent_dim
-    var q_nope_proj_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * kv_latent_dim
-    )
-    var q_nope_proj = TileTensor(
-        q_nope_proj_buf,
-        row_major((Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]())),
-    )
-    var q_nope_proj_nd = q_nope_proj._to_ndbuffer()
-    var q_nope_t_nd = q_nope_t._to_ndbuffer()
-    var w_uk_view = TileTensor(
-        w_uk.ptr,
-        row_major(
-            (Idx[num_heads](), Idx[qk_nope_head_dim](), Idx[kv_latent_dim]())
-        ),
-    )
-    var w_uk_nd = w_uk_view._to_ndbuffer()
-    batched_matmul[transpose_b=False, target=target](
-        q_nope_proj_nd,
-        q_nope_t_nd,
-        w_uk_nd,
-        context=ctx,
-    )
-
-    # concatenate the projected q_nope and q_rope tensors
-    var q_full_buf = ctx.enqueue_create_buffer[dtype](
-        seq_len * num_heads * (kv_latent_dim + qk_rope_head_dim)
-    )
-    var q_full = TileTensor(
-        q_full_buf,
-        row_major(
-            (
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[kv_latent_dim + qk_rope_head_dim](),
-            )
+    # Then create a view of the mla_decode_input tensor that only contains the
+    # first kv_latent_dim columns of each Q head.
+    var mla_decode_input_nope = TileTensor(
+        mla_decode_input.ptr,
+        TileLayout(
+            (Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]()),
+            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx(1)),
         ),
     )
 
-    concat_q_nope_proj_rope[dtype](q_full, q_nope_proj, q_rope, ctx)
+    _batched_matmul_gpu[transpose_b=True](
+        mla_decode_input_nope, q_nope_t, w_uk, ctx
+    )
 
     # Perform MLA decode
     var raw_output_buf = ctx.enqueue_create_buffer[dtype](
@@ -1640,7 +1505,7 @@ fn mla_decode_branch_bf16[
         mask_str=mask_str,
         score_mod_str=score_mod_str,
     ](
-        q_full.to_layout_tensor(),
+        mla_decode_input.to_layout_tensor(),
         input_row_offsets.to_layout_tensor(),
         kv_collection,
         layer_idx,
@@ -1649,40 +1514,29 @@ fn mla_decode_branch_bf16[
         ctx,
     )
 
-    # transpose raw output to [num_heads, seq_len, kv_latent_dim]
-    var raw_output_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * kv_latent_dim
-    )
+    # Create a view of the raw output tensor with logical shape
+    # [num_heads, seq_len, kv_latent_dim], and map directly to
+    # [seq_len, num_heads, kv_latent_dim] physical memory.
     var raw_output_t = TileTensor(
-        raw_output_t_buf,
-        row_major((Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]())),
-    )
-    transpose_helper[dtype](raw_output_t, raw_output, ctx)
-
-    # Batched matmul writes to row-major output; transpose to output layout.
-    var output_bmm_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * v_head_dim
-    )
-    var output_bmm = TileTensor(
-        output_bmm_buf,
-        row_major((Idx[num_heads](), Idx(seq_len), Idx[v_head_dim]())),
+        raw_output_buf,
+        TileLayout(
+            (Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]()),
+            (Idx[kv_latent_dim](), Idx[num_heads * kv_latent_dim](), Idx(1)),
+        ),
     )
 
-    var output_bmm_nd = output_bmm._to_ndbuffer()
-    var raw_output_t_nd = raw_output_t._to_ndbuffer()
-    var w_uv_view = TileTensor(
-        w_uv.ptr,
-        row_major((Idx[num_heads](), Idx[kv_latent_dim](), Idx[v_head_dim]())),
-    )
-    var w_uv_nd = w_uv_view._to_ndbuffer()
-    batched_matmul[transpose_b=False, target=target](
-        output_bmm_nd,
-        raw_output_t_nd,
-        w_uv_nd,
-        context=ctx,
+    # Create a view of the output tensor with logical shape
+    # [num_heads, seq_len, v_head_dim], and map directly to
+    # [seq_len, num_heads, v_head_dim] physical memory.
+    var output_t = TileTensor(
+        output.ptr,
+        TileLayout(
+            (Idx[num_heads](), Idx(seq_len), Idx[v_head_dim]()),
+            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx(1)),
+        ),
     )
 
-    transpose_helper[dtype](output, output_bmm, ctx)
+    _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
 
 
 # ===-----------------------------------------------------------------------===#

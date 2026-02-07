@@ -26,7 +26,13 @@ from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.interfaces import (
+    BaseContext,
+    PipelineOutput,
+    PipelinesFactory,
+    PipelineTask,
+    PipelineTokenizer,
+)
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
@@ -43,7 +49,12 @@ from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
-from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
+from max.serve.router import (
+    kserve_routes,
+    openai_routes,
+    openresponses_routes,
+    sagemaker_routes,
+)
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -54,6 +65,7 @@ ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
     APIType.SAGEMAKER: sagemaker_routes,
+    APIType.OPENRESPONSES: openresponses_routes,
 }
 
 logger = logging.getLogger("max.serve")
@@ -121,15 +133,17 @@ async def lifespan(
                     serving_settings.pipeline_config.audio_decoder
                 )
 
-        model_worker_interface = ZmqModelWorkerInterface(
+        model_worker_interface = ZmqModelWorkerInterface[
+            BaseContext, PipelineOutput
+        ](
             serving_settings.pipeline_task,
-            context_type=PIPELINE_REGISTRY.retrieve_context_type(
+            PIPELINE_REGISTRY.retrieve_context_type(
                 serving_settings.pipeline_config,
                 override_architecture=override_architecture,
                 task=serving_settings.pipeline_task,
             ),
         )
-        worker_monitor = await exit_stack.enter_async_context(
+        model_worker = await exit_stack.enter_async_context(
             start_model_worker(
                 serving_settings.model_factory,
                 serving_settings.pipeline_config,
@@ -160,13 +174,12 @@ async def lifespan(
             model_name=serving_settings.pipeline_config.model.model_name,
             tokenizer=serving_settings.tokenizer,
             lora_queue=lora_queue,
-            model_worker_interface=model_worker_interface,
+            model_worker=model_worker,
         )
 
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
 
-        await exit_stack.enter_async_context(pipeline)
         logger.info(
             f"\n\n{'*' * 80}\n\n"
             f"{f'🚀 Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)'.center(80)}\n\n"

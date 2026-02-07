@@ -188,7 +188,7 @@ fn allreduce_test[
     # Precompute expected sum across GPUs for verification.
     var expected_sum = Scalar[dtype](0)
     for i in range(ngpus):
-        expected_sum += i + 1
+        expected_sum += Scalar[dtype](i + 1)
 
     group_start()
 
@@ -383,7 +383,7 @@ def allreduce_naive_test() -> None:
 
     var expected = Float32(0)
     for i in range(ngpus):
-        expected += i + 1
+        expected += Float32(i + 1)
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
 
     for i in range(ngpus):

@@ -117,7 +117,7 @@ from utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 from kv_cache.types import swizzle_granularity
 
-from sys import size_of, bit_width_of
+from sys import size_of, bit_width_of, env_get_bool
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
@@ -146,6 +146,10 @@ comptime SharedMemPointer[type: AnyType] = UnsafePointer[
     type, MutAnyOrigin, address_space = AddressSpace.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
+
+comptime EnableForcedOrdering = env_get_bool[
+    "FA4ForcedSoftmaxOrdering", False
+]()
 
 
 fn extract_power_of_two(N: Int, i: Int) -> Int:
@@ -970,11 +974,17 @@ struct FA4Config(TrivialRegisterType):
         # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
         # - S barriers: 2 * (1 + num_pv_stages) per warp group = 4 + 4*num_pv_stages
         # - C barriers: 4 (C0/C1 producer/consumer)
-        # - Order barriers: 2
+        # - Order barriers: 2 (only when EnableForcedOrdering)
         # - Q1Sync barriers: num_qk_stages
         # - O barriers: 4 (2 producer + 2 consumer)
-        # Total fixed = 8 + 2*num_pv_stages + num_qk_stages + 4
-        misc_mbars_fixed_size = 12 + 2 * self.num_pv_stages + self.num_qk_stages
+        # Total fixed = 10 + order_barrier_count + 2*num_pv_stages + num_qk_stages
+        comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
+        misc_mbars_fixed_size = (
+            10
+            + order_barrier_count
+            + 2 * self.num_pv_stages
+            + self.num_qk_stages
+        )
         smem_use += misc_mbars_fixed_size * Self.mbar_size
 
         # BK0: K-dimension chunk size for Q@K' per stage
@@ -1264,30 +1274,41 @@ fn llvm_opaque_tid() -> UInt32:
 
 
 @always_inline
-fn sub_ftz(a: Float32, b: Float32) -> Float32:
+fn intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
     return inlined_assembly[
-        """
-        sub.ftz.f32 $0, $1, $2;
-        """,
+        String(intrin, ".ftz.f32 $0, $1, $2;"),
         Float32,
         constraints="=f,f,f",
     ](a, b)
 
 
 @always_inline
-fn sub_ftz(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
+fn intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
+    return inlined_assembly[
+        String(intrin, ".f32 $0, $1, $2, $3;"),
+        Float32,
+        constraints="=f,f,f,f",
+    ](a, b, c)
+
+
+@always_inline
+fn intrin_ftz_x2[
+    intrin: String
+](a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]) -> SIMD[
+    DType.float32, 2
+]:
+    comptime s0 = """{
         .reg .b64 %ra;
         .reg .b64 %rb;
         .reg .b64 %rc;
         mov.b64 %ra, {$2, $3};
         mov.b64 %rb, {$4, $5};
-        sub.ftz.f32x2 %rc, %ra, %rb;
+        """
+    comptime s1 = """.ftz.f32x2 %rc, %ra, %rb;
         mov.b64 {$0, $1}, %rc;
-        }""",
+        }"""
+    ret = inlined_assembly[
+        String(s0, intrin, s1),
         _RegisterPackType[Float32, Float32],
         constraints="=f,=f,f,f,f,f",
     ](a[0], a[1], b[0], b[1])
@@ -1296,106 +1317,60 @@ fn sub_ftz(
 
 @always_inline
 fn add_ftz(a: Float32, b: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        add.ftz.f32 $0, $1, $2;
-        """,
-        Float32,
-        constraints="=f,f,f",
-    ](a, b)
+    return intrin_ftz["add"](a, b)
+
+
+@always_inline
+fn sub_ftz(a: Float32, b: Float32) -> Float32:
+    return intrin_ftz["sub"](a, b)
+
+
+@always_inline
+fn mul_ftz(a: Float32, b: Float32) -> Float32:
+    return intrin_ftz["mul"](a, b)
 
 
 @always_inline
 fn max_ftz(a: Float32, b: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        max.ftz.f32 $0, $1, $2;
-        """,
-        Float32,
-        constraints="=f,f,f",
-    ](a, b)
+    return intrin_ftz["max"](a, b)
 
 
 @always_inline
 fn max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        max.ftz.f32 $0, $1, $2, $3;
-        """,
-        Float32,
-        constraints="=f,f,f,f",
-    ](a, b, c)
+    return intrin["max.ftz"](a, b, c)
 
 
 @always_inline
 fn max3(a: Float32, b: Float32, c: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        max.f32 $0, $1, $2, $3;
-        """,
-        Float32,
-        constraints="=f,f,f,f",
-    ](a, b, c)
+    return intrin["max"](a, b, c)
 
 
 @always_inline
 fn add_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        add.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    return intrin_ftz_x2["add"](a, b)
 
 
 @always_inline
-fn add_ftz_rm(
+fn sub_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        add.rm.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    return intrin_ftz_x2["sub"](a, b)
 
 
 @always_inline
 fn mul_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        mul.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    return intrin_ftz_x2["mul"](a, b)
+
+
+@always_inline
+fn add_ftz_rm(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    return intrin_ftz_x2["add.rm"](a, b)
 
 
 @always_inline
@@ -1424,7 +1399,7 @@ fn fma_ftz(
 
 @always_inline
 fn exp2_emulation[
-    use_exp2_emulation: Bool = False
+    use_exp2_emulation: Bool = True
 ](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
     @parameter
     if use_exp2_emulation:
@@ -2928,6 +2903,7 @@ struct FA4MiscMBars[
     num_pv_stages: Int = 1,
     num_kv_stages: Int = 2,
     separate_kv: Bool = True,
+    use_order_barriers: Bool = True,
 ](TrivialRegisterType):
     """Manages all mbarrier resources for FA4.
 
@@ -2944,9 +2920,12 @@ struct FA4MiscMBars[
         num_pv_stages: Number of stages for P@V MMA (P writing can be staged).
         num_kv_stages: Number of KV buffer stages for double/triple buffering.
         separate_kv: True for MHA (separate K/V barriers), False for MLA (unified KV).
+        use_order_barriers: When True, allocate order barriers to prevent softmax
+            warp group overlap. When False, order barriers are omitted.
 
     Memory layout (count=128 first, then count=1):
-        [S0_cons] [S1_cons] [C0] [C1] [Order] [O_cons] | [S0_prod] [S1_prod] [Q1Sync] [K] [V*] [O_prod]
+        [S0_cons] [S1_cons] [C0] [C1] [Order*] [O_cons] | [S0_prod] [S1_prod] [Q1Sync] [K] [V*] [O_prod]
+        *Order barriers only present when use_order_barriers=True
         *V barriers only present when separate_kv=True
     """
 
@@ -2959,10 +2938,11 @@ struct FA4MiscMBars[
     # C barriers: 2 per warp group (producer + consumer, both count=128)
     comptime C0_offset = 2 * Self.num_pv_stages
     comptime C1_offset = Self.C0_offset + 2
-    # Order barriers: 1 per warp group (count=128)
+    # Order barriers: 1 per warp group (count=128), conditional on use_order_barriers
+    comptime num_order_barriers: Int = 2 if Self.use_order_barriers else 0
     comptime order_offset = Self.C1_offset + 2
     # O consumer barriers (count=128)
-    comptime O_consumer_offset = Self.order_offset + 2
+    comptime O_consumer_offset = Self.order_offset + Self.num_order_barriers
 
     # ---- Count=1 section ----
     # S producer barriers: 1 per warp group
@@ -3172,6 +3152,7 @@ struct SM100MHA2Q[
         num_pv_stages = Self.num_pv_stages,
         num_kv_stages = Self.config.num_kv_stages,
         separate_kv=True,
+        use_order_barriers=EnableForcedOrdering,
     ]
 
     # First MMA is Q@K' (can be staged by num_qk_stages)
@@ -3714,10 +3695,15 @@ struct SM100MHA2Q[
 
         var pipeline_s = mbars.consumer_s(warp_group_idx)
         pipeline_c = mbars.producer_c(warp_group_idx)
-        # TODO: order_s_wait/arrive
-        order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
-        order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
-        var order_phase: UInt32 = 0
+        var order_phase: UInt32 = 1 - warp_group_idx
+
+        @parameter
+        if EnableForcedOrdering:
+            order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
+            order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
+        else:
+            order_s_wait = MBarType()
+            order_s_arrive = MBarType()
 
         var q_head_idx: UInt32 = seq_info.head_idx
         var scale_log2e: Scalar[Self.accum_type] = scale
@@ -3771,6 +3757,9 @@ struct SM100MHA2Q[
         fn load_mask_max_impl[
             *, mask_strategy: MaskStrategy
         ](kv_row: UInt32) -> StaticTuple[Float32, 4]:
+            @parameter
+            if EnableForcedOrdering:
+                order_s_wait[].wait(order_phase)
             pipeline_s.wait()
             tcgen05_fence_after()
             # break up into sets of 32
@@ -4052,6 +4041,11 @@ struct SM100MHA2Q[
             tcgen05_store_wait()
             tcgen05_fence_before()
             pipeline_s.release[Self.config.num_pv_stages - 1]()
+
+            @parameter
+            if EnableForcedOrdering:
+                _ = order_s_arrive[].arrive()
+                order_phase ^= 1
             pipeline_c.acquire()
             # now we can sum the remaining elements of `acc`
             var acc0: f32x2 = rebind[f32x2](vs[batch_size // 2])
@@ -4158,8 +4152,6 @@ struct SM100MHA2Q[
             Self.qkv_type
         ]() >= 2 else Float32(0)
 
-        # TODO: add ordering barriers to prevent overlap
-        # between the two softmax warpgroups
         @parameter
         if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
 

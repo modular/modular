@@ -62,6 +62,11 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite
+from linalg.fp8_utils import (
+    compute_dynamic_fp8_scale,
+    compute_static_fp8_scale_recip,
+    fp8_quantize,
+)
 
 from .reshape import reshape
 
@@ -2313,80 +2318,17 @@ fn _rms_norm_fused_fp8_gpu[
         in_dtype, target = get_gpu_target()
     ]()
 
-    if cols % base_simd_width == 0:
-        # Use warp-tiling with adaptive SIMD width based on columns
-        if cols <= (WARP_SIZE * base_simd_width * max_warps_per_block):
-            _rms_norm_fused_fp8_gpu_warp_tiling[
-                base_simd_width,
-                in_dtype,
-                out_dtype,
-                scales_dtype,
-                input_fn_2d,
-                use_dynamic_scaling,
-            ](
-                rows,
-                cols,
-                output_2d,
-                gamma,
-                epsilon,
-                weight_offset,
-                scale_ub,
-                static_scale,
-                scale_output,
-                ctx,
-            )
-
-        elif (
-            cols <= (WARP_SIZE * (base_simd_width * 2) * max_warps_per_block)
-            and cols % (base_simd_width * 2) == 0
-        ):
-            _rms_norm_fused_fp8_gpu_warp_tiling[
-                base_simd_width * 2,
-                in_dtype,
-                out_dtype,
-                scales_dtype,
-                input_fn_2d,
-                use_dynamic_scaling,
-            ](
-                rows,
-                cols,
-                output_2d,
-                gamma,
-                epsilon,
-                weight_offset,
-                scale_ub,
-                static_scale,
-                scale_output,
-                ctx,
-            )
-        else:
-            _rms_norm_fused_fp8_gpu_block[
-                base_simd_width,
-                in_dtype,
-                out_dtype,
-                scales_dtype,
-                input_fn_2d,
-                use_dynamic_scaling,
-            ](
-                rows,
-                cols,
-                output_2d,
-                gamma,
-                epsilon,
-                weight_offset,
-                scale_ub,
-                static_scale,
-                scale_output,
-                ctx,
-            )
-    else:
-        _rms_norm_fused_fp8_gpu_block[
-            1,
+    # Dispatch: select SIMD width and kernel strategy based on column count
+    @parameter
+    fn launch[sw: Int, warp_tiling: Bool]() raises:
+        _rms_norm_fused_fp8_gpu_launch[
+            sw,
             in_dtype,
             out_dtype,
             scales_dtype,
             input_fn_2d,
             use_dynamic_scaling,
+            use_warp_tiling=warp_tiling,
         ](
             rows,
             cols,
@@ -2399,6 +2341,19 @@ fn _rms_norm_fused_fp8_gpu[
             scale_output,
             ctx,
         )
+
+    if cols % base_simd_width == 0:
+        if cols <= (WARP_SIZE * base_simd_width * max_warps_per_block):
+            launch[base_simd_width, True]()
+        elif (
+            cols <= (WARP_SIZE * (base_simd_width * 2) * max_warps_per_block)
+            and cols % (base_simd_width * 2) == 0
+        ):
+            launch[base_simd_width * 2, True]()
+        else:
+            launch[base_simd_width, False]()
+    else:
+        launch[1, False]()
 
 
 fn _rms_norm_fused_fp8_kernel_warp_tiling[
@@ -2437,39 +2392,26 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     comptime accum_type = get_accum_type[in_dtype]()
-    comptime fp8_max = max_finite[out_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
     var row = Int(block_idx.x)
     var tid = Int(thread_idx.x)
     var idx = tid * simd_width
 
-    # Helper: Load gamma and apply to normalized value
+    # Helper: Load gamma and apply to value (shared between both kernel variants)
     @always_inline
-    @__copy_capture(gamma, weight_offset, idx)
+    @__copy_capture(gamma, weight_offset)
     @parameter
-    fn apply_gamma_scaling[
+    fn apply_gamma[
         width: Int
-    ](normalized: SIMD[accum_type, width]) -> SIMD[accum_type, width]:
+    ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](
-            Coord(Idx(idx))
+            Coord(Idx(col))
         )
         var gamma_accum = (
             gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
         )
-        return normalized * gamma_accum
-
-    # Helper: Quantize to FP8 with clamping
-    @always_inline
-    @parameter
-    fn quantize_to_fp8[
-        width: Int
-    ](scaled: SIMD[accum_type, width], scale_recip: Scalar[accum_type]) -> SIMD[
-        out_dtype, width
-    ]:
-        comptime min_val = SIMD[accum_type, width](min_finite[out_dtype]())
-        comptime max_val = SIMD[accum_type, width](max_finite[out_dtype]())
-        return clamp(scaled * scale_recip, min_val, max_val).cast[out_dtype]()
+        return val * gamma_accum
 
     var vec_data = SIMD[accum_type, simd_width](0)
     var is_valid = idx < cols
@@ -2496,55 +2438,45 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
             var thread_max = Scalar[accum_type](0)
 
             if is_valid:
-                # Normalize and apply gamma scaling
-                normalized = vec_data * norm_factor
-                normalized = apply_gamma_scaling[simd_width](normalized)
+                normalized = apply_gamma[simd_width](
+                    vec_data * norm_factor, idx
+                )
                 thread_max = abs(normalized).reduce_max()
 
             # Find maximum and compute scale
             var row_max = block.max[
                 block_size=threads_per_block, broadcast=True
             ](thread_max)
-            var scale_factor = (
-                min(row_max.cast[scales_dtype](), scale_ub)
-                / fp8_max.cast[scales_dtype]()
-            )
-
-            # Don't use `math.recip` here to avoid using an reciprocal approximation
-            # that gives up too much precision.
-
-            var scale_factor_recip = (
-                0.0 if scale_factor
-                == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-            )
+            var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+                out_dtype
+            ](row_max, scale_ub)
             if tid == 0:
                 scale_buffer[row] = scale_factor
 
             # Phase 3: Quantize and write (normalized values already in registers)
             if is_valid:
-                var output_fp8 = quantize_to_fp8[simd_width](
+                var output_fp8 = fp8_quantize[out_dtype](
                     normalized, scale_factor_recip
                 )
                 output_fn[simd_width](row, idx, output_fp8)
         else:
             # Static scaling: combined normalize and quantize using cached data
-            var scale_factor_recip = (
-                fp8_max.cast[accum_type]() / static_scale_val.cast[accum_type]()
-            )
+            var scale_factor_recip = compute_static_fp8_scale_recip[
+                accum_type, out_dtype
+            ](static_scale_val)
 
             if is_valid:
-                # Normalize and apply gamma scaling
-                var normalized = vec_data * norm_factor
-                normalized = apply_gamma_scaling[simd_width](normalized)
+                var normalized = apply_gamma[simd_width](
+                    vec_data * norm_factor, idx
+                )
 
-                # Quantize and write
-                var output_fp8 = quantize_to_fp8[simd_width](
+                var output_fp8 = fp8_quantize[out_dtype](
                     normalized, scale_factor_recip
                 )
                 output_fn[simd_width](row, idx, output_fp8)
 
 
-fn _rms_norm_fused_fp8_gpu_warp_tiling[
+fn _rms_norm_fused_fp8_gpu_launch[
     simd_width: Int,
     in_dtype: DType,
     out_dtype: DType,
@@ -2553,6 +2485,7 @@ fn _rms_norm_fused_fp8_gpu_warp_tiling[
         in_dtype, width
     ],
     use_dynamic_scaling: Bool,
+    use_warp_tiling: Bool,
 ](
     rows: Int,
     cols: Int,
@@ -2567,9 +2500,11 @@ fn _rms_norm_fused_fp8_gpu_warp_tiling[
     ],
     ctx: DeviceContext,
 ) raises:
-    """Warp-tiling kernel implementation with fixed SIMD width."""
+    """Unified kernel launcher for fused RMSNorm + FP8 quantization.
 
-    # Compute thread count at compile time based on max available
+    Selects between warp-tiling and block-tiling kernels at compile time.
+    """
+
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
 
@@ -2595,13 +2530,11 @@ fn _rms_norm_fused_fp8_gpu_warp_tiling[
             raise Error(
                 "scale_output must be provided when use_dynamic_scaling=True"
             )
-        # Wrap the NDBuffer as a LegacyLayoutTensor
         var scale_buf = scale_output.value()
         scale_buffer_tensor = LegacyLayoutTensor[
             mut=True, scales_dtype, layout_1d, MutAnyOrigin
         ](scale_buf.data, RuntimeLayout[layout_1d].row_major(Index(rows)))
     else:
-        # Use a null pointer for static scaling case (no allocation needed)
         comptime dummy_device_buffer = UnsafePointer[
             Scalar[scales_dtype], MutAnyOrigin
         ]()
@@ -2609,7 +2542,6 @@ fn _rms_norm_fused_fp8_gpu_warp_tiling[
             mut=True, scales_dtype, layout_1d, MutAnyOrigin
         ](dummy_device_buffer, RuntimeLayout[layout_1d].row_major(Index(1)))
 
-    # Pass static scale as runtime parameter, not compile-time
     var static_scale_val = Float32(1.0)
 
     @parameter
@@ -2620,32 +2552,61 @@ fn _rms_norm_fused_fp8_gpu_warp_tiling[
             )
         static_scale_val = static_scale.value()
 
-    comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        LayoutType = gamma.LayoutType,
-        in_dtype=in_dtype,
-        out_dtype=out_dtype,
-        scales_dtype=scales_dtype,
-        scale_layout=layout_1d,
-        simd_width=simd_width,
-        threads_per_block=threads_per_block,
-        input_fn=input_fn,
-        output_fn=output_fn,
-        use_dynamic_scaling=use_dynamic_scaling,
-    ]
-    ctx.enqueue_function[kernel, kernel](
-        gamma,
-        scale_buffer_tensor,
-        epsilon,
-        weight_offset,
-        cols,
-        scale_ub.cast[scales_dtype](),
-        static_scale_val,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
-    )
+    @parameter
+    if use_warp_tiling:
+        comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
+            mut = gamma.mut,
+            origin = gamma.origin,
+            LayoutType = gamma.LayoutType,
+            in_dtype=in_dtype,
+            out_dtype=out_dtype,
+            scales_dtype=scales_dtype,
+            scale_layout=layout_1d,
+            simd_width=simd_width,
+            threads_per_block=threads_per_block,
+            input_fn=input_fn,
+            output_fn=output_fn,
+            use_dynamic_scaling=use_dynamic_scaling,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            scale_buffer_tensor,
+            epsilon,
+            weight_offset,
+            cols,
+            scale_ub.cast[scales_dtype](),
+            static_scale_val,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(),
+        )
+    else:
+        comptime kernel = _rms_norm_fused_fp8_kernel_block[
+            mut = gamma.mut,
+            origin = gamma.origin,
+            LayoutType = gamma.LayoutType,
+            in_dtype=in_dtype,
+            out_dtype=out_dtype,
+            scales_dtype=scales_dtype,
+            scale_layout=layout_1d,
+            simd_width=simd_width,
+            threads_per_block=threads_per_block,
+            input_fn=input_fn,
+            output_fn=output_fn,
+            use_dynamic_scaling=use_dynamic_scaling,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            scale_buffer_tensor,
+            epsilon,
+            weight_offset,
+            cols,
+            scale_ub.cast[scales_dtype](),
+            static_scale_val,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(),
+        )
 
 
 fn _rms_norm_fused_fp8_kernel_block[
@@ -2684,43 +2645,25 @@ fn _rms_norm_fused_fp8_kernel_block[
     comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     comptime accum_type = get_accum_type[in_dtype]()
-    comptime fp8_max = max_finite[out_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
     var row = Int(block_idx.x)
     var tid = Int(thread_idx.x)
 
-    # Helper: Load, normalize, and apply gamma scaling
+    # Helper: Load gamma and apply to value (same as warp-tiling variant)
     @always_inline
     @__copy_capture(gamma, weight_offset)
     @parameter
-    fn normalize_and_scale[
+    fn apply_gamma[
         width: Int
-    ](
-        vec_data: SIMD[accum_type, width],
-        norm_factor: Scalar[accum_type],
-        col: Int,
-    ) -> SIMD[accum_type, width]:
-        var normalized = vec_data * norm_factor
+    ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](
             Coord(Idx(col))
         )
         var gamma_accum = (
             gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
         )
-        return normalized * gamma_accum
-
-    # Helper: Quantize to FP8 with clamping
-    @always_inline
-    @parameter
-    fn quantize_to_fp8[
-        width: Int
-    ](scaled: SIMD[accum_type, width], scale_recip: Scalar[accum_type]) -> SIMD[
-        out_dtype, width
-    ]:
-        comptime min_val = SIMD[accum_type, width](min_finite[out_dtype]())
-        comptime max_val = SIMD[accum_type, width](max_finite[out_dtype]())
-        return clamp(scaled * scale_recip, min_val, max_val).cast[out_dtype]()
+        return val * gamma_accum
 
     with PDL():
         # Phase 1: Compute mean square for RMSNorm
@@ -2746,12 +2689,11 @@ fn _rms_norm_fused_fp8_kernel_block[
             for col_offset in range(0, cols, threads_per_block * simd_width):
                 var col = col_offset + tid * simd_width
                 if col < cols:
-                    # Load input, normalize, and apply gamma
                     var vec_data = input_fn[simd_width](row, col).cast[
                         accum_type
                     ]()
-                    var normalized = normalize_and_scale[simd_width](
-                        vec_data, norm_factor, col
+                    var normalized = apply_gamma[simd_width](
+                        vec_data * norm_factor, col
                     )
                     thread_max = max(thread_max, abs(normalized).reduce_max())
 
@@ -2765,151 +2707,32 @@ fn _rms_norm_fused_fp8_kernel_block[
                 block_size=threads_per_block, broadcast=True
             ](thread_max)
 
-            # Compute scale: scale = min(max_abs, scale_ub) / fp8_max
-            var scale_factor = (
-                min(row_max.cast[scales_dtype](), scale_ub)
-                / fp8_max.cast[scales_dtype]()
-            )
-
-            # Don't use `math.recip` here to avoid using an reciprocal approximation
-            # that gives up too much precision.
-
-            scale_factor_recip = (
-                0.0 if scale_factor
-                == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-            )
+            var scale_factor: Scalar[scales_dtype]
+            scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+                out_dtype
+            ](row_max, scale_ub)
 
             # Write scale
             if tid == 0:
                 scale_buffer[row] = scale_factor
         else:
-            # Use static scale
-            scale_factor_recip = (
-                fp8_max.cast[accum_type]() / static_scale_val.cast[accum_type]()
-            )
+            scale_factor_recip = compute_static_fp8_scale_recip[
+                accum_type, out_dtype
+            ](static_scale_val)
 
         # Phase 4: Normalize, quantize and write output
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:
-                # Load input, normalize, and apply gamma
                 var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
-                var normalized = normalize_and_scale[simd_width](
-                    vec_data, norm_factor, col
+                var normalized = apply_gamma[simd_width](
+                    vec_data * norm_factor, col
                 )
 
-                # Quantize to FP8 and write
-                var output_fp8 = quantize_to_fp8[simd_width](
+                var output_fp8 = fp8_quantize[out_dtype](
                     normalized, scale_factor_recip
                 )
                 output_fn[simd_width](row, col, output_fp8)
-
-
-fn _rms_norm_fused_fp8_gpu_block[
-    simd_width: Int,
-    in_dtype: DType,
-    out_dtype: DType,
-    scales_dtype: DType,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
-    use_dynamic_scaling: Bool,
-](
-    rows: Int,
-    cols: Int,
-    output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, ...],
-    gamma: TileTensor[in_dtype, ...],
-    epsilon: Scalar[in_dtype],
-    weight_offset: Scalar[in_dtype],
-    scale_ub: Float32,
-    static_scale: OptionalReg[Float32],
-    scale_output: OptionalReg[
-        NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin]
-    ],
-    ctx: DeviceContext,
-) raises:
-    """Block-tiling kernel implementation with fixed SIMD width."""
-
-    # Use more threads for large rows
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
-
-    var grid_dim = rows
-    var block_dim = threads_per_block
-
-    @always_inline
-    @parameter
-    @__copy_capture(output)
-    fn output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
-        """Write output to buffer."""
-        output.store[width=width](IndexList[2](row, col), val)
-
-    # Create a scale buffer tensor (either real or dummy)
-    comptime layout_1d = LegacyLayout.row_major(UNKNOWN_VALUE)
-    var scale_buffer_tensor: LegacyLayoutTensor[
-        mut=True, scales_dtype, layout_1d, MutAnyOrigin
-    ]
-
-    @parameter
-    if use_dynamic_scaling:
-        if not scale_output:
-            raise Error(
-                "scale_output must be provided when use_dynamic_scaling=True"
-            )
-        # Wrap the NDBuffer as a LegacyLayoutTensor
-        var scale_buf = scale_output.value()
-        scale_buffer_tensor = LegacyLayoutTensor[
-            mut=True, scales_dtype, layout_1d, MutAnyOrigin
-        ](scale_buf.data, RuntimeLayout[layout_1d].row_major(Index(rows)))
-    else:
-        # Use a null pointer for static scaling case (no allocation needed)
-        comptime dummy_device_buffer = UnsafePointer[
-            Scalar[scales_dtype], MutAnyOrigin
-        ]()
-        scale_buffer_tensor = LegacyLayoutTensor[
-            mut=True, scales_dtype, layout_1d, MutAnyOrigin
-        ](
-            dummy_device_buffer,
-            RuntimeLayout[layout_1d].row_major(Index(1)),
-        )
-
-    # Pass static scale as runtime parameter, not compile-time
-    var static_scale_val = Float32(1.0)
-
-    @parameter
-    if not use_dynamic_scaling:
-        if not static_scale:
-            raise Error(
-                "static_scale must be provided when use_dynamic_scaling=False"
-            )
-        static_scale_val = static_scale.value()
-
-    comptime kernel = _rms_norm_fused_fp8_kernel_block[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        LayoutType = gamma.LayoutType,
-        in_dtype=in_dtype,
-        out_dtype=out_dtype,
-        scales_dtype=scales_dtype,
-        scale_layout=layout_1d,
-        simd_width=simd_width,
-        threads_per_block=threads_per_block,
-        input_fn=input_fn,
-        output_fn=output_fn,
-        use_dynamic_scaling=use_dynamic_scaling,
-    ]
-    ctx.enqueue_function[kernel, kernel](
-        gamma,
-        scale_buffer_tensor,
-        epsilon,
-        weight_offset,
-        cols,
-        scale_ub.cast[scales_dtype](),
-        static_scale_val,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
-    )
 
 
 @always_inline

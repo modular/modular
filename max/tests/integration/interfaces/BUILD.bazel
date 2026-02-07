@@ -20,6 +20,7 @@ modular_py_test(
         "//max/python/max/support",
         requirement("msgspec"),
         requirement("numpy"),
+        requirement("pillow"),
         requirement("pydantic"),
         requirement("pytest-asyncio"),
     ],

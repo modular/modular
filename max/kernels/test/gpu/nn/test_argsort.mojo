@@ -24,11 +24,11 @@ from utils.index import IndexList
 
 
 fn linear_filler(i: Int, n: Int) -> Float32:
-    return i
+    return Float32(i)
 
 
 fn reverse_filler(i: Int, n: Int) -> Float32:
-    return n - i
+    return Float32(n - i)
 
 
 fn test_argsort[

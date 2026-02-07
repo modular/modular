@@ -292,12 +292,12 @@ fn tma_umma_kernel_sgs[
 
     @parameter
     if num_threads > 128:
-        warp_id = Int(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        warp_id = UInt(Int(2 * Int(warp_id % 4) + Int(warp_id // 4)))
 
     for i in range(num_iters):
         # Load A via TMA
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(a_expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(a_expected_bytes))
 
             var m = Int(block_idx.y) * BM
             var k = Int(i) * BK
@@ -593,7 +593,9 @@ def test_tma_umma_fp8_b[
         grid_dim=(N // BN, M // BM),
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
     # Reference computation using CPU to avoid any device sync issues

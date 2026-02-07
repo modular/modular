@@ -85,7 +85,9 @@ fn test_scheduler_kernel[
                 visited_m[idx, 0] = Int32(current.m)
                 visited_n[idx, 0] = Int32(current.n)
                 visited_k_tiles[idx, 0] = Int32(current.k_tile_count)
-                visited_changed[idx, 0] = 1 if current.group_changed else 0
+                visited_changed[idx, 0] = Int32(
+                    1 if current.group_changed else 0
+                )
 
         work_iter.advance()
 

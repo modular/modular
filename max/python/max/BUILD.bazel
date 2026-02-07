@@ -96,6 +96,7 @@ modular_py_library(
     ],
     deps = [
         ":_core",
+        ":_mlir_context",
         ":interpreter",
         "//max/python/max/driver",
         "//max/python/max/dtype",

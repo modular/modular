@@ -43,6 +43,7 @@ modular_py_test(
     ],
     tags = [
         "gpu",
+        "no-pydeps",  # vllm is conditionally included via select()
         "no-sandbox",
         "requires-network",
     ],
@@ -64,5 +65,10 @@ modular_py_test(
         requirement("torch"),
         requirement("numpy"),
         requirement("transformers"),
-    ],
+    ] + select({
+        "//:nvidia_gpu": [
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
 )

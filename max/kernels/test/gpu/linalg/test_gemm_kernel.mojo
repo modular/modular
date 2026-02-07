@@ -181,10 +181,10 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)

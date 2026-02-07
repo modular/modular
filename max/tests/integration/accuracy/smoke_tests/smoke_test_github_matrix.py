@@ -153,9 +153,9 @@ MODELS = {
     ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": ["8xB200", "8xMI355"],
     "unsloth/gpt-oss-20b-bf16": [
-        "max-ci@H100",
         "max@H100",
-        "multi",
+        "8xB200",
+        "8xMI355",
     ],
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": [
         "H100",

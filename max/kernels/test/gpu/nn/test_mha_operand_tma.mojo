@@ -101,8 +101,8 @@ fn mha_operand_tma_copy_kernel[
     # Loop over columns to copy full head size
     for kv_tile_start_row in range(0, num_keys, tile_m):
         if thread_idx.x == 0:
-            src_row = src_operand.row_idx(batch_idx, kv_tile_start_row)
-            mbar.expect_bytes(elements * size_of[kv_t.dtype]())
+            src_row = src_operand.row_idx(batch_idx, UInt32(kv_tile_start_row))
+            mbar.expect_bytes(Int32(elements * size_of[kv_t.dtype]()))
 
             # Initiate TMA load
             src_tma_tile.async_copy(
@@ -125,7 +125,7 @@ fn mha_operand_tma_copy_kernel[
         fence_async_view_proxy()
         # Store to destination
         if thread_idx.x == 0:
-            dst_row = dst_operand.row_idx(batch_idx, kv_tile_start_row)
+            dst_row = dst_operand.row_idx(batch_idx, UInt32(kv_tile_start_row))
 
             # Initiate TMA store
             dst_tma_tile.async_store(
@@ -282,11 +282,13 @@ fn test_continuous_kv_cache[
 
     with lookup_table_device.map_to_host() as lookup_host:
         for i in range(batch_size):
-            lookup_host[i] = i
+            lookup_host[i] = UInt32(i)
 
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         for i in range(batch_size):
-            cache_lengths_host[i] = max_seq_len // 2  # Half filled caches
+            cache_lengths_host[i] = UInt32(
+                max_seq_len // 2
+            )  # Half filled caches
 
     # Create source collection on device
     var src_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
@@ -451,11 +453,11 @@ fn test_paged_kv_cache[
         )
         for bs in range(batch_size):
             for page_idx in range(pages_per_seq):
-                block_idx = Int(random_ui64(0, num_blocks - 1))
+                block_idx = Int(random_ui64(0, UInt64(num_blocks - 1)))
                 while block_idx in paged_lut_set:
-                    block_idx = Int(random_ui64(0, num_blocks - 1))
+                    block_idx = Int(random_ui64(0, UInt64(num_blocks - 1)))
                 paged_lut_set.add(block_idx)
-                paged_lut_tensor[bs, page_idx] = block_idx
+                paged_lut_tensor[bs, page_idx] = UInt32(block_idx)
 
     # Set up cache lengths
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
@@ -470,7 +472,7 @@ fn test_paged_kv_cache[
 
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         for i in range(batch_size):
-            cache_lengths_host[i] = max_seq_len // 2  # Half filled
+            cache_lengths_host[i] = UInt32(max_seq_len // 2)  # Half filled
 
     # Create source collection on device
     var src_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
@@ -696,9 +698,9 @@ fn test_ragged[
     with cache_row_offsets_device.map_to_host() as offsets_host:
         offset = 0
         for i in range(batch_size):
-            offsets_host[i] = offset
+            offsets_host[i] = UInt32(offset)
             offset += seq_lens[i]
-        offsets_host[batch_size] = offset
+        offsets_host[batch_size] = UInt32(offset)
 
     # Create ragged buffers
     var dyn_shape = IndexList[3](

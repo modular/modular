@@ -72,17 +72,18 @@ class Dim:
     def __new__(cls, value: DimLike):
         """Converts valid input values to Dim."""
         if cls is not Dim:
-            # Create subclass if given instead of redirecting to Dim.
+            # For subclass constructors, preserve identity only for same subclass.
+            if isinstance(value, cls):
+                return value
             return super().__new__(cls)
-
         if isinstance(value, Dim):
-            # Directly return existing Dim instance.
+            # For base Dim constructor, pass through any existing Dim.
             return value
-        elif isinstance(value, int | np.integer):
+        if isinstance(value, int | np.integer):
             return super().__new__(StaticDim)
-        elif isinstance(value, str):
+        if isinstance(value, str):
             return super().__new__(SymbolicDim)
-        elif isinstance(value, kgen.ParamOperatorAttr):
+        if isinstance(value, kgen.ParamOperatorAttr):
             return super().__new__(AlgebraicDim)
 
         raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
@@ -241,6 +242,10 @@ class SymbolicDim(Dim):
     """The name of the dimension."""
 
     def __init__(self, name: str | SymbolicDim) -> None:
+        if not isinstance(name, str | SymbolicDim):
+            raise TypeError(
+                f"SymbolicDim.__init__ only accepts str or SymbolicDim, got {type(name).__name__}"
+            )
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("name", str(name))
         # TODO(MSDK-695): less restrictive names
@@ -323,6 +328,10 @@ class AlgebraicDim(Dim):
     attr: kgen.ParamOperatorAttr
 
     def __init__(self, attr: kgen.ParamOperatorAttr | AlgebraicDim) -> None:
+        if not isinstance(attr, kgen.ParamOperatorAttr | AlgebraicDim):
+            raise TypeError(
+                f"AlgebraicDim.__init__ only accepts kgen.ParamOperatorAttr or AlgebraicDim, got {type(attr).__name__}"
+            )
         super().__setattr__(
             "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
         )
@@ -416,6 +425,10 @@ class StaticDim(Dim):
     """The size of the static dimension."""
 
     def __init__(self, dim: int | StaticDim) -> None:
+        if not isinstance(dim, int | StaticDim):
+            raise TypeError(
+                f"StaticDim.__init__ only accepts int or StaticDim, got {type(dim).__name__}"
+            )
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("dim", int(dim))
         if not -(2**63) <= self.dim < 2**63:

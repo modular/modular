@@ -479,9 +479,9 @@ struct Grouped1D1DMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var tmem_addr_storage = smem.tmem_addr().ptr
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var tmem_addr_storage = smem.pipelines.tmem_addr().ptr
 
         # Create input pipeline with tile payload
         var tile_payload = Self.TilePayload(
@@ -543,7 +543,7 @@ struct Grouped1D1DMatmulKernel[
             )
 
             # Initialize TMEM deallocation barrier
-            smem.tmem_dealloc().ptr[].init(
+            smem.pipelines.tmem_dealloc().ptr[].init(
                 Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group)
             )
 
@@ -595,11 +595,11 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== MMA WARP =====
         if WarpRole1D1D.is_mma():
-            var tmem = Self.Tmem.allocate(smem.tmem_addr())
+            var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             var tmem_region = Self.TmemRegion(tmem)
@@ -641,11 +641,11 @@ struct Grouped1D1DMatmulKernel[
         if WarpRole1D1D.is_epilogue():
             Self.MmaEpilogueSync.wait()
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             with epi_ctx:

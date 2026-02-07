@@ -765,13 +765,6 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
 
-        kv_inputs = kv_params.get_symbolic_inputs()
-
-        # Flatten kv types for each device
-        flattened_kv_types: list[TensorType] = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         signals = Signals(devices=self.config.devices)
         signal_buffer_types: list[BufferType] = signals.input_types()
 
@@ -783,7 +776,7 @@ class DeepseekV3(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(flattened_kv_types)
+        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(

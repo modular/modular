@@ -261,7 +261,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
             input_device,
             low_output_device,
             length,
-            Float32(1.0 + i),
+            Float32(1.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
         )
@@ -272,7 +272,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
             input_device,
             high_output_device,
             length,
-            Float32(2.0 + i),
+            Float32(2.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
         )

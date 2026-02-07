@@ -19,8 +19,12 @@ from python.bindings import PythonModuleBuilder
 from sys.info import has_accelerator, simd_width_of
 
 from math import iota
+from random import NormalRandom
 from algorithm.functional import elementwise, IndexList
 from algorithm import max as reduce_max
+from algorithm import min as reduce_min
+from algorithm import sum as reduce_sum
+from algorithm import mean as reduce_mean
 from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
@@ -33,6 +37,7 @@ from compiler_internal import StaticTensorSpec
 from tensor import (
     ElementwiseBinaryOp,
     ElementwiseBinaryComparisonOp,
+    ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
 from MOGGKernelAPI.MOGGKernelAPI import (
@@ -68,8 +73,12 @@ from MOGGKernelAPI.MOGGKernelAPI import (
     Erf,
     Trunc,
     Not,
+    Cast,
+    IsNan,
+    IsInf,
     Select,
     StaticBroadcastTo,
+    Pow,
 )
 
 
@@ -109,6 +118,11 @@ comptime UNARY_FLOAT_ONLY_OPS = Variadic.types[
     Cos,
     Erf,
     Trunc,
+]
+
+# Unary mixed-type predicate operations (float input -> bool output)
+comptime UNARY_PREDICATE_OPS = Variadic.types[
+    T=ElementwiseUnaryMixedOp, IsNan, IsInf
 ]
 
 # =============================================================================
@@ -168,6 +182,12 @@ fn _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
         or name == "Cos"
         or name == "Not"
     )
+
+
+fn _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
+    """Check if a mixed-type unary op is allowed on GPU at compile time."""
+    comptime name = get_base_type_name[op]()
+    return name == "IsNan" or name == "IsInf" or name == "Cast"
 
 
 fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
@@ -258,6 +278,23 @@ fn PyInit_mojo_ops() -> PythonObject:
             "Not", docstring="Elementwise Not (bool only)"
         )
 
+        # Unary predicate operations (float -> bool)
+        @parameter
+        for i in range(Variadic.size(UNARY_PREDICATE_OPS)):
+            comptime op = UNARY_PREDICATE_OPS[i]
+            comptime name = get_base_type_name[op]()
+            comptime docstring = StaticString(
+                "Elementwise " + name + " predicate (float -> bool)"
+            )
+            b.def_function[unary_predicate_dispatcher[op]](
+                name, docstring=docstring
+            )
+
+        # Cast operation (mixed input/output dtypes)
+        b.def_function[cast_dispatcher](
+            "Cast", docstring="Elementwise Cast with dtype dispatch"
+        )
+
         # Matrix multiplication
         b.def_function[matmul_dispatcher](
             "Matmul", docstring="Matrix multiplication"
@@ -266,14 +303,30 @@ fn PyInit_mojo_ops() -> PythonObject:
         # Range operation
         b.def_function[range_dispatcher]("Range", docstring="Range operation")
 
-        # Reduce max operation
+        # Reduce operations
         b.def_function[reduce_max_dispatcher](
             "ReduceMax", docstring="Reduce max along axis"
         )
+        b.def_function[reduce_min_dispatcher](
+            "ReduceMin", docstring="Reduce min along axis"
+        )
+        b.def_function[reduce_sum_dispatcher](
+            "ReduceAdd", docstring="Reduce add along axis"
+        )
+        b.def_function[mean_dispatcher]("Mean", docstring="Mean along axis")
 
         # Static broadcast to operation
         b.def_function[static_broadcast_to_dispatcher](
             "StaticBroadcastTo", docstring="Static broadcast to"
+        )
+
+        # Pow operation (custom dispatch - Pow doesn't conform to
+        # ElementwiseBinaryOp)
+        b.def_function[pow_dispatcher]("Pow", docstring="Elementwise Pow")
+
+        # Random normal operation
+        b.def_function[random_normal_dispatcher](
+            "RandomNormal", docstring="Random normal distribution"
         )
 
         return b.finalize()
@@ -467,6 +520,136 @@ fn bin_elementwise_dispatcher[
             "Unsupported dtype for binary elementwise operation: "
             + String(dtype)
         )
+
+
+fn pow_dispatcher(
+    out_buffer: PythonObject,
+    lhs_buffer: PythonObject,
+    rhs_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Pow dispatcher with dtype dispatch.
+
+    Pow has a non-standard kernel signature (separate dtype/pow_dtype params)
+    so it cannot use the generic bin_elementwise_dispatcher.
+
+    Args:
+        out_buffer: The output buffer object.
+        lhs_buffer: The base buffer object.
+        rhs_buffer: The exponent buffer object.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(lhs_buffer)
+    var rhs_dtype = _get_dtype(rhs_buffer)
+    if dtype != rhs_dtype:
+        raise Error(
+            "Mismatched input dtypes for pow: "
+            + String(dtype)
+            + " and "
+            + String(rhs_dtype)
+        )
+
+    var size = _get_size(out_buffer)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float16:
+        pow_elementwise_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.float16](lhs_buffer),
+            _get_buffer_ptr[DType.float16](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        pow_elementwise_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.float32](lhs_buffer),
+            _get_buffer_ptr[DType.float32](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        pow_elementwise_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.float64](lhs_buffer),
+            _get_buffer_ptr[DType.float64](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        pow_elementwise_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bfloat16](lhs_buffer),
+            _get_buffer_ptr[DType.bfloat16](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int8:
+        pow_elementwise_op[DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.int8](lhs_buffer),
+            _get_buffer_ptr[DType.int8](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        pow_elementwise_op[DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.int16](lhs_buffer),
+            _get_buffer_ptr[DType.int16](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        pow_elementwise_op[DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.int32](lhs_buffer),
+            _get_buffer_ptr[DType.int32](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        pow_elementwise_op[DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.int64](lhs_buffer),
+            _get_buffer_ptr[DType.int64](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint8:
+        pow_elementwise_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.uint8](lhs_buffer),
+            _get_buffer_ptr[DType.uint8](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        pow_elementwise_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.uint16](lhs_buffer),
+            _get_buffer_ptr[DType.uint16](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        pow_elementwise_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.uint32](lhs_buffer),
+            _get_buffer_ptr[DType.uint32](rhs_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        pow_elementwise_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.uint64](lhs_buffer),
+            _get_buffer_ptr[DType.uint64](rhs_buffer),
+            size,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for pow: " + String(dtype))
 
 
 fn bin_bool_dispatcher[
@@ -807,6 +990,211 @@ fn unary_bool_dispatcher[
         )
 
 
+fn unary_predicate_dispatcher[
+    op: ElementwiseUnaryMixedOp
+](
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Unary predicate operation dispatcher (float input -> bool output).
+
+    Args:
+        out_buffer: The output buffer object (uint8/bool).
+        in_buffer: The input buffer object (float).
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(in_buffer)
+    var out_ptr = _get_buffer_ptr[DType.bool](out_buffer)
+    var size = _get_size(out_buffer)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float16:
+        unary_mixed_op[op, DType.float16, DType.bool](
+            out_ptr,
+            _get_buffer_ptr[DType.float16](in_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        unary_mixed_op[op, DType.float32, DType.bool](
+            out_ptr,
+            _get_buffer_ptr[DType.float32](in_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        unary_mixed_op[op, DType.float64, DType.bool](
+            out_ptr,
+            _get_buffer_ptr[DType.float64](in_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        unary_mixed_op[op, DType.bfloat16, DType.bool](
+            out_ptr,
+            _get_buffer_ptr[DType.bfloat16](in_buffer),
+            size,
+            ctx,
+        )
+    else:
+        raise Error(
+            "Unsupported dtype for unary predicate operation: " + String(dtype)
+        )
+
+
+fn cast_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Cast operation dispatcher that handles double dtype dispatch.
+
+    Args:
+        out_buffer: The output buffer object.
+        in_buffer: The input buffer object.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var in_dtype = _get_dtype(in_buffer)
+    var out_dtype = _get_dtype(out_buffer)
+    var size = _get_size(out_buffer)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if in_dtype == DType.float16:
+        _cast_dispatch_out[DType.float16](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.float32:
+        _cast_dispatch_out[DType.float32](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.float64:
+        _cast_dispatch_out[DType.float64](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.bfloat16:
+        _cast_dispatch_out[DType.bfloat16](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.int8:
+        _cast_dispatch_out[DType.int8](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.int16:
+        _cast_dispatch_out[DType.int16](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.int32:
+        _cast_dispatch_out[DType.int32](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.int64:
+        _cast_dispatch_out[DType.int64](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.uint8:
+        _cast_dispatch_out[DType.uint8](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.uint16:
+        _cast_dispatch_out[DType.uint16](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.uint32:
+        _cast_dispatch_out[DType.uint32](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.uint64:
+        _cast_dispatch_out[DType.uint64](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    elif in_dtype == DType.bool:
+        _cast_dispatch_out[DType.bool](
+            out_buffer, in_buffer, out_dtype, size, ctx
+        )
+    else:
+        raise Error("Unsupported input dtype for cast: " + String(in_dtype))
+
+
+fn _cast_dispatch_out[
+    in_dtype: DType
+](
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    out_dtype: DType,
+    size: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Second level dispatch for cast: dispatches on output dtype.
+
+    Parameters:
+        in_dtype: The input data type (already resolved).
+
+    Args:
+        out_buffer: The output buffer object.
+        in_buffer: The input buffer object.
+        out_dtype: The output data type to dispatch on.
+        size: Number of elements.
+        ctx: Device context pointer.
+    """
+    var in_ptr = _get_buffer_ptr[in_dtype](in_buffer)
+
+    if out_dtype == DType.float16:
+        unary_mixed_op[Cast, in_dtype, DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.float32:
+        unary_mixed_op[Cast, in_dtype, DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.float64:
+        unary_mixed_op[Cast, in_dtype, DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.bfloat16:
+        unary_mixed_op[Cast, in_dtype, DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.int8:
+        unary_mixed_op[Cast, in_dtype, DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.int16:
+        unary_mixed_op[Cast, in_dtype, DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.int32:
+        unary_mixed_op[Cast, in_dtype, DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.int64:
+        unary_mixed_op[Cast, in_dtype, DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.uint8:
+        unary_mixed_op[Cast, in_dtype, DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.uint16:
+        unary_mixed_op[Cast, in_dtype, DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.uint32:
+        unary_mixed_op[Cast, in_dtype, DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.uint64:
+        unary_mixed_op[Cast, in_dtype, DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer), in_ptr, size, ctx
+        )
+    elif out_dtype == DType.bool:
+        unary_mixed_op[Cast, in_dtype, DType.bool](
+            _get_buffer_ptr[DType.bool](out_buffer), in_ptr, size, ctx
+        )
+    else:
+        raise Error("Unsupported output dtype for cast: " + String(out_dtype))
+
+
 @always_inline
 fn bin_elementwise_op[
     op: ElementwiseBinaryOp, dtype: DType
@@ -865,6 +1253,69 @@ fn bin_elementwise_op[
                 raise Error(
                     "GPU execution not supported for this binary elementwise"
                     " op or dtype"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+@always_inline
+fn pow_elementwise_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Pow elementwise operation: out = lhs ** rhs.
+
+    Pow has a non-standard signature (separate dtype/pow_dtype params)
+    so it cannot use the generic bin_elementwise_op.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        lhs_ptr: Pointer to the base buffer data.
+        rhs_ptr: Pointer to the exponent buffer data.
+        size: Number of elements to process.
+        ctx: Device context pointer (null for CPU).
+    """
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+
+        var res = Pow.elementwise[dtype, dtype, width](
+            lhs_ptr.load[width=width](i), rhs_ptr.load[width=width](i)
+        )
+        out_ptr.store[width=width](i, res)
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](size))
+    else:
+        # GPU execution - check GPU availability and dtype support
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for pow with dtype float64"
                 )
         else:
             raise Error("No GPU accelerator available")
@@ -985,6 +1436,67 @@ fn unary_elementwise_op[
             else:
                 raise Error(
                     "GPU execution not supported for this unary elementwise"
+                    " op or dtype"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+@always_inline
+fn unary_mixed_op[
+    op: ElementwiseUnaryMixedOp, dtype: DType, out_dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Elementwise unary mixed-type operation: out = op(input).
+
+    Parameters:
+        op: The unary mixed-type elementwise operation to perform.
+        dtype: The input data type.
+        out_dtype: The output data type.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        in_ptr: Pointer to the input buffer data.
+        size: Number of elements to process.
+        ctx: Device context pointer (null for CPU).
+    """
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, in_ptr)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+
+        var res = op.elementwise[dtype, out_dtype, width](
+            in_ptr.load[width=width](i)
+        )
+        out_ptr.store[width=width](i, res)
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](size))
+    else:
+        # GPU execution - check GPU availability and op/dtype support
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if _is_gpu_allowed_mixed_unary_op[op]() and dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for this mixed-type unary"
                     " op or dtype"
                 )
         else:
@@ -1408,17 +1920,283 @@ fn range_op[
 
 
 # ===----------------------------------------------------------------------=== #
-# ReduceMax operation
+# Random normal operation
 # ===----------------------------------------------------------------------=== #
 
 
-fn reduce_max_dispatcher(
+fn random_normal_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    mean: Float32,
+    variance: Float32,
+    seed_value: UInt64,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Random normal operation: fill output with normally distributed values.
+
+    Parameters:
+        dtype: The data type of the output array.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        size: Number of elements to produce.
+        mean: Mean of the normal distribution.
+        variance: Standard deviation of the normal distribution.
+        seed_value: Seed for the random number generator.
+        ctx: Device context pointer (null for CPU).
+    """
+    if variance <= 0:
+        raise Error("stddev must be positive")
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, mean, variance, seed_value)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+        var generator = NormalRandom(seed=seed_value, offset=UInt64(i))
+        var values = generator.step_normal(mean=mean, stddev=variance)
+        out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[func, simd_width=8, use_blocking_impl=True](
+            IndexList[1](size)
+        )
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=8, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for random_normal"
+                    " with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+fn random_normal_dispatcher(
+    out_buffer: PythonObject,
+    mean_val: PythonObject,
+    variance_val: PythonObject,
+    seed_val: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Random normal dispatcher with dtype dispatch.
+
+    Args:
+        out_buffer: The output buffer object.
+        mean_val: Python float for the mean.
+        variance_val: Python float for the standard deviation.
+        seed_val: Python int for the seed.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(out_buffer)
+    var size = _get_size(out_buffer)
+    var mean = Float32(py=mean_val)
+    var variance = Float32(py=variance_val)
+    var seed = UInt64(Int(py=seed_val))
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float32:
+        random_normal_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        random_normal_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.float16:
+        random_normal_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        random_normal_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for random_normal: " + String(dtype))
+
+
+# ===----------------------------------------------------------------------=== #
+# Reduce operations (max, min, sum, mean)
+# ===----------------------------------------------------------------------=== #
+
+# Function type shared by reduce_max, reduce_min, reduce_sum, and
+# _reduce_mean. Each takes (input_shape, reduce_dim, context) with
+# compile-time dtype, input/output lambdas, and target parameters.
+comptime ReduceFn = fn[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) capturing raises -> None
+
+
+fn _reduce_max[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.max for use with ReduceFn."""
+    reduce_max[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
+fn _reduce_min[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.min for use with ReduceFn."""
+    reduce_min[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
+fn _reduce_sum[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.sum for use with ReduceFn."""
+    reduce_sum[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
+fn _reduce_mean[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Wrapper around algorithm.mean matching the reduce_max/min/sum signature.
+
+    Computes output_shape (reduction axis set to 1) and forwards to
+    reduce_mean which requires it as an extra argument.
+    """
+    var output_shape = input_shape
+    output_shape[reduce_dim] = 1
+    reduce_mean[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, output_shape, context)
+
+
+fn reduce_dispatcher[
+    reduce_fn: ReduceFn
+](
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    """ReduceMax dispatcher with dtype dispatch.
+    """Reduce dispatcher with dtype dispatch.
+
+    Parameters:
+        reduce_fn: The reduction algorithm function (e.g. reduce_max,
+            reduce_min, reduce_sum, _reduce_mean).
 
     Args:
         out_buffer: The output buffer object (reduced shape).
@@ -1452,28 +2230,28 @@ fn reduce_max_dispatcher(
 
     # Float types
     if dtype == DType.float16:
-        reduce_max_op[DType.float16](
+        reduce_op[DType.float16, reduce_fn](
             _get_buffer_ptr[DType.float16](out_buffer),
             _get_buffer_ptr[DType.float16](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.float32:
-        reduce_max_op[DType.float32](
+        reduce_op[DType.float32, reduce_fn](
             _get_buffer_ptr[DType.float32](out_buffer),
             _get_buffer_ptr[DType.float32](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.float64:
-        reduce_max_op[DType.float64](
+        reduce_op[DType.float64, reduce_fn](
             _get_buffer_ptr[DType.float64](out_buffer),
             _get_buffer_ptr[DType.float64](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.bfloat16:
-        reduce_max_op[DType.bfloat16](
+        reduce_op[DType.bfloat16, reduce_fn](
             _get_buffer_ptr[DType.bfloat16](out_buffer),
             _get_buffer_ptr[DType.bfloat16](in_buffer),
             normalized_shape,
@@ -1481,28 +2259,28 @@ fn reduce_max_dispatcher(
         )
     # Integer types
     elif dtype == DType.int8:
-        reduce_max_op[DType.int8](
+        reduce_op[DType.int8, reduce_fn](
             _get_buffer_ptr[DType.int8](out_buffer),
             _get_buffer_ptr[DType.int8](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.int16:
-        reduce_max_op[DType.int16](
+        reduce_op[DType.int16, reduce_fn](
             _get_buffer_ptr[DType.int16](out_buffer),
             _get_buffer_ptr[DType.int16](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.int32:
-        reduce_max_op[DType.int32](
+        reduce_op[DType.int32, reduce_fn](
             _get_buffer_ptr[DType.int32](out_buffer),
             _get_buffer_ptr[DType.int32](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.int64:
-        reduce_max_op[DType.int64](
+        reduce_op[DType.int64, reduce_fn](
             _get_buffer_ptr[DType.int64](out_buffer),
             _get_buffer_ptr[DType.int64](in_buffer),
             normalized_shape,
@@ -1510,49 +2288,51 @@ fn reduce_max_dispatcher(
         )
     # Unsigned integer types
     elif dtype == DType.uint8:
-        reduce_max_op[DType.uint8](
+        reduce_op[DType.uint8, reduce_fn](
             _get_buffer_ptr[DType.uint8](out_buffer),
             _get_buffer_ptr[DType.uint8](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.uint16:
-        reduce_max_op[DType.uint16](
+        reduce_op[DType.uint16, reduce_fn](
             _get_buffer_ptr[DType.uint16](out_buffer),
             _get_buffer_ptr[DType.uint16](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.uint32:
-        reduce_max_op[DType.uint32](
+        reduce_op[DType.uint32, reduce_fn](
             _get_buffer_ptr[DType.uint32](out_buffer),
             _get_buffer_ptr[DType.uint32](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.uint64:
-        reduce_max_op[DType.uint64](
+        reduce_op[DType.uint64, reduce_fn](
             _get_buffer_ptr[DType.uint64](out_buffer),
             _get_buffer_ptr[DType.uint64](in_buffer),
             normalized_shape,
             ctx,
         )
     else:
-        raise Error("Unsupported dtype for reduce_max: " + String(dtype))
+        raise Error("Unsupported dtype for reduce: " + String(dtype))
 
 
-fn reduce_max_op[
-    dtype: DType
+fn reduce_op[
+    dtype: DType,
+    reduce_fn: ReduceFn,
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     normalized_shape: IndexList[3],
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
-    """ReduceMax operation on a rank-3 normalized tensor.
+    """Reduce operation on a rank-3 normalized tensor.
 
     Parameters:
         dtype: The data type of the arrays.
+        reduce_fn: The reduction algorithm function.
 
     Args:
         out_ptr: Pointer to the output buffer.
@@ -1596,12 +2376,12 @@ fn reduce_max_op[
     # Always dispatch rank-3 reduction with axis=1
     if not ctx:
         # TODO(MXF-108): Remove single_thread_blocking_override
-        reduce_max[
+        reduce_fn[
             dtype,
             input_fn,
             output_fn,
-            target="cpu",
             single_thread_blocking_override=True,
+            target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
 
@@ -1619,7 +2399,7 @@ fn reduce_max_op[
                 DType.uint64,
             ):
                 var device_ctx = DeviceContextPtr(ctx)
-                reduce_max[
+                reduce_fn[
                     dtype,
                     input_fn,
                     output_fn,
@@ -1629,11 +2409,60 @@ fn reduce_max_op[
                 device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
-                    "GPU execution not supported for reduce_max with dtype "
+                    "GPU execution not supported for reduce with dtype "
                     + String(dtype)
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# Concrete dispatcher functions for def_function registration.
+# def_function requires fully concrete function types, so we can't pass
+# reduce_dispatcher[_reduce_max] directly (parametric fn type can't be inferred).
+
+
+fn reduce_max_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_max](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn reduce_min_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_min](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn reduce_sum_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_sum](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn mean_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_mean](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
 
 
 # ===----------------------------------------------------------------------=== #

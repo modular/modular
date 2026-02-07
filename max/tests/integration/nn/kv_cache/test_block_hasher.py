@@ -51,8 +51,8 @@ async def test_basic(block_size: int, prompt_len: int) -> None:
 def check_for_collisions(
     prompt_1: np.ndarray, prompt_2: np.ndarray, block_size: int
 ) -> None:
-    hash_vals_1 = hash_request_tokens(prompt_1, block_size, hash("None"))
-    hash_vals_2 = hash_request_tokens(prompt_2, block_size, hash("None"))
+    hash_vals_1 = hash_request_tokens(prompt_1, block_size, 0)
+    hash_vals_2 = hash_request_tokens(prompt_2, block_size, 0)
 
     for i, x in enumerate(hash_vals_1):
         if x in hash_vals_2:

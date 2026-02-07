@@ -88,7 +88,7 @@ fn run_reduce[
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals[i] = shape[axis] * Scalar[dtype](1)
+        expected_vals[i] = Scalar[dtype](shape[axis]) * Scalar[dtype](1)
 
     var multi_in_buffer = ctx.enqueue_create_buffer[dtype](in_cache_elems)
     var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)

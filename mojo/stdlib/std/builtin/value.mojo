@@ -238,8 +238,9 @@ trait Defaultable(ImplicitlyDestructible):
         ...
 
 
-@register_passable
-trait TrivialRegisterType(ImplicitlyCopyable, ImplicitlyDestructible, Movable):
+trait TrivialRegisterType(
+    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterType
+):
     """A marker trait to denote the type to be register passable trivial.
 
      The compiler treats the type that conforms to this trait with the

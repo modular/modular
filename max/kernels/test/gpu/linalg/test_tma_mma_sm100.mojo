@@ -271,7 +271,7 @@ fn tma_umma_kernel_ss[
 
     for i in range(num_iters):
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var m = Int(block_idx.y) * BM
             var n = Int(block_idx.x) * BN
@@ -481,7 +481,7 @@ fn tma_umma_kernel_ts[
         if thread_idx.x >= 128:
             tmem_addr += 1 << 20  # offset for lane 16
     var c_tmem: UInt32 = tmem_addr
-    var a_tmem: UInt32 = tmem_addr + MMA_N
+    var a_tmem: UInt32 = tmem_addr + UInt32(MMA_N)
 
     comptime b_canonical_layout = tile_to_descriptor[
         b_type, b_smem_layout, is_k_major=transpose_b
@@ -554,7 +554,7 @@ fn tma_umma_kernel_ts[
 
         # Load B by TMA
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             b_tma_op.async_copy(
                 b_smem_tile,
@@ -579,7 +579,7 @@ fn tma_umma_kernel_ts[
                     comptime b_idx = IntTuple(MMA_N * 0, MMA_K * j)
                     comptime b_offset = b_smem_layout(b_idx) * size_of[b_type]()
                     mma[c_scale=1](
-                        a_tmem + j * atmem_kstride,
+                        a_tmem + UInt32(j * atmem_kstride),
                         bdesc + b_offset,
                         c_tmem,
                         idesc,
@@ -591,7 +591,7 @@ fn tma_umma_kernel_ts[
                     comptime b_idx = IntTuple(MMA_N * 0, MMA_K * j)
                     comptime b_offset = b_smem_layout(b_idx) * size_of[b_type]()
                     mma[c_scale=1](
-                        a_tmem + j * atmem_kstride,
+                        a_tmem + UInt32(j * atmem_kstride),
                         bdesc + b_offset,
                         c_tmem,
                         idesc,
@@ -787,7 +787,7 @@ def test_tma_umma[
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
+                UInt32(smem_use)
             ),
         )
 
@@ -817,7 +817,7 @@ def test_tma_umma[
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
+                UInt32(smem_use)
             ),
         )
 

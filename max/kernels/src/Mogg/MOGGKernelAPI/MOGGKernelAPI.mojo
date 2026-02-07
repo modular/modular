@@ -70,7 +70,7 @@ from kv_cache.types import (
 from layout import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from layout._coord import DynamicCoord, RuntimeInt, Idx, coord_to_index_list
-from layout._layout import _RowMajor, Layout as TileLayout, row_major
+from layout._layout import Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (

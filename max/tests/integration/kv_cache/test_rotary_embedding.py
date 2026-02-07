@@ -450,6 +450,7 @@ def test_kv_cache_ragged_rope(
         ]
 
         if use_position_ids:
+            assert position_ids_type is not None
             input_types.insert(3, position_ids_type)
 
         graph_name = (

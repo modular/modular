@@ -386,7 +386,7 @@ fn test_warp_shuffle_up(val: Float32) -> Float32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += warp.shuffle_up(res, 1 << mask)
+        res += warp.shuffle_up(res, UInt32(1 << mask))
     return res
 
 
@@ -417,7 +417,7 @@ fn test_warp_shuffle_down(val: Int32) -> Int32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += warp.shuffle_down(res, 1 << mask)
+        res += warp.shuffle_down(res, UInt32(1 << mask))
     return res
 
 
@@ -453,7 +453,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += warp.shuffle_xor(res, 1 << mask)
+        res += warp.shuffle_xor(res, UInt32(1 << mask))
     return res
 
 

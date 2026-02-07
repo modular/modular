@@ -46,7 +46,7 @@ fn semaphore_vector_reduce[
         lx = 0
     else:
         lx = Int(block_idx + 1)
-    sema.release(lx)
+    sema.release(Int32(lx))
 
 
 fn run_vector_reduction[
@@ -132,7 +132,7 @@ fn semaphore_matrix_reduce[
         lx = 0
     else:
         lx = Int(block_idx + 1)
-    sema.release(lx)
+    sema.release(Int32(lx))
 
 
 fn run_matrix_reduction[

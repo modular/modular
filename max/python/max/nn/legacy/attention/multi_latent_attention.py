@@ -59,7 +59,32 @@ class MLAPrefillMetadata:
 
 
 class LatentAttentionWithRope(Module, Shardable):
-    """Implementation of Latent Attention with Rope."""
+    """Implementation of Latent Attention with Rope.
+
+    Args:
+        rope: The rope layer to borrow the freqs_cis value from.
+        num_attention_heads: The number of attention heads.
+        num_key_value_heads: Number of key/value heads.
+        hidden_size: The dimension of the hidden states.
+        kv_params: KV Cache Params, including the number of kv heads, the
+            head dim, and data type.
+        dtype: DType of the weights, currently only bfloat16 is supported.
+        devices: Device to place the weights and run the computation. If
+            multiple are provided, the first device is used.
+        linear_cls: Linear class to use for the outputs dense layer.
+        o_proj_dtype: Optional dtype override for the output projection.
+        o_proj_float8_config: Optional float8 config for the output projection.
+        scale: Value used to scale the results of the attention output.
+        q_lora_rank: Optional LoRA rank for Q projection.
+        kv_lora_rank: LoRA rank for KV projections.
+        qk_nope_head_dim: Head dimension for non-positional encoding part.
+        qk_rope_head_dim: Head dimension for rope part.
+        v_head_dim: Head dimension for value.
+        buffer_size: Buffer size for storing the temporal results during
+            prefill, in unit of tokens.
+        graph_mode: Pipeline role to use for the attention layer. Should be
+            "prefill", "decode", or "auto".
+    """
 
     # TODO: This will be replaced with a generic Yarn Rope implementation for Deepseek-V2-lite.
     rope: RotaryEmbedding
@@ -89,32 +114,6 @@ class LatentAttentionWithRope(Module, Shardable):
         buffer_size: int = 16384,
         graph_mode: str | None = None,
     ) -> None:
-        """Initializes the latent attention layer.
-
-        Args:
-            rope: The rope layer to borrow the freqs_cis value from.
-            num_attention_heads: The number of attention heads.
-            num_key_value_heads: Number of key/value heads.
-            hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the
-                head dim, and data type.
-            dtype: DType of the weights, currently only bfloat16 is supported.
-            devices: Device to place the weights and run the computation. If
-                multiple are provided, the first device is used.
-            linear_cls: Linear class to use for the outputs dense layer.
-            o_proj_dtype: Optional dtype override for the output projection.
-            o_proj_float8_config: Optional float8 config for the output projection.
-            scale: Value used to scale the results of the attention output.
-            q_lora_rank: Optional LoRA rank for Q projection.
-            kv_lora_rank: LoRA rank for KV projections.
-            qk_nope_head_dim: Head dimension for non-positional encoding part.
-            qk_rope_head_dim: Head dimension for rope part.
-            v_head_dim: Head dimension for value.
-            buffer_size: Buffer size for storing the temporal results during
-                prefill, in unit of tokens.
-            graph_mode: Pipeline role to use for the attention layer. Should be
-                "prefill", "decode", or "auto".
-        """
         super().__init__()
 
         _role = graph_mode or "auto"
@@ -529,8 +528,8 @@ class LatentAttentionWithRope(Module, Shardable):
         w_uv: TensorValue | None = None
         if self.graph_mode in ["decode", "auto"]:
             w_uk, w_uv = self.w_uk_uv
-            attn_kwargs["w_uk"] = w_uk
-            attn_kwargs["w_uv"] = w_uv
+            attn_kwargs["w_uk"] = w_uk.transpose(1, 2)
+            attn_kwargs["w_uv"] = w_uv.transpose(1, 2)
 
         def _mla_prefill() -> TensorValue:
             assert mla_prefill_metadata is not None

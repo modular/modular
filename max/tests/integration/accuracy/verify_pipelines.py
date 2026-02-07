@@ -712,6 +712,7 @@ PIPELINES = {
     ),
     "unsloth/gpt-oss-20b-BF16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-multi", "no-b200-multi"],
         run=_make_pipeline_runner(
             pipeline="unsloth/gpt-oss-20b-BF16",
             encoding="bfloat16",
@@ -719,8 +720,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
                 json_file="torch_gpt-oss_bfloat16_golden.json",
             ),
-            cos_dist_threshold=2.2e01,
-            kl_div_threshold=2.2e01,
+            cos_dist_threshold=5.0e-03,
+            kl_div_threshold=8.0e-02,
         ),
     ),
     "allenai/OLMo-1B-hf-float32": PipelineDef(
@@ -841,6 +842,20 @@ PIPELINES = {
             ),
             cos_dist_threshold=1.4e-02,
             kl_div_threshold=4.1e-02,
+        ),
+    ),
+    "nvidia/Llama-3.1-8B-Instruct-NVFP4": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only", "no-h100"],
+        run=_make_pipeline_runner(
+            pipeline="nvidia/Llama-3.1-8B-Instruct-NVFP4",
+            encoding="float4_e2m1fnx2",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_8B_nvfp4/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json.tar.gz",
+                json_file="tmp/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json",
+            ),
+            cos_dist_threshold=5.8e-04,
+            kl_div_threshold=2.0e-01,
         ),
     ),
     "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(

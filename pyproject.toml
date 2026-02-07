@@ -52,6 +52,7 @@ ignore = [
   "D103", # TODO: Enable missing docstrings in public functions
   "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
+  "D107", # Missing docstring in __init__ (constructor args go in class docstring)
   "E402", # TODO: import top of file
   "E722", # bare except
   "E731", # TODO: Don't assign lambda
@@ -96,7 +97,7 @@ convention = "google"
 # To add more modules to this list, test them with:
 #   ./bazelw run //oss/modular/bazel/lint:ruff.check -- --no-cache <file>
 # and verify no errors are reported for that specific file.
-"!max/python/max/{interfaces/tokens.py,driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,nn/embedding.py,nn/float8_config.py,nn/linear.py}" = ["D"]
+"!max/python/max/{driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/graph.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,interfaces/tokens.py,nn/embedding.py,nn/float8_config.py,nn/linear.py,torch/torch.py}" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated
 # stubfiles
 "*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206"]

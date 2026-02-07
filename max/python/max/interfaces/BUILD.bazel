@@ -10,6 +10,7 @@ modular_py_library(
         "//max/python/max/profiler",
         requirement("msgspec"),
         requirement("numpy"),
+        requirement("pillow"),
         requirement("pydantic"),
         requirement("typing-extensions"),
     ],

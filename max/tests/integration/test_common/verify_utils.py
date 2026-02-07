@@ -516,7 +516,8 @@ class DistanceValidatorBase(ValidatorBase, ABC):
         **kwargs,
     ) -> ValidationResultCollection:
         distance = self._compute_distance(target, reference)
-        isoff = distance > self._threshold
+        non_finite = np.logical_not(np.isfinite(distance))
+        isoff = np.logical_or(distance > self._threshold, non_finite)
         if not isoff.any():
             return ValidationResultCollection(
                 ValidationResult(self.short_name(), True)
@@ -530,9 +531,12 @@ class DistanceValidatorBase(ValidatorBase, ABC):
             isoff = isoff.reshape(-1)
 
         element_indices = np.transpose(np.where(isoff))
-        max_distance = distance.max()
-        num_diffs = isoff.size
+        max_distance = (
+            np.nanmax(distance) if np.isfinite(distance).any() else float("nan")
+        )
+        num_diffs = np.count_nonzero(isoff)
         distance = distance[isoff]
+        num_non_finite = np.count_nonzero(non_finite)
 
         # not within tolerance, report the error
         err_msg = (
@@ -540,6 +544,8 @@ class DistanceValidatorBase(ValidatorBase, ABC):
             f" {self._pretty_names()[0]} threshold (Max Distance:"
             f" {max_distance:.6e})"
         )
+        if num_non_finite:
+            err_msg += f", including {num_non_finite} non-finite values"
 
         result = ValidationResult(
             self.short_name(),

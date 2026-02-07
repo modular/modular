@@ -47,7 +47,7 @@ def test_warp_sum(ctx: DeviceContext):
     var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
 
     for i in range(size):
-        in_host[i] = i
+        in_host[i] = UInt64(i)
         out_host[i] = 0
 
     # Create device buffers and copy input data
@@ -71,7 +71,7 @@ def test_warp_sum(ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(size):
-        var expected: Scalar[dtype] = size * (size - 1) // 2
+        var expected: Scalar[dtype] = UInt64(size * (size - 1) // 2)
 
         assert_equal(
             out_host[i],
@@ -111,7 +111,7 @@ def test_block_sum(ctx: DeviceContext):
     var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
 
     for i in range(size):
-        in_host[i] = i
+        in_host[i] = UInt64(i)
         out_host[i] = 0
 
     # Create device buffers and copy input data
@@ -135,7 +135,7 @@ def test_block_sum(ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(size):
-        var expected: Scalar[dtype] = size * (size - 1) // 2
+        var expected: Scalar[dtype] = UInt64(size * (size - 1) // 2)
 
         assert_equal(
             out_host[i],

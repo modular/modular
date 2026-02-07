@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 from max import _realization_context as rc
 from max import functional as F
+from max import random as max_random
+from max._realization_context import set_seed
 from max.driver import CPU
 from max.dtype import DType
 from max.tensor import Tensor, realization_context
@@ -112,6 +114,26 @@ class TestBinaryElementwiseOps:
             c = a / b
 
         expected = np.divide(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_pow(self, dtype: DType) -> None:
+        """Test pow op matches numpy."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        # Use positive base values to avoid NaN from fractional exponents
+        a_np = np.arange(1, 13, dtype=np_dtype).reshape(shape)
+        b_np = np.full(shape, 2.0, dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a**b
+
+        expected = np.power(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
     @pytest.mark.parametrize("dtype", ELEMENTWISE_DTYPES)
@@ -439,6 +461,226 @@ class TestUnaryElementwiseOps:
 
         expected = np.floor(x_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestUnaryMixedOps:
+    """Tests for unary mixed-dtype Mojo ops (cast, is_nan, is_inf)."""
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            (DType.float32, DType.int32),
+            (DType.float64, DType.float32),
+            (DType.int32, DType.float64),
+            (DType.int32, DType.float32),
+            (DType.float32, DType.float64),
+            (DType.int8, DType.int32),
+            (DType.uint8, DType.float32),
+            (DType.float32, DType.int64),
+            (DType.int64, DType.float32),
+        ],
+    )
+    def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:
+        """Test cast op converts dtype correctly."""
+        in_np_dtype = in_dtype.to_numpy()
+        out_np_dtype = out_dtype.to_numpy()
+        x_np = np.arange(12, dtype=in_np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(out_np_dtype)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == out_np_dtype
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_is_nan(self, dtype: DType) -> None:
+        """Test is_nan op detects NaN values."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1.0, np.nan, 3.0, np.nan, np.inf, 0.0], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_nan(x)
+
+        result_np = np.from_dlpack(y)
+        expected = np.isnan(x_np)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.bool_
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_is_inf(self, dtype: DType) -> None:
+        """Test is_inf op detects Inf values."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array(
+            [1.0, np.inf, -np.inf, np.nan, 0.0, 42.0], dtype=np_dtype
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_inf(x)
+
+        result_np = np.from_dlpack(y)
+        expected = np.isinf(x_np)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.bool_
+
+    def test_cast_identity(self) -> None:
+        """Test cast to same dtype is identity."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.float32)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), x_np)
+
+    def test_cast_float_to_int_truncation(self) -> None:
+        """Test cast from float to int truncates toward zero."""
+        x_np = np.array([1.7, -2.3, 3.9, -4.1], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.int32)
+
+        expected = x_np.astype(np.int32)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_is_nan_all_normal(self) -> None:
+        """Test is_nan returns all False for normal values."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_nan(x)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(y), np.array([False, False, False, False])
+        )
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            # Signed integer narrowing: values exceed target range
+            (DType.int32, DType.int8),
+            (DType.int64, DType.int16),
+            (DType.int32, DType.int16),
+            (DType.int64, DType.int8),
+        ],
+    )
+    def test_cast_signed_integer_overflow(
+        self, in_dtype: DType, out_dtype: DType
+    ) -> None:
+        """Test cast with signed integer values that overflow the target type."""
+        in_np_dtype = in_dtype.to_numpy()
+        out_np_dtype = out_dtype.to_numpy()
+        # Values that exceed target range (e.g., 200 overflows int8 [-128,127])
+        x_np = np.array(
+            [200, -200, 1000, -1000, 0, 127, 128], dtype=in_np_dtype
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(out_np_dtype)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == out_np_dtype
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            (DType.uint32, DType.int8),
+            (DType.uint16, DType.int8),
+            (DType.uint32, DType.uint8),
+        ],
+    )
+    def test_cast_unsigned_integer_overflow(
+        self, in_dtype: DType, out_dtype: DType
+    ) -> None:
+        """Test cast with unsigned integer values that overflow the target."""
+        in_np_dtype = in_dtype.to_numpy()
+        out_np_dtype = out_dtype.to_numpy()
+        # Positive values that exceed target range
+        x_np = np.array(
+            [200, 300, 1000, 65535, 0, 127, 128, 255, 256],
+            dtype=in_np_dtype,
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(out_np_dtype)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == out_np_dtype
+
+    def test_cast_float64_to_float32_precision_loss(self) -> None:
+        """Test cast from float64 to float32 loses precision."""
+        # Use values that have more precision than float32 can represent
+        x_np = np.array(
+            [1.0000000000000002, 1.23456789012345678, 1e-40, 1e38],
+            dtype=np.float64,
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.float32)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(np.float32)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.float32
+
+    def test_cast_float_to_int_narrowing(self) -> None:
+        """Test cast from float to narrow int with truncation and wrapping."""
+        # Use float32→int32 with fractional values to test truncation
+        x_np = np.array(
+            [1e9, -1e9, 1.5e9, -1.5e9, 0.0, 1.0, -1.0], dtype=np.float32
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.int32)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(np.int32)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.int32
 
 
 class TestBooleanLogicOps:
@@ -1212,3 +1454,374 @@ class TestReduceOps:
 
         expected = np.max(x_np, axis=-1, keepdims=True)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- ReduceMin tests ---
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+    def test_reduce_min_last_axis(self, dtype: DType) -> None:
+        """Test reduce_min on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_min_first_axis(self, dtype: DType) -> None:
+        """Test reduce_min on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=0)
+
+        expected = np.min(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_min_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_min on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=1)
+
+        expected = np.min(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_min_2d(self, dtype: DType) -> None:
+        """Test reduce_min on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- ReduceAdd (sum) tests ---
+
+    @pytest.mark.parametrize(
+        "dtype",
+        FLOAT_DTYPES + [DType.int32, DType.int64],
+    )
+    def test_reduce_sum_last_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=-1)
+
+        expected = np.sum(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_sum_first_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=0)
+
+        expected = np.sum(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_sum_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=1)
+
+        expected = np.sum(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_sum_2d(self, dtype: DType) -> None:
+        """Test reduce_sum on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=-1)
+
+        expected = np.sum(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- Mean tests ---
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_last_axis(self, dtype: DType) -> None:
+        """Test mean on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=-1)
+
+        expected = np.mean(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_first_axis(self, dtype: DType) -> None:
+        """Test mean on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=0)
+
+        expected = np.mean(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_middle_axis(self, dtype: DType) -> None:
+        """Test mean on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=1)
+
+        expected = np.mean(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_2d(self, dtype: DType) -> None:
+        """Test mean on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=-1)
+
+        expected = np.mean(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestBroadcastBinaryOps:
+    """Tests for implicit broadcasting in binary ops on CPU.
+
+    These tests exercise the ShapeOfOp -> BroadcastShapeOp -> BroadcastToOp
+    chain that gets generated when binary elementwise ops have operands with
+    different shapes.
+    """
+
+    def test_add_broadcast_1d_2d(self) -> None:
+        """Test add with broadcasting: [3] + [2,3] -> [2,3]."""
+        a_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        b_np = np.array(
+            [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]], dtype=np.float32
+        )
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a + b
+
+        expected = np.add(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    def test_mul_broadcast_scalar_like(self) -> None:
+        """Test mul with broadcasting: [1] * [3,4] -> [3,4]."""
+        a_np = np.array([2.0], dtype=np.float32)
+        b_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a * b
+
+        expected = np.multiply(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    def test_sub_broadcast_different_ranks(self) -> None:
+        """Test sub with broadcasting: [4] - [2,3,4] -> [2,3,4]."""
+        a_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        b_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a - b
+
+        expected = np.subtract(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_add_broadcast_size1_dim(self, dtype: DType) -> None:
+        """Test add with broadcasting: [1,4] + [3,4] -> [3,4]."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(4, dtype=np_dtype).reshape(1, 4)
+        b_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a + b
+
+        expected = np.add(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+
+class TestRandomNormalOp:
+    """Tests for random normal op via max.random.gaussian with interpreter."""
+
+    def test_random_normal_shape_and_dtype(self) -> None:
+        """Test that random normal produces correct shape and dtype."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.gaussian(
+                (3, 4), dtype=DType.float32, device=CPU()
+            )
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (3, 4)
+        assert result_np.dtype == np.float32
+
+    def test_random_normal_deterministic(self) -> None:
+        """Test that same seed produces identical results."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result1 = max_random.gaussian(
+                (5, 5), dtype=DType.float32, device=CPU()
+            )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result2 = max_random.gaussian(
+                (5, 5), dtype=DType.float32, device=CPU()
+            )
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(result1), np.from_dlpack(result2)
+        )
+
+    def test_random_normal_statistics(self) -> None:
+        """Test that random normal has approximately correct mean and std."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(123)
+            result = max_random.gaussian(
+                (1000, 1000),
+                mean=5.0,
+                std=2.0,
+                dtype=DType.float32,
+                device=CPU(),
+            )
+
+        result_np = np.from_dlpack(result)
+        # With 1M samples, statistics should be quite close
+        np.testing.assert_allclose(result_np.mean(), 5.0, atol=0.1)
+        np.testing.assert_allclose(result_np.std(), 2.0, atol=0.1)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float64])
+    def test_random_normal_dtypes(self, dtype: DType) -> None:
+        """Test random normal with different float dtypes."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.gaussian((10, 10), dtype=dtype, device=CPU())
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (10, 10)
+        assert result_np.dtype == dtype.to_numpy()

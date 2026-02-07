@@ -29,7 +29,7 @@ fn test_vectorize_2() raises:
 
     var n = product(tensor.layout.shape)
     for i in range(n):
-        tensor.ptr[i] = i
+        tensor.ptr[i] = Float32(i)
 
     var frag = tensor._vectorize_2[origin_of(), IntTuple(IntTuple(1, 4), 1)]()
     var crd = RuntimeTuple[IntTuple(2)]()
@@ -54,7 +54,7 @@ fn test_vectorize_2() raises:
 
     n = product(three_dim_tensor.layout.shape)
     for i in range(n):
-        three_dim_tensor.ptr[i] = i
+        three_dim_tensor.ptr[i] = Float32(i)
 
     var frag_3dt = three_dim_tensor._vectorize_2[
         origin_of(), IntTuple(1, 4, 1)
@@ -81,7 +81,7 @@ fn test_vectorize_2() raises:
 
     n = product(tensor2.layout.shape)
     for i in range(n):
-        tensor2.ptr[i] = i
+        tensor2.ptr[i] = Float32(i)
 
     var frag2 = tensor2.vectorize[2]()
     var val2 = frag2[crd]
@@ -90,7 +90,7 @@ fn test_vectorize_2() raises:
 
     n = product(tensor2.layout.shape)
     for i in range(n):
-        tensor2.ptr[i] = i
+        tensor2.ptr[i] = Float32(i)
 
     var frag3 = tensor2._vectorize_2[2]()
     var val3 = frag3[crd]
@@ -108,7 +108,7 @@ fn test_vectorize_2() raises:
         layout_int_type = DType.int32,
     ](heap, RuntimeLayout[layout_unknown]({8, 8}, {8, 1}))
     for i in range(64):
-        tensor4.ptr[i] = i
+        tensor4.ptr[i] = Int32(i)
     var frag4 = tensor4._vectorize_2[2]()
     var val4 = frag4[crd]
     assert_equal(val4[0], 16)
