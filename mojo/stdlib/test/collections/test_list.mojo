@@ -885,6 +885,40 @@ def test_list_contains():
     # assert_equal([1, 2] in y,True)
     # assert_equal([0, 1] in y,False)
 
+    # Test SIMD-optimized path with a list larger than typical SIMD width.
+    var large = List[Int]()
+    for i in range(64):
+        large.append(i)
+
+    assert_true(0 in large)
+    assert_true(32 in large)
+    assert_true(63 in large)
+    assert_false(64 in large)
+    assert_false(-1 in large)
+
+    # Test with Float64.
+    var floats = List[Float64]()
+    for i in range(64):
+        floats.append(Float64(i) * 1.5)
+
+    assert_true(Float64(0.0) in floats)
+    assert_true(Float64(1.5) in floats)
+    assert_true(Float64(94.5) in floats)
+    assert_false(Float64(1.0) in floats)
+
+    # Test with UInt8.
+    var bytes = List[UInt8]()
+    for i in range(256):
+        bytes.append(UInt8(i))
+
+    assert_true(UInt8(0) in bytes)
+    assert_true(UInt8(127) in bytes)
+    assert_true(UInt8(255) in bytes)
+
+    # Test empty list of scalar type.
+    var empty = List[Int]()
+    assert_false(0 in empty)
+
 
 def test_list_eq_ne():
     var l1 = [1, 2, 3]
