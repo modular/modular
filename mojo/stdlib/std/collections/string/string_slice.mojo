@@ -2421,11 +2421,13 @@ def _split[
         output.append(S(ptr=ptr + i_len - 1, length=0))
         return
 
+    var amnt: Int
+
     comptime if has_maxsplit:
-        var amnt = maxsplit + 1
+        amnt = maxsplit + 1
         output = {capacity = amnt}
     else:
-        var amnt = src_str.count(sep) + 1
+        amnt = src_str.count(sep) + 1
         output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
     var lhs = 0
