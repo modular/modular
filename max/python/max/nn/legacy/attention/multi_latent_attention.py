@@ -529,8 +529,8 @@ class LatentAttentionWithRope(Module, Shardable):
         w_uv: TensorValue | None = None
         if self.graph_mode in ["decode", "auto"]:
             w_uk, w_uv = self.w_uk_uv
-            attn_kwargs["w_uk"] = w_uk
-            attn_kwargs["w_uv"] = w_uv
+            attn_kwargs["w_uk"] = w_uk.transpose(1, 2)
+            attn_kwargs["w_uv"] = w_uv.transpose(1, 2)
 
         def _mla_prefill() -> TensorValue:
             assert mla_prefill_metadata is not None
