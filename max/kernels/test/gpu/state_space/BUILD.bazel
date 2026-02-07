@@ -2,6 +2,18 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
+# TODO(GEX-3342): Metal GPU execution not supported for causal_conv1d kernels
+_EXTRA_CONSTRAINTS = {
+    "test_causal_conv1d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_causal_conv1d_update.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -11,7 +23,7 @@ package(default_visibility = ["//max:consumers"])
             "test.resources:gpu-memory": "2",
         },
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "//max:internal_utils",
             "//max:linalg",

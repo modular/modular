@@ -38,8 +38,6 @@ from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from peft.peft_model import PeftModel
-
-# Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import (

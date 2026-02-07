@@ -38,6 +38,7 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
+from max._mlir_context import default_mlir_context
 from max.mlir.dialects import mo
 from mojo.paths import (
     _build_mojo_source_package,
@@ -144,20 +145,19 @@ class KernelLibrary:
     of custom operations within the MLIR context.
     """
 
-    _context: mlir.Context
     _analysis: _graph.Analysis
 
-    def __init__(self, context: mlir.Context, paths: list[Path] = []) -> None:  # noqa: B006
+    def __init__(self, paths: Iterable[Path] = ()) -> None:
         # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
         # Get rid of this and properly setup the context instead.
         from max.driver import CPU
         from max.engine import InferenceSession  # type: ignore
 
+        context = default_mlir_context()
+        paths_list = list(paths)
         mock_session = InferenceSession(devices=[CPU()])
         mock_session._impl.register_runtime_context(context)
-
-        self._context = context
-        self._analysis = _graph.Analysis(context, paths)
+        self._analysis = _graph.Analysis(context, paths_list)
 
     def library_paths(self) -> list[Path]:
         """Returns the list of kernel library paths.
@@ -177,9 +177,7 @@ class KernelLibrary:
         """
         self._analysis.add_path(path)
 
-    def load_paths(
-        self, context: mlir.Context, custom_extensions: Iterable[Path]
-    ) -> None:
+    def load_paths(self, custom_extensions: Iterable[Path]) -> None:
         """Loads custom operations from provided library paths.
 
         Performs additional "smart" library loading logic for custom operation
@@ -192,21 +190,19 @@ class KernelLibrary:
         The loaded libraries are added to the current kernel library.
 
         Args:
-            context: The MLIR context for loading MLIR operations.
             custom_extensions: The file paths to the custom operation libraries.
         """
-        with context:
-            for ext_path in custom_extensions:
-                if is_mojo_binary_package_path(ext_path):
-                    self.add_path(ext_path)
-                elif is_mojo_source_package_path(ext_path):
-                    # Builds the source directory into a .mojopkg file.
-                    self.add_path(_build_mojo_source_package(ext_path))
-                else:
-                    raise ValueError(
-                        "Path provided as custom extension to Graph must be a "
-                        + f"Mojo source or binary package: {ext_path}"
-                    )
+        for ext_path in custom_extensions:
+            if is_mojo_binary_package_path(ext_path):
+                self.add_path(ext_path)
+            elif is_mojo_source_package_path(ext_path):
+                # Builds the source directory into a .mojopkg file.
+                self.add_path(_build_mojo_source_package(ext_path))
+            else:
+                raise ValueError(
+                    "Path provided as custom extension to Graph must be a "
+                    + f"Mojo source or binary package: {ext_path}"
+                )
 
     def __getitem__(self, kernel: str):
         if kernel not in self._analysis.symbol_names:
@@ -393,7 +389,6 @@ class Graph:
         path: Path | None = None,
         *args,
         custom_extensions: Iterable[Path] = [],
-        context: mlir.Context | None = None,
         kernel_library: KernelLibrary | None = None,
         module: mlir.Module | None = None,
         **kwargs,
@@ -420,10 +415,9 @@ class Graph:
             if isinstance(dim, SymbolicDim)
         )
         self._context_state = []
-        context = context or mlir.Context()
         self._should_verify_ops = True
 
-        with context, _location() as loc:
+        with _location() as loc:
             # Create the top level module op.
             self._module = module or mlir.Module.create()
             _module: builtin.ModuleOp = Operation._from_cmlir(  # type: ignore
@@ -478,7 +472,7 @@ class Graph:
         assert isinstance(self._current_chain, _ChainValue)
 
         # Initialize the kernel library and load custom extensions paths.
-        self._kernel_library = kernel_library or KernelLibrary(context)
+        self._kernel_library = kernel_library or KernelLibrary()
         self._import_kernels(custom_extensions)
 
         self._subgraphs = {}
@@ -512,10 +506,6 @@ class Graph:
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args
         )
-
-    @property
-    def _context(self) -> mlir.Context:
-        return self._mlir_op.context
 
     def add_subgraph(
         self,
@@ -558,7 +548,6 @@ class Graph:
             path=path,
             # *args,
             custom_extensions=custom_extensions,
-            context=self._context,
             module=self._module,
             # **kwargs,
         )
@@ -598,7 +587,7 @@ class Graph:
 
     def _add_chain_block_arg(self) -> _ChainValue:
         """Add a new chain as a graph block argument."""
-        with self._context, _location() as loc:
+        with _location() as loc:
             block = Block._from_cmlir(self._graph_body)
             block.add_argument(_ChainType().to_mlir(), loc)
         mlir_value = _Value._from_cmlir(self._graph_body.arguments[-1])
@@ -685,8 +674,7 @@ class Graph:
     def _enter(self) -> Generator[Graph]:
         token = CURRENT_GRAPH.set(self)
         try:
-            with self._context:
-                yield self
+            yield self
         finally:
             CURRENT_GRAPH.reset(token)
 
@@ -749,7 +737,7 @@ class Graph:
 
         # Temporarily hookup a handler to record diagnostics from mlir.
         # These are used to generate a better error message on failure.
-        handle = self._context.attach_diagnostic_handler(handler)
+        handle = default_mlir_context().attach_diagnostic_handler(handler)
         try:
             yield None
         except (mlir.MLIRError, ValueError) as e:
@@ -786,7 +774,7 @@ class Graph:
         self, op_type: type[Operation], *args, **kwargs
     ) -> list[Value[Any]]:
         """Wrapper for clients that only require the op results."""
-        with self._context, _location() as location:
+        with _location() as location:
             builder = OpBuilder(Block._from_cmlir(self._current_block).end)
             op = op_type(builder, location, *_to_mlir(args), **_to_mlir(kwargs))  # type: ignore
             op.verify()
@@ -1017,11 +1005,12 @@ class Graph:
     def _load_mlir(self, path: Path) -> None:
         self._context_state = []
         with open(path) as f:
-            with mlir.Context() as ctx, _location() as loc:
+            context = default_mlir_context()
+            with _location() as loc:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
-                    self._module = self._module.parse(f.read(), ctx)  # type: ignore
+                    self._module = self._module.parse(f.read(), context)
                     # Set the mo.graph op, which is the first operation in the
                     # module body block.
                     self._mlir_op = self._module.body.operations[0]
@@ -1034,7 +1023,7 @@ class Graph:
             ]
             if isinstance(paths_attr, mlir.ArrayAttr):
                 kernels_paths = [Path(str(x)) for x in paths_attr]
-        self._kernel_library = KernelLibrary(self._context, kernels_paths)
+        self._kernel_library = KernelLibrary(kernels_paths)
 
     def add_weight(
         # TODO(GEX-2121): Remove `force_initial_weight_on_host`
@@ -1117,18 +1106,16 @@ class Graph:
         return str(self._mlir_op)
 
     def _import_kernels(self, paths: Iterable[Path]) -> None:
-        with self._context:
-            self._kernel_library.load_paths(self._context, paths)
-
-            # Update the graph attribute for the library paths.
-            self._mlir_op.attributes[_KERNEL_LIBRARY_PATHS_ATTR_NAME] = (
-                mlir.ArrayAttr.get(
-                    [
-                        mlir.StringAttr.get(str(path), self._context)
-                        for path in self._kernel_library.library_paths()
-                    ]
-                )
+        self._kernel_library.load_paths(paths)
+        context = default_mlir_context()
+        self._mlir_op.attributes[_KERNEL_LIBRARY_PATHS_ATTR_NAME] = (
+            mlir.ArrayAttr.get(
+                [
+                    mlir.StringAttr.get(str(path), context)
+                    for path in self._kernel_library.library_paths()
+                ]
             )
+        )
 
     @property
     def kernel_libraries_paths(self) -> list[Path]:

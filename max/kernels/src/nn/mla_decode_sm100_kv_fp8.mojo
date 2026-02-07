@@ -207,7 +207,7 @@ struct MLA_SM100_Decode_KV_FP8[
     @__llvm_arg_metadata(o_tma, `nvvm.grid_constant`)
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Self.config.num_threads
+            Int32(Self.config.num_threads)
         )
     )
     fn kernel(
@@ -542,7 +542,11 @@ struct MLA_SM100_Decode_KV_FP8[
         if is_leader:
             # this is the total bytes expected to be transferred to the mbar for Q and K0
             mbar_q[].expect_bytes(
-                Self.config.BM * Self.config.q_depth * size_of[Self.q_type]()
+                Int32(
+                    Self.config.BM
+                    * Self.config.q_depth
+                    * size_of[Self.q_type]()
+                )
             )
             Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
 
@@ -550,7 +554,11 @@ struct MLA_SM100_Decode_KV_FP8[
 
         if is_leader:
             k0_bar[].expect_bytes(
-                Self.config.BN * Self.config.q_depth * size_of[Self.kv_type]()
+                Int32(
+                    Self.config.BN
+                    * Self.config.q_depth
+                    * size_of[Self.kv_type]()
+                )
             )
             var stage_ptr = kv_load_prod.stage_base_ptr[qk_stage=0]()
             Self.Common_MLA_Op.load_kv(
@@ -559,7 +567,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
         kv_load_prod.commit_step()
 
-        kv_row += Self.config.BN
+        kv_row += UInt32(Self.config.BN)
 
         # We already primed tile 0 into stage 0 (kv_smem base).
         # Now pipeline the remaining K tiles: tile_idx in [1, num_k_tiles)
@@ -580,15 +588,17 @@ struct MLA_SM100_Decode_KV_FP8[
 
             if is_leader:
                 k_mbar[].expect_bytes(
-                    Self.config.BN
-                    * Self.config.q_depth
-                    * size_of[Self.kv_type]()
+                    Int32(
+                        Self.config.BN
+                        * Self.config.q_depth
+                        * size_of[Self.kv_type]()
+                    )
                 )
                 Self.Common_MLA_Op.load_kv(
                     k_tma_fp8, stage_ptr, k_mbar, UInt(0), UInt(kv_gmem_row)
                 )
 
-            kv_row += Self.config.BN
+            kv_row += UInt32(Self.config.BN)
             kv_load_prod.commit_step()
 
             # this way we can make sure that the k wont be overwritten before mma consume it as V
@@ -710,7 +720,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 p1b_all.ptr.store(b * 4, p1b)
 
             # Single barrier. All 128 threads finish ALL reads before ANY writes
-            named_barrier[WARPGROUP_SIZE](3)
+            named_barrier[Int32(WARPGROUP_SIZE)](3)
 
             # Second: Store all BF16 data from registers
             @parameter
@@ -865,7 +875,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
-                b=k_descriptor + k_slot_index * stage_stride_in_bytes,
+                b=k_descriptor + k_slot_index * UInt32(stage_stride_in_bytes),
                 c=s_tmem_slot,
                 c_scale=UInt32(0),
                 elect=elect_mask,
@@ -948,10 +958,11 @@ struct MLA_SM100_Decode_KV_FP8[
             for block in range(0, Self.NumVOBlocks, block_step):
                 o_prod.acquire()
                 Self.UMMAPVSS.mma[stage_idx=0](
-                    a=p_descriptor + p_slot_index * stage_stride_in_bytes,
+                    a=p_descriptor
+                    + p_slot_index * UInt32(stage_stride_in_bytes),
                     b=v_descriptor
-                    + v_slot_index * stage_stride_in_bytes
-                    + block * block_stride_in_bytes,
+                    + v_slot_index * UInt32(stage_stride_in_bytes)
+                    + UInt32(block * block_stride_in_bytes),
                     c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
                     c_scale=c_scale,
                     elect=elect_mask,

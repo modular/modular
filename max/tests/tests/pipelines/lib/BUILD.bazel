@@ -25,5 +25,6 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         requirement("pyyaml"),
         requirement("pydantic"),
+        requirement("pytest-mock"),
     ],
 )

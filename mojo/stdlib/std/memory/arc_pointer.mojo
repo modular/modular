@@ -70,9 +70,8 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         return True
 
 
-@register_passable
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
-    Identifiable, ImplicitlyCopyable, Writable
+    Identifiable, ImplicitlyCopyable, RegisterType, Writable
 ):
     """Atomic reference-counted pointer.
 

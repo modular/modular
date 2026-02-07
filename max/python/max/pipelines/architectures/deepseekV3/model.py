@@ -37,13 +37,13 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
-from ..llama3.data_parallel_llama import compute_data_parallel_splits
 from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 
@@ -551,18 +551,44 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )
-        if len(model_outputs) == 4:
+
+        num_hidden_state_outputs = len(self.devices)
+        num_outputs = len(model_outputs)
+
+        # Possible output configurations:
+        # - 1 output: next_token_logits only
+        # - 3 outputs: next_token_logits, logits, logit_offsets (variable logits)
+        # - 1 + N: next_token_logits + hidden_states (one per device)
+        # - 3 + N: next_token_logits, logits, logit_offsets + hidden_states (one per device)
+
+        if num_outputs == 3 + num_hidden_state_outputs:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
-            assert isinstance(model_outputs[3], Buffer)
+            hidden_states_list: list[Buffer] = []
+            for i in range(num_hidden_state_outputs):
+                hs = model_outputs[3 + i]
+                assert isinstance(hs, Buffer)
+                hidden_states_list.append(hs)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
-                hidden_states=model_outputs[3],
+                hidden_states=hidden_states_list,
             )
-        elif len(model_outputs) == 3:
+        elif num_outputs == 1 + num_hidden_state_outputs:
+            assert isinstance(model_outputs[0], Buffer)
+            hidden_states_list = []
+            for i in range(num_hidden_state_outputs):
+                hs = model_outputs[1 + i]
+                assert isinstance(hs, Buffer)
+                hidden_states_list.append(hs)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+                hidden_states=hidden_states_list,
+            )
+        elif num_outputs == 3:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)

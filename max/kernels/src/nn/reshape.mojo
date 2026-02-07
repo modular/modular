@@ -32,11 +32,11 @@ fn reshape[
     new_shape: IndexList[output_rank],
 ) -> TileTensor[
     dtype,
-    input.origin,
     Layout[
         shape_types = DynamicCoord[DType.int64, output_rank].element_types,
         stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     ],
+    input.origin,
     address_space = input.address_space,
 ]:
     var stride_tuple = type_of(new_shape)()
@@ -67,11 +67,11 @@ fn layout_tensor_reshape[
     new_shape: IndexList[output_rank],
 ) -> TileTensor[
     dtype,
-    input.origin,
     Layout[
         shape_types = DynamicCoord[DType.int64, output_rank].element_types,
         stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     ],
+    input.origin,
     address_space = input.address_space,
 ]:
     return reshape[

@@ -58,10 +58,10 @@ modular_py_binary(
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/config",
-        "//max/python/max/entrypoints",
         "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/telemetry",

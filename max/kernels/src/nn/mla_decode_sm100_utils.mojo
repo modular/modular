@@ -638,7 +638,7 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
-        var stage_offset: UInt32 = stage_idx * Self.kv_stage_elems
+        var stage_offset: UInt32 = stage_idx * UInt32(Self.kv_stage_elems)
         return self.smem + stage_offset
 
     @always_inline
@@ -798,21 +798,21 @@ struct KVPipelineGeneric[
         # Consumer & Producer mbars: arrived by 1 thread performing TMA/mma
         @parameter
         for i in range(Self.num_stages):
-            self.mbar[i].init(Self.num_producer)
+            self.mbar[i].init(Int32(Self.num_producer))
 
         @parameter
         for i in range(Self.num_stages, Self.num_stages * 2):
-            self.mbar[i].init(Self.num_consumer)
+            self.mbar[i].init(Int32(Self.num_consumer))
 
     @always_inline
     fn producer_mbar[qk_stage: Int](self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.mbar + Self.num_qk_stages * idx + qk_stage
+        return self.mbar + UInt32(Self.num_qk_stages) * idx + qk_stage
 
     @always_inline
     fn consumer_mbar[qk_stage: Int](self, idx: UInt32) -> MBarType:
         comptime const_offset = qk_stage + Self.num_stages
-        return self.mbar + Self.num_qk_stages * idx + const_offset
+        return self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
 
     @always_inline
     fn consumer_mbar[qk_stage: Int](self) -> MBarType:
@@ -842,7 +842,7 @@ struct KVPipelineGeneric[
     @staticmethod
     @always_inline
     fn num_mbars() -> UInt32:
-        return 2 * Self.num_qk_stages * Self.num_kv_stages
+        return UInt32(2 * Self.num_qk_stages * Self.num_kv_stages)
 
 
 # -------------------------------------------------------------------------------
@@ -1135,11 +1135,11 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
         # Consumer & Producer mbars: arrived by num_producer and num_consumer threads
         @parameter
         for i in range(Self.num_stages):
-            self.mbar[i].init(Self.num_producer)
+            self.mbar[i].init(Int32(Self.num_producer))
 
         @parameter
         for i in range(Self.num_stages):
-            (self.mbar + Self.num_stages)[i].init(Self.num_consumer)
+            (self.mbar + Self.num_stages)[i].init(Int32(Self.num_consumer))
 
     @always_inline
     fn producer_mbar(self) -> MBarType:
@@ -1180,7 +1180,7 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
     @staticmethod
     @always_inline
     fn num_mbars() -> UInt32:
-        return 2 * Self.num_stages
+        return UInt32(2 * Self.num_stages)
 
 
 struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
@@ -1223,9 +1223,10 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         self, half_idx: Int
     ) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
-        var stage_offset: UInt32 = (
-            stage_idx * Self.out_stage_elems * Self.blocks_per_stage
-            + half_idx * Self.out_stage_elems
+        var stage_offset: UInt32 = stage_idx * UInt32(
+            Self.out_stage_elems
+        ) * UInt32(Self.blocks_per_stage) + UInt32(
+            half_idx * Self.out_stage_elems
         )
         return self.smem + stage_offset
 
@@ -1275,9 +1276,10 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         self, half_idx: Int
     ) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
-        var stage_offset: UInt32 = (
-            stage_idx * Self.out_stage_elems * Self.blocks_per_stage
-            + half_idx * Self.out_stage_elems
+        var stage_offset: UInt32 = stage_idx * UInt32(
+            Self.out_stage_elems
+        ) * UInt32(Self.blocks_per_stage) + UInt32(
+            half_idx * Self.out_stage_elems
         )
         return self.smem + stage_offset
 
@@ -1873,8 +1875,8 @@ struct MLA_SM100_Decode_Common[
                     prompt_idx,
                     q_head_idx,
                     score_row + start_pos + cache_start_pos,
-                    col0 + i,
-                    tile_key_base,
+                    UInt32(col0 + i),
+                    UInt32(tile_key_base),
                     num_keys,
                     cache_start_pos,
                 )
@@ -1888,8 +1890,8 @@ struct MLA_SM100_Decode_Common[
                     prompt_idx,
                     q_head_idx,
                     score_row + start_pos + cache_start_pos,
-                    col0 + i,
-                    tile_key_base,
+                    UInt32(col0 + i),
+                    UInt32(tile_key_base),
                     num_keys,
                     cache_start_pos,
                 )
@@ -2064,11 +2066,11 @@ struct MLA_SM100_Decode_Common[
             current_max *= log2e_f32
 
             # every softmax thread signals arrival on the shared-mem barrier
-            comptime rescale_threshold: Float32 = -8 if size_of[
-                Self.q_type
-            ]() >= 2 else 0
+            comptime rescale_threshold: Float32 = Float32(
+                -8 if size_of[Self.q_type]() >= 2 else 0
+            )
             max_Smem_Tensor[lane_id] = current_max
-            named_barrier[WARPGROUP_SIZE](2)
+            named_barrier[Int32(WARPGROUP_SIZE)](2)
             # 0 ^ 64 = 64
             # 1 ^ 64 = 65
             # 2 ^ 64 = 66
@@ -2120,8 +2122,8 @@ struct MLA_SM100_Decode_Common[
             p_prod.acquire()
             var p_stage = p_prod.stage_index()  # 0 or 1
             var p_smem = kv_smem + (
-                p_stage * Self.KVStageElems
-                + (Self.NumVOBlocks) * Self.BlockElems
+                p_stage * UInt32(Self.KVStageElems)
+                + UInt32(Self.NumVOBlocks * Self.BlockElems)
             )
 
             # Write P to shared memory (no scaling needed)
@@ -2144,7 +2146,7 @@ struct MLA_SM100_Decode_Common[
             tiles_done += 1
 
         li_Smem_Tensor[lane_id] = li
-        named_barrier[WARPGROUP_SIZE](2)
+        named_barrier[Int32(WARPGROUP_SIZE)](2)
         li += li_Smem_Tensor[lane_id ^ 64][0]
 
         # --------------------------------------------------------------------------
@@ -2171,7 +2173,7 @@ struct MLA_SM100_Decode_Common[
         # it is 256/32 which is equivalent of 512/64
 
         comptime num_store_tiles = Self.config.depth // Self.config.BN
-        comptime epi_half_load: UInt32 = Self.config.BN >> 1
+        comptime epi_half_load: UInt32 = UInt32(Self.config.BN >> 1)
         comptime chunk_size: Int = 16
         comptime total_elems: Int = Int(epi_half_load) * blocks_per_stage
         var out_prod = DecodeOutProducer[Self.output_type, Self.config](
@@ -2185,7 +2187,7 @@ struct MLA_SM100_Decode_Common[
 
         var warp_pair = UInt32(warp_idx >> 1)
         var epi_col0: Int = Int(
-            warp_pair * epi_half_load * ((blocks_per_stage >> 1) ^ 1)
+            warp_pair * epi_half_load * UInt32((blocks_per_stage >> 1) ^ 1)
         )
 
         # Number of MMA PV rounds (outer loop) and iterations within each round (inner loop)
@@ -2215,9 +2217,9 @@ struct MLA_SM100_Decode_Common[
                 # Global iteration index combining mma_round and slot
                 comptime i = mma_round * iters_per_mma_round + slot
 
-                var o_tmem_base: UInt32 = (
-                    o_tmem + UInt32(i) * epi_half_load * blocks_per_stage
-                )
+                var o_tmem_base: UInt32 = o_tmem + UInt32(
+                    i
+                ) * epi_half_load * UInt32(blocks_per_stage)
 
                 # Load all data for this tile into a LocalTensor
                 var o_row_subtile = LocalTensor[
@@ -2237,7 +2239,7 @@ struct MLA_SM100_Decode_Common[
 
                 out_prod.acquire()
                 var stage_ptr = out_prod.stage_base_ptr(
-                    Int(warp_pair * (blocks_per_stage >> 1))
+                    Int(warp_pair * UInt32(blocks_per_stage >> 1))
                 )
 
                 # Write O to shared memory with scaling
@@ -2314,7 +2316,7 @@ struct MLA_SM100_Decode_Common[
                         var o_tmem_subtile: UInt32 = (
                             o_tmem
                             + UInt32(i) * UInt32(Self.config.BN)
-                            + UInt32(slot_idx) * o_stride
+                            + UInt32(slot_idx) * UInt32(o_stride)
                         )
                         var o_row_subtile = LocalTensor[
                             Self.AccumType, Layout.row_major(Self.config.BN)

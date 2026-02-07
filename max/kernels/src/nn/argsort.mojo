@@ -128,8 +128,8 @@ fn _argsort_gpu_impl[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
     fn bitonic_sort_step(
-        indices: TileTensor[indices.dtype, indices.origin, indices.LayoutType],
-        input: TileTensor[input.dtype, input.origin, input.LayoutType],
+        indices: TileTensor[indices.dtype, indices.LayoutType, indices.origin],
+        input: TileTensor[input.dtype, input.LayoutType, input.origin],
         n: Int,
         step: Int,
         stage: Int,

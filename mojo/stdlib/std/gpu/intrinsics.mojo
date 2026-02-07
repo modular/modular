@@ -781,7 +781,7 @@ fn store_release[
         comptime store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
-        external_call[store_intrin, NoneType,](
+        external_call[store_intrin, NoneType](
             ptr.address_space_cast[addr_space](),
             value,
             _AirMemOrder.Relaxed,
@@ -910,7 +910,7 @@ fn load_acquire[
         comptime load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
-        var value = external_call[load_intrin, Scalar[dtype],](
+        var value = external_call[load_intrin, Scalar[dtype]](
             ptr.address_space_cast[addr_space](),
             _AirMemOrder.Relaxed,
             air_scope,

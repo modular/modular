@@ -269,8 +269,7 @@ fn _has_native_f8_support() -> Bool:
 
 
 @fieldwise_init
-@register_passable
-struct FastMathFlag(Equatable, ImplicitlyCopyable):
+struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterType):
     """Flags for controlling fast-math optimizations in floating-point operations.
 
     FastMathFlag provides compile-time controls for various floating-point math
@@ -1914,43 +1913,16 @@ struct SIMD[dtype: DType, size: Int](
         """
         return Self(mlir_value=__mlir_op.`pop.trunc`(self._mlir_value))
 
-    @always_inline
+    @always_inline("builtin")
     fn __abs__(self) -> Self:
         """Defines the absolute value operation.
 
         Returns:
             The absolute value of this SIMD vector.
         """
+        return Self(mlir_value=__mlir_op.`pop.abs`(self._mlir_value))
 
-        @parameter
-        if Self.dtype.is_unsigned() or Self.dtype == DType.bool:
-            return self
-        elif Self.dtype.is_integral():
-            return self.lt(0).select(-self, self)
-        else:
-
-            @parameter
-            if is_nvidia_gpu():
-
-                @parameter
-                if Self.dtype.is_half_float():
-                    comptime prefix = "abs.bf16" if Self.dtype == DType.bfloat16 else "abs.f16"
-                    return _call_ptx_intrinsic[
-                        scalar_instruction=prefix,
-                        vector2_instruction = prefix + "x2",
-                        scalar_constraints="=h,h",
-                        vector_constraints="=r,r",
-                    ](self)
-                return llvm_intrinsic["llvm.fabs", Self, has_side_effect=False](
-                    self
-                )
-
-            comptime mask = FPUtils[Self.dtype].exponent_mantissa_mask()
-            return Self(
-                from_bits=self.to_bits() & type_of(self.to_bits())(mask)
-            )
-
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __round__(self) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
@@ -1959,14 +1931,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The elementwise rounded value of this SIMD vector.
         """
-
-        @parameter
-        if Self.dtype.is_integral() or Self.dtype == DType.bool:
-            return self
-
-        return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
-            self
-        )
+        return Self(mlir_value=__mlir_op.`pop.round`(self._mlir_value))
 
     @always_inline("nodebug")
     fn __round__(self, ndigits: Int) -> Self:
