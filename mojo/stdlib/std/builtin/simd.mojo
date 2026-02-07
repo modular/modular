@@ -40,6 +40,7 @@ components, including tensor operations, linear algebra routines, and
 domain-specific libraries for machine learning and scientific computing.
 """
 
+from bit import next_power_of_two
 import math
 from collections import InlineArray
 from hashlib.hasher import Hasher
@@ -73,7 +74,7 @@ from bit import bit_width, byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _write_int
-from math import DivModable, Powable
+from math import DivModable, Powable, log10, ceil
 from documentation import doc_private
 from memory import bitcast, memcpy, pack_bits
 from python import ConvertibleToPython, Python, PythonObject
@@ -89,6 +90,7 @@ from utils.numerics import max_or_inf as _max_or_inf
 from utils.numerics import min_finite as _min_finite
 from utils.numerics import min_or_neg_inf as _min_or_neg_inf
 from utils.numerics import nan as _nan
+from format._utils import _TotalWritableBytes
 
 from .dtype import (
     _integral_type_of,
@@ -2206,6 +2208,119 @@ struct SIMD[dtype: DType, size: Int](
             _write_scalar(writer, element)
         writer.write_string(")")
 
+    fn estimate_bytes_to_write(self) -> Int:
+        """Estimate the total bytes to write the type into a writer.
+
+        Returns:
+            The estimated bytes needed to write the type into a writer.
+        """
+
+        @parameter
+        if not Self.dtype.is_integral():
+            var total_bytes = _TotalWritableBytes()
+            self.write_to(total_bytes)
+            return total_bytes.size
+        else:
+            comptime extra = (2 * Self.size) if Self.size > 1 else 0
+            comptime is_unsigned = Self.dtype.is_unsigned()
+            comptime MAX = Scalar[Self.dtype].MAX
+            comptime f_MAX = MAX.cast[DType.float64]()
+            comptime log10_f_MAX = Int(ceil(log10(f_MAX)))
+            comptime max_digits_size[offset: Int] = next_power_of_two(
+                log10_f_MAX - offset
+            )
+
+            fn _get_max_digits[
+                offset: Int = 0
+            ](out res: SIMD[Self.dtype, max_digits_size[offset]]):
+                res = {MAX}
+
+                var idx = 0
+
+                for i in range(offset, offset + type_of(res).size):
+                    if log10_f_MAX >= i + 1:
+                        res[idx] = Scalar[Self.dtype](10) ** i - 1
+                        idx += 1
+
+            @parameter
+            fn _full_digits[offset: Int = 0]() -> Int:
+                var abs_v: Self
+
+                @parameter
+                if is_unsigned:
+                    abs_v = self
+                else:
+                    abs_v = abs(self + self.eq(Self.MIN).cast[Self.dtype]())
+
+                var count = offset + extra
+
+                @parameter
+                if bit_width_of[Self.dtype]() <= 64:
+                    comptime max_digits = _get_max_digits[offset]()
+
+                    @parameter
+                    for i in range(Self.size):
+                        count += max_digits.lt(abs_v[i]).reduce_bit_count()
+                else:  # 128 and 256 bit integers would take 1KiB+
+                    var max_digit = Self(10) ** offset
+
+                    @parameter
+                    for i in range(offset, max_digits_size[0]):
+
+                        @parameter
+                        if log10_f_MAX < i + 1:
+                            break
+                        count += max_digit.le(abs_v).reduce_bit_count()
+                        max_digit *= 10
+
+                return count + self.le(0).reduce_bit_count()
+
+            @parameter
+            if bit_width_of[Self.dtype]() <= 16 or Self.size > 1:
+                return _full_digits()
+            else:
+                # NOTE: We can take advantage of 4 facts:
+                # 1. We are human and our measurement systems don't tend towards
+                # numbers bigger than 10_000
+                # 2. They can be casted to [u]int16 and use a size of 4 which
+                # only requires a machine simd width of 64 bits
+                # 3. We can lower latecy by letting the branch predictor do its
+                # job, instead of brute-forcing all possible digits
+                # 4. After this comparison 32bit integers need only 8 digit
+                # comparisons instead of 16 and 64bit need only 16 instead of 32
+                var comp: Bool
+
+                @parameter
+                if is_unsigned:
+                    comp = self < 10_000
+                else:
+                    comp = Self(-10_000) < self < Self(10_000)
+                if not comp:
+                    return _full_digits[4]()
+                else:
+                    comptime dt = DType.uint16 if is_unsigned else DType.int16
+                    comptime max_digits = SIMD[dt, 4](0, 10, 100, 1000)
+                    var vec = self.cast[dt]()
+                    var abs_v: type_of(vec)
+
+                    @parameter
+                    if is_unsigned:
+                        abs_v = vec
+                    else:
+                        abs_v = abs(vec)
+
+                    var count = 0
+
+                    @parameter
+                    for i in range(Self.size):
+                        count += max_digits.le(abs_v[i]).reduce_bit_count()
+
+                    @parameter
+                    if is_unsigned:
+                        return count
+                    else:
+                        return count + vec.lt(0).reduce_bit_count()
+
     @always_inline
     fn to_bits[
         _dtype: DType = _uint_type_of_width[bit_width_of[Self.dtype]()]()
@@ -2982,17 +3097,14 @@ struct SIMD[dtype: DType, size: Int](
         ), "Expected either integral or bool type"
 
         @parameter
-        if Self.dtype == DType.bool:
-
-            @parameter
-            if Self.size == 1:
-                return Int(self)
+        if Self.dtype == DType.bool and Self.size == 1:
+            return Int(self)
+        elif Self.dtype == DType.bool:
+            if is_compile_time():  # FIXME(#5855): remove this workaround
+                return self.cast[DType.uint8]().reduce_bit_count()
             else:
-                var packed_mask = pack_bits(
-                    rebind[SIMD[DType.bool, Self.size]](self)
-                )
-                var count = pop_count(packed_mask)
-                return Int(count)
+                var s = self._refine[DType.bool, Self.size]()
+                return Int(pop_count(pack_bits(s)))
         else:
             return Int(pop_count(self).reduce_add())
 
