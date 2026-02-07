@@ -1074,8 +1074,12 @@ struct PRegisterBuffer[
         return mma_reg_tile
 
     @always_inline
+    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+        return self.get_mma_tile[tile_idx, k_idx, 0]()
+
+    @always_inline
     fn get_mma_tile[
-        tile_idx: Int, k_idx: Int, stage: Int = 0
+        tile_idx: Int, k_idx: Int, stage: Int
     ](self) -> Self.MMATileType:
         return self.get_mma_tile_reg[
             tile_idx, k_idx, stage
@@ -1102,8 +1106,12 @@ struct PRegisterBuffer[
         )
 
     @always_inline
-    fn zero[stage: Int = 0](self):
+    fn zero[stage: Int](self):
         _ = self.reg_tile.split[Self.num_stages]()[stage].fill(0)
+
+    @always_inline
+    fn zero(self):
+        self.zero[0]()
 
     @always_inline
     fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
