@@ -417,16 +417,16 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         var input = StringSlice("123")
         var iter = input.codepoints()
 
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
 
         # A call to `next()` return the same value as `peek_next()` had,
         # but also advance the iterator.
-        assert_equal(iter.next().value(), Codepoint.ord("1"))
+        assert_equal(iter.next().value(), Codepoint("1"))
 
         # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
+        assert_equal(iter.peek_next().value(), Codepoint("2"))
         ```
         """
         if len(self._slice) > 0:
@@ -1539,9 +1539,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var s = StringSlice("abc")
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
-        assert_equal(iter.__next__(), Codepoint.ord("b"))
-        assert_equal(iter.__next__(), Codepoint.ord("c"))
+        assert_equal(iter.__next__(), Codepoint("a"))
+        assert_equal(iter.__next__(), Codepoint("b"))
+        assert_equal(iter.__next__(), Codepoint("c"))
         with assert_raises():
             _ = iter.__next__() # raises StopIteration
         ```
@@ -1558,7 +1558,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         with assert_raises():

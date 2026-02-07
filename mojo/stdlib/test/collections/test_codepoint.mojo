@@ -100,31 +100,31 @@ def test_char_properties():
 
 def test_char_is_posix_space():
     # checking true cases
-    assert_true(Codepoint.ord(" ").is_posix_space())
-    assert_true(Codepoint.ord("\n").is_posix_space())
-    assert_true(Codepoint.ord("\n").is_posix_space())
-    assert_true(Codepoint.ord("\t").is_posix_space())
-    assert_true(Codepoint.ord("\r").is_posix_space())
-    assert_true(Codepoint.ord("\v").is_posix_space())
-    assert_true(Codepoint.ord("\f").is_posix_space())
+    assert_true(Codepoint(" ").is_posix_space())
+    assert_true(Codepoint("\n").is_posix_space())
+    assert_true(Codepoint("\n").is_posix_space())
+    assert_true(Codepoint("\t").is_posix_space())
+    assert_true(Codepoint("\r").is_posix_space())
+    assert_true(Codepoint("\v").is_posix_space())
+    assert_true(Codepoint("\f").is_posix_space())
 
     # Checking false cases
-    assert_false(Codepoint.ord("a").is_posix_space())
-    assert_false(Codepoint.ord("a").is_posix_space())
-    assert_false(Codepoint.ord("u").is_posix_space())
-    assert_false(Codepoint.ord("s").is_posix_space())
-    assert_false(Codepoint.ord("t").is_posix_space())
-    assert_false(Codepoint.ord("i").is_posix_space())
-    assert_false(Codepoint.ord("n").is_posix_space())
-    assert_false(Codepoint.ord("z").is_posix_space())
-    assert_false(Codepoint.ord(".").is_posix_space())
+    assert_false(Codepoint("a").is_posix_space())
+    assert_false(Codepoint("a").is_posix_space())
+    assert_false(Codepoint("u").is_posix_space())
+    assert_false(Codepoint("s").is_posix_space())
+    assert_false(Codepoint("t").is_posix_space())
+    assert_false(Codepoint("i").is_posix_space())
+    assert_false(Codepoint("n").is_posix_space())
+    assert_false(Codepoint("z").is_posix_space())
+    assert_false(Codepoint(".").is_posix_space())
 
 
 def test_char_is_lower():
-    assert_true(Codepoint.ord("a").is_ascii_lower())
-    assert_true(Codepoint.ord("b").is_ascii_lower())
-    assert_true(Codepoint.ord("y").is_ascii_lower())
-    assert_true(Codepoint.ord("z").is_ascii_lower())
+    assert_true(Codepoint("a").is_ascii_lower())
+    assert_true(Codepoint("b").is_ascii_lower())
+    assert_true(Codepoint("y").is_ascii_lower())
+    assert_true(Codepoint("z").is_ascii_lower())
 
     assert_false(
         Codepoint.from_u32(UInt32(ord("a") - 1)).value().is_ascii_lower()
@@ -133,15 +133,15 @@ def test_char_is_lower():
         Codepoint.from_u32(UInt32(ord("z") + 1)).value().is_ascii_lower()
     )
 
-    assert_false(Codepoint.ord("!").is_ascii_lower())
-    assert_false(Codepoint.ord("0").is_ascii_lower())
+    assert_false(Codepoint("!").is_ascii_lower())
+    assert_false(Codepoint("0").is_ascii_lower())
 
 
 def test_char_is_upper():
-    assert_true(Codepoint.ord("A").is_ascii_upper())
-    assert_true(Codepoint.ord("B").is_ascii_upper())
-    assert_true(Codepoint.ord("Y").is_ascii_upper())
-    assert_true(Codepoint.ord("Z").is_ascii_upper())
+    assert_true(Codepoint("A").is_ascii_upper())
+    assert_true(Codepoint("B").is_ascii_upper())
+    assert_true(Codepoint("Y").is_ascii_upper())
+    assert_true(Codepoint("Z").is_ascii_upper())
 
     assert_false(
         Codepoint.from_u32(UInt32(ord("A") - 1)).value().is_ascii_upper()
@@ -150,25 +150,25 @@ def test_char_is_upper():
         Codepoint.from_u32(UInt32(ord("Z") + 1)).value().is_ascii_upper()
     )
 
-    assert_false(Codepoint.ord("!").is_ascii_upper())
-    assert_false(Codepoint.ord("0").is_ascii_upper())
+    assert_false(Codepoint("!").is_ascii_upper())
+    assert_false(Codepoint("0").is_ascii_upper())
 
 
 def test_char_is_digit():
-    assert_true(Codepoint.ord("1").is_ascii_digit())
-    assert_false(Codepoint.ord("g").is_ascii_digit())
+    assert_true(Codepoint("1").is_ascii_digit())
+    assert_false(Codepoint("g").is_ascii_digit())
 
     # Devanagari Digit 6 — non-ASCII digits are not "ascii digit".
-    assert_false(Codepoint.ord("६").is_ascii_digit())
+    assert_false(Codepoint("६").is_ascii_digit())
 
 
 def test_char_is_printable():
-    assert_true(Codepoint.ord("a").is_ascii_printable())
-    assert_false(Codepoint.ord("\n").is_ascii_printable())
-    assert_false(Codepoint.ord("\t").is_ascii_printable())
+    assert_true(Codepoint("a").is_ascii_printable())
+    assert_false(Codepoint("\n").is_ascii_printable())
+    assert_false(Codepoint("\t").is_ascii_printable())
 
     # Non-ASCII characters are not considered "ascii printable".
-    assert_false(Codepoint.ord("स").is_ascii_printable())
+    assert_false(Codepoint("स").is_ascii_printable())
 
 
 comptime SIGNIFICANT_CODEPOINTS: List[Tuple[Int, List[Byte]]] = [
