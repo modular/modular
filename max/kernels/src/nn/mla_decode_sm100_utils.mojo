@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp2, recip, align_up, log2, ceildiv
+from math import exp2, recip, align_up
 from math.constants import log2e
 from sys import size_of, _RegisterPackType
 import gpu.primitives.warp as warp
@@ -144,12 +144,11 @@ struct MLA_Decode_Pack[
     ValidLengthType: OptionalPointer,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
-    SplitAccumType: OptionalPointer,
 ](Copyable, DevicePassable, TrivialRegisterType):
     var mask: Self.MaskType
     var score_mod: Self.ScoreModType
     var valid_length: Self.ValidLengthType
-    var lse_accum_split_ptr: Self.SplitAccumType
+
     comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
@@ -169,12 +168,10 @@ struct MLA_Decode_Pack[
         mask: Self.MaskType,
         score_mod: Self.ScoreModType,
         valid_length: Self.ValidLengthType,
-        lse_accum_split_ptr: Self.SplitAccumType,
     ):
         self.mask = mask
         self.score_mod = score_mod
         self.valid_length = valid_length
-        self.lse_accum_split_ptr = lse_accum_split_ptr
 
 
 # ------------------------------------------------------------------------------
@@ -187,8 +184,7 @@ fn num_matrix_view_rows_decode[
     dtype: DType,
     //,
 ](q: LayoutTensor[dtype, ...]) -> Int:
-    # q and output are (batch x seq_len x num_heads , depth)
-    # output when split-k is used are (split_k x batch x seq_len x num_heads , depth)
+    # q and out are (batch x seq_len x num_heads , depth)
     var num_rows: Int = q.dim[0]()
 
     @parameter
@@ -405,16 +401,10 @@ struct OffsetPosition[
     ragged: Bool,
     is_cache_length_accurate: Bool,
     ValidLengthType: OptionalPointer,
-    decoding_warp_split_k: Bool = False,
 ](TrivialRegisterType):
     var seq_len: Int
-    var num_keys: Int  # Total keys for this batch (full KV cache length)
-    var q_row_offset: Int  # Row offset for Q tensor (no split dimension)
-    var out_row_offset: Int  # Row offset for output tensor (includes split dimension)
-    var split_idx: Int  # Which split partition this CTA handles
-    var batch_idx: Int  # Which batch this CTA handles
-    var kv_start_row: Int  # Starting KV row for this split
-    var num_keys_this_split: Int  # Number of keys this split processes
+    var num_keys: Int
+    var q_out_row_offset: Int
 
     @always_inline
     fn __init__(
@@ -424,120 +414,38 @@ struct OffsetPosition[
             Scalar[Self.ValidLengthType.dtype], origin=ImmutAnyOrigin
         ],
         max_seq_len: Int,
-        num_partitions: Int,
-        batch_size: Int,
     ):
         self.seq_len = 0
         self.num_keys = 0
-        self.q_row_offset = 0
-        self.out_row_offset = 0
-        self.split_idx = 0
-        self.batch_idx = 0
-        self.kv_start_row = 0
-        self.num_keys_this_split = 0
+        self.q_out_row_offset = 0
 
-        # Decode block_idx.z into split_idx and batch_idx
-        # Grid layout: block_z = batch_size * num_partitions
-        # block_idx.z = batch_idx * num_partitions + split_idx
-        @parameter
-        if Self.decoding_warp_split_k:
-            self.batch_idx = Int(block_idx.z) // num_partitions
-            self.split_idx = Int(block_idx.z) % num_partitions
-        else:
-            self.batch_idx = Int(block_idx.z)
-            self.split_idx = 0
-
+        # This is when the sequence length is variable
         @parameter
         if Self.ragged:
-            # treat valid_lengths as input_row_offsets
-            # Use batch_idx (not block_idx.z) to index into valid_length
-            var start_of_seq = Int(valid_length[self.batch_idx])
-            var end_of_seq = Int(valid_length[self.batch_idx + 1])
+            # treat valid_lengths as a input_row_offsets
+            var start_of_seq = Int(valid_length[Int(block_idx.z)])
+            var end_of_seq = Int(valid_length[Int(block_idx.z) + 1])
             self.seq_len = end_of_seq - start_of_seq
-
-            # Q row offset: no split dimension
-            # Q shape: (total_tokens * num_heads, depth)
-            self.q_row_offset = (
+            self.q_out_row_offset = (
                 start_of_seq * Self.config.num_q_heads
                 + Int(block_idx.x) * Self.config.BM
                 + Int(block_idx.y) * Self.config.num_q_heads
             )
 
-            # Output row offset: includes split dimension for split-K
-            # Out shape: (split_k * total_q_tokens * num_heads, depth)
-            @parameter
-            if Self.decoding_warp_split_k:
-                # For ragged with split-K:
-                # - valid_length is input_row_offsets (cumulative token counts)
-                # - valid_length[batch_size] = total Q tokens across all batches
-                # - Each split writes to its own slice in the output accumulator
-                var total_q_tokens = Int(valid_length[batch_size])
-                var rows_per_split = total_q_tokens * Self.config.num_q_heads
-                self.out_row_offset = (
-                    self.split_idx * rows_per_split + self.q_row_offset
-                )
-            else:
-                self.out_row_offset = self.q_row_offset
-
         # This is when the sequence length is Fixed
         else:
             self.seq_len = max_seq_len
-
-            # Q row offset: (batch * seq_len * num_heads, depth)
-            # Row = batch_idx * (seq_len * num_heads) + seq_idx * num_heads + head_block * BM
-            self.q_row_offset = (
-                Self.config.num_q_heads * self.seq_len * self.batch_idx
+            self.q_out_row_offset = (
+                Self.config.num_q_heads * self.seq_len * Int(block_idx.z)
                 + Int(block_idx.x) * Self.config.BM
                 + Int(block_idx.y) * Self.config.num_q_heads
             )
 
-            # Output row offset for split-K:
-            # Out shape: (split_k * batch * seq_len * num_heads, depth)
-            # Row = split_idx * (batch * seq_len * num_heads) + q_row_offset
-            @parameter
-            if Self.decoding_warp_split_k:
-                var rows_per_split = (
-                    batch_size * self.seq_len * Self.config.num_q_heads
-                )
-                self.out_row_offset = (
-                    self.split_idx * rows_per_split + self.q_row_offset
-                )
-            else:
-                self.out_row_offset = self.q_row_offset
-
-        # Get num_keys from KV cache for this batch
-        # Use batch_idx (not block_idx.z) to get the correct cache length
-        self.num_keys = k.cache_length(self.batch_idx)
+        self.num_keys = k.cache_length(Int(block_idx.z))
 
         @parameter
         if not Self.is_cache_length_accurate:
             self.num_keys += self.seq_len
-
-        # Compute KV range for this split
-        # Each split handles a portion of the KV cache: [kv_start_row, kv_start_row + num_keys_this_split)
-        @parameter
-        if Self.decoding_warp_split_k:
-            # Page-aligned split strategy: only last CTA handles ragged remainder
-            # All other CTAs process complete 128-element pages
-            comptime page_size = 128
-            var total_pages = (self.num_keys + page_size - 1) // page_size
-            var pages_per_split = (
-                total_pages + num_partitions - 1
-            ) // num_partitions
-
-            # Split boundaries are page-aligned
-            var start_page = self.split_idx * pages_per_split
-            var end_page = min(
-                (self.split_idx + 1) * pages_per_split, total_pages
-            )
-
-            self.kv_start_row = start_page * page_size
-            var kv_end_row = min(end_page * page_size, self.num_keys)
-            self.num_keys_this_split = max(kv_end_row - self.kv_start_row, 0)
-        else:
-            # No split: process all keys starting from row 0
-            self.kv_start_row = 0
-            self.num_keys_this_split = self.num_keys
 
     @always_inline
     fn cache_len(self) -> Int:
@@ -548,6 +456,11 @@ struct OffsetPosition[
     fn start_pos(self, cache_start_pos: UInt32) -> UInt32:
         # start_pos is the base absolute Q index for this chunk (plus any external base)
         return UInt32(self.cache_len()) + cache_start_pos
+
+
+# ------------------------------------------------------------------------------
+# MLA decoding ProducerKVPipeline
+# ------------------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------------------
@@ -715,6 +628,8 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         pipe: Self.KVPipeType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
     ):
+        # NOTE: we copy the KVPipeline value – that's how FA4 does it.
+        # Both sides keep their own PipelineState; the *barriers* do the real sync.
         self.pipe = pipe
         self.smem = smem
 
@@ -742,7 +657,7 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
 
 
 # ------------------------------------------------------------------------------
-# MLA decoding ProducerKVPipeline
+# MLA decoding ConsumerKVPipeline
 # ------------------------------------------------------------------------------
 
 
@@ -772,12 +687,14 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
 
     @always_inline
     fn init(self):
+        # Only producer OR consumer should call init(), not both.
         self.pipe.init()
 
     @always_inline
     fn stage_base_ptr[
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
+        # Which KV stage (0..num_kv_stages-1)?
         var stage_idx: UInt32 = self.pipe.state.index()
         var stage_offset: UInt32 = stage_idx * UInt32(Self.kv_stage_elems)
         return self.smem + stage_offset
@@ -802,9 +719,6 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.pipe.state.step()
 
 
-# ------------------------------------------------------------------------------
-# MLA decoding ConsumerKVPipeline
-# ------------------------------------------------------------------------------
 struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     TrivialRegisterType
 ):
@@ -929,6 +843,23 @@ struct KVPipelineGeneric[
     @always_inline
     fn num_mbars() -> UInt32:
         return UInt32(2 * Self.num_qk_stages * Self.num_kv_stages)
+
+
+# -------------------------------------------------------------------------------
+# TMA DESTINATION
+# -------------------------------------------------------------------------------
+
+
+struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
+    var mbar: MBarType
+    var smem: SharedMemTensor[Self.dtype, Self.layout]
+
+    @always_inline
+    fn __init__(
+        out self, mbar: MBarType, smem: SharedMemTensor[Self.dtype, Self.layout]
+    ):
+        self.mbar = mbar
+        self.smem = smem
 
 
 # ------------------------------------------------------------------------------
@@ -1791,7 +1722,6 @@ struct MLA_SM100_Decode_Common[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
-    SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
@@ -1899,12 +1829,10 @@ struct MLA_SM100_Decode_Common[
         cache_len: Int,
         start_pos: UInt32,
         cache_start_pos: UInt32,
-        kv_start_row: Int = 0,  # Starting KV row for split-K (0 for non-split)
     ) -> Scalar[Self.AccumType]:
-        # Tile / column base this thread covers in num_keys in global KV cache
-        # For split-K: kv_start_row + tiles_done * BN gives global position
-        # For non-split: kv_start_row=0, so this is just tiles_done * BN
-        var tile_key_base: Int = kv_start_row + tiles_done * Self.config.BN
+        # Tile / column base this thread covers in num_keys in globalse
+        # 64 * tile_index
+        var tile_key_base: Int = tiles_done * Self.config.BN
         # first key index for this thread
         var col_base: Int = tile_key_base + col0
 
@@ -2006,21 +1934,19 @@ struct MLA_SM100_Decode_Common[
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ],
+        num_k_tiles: Int,
         offset_position: OffsetPosition[
             Self.config,
             Self.KVLUTType,
             Self.ragged,
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
-            Self.config.decoding_warp_split_k,
         ],
         scale: Float32,
         mask: Self.MaskType,
         score_mod: Self.ScoreModType,
         prompt_idx: UInt32,  # batch index
         max_seq_len: UInt32,  # for score_mod
-        lse_accum_split_ptr: Self.SplitAccumType,
-        batch_size: Int,
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime assert Self.AccumType.is_floating_point()
@@ -2042,20 +1968,12 @@ struct MLA_SM100_Decode_Common[
         )
 
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
-        # For split-K: use num_keys_this_split for loop bounds
-        # but keep num_keys (total) for masking with global KV positions
-        var num_keys = offset_position.num_keys  # Total keys for masking
-        var num_keys_this_split = (
-            offset_position.num_keys_this_split
-        )  # Keys for this split
-        var kv_start_row = (
-            offset_position.kv_start_row
-        )  # Starting KV position for this split
+        var num_keys = offset_position.num_keys
         var cache_start_pos: UInt32 = 0
         var cache_len: Int = offset_position.cache_len()
         var start_pos: UInt32 = offset_position.start_pos(cache_start_pos)
 
-        # S consumer wrapper
+        # NEW: S consumer wrapper
         var s_cons = DecodeSConsumer(s_bars.consumer())
         var p_prod = DecodePProducer(p_bars.producer())
         var c_prod = DecodeCProducer(c_bars.producer())
@@ -2081,8 +1999,6 @@ struct MLA_SM100_Decode_Common[
         var scale_log2e = scale.cast[Self.AccumType]()
 
         var tiles_done: Int = 0
-        # Use num_keys_this_split for loop bounds (each split processes its portion)
-        var num_k_tiles = ceildiv(num_keys_this_split, Self.config.BN)
         while tiles_done < num_k_tiles:
             # Wait for an S slot to become ready
             var slot_idx: UInt32 = s_cons.wait()
@@ -2128,7 +2044,6 @@ struct MLA_SM100_Decode_Common[
                     cache_len,
                     start_pos,
                     cache_start_pos,
-                    kv_start_row,  # Pass kv_start_row for split-K global position
                 )
             else:
                 current_max = Self.apply_mask[
@@ -2147,7 +2062,6 @@ struct MLA_SM100_Decode_Common[
                     cache_len,
                     start_pos,
                     cache_start_pos,
-                    kv_start_row,  # Pass kv_start_row for split-K global position
                 )
             current_max *= log2e_f32
 
@@ -2203,6 +2117,7 @@ struct MLA_SM100_Decode_Common[
                 #  signal to the correction warpgroup:
                 c_prod.commit()
 
+            # Before first tile or each tile:
             # wait until MMA has released P (consumer_mbar.phase matches)
             p_prod.acquire()
             var p_stage = p_prod.stage_index()  # 0 or 1
@@ -2233,56 +2148,6 @@ struct MLA_SM100_Decode_Common[
         li_Smem_Tensor[lane_id] = li
         named_barrier[Int32(WARPGROUP_SIZE)](2)
         li += li_Smem_Tensor[lane_id ^ 64][0]
-
-        # --------------------------------------------------------------------------
-        # Split-K: Store partial LSE to lse_accum_split for combine kernel
-        # --------------------------------------------------------------------------
-        # LSE (Log-Sum-Exp) in log2 format: lse = log2(li) + mi
-        # This allows the combine kernel to merge partial results:
-        #   global_lse = log2(sum(exp2(lse_i - max_lse))) + max_lse
-        #   scale_i = exp2(lse_i - global_lse)
-        #   final_output = sum(scale_i * partial_output_i)
-        #
-        # LSE accumulator shape: (num_splits, batch_size, seq_len, num_heads)
-        # Strides: stride_split = batch_size * seq_len * num_heads
-        #          stride_batch = seq_len * num_heads
-        #          stride_seq = num_heads
-        @parameter
-        if Self.config.decoding_warp_split_k:
-            # Only threads with valid heads should write LSE
-            # head_idx = block_idx.x * BM + row (where row is 0-63 for each half)
-            # Each thread in the warpgroup handles one row (one head)
-            # row = lane_id & 0x3F gives 0-63 for both halves
-            # half = lane_id >> 6 gives 0 or 1
-            # We only need one write per head, so half=0 threads write
-            var head_idx = Int(block_idx.x) * Self.config.BM + row
-            var half_idx = lane_id >> 6  # 0 for first half, 1 for second half
-
-            if half_idx == 0 and head_idx < Self.config.num_q_heads:
-                # Compute LSE in log2 format: log2(li) + mi
-                # li is already the sum of exp2 values, mi is already in log2 scale
-                var partial_lse = log2(li[0]) + mi
-
-                # LSE offset calculation:
-                # lse_accum_split shape: (num_splits, batch_size, seq_len, num_heads)
-                var seq_idx = Int(block_idx.y)
-                var stride_batch = (
-                    offset_position.seq_len * Self.config.num_q_heads
-                )
-                var stride_split = batch_size * stride_batch
-                var stride_seq = Self.config.num_q_heads
-
-                var lse_offset = (
-                    offset_position.split_idx * stride_split
-                    + offset_position.batch_idx * stride_batch
-                    + seq_idx * stride_seq
-                    + head_idx
-                )
-                # need to rebind the pointer to mutable pointer for write access
-                var lse_ptr = rebind[
-                    UnsafePointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
-                ](lse_accum_split_ptr.value())
-                lse_ptr[lse_offset] = partial_lse
 
         # --------------------------------------------------------------------------
         # Epilogue: scale output by recip(li) and write to shared memory as bf16
@@ -2410,24 +2275,13 @@ struct MLA_SM100_Decode_Common[
             num_producer=WARPGROUP_SIZE,
             num_consumer=WARPGROUP_SIZE,
         ],
-        offset_position: OffsetPosition[
-            Self.config,
-            Self.KVLUTType,
-            Self.ragged,
-            Self._is_cache_length_accurate,
-            Self.ValidLengthType,
-            Self.config.decoding_warp_split_k,
-        ],
+        num_k_tiles: Int,
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
         var o_cons = DecodeOConsumer(o_bars.consumer())
         var c_cons = DecodeCConsumer(c_bars.consumer())
         var tiles_done: Int = 1
-
-        var num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
-        )
 
         while tiles_done < num_k_tiles:
             # after computing per-row c_scalar from max/li:
@@ -2440,6 +2294,7 @@ struct MLA_SM100_Decode_Common[
                 dtype = Self.AccumType,
                 pack=False,
             ](corr_scale_tmem)
+            # 3) Ensure the loads are complete before using li/scale
             tcgen05_load_wait()
             c_cons.release()
             change = _vote_nvidia_helper(scale_value < 1.0) != 0
@@ -2543,7 +2398,6 @@ struct MLA_SM100_Decode_Common[
             Self.ragged,
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
-            Self.config.decoding_warp_split_k,
         ],
     ):
         comptime DecodeOutConsumerType = DecodeOutConsumer[
@@ -2560,7 +2414,7 @@ struct MLA_SM100_Decode_Common[
         )
         elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.out_row_offset)
+        var row: UInt = UInt(offset_position.q_out_row_offset)
         # The code work with the assumption that the num_q_heads is power of two.
         var tma_phase: UInt32 = 0
 
