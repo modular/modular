@@ -743,7 +743,10 @@ struct SM100TensorAccumulatorTS[
     comptime MMA_K = 16
     comptime num_k_mmas = Self.BK // Self.MMA_K
     comptime num_k_blocks = Self.padded_BK // Self.MMA_K
-    comptime num_k_blocks_per_stage = Self.num_k_blocks // Self.num_stages
+    comptime use_3_then_1_split: Bool = Self.num_stages == 2
+    comptime num_k_blocks_per_stage = Self.num_k_blocks // (
+        4 if Self.use_3_then_1_split else Self.num_stages
+    )
 
     comptime AType = TMemTile[Self.operand_type, Self.MMA_M, Self.BK]
     comptime BType = MMASmemDescriptorPair
@@ -778,9 +781,11 @@ struct SM100TensorAccumulatorTS[
                 operand_size = Self.operand_size,
             ](Self.idesc, a, b, c, c_scale, elect)
         else:
-            comptime k_batch_start = Self.num_k_blocks_per_stage * stage_idx
+            comptime start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
+            comptime end = stage_idx + 3 if Self.use_3_then_1_split else stage_idx + 1
+            comptime k_batch_start = Self.num_k_blocks_per_stage * start
             comptime k_batch_end = min(
-                Self.num_k_blocks_per_stage * (stage_idx + 1), Self.num_k_mmas
+                Self.num_k_blocks_per_stage * end, Self.num_k_mmas
             )
             comptime k_offset = k_batch_start * Self.MMA_K
             # P (tmem) offset: move by stage_idx * k_per_stage columns
@@ -3902,7 +3907,10 @@ struct SM100MHA2Q[
             comptime vs_len = Self.config.BN // exp_simd  # 128 // 2 = 64
             comptime assert (vs_len % Self.config.num_pv_stages) == 0
             # comptime num_per_stage = Self.config.BN // Self.config.num_pv_stages
-            comptime batch_size = 32 if Self.config.num_pv_stages == 1 else vs_len // Self.config.num_pv_stages
+            comptime use_3_then_1_split = Self.UMMA1Type.use_3_then_1_split
+            comptime batch_size = 32 if Self.config.num_pv_stages == 1 else vs_len // (
+                4 if use_3_then_1_split else Self.config.num_pv_stages
+            )
             comptime num_batch_iters = vs_len // batch_size
             comptime remainder = vs_len % batch_size
             comptime assert num_batch_iters > 0
@@ -3988,7 +3996,14 @@ struct SM100MHA2Q[
                 comptime offset = batch_size * b
 
                 @parameter
-                if Self.config.num_pv_stages > 1:
+                if use_3_then_1_split:
+
+                    @parameter
+                    if 4 * b == 3 * num_batch_iters:
+                        tcgen05_store_wait()
+                        tcgen05_fence_before()
+                        pipeline_s.release_no_step[0]()
+                elif Self.config.num_pv_stages > 1:
                     comptime assert Self.config.num_pv_stages == num_batch_iters
                     tcgen05_store_wait()
                     tcgen05_fence_before()
