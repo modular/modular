@@ -196,7 +196,7 @@ what we publish.
   return a single byte, and produce invalid UTF-8 if the index fell on
   the starting byte of a multi-byte codepoint.
 - The following types now correctly implement `write_repr_to`
-  - `List`, `Set`
+  - `List`, `Set`, `Counter`
 
 - `assert_equal` and `assert_not_equal` now work with types implementing
   `Writable`.
