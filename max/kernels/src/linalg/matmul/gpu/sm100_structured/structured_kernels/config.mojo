@@ -239,6 +239,7 @@ struct MatmulConfig[
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
+        extra_smem_per_stage: Int = 0,
     ):
         constrained[Self.a_type == Self.b_type]()
 
@@ -277,6 +278,7 @@ struct MatmulConfig[
             self.num_output_stages,
             self.num_clc_pipeline_stages,
             self.num_accum_pipeline_stages,
+            extra_smem_per_stage,
         )
 
         if num_pipeline_stages:
