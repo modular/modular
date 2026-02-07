@@ -38,6 +38,7 @@ from gpu import warp_id as get_warp_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
+    external_memory,
     fence_mbarrier_init,
 )
 from layout import IntTuple, Layout, LayoutTensor
@@ -62,33 +63,50 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import block_swizzle
 from ..tile_scheduler import MatmulSchedule, TileScheduler, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
-from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
 from ....structuring import (
-    SMemTile,
+    SMemTile as LTSMemTile,  # LayoutTensor-based (for compatibility)
     RegTile,
     PipelineBarrier,
     eval,
 )
-from .ring_buffer import RingBuffer, RingBufferConsumer, RingBufferProducer
+
+# Shared types from SM100 tile_types
+from ..sm100_structured.structured_kernels.tile_types import (
+    SMemTile,
+    SMemTileArrayWithLayout,
+    SMemTileArray2DRowMajor,
+)
+from layout._layout import Layout as _Layout, row_major
+from layout._coord import Coord, Idx
+from ..sm100_structured.structured_kernels.pipeline import (
+    ProducerConsumerPipeline,
+)
+from ..sm100_structured.structured_kernels.pipeline_storage import BarrierPair
 from .tile_loader import (
     TileLoaderTMA,
     TileLoaderCPAsync,
     TileLoader,
+    BarrierHandler,
+    TMABarrierHandler,
+    CPAsyncBarrierHandler,
 )
 from .matmul_output import MatmulTileWriter
 
 
-# Shared memory structure for Hopper SM90 kernel
+# Shared memory structure for Hopper SM90 kernel (TileTensor-based)
 struct HopperMatmulSM90Kernel_SMem[
     a_type: DType,
-    a_layout: Layout,
     b_type: DType,
-    b_layout: Layout,
     c_type: DType,
-    c_layout: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WG_BM: Int,  # C tile M dimension (warpgroup output)
+    WG_BN: Int,  # C tile N dimension (warpgroup output)
     num_pipeline_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+    swizzle_bytes: Int = 128,
+]:
     """Shared memory layout for Hopper SM90 matrix multiplication kernel.
 
     This struct manages the shared memory allocation for:
@@ -98,65 +116,108 @@ struct HopperMatmulSM90Kernel_SMem[
 
     The memory is organized to support asynchronous loads and efficient
     bank-conflict-free access patterns for tensor core operations.
+
+    All tiles use TileTensor-based types from tile_types.mojo. At TMA/WGMMA
+    boundaries, pass {tile.ptr} to construct LayoutTensor.
     """
 
-    comptime SMM = SharedMemoryManager[]
+    # SM90 blocked_product ordering: ((8, tiles_m), ...) with non-zero K-tile stride.
+    # The atom (8 x atom_k) is the inner dimension, M-tiles are outer.
+    comptime _k_major[dtype: DType, BM_: Int, BK_: Int, sb: Int] = _Layout(
+        Coord(
+            Coord(Idx[8](), Idx[BM_ // 8]()),
+            Coord(
+                Idx[sb // size_of[dtype]()](),
+                Idx[BK_ * size_of[dtype]() // sb](),
+            ),
+        ),
+        Coord(
+            Coord(
+                Idx[sb // size_of[dtype]()](),
+                Idx[8 * (sb // size_of[dtype]())](),
+            ),
+            Coord(
+                Idx[1](),
+                Idx[
+                    0 if BK_ * size_of[dtype]() // sb
+                    == 1 else BM_ * (sb // size_of[dtype]())
+                ](),
+            ),
+        ),
+    )
 
-    # Tile iterator types - manage cycling through pipeline stages
-    comptime ATileArray = Self.SMM.TileArray[
-        Self.a_type, Self.a_layout, Self.num_pipeline_stages
+    # TileTensor-based tile array types for A/B (SM90 swizzled k-major layout)
+    comptime ATileArray = SMemTileArrayWithLayout[
+        Self.a_type,
+        Self._k_major[Self.a_type, Self.BM, Self.BK, Self.swizzle_bytes],
+        Self.num_pipeline_stages,
     ]
-    comptime BTileArray = Self.SMM.TileArray[
-        Self.b_type, Self.b_layout, Self.num_pipeline_stages
+    comptime BTileArray = SMemTileArrayWithLayout[
+        Self.b_type,
+        Self._k_major[Self.b_type, Self.BN, Self.BK, Self.swizzle_bytes],
+        Self.num_pipeline_stages,
     ]
-    comptime CTile = Self.SMM.Tile[Self.c_type, Self.c_layout]
-
-    # Pipeline barrier types - for producer/consumer synchronization
-    comptime PipelineBarrier = PipelineBarrier[
-        Self.num_pipeline_stages // Self.k_group_size
+    # TileTensor-based for C tile (row-major, no swizzle, single tile)
+    comptime CTileArray = SMemTileArray2DRowMajor[
+        Self.c_type, Self.WG_BM, Self.WG_BN, 1  # num_tiles=1
     ]
+    comptime CTile = Self.CTileArray.Tile
 
-    # Tile iterators - cycle through pipeline stages
-    var a_tiles: Self.ATileArray
-    var b_tiles: Self.BTileArray
-    var c_tile: Self.CTile
+    # Number of pipeline stages for barriers (adjusted for k_group_size)
+    comptime _num_barrier_stages = Self.num_pipeline_stages // Self.k_group_size
 
-    # Pipeline barriers:
-    # - full_mbar: Signals when tiles are loaded and ready for consumption
-    # - empty_mbar: Signals when tiles have been consumed and can be reused
-    var full_mbar: Self.PipelineBarrier
-    var empty_mbar: Self.PipelineBarrier
+    # InlineArray storage fields (like SM100 pattern)
+    var a_tiles_storage: Self.ATileArray.Storage
+    var b_tiles_storage: Self.BTileArray.Storage
+    var c_tile_storage: Self.CTileArray.Storage
 
-    fn __init__(out self):
-        var smem_mgr = Self.SMM()
-        # Initialize tile iterators
-        self.a_tiles = smem_mgr.build[T = Self.ATileArray]()
-        self.b_tiles = smem_mgr.build[T = Self.BTileArray]()
-        self.c_tile = smem_mgr.build[T = Self.CTile]()
-        # Initialize barriers
-        self.full_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
-        self.empty_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
+    # Pipeline barriers using BarrierPair (explicit contiguous layout)
+    # Contains full[0..n-1] + empty[0..n-1] in one array
+    var barriers: BarrierPair[Self._num_barrier_stages]
+
+    # Accessor functions (like SM100 pattern)
+    @always_inline
+    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+        """Get A tile array accessor (TileTensor-based)."""
+        return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+        """Get B tile array accessor (TileTensor-based)."""
+        return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn c_tile(ref[AddressSpace.SHARED] self) -> Self.CTile:
+        """Get C tile accessor (TileTensor-based)."""
+        return Self.CTileArray(self.c_tile_storage.unsafe_ptr())[0]
+
+    @always_inline
+    fn create_pipeline(
+        ref[AddressSpace.SHARED] self,
+    ) -> ProducerConsumerPipeline[Self._num_barrier_stages]:
+        """Create producer-consumer pipeline from barrier storage."""
+        return self.barriers.create_pipeline()
+
+    # Barrier pair type alias for storage size calculation
+    comptime _BarrierPair = BarrierPair[Self._num_barrier_stages]
 
     @staticmethod
     @always_inline
     fn pipeline_storage_size() -> Int:
         """Calculate the memory size for all pipeline stages."""
-        var a_size = Self.ATileArray.storage_size
-        var b_size = Self.BTileArray.storage_size
-
         return (
-            # A and B tile iterators with padding
-            a_size
-            + b_size
-            # Pipeline barriers (full + empty)
-            + 2 * Self.PipelineBarrier.storage_size
+            # A and B tile storage
+            Self.ATileArray.storage_size
+            + Self.BTileArray.storage_size
+            # Pipeline barriers (full + empty in BarrierPair)
+            + Self._BarrierPair.Array.storage_size
         )
 
     @staticmethod
     @always_inline
     fn output_storage_size() -> Int:
         """Calculate the memory size for output tile."""
-        return Self.CTile.storage_size
+        return Self.CTileArray.storage_size
 
     @staticmethod
     @always_inline
@@ -245,6 +306,12 @@ struct HopperMatmulSM90Kernel[
 
     comptime adjusted_num_pipeline_stages = Self.num_pipeline_stages // Self.k_group_size
 
+    # TMA expected bytes per pipeline stage (combined A + B tiles)
+    comptime _tma_bytes_per_stage = (
+        Self.SMem.ATileArray.storage_size + Self.SMem.BTileArray.storage_size
+    ) // Self.adjusted_num_pipeline_stages
+    comptime TMABarrier = TMABarrierHandler[Self._tma_bytes_per_stage]
+
     comptime AccumRegTile = RegTile[
         Self.accum_type,
         Layout.row_major(Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size),
@@ -256,30 +323,17 @@ struct HopperMatmulSM90Kernel[
 
     comptime SMem = HopperMatmulSM90Kernel_SMem[
         Self.a_type,
-        Self.a_smem_layout,
         Self.b_type,
-        Self.b_smem_layout,
         Self.c_type,
-        Self.c_smem_layout,
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.c_smem_layout.shape[0].value(),  # WG_BM
+        Self.c_smem_layout.shape[1].value(),  # WG_BN
         Self.num_pipeline_stages,
         Self.k_group_size,
+        128,  # swizzle_bytes (matches TensorMapSwizzle.SWIZZLE_128B default)
     ]
-
-    comptime RingBuffer[tma_transfer: Bool = True] = RingBuffer[
-        Self.a_type,
-        Self.b_type,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
-        Self.num_pipeline_stages,
-        Self.num_consumer,
-        Self.cluster_size,
-        tma_transfer,
-        Self.k_group_size,
-    ]
-
-    comptime RingBufferConsumer[
-        origin: MutOrigin, tma_transfer: Bool
-    ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
     comptime WgmmaOp = TensorCoreAsync[
         Self.accum_type,
@@ -419,25 +473,6 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn build_ring_buffer[
-        tma_transfer: Bool = True
-    ](
-        smem: Self.SMem,
-        warp_group_thread_idx: UInt,
-    ) -> Self.RingBuffer[
-        tma_transfer
-    ]:
-        """Create ring buffer for producer-consumer synchronization."""
-        return Self.RingBuffer[tma_transfer](
-            smem.full_mbar,
-            smem.empty_mbar,
-            warp_group_thread_idx,
-            smem.a_tiles,
-            smem.b_tiles,
-        )
-
-    @staticmethod
-    @always_inline
     fn setup_producer() -> Int:
         """Setup producer warp group by deallocating registers.
 
@@ -474,6 +509,33 @@ struct HopperMatmulSM90Kernel[
         var final_c_reg_tile = Self.AccumRegTile.stack_allocation()
 
         return (local_warp_group_idx, c_reg_tile, final_c_reg_tile)
+
+    @staticmethod
+    @always_inline
+    fn consumer_arrive_empty_barriers(
+        warp_group_thread_idx: UInt,
+        mut pipeline: ProducerConsumerPipeline[
+            Self.adjusted_num_pipeline_stages
+        ],
+    ):
+        """Signal initial empty barrier arrival for all pipeline stages.
+
+        Must be called by consumer warp groups before the main loop so
+        the producer knows it can start filling stages.
+        """
+
+        @parameter
+        for i in range(Self.adjusted_num_pipeline_stages):
+
+            @parameter
+            if Self.cluster_size > 1:
+                if warp_group_thread_idx < UInt(Self.cluster_size):
+                    _ = pipeline.empty[i].arrive_cluster(
+                        UInt32(warp_group_thread_idx)
+                    )
+            else:
+                if warp_group_thread_idx == 0:
+                    _ = pipeline.empty[i].arrive()
 
     @staticmethod
     @always_inline
@@ -529,6 +591,12 @@ struct HopperMatmulSM90Kernel[
         block_x: Int,
     ):
         """Handle consumer output by writing GEMM results to global memory."""
+        # Convert TileTensor to LayoutTensor at boundary (cheap ptr wrap)
+        comptime CTileLT = LTSMemTile[
+            Self.c_type, Self.c_smem_layout, alignment=128
+        ]
+        var c_tile_lt = CTileLT(c_tile.ptr)
+
         var matmul_tile_writer = MatmulTileWriter[
             BM = Self.BM,
             BN = Self.BN,
@@ -542,7 +610,7 @@ struct HopperMatmulSM90Kernel[
         ](
             # Pointer(to=c_tma_op),
             c,
-            c_tile,
+            c_tile_lt,
             warp_group_thread_idx,
             local_warp_group_idx,
             local_thread_idx,
@@ -650,9 +718,10 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn producer_main_loop[
+    fn producer_main_loop_pipeline[
         a_loader_type: TileLoader,
         b_loader_type: TileLoader,
+        barrier_handler_type: BarrierHandler,
         //,
         num_k_iters: Int,
     ](
@@ -661,20 +730,13 @@ struct HopperMatmulSM90Kernel[
         k_coord: UInt,
         a_loader: a_loader_type,
         b_loader: b_loader_type,
-        mut ring_buffer: RingBuffer[
-            a_loader_type._dtype,  # RingBuffer and TileLoader must agree on dtypes
-            b_loader_type._dtype,
-            _,
-            _,
-            Self.num_pipeline_stages,
-            _,
-            _,
-            _,
-            Self.k_group_size,
+        barrier_handler: barrier_handler_type,
+        mut pipeline: ProducerConsumerPipeline[
+            Self.adjusted_num_pipeline_stages
         ],
+        a_tiles: Self.SMem.ATileArray,
+        b_tiles: Self.SMem.BTileArray,
     ):
-        """Polymorphic A and B Tile Loader, works with both TMA and CPAsync."""
-
         @always_inline
         @parameter
         fn producer_loop[
@@ -686,27 +748,67 @@ struct HopperMatmulSM90Kernel[
                     k_iter * Self.num_pipeline_stages + (j * Self.k_group_size)
                 )
 
-                # Get the next available tile slot from the ring buffer.
-                # The context manager ensures proper barrier synchronization.
-                with ring_buffer.producer() as producer:
-                    with producer.get_tiles() as tiles:
-                        var a_tile_array = tiles.a_tile_array
-                        var b_tile_array = tiles.b_tile_array
+                # Acquire producer stage (waits for consumer)
+                var stage = pipeline.acquire_producer()
+                var slot = Int(stage.index())
 
-                        @parameter
-                        for k in range(a_tile_array.num_tiles):
-                            a_loader.load_tile(
-                                a_tile_array[k],
-                                tiles.barrier,
-                                (m_coord, k_offset),
-                            )
-                            b_loader.load_tile(
-                                b_tile_array[k],
-                                tiles.barrier,
-                                (n_coord, k_offset),
-                            )
+                # Prepare barrier for this stage (TMA: expect_bytes, cp.async: noop)
+                barrier_handler.prepare_stage(stage.mbar())
 
-                            k_offset += UInt(1)
+                # Get tile slices for this stage
+                var a_tile_slice = a_tiles.slice[Self.k_group_size](
+                    slot * Self.k_group_size
+                )
+                var b_tile_slice = b_tiles.slice[Self.k_group_size](
+                    slot * Self.k_group_size
+                )
+
+                # Define LayoutTensor types using OLD Layout from outer struct.
+                # TileTensor tiles use new Layout type, so we construct LayoutTensor
+                # from pointer at TMA boundary (cheap ptr wrap).
+                comptime ATileLT = LayoutTensor[
+                    a_loader_type._dtype,
+                    Self.a_smem_layout,  # OLD Layout from kernel struct
+                    MutAnyOrigin,
+                    address_space = AddressSpace.SHARED,
+                    alignment=128,
+                ]
+                comptime BTileLT = LayoutTensor[
+                    b_loader_type._dtype,
+                    Self.b_smem_layout,  # OLD Layout from kernel struct
+                    MutAnyOrigin,
+                    address_space = AddressSpace.SHARED,
+                    alignment=128,
+                ]
+                # Pointer types for rebinding TileTensor ptr to LayoutTensor ptr
+                comptime ATileLT_ptr = UnsafePointer[
+                    Scalar[a_loader_type._dtype],
+                    address_space = AddressSpace.SHARED,
+                ]
+                comptime BTileLT_ptr = UnsafePointer[
+                    Scalar[b_loader_type._dtype],
+                    address_space = AddressSpace.SHARED,
+                ]
+
+                @parameter
+                for k in range(Self.k_group_size):
+                    # Convert TileTensor to LayoutTensor via ptr (cheap wrap)
+                    a_loader.load_tile(
+                        ATileLT(rebind[ATileLT_ptr](a_tile_slice[k].ptr)),
+                        stage.mbar(),
+                        (m_coord, k_offset),
+                    )
+                    b_loader.load_tile(
+                        BTileLT(rebind[BTileLT_ptr](b_tile_slice[k].ptr)),
+                        stage.mbar(),
+                        (n_coord, k_offset),
+                    )
+
+                    k_offset += UInt(1)
+
+                # Complete stage (TMA: noop, cp.async: arrive + signal)
+                barrier_handler.complete_stage(stage.mbar())
+                stage^.release()
 
         # Calculate how many full pipeline iterations we need
         comptime num_full_k_iters = ceildiv(
@@ -775,7 +877,11 @@ struct HopperMatmulSM90Kernel[
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        var smem = Self.SMem()
+        ref smem = external_memory[
+            Scalar[DType.uint8],
+            address_space = AddressSpace.SHARED,
+            alignment=128,
+        ]().bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -787,8 +893,11 @@ struct HopperMatmulSM90Kernel[
             lane_predicate,
         ) = Self.common_kernel_init()
 
-        # Create ring buffer
-        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+        # Create pipeline and barrier handler (initializes phase + barrier counts)
+        var pipeline = smem.create_pipeline()
+        var barrier_handler = Self.TMABarrier(
+            pipeline, Self.num_consumer, Self.cluster_size
+        )
 
         # Create TileLoaderTMA loaders
         var a_loader, b_loader = Self.build_tma_loaders(
@@ -817,13 +926,16 @@ struct HopperMatmulSM90Kernel[
             _ = Self.setup_producer()
 
             if warp_id == 0 and lane_predicate:
-                Self.producer_main_loop[num_k_iters=num_k_iters](
+                Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
                     UInt(m_coord),
                     UInt(n_coord),
                     0,  # k_start,
                     a_loader,
                     b_loader,
-                    ring_buffer,
+                    barrier_handler,
+                    pipeline,
+                    smem.a_tiles(),
+                    smem.b_tiles(),
                 )
         else:
             # Consumer warp groups
@@ -831,15 +943,18 @@ struct HopperMatmulSM90Kernel[
                 Self.setup_consumer(warp_group_idx)
             )
 
-            # Enter consumer mode
-            with ring_buffer.consumer() as consumer:
-                Self.consumer_main_loop[num_k_iters=num_k_iters](
-                    wgmma_op,
-                    local_warp_group_idx,
-                    final_c_reg_tile,
-                    c_reg_tile,
-                    consumer,
-                )
+            Self.consumer_arrive_empty_barriers(warp_group_thread_idx, pipeline)
+
+            Self.consumer_main_loop_pipeline[num_k_iters=num_k_iters](
+                wgmma_op,
+                local_warp_group_idx,
+                final_c_reg_tile,
+                c_reg_tile,
+                pipeline,
+                smem.a_tiles(),
+                smem.b_tiles(),
+                warp_group_thread_idx,
+            )
 
             var output_reg_tile = (
                 final_c_reg_tile if Self.a_type
@@ -849,7 +964,7 @@ struct HopperMatmulSM90Kernel[
             Self.consumer_output(
                 c_tma_op,
                 c,
-                smem.c_tile,
+                smem.c_tile(),
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
@@ -898,7 +1013,11 @@ struct HopperMatmulSM90Kernel[
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        var smem = Self.SMem()
+        ref smem = external_memory[
+            Scalar[DType.uint8],
+            address_space = AddressSpace.SHARED,
+            alignment=128,
+        ]().bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -910,8 +1029,11 @@ struct HopperMatmulSM90Kernel[
             lane_predicate,
         ) = Self.common_kernel_init()
 
-        # Create ring buffer
-        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+        # Create pipeline from barrier storage (uses BarrierPair for explicit layout)
+        var pipeline = smem.create_pipeline()
+        var barrier_handler = Self.TMABarrier(
+            pipeline, Self.num_consumer, Self.cluster_size
+        )
 
         # Create TileLoaderTMA loaders
         var a_loader, b_loader = Self.build_tma_loaders(
@@ -965,13 +1087,18 @@ struct HopperMatmulSM90Kernel[
                     comptime work_k_tile_count = num_k_iters // splits
                     var work_k_tile_start = work_tile_info.get_k_start()
 
-                    Self.producer_main_loop[num_k_iters=work_k_tile_count](
+                    Self.producer_main_loop_pipeline[
+                        num_k_iters=work_k_tile_count
+                    ](
                         UInt(m_coord),
                         UInt(n_coord),
                         UInt(work_k_tile_start),
                         a_loader,
                         b_loader,
-                        ring_buffer,
+                        barrier_handler,
+                        pipeline,
+                        smem.a_tiles(),
+                        smem.b_tiles(),
                     )
 
                     # Get next work tile
@@ -984,57 +1111,54 @@ struct HopperMatmulSM90Kernel[
 
             var work_tile_info = scheduler.initial_work_tile_info()
 
-            @parameter
-            if Self.a_type == DType.float8_e4m3fn:
-                _ = final_c_reg_tile.fill(0.0)
-            else:
-                _ = c_reg_tile.fill(0.0)
+            Self.consumer_arrive_empty_barriers(warp_group_thread_idx, pipeline)
 
-            # Enter consumer mode
-            with ring_buffer.consumer() as consumer:
-                while work_tile_info.is_valid():
-                    comptime work_k_tile_count = num_k_iters // splits
+            while work_tile_info.is_valid():
+                comptime work_k_tile_count = num_k_iters // splits
 
-                    Self.consumer_main_loop[num_k_iters=work_k_tile_count](
-                        wgmma_op,
-                        local_warp_group_idx,
-                        final_c_reg_tile,
-                        c_reg_tile,
-                        consumer,
-                    )
+                Self.consumer_main_loop_pipeline[num_k_iters=work_k_tile_count](
+                    wgmma_op,
+                    local_warp_group_idx,
+                    final_c_reg_tile,
+                    c_reg_tile,
+                    pipeline,
+                    smem.a_tiles(),
+                    smem.b_tiles(),
+                    warp_group_thread_idx,
+                )
 
-                    var output_reg_tile = (
-                        final_c_reg_tile if Self.a_type
-                        == DType.float8_e4m3fn else c_reg_tile
-                    )
+                var output_reg_tile = (
+                    final_c_reg_tile if Self.a_type
+                    == DType.float8_e4m3fn else c_reg_tile
+                )
 
-                    scheduler.reduction(
-                        reduction_workspace,
+                scheduler.reduction(
+                    reduction_workspace,
+                    output_reg_tile,
+                    work_tile_info,
+                    UInt32(Self.num_consumer),
+                    UInt32(local_warp_group_idx),
+                )
+
+                # check if this is the reduction tile
+                if scheduler.is_last_split(work_tile_info):
+                    var block_y = UInt(work_tile_info.m)
+                    var block_x = UInt(work_tile_info.n)
+
+                    Self.consumer_output(
+                        c_tma_op,
+                        c,
+                        smem.c_tile(),
                         output_reg_tile,
-                        work_tile_info,
-                        UInt32(Self.num_consumer),
-                        UInt32(local_warp_group_idx),
+                        warp_group_thread_idx,
+                        local_warp_group_idx,
+                        thread_idx.x - UInt(WARPGROUP_SIZE),
+                        Int(block_y),
+                        Int(block_x),
                     )
 
-                    # check if this is the reduction tile
-                    if scheduler.is_last_split(work_tile_info):
-                        var block_y = UInt(work_tile_info.m)
-                        var block_x = UInt(work_tile_info.n)
-
-                        Self.consumer_output(
-                            c_tma_op,
-                            c,
-                            smem.c_tile,
-                            output_reg_tile,
-                            warp_group_thread_idx,
-                            local_warp_group_idx,
-                            thread_idx.x - UInt(WARPGROUP_SIZE),
-                            Int(block_y),
-                            Int(block_x),
-                        )
-
-                    # Get next work tile
-                    work_tile_info = scheduler.fetch_next_work(work_tile_info)
+                # Get next work tile
+                work_tile_info = scheduler.fetch_next_work(work_tile_info)
 
         Self.finalize_kernel()
 
@@ -1076,7 +1200,11 @@ struct HopperMatmulSM90Kernel[
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        var smem = Self.SMem()
+        ref smem = external_memory[
+            Scalar[DType.uint8],
+            address_space = AddressSpace.SHARED,
+            alignment=128,
+        ]().bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1088,8 +1216,10 @@ struct HopperMatmulSM90Kernel[
             lane_predicate,
         ) = Self.common_kernel_init()
 
-        # Create ring buffer
-        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+        var pipeline = smem.create_pipeline()
+        var barrier_handler = Self.TMABarrier(
+            pipeline, Self.num_consumer, Self.cluster_size
+        )
 
         # Create TileLoaderTMA loaders
         var a_loader, b_loader = Self.build_tma_loaders(
@@ -1143,13 +1273,16 @@ struct HopperMatmulSM90Kernel[
                 )
 
                 if warp_id == 0 and lane_predicate:
-                    Self.producer_main_loop[num_k_iters=num_k_iters](
+                    Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
                         m_coord,
                         n_coord,
                         0,  # k_start,
                         a_loader,
                         b_loader,
-                        ring_buffer,
+                        barrier_handler,
+                        pipeline,
+                        smem.a_tiles(),
+                        smem.b_tiles(),
                     )
         else:
             # Consumer warp groups
@@ -1157,18 +1290,21 @@ struct HopperMatmulSM90Kernel[
                 Self.setup_consumer(warp_group_idx)
             )
 
-            _ = c_reg_tile.fill(0.0)
+            Self.consumer_arrive_empty_barriers(warp_group_thread_idx, pipeline)
 
             if not skip_matmul:
-                # Enter consumer mode
-                with ring_buffer.consumer() as consumer:
-                    Self.consumer_main_loop[num_k_iters=num_k_iters](
-                        wgmma_op,
-                        local_warp_group_idx,
-                        final_c_reg_tile,
-                        c_reg_tile,
-                        consumer,
-                    )
+                Self.consumer_main_loop_pipeline[num_k_iters=num_k_iters](
+                    wgmma_op,
+                    local_warp_group_idx,
+                    final_c_reg_tile,
+                    c_reg_tile,
+                    pipeline,
+                    smem.a_tiles(),
+                    smem.b_tiles(),
+                    warp_group_thread_idx,
+                )
+            else:
+                _ = c_reg_tile.fill(0.0)
 
             var output_reg_tile = (
                 final_c_reg_tile if Self.a_type
@@ -1214,7 +1350,7 @@ struct HopperMatmulSM90Kernel[
             ](
                 c_tma_op,
                 c_by_expert,
-                smem.c_tile,
+                smem.c_tile(),
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
@@ -1227,32 +1363,34 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn consumer_main_loop[
-        ring_buffer_origin: MutOrigin,
-        //,
+    fn consumer_main_loop_pipeline[
         num_k_iters: Int,
     ](
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
         final_c_reg_tile: Self.AccumRegTile,
         c_reg_tile: Self.AccumRegTile,
-        mut ring_buffer: Self.RingBufferConsumer[ring_buffer_origin, _],
+        mut pipeline: ProducerConsumerPipeline[
+            Self.adjusted_num_pipeline_stages
+        ],
+        a_tiles: Self.SMem.ATileArray,
+        b_tiles: Self.SMem.BTileArray,
+        warp_group_thread_idx: UInt,
     ):
-        """Main computation loop for consumer warp groups.
+        """Pipeline-based consumer loop using ProducerConsumerPipeline.
 
-        This function implements the core matrix multiplication using tensor cores.
-        It consumes tiles from the ring buffer and accumulates results using WGMMA
-        (Warp Group Matrix Multiply Accumulate) instructions.
-
-        For FP8 data types, it periodically promotes intermediate results to higher
-        precision to maintain accuracy.
+        This is an alternative implementation of consumer_main_loop that uses
+        the SM100 ProducerConsumerPipeline for synchronization instead of RingBuffer.
 
         Args:
             wgmma_op: Tensor core operator for matrix multiplication.
             local_warp_group_idx: Index of this consumer warp group (0-based).
             final_c_reg_tile: Final accumulation register tile (for FP8 promotion).
             c_reg_tile: Working accumulation register tile.
-            ring_buffer: Consumer handle for synchronized tile access.
+            pipeline: ProducerConsumerPipeline for synchronized tile access.
+            a_tiles: Tile array for A matrix in shared memory.
+            b_tiles: Tile array for B matrix in shared memory.
+            warp_group_thread_idx: Thread index within the warp group.
         """
 
         @parameter
@@ -1268,8 +1406,6 @@ struct HopperMatmulSM90Kernel[
         )
         comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
-        # `num_pipeline_stages_to_unroll` determines how many pipeline stages should be unroll in the consumer loop;
-        # if num_k_iters % pipeline_stages != 0 then for the last loop, we only unroll (num_k_iters % pipeline_stages) pipeline stages
         @always_inline
         @parameter
         fn consumer_loop[
@@ -1277,24 +1413,44 @@ struct HopperMatmulSM90Kernel[
         ]():
             @parameter
             for _ in range(num_pipeline_stages_to_unroll):
-                # Get the next available tile slot from the ring buffer.
-                # The context manager ensures proper barrier synchronization.
-                with ring_buffer.get_tiles() as tiles:
-                    var a_tile_array = tiles.a_tile_array
-                    var b_tile_array = tiles.b_tile_array
+                # Acquire consumer stage (waits for producer)
+                var stage = pipeline.acquire_consumer()
+                var slot = Int(stage.index())
 
-                    @parameter
-                    for k in range(a_tile_array.num_tiles):
-                        var a_tile = a_tile_array[k]
-                        var b_tile = b_tile_array[k]
+                # Get tile slices for this stage
+                var a_tile_slice = a_tiles.slice[Self.k_group_size](
+                    slot * Self.k_group_size
+                )
+                var b_tile_slice = b_tiles.slice[Self.k_group_size](
+                    slot * Self.k_group_size
+                )
 
-                        Self.wgmma(
-                            wgmma_op,
-                            local_warp_group_idx,
-                            a_tile,
-                            b_tile,
-                            c_reg_tile,
+                @parameter
+                for k in range(Self.k_group_size):
+                    var a_tile = a_tile_slice[k]
+                    var b_tile = b_tile_slice[k]
+
+                    Self.wgmma(
+                        wgmma_op,
+                        local_warp_group_idx,
+                        a_tile,
+                        b_tile,
+                        c_reg_tile,
+                    )
+
+                # SM90-specific: cluster-aware barrier arrive
+                @parameter
+                if Self.cluster_size > 1:
+                    if warp_group_thread_idx < UInt(Self.cluster_size):
+                        _ = stage.mbar()[].arrive_cluster(
+                            UInt32(warp_group_thread_idx)
                         )
+                else:
+                    if warp_group_thread_idx == 0:
+                        stage.arrive()
+
+                # Release stage (advance to next) - signal already done above
+                stage^.release_without_signal()
 
                 @parameter
                 if Self.a_type == DType.float8_e4m3fn:
@@ -1364,16 +1520,26 @@ struct HopperMatmulSM90Kernel[
     fn wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        a_tile: SMemTile[Self.a_type, _, ...],
-        b_tile: SMemTile[Self.b_type, _, ...],
+        a_tile: Self.SMem.ATileArray.Tile,
+        b_tile: Self.SMem.BTileArray.Tile,
         c_reg_tile: Self.AccumRegTile,
     ):
+        # Convert TileTensor to LayoutTensor for wgmma_op (uses OLD Layout)
+        comptime ATileLT = LTSMemTile[
+            Self.a_type, Self.a_smem_layout, alignment=128
+        ]
+        comptime BTileLT = LTSMemTile[
+            Self.b_type, Self.b_smem_layout, alignment=128
+        ]
+        var a_tile_lt = ATileLT(a_tile.ptr)
+        var b_tile_lt = BTileLT(b_tile.ptr)
+
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
         comptime scale_c = 0 if Self.a_type == DType.float8_e4m3fn else 1
         wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
-            a_tile,
-            b_tile,
+            a_tile_lt,
+            b_tile_lt,
             c_reg_tile,
             Int(local_warp_group_idx),
         )

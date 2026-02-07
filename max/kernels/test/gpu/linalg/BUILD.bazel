@@ -300,7 +300,6 @@ _GPU_MEMORY = {
         # KERN-2339: Tests disabled due to bounds check failures or other assertion issues
         enable_assertions = not src in [
             "test_warp_specialization_gemm.mojo",  # KERN-2339: assertions exception
-            "test_generated_sm90_matmul_ptx.mojo",  # KERN-2339: assertions exception
             "test_ping_pong.mojo",  # Compilation timeout on MI355 with assertions
             "test_dual_gemm.mojo",  # KERN-2339: bounds check triggers on zero-sized edge tiles
         ],
