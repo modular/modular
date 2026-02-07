@@ -159,6 +159,17 @@ def test_optional_str_repr():
     assert_equal(Optional[Int](None).__str__(), "None")
     assert_equal(Optional[Int](None).__repr__(), "Optional(None)")
 
+def test_optional_write_repr_to():
+    var o = Optional(3)
+    var s = String()
+    o.write_repr_to(s)
+    assert_equal(s, "Optional(3)")
+
+def test_optional_write_repr_nested():
+    var o = Optional(Optional[Int](None))
+    var s = String()
+    o.write_repr_to(s)
+    assert_equal(s, "Optional(Optional(None))")
 
 def test_optional_equality():
     o = Optional(10)
