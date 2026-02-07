@@ -561,9 +561,6 @@ class OverlapTextGenerationPipeline(
                 self._prev_batch.sync_and_process_outputs()
             )
 
-            # Update the cache lengths in our kv_cache manager.
-            # This should be done after the contexts are updated.
-            self._kv_manager.step(self._prev_batch.inputs.batches)
             self._prev_batch = None
         else:
             # Empty outputs as there is no previous batch.
@@ -571,6 +568,10 @@ class OverlapTextGenerationPipeline(
 
         for context in inputs.flat_batch:
             context.update_with_future_token()
+
+        # Commit the new KV blocks into the prefix cache, ignoring the final
+        # placeholder future token.
+        self._kv_manager.step(inputs.batches)
 
         if inputs:
             curr_batch = AsyncBatch(

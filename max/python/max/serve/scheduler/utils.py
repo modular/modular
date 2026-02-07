@@ -89,8 +89,8 @@ class BatchMetrics:
             batch_size * inputs.num_steps / batch_execution_time_s
         )
 
-        used_kv_pct = 0.0
         total_kv_blocks = 0
+        used_kv_pct = 0.0
         cache_hit_rate = 0.0
         cache_hit_tokens = 0
         cache_miss_tokens = num_input_tokens
@@ -99,12 +99,22 @@ class BatchMetrics:
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
         if kv_cache is not None:
+            # TODO SERVOPT-939: Add some sugar
+            total_kv_blocks = sum(
+                kv_cache.get_num_pages(replica_idx)
+                for replica_idx in range(kv_cache.num_replicas)
+            )
+            used_kv_blocks = sum(
+                kv_cache.get_num_used_pages(replica_idx)
+                for replica_idx in range(kv_cache.num_replicas)
+            )
+            assert total_kv_blocks > 0
+            used_kv_pct = used_kv_blocks / total_kv_blocks
             cache_hit_tokens = sum(
                 kv_cache.get_metrics(replica_idx).cache_tokens
                 for replica_idx in range(kv_cache.num_replicas)
             )
             all_tokens = cache_hit_tokens + cache_miss_tokens
-            cache_hit_rate = 0.0
             # We have to handle case where denominator is 0 (empty batch)
             if all_tokens > 0:
                 # This may differ from cache_metrics.cache_hit_rate due as this
@@ -130,7 +140,7 @@ class BatchMetrics:
                     for replica_idx in range(kv_cache.num_replicas)
                 )
 
-                kv_cache.reset_metrics()
+            kv_cache.reset_metrics()
 
         return cls(
             batch_type=inputs.batch_type,

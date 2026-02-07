@@ -842,10 +842,6 @@ class PipelineConfig(ConfigFileModel):
                     "It is only supported with the PrefillAndDecode pipeline role. "
                     f"Found {self.pipeline_role}."
                 )
-            if self.model.kv_cache.enable_prefix_caching:
-                raise ValueError(
-                    "Prefix caching is not supported with the Overlap scheduler."
-                )
             if self.sampling.enable_structured_output:
                 raise ValueError(
                     "Structured outputs are not supported with the Overlap scheduler."

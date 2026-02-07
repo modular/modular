@@ -46,6 +46,12 @@ class DummyKVCache(PagedKVCacheManager):
     def release(self, request_id: RequestID, replica_idx: int) -> None:
         pass
 
+    def get_num_pages(self, replica_idx: int) -> int:
+        return 1
+
+    def get_num_used_pages(self, replica_idx: int) -> int:
+        return 1
+
     def get_num_host_pages(self, replica_idx: int) -> int:
         return 1
 
