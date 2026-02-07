@@ -136,17 +136,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: @external_call
 kgen.func @external_call(%a : !kgen.struct<(scalar<si32>)>,
                          %b : !kgen.struct<(scalar<si32>, scalar<f32>, scalar<f32>)>) {
-   // CHECK: %0 = builtin.unrealized_conversion_cast %arg1
-   // CHECK: %1 = builtin.unrealized_conversion_cast %arg0
-
-   // CHECK: %2 = llvm.extractvalue %1[0]
-   // CHECK: llvm.call @call1(%2) : (i32) -> i32
+   // Struct operands are passed directly — LLVM's backend handles C ABI.
+   // CHECK: llvm.call @call1(%{{.*}}) : (!llvm.struct<(i32)>) -> i32
    %0 = pop.external_call @call1(%a) : (!kgen.struct<(scalar<si32>)>) -> !pop.scalar<si32>
 
-   // CHECK: %4 = llvm.extractvalue %0[0]
-   // CHECK: %5 = llvm.extractvalue %0[1]
-   // CHECK: %6 = llvm.extractvalue %0[2]
-   // CHECK: %7 = llvm.call @call3(%4, %5, %6) : (i32, f32, f32) -> i32
+   // CHECK: llvm.call @call3(%{{.*}}) : (!llvm.struct<(i32, f32, f32)>) -> i32
    %1 = pop.external_call @call3(%b) : (!kgen.struct<(scalar<si32>, scalar<f32>, scalar<f32>)>) -> !pop.scalar<si32>
    kgen.return
 }
