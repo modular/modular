@@ -104,6 +104,10 @@ class CustomOpLibrary:
     Mojo operation will be modified in-place.
 
     For more information, see the [custom ops for PyTorch](/max/tutorials/custom-kernels-pytorch) tutorial.
+
+    Args:
+        kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
+            your custom op kernels, or the corresponding library object.
     """
 
     _kernel_library: KernelLibrary
@@ -112,11 +116,6 @@ class CustomOpLibrary:
     _ops_lock: threading.Lock
 
     def __init__(self, kernel_library: Path | KernelLibrary) -> None:
-        """
-        Args:
-            kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
-              your custom op kernels, or the corresponding library object.
-        """
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
         if isinstance(kernel_library, KernelLibrary):
@@ -219,6 +218,18 @@ class CustomOp:
         return num_dps_outputs.value
 
     def op(self, *args: TensorValue, result_types: Sequence[TensorType]):  # noqa: ANN201
+        """Builds a MAX graph custom op with the given inputs and output types.
+
+        The device is inferred from the input or result types, or defaults to
+        CPU.
+
+        Args:
+            *args: The input graph tensor values to the custom op.
+            result_types: The types of the op's output tensors.
+
+        Returns:
+            The graph value(s) produced by the custom op.
+        """
         # Infer custom op device from inputs
         device = next(
             itertools.chain(
@@ -253,7 +264,6 @@ class CustomOp:
         Returns:
             inspect.Signature: The Python-level signature for the custom op.
         """
-
         op = self.kernel
         num_dps_outputs = self.num_outputs
 

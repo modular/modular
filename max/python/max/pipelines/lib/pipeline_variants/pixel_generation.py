@@ -49,19 +49,18 @@ class PixelGenerationPipeline(
     ],
     Generic[PixelGenerationContextType],
 ):
-    """Pixel generation pipeline for diffusion models."""
+    """Pixel generation pipeline for diffusion models.
+
+    Args:
+        pipeline_config: Configuration for the pipeline and runtime behavior.
+        pipeline_model: The diffusion pipeline model class to instantiate.
+    """
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[DiffusionPipeline],
     ) -> None:
-        """Initialize a pixel generation pipeline instance.
-
-        Args:
-            pipeline_config: Configuration for the pipeline and runtime behavior.
-            pipeline_model: The diffusion pipeline model class to instantiate.
-        """
         from max.engine import InferenceSession  # local import to avoid cycles
 
         self._pipeline_config = pipeline_config

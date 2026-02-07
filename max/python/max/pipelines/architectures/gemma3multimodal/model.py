@@ -134,7 +134,17 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
 
     This class encapsulates the input tensors required for the Gemma3 multi
-    modal model, for text and vision processing
+    modal model, for text and vision processing.
+
+    Args:
+        tokens: Input token IDs.
+        input_row_offsets: Input row offsets (ragged tensors).
+        return_n_logits: Number of logits to return.
+        signal_buffers: Device buffers for distributed communication.
+        kv_cache_inputs: Inputs for the KV cache.
+        pixel_values: Raw pixel values for vision inputs. Defaults to ``None``.
+        image_token_indices: Pre-computed indices of image tokens. Defaults to
+            ``None``.
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
@@ -167,14 +177,6 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         pixel_values: list[Buffer] | None = None,
         image_token_indices: list[Buffer] | None = None,
     ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
         self.signal_buffers = signal_buffers
@@ -194,9 +196,26 @@ class Gemma3_MultiModalModel(
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
-    This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
-    infrastructure, handling model loading, KV cache management, and input preparation
-    for inference.
+    This class integrates the Gemma 3 multimodal architecture with the MAX
+    pipeline infrastructure, handling model loading, KV cache management, and
+    input preparation for inference.
+
+    Args:
+        pipeline_config: The configuration settings for the entire pipeline.
+        session: The MAX inference session managing the runtime.
+        huggingface_config: The configuration loaded from HuggingFace
+            (:obj:`transformers.AutoConfig`).
+        encoding: The quantization and data type encoding used for the model
+            (:obj:`max.pipelines.config_enums.SupportedEncoding`).
+        devices: A list of MAX devices (:obj:`max.driver.Device`) to
+            run the model on.
+        kv_cache_config: Configuration settings for the Key-Value cache
+            (:obj:`max.pipelines.max_config.KVCacheConfig`).
+        weights: The model weights (:obj:`max.graph.weights.Weights`).
+        adapter: An optional adapter to modify weights before loading
+            (:obj:`max.graph.weights.WeightsAdapter`).
+        return_logits: The number of top logits to return from the model
+            execution.
     """
 
     language_model: Model
@@ -222,27 +241,6 @@ class Gemma3_MultiModalModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        """Initialize a PipelineModel with default values for signal_buffers,
-        then begin the loading of our vision and language models.
-
-        Args:
-            pipeline_config: The configuration settings for the entire pipeline.
-            session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
-                run the model on.
-            kv_cache_config: Configuration settings for the Key-Value cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            weights: The model weights (:obj:`max.graph.weights.Weights`).
-            adapter: An optional adapter to modify weights before loading
-                (:obj:`max.graph.weights.WeightsAdapter`).
-            return_logits: The number of top logits to return from the model
-                execution.
-        """
-
         super().__init__(
             pipeline_config,
             session,

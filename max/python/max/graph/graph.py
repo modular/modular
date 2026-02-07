@@ -356,6 +356,19 @@ class Graph:
     chain to perform the op and and update Graph._current_chain with a new
     chain. Currently, the input/output chains for mutable ops can be used at
     most once. The goal of this design choice is to prevent data races.
+
+    Args:
+        name: A name for the graph.
+        forward: The sequence of graph ops for the forward pass (inference).
+        input_types: The data type(s) for the input tensor(s).
+        path: The path to a saved graph (internal use only).
+        custom_extensions: The extensions to load for the model. Supports paths
+            to ``.mojopkg`` or ``.mojo`` sources with custom ops.
+        kernel_library: Optional pre-built kernel library to use. Defaults to
+            ``None`` (a new library is created from ``custom_extensions`` if
+            needed).
+        module: Optional existing MLIR module (internal use only). Defaults to
+            ``None``.
     """
 
     # Use a dict rather than a set to keep params ordered.
@@ -393,15 +406,6 @@ class Graph:
         module: mlir.Module | None = None,
         **kwargs,
     ) -> None:
-        """
-        Args:
-            name: A name for the graph.
-            forward: The sequence of graph ops for the forward pass (inference).
-            input_types: The data type(s) for the input tensor(s).
-            path: The path to a saved graph (internal use only).
-            custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojopkg` or `.mojo` sources with custom ops.
-        """
         self.name = name
         if path is not None:
             self._load_mlir(path)
@@ -608,8 +612,7 @@ class Graph:
     @staticmethod
     @contextlib.contextmanager
     def _async_region():  # noqa: ANN205
-        """Create a region of the graph with tasks guaranteed to execute
-        independently.
+        """Create a region of the graph with tasks guaranteed to execute independently.
 
         Overrides the implicit chaining of the graph to allow for asynchronous
         execution of operations which might mutate state.
@@ -626,7 +629,6 @@ class Graph:
                 with task():
                     ops.buffer_store(buffer2, tensor)
         """
-
         old_chain = Graph.current._current_chain
         old_device_chains = Graph.current.device_chains.copy()
         new_chains = []
@@ -1120,5 +1122,4 @@ class Graph:
     @property
     def kernel_libraries_paths(self) -> list[Path]:
         """Returns the list of extra kernel libraries paths for the custom ops."""
-
         return self._kernel_library.library_paths()
