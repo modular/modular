@@ -2760,6 +2760,7 @@ fn apply_mask[
     *,
     use_score_mod: Bool,
     mask_strategy: MaskStrategy,
+    skip_scale: Bool = False,
 ](
     srow: LocalTensor[DType.float32, Layout.row_major(BN)],
     mask: MaskType,
@@ -2831,7 +2832,13 @@ fn apply_mask[
             for n in range(32 // simd_size):
                 comptime frag_col_simd = n + 32 * batch // simd_size
                 comptime frag_col = frag_col_simd * simd_size
-                var s = mul_ftz(rebind[F32x2](vs[frag_col_simd]), scale_log2e)
+                var s: F32x2
+
+                @parameter
+                if skip_scale:
+                    s = rebind[F32x2](vs[frag_col_simd])
+                else:
+                    s = mul_ftz(rebind[F32x2](vs[frag_col_simd]), scale_log2e)
 
                 @parameter
                 for i in range(simd_size):
@@ -2867,7 +2874,13 @@ fn apply_mask[
         @parameter
         for n in range(block_size):
             # score_col = mask_frag_col + j * 8
-            var s = mul_ftz(rebind[F32x2](vs[n]), scale_log2e)
+            var s: F32x2
+
+            @parameter
+            if skip_scale:
+                s = rebind[F32x2](vs[n])
+            else:
+                s = mul_ftz(rebind[F32x2](vs[n]), scale_log2e)
             comptime frag_col = simd_size * n
             var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
 
@@ -3718,6 +3731,18 @@ struct SM100MHA2Q[
         if not (Self.use_score_mod or Self.MaskType.apply_log2e_after_mask):
             scale_log2e *= log2e
 
+        # Fuse scale*log2e multiplication and row_max subtraction into a
+        # single FMA in store_exp. Only valid on the default scaling path
+        # where score_mod and apply_log2e_after_mask are both off.
+        # Disabled when sink weights are used because the sink logit lives
+        # in a different domain (scaled by log2e only, not scale*log2e).
+        # To disable for NaN debugging, set use_fma = False.
+        comptime use_fma = not (
+            Self.use_score_mod
+            or Self.MaskType.apply_log2e_after_mask
+            or not Self.SinkType.is_null
+        )
+
         @parameter
         @always_inline
         fn mask_row[
@@ -3727,7 +3752,9 @@ struct SM100MHA2Q[
             kv_row: UInt32,
         ):
             apply_mask[
-                use_score_mod = Self.use_score_mod, mask_strategy=mask_strategy
+                use_score_mod = Self.use_score_mod,
+                mask_strategy=mask_strategy,
+                skip_scale=use_fma,
             ](
                 s,
                 mask,
@@ -3937,10 +3964,34 @@ struct SM100MHA2Q[
             # in registers until after we write.
             # The optimal solution for the number to do in advance is also
             # independent of the number of batches.
-            var vrow_max: f32x2 = f32x2(row_max)
-            var acc: f32x2 = exp2(sub_ftz(rebind[f32x2](vs[0]), vrow_max))
+            # When use_fma, scores are unscaled; fuse scale+subtract
+            # into fma_ftz(score, scale_log2e, -row_max*scale_log2e).
+            var vrow_max: f32x2
+            var vscale: f32x2
+            var vneg_max_scaled: f32x2
+
+            @parameter
+            if use_fma:
+                vscale = f32x2(scale_log2e)
+                vneg_max_scaled = f32x2(-row_max * scale_log2e)
+                vrow_max = f32x2(0)  # unused
+            else:
+                vrow_max = f32x2(row_max)
+                vscale = f32x2(0)  # unused
+                vneg_max_scaled = f32x2(0)  # unused
+
+            @parameter
+            @always_inline
+            fn score_to_logit(score: f32x2) -> f32x2:
+                @parameter
+                if use_fma:
+                    return fma_ftz(score, vscale, vneg_max_scaled)
+                else:
+                    return sub_ftz(score, vrow_max)
+
+            var acc: f32x2 = exp2(score_to_logit(rebind[f32x2](vs[0])))
             vs[0] = rebind[vs.element_type](acc)
-            vsi = exp2_emulation(sub_ftz(rebind[f32x2](vs[1]), vrow_max))
+            vsi = exp2_emulation(score_to_logit(rebind[f32x2](vs[1])))
             vs[1] = rebind[vs.element_type](vsi)
             acc = add_ftz(acc, vsi)
             comptime exp2_emulation_freq = 4
@@ -3948,7 +3999,7 @@ struct SM100MHA2Q[
             @parameter
             for i in range(2, 8):
                 vs[i] = rebind[vs.element_type](
-                    sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+                    score_to_logit(rebind[f32x2](vs[i]))
                 )
 
             @parameter
@@ -3964,7 +4015,7 @@ struct SM100MHA2Q[
 
             @parameter
             for i in range(8, batch_size // 2):
-                diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+                diff = score_to_logit(rebind[f32x2](vs[i]))
 
                 @parameter
                 if i % exp2_emulation_freq == 0:
@@ -3977,7 +4028,7 @@ struct SM100MHA2Q[
             # at this point, we need 32 fewer fp32 registers but 16 more u32
             @parameter
             for i in range(batch_size // 2, batch_size):
-                diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+                diff = score_to_logit(rebind[f32x2](vs[i]))
 
                 @parameter
                 if i % exp2_emulation_freq == 0:
@@ -4007,11 +4058,13 @@ struct SM100MHA2Q[
                     comptime assert Self.config.num_pv_stages == num_batch_iters
                     tcgen05_store_wait()
                     tcgen05_fence_before()
+
+                    comptime assert Self.config.num_pv_stages == num_batch_iters
                     pipeline_s.release_no_step[b - 1]()
 
                 @parameter
                 for i in range(offset, offset + batch_size):
-                    diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+                    diff = score_to_logit(rebind[f32x2](vs[i]))
 
                     @parameter
                     if i % exp2_emulation_freq == 0:
@@ -4035,7 +4088,7 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + remainder):
-                    diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+                    diff = score_to_logit(rebind[f32x2](vs[i]))
 
                     @parameter
                     if i % exp2_emulation_freq == 0:
@@ -4147,9 +4200,14 @@ struct SM100MHA2Q[
                 UnsafePointer[Scalar[Self.qkv_type], ImmutAnyOrigin]
             ](sink_weights.value())
             var head_idx: UInt32 = seq_info.head_idx
-            sink_weight = (
-                sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
-            )
+
+            @parameter
+            if use_fma:
+                sink_weight = sink_weights_ptr[head_idx].cast[Self.accum_type]()
+            else:
+                sink_weight = (
+                    sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
+                )
             row_max = max(row_max, sink_weight)
         else:
             sink_weights_ptr = {}
@@ -4161,7 +4219,12 @@ struct SM100MHA2Q[
 
         @parameter
         if not Self.SinkType.is_null:
-            row_sum[0] += exp2(sink_weight - row_max)
+
+            @parameter
+            if use_fma:
+                row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
+            else:
+                row_sum[0] += exp2(sink_weight - row_max)
 
         comptime rescale_threshold: Float32 = Float32(-8) if size_of[
             Self.qkv_type
@@ -4185,7 +4248,12 @@ struct SM100MHA2Q[
                     var new_row_max: Float32 = load_mask_max[
                         mask_strategy=mask_strategy
                     ](kv_row, old_max)
+
                     diff = sub_ftz(old_max, new_row_max)
+
+                    @parameter
+                    if use_fma:
+                        diff = mul_ftz(diff, scale_log2e)
                     var correction: Float32
 
                     @parameter
@@ -4226,7 +4294,12 @@ struct SM100MHA2Q[
                     new_row_max = load_mask_max[
                         mask_strategy = MaskStrategy.OUT_OF_BOUNDS
                     ](kv_row, old_max)
+
                 diff = sub_ftz(old_max, new_row_max)
+
+                @parameter
+                if use_fma:
+                    diff = mul_ftz(diff, scale_log2e)
                 var correction: Float32
 
                 @parameter
