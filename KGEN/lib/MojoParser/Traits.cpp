@@ -74,6 +74,7 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
     params.push_back(UnboundAttr::get(type));
     bindings.addPrechecked(expr, params.back());
   }
+  bindings.doNotApplyDefaults = true;
 
   FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(
       params, &emitter.getDeclScope().getShared().getEvaluationContext());

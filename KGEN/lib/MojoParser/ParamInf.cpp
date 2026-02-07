@@ -1423,6 +1423,11 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 // Infer any missing parameter from defaulted value (this is supposed to be
 // invoked after both parameter list and argument list has been scanned).
 LogicalResult ParamInf::inferFromDefaults() {
+
+  // If we aren't applying default parameter values, just return success.
+  if (paramBindings.doNotApplyDefaults)
+    return success();
+
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
@@ -1449,17 +1454,7 @@ LogicalResult ParamInf::inferFromDefaults() {
     };
 
     // If available, we use a default parameter value.
-    if (TypedAttr defaultParam = declaredParamPogs.getDefault(idx);
-        defaultParam && !sugarIsa<UnknownAttr>(defaultParam)) {
-
-      // Skip anything that is prechecked
-      // TODO: move this out the if condition: this is crazy that we still need
-      // to infer a empty variadic (even when there is a prechecked unbound
-      // attribute). This probably means that something is wrong in
-      // ParamBindings.
-      if (idx < paramBindings.getNumPreCheckedParams())
-        continue;
-
+    if (TypedAttr defaultParam = declaredParamPogs.getDefault(idx)) {
       // Default parameter values may reference other parameter values, so we
       // need to evaluate these.
       // If the default value is dependent, and we can not fully resolve all its

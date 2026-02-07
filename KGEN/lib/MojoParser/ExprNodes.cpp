@@ -448,8 +448,8 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       // `SomeType[b=42].someAlias`. We want to support this so long as the
       // alias doesn't refer to an unbound parameter:
       //    struct X[a: Int, b: Int]:
-      //        alias a1 = 42
-      //        alias a2 = a+1
+      //        comptime a1 = 42
+      //        comptime a2 = a+1
       //    fn test():
       //        use(X.a1) # Ok
       //        use(X[1].a2) # Ok

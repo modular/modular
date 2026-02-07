@@ -6,7 +6,11 @@
 
 # RUN: %parse-mojo-isolated %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
-struct Empty: pass
+# Empty struct with always_inline builtin initializer.
+struct Empty(TrivialRegisterType):
+    @always_inline("builtin")
+    fn __init__(out self):
+        pass
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -1371,6 +1375,11 @@ fn test_struct_with_parametric_default_value():
     # CHECK-SAME: :!TrivialRegisterType !Int,
     # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::TrivialRegisterType]()"{{.*}}<:!TrivialRegisterType !Int>)>
     comptime a = StructWithParametricDefaultValue[Int]
+
+struct HasEmptyDefault[a: Empty = Empty()]:
+    pass
+fn test_empty_default():
+    var v : HasEmptyDefault
 
 ##===----------------------------------------------------------------------===##
 # Struct keyword parameters

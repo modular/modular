@@ -137,6 +137,11 @@ public:
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;
 
+  /// This flag force-disables bindings of default parameter values, for use in
+  /// trait method resolution.  This is a really horrible hack - trait method
+  /// resolution should not need anything like this.
+  bool doNotApplyDefaults = false;
+
 private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
