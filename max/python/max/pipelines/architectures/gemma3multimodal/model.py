@@ -24,7 +24,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Type, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Type, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.kv_cache import PagedKVCacheManager, load_kv_managers
@@ -359,7 +359,7 @@ class Gemma3_MultiModalModel(
 
     def _language_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
-    ) -> Sequence[TensorType]:
+    ) -> Sequence[TensorType | BufferType]:
         """Prepare the Tensor input types that our language graph will work with"""
         device_ref = DeviceRef.from_device(self.devices[0])
         tokens_type = TensorType(
@@ -404,12 +404,6 @@ class Gemma3_MultiModalModel(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         return (
             tokens_type,
             return_n_logits_type,
@@ -417,7 +411,7 @@ class Gemma3_MultiModalModel(
             *image_embeddings_types,
             *image_token_indices_types,
             *signals.input_types(),
-            *flattened_kv_types,
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     def _build_language_graph(

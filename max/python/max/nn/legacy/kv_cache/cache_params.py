@@ -27,7 +27,12 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
-from .input_types import PagedCacheInputSymbols
+from .input_types import (
+    InputSymbolInterface,
+    MultiKVCacheInputSymbols,
+    PagedCacheInputSymbols,
+    PagedCacheInputSymbolsByReplica,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -88,6 +93,10 @@ class KVCacheParamInterface(Protocol):
     @property
     def bytes_per_block(self) -> int:
         """Number of bytes per cache block."""
+        ...
+
+    def get_symbolic_inputs(self) -> InputSymbolInterface:
+        """Returns the symbolic inputs for the KV cache."""
         ...
 
 
@@ -447,7 +456,7 @@ class KVCacheParams(KVCacheParamInterface):
             for device in devices
         ]
 
-    def get_symbolic_inputs(self) -> list[PagedCacheInputSymbols]:
+    def get_symbolic_inputs(self) -> PagedCacheInputSymbolsByReplica:
         """Computes the symbolic inputs for the KV cache.
 
         This method returns a list of PagedCacheInputSymbols for each replica.
@@ -466,7 +475,7 @@ class KVCacheParams(KVCacheParamInterface):
                 replica_idx,
             )
             input_symbols.extend(symbols)
-        return input_symbols
+        return PagedCacheInputSymbolsByReplica(values=input_symbols)
 
 
 @dataclass(frozen=True)
@@ -537,6 +546,12 @@ class MultiKVCacheParams(KVCacheParamInterface):
         memory cost per block is the sum across all param sets.
         """
         return sum(p.bytes_per_block for p in self.params)
+
+    def get_symbolic_inputs(self) -> MultiKVCacheInputSymbols:
+        """Returns the symbolic inputs for the KV cache."""
+        return MultiKVCacheInputSymbols(
+            [p.get_symbolic_inputs() for p in self.params]
+        )
 
 
 def compute_num_device_blocks(

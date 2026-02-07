@@ -208,7 +208,7 @@ class DistributedLlama3(DistributedTransformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_params.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs().flatten()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -217,10 +217,6 @@ class DistributedLlama3(DistributedTransformer):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
-        # Flatten kv types for each device
-        flattened_kv_types: list[TensorType] = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
 
         signals = Signals(devices=self.config.devices)
 
@@ -234,6 +230,6 @@ class DistributedLlama3(DistributedTransformer):
             return_n_logits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(flattened_kv_types)
+        all_input_types.extend(kv_inputs)
 
         return tuple(all_input_types)

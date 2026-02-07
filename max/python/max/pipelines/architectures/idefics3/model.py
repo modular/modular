@@ -24,7 +24,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -384,15 +384,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             return graph, vision_model.state_dict()
 
-    def _language_graph_input_types(self) -> Sequence[TensorType]:
+    def _language_graph_input_types(self) -> Sequence[TensorType | BufferType]:
         # Generate DeviceRef.
         device_ref = DeviceRef.from_device(self.devices[0])
 
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -417,18 +415,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             DType.int32, shape=["total_image_tokens"], device=device_ref
         )
 
-        # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
             image_embeddings_type,
             image_token_indices_type,
-            *flattened_kv_types,
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     def _unflatten_kv_inputs(

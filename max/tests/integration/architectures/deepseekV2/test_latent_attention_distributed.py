@@ -22,7 +22,7 @@ from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
@@ -271,7 +271,7 @@ def _build_graph_and_compile(
     devices: list[Accelerator],
 ) -> tuple:
     """Builds a per-device inputs graph and compiles it."""
-    input_types: list[TensorType] = []
+    input_types: list[TensorType | BufferType] = []
     for d in devices:
         devref = DeviceRef.from_device(d)
         input_types.append(
