@@ -13,7 +13,8 @@
 
 from collections import Optional, Dict
 from math import align_down, ceildiv
-from memory import LegacyUnsafePointer
+from memory import LegacyUnsafePointer, UnsafePointer as NewUnsafePointer
+from builtin.rebind import rebind
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
@@ -808,7 +809,9 @@ struct ConvDirectNHWC[
             acc.init(0)
         else:
             acc.load[partial_load=has_residual](
-                self.output.ptr + output_offset,
+                rebind[
+                    NewUnsafePointer[Scalar[Self.output_type], MutAnyOrigin]
+                ](NewUnsafePointer(self.output.ptr + output_offset)),
                 self.conv_shape.f,
                 self.conv_shape.f_per_group() % simd_size,
             )
@@ -879,7 +882,9 @@ struct ConvDirectNHWC[
                     )
 
         acc.store[partial_store=has_residual](
-            self.output.ptr + output_offset,
+            rebind[NewUnsafePointer[Scalar[Self.output_type], MutAnyOrigin]](
+                NewUnsafePointer(self.output.ptr + output_offset)
+            ),
             self.conv_shape.f,
             self.conv_shape.f_per_group() % simd_size,
         )
@@ -1884,7 +1889,12 @@ struct ConvDirectNHWC[
         var acc = _Accumulator[
             Self.output_type, micro_kernel_height, micro_kernel_width, simd_size
         ]()
-        acc.load(output_micro_tile.ptr, micro_kernel_width * simd_size)
+        acc.load(
+            rebind[NewUnsafePointer[Scalar[Self.output_type], MutAnyOrigin]](
+                NewUnsafePointer(output_micro_tile.ptr)
+            ),
+            micro_kernel_width * simd_size,
+        )
 
         comptime W = Int(Self.input_layout.shape[2])  # NHWC
         comptime H = Int(Self.input_layout.shape[1])  # NHWC
@@ -1954,7 +1964,12 @@ struct ConvDirectNHWC[
 
             h_shift += conv_attr_dyn.dilations()[0]
 
-        acc.store(output_micro_tile.ptr, micro_kernel_width * simd_size)
+        acc.store(
+            rebind[NewUnsafePointer[Scalar[Self.output_type], MutAnyOrigin]](
+                NewUnsafePointer(output_micro_tile.ptr)
+            ),
+            micro_kernel_width * simd_size,
+        )
         # Store the micro tile
         self._store_output_micro_tile[
             micro_kernel_height,
