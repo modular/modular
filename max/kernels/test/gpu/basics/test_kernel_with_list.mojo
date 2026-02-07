@@ -20,7 +20,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 fn kernel_with_list(res: UnsafePointer[Float32]):
     var list: List[Float32] = [10]
     for i in range(4):
-        list.append(i + 1)
+        list.append(Float32(i + 1))
     res[] = list[0] * list[1] + list[2] * list[3]
 
 

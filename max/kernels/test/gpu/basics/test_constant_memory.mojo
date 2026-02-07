@@ -48,7 +48,7 @@ def test_constant_mem(ctx: DeviceContext):
 
         @parameter
         for i in range(n):
-            ptr[i] = i
+            ptr[i] = Float32(i)
         return ptr
 
     fn static_constant_kernel[n: Int](data: UnsafePointer[Float32]):
@@ -65,7 +65,7 @@ def test_constant_mem(ctx: DeviceContext):
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
-            assert_equal(res_host[i], i)
+            assert_equal(res_host[i], Float32(i))
 
 
 def test_constant_mem_via_func(ctx: DeviceContext):
@@ -80,7 +80,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
         @parameter
         for i in range(n):
-            ptr[i] = i
+            ptr[i] = Float32(i)
         return ptr
 
     fn static_constant_kernel[
@@ -101,7 +101,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
-            assert_equal(res_host[i], i)
+            assert_equal(res_host[i], Float32(i))
 
 
 def test_external_constant_mem(ctx: DeviceContext):
@@ -157,7 +157,7 @@ def test_external_constant_mem(ctx: DeviceContext):
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
-            assert_equal(res_host[i], i)
+            assert_equal(res_host[i], Float32(i))
 
 
 def main():

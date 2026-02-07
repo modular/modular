@@ -132,19 +132,19 @@ fn run_causal_conv1d_update[
     var conv_state_ref_buf = conv_state_ref_h
 
     # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = dim * seqlen
-    var x_c_stride: UInt32 = seqlen
+    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var x_c_stride: UInt32 = UInt32(seqlen)
     var x_l_stride: UInt32 = 1
 
-    var conv_state_batch_stride: UInt32 = dim * state_len
-    var conv_state_c_stride: UInt32 = state_len
+    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_state_c_stride: UInt32 = UInt32(state_len)
     var conv_state_l_stride: UInt32 = 1
 
-    var weight_c_stride: UInt32 = width
+    var weight_c_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
 
-    var out_batch_stride: UInt32 = dim * seqlen
-    var out_c_stride: UInt32 = seqlen
+    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var out_c_stride: UInt32 = UInt32(seqlen)
     var out_l_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
@@ -242,17 +242,17 @@ fn run_causal_conv1d_update[
                         # Read from x
                         var x_l_pos = src_pos - state_len
                         var x_offset = (
-                            b * x_batch_stride
-                            + c * x_c_stride
-                            + x_l_pos * x_l_stride
+                            UInt32(b) * x_batch_stride
+                            + UInt32(c) * x_c_stride
+                            + UInt32(x_l_pos) * x_l_stride
                         )
                         input_val = input_buf.ptr.load(x_offset)
                     elif src_pos >= 0:
                         # Read from conv_state
                         var conv_state_offset = (
-                            b * conv_state_batch_stride
-                            + c * conv_state_c_stride
-                            + src_pos * conv_state_l_stride
+                            UInt32(b) * conv_state_batch_stride
+                            + UInt32(c) * conv_state_c_stride
+                            + UInt32(src_pos) * conv_state_l_stride
                         )
                         input_val = conv_state_ref_buf.ptr.load(
                             conv_state_offset
@@ -260,14 +260,17 @@ fn run_causal_conv1d_update[
                     # else: src_pos < 0, treat as 0 (zero padding)
 
                     var weight_offset = (
-                        c * weight_c_stride + w * weight_width_stride
+                        UInt32(c) * weight_c_stride
+                        + UInt32(w) * weight_width_stride
                     )
                     var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
 
                 # Write output
                 var out_offset = (
-                    b * out_batch_stride + c * out_c_stride + l * out_l_stride
+                    UInt32(b) * out_batch_stride
+                    + UInt32(c) * out_c_stride
+                    + UInt32(l) * out_l_stride
                 )
                 var out_val = conv_sum
                 if silu_activation:
@@ -280,29 +283,29 @@ fn run_causal_conv1d_update[
                 for s in range(state_len):
                     var x_l_pos = seqlen - state_len + s
                     var x_offset = (
-                        b * x_batch_stride
-                        + c * x_c_stride
-                        + x_l_pos * x_l_stride
+                        UInt32(b) * x_batch_stride
+                        + UInt32(c) * x_c_stride
+                        + UInt32(x_l_pos) * x_l_stride
                     )
                     var x_val = input_buf.ptr.load(x_offset)
                     var conv_state_offset = (
-                        b * conv_state_batch_stride
-                        + c * conv_state_c_stride
-                        + s * conv_state_l_stride
+                        UInt32(b) * conv_state_batch_stride
+                        + UInt32(c) * conv_state_c_stride
+                        + UInt32(s) * conv_state_l_stride
                     )
                     conv_state_ref_buf.ptr.store(conv_state_offset, x_val)
             else:
                 # Shift conv_state left by seqlen positions, then append x
                 for s in range(state_len - seqlen):
                     var src_offset = (
-                        b * conv_state_batch_stride
-                        + c * conv_state_c_stride
-                        + (s + seqlen) * conv_state_l_stride
+                        UInt32(b) * conv_state_batch_stride
+                        + UInt32(c) * conv_state_c_stride
+                        + UInt32((s + seqlen)) * conv_state_l_stride
                     )
                     var dst_offset = (
-                        b * conv_state_batch_stride
-                        + c * conv_state_c_stride
-                        + s * conv_state_l_stride
+                        UInt32(b) * conv_state_batch_stride
+                        + UInt32(c) * conv_state_c_stride
+                        + UInt32(s) * conv_state_l_stride
                     )
                     var val = conv_state_ref_buf.ptr.load(src_offset)
                     conv_state_ref_buf.ptr.store(dst_offset, val)
@@ -310,13 +313,15 @@ fn run_causal_conv1d_update[
                 # Copy x values to the end
                 for l in range(seqlen):
                     var x_offset = (
-                        b * x_batch_stride + c * x_c_stride + l * x_l_stride
+                        UInt32(b) * x_batch_stride
+                        + UInt32(c) * x_c_stride
+                        + UInt32(l) * x_l_stride
                     )
                     var x_val = input_buf.ptr.load(x_offset)
                     var conv_state_offset = (
-                        b * conv_state_batch_stride
-                        + c * conv_state_c_stride
-                        + (state_len - seqlen + l) * conv_state_l_stride
+                        UInt32(b) * conv_state_batch_stride
+                        + UInt32(c) * conv_state_c_stride
+                        + UInt32((state_len - seqlen + l)) * conv_state_l_stride
                     )
                     conv_state_ref_buf.ptr.store(conv_state_offset, x_val)
 

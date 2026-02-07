@@ -16,8 +16,6 @@ This module provides configuration structs for SM100 (Blackwell) GPU matmul
 operations, including standard matmul and block-scaled matmul variants.
 """
 
-from hashlib.hasher import Hasher
-
 from bit import next_power_of_two
 from collections.set import Set
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -37,6 +35,161 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+
+
+# ============================================================================
+# Shared Configuration Helpers
+# ============================================================================
+
+
+fn _compute_block_tile_shape[
+    a_type: DType
+](mma_shape: IndexList[3], cta_group: Int) -> IndexList[3]:
+    """Compute block tile shape from MMA shape and CTA group."""
+    return Index(
+        mma_shape[0] // cta_group,
+        mma_shape[1] // cta_group,
+        128 // size_of[a_type](),
+    )
+
+
+fn _compute_output_tile_shape(
+    mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool
+) -> IndexList[2]:
+    """Compute output tile shape based on MMA config."""
+    # If MMA_M is 256, each of the pair ctas has the entire MMA_N.
+    # If MMA_M is 128, each of the pair ctas has 1/2 of MMA_N.
+    # If cta_group=1, the cta has the entire MMA_N.
+    var c_tile_n = mma_shape[1] if (
+        mma_shape[0] == 256 or cta_group == 1
+    ) else (mma_shape[1] // 2)
+    var output_tile_n = 8
+    if c_tile_n % 32 == 0:
+        output_tile_n = 32
+    elif c_tile_n % 16 == 0:
+        output_tile_n = 16
+    # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
+    var output_tile_m = 128 if cta_group == 2 else mma_shape[0]
+    return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+        output_tile_m, output_tile_n
+    )
+
+
+fn _compute_swizzle_modes(
+    output_tile_shape: IndexList[2], AB_swapped: Bool
+) -> Tuple[TensorMapSwizzle, TensorMapSwizzle, TensorMapSwizzle]:
+    """Compute A, B, C swizzle modes."""
+    var a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
+    if AB_swapped:
+        c_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    else:
+        # When not swapped, output_tile_shape[1] is the N dimension
+        var tile_n = output_tile_shape[1]
+        if tile_n == 32:
+            c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+        elif tile_n == 16:
+            c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+    return (a_swizzle, b_swizzle, c_swizzle)
+
+
+fn _maximize_pipeline_stages[
+    a_type: DType, b_type: DType, c_type: DType
+](
+    block_tile_shape: IndexList[3],
+    output_tile_shape: IndexList[2],
+    num_output_stages: Int,
+    num_clc_pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    extra_smem_per_stage: Int = 0,
+) -> Int:
+    """Calculate max pipeline stages based on shared memory budget."""
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+
+    var c_smem_bytes = (
+        output_tile_shape[0]
+        * output_tile_shape[1]
+        * num_output_stages
+        * size_of[c_type]()
+    )
+    # Add tmem addr (4 bytes) and tmem dealloc mbar (8 bytes).
+    var output_smem_bytes = c_smem_bytes + 12
+    # Response 128B, clc mbar 16B, clc-load pipeline mbar 16B.
+    var clc_smem_bytes = 160 * num_clc_pipeline_stages
+    # Usage by mma-output-pipeline.
+    var mma_output_smem_bytes = num_accum_pipeline_stages * 16
+
+    var a_smem_bytes_per_stage = (
+        block_tile_shape[0] * block_tile_shape[2] * size_of[a_type]()
+    )
+    var b_smem_bytes_per_stage = (
+        block_tile_shape[1] * block_tile_shape[2] * size_of[b_type]()
+    )
+    # Include 16 bytes for consumer and producer mbar per stage.
+    var AB_smem_per_stage = (
+        a_smem_bytes_per_stage
+        + b_smem_bytes_per_stage
+        + 16
+        + extra_smem_per_stage
+    )
+
+    return (
+        b200_smem - output_smem_bytes - clc_smem_bytes - mma_output_smem_bytes
+    ) // AB_smem_per_stage
+
+
+fn _write_common_config[
+    W: Writer,
+    a_type: DType,
+    c_type: DType,
+    transpose_b: Bool,
+](
+    mut writer: W,
+    cta_group: Int,
+    mma_shape: IndexList[3],
+    cluster_shape: IndexList[3],
+    num_pipeline_stages: Int,
+    k_group_size: Int,
+    num_clc_pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    num_output_stages: Int,
+    output_tile_shape: IndexList[2],
+    AB_swapped: Bool,
+    a_swizzle: TensorMapSwizzle,
+    b_swizzle: TensorMapSwizzle,
+    c_swizzle: TensorMapSwizzle,
+    block_swizzle_size: Int,
+    raster_order: RasterOrder,
+    num_split_k: Int,
+):
+    """Write common config fields to string."""
+    writer.write(a_type, "_")
+    writer.write(c_type, "_")
+    writer.write("cta", cta_group, "_")
+    writer.write("mma", mma_shape[0], "x", mma_shape[1], "x", mma_shape[2], "_")
+    writer.write(
+        "cluster",
+        cluster_shape[0],
+        "x",
+        cluster_shape[1],
+        "x",
+        cluster_shape[2],
+        "_",
+    )
+    writer.write("stages", num_pipeline_stages, "_")
+    writer.write("k_group", k_group_size, "_")
+    writer.write("clc", num_clc_pipeline_stages, "_")
+    writer.write("accum", num_accum_pipeline_stages, "_")
+    writer.write("out", num_output_stages, "_")
+    writer.write(output_tile_shape[0], "x", output_tile_shape[1], "_")
+    writer.write("swap" if AB_swapped else "noswap", "_")
+    writer.write("K_" if transpose_b else "MN_")
+    writer.write("asz", a_swizzle.bytes(), "_")
+    writer.write("bsz", b_swizzle.bytes(), "_")
+    writer.write("csz", c_swizzle.bytes(), "_")
+    writer.write("bz", block_swizzle_size, "_", raster_order)
+    writer.write("splitk", num_split_k, "_")
 
 
 @fieldwise_init
@@ -96,50 +249,35 @@ struct MatmulConfig[
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
-        self.block_tile_shape = Index(
-            self.mma_shape[0] // self.cta_group,
-            self.mma_shape[1] // self.cta_group,
-            128 // size_of[Self.a_type](),
-        )
 
-        # If MMA_M is 256, each of the pair ctas has the entire MMA_N
-        # If MMA_M is 128, each of the pair ctas has 1/2 of MMA_N
-        # If cta_group=1, the cta has the entire MMA_N
-        var c_tile_n = (
-            self.mma_shape[1] if (
-                self.mma_shape[0] == 256 or self.cta_group == 1
-            ) else self.mma_shape[1]
-            // 2
+        self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
+            mma_shape, cta_group
         )
-        var output_tile_n = 8
-        if c_tile_n % 32 == 0:
-            output_tile_n = 32
-        elif c_tile_n % 16 == 0:
-            output_tile_n = 16
-
-        # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
-        var output_tile_m = 128 if self.cta_group == 2 else self.mma_shape[0]
-        self.output_tile_shape = Index(
-            output_tile_n, output_tile_m
-        ) if self.AB_swapped else Index(output_tile_m, output_tile_n)
+        self.output_tile_shape = _compute_output_tile_shape(
+            mma_shape, cta_group, AB_swapped
+        )
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_output_stages = 2
         self.num_split_k = num_split_k
 
-        self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
-        if self.AB_swapped:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        elif output_tile_n == 32:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-        elif output_tile_n == 16:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+        var swizzles = _compute_swizzle_modes(
+            self.output_tile_shape, AB_swapped
+        )
+        self.a_swizzle = swizzles[0]
+        self.b_swizzle = swizzles[1]
+        self.c_swizzle = swizzles[2]
 
-        self.num_pipeline_stages = 4  # Need for compilation
-        self._maximize_pipeline_stages_by_default()
+        self.num_pipeline_stages = _maximize_pipeline_stages[
+            Self.a_type, Self.b_type, Self.c_type
+        ](
+            self.block_tile_shape,
+            self.output_tile_shape,
+            self.num_output_stages,
+            self.num_clc_pipeline_stages,
+            self.num_accum_pipeline_stages,
+        )
 
         if num_pipeline_stages:
             self.num_pipeline_stages = num_pipeline_stages.value()
@@ -147,73 +285,6 @@ struct MatmulConfig[
         # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
-        )
-
-    fn _maximize_pipeline_stages_by_default(mut self):
-        comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
-        var c_smem_bytes = (
-            self.output_tile_shape[0]
-            * self.output_tile_shape[1]
-            * self.num_output_stages
-            * size_of[Self.c_type]()
-        )
-        # Add tmem addr (4) and tmem dealloc mbar(8)
-        var output_smem_bytes = c_smem_bytes + 12
-
-        # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
-
-        # Usage by mma-output-pipeline
-        var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
-
-        var a_smem_bytes_per_stage = (
-            self.block_tile_shape[0]
-            * self.block_tile_shape[2]
-            * size_of[Self.a_type]()
-        )
-        var b_smem_bytes_per_stage = (
-            self.block_tile_shape[1]
-            * self.block_tile_shape[2]
-            * size_of[Self.b_type]()
-        )
-        # Include 16 for consumer and producer mbar per stage
-        var AB_smem_per_stage = (
-            a_smem_bytes_per_stage + b_smem_bytes_per_stage + 16
-        )
-
-        # Subtract 511B for mbar usage etc
-        self.num_pipeline_stages = (
-            b200_smem
-            - output_smem_bytes
-            - clc_smem_bytes
-            - mma_output_smem_bytes
-        ) // AB_smem_per_stage
-
-    fn __eq__(
-        self,
-        other: MatmulConfig[
-            Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
-        ],
-    ) -> Bool:
-        return (
-            self.cta_group == other.cta_group
-            and self.mma_shape == other.mma_shape
-            and self.cluster_shape == other.cluster_shape
-            and self.AB_swapped == other.AB_swapped
-            and self.num_pipeline_stages == other.num_pipeline_stages
-            and self.num_clc_pipeline_stages == other.num_clc_pipeline_stages
-            and self.num_accum_pipeline_stages
-            == other.num_accum_pipeline_stages
-            and self.num_output_stages == other.num_output_stages
-            and self.output_tile_shape == other.output_tile_shape
-            and self.a_swizzle == other.a_swizzle
-            and self.b_swizzle == other.b_swizzle
-            and self.c_swizzle == other.c_swizzle
-            and self.block_swizzle_size == other.block_swizzle_size
-            and self.raster_order == other.raster_order
-            and self.k_group_size == other.k_group_size
-            and self.num_split_k == other.num_split_k
         )
 
     fn swap_AB_type(
@@ -238,78 +309,30 @@ struct MatmulConfig[
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
-        writer.write(Self.a_type, "_")
-        writer.write(Self.c_type, "_")
-        writer.write("cta", self.cta_group, "_")
-        writer.write(
-            "mma",
-            self.mma_shape[0],
-            "x",
-            self.mma_shape[1],
-            "x",
-            self.mma_shape[2],
-            "_",
+        _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
+            writer,
+            self.cta_group,
+            self.mma_shape,
+            self.cluster_shape,
+            self.num_pipeline_stages,
+            self.k_group_size,
+            self.num_clc_pipeline_stages,
+            self.num_accum_pipeline_stages,
+            self.num_output_stages,
+            self.output_tile_shape,
+            self.AB_swapped,
+            self.a_swizzle,
+            self.b_swizzle,
+            self.c_swizzle,
+            self.block_swizzle_size,
+            self.raster_order,
+            self.num_split_k,
         )
-        writer.write(
-            "cluster",
-            self.cluster_shape[0],
-            "x",
-            self.cluster_shape[1],
-            "x",
-            self.cluster_shape[2],
-            "_",
-        )
-        writer.write("stages", self.num_pipeline_stages, "_")
-        writer.write("k_group", self.k_group_size, "_")
-        writer.write("clc", self.num_clc_pipeline_stages, "_")
-        writer.write("accum", self.num_accum_pipeline_stages, "_")
-        writer.write("out", self.num_output_stages, "_")
-        writer.write(
-            self.output_tile_shape[0], "x", self.output_tile_shape[1], "_"
-        )
-        writer.write("swap" if self.AB_swapped else "noswap", "_")
-        writer.write("K_")
-        writer.write("K_" if Self.transpose_b else "MN_")
-        writer.write("asz", self.a_swizzle.bytes(), "_")
-        writer.write("bsz", self.b_swizzle.bytes(), "_")
-        writer.write("csz", self.c_swizzle.bytes(), "_")
-        writer.write("bz", self.block_swizzle_size, "_", self.raster_order)
-        writer.write("splitk", self.num_split_k, "_")
 
     fn __repr__(self) -> String:
         return String.write(self)
-
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying bytes.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(Self.a_type)
-        hasher.update(Self.b_type)
-        hasher.update(Self.c_type)
-        hasher.update(Self.transpose_b)
-        hasher.update(self.cta_group)
-        hasher.update(self.mma_shape)
-        hasher.update(self.block_tile_shape)
-        hasher.update(self.cluster_shape)
-        hasher.update(self.AB_swapped)
-        hasher.update(self.num_pipeline_stages)
-        hasher.update(self.num_clc_pipeline_stages)
-        hasher.update(self.num_accum_pipeline_stages)
-        hasher.update(self.num_output_stages)
-        hasher.update(self.output_tile_shape)
-        hasher.update(Int(self.a_swizzle))
-        hasher.update(Int(self.b_swizzle))
-        hasher.update(Int(self.c_swizzle))
-        hasher.update(self.raster_order)
-        hasher.update(self.k_group_size)
-        hasher.update(self.num_split_k)
 
 
 fn choose_config[
@@ -532,10 +555,11 @@ struct BlockScaledMatmulConfig[
         self.raster_order = raster_order
         self.k_group_size = k_group_size
 
-        self.block_tile_shape = Index(
-            self.mma_shape[0] // self.cta_group,
-            self.mma_shape[1] // self.cta_group,
-            128 // size_of[Self.a_type](),
+        self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
+            mma_shape, cta_group
+        )
+        self.output_tile_shape = _compute_output_tile_shape(
+            mma_shape, cta_group, AB_swapped
         )
 
         # Scaling factors configuration (SFA, SFB)
@@ -544,90 +568,27 @@ struct BlockScaledMatmulConfig[
             NVFP4_SF_VECTOR_SIZE if self.scaling_kind
             == UMMAKind.KIND_MXF4NVF4 else MXFP8_SF_VECTOR_SIZE
         )
-        var SF_K_GROUP_SIZE = self.vec_sf_size * SF_ATOM_K
+        var sf_k_group_size = self.vec_sf_size * SF_ATOM_K
         self.num_sf_k_tiles = (
             (2 * self.block_tile_shape[2])
-            // (SF_K_GROUP_SIZE) if (
-                self.scaling_kind == UMMAKind.KIND_MXF4NVF4
-            ) else (self.block_tile_shape[2])
-            // (SF_K_GROUP_SIZE)
+            // sf_k_group_size if self.scaling_kind
+            == UMMAKind.KIND_MXF4NVF4 else self.block_tile_shape[2]
+            // sf_k_group_size
         )
-
-        # If MMA_M is 256, each of the pair ctas has the entire MMA_N
-        # If MMA_M is 128, each of the pair ctas has 1/2 of MMA_N
-        # If cta_group=1, the cta has the entire MMA_N
-        var c_tile_n = (
-            self.mma_shape[1] if (
-                self.mma_shape[0] == 256 or self.cta_group == 1
-            ) else self.mma_shape[1]
-            // 2
-        )
-        var output_tile_n = 8
-        if c_tile_n % 32 == 0:
-            output_tile_n = 32
-        elif c_tile_n % 16 == 0:
-            output_tile_n = 16
-
-        # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
-        var output_tile_m = 128 if self.cta_group == 2 else self.mma_shape[0]
-        self.output_tile_shape = Index(
-            output_tile_n, output_tile_m
-        ) if self.AB_swapped else Index(output_tile_m, output_tile_n)
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_output_stages = 2
         self.num_split_k = num_split_k
 
-        self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
-        if self.AB_swapped:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        elif output_tile_n == 32:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-        elif output_tile_n == 16:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B
-
-        self.num_pipeline_stages = 4  # Need for compilation
-        self._maximize_pipeline_stages_by_default()
-
-        if num_pipeline_stages:
-            self.num_pipeline_stages = num_pipeline_stages.value()
-
-        # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
-        self.num_pipeline_stages = align_down(
-            self.num_pipeline_stages, self.k_group_size
+        var swizzles = _compute_swizzle_modes(
+            self.output_tile_shape, AB_swapped
         )
+        self.a_swizzle = swizzles[0]
+        self.b_swizzle = swizzles[1]
+        self.c_swizzle = swizzles[2]
 
-    fn _maximize_pipeline_stages_by_default(mut self):
-        comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
-        var c_smem_bytes = (
-            self.output_tile_shape[0]
-            * self.output_tile_shape[1]
-            * self.num_output_stages
-            * size_of[Self.c_type]()
-        )
-        # Add tmem addr (4) and tmem dealloc mbar(8)
-        var output_smem_bytes = c_smem_bytes + 12
-
-        # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
-
-        # Usage by mma-output-pipeline
-        var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
-
-        var a_smem_bytes_per_stage = (
-            self.block_tile_shape[0]
-            * self.block_tile_shape[2]
-            * size_of[Self.a_type]()
-        )
-        var b_smem_bytes_per_stage = (
-            self.block_tile_shape[1]
-            * self.block_tile_shape[2]
-            * size_of[Self.b_type]()
-        )
+        # Calculate scaling factor shared memory per stage
         var a_scales_smem_bytes_per_stage = (
             self.num_sf_k_tiles
             * (self.block_tile_shape[0] // SF_MN_GROUP_SIZE)
@@ -640,54 +601,27 @@ struct BlockScaledMatmulConfig[
             * Self.sf_block_atom_size
             * size_of[Self.sfb_dtype]()
         )
-        # Include 16 for consumer and producer mbar per stage
-        var AB_smem_per_stage = (
-            a_smem_bytes_per_stage + b_smem_bytes_per_stage + 16
-        )
-        var AB_sf_smem_per_stage = (
+        var sf_smem_per_stage = (
             a_scales_smem_bytes_per_stage + b_scales_smem_bytes_per_stage
         )
 
-        # Subtract 511B for mbar usage etc
-        self.num_pipeline_stages = (
-            b200_smem
-            - output_smem_bytes
-            - clc_smem_bytes
-            - mma_output_smem_bytes
-        ) // (AB_smem_per_stage + AB_sf_smem_per_stage)
+        self.num_pipeline_stages = _maximize_pipeline_stages[
+            Self.a_type, Self.b_type, Self.c_type
+        ](
+            self.block_tile_shape,
+            self.output_tile_shape,
+            self.num_output_stages,
+            self.num_clc_pipeline_stages,
+            self.num_accum_pipeline_stages,
+            sf_smem_per_stage,
+        )
 
-    fn __eq__(
-        self,
-        other: BlockScaledMatmulConfig[
-            Self.a_type,
-            Self.b_type,
-            Self.c_type,
-            Self.sfa_dtype,
-            Self.sfb_dtype,
-            Self.transpose_b,
-        ],
-    ) -> Bool:
-        return (
-            self.cta_group == other.cta_group
-            and self.mma_shape == other.mma_shape
-            and self.cluster_shape == other.cluster_shape
-            and self.AB_swapped == other.AB_swapped
-            and self.num_pipeline_stages == other.num_pipeline_stages
-            and self.num_clc_pipeline_stages == other.num_clc_pipeline_stages
-            and self.num_accum_pipeline_stages
-            == other.num_accum_pipeline_stages
-            and self.num_output_stages == other.num_output_stages
-            and self.output_tile_shape == other.output_tile_shape
-            and self.a_swizzle == other.a_swizzle
-            and self.b_swizzle == other.b_swizzle
-            and self.c_swizzle == other.c_swizzle
-            and self.block_swizzle_size == other.block_swizzle_size
-            and self.raster_order == other.raster_order
-            and self.k_group_size == other.k_group_size
-            and self.num_split_k == other.num_split_k
-            and self.scaling_kind == other.scaling_kind
-            and self.vec_sf_size == other.vec_sf_size
-            and self.num_sf_k_tiles == other.num_sf_k_tiles
+        if num_pipeline_stages:
+            self.num_pipeline_stages = num_pipeline_stages.value()
+
+        # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
+        self.num_pipeline_stages = align_down(
+            self.num_pipeline_stages, self.k_group_size
         )
 
     fn swap_AB_type(
@@ -725,85 +659,32 @@ struct BlockScaledMatmulConfig[
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         writer.write(self.scaling_kind, "_")
-        writer.write(Self.a_type, "_")
-        writer.write(Self.c_type, "_")
         writer.write("A_vec", self.vec_sf_size, "_")
         writer.write(Self.sfa_dtype, "_")
         writer.write("B_vec", self.vec_sf_size, "_")
         writer.write(Self.sfb_dtype, "_")
-        writer.write("cta", self.cta_group, "_")
-        writer.write(
-            "mma",
-            self.mma_shape[0],
-            "x",
-            self.mma_shape[1],
-            "x",
-            self.mma_shape[2],
-            "_",
+        _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
+            writer,
+            self.cta_group,
+            self.mma_shape,
+            self.cluster_shape,
+            self.num_pipeline_stages,
+            self.k_group_size,
+            self.num_clc_pipeline_stages,
+            self.num_accum_pipeline_stages,
+            self.num_output_stages,
+            self.output_tile_shape,
+            self.AB_swapped,
+            self.a_swizzle,
+            self.b_swizzle,
+            self.c_swizzle,
+            self.block_swizzle_size,
+            self.raster_order,
+            self.num_split_k,
         )
-        writer.write(
-            "cluster",
-            self.cluster_shape[0],
-            "x",
-            self.cluster_shape[1],
-            "x",
-            self.cluster_shape[2],
-            "_",
-        )
-        writer.write("stages", self.num_pipeline_stages, "_")
-        writer.write("k_group", self.k_group_size, "_")
-        writer.write("clc", self.num_clc_pipeline_stages, "_")
-        writer.write("accum", self.num_accum_pipeline_stages, "_")
-        writer.write("out", self.num_output_stages, "_")
-        writer.write(
-            self.output_tile_shape[0], "x", self.output_tile_shape[1], "_"
-        )
-        writer.write("swap" if self.AB_swapped else "noswap", "_")
-        writer.write("K_")
-        writer.write("K_" if Self.transpose_b else "MN_")
-        writer.write("asz", self.a_swizzle.bytes(), "_")
-        writer.write("bsz", self.b_swizzle.bytes(), "_")
-        writer.write("csz", self.c_swizzle.bytes(), "_")
-        writer.write("bz", self.block_swizzle_size, "_", self.raster_order)
-        writer.write("splitk", self.num_split_k, "_")
 
     fn __repr__(self) -> String:
         return String.write(self)
-
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying bytes.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(Self.a_type)
-        hasher.update(Self.b_type)
-        hasher.update(Self.c_type)
-        hasher.update(Self.sfa_dtype)
-        hasher.update(Self.sfb_dtype)
-        hasher.update(Self.transpose_b)
-        hasher.update(self.cta_group)
-        hasher.update(self.mma_shape)
-        hasher.update(self.block_tile_shape)
-        hasher.update(self.cluster_shape)
-        hasher.update(self.AB_swapped)
-        hasher.update(self.num_pipeline_stages)
-        hasher.update(self.num_clc_pipeline_stages)
-        hasher.update(self.num_accum_pipeline_stages)
-        hasher.update(self.num_output_stages)
-        hasher.update(self.output_tile_shape)
-        hasher.update(Int(self.a_swizzle))
-        hasher.update(Int(self.b_swizzle))
-        hasher.update(Int(self.c_swizzle))
-        hasher.update(self.raster_order)
-        hasher.update(self.k_group_size)
-        hasher.update(self.num_split_k)
-        hasher.update(self.scaling_kind)
-        hasher.update(self.vec_sf_size)
-        hasher.update(self.num_sf_k_tiles)

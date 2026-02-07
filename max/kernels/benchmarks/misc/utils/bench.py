@@ -217,17 +217,30 @@ def bench_kineto(
         total_num = 0
         for line in prof_lines:
             if name in line:
-                time_str = line.split()[-2]
-                num_str = line.split()[-1]
+                parts = line.split()
+                if len(parts) < 2:
+                    continue  # Skip malformed lines
+                time_str = parts[-2]
+                num_str = parts[-1]
+                # Debug: print what we're parsing
+                # print(f"DEBUG: name={name}, time_str={time_str}, num_str={num_str}")
                 for unit, scale in units.items():
                     if unit in time_str:
-                        total_time += (
-                            float(time_str.replace(unit, ""))
-                            / scale
-                            * int(num_str)
-                        )
-                        total_num += int(num_str)
+                        try:
+                            total_time += (
+                                float(time_str.replace(unit, ""))
+                                / scale
+                                * int(num_str)
+                            )
+                            total_num += int(num_str)
+                        except ValueError:
+                            pass  # Skip lines that don't parse correctly
                         break
+        if total_num == 0:
+            raise RuntimeError(
+                f"No kernel times found for '{name}'. "
+                f"Profiler table:\n{prof_table}"
+            )
         kernel_times.append(total_time / total_num)
 
     return tuple(kernel_times) if is_tuple else kernel_times[0]

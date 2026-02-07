@@ -68,7 +68,7 @@ fn fold[
 
     var channels_col = C * kernel_size[0] * kernel_size[1]
 
-    if input.dim(1) != channels_col:
+    if input.dim(1) != Scalar[input.linear_idx_type](channels_col):
         raise Error(
             "Input tensor channels must be equal to C * prod(kernel_size)."
         )
@@ -84,7 +84,7 @@ fn fold[
 
     var expected_blocks = height_col * width_col
 
-    if num_blocks != expected_blocks:
+    if num_blocks != Scalar[input.linear_idx_type](expected_blocks):
         raise Error(
             "Input tensor must have the same number of blocks ("
             + String(num_blocks)

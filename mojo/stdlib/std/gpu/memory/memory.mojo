@@ -1184,6 +1184,389 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             )
 
 
+@always_inline("nodebug")
+fn cp_async_bulk_tensor_shared_cluster_global_im2col[
+    dst_type: AnyType,
+    mbr_type: AnyType,
+    tensor_rank: Int,
+    /,
+    *,
+    cta_group: Int = 1,
+](
+    dst_mem: UnsafePointer[
+        mut=True, dst_type, address_space = AddressSpace.SHARED
+    ],
+    tma_descriptor: OpaquePointer[mut=False],
+    mem_bar: UnsafePointer[
+        mut=False, mbr_type, address_space = AddressSpace.SHARED
+    ],
+    coords: IndexList[tensor_rank],
+    filter_offsets: IndexList[tensor_rank - 2],
+):
+    """Initiates an asynchronous TMA load with im2col addressing for convolution.
+
+    This function performs a TMA load using im2col mode, which applies coordinate
+    transformation suitable for implicit GEMM convolution. The TMA descriptor must
+    be created with cuTensorMapEncodeIm2col.
+
+    For 2D convolution with 4D NHWC tensor:
+    - coords: (c, w, h, n) - channel, output spatial, batch
+    - filter_offsets: (offset_w, offset_h) - position within filter window
+
+    PTX instruction formats differ based on cta_group:
+    - cta_group=1: Uses SM90-style PTX (no cta_group modifier)
+      cp.async.bulk.tensor.4d.shared::cluster.global.im2col...
+    - cta_group=2: Uses SM100-style PTX with cta_group::2 (from CUTLASS)
+      cp.async.bulk.tensor.4d.im2col.cta_group::2.shared::cluster.global...
+
+    Parameters:
+        dst_type: The data type of the destination memory.
+        mbr_type: The data type of the memory barrier.
+        tensor_rank: The rank of the tensor (3, 4, or 5).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
+
+    Args:
+        dst_mem: Pointer to the destination in shared memory.
+        tma_descriptor: Pointer to the TMA im2col descriptor.
+        mem_bar: Pointer to the shared memory barrier.
+        coords: Tensor coordinates (c, w, h, n for 4D).
+        filter_offsets: Filter window offsets (offset_w, offset_h for 4D).
+    """
+    comptime assert tensor_rank in (
+        3,
+        4,
+        5,
+    ), "Im2col TMA expects 3D, 4D, or 5D tensor"
+    comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
+    comptime assert cta_group == 1 or _is_sm_100x_or_newer()
+
+    @parameter
+    if cta_group == 1:
+        # SM90-style PTX: no cta_group, no L2 hint, no Sm100MemDescDefault
+        # Format: cp.async.bulk.tensor.Nd.shared::cluster.global.im2col.mbarrier::complete_tx::bytes
+        comptime tma_asm_sm90 = String(
+            "cp.async.bulk.tensor.",
+            tensor_rank,
+            "d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes",
+        )
+
+        @parameter
+        if tensor_rank == 4:
+            inlined_assembly[
+                tma_asm_sm90 + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8};",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,h,h",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+            )
+        elif tensor_rank == 3:
+            inlined_assembly[
+                tma_asm_sm90 + " [$0], [$1, {$3, $4, $5}], [$2], {$6};",
+                NoneType,
+                constraints="r,l,r,r,r,r,h",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                UInt16(filter_offsets[0]),
+            )
+        else:  # tensor_rank == 5
+            inlined_assembly[
+                tma_asm_sm90
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], {$8, $9, $10};",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,h,h,h",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                UInt16(filter_offsets[2]),
+            )
+    else:  # cta_group == 2
+        # SM100-style PTX: cta_group::2, L2 hint, Sm100MemDescDefault, peer bit mask
+        # Format: cp.async.bulk.tensor.Nd.im2col.cta_group::2.shared::cluster.global...L2::cache_hint
+        comptime tma_asm_sm100 = String(
+            "cp.async.bulk.tensor.",
+            tensor_rank,
+            "d.im2col.cta_group::2.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint",
+        )
+
+        # Sm100MemDescDefault constant from CUTLASS
+        comptime Sm100MemDescDefault: UInt64 = 0x1000000000000000
+        # Sm100MmaPeerBitMask for mbarrier (apply to clear peer bit)
+        comptime Sm100MmaPeerBitMask: Int32 = Int32(0xFEFFFFFF)
+
+        @parameter
+        if tensor_rank == 4:
+            inlined_assembly[
+                tma_asm_sm100
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8}, $9;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,h,h,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & Sm100MmaPeerBitMask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                Sm100MemDescDefault,
+            )
+        elif tensor_rank == 3:
+            inlined_assembly[
+                tma_asm_sm100 + " [$0], [$1, {$3, $4, $5}], [$2], {$6}, $7;",
+                NoneType,
+                constraints="r,l,r,r,r,r,h,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & Sm100MmaPeerBitMask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                UInt16(filter_offsets[0]),
+                Sm100MemDescDefault,
+            )
+        else:  # tensor_rank == 5
+            inlined_assembly[
+                tma_asm_sm100
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], {$8, $9, $10},"
+                " $11;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,h,h,h,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & Sm100MmaPeerBitMask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                UInt16(filter_offsets[2]),
+                Sm100MemDescDefault,
+            )
+
+
+@always_inline("nodebug")
+fn cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
+    dst_type: AnyType,
+    mbr_type: AnyType,
+    tensor_rank: Int,
+    /,
+    *,
+    cta_group: Int = 1,
+](
+    dst_mem: UnsafePointer[
+        mut=True, dst_type, address_space = AddressSpace.SHARED
+    ],
+    tma_descriptor: OpaquePointer[mut=False],
+    mem_bar: UnsafePointer[
+        mut=False, mbr_type, address_space = AddressSpace.SHARED
+    ],
+    coords: IndexList[tensor_rank],
+    filter_offsets: IndexList[tensor_rank - 2],
+    multicast_mask: UInt16,
+):
+    """Initiates an asynchronous multicast TMA load with im2col addressing.
+
+    This combines im2col addressing with multicast, distributing the loaded
+    data to multiple CTAs in a cluster.
+
+    For 2D convolution with 4D NHWC tensor:
+    - coords: (c, w, h, n) - channel, output spatial, batch
+    - filter_offsets: (offset_w, offset_h) - position within filter window
+
+    PTX instruction formats differ based on cta_group:
+    - cta_group=1: Uses SM90-style multicast im2col PTX (no cta_group modifier)
+      cp.async.bulk.tensor.4d.shared::cluster.global.im2col...multicast::cluster
+    - cta_group=2: Uses SM100-style multicast im2col PTX with cta_group::2 (from CUTLASS)
+      cp.async.bulk.tensor.4d.im2col.cta_group::2.shared::cluster.global...multicast::cluster...
+
+    Parameters:
+        dst_type: The data type of the destination memory.
+        mbr_type: The data type of the memory barrier.
+        tensor_rank: The rank of the tensor (3, 4, or 5).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
+
+    Args:
+        dst_mem: Pointer to the destination in shared memory.
+        tma_descriptor: Pointer to the TMA im2col descriptor.
+        mem_bar: Pointer to the shared memory barrier.
+        coords: Tensor coordinates (c, w, h, n for 4D).
+        filter_offsets: Filter window offsets (offset_w, offset_h for 4D).
+        multicast_mask: Bitmask specifying target CTAs for multicast.
+    """
+    comptime assert tensor_rank in (
+        3,
+        4,
+        5,
+    ), "Im2col TMA expects 3D, 4D, or 5D tensor"
+    comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
+
+    @parameter
+    if cta_group == 1:
+        # SM90-style multicast im2col PTX: no cta_group, no L2 hint, no Sm100MemDescDefault
+        # Format: cp.async.bulk.tensor.Nd.shared::cluster.global.im2col.mbarrier::complete_tx::bytes.multicast::cluster
+        comptime tma_asm_sm90 = String(
+            "cp.async.bulk.tensor.",
+            tensor_rank,
+            "d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes.multicast::cluster",
+        )
+
+        @parameter
+        if tensor_rank == 4:
+            inlined_assembly[
+                tma_asm_sm90
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8}, $9;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,h,h,h",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                multicast_mask,
+            )
+        elif tensor_rank == 3:
+            inlined_assembly[
+                tma_asm_sm90 + " [$0], [$1, {$3, $4, $5}], [$2], {$6}, $7;",
+                NoneType,
+                constraints="r,l,r,r,r,r,h,h",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                UInt16(filter_offsets[0]),
+                multicast_mask,
+            )
+        else:  # tensor_rank == 5
+            inlined_assembly[
+                tma_asm_sm90
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], {$8, $9, $10},"
+                " $11;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,h,h,h,h",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                UInt16(filter_offsets[2]),
+                multicast_mask,
+            )
+    else:  # cta_group == 2
+        # SM100-style multicast im2col PTX: cta_group::2, L2 hint, Sm100MemDescDefault, peer bit mask
+        # Format: cp.async.bulk.tensor.Nd.im2col.cta_group::2.shared::cluster.global...multicast::cluster.L2::cache_hint
+        comptime tma_asm_sm100 = String(
+            "cp.async.bulk.tensor.",
+            tensor_rank,
+            "d.im2col.cta_group::2.shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster.L2::cache_hint",
+        )
+
+        # Sm100MemDescDefault constant from CUTLASS
+        comptime Sm100MemDescDefault: UInt64 = 0x1000000000000000
+        # Sm100MmaPeerBitMask for mbarrier (apply to clear peer bit)
+        comptime Sm100MmaPeerBitMask: Int32 = Int32(0xFEFFFFFF)
+
+        @parameter
+        if tensor_rank == 4:
+            inlined_assembly[
+                tma_asm_sm100
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8}, $9, $10;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,h,h,h,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & Sm100MmaPeerBitMask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                multicast_mask,
+                Sm100MemDescDefault,
+            )
+        elif tensor_rank == 3:
+            inlined_assembly[
+                tma_asm_sm100
+                + " [$0], [$1, {$3, $4, $5}], [$2], {$6}, $7, $8;",
+                NoneType,
+                constraints="r,l,r,r,r,r,h,h,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & Sm100MmaPeerBitMask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                UInt16(filter_offsets[0]),
+                multicast_mask,
+                Sm100MemDescDefault,
+            )
+        else:  # tensor_rank == 5
+            inlined_assembly[
+                tma_asm_sm100
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], {$8, $9, $10}, $11,"
+                " $12;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,h,h,h,h,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & Sm100MmaPeerBitMask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                UInt16(filter_offsets[0]),
+                UInt16(filter_offsets[1]),
+                UInt16(filter_offsets[2]),
+                multicast_mask,
+                Sm100MemDescDefault,
+            )
+
+
 @always_inline
 fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     dst_type: AnyType,

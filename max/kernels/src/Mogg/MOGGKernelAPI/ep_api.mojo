@@ -17,6 +17,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 
 import compiler_internal as compiler
+from comm.sync import can_enable_p2p
 from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
@@ -79,6 +80,7 @@ struct Struct_ep_init:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
+        n_nodes: Int,
         dispatch_scale_dtype: DType,
         dispatch_fmt_str: StaticString,
         //,
@@ -101,6 +103,7 @@ struct Struct_ep_init:
             n_experts: Total number of experts across all GPUs.
             max_token_per_rank: Maximum number of tokens per GPU.
             n_gpus_per_node: Number of GPUs per node.
+            n_nodes: Number of physical nodes.
             dispatch_scale_dtype: DType of the dispatch scale.
             dispatch_fmt_str: String indicating the dispatch format.
             target: Target for this kernel.
@@ -202,22 +205,55 @@ struct Struct_ep_init:
         )
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
-        # Initialize the SHMEM library for this GPU
-        shmem_init_thread(gpu_ctx, n_gpus_per_node)
+        var dispatch_send_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var dispatch_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var dispatch_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        # Allocate SHMEM buffers for dispatch phase
-        var dispatch_send_p = shmem_malloc[DType.uint8](
-            UInt(dispatch_send_size)
-        )
-        var dispatch_recv_p = shmem_malloc[DType.uint8](
-            UInt(dispatch_recv_size)
-        )
-        var dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+        var combine_send_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        # Allocate SHMEM buffers for combine phase
-        var combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
-        var combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
-        var combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+        @parameter
+        if n_nodes > 1:
+            # Initialize the SHMEM library for this GPU
+            shmem_init_thread(gpu_ctx, n_gpus_per_node)
+
+            # Allocate SHMEM buffers for dispatch phase
+            dispatch_send_p = shmem_malloc[DType.uint8](
+                UInt(dispatch_send_size)
+            )
+            dispatch_recv_p = shmem_malloc[DType.uint8](
+                UInt(dispatch_recv_size)
+            )
+            dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+
+            # Allocate SHMEM buffers for combine phase
+            combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
+            combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
+            combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+
+        else:
+            if not can_enable_p2p():
+                raise Error("P2P is not supported on this system.")
+            dispatch_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                dispatch_send_size
+            ).take_ptr()
+            dispatch_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                dispatch_recv_size
+            ).take_ptr()
+            dispatch_recv_count_p = gpu_ctx.enqueue_create_buffer[DType.uint64](
+                n_experts
+            ).take_ptr()
+
+            combine_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                combine_send_size
+            ).take_ptr()
+            combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                combine_recv_size
+            ).take_ptr()
+            combine_recv_count_p = gpu_ctx.enqueue_create_buffer[DType.uint64](
+                n_experts
+            ).take_ptr()
 
         # Initialize receive count buffers to MAX_FINITE
         # This sentinel value indicates that no data has been received yet
@@ -242,7 +278,13 @@ struct Struct_ep_init:
         dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
 
         # Store current device's rank
-        var my_rank = Int32(shmem_my_pe())
+        var my_rank: Int32
+
+        @parameter
+        if n_nodes > 1:
+            my_rank = Int32(shmem_my_pe())
+        else:
+            my_rank = Int32(gpu_ctx.id())
         my_rank_tensor[0] = my_rank
 
 

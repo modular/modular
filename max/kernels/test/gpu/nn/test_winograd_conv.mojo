@@ -486,7 +486,7 @@ fn test_winograd_conv_gpu[
     )
 
     # Run reference convolution
-    conv_gpu[input_layout, filter_layout, output_layout, dtype, dtype, dtype,](
+    conv_gpu[input_layout, filter_layout, output_layout, dtype, dtype, dtype](
         input_tensor.as_any_origin(),
         filter_tensor.as_any_origin(),
         output_ref_tensor.as_any_origin(),

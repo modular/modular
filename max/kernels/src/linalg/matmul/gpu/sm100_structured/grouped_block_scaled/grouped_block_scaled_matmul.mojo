@@ -638,9 +638,9 @@ fn grouped_block_scaled_matmul[
         config=config,
         max_groups=max_groups,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
@@ -692,7 +692,7 @@ fn grouped_block_scaled_matmul[
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                b200_smem
+                UInt32(b200_smem)
             ),
         )
     else:
@@ -723,7 +723,7 @@ fn grouped_block_scaled_matmul[
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                b200_smem
+                UInt32(b200_smem)
             ),
         )
 

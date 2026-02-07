@@ -210,7 +210,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         cache_lengths=cache_lengths_tensor,
         lookup_table=lookup_table_tensor,
         max_seq_length=seq_len,
-        max_cache_length=max_cache_len_in_batch,
+        max_cache_length=UInt32(max_cache_len_in_batch),
     )
 
     # Create and initialize golden outputs.

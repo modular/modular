@@ -44,6 +44,7 @@ BINARY_ELEMENTWISE: dict[
     mo.AndOp: mojo_ops.And,
     mo.OrOp: mojo_ops.Or,
     mo.XorOp: mojo_ops.Xor,
+    mo.PowOp: mojo_ops.Pow,
 }
 
 # Comparison binary ops: output dtype is always bool
@@ -80,6 +81,27 @@ UNARY_ELEMENTWISE: dict[
     mo.NotOp: mojo_ops.Not,
 }
 
+# Reduce ops: reduce along an axis, output shape has reduced dim = 1
+REDUCE: dict[
+    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
+] = {
+    mo.ReduceMaxOp: mojo_ops.ReduceMax,
+    mo.ReduceMinOp: mojo_ops.ReduceMin,
+    mo.ReduceAddOp: mojo_ops.ReduceAdd,
+    mo.MeanOp: mojo_ops.Mean,
+}
+
+# Unary mixed-dtype ops: output dtype differs from input dtype
+# IsNan, IsInf: float input -> bool output
+# Cast: any dtype input -> any dtype output
+UNARY_MIXED: dict[
+    type[_core.Operation], Callable[[Buffer, Buffer, int], None]
+] = {
+    mo.CastOp: mojo_ops.Cast,
+    mo.IsNanOp: mojo_ops.IsNan,
+    mo.IsInfOp: mojo_ops.IsInf,
+}
+
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
@@ -87,7 +109,9 @@ from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 __all__ = [
     "BINARY_ELEMENTWISE",
     "BINARY_ELEMENTWISE_COMPARISON",
+    "REDUCE",
     "UNARY_ELEMENTWISE",
+    "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "lookup_handler",
     "register_op_handler",

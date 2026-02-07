@@ -25,8 +25,6 @@ from .model_config import ClipConfig
 
 
 class ClipModel(ComponentModel):
-    config_name = ClipConfig.config_name
-
     def __init__(
         self,
         config: dict[str, Any],

@@ -1,7 +1,7 @@
-# CLAUDE.md
+# Development Guidelines
 
-This file provides guidance to Claude Code (claude.ai/code) when working with
-code in this repository.
+This file provides guidelines for AI coding assistants such as Claude Code when
+working with code in this repository.
 
 ## Repository Overview
 
@@ -33,7 +33,7 @@ All builds use the `./bazelw` wrapper from the repository root:
 
 # Find targets
 ./bazelw query '//max/...'
-./bazelw query 'tests(//...)' 
+./bazelw query 'tests(//...)'
 ```
 
 ### Pixi Environment Management

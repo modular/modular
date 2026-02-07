@@ -26,7 +26,7 @@ fn arange(tensor: LayoutTensor[mut=True, ...]):
 
         @parameter
         for j in range(tensor.shape[1]()):
-            tensor[i, j] = i + j
+            tensor[i, j] = Scalar[tensor.dtype](i + j)
 
 
 fn load_and_mma_16x8x32[

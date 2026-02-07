@@ -14,7 +14,7 @@
 """Simple offline pixel generation example using diffusion models.
 
 This module demonstrates end-to-end pixel generation using:
-- PixelGenerationRequest: Create generation requests with prompts
+- OpenResponsesRequest: Create generation requests with prompts
 - PixelGenerationTokenizer: Tokenize prompts and prepare model context
 - PixelGenerationPipeline: Execute the diffusion model to generate pixels
 
@@ -28,15 +28,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import os
+from io import BytesIO
 
-import numpy as np
 from max.driver import DeviceSpec
 from max.interfaces import (
     PixelGenerationInputs,
-    PixelGenerationRequest,
     RequestID,
 )
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
+from max.interfaces.request import OpenResponsesRequest
+from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.flux1.pipeline_flux import (
     FluxPipeline,
@@ -130,27 +136,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def save_image(pixel_data: np.ndarray, output_path: str) -> None:
-    """Save generated pixel data as an image file.
+def save_image(image_data: str, output_path: str) -> None:
+    """Save base64-encoded image data to a file.
 
     Args:
-        pixel_data: Numpy array of shape (H, W, C) with values in [0, 1]
+        image_data: Base64-encoded image data string
         output_path: Path where the image should be saved
+
+    Raises:
+        ImportError: If PIL is not available
     """
     try:
         from PIL import Image
 
-        # Convert from float [0, 1] to uint8 [0, 255]
-        pixel_data = (pixel_data * 255).clip(0, 255).astype(np.uint8)
-
-        # Create and save image
-        image = Image.fromarray(pixel_data)
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(BytesIO(image_bytes))
         image.save(output_path)
         print(f"Image saved to: {output_path}")
     except ImportError:
-        print("WARNING: PIL not available, saving as numpy array instead")
-        np.save(output_path.replace(".png", ".npy"), pixel_data)
-        print(f"Pixel data saved to: {output_path.replace('.png', '.npy')}")
+        print("WARNING: PIL not available, cannot save image")
+        print(f"Base64 data length: {len(image_data)} chars")
 
 
 async def generate_image(args: argparse.Namespace) -> None:
@@ -188,18 +193,22 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     print(f"Generating image for prompt: '{args.prompt}'")
 
-    # Step 4: Create a PixelGenerationRequest
-    request = PixelGenerationRequest(
-        request_id=RequestID(),
-        model_name=args.model,
-        prompt=args.prompt,
-        negative_prompt=args.negative_prompt,
-        height=args.height,
-        width=args.width,
-        num_inference_steps=args.num_inference_steps,
-        guidance_scale=args.guidance_scale,
+    # Step 4: Create an OpenResponsesRequest
+    body = OpenResponsesRequestBody(
+        model=args.model,
+        input=args.prompt,
         seed=args.seed,
+        provider_options=ProviderOptions(
+            image=ImageProviderOptions(
+                negative_prompt=args.negative_prompt,
+                height=args.height,
+                width=args.width,
+                steps=args.num_inference_steps,
+                guidance_scale=args.guidance_scale,
+            )
+        ),
     )
+    request = OpenResponsesRequest(request_id=RequestID(), body=body)
 
     print(
         f"Parameters: steps={args.num_inference_steps}, guidance={args.guidance_scale}"
@@ -234,17 +243,29 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     print("Generation complete!")
 
-    # Step 9: Post-process the pixel data
-    # The tokenizer's postprocess method converts from model output format
-    # (NCHW, [-1, 1]) to display format (NHWC, [0, 1])
-    pixel_data = await tokenizer.postprocess(output.pixel_data)
+    # Step 9: Extract and save images from OutputImageContent
+    # The output now contains a list of OutputImageContent objects with base64-encoded images
+    if not output.output:
+        print("ERROR: No images generated")
+        return
 
-    # Step 10: Save the image
-    # Take the first image if multiple were generated
-    if pixel_data.shape[0] > 0:
-        save_image(pixel_data[0], args.output)
-    else:
-        print("ERROR: No pixel data generated")
+    # Save each generated image
+    for idx, image_content in enumerate(output.output):
+        # Determine output filename
+        if len(output.output) > 1:
+            # Multiple images: add index to filename
+            base_name, ext = os.path.splitext(args.output)
+            output_path = f"{base_name}_{idx}{ext}"
+        else:
+            output_path = args.output
+
+        # Save the image
+        if image_content.image_data:
+            save_image(image_content.image_data, output_path)
+        elif image_content.image_url:
+            print(f"Image available at URL: {image_content.image_url}")
+        else:
+            print("ERROR: No image data or URL in output")
 
 
 def main(argv: list[str] | None = None) -> int:

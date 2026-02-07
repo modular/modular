@@ -108,7 +108,7 @@ fn ep_dispatch_async_kernel_api[
     n_nodes: Int,
     target: StaticString,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     atomic_counters: LayoutTensor[DType.int32, ...],
     input_tokens: LayoutTensor,
@@ -395,7 +395,7 @@ fn ep_fused_dispatch_kernel_api[
     fused_shared_expert: Bool,
     target: StaticString,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     token_handler: token_fmt_type,
     row_offsets: LayoutTensor[DType.uint32, ...],
@@ -572,7 +572,7 @@ fn ep_combine_async_kernel_api[
     n_nodes: Int,
     target: StaticString,
     fused_shared_expert: Bool = False,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     atomic_counters: LayoutTensor[DType.int32, ...],
     input_tokens: LayoutTensor[combine_dtype, ...],
@@ -676,17 +676,20 @@ fn ep_combine_async_kernel_api[
         task_id=get_safe_task_id(context),
     ):
         var func = gpu_ctx.compile_function[combine_async, combine_async]()
-        var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
-        # Don't initialize the module repeatedly
-        if not Int(global_cache_lookup(cached_module_key)):
-            shmem_module_init(func)
-            global_cache_insert(
-                cached_module_key,
-                UnsafePointer[NoneType, MutExternalOrigin](
-                    unsafe_from_address=1
-                ),
-            )
+        @parameter
+        if use_shmem:
+            var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    UnsafePointer[NoneType, MutExternalOrigin](
+                        unsafe_from_address=1
+                    ),
+                )
 
         var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
@@ -865,7 +868,7 @@ fn ep_fused_combine_kernel_api[
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
     fused_shared_expert: Bool = False,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     output_tokens: LayoutTensor[combine_dtype, ...],
     atomic_counters: LayoutTensor[DType.int32, ...],

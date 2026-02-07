@@ -133,7 +133,7 @@ fn mac_loop[
         sema.wait(end_iter)
         if global_r < M and global_c < N:
             C[c_offset] += accum
-    sema.release(start_iter)
+    sema.release(Int32(start_iter))
 
 
 fn first_wave_kernel[

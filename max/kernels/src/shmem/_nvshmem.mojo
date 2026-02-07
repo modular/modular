@@ -37,8 +37,7 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
-struct NVSHMEMIVersion:
+struct NVSHMEMIVersion(RegisterType):
     var major: c_int
     var minor: c_int
     var patch: c_int

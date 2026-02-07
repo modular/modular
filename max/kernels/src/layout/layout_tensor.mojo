@@ -8312,6 +8312,27 @@ struct LayoutTensorIter[
             address_space = Self.address_space,
             origin = Self.origin,
         ],
+        bound: Int,
+    ):
+        """Initialize an iterator with a pointer and `Int` bound.
+
+        Creates an iterator for a memory region with the specified bounds and
+        stride.
+
+        Args:
+            ptr: Pointer to the beginning of the memory region.
+            bound: Upper bound of the memory region.
+        """
+        return Self(ptr, Self.linear_uint_type(bound))
+
+    @always_inline
+    fn __init__(
+        out self,
+        ptr: LegacyUnsafePointer[
+            Scalar[Self.dtype],
+            address_space = Self.address_space,
+            origin = Self.origin,
+        ],
         bound: Self.linear_uint_type,
         runtime_layout: RuntimeLayout[Self.layout, ...],
         stride: Self.linear_uint_type = Self.linear_uint_type(

@@ -57,7 +57,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
         for r in range(4):
             for c in range(4):
-                if sram_tensor[r, c] != r * 16 + Int(col_offset) + c:
+                if sram_tensor[r, c] != Float32(r * 16 + Int(col_offset) + c):
                     flag[] = False
 
     comptime kernel = copy_to_sram_test_kernel[tensor_layout]

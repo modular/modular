@@ -111,14 +111,14 @@ fn TopKMaskLogitsKernel[
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
-    logits_origin: ImmutOrigin,
     LogitsLayoutType: TensorLayout,
-    masked_logits_origin: MutOrigin,
+    logits_origin: ImmutOrigin,
     MaskedLogitsLayoutType: TensorLayout,
+    masked_logits_origin: MutOrigin,
 ](
-    logits: TileTensor[dtype, logits_origin, LogitsLayoutType],
+    logits: TileTensor[dtype, LogitsLayoutType, logits_origin],
     masked_logits: TileTensor[
-        dtype, masked_logits_origin, MaskedLogitsLayoutType
+        dtype, MaskedLogitsLayoutType, masked_logits_origin
     ],
     top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
@@ -270,7 +270,7 @@ fn topk_mask_logits[
     masked_logits: TileTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
     ] = None,
 ) raises:
     comptime assert logits.rank == 2, "logits rank must be 2"
@@ -303,10 +303,10 @@ fn topk_mask_logits[
             vec_size,
             dtype,
             out_idx_type,
-            logits_origin = ImmutOrigin(logits.origin),
             LogitsLayoutType = logits.LayoutType,
-            masked_logits_origin = masked_logits.origin,
+            logits_origin = ImmutOrigin(logits.origin),
             MaskedLogitsLayoutType = masked_logits.LayoutType,
+            masked_logits_origin = masked_logits.origin,
         ]
         ctx.enqueue_function[kernel, kernel](
             logits.as_immut(),
@@ -580,18 +580,18 @@ fn _block_reduce_value_count[
 
 
 fn TopKSamplingFromProbKernel[
-    probs_origin: ImmutOrigin,
     ProbsLayoutType: TensorLayout,
-    output_origin: MutOrigin,
+    probs_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
     block_size: Int,
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
     deterministic: Bool,
 ](
-    probs: TileTensor[dtype, probs_origin, ProbsLayoutType],
-    output: TileTensor[out_idx_type, output_origin, OutputLayoutType],
+    probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
+    output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
     indices: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
@@ -795,10 +795,10 @@ fn topk_sampling_from_prob[
     rng_seed: UInt64 = 0,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        TileTensor[out_idx_type, MutExternalOrigin, IndicesLayoutType]
+        TileTensor[out_idx_type, IndicesLayoutType, MutExternalOrigin]
     ] = None,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
     ] = None,
 ) raises:
     """Top-K sampling from probability distribution.
@@ -851,10 +851,10 @@ fn topk_sampling_from_prob[
     @parameter
     fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
         comptime kernel = TopKSamplingFromProbKernel[
-            ImmutOrigin(probs.origin),
             probs.LayoutType,
-            output.origin,
+            ImmutOrigin(probs.origin),
             output.LayoutType,
+            output.origin,
             block_size,
             vec_size,
             dtype,
@@ -895,14 +895,14 @@ fn TopKSoftmaxSampleKernel[
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
-    logits_origin: ImmutOrigin,
     LogitsLayoutType: TensorLayout,
-    sampled_origin: MutOrigin,
+    logits_origin: ImmutOrigin,
     SampledLayoutType: TensorLayout,
+    sampled_origin: MutOrigin,
 ](
-    logits: TileTensor[dtype, logits_origin, LogitsLayoutType],
+    logits: TileTensor[dtype, LogitsLayoutType, logits_origin],
     sampled_indices: TileTensor[
-        out_idx_type, sampled_origin, SampledLayoutType
+        out_idx_type, SampledLayoutType, sampled_origin
     ],
     top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
@@ -1121,13 +1121,13 @@ fn topk_softmax_sample[
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, MutExternalOrigin, TemperatureLayoutType]
+        TileTensor[DType.float32, TemperatureLayoutType, MutExternalOrigin]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, MutExternalOrigin, SeedLayoutType]
+        TileTensor[DType.uint64, SeedLayoutType, MutExternalOrigin]
     ] = None,
 ) raises:
     """Samples token indices from top-K logits using softmax probabilities.
@@ -1209,10 +1209,10 @@ fn topk_softmax_sample[
             vec_size,
             dtype,
             out_idx_type,
-            logits_origin = ImmutOrigin(logits.origin),
             LogitsLayoutType = logits.LayoutType,
-            sampled_origin = sampled_indices.origin,
+            logits_origin = ImmutOrigin(logits.origin),
             SampledLayoutType = sampled_indices.LayoutType,
+            sampled_origin = sampled_indices.origin,
         ]
         ctx.enqueue_function[kernel, kernel](
             logits.as_immut(),

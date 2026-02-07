@@ -147,7 +147,9 @@ fn repeat_interleave_shape[
     comptime assert repeats.rank == 1
 
     var repeats_size = repeats.dim[0]()
-    if repeats_size != 1 and repeats_size != Int(input.dim(axis)):
+    if repeats_size != 1 and repeats_size != Scalar[repeats.linear_idx_type](
+        Int(input.dim(axis))
+    ):
         raise Error(
             "repeat_interleave: repeats must be size 1 or equal to "
             "the size of input[axis]"
