@@ -22,13 +22,13 @@ from typing import (
     Protocol,
     TypeAlias,
     TypeGuard,
-    TypeVar,
     overload,
     runtime_checkable,
 )
 
 from max.driver import Buffer
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
+from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
 
