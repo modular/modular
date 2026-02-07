@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import align_up
 from sys import (
     env_get_bool,
@@ -35,8 +35,6 @@ from internal_utils._utils import (
     ValOrDim,
     dynamic,
     init_vector_launch,
-    initialize,
-    random,
     static,
 )
 from linalg.matmul.gpu import _matmul_gpu
@@ -143,32 +141,8 @@ fn bench_matmul[
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[c_dtype](cache_c)
 
-    # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_a)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_b)
-
-    # TODO: remove init_on_gpu flag and the loading on CPU
-    comptime init_on_gpu = True
-
-    @parameter
-    if not init_on_gpu:
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cache_a)
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cache_b)
-
-        @parameter
-        if dtype.is_float8():
-            random(a_host)
-            random(b_host)
-        else:
-            initialize(a_host, init_type)
-            initialize(b_host, init_type)
-
-        ctx.enqueue_copy(buffer_a, a_host_ptr)
-        ctx.enqueue_copy(buffer_b, b_host_ptr)
-        ctx.synchronize()
-    else:
-        init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
-        init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
+    init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
+    init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
 
     @parameter
     @__copy_capture(cache_a, cache_b, cache_c, stride_a, stride_b, stride_c)
@@ -211,7 +185,7 @@ fn bench_matmul[
                 var y = val * x
                 return y
 
-            comptime optional_lambda_fn = OptionalReg[
+            comptime optional_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords_prod) if epilogue else None
 
@@ -269,10 +243,6 @@ fn bench_matmul[
         # TODO: Pick relevant benchmetric
         [flops],
     )
-
-    # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
 
     # Consume device buffers
     _ = buffer_a^

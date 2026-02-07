@@ -1158,7 +1158,7 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn load_a[stage: Int, which: Int, *, k: Int](self):
+    fn load_a[stage: Int, which: Int](self, *, k: Int):
         """Load A[stage][which] from global to LDS using all 8 warps."""
         self.loader_a.load_tile(
             self.a_load_tiles[stage][which],
@@ -1167,7 +1167,7 @@ struct TileBuffers[
         )
 
     @always_inline
-    fn load_b[stage: Int, which: Int, *, k: Int](self):
+    fn load_b[stage: Int, which: Int](self, *, k: Int):
         """Load B[stage][which] from global to LDS using all 8 warps."""
         self.loader_b.load_tile(
             self.b_load_tiles[stage][which],
@@ -1235,8 +1235,9 @@ struct TileBuffers[
 
     @always_inline
     fn load_a_as_group[
-        stage: Int, target_group: Int, *, k: Int
-    ](self, caller_group: Int):
+        stage: Int,
+        target_group: Int,
+    ](self, caller_group: Int, *, k: Int):
         """Load A[stage][target_group] from global to LDS using 4 warps."""
         if caller_group != target_group:
             return
@@ -1246,8 +1247,9 @@ struct TileBuffers[
 
     @always_inline
     fn load_b_as_group[
-        stage: Int, which: Int, *, k: Int
-    ](self, caller_group: Int, loading_group: Int):
+        stage: Int,
+        which: Int,
+    ](self, caller_group: Int, loading_group: Int, *, k: Int):
         """Load B[stage][which] from global to LDS using 4 warps."""
         if caller_group != loading_group:
             return
@@ -1629,20 +1631,18 @@ struct AMDPingPongMatmul[
             # Warp group 0 and 1 alternate loading while the other computes.
             # ================================================================
 
-            @parameter
             for k in range(0, K, BK * 2):
                 # K offsets for this iteration
-                comptime k0 = k  # Stage 0 K offset
-                comptime k1 = k + BK  # Stage 1 K offset
-                comptime k_next = k + 2 * BK  # Next iteration's stage 0
+                var k0 = k  # Stage 0 K offset
+                var k1 = k + BK  # Stage 1 K offset
+                var k_next = k + 2 * BK  # Next iteration's stage 0
 
-                @parameter
                 if k == 0:
                     # Prologue: load stage 0
-                    buffers.load_a_as_group[0, 0, k=k0](warp_id_m)
-                    buffers.load_a_as_group[0, 1, k=k0](warp_id_m)
-                    buffers.load_b_as_group[0, 0, k=k0](warp_id_m, 0)
-                    buffers.load_b_as_group[0, 1, k=k0](warp_id_m, 1)
+                    buffers.load_a_as_group[0, 0](warp_id_m, k=k0)
+                    buffers.load_a_as_group[0, 1](warp_id_m, k=k0)
+                    buffers.load_b_as_group[0, 0](warp_id_m, 0, k=k0)
+                    buffers.load_b_as_group[0, 1](warp_id_m, 1, k=k0)
                     s_waitcnt[vmcnt=0]()
                     s_barrier()
                     if warp_id_m == 1:
@@ -1650,10 +1650,10 @@ struct AMDPingPongMatmul[
 
                 # Load stage 1
                 s_barrier()
-                buffers.load_a_as_group[1, 0, k=k1](warp_id_m)
-                buffers.load_a_as_group[1, 1, k=k1](warp_id_m)
-                buffers.load_b_as_group[1, 0, k=k1](warp_id_m, 0)
-                buffers.load_b_as_group[1, 1, k=k1](warp_id_m, 1)
+                buffers.load_a_as_group[1, 0](warp_id_m, k=k1)
+                buffers.load_a_as_group[1, 1](warp_id_m, k=k1)
+                buffers.load_b_as_group[1, 0](warp_id_m, 0, k=k1)
+                buffers.load_b_as_group[1, 1](warp_id_m, 1, k=k1)
                 s_waitcnt[vmcnt=0]()
 
                 # Compute stage 0
@@ -1661,21 +1661,19 @@ struct AMDPingPongMatmul[
                 compute_stage[0]()
 
                 # Prefetch A for next iteration (overlaps with compute[1])
-                @parameter
                 if k < K - BK * 2:
-                    buffers.load_a_as_group[0, 0, k=k_next](warp_id_m)
-                    buffers.load_a_as_group[0, 1, k=k_next](warp_id_m)
+                    buffers.load_a_as_group[0, 0](warp_id_m, k=k_next)
+                    buffers.load_a_as_group[0, 1](warp_id_m, k=k_next)
 
                 # Compute stage 1
                 s_barrier()
                 compute_stage[1]()
 
                 # Prefetch B for next iteration
-                @parameter
                 if k < K - BK * 2:
                     s_barrier()
-                    buffers.load_b_as_group[0, 0, k=k_next](warp_id_m, 0)
-                    buffers.load_b_as_group[0, 1, k=k_next](warp_id_m, 1)
+                    buffers.load_b_as_group[0, 0](warp_id_m, 0, k=k_next)
+                    buffers.load_b_as_group[0, 1](warp_id_m, 1, k=k_next)
                     s_waitcnt[vmcnt=0]()
 
             # Epilogue: rebalance warp stagger
@@ -1695,10 +1693,10 @@ struct AMDPingPongMatmul[
 
             # === PROLOGUE ===
             # Stage 0: all 4 tiles at k=0
-            buffers.load_b[0, 0, k=0]()
-            buffers.load_a[0, 0, k=0]()
-            buffers.load_b[0, 1, k=0]()
-            buffers.load_a[0, 1, k=0]()
+            buffers.load_b[0, 0](k=0)
+            buffers.load_a[0, 0](k=0)
+            buffers.load_b[0, 1](k=0)
+            buffers.load_a[0, 1](k=0)
 
             # Warp staggering
             if warp_id_m == 1:
@@ -1708,9 +1706,9 @@ struct AMDPingPongMatmul[
             s_barrier()
 
             # Stage 1: 3 tiles at k=0 (A[1,1] loaded in main loop)
-            buffers.load_a[1, 0, k=0]()
-            buffers.load_b[1, 0, k=0]()
-            buffers.load_b[1, 1, k=0]()
+            buffers.load_a[1, 0](k=0)
+            buffers.load_b[1, 0](k=0)
+            buffers.load_b[1, 1](k=0)
 
             s_waitcnt[vmcnt=6]()
             s_barrier()
@@ -1718,21 +1716,20 @@ struct AMDPingPongMatmul[
             # === MAIN LOOP ===
             # Each iteration processes 2*BK elements (one full ping-pong cycle).
             # Loop variable k is the K offset for stage 0 prefetch.
-            @parameter
             for k in range(BK, K - BK, 2 * BK):
                 # K offsets: stage 1 completion matches prologue/previous prefetch,
                 # stage 0 prefetch+completion at same K, stage 1 prefetch for next iter
-                comptime k_complete_1 = k - BK  # Matches stage 1's other tiles
-                comptime k_prefetch_0 = k  # All 4 stage 0 tiles at same K
-                comptime k_complete_0 = k  # Matches stage 0's prefetch
-                comptime k_prefetch_1 = k + BK  # All 4 stage 1 tiles at same K
+                var k_complete_1 = k - BK  # Matches stage 1's other tiles
+                var k_prefetch_0 = k  # All 4 stage 0 tiles at same K
+                var k_complete_0 = k  # Matches stage 0's prefetch
+                var k_prefetch_1 = k + BK  # All 4 stage 1 tiles at same K
 
                 # --- First half: compute stage 0, prefetch stage 0 ---
                 mma_op.load_b[0](buffers.b_mma_tiles[0][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[0][0])
-                buffers.load_a[
-                    1, 1, k=k_complete_1
-                ]()  # Complete stage 1 (4th tile)
+                buffers.load_a[1, 1](
+                    k=k_complete_1
+                )  # Complete stage 1 (4th tile)
                 s_waitcnt[lgkmcnt=lgkm_partial]()
                 s_barrier()
 
@@ -1744,7 +1741,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[0][1])
-                buffers.load_a[0, 0, k=k_prefetch_0]()
+                buffers.load_a[0, 0](k=k_prefetch_0)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1754,7 +1751,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[0][1])
-                buffers.load_b[0, 0, k=k_prefetch_0]()
+                buffers.load_b[0, 0](k=k_prefetch_0)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1764,7 +1761,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
                 schedule_barrier()
 
-                buffers.load_b[0, 1, k=k_prefetch_0]()
+                buffers.load_b[0, 1](k=k_prefetch_0)
                 s_waitcnt[vmcnt=6]()
                 s_barrier()
 
@@ -1776,9 +1773,9 @@ struct AMDPingPongMatmul[
                 # --- Second half: compute stage 1, prefetch stage 1 ---
                 mma_op.load_b[0](buffers.b_mma_tiles[1][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[1][0])
-                buffers.load_a[
-                    0, 1, k=k_complete_0
-                ]()  # Complete stage 0 (4th tile)
+                buffers.load_a[0, 1](
+                    k=k_complete_0
+                )  # Complete stage 0 (4th tile)
                 s_waitcnt[lgkmcnt=lgkm_partial]()
                 s_barrier()
 
@@ -1790,7 +1787,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[1][1])
-                buffers.load_a[1, 0, k=k_prefetch_1]()
+                buffers.load_a[1, 0](k=k_prefetch_1)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1800,7 +1797,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[1][1])
-                buffers.load_b[1, 0, k=k_prefetch_1]()
+                buffers.load_b[1, 0](k=k_prefetch_1)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1810,7 +1807,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
                 schedule_barrier()
 
-                buffers.load_b[1, 1, k=k_prefetch_1]()
+                buffers.load_b[1, 1](k=k_prefetch_1)
                 s_waitcnt[vmcnt=6]()
                 s_barrier()
 
@@ -1823,7 +1820,7 @@ struct AMDPingPongMatmul[
             # Process final stage 0, then final stage 1
             mma_op.load_b[0](buffers.b_mma_tiles[0][0])
             mma_op.load_a[0](buffers.a_mma_tiles[0][0])
-            buffers.load_a[1, 1, k = K - 2 * BK]()  # Complete stage 1
+            buffers.load_a[1, 1](k=K - 2 * BK)  # Complete stage 1
             s_barrier()
 
             s_waitcnt[lgkmcnt=0]()
@@ -1907,10 +1904,10 @@ struct AMDPingPongMatmul[
 
             # === PROLOGUE ===
             # Stage 0: all 4 tiles at k=0
-            buffers.load_b[0, 0, k=0]()
-            buffers.load_a[0, 0, k=0]()
-            buffers.load_b[0, 1, k=0]()
-            buffers.load_a[0, 1, k=0]()
+            buffers.load_b[0, 0](k=0)
+            buffers.load_a[0, 0](k=0)
+            buffers.load_b[0, 1](k=0)
+            buffers.load_a[0, 1](k=0)
 
             # Warp staggering
             if warp_id_m == 1:
@@ -1921,9 +1918,9 @@ struct AMDPingPongMatmul[
             s_barrier()
 
             # Stage 1: 3 tiles at k=BK (A[1,1] loaded in main loop)
-            buffers.load_b[1, 0, k=BK]()
-            buffers.load_a[1, 0, k=BK]()
-            buffers.load_b[1, 1, k=BK]()
+            buffers.load_b[1, 0](k=BK)
+            buffers.load_a[1, 0](k=BK)
+            buffers.load_b[1, 1](k=BK)
 
             # HipKittens-style: vmcnt=6 after 7 loads
             s_waitcnt[vmcnt=6]()
@@ -1932,20 +1929,19 @@ struct AMDPingPongMatmul[
             # === MAIN LOOP ===
             # Each iteration processes 2*BK elements (one full ping-pong cycle).
             # Loop variable k is the K offset for stage 0 prefetch.
-            @parameter
             for k in range(BK * 2, K, BK * 2):
                 # K offsets: stage 1 completion matches prologue/previous prefetch,
                 # stage 0 prefetch for current iter, stage 1 prefetch for next iter
-                comptime k_complete_1 = k - BK  # Matches stage 1's other tiles
-                comptime k_prefetch_0 = k  # All 4 stage 0 tiles at same K
-                comptime k_prefetch_1 = k + BK  # All 4 stage 1 tiles at same K
+                var k_complete_1 = k - BK  # Matches stage 1's other tiles
+                var k_prefetch_0 = k  # All 4 stage 0 tiles at same K
+                var k_prefetch_1 = k + BK  # All 4 stage 1 tiles at same K
 
                 # --- First half: compute stage 0, prefetch stage 0 ---
                 mma_op.load_b[0](buffers.b_mma_tiles[0][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[0][0])
-                buffers.load_a[
-                    1, 1, k=k_complete_1
-                ]()  # Complete stage 1 (4th tile)
+                buffers.load_a[1, 1](
+                    k=k_complete_1
+                )  # Complete stage 1 (4th tile)
                 s_waitcnt[lgkmcnt=8]()
                 s_barrier()
 
@@ -1957,7 +1953,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[0][1])
-                buffers.load_b[0, 0, k=k_prefetch_0]()
+                buffers.load_b[0, 0](k=k_prefetch_0)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1967,7 +1963,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[0][1])
-                buffers.load_a[0, 0, k=k_prefetch_0]()
+                buffers.load_a[0, 0](k=k_prefetch_0)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1978,7 +1974,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[0](buffers.b_mma_tiles[1][0])
-                buffers.load_b[0, 1, k=k_prefetch_0]()
+                buffers.load_b[0, 1](k=k_prefetch_0)
                 s_waitcnt[vmcnt=6]()
                 s_barrier()
 
@@ -1990,7 +1986,7 @@ struct AMDPingPongMatmul[
                 # --- Second half: compute stage 1, prefetch stage 1 ---
                 mma_op.load_a[0](buffers.a_mma_tiles[1][0])
                 # Complete stage 0 (4th tile)
-                buffers.load_a[0, 1, k=k_prefetch_0]()
+                buffers.load_a[0, 1](k=k_prefetch_0)
                 s_waitcnt[lgkmcnt=8]()
                 s_barrier()
 
@@ -2002,7 +1998,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[1][1])
-                buffers.load_b[1, 0, k=k_prefetch_1]()
+                buffers.load_b[1, 0](k=k_prefetch_1)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -2012,7 +2008,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[1][1])
-                buffers.load_a[1, 0, k=k_prefetch_1]()
+                buffers.load_a[1, 0](k=k_prefetch_1)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -2022,7 +2018,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
                 schedule_barrier()
 
-                buffers.load_b[1, 1, k=k_prefetch_1]()
+                buffers.load_b[1, 1](k=k_prefetch_1)
                 s_waitcnt[vmcnt=6]()
                 s_barrier()
 
@@ -2036,7 +2032,7 @@ struct AMDPingPongMatmul[
             mma_op.load_b[0](buffers.b_mma_tiles[0][0])
             mma_op.load_a[0](buffers.a_mma_tiles[0][0])
             # Complete stage 1
-            buffers.load_a[1, 1, k = K - BK]()
+            buffers.load_a[1, 1](k=K - BK)
             s_barrier()
             s_waitcnt[lgkmcnt=0]()
 
