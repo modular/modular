@@ -845,7 +845,7 @@ PIPELINES = {
     ),
     "nvidia/Llama-3.1-8B-Instruct-NVFP4": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["nvfp4-support", "b200"],
+        tags=["nvidia-only", "no-h100"],
         run=_make_pipeline_runner(
             pipeline="nvidia/Llama-3.1-8B-Instruct-NVFP4",
             encoding="float4_e2m1fnx2",
