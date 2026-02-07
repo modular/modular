@@ -419,3 +419,40 @@ kgen.func @lower_args_with_arg_metadata(
 } {
     kgen.return %arg1 : !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
 }
+
+//===----------------------------------------------------------------------===//
+// `pop.external_call` pack expansion
+//===----------------------------------------------------------------------===//
+
+// CHECK-LABEL: @external_call_pack_expand
+kgen.func @external_call_pack_expand(%a: !pop.scalar<si32>, %b: !pop.scalar<f32>) {
+  // CHECK: [[PACK:%.*]] = kgen.pack.create
+  %pack = kgen.pack.create(%a, %b) : !kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>
+  // CHECK: [[V0:%.*]] = kgen.pack.extract [[PACK]][0]
+  // CHECK: [[V1:%.*]] = kgen.pack.extract [[PACK]][1]
+  // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!pop.scalar<si32>, !pop.scalar<f32>) -> ()
+  pop.external_call @my_extern(%pack)
+    : (!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>) -> ()
+  kgen.return
+}
+
+// Nested packs are recursively flattened. This occurs in practice when Mojo
+// variadic args are forwarded to a C variadic function (e.g. fcntl(fd, cmd, *args)).
+// CHECK-LABEL: @external_call_nested_pack
+kgen.func @external_call_nested_pack(
+    %a: !pop.scalar<si32>, %b: !pop.scalar<f32>, %c: !pop.scalar<f64>) {
+  %inner = kgen.pack.create(%a, %b) : !kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>
+  %outer = kgen.pack.create(%inner, %c)
+    : !kgen.pack<[!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>, !pop.scalar<f64>]>
+  // The outer pack is expanded, and the inner pack extracted from it is
+  // recursively expanded as well, yielding three individual arguments.
+  // CHECK: [[INNER:%.*]] = kgen.pack.extract %{{.*}}[0]
+  // CHECK: [[A:%.*]] = kgen.pack.extract [[INNER]][0]
+  // CHECK: [[B:%.*]] = kgen.pack.extract [[INNER]][1]
+  // CHECK: [[C:%.*]] = kgen.pack.extract %{{.*}}[1]
+  // CHECK: pop.external_call @my_extern([[A]], [[B]], [[C]])
+  // CHECK-SAME: (!pop.scalar<si32>, !pop.scalar<f32>, !pop.scalar<f64>) -> ()
+  pop.external_call @my_extern(%outer)
+    : (!kgen.pack<[!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>, !pop.scalar<f64>]>) -> ()
+  kgen.return
+}

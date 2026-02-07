@@ -417,17 +417,23 @@ void CallsiteTransform::applyValueTransform(unsigned operandIndex,
   callOp->setOperand(operandIndex, newArg);
 }
 
+/// Emit PackExtractOp for each element of a pack-typed value.
+static SmallVector<Value> emitPackExtracts(OpBuilder &builder, Location loc,
+                                           Value pack, ArrayRef<Type> types) {
+  SmallVector<Value> results;
+  for (auto [i, type] : llvm::enumerate(types))
+    results.push_back(PackExtractOp::create(
+        builder, loc, type, pack, IntegerAttr::get(builder.getIndexType(), i)));
+  return results;
+}
+
 void CallsiteTransform::applyPackTransform(unsigned operandIndex,
                                            ArrayRef<Type> types,
                                            PackType type) {
   b.setInsertionPoint(callOp);
   Value operand = callOp->getOperands()[operandIndex];
-  SmallVector<Value> newArgs;
-  unsigned curr = 0;
-  for (auto member : types) {
-    newArgs.push_back(KGEN::PackExtractOp::create(
-        b, member, operand, IntegerAttr::get(b.getIndexType(), curr++)));
-  }
+  SmallVector<Value> newArgs =
+      emitPackExtracts(b, operand.getLoc(), operand, types);
   SmallVector<Value> newOperands;
   for (unsigned i = 0; i < operandIndex; ++i)
     newOperands.push_back(callOp->getOperand(i));
@@ -775,6 +781,60 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
   return success(!transform.hasError);
 }
 
+/// Expand pack operands on `pop.external_call` into individual elements.
+///
+/// Before this, an `external_call` taking a pack looks like:
+///   pop.external_call @foo(%pack) : (!kgen.pack<[i32, f32]>) -> ()
+///
+/// After expansion:
+///   %0 = kgen.pack.extract %pack[0] : <[i32, f32]>
+///   %1 = kgen.pack.extract %pack[1] : <[i32, f32]>
+///   pop.external_call @foo(%0, %1) : (i32, f32) -> ()
+///
+/// Recursively flatten a pack-typed value into individual scalar operands.
+/// Nested packs (e.g. from variadic C calls like `printf(pack(fmt,
+/// pack(*args))`) are fully expanded so that every operand passed to the
+/// external call is a non-pack value.
+static void flattenPackOperand(OpBuilder &builder, Location loc, Value pack,
+                               PackType packTy,
+                               SmallVectorImpl<Value> &results) {
+  VariadicAttr variadic = packTy.getVariadicIfResolved();
+  assert(variadic && "unresolved variadic pack on pop.external_call");
+
+  for (auto [i, typeExpr] : llvm::enumerate(variadic.getValues())) {
+    Type elemTy = cast<TypeParamAttr>(typeExpr).getMlirType();
+    Value extracted =
+        PackExtractOp::create(builder, loc, elemTy, pack,
+                              IntegerAttr::get(builder.getIndexType(), i));
+
+    if (auto nestedPackTy = dyn_cast<PackType>(elemTy))
+      flattenPackOperand(builder, loc, extracted, nestedPackTy, results);
+    else
+      results.push_back(extracted);
+  }
+}
+
+static void lowerExternalCallOpImpl(POP::ExternalCallOp op) {
+  SmallVector<Value> newOperands;
+  bool changed = false;
+
+  OpBuilder builder(op);
+
+  for (Value operand : op.getOperands()) {
+    auto packTy = dyn_cast<PackType>(operand.getType());
+    if (!packTy) {
+      newOperands.push_back(operand);
+      continue;
+    }
+
+    changed = true;
+    flattenPackOperand(builder, op.getLoc(), operand, packTy, newOperands);
+  }
+
+  if (changed)
+    op.getOperandsMutable().assign(newOperands);
+}
+
 void LowerArgConventionsPass::runOnOperation() {
   FuncOp func = getOperation();
   if (failed(lowerFuncOp(func)))
@@ -789,6 +849,8 @@ void LowerArgConventionsPass::runOnOperation() {
     if (auto callOp = dyn_cast<CallIndirectOp>(op))
       return lowerCallOpImpl(callOp, callOp.getCallee().getType().getBody(),
                              spAttr);
+    if (auto extCall = dyn_cast<POP::ExternalCallOp>(op))
+      return lowerExternalCallOpImpl(extCall);
   });
 
   // We must do this in a second pass, otherwise ops like kgen.call_indirect

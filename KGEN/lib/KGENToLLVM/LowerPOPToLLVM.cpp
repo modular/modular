@@ -3450,24 +3450,6 @@ namespace {
 // ConvertPOPExternalCall
 //===----------------------------------------------------------------------===//
 
-/// Expand one level of struct type from any operand types, these come from
-/// !kgen.pack.
-static SmallVector<Type> expandOperandTypes(TypeRange types) {
-  SmallVector<Type> operandTypes;
-  operandTypes.reserve(types.size());
-  for (auto type : types) {
-    if (auto structTy = dyn_cast<StructType>(type)) {
-      if (auto elementTypes = structTy.getElementTypes())
-        llvm::append_range(operandTypes, *elementTypes);
-      else
-        operandTypes.push_back(type); // Keep unexpanded if unresolved
-    } else {
-      operandTypes.push_back(type);
-    }
-  }
-  return operandTypes;
-}
-
 /// Lower an external call. Add the callee to the symbol table.
 struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
@@ -3475,10 +3457,13 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
   LogicalResult
   matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // Build the function type from the operands directly. By this point,
+    // operands are either primitive POP types or kgen.struct — operand types
+    // map 1:1 to parameters.
     std::optional<FunctionType> funcType = op.getVariadicType();
     if (!funcType) {
-      funcType = rewriter.getFunctionType(
-          expandOperandTypes(op.getOperandTypes()), op.getResultTypes());
+      funcType =
+          rewriter.getFunctionType(op.getOperandTypes(), op.getResultTypes());
     }
     TypeConverter::SignatureConversion conversion(funcType->getNumInputs());
     Type signature = getTypeConverter()->convertFunctionSignature(
@@ -3528,10 +3513,15 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
       symtab.insert(func);
     }
 
-    LLVM::CallOp call = createLLVMCall(
-        rewriter, op.getLoc(), func,
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                       op.getOperands().getTypes(), *getTypeConverter()));
+    // C ABI is handled in the LLVM back-end. That is, decisions such as
+    // "this struct is small and so should be passed in two registers"
+    // are done there.
+    // Here the code just translates arguments verbatim.
+    SmallVector<Value> callArgs;
+    for (Value val : adaptor.getOperands())
+      callArgs.push_back(squashPointlessCasts(val));
+
+    LLVM::CallOp call = createLLVMCall(rewriter, op.getLoc(), func, callArgs);
     replaceCallWithLLVMCall(rewriter, op, call);
     return success();
   }
