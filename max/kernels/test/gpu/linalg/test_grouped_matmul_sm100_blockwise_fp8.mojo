@@ -185,10 +185,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids_list[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids_list[i])
 
     # Device allocations
     var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)

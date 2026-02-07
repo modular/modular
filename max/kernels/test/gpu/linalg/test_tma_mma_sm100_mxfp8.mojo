@@ -260,8 +260,10 @@ fn block_scaled_mxfp8_kernel[
 
     comptime SFA_NUM_COLS = BM // 32
     comptime SFB_NUM_COLS = BN // 32
-    var a_scales_tmem_addr_start = tmem_addr + BN
-    var b_scales_tmem_addr_start = a_scales_tmem_addr_start + SFA_NUM_COLS
+    var a_scales_tmem_addr_start = tmem_addr + UInt32(BN)
+    var b_scales_tmem_addr_start = a_scales_tmem_addr_start + UInt32(
+        SFA_NUM_COLS
+    )
 
     if thread_idx.x >= 128:
         tmem_addr += 16 << 16  # offset for lane 16
@@ -295,7 +297,7 @@ fn block_scaled_mxfp8_kernel[
 
     for k_iter in range(num_iters):
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             a_tma_op.async_copy(
                 a_smem_tile,
@@ -345,8 +347,8 @@ fn block_scaled_mxfp8_kernel[
                 comptime a_scales_offset = a_scales_smem_layout(idx) * size_of[
                     a_scales_type
                 ]()
-                var a_scales_tmem_addr = a_scales_tmem_addr_start + i * (
-                    SF_MN_GROUP_SIZE // 32
+                var a_scales_tmem_addr = a_scales_tmem_addr_start + UInt32(
+                    i * (SF_MN_GROUP_SIZE // 32)
                 )
                 var a_scales_desc = MMASmemDescriptor.create[
                     8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
@@ -361,8 +363,8 @@ fn block_scaled_mxfp8_kernel[
                 comptime b_scales_offset = b_scales_smem_layout(idx) * size_of[
                     b_scales_type
                 ]()
-                var b_scales_tmem_addr = b_scales_tmem_addr_start + i * (
-                    SF_MN_GROUP_SIZE // 32
+                var b_scales_tmem_addr = b_scales_tmem_addr_start + UInt32(
+                    i * (SF_MN_GROUP_SIZE // 32)
                 )
                 var b_scales_desc = MMASmemDescriptor.create[
                     8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
@@ -396,7 +398,7 @@ fn block_scaled_mxfp8_kernel[
                 for j in range(1, num_k_mmas):
                     runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
-                    ].update_desc_with_sf_id[j](
+                    ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
                     comptime idx = IntTuple(0, MMA_K * j)
@@ -417,7 +419,7 @@ fn block_scaled_mxfp8_kernel[
                 for j in range(num_k_mmas):
                     var runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
-                    ].update_desc_with_sf_id[j](
+                    ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
                     comptime idx = IntTuple(0, MMA_K * j)
@@ -664,7 +666,9 @@ fn sm100_block_scaled_mxfp8[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 

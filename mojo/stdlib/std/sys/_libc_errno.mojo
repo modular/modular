@@ -59,7 +59,7 @@ fn set_errno(errno: ErrNo):
 
 
 # Alias to shorten the error definitions below
-comptime pm = platform_map
+comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init

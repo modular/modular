@@ -40,8 +40,8 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     # Initialize the input and outputs with known values.
     with in0.map_to_host() as in_host, out.map_to_host() as out_host:
         for i in range(length):
-            in_host[i] = i
-            out_host[i] = length + i
+            in_host[i] = Scalar[dtype](i)
+            out_host[i] = Scalar[dtype](length + i)
 
     var in_buffer = Span[Scalar[dtype]](ptr=in0.unsafe_ptr(), length=length)
     var out_buffer = Span[Scalar[dtype]](ptr=out.unsafe_ptr(), length=length)
@@ -71,7 +71,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             print("at index", i, "the value is", out_host[i])
             assert_equal(
                 out_host[i],
-                i + 42,
+                Scalar[dtype](i + 42),
                 String(
                     "at index ",
                     i,

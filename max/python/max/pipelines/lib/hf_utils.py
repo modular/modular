@@ -606,6 +606,8 @@ class HuggingFaceRepo:
         return gguf_files
 
     def file_exists(self, filename: str) -> bool:
+        if self.repo_type == RepoType.local:
+            return os.path.exists(os.path.join(self.repo_id, filename))
         return huggingface_hub.file_exists(self.repo_id, filename)
 
     @property

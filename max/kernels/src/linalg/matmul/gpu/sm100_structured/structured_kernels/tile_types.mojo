@@ -197,11 +197,11 @@ comptime SMemTile[
     alignment: Int = 128,
 ] = TileTensor[
     dtype,
-    MutAnyOrigin,
     Layout[
         shape_types = layout.shape_types,
         stride_types = layout.stride_types,
     ],
+    MutAnyOrigin,
     address_space = AddressSpace.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
@@ -432,10 +432,10 @@ struct SMemTileArray[
     # The TileTensor-based tile type with correct shape/stride types
     comptime Tile = TileTensor[
         Self.dtype,
-        MutAnyOrigin,
         Layout[
             shape_types = Self.shape_types, stride_types = Self.stride_types
         ],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]
 

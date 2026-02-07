@@ -215,6 +215,18 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
         ](writer, open="", close="")
 
 
+@always_inline
+fn write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
+    comptime assert conforms_to(T, Writable), "T must be Writable"
+    trait_downcast[Writable](t).write_repr_to(writer)
+
+
+@always_inline
+fn write_to[T: AnyType](t: T, mut writer: Some[Writer]):
+    comptime assert conforms_to(T, Writable), "T must be Writable"
+    trait_downcast[Writable](t).write_to(writer)
+
+
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
     """A wrapper type that writes the repr representation of a value.
 

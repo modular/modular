@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, load_devices, scan_available_devices
+from max.driver import Buffer, Device, load_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -48,7 +48,10 @@ from transformers import AutoConfig
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
 from ..interfaces import GenerateMixin, ModelOutputs, PipelineModel
-from ..sampling import rejection_sampler_with_residuals, token_sampler
+from ..sampling import (
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -138,7 +141,11 @@ def hidden_states_return_config(
 
     """
     assert pipeline_config.speculative is not None
-    if pipeline_config.speculative.is_eagle():
+    is_eagle_or_mtp = (
+        pipeline_config.speculative.is_eagle()
+        or pipeline_config.speculative.is_mtp()
+    )
+    if is_eagle_or_mtp:
         if is_draft:
             return ReturnHiddenStates.LAST
         else:
@@ -269,8 +276,10 @@ class SpeculativeDecodingPipelineBase(
         )
 
         # Load draft model
-        # For now, we are assuming we are placing the draft model will sit
-        self.draft_devices = load_devices(scan_available_devices()[:1])
+        assert self.pipeline_config.draft_model is not None
+        self.draft_devices = load_devices(
+            self.pipeline_config.draft_model.device_specs
+        )
         draft_session = InferenceSession(devices=self.draft_devices)
         self.pipeline_config.configure_session(draft_session)
 
@@ -352,6 +361,7 @@ class SpeculativeDecodingPipelineBase(
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
         assert self.pipeline_config.speculative is not None
+        self._speculative_config = self.pipeline_config.speculative
 
         # Use draft model's pipeline model and weight adapters if provided
         # Otherwise fall back to target model's (for backward compatibility)
@@ -392,7 +402,7 @@ class SpeculativeDecodingPipelineBase(
             )
         )
 
-        # Load rejection sampler
+        # TODO: add option to load greedy sampler
         self._rejection_sampler = target_session.load(
             rejection_sampler_with_residuals(
                 device=DeviceRef.from_device(self.target_devices[0])
@@ -401,6 +411,9 @@ class SpeculativeDecodingPipelineBase(
 
         # Initialize metrics tracker
         self._metrics = SpeculativeDecodingMetrics()
+
+        # Track draft model replica assignments per request
+        self._draft_replica_idx: dict[RequestID, int] = {}
 
         # Check that the max length for both models are the same
         draft_seq_len = self._draft_model.calculate_max_seq_len(
@@ -538,7 +551,7 @@ class SpeculativeDecodingPipelineBase(
     def kv_managers(
         self,
     ) -> list[PagedKVCacheManager]:
-        return [self._draft_model.kv_manager, self._target_model.kv_manager]
+        return [self._target_model.kv_manager, self._draft_model.kv_manager]
 
     @property
     def metrics(self) -> SpeculativeDecodingMetrics:
@@ -655,6 +668,14 @@ class SpeculativeDecodingPipelineBase(
         This method only releases the draft model KV cache, which the scheduler
         doesn't know about.
         """
-        # Release draft model KV cache (scheduler doesn't manage this)
-        self._draft_model.kv_manager.release(request_id, replica_idx=0)
+        # Release draft model KV cache (scheduler doesn't manage this).
+        # The request may not have been claimed yet if it errored before
+        # execute() ran the draft model, so check before releasing.
+        replica_idx = self._draft_replica_idx.pop(request_id, 0)
+        if self._draft_model.kv_manager.contains(
+            request_id, replica_idx=replica_idx
+        ):
+            self._draft_model.kv_manager.release(
+                request_id, replica_idx=replica_idx
+            )
         # Target model KV cache is released by scheduler via batch_constructor

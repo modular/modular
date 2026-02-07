@@ -62,14 +62,14 @@ def _initialize_ragged_inputs[
     total_length = 0
     max_seq_length_batch = -1
     for i in range(batch_size):
-        input_row_offsets_host_ptr[i] = total_length
+        input_row_offsets_host_ptr[i] = UInt32(total_length)
 
         curr_len = prompt_lens[i]
         total_length += curr_len
         if curr_len > max_seq_length_batch:
             max_seq_length_batch = curr_len
 
-    input_row_offsets_host_ptr[batch_size] = total_length
+    input_row_offsets_host_ptr[batch_size] = UInt32(total_length)
     var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
@@ -247,7 +247,7 @@ def execute_matmul_kv_cache_ragged[
     var max_prompt_len = 0
     var max_context_len = 0
     for i in range(batch_size):
-        cache_lengths_host_ptr[i] = cache_sizes[i]
+        cache_lengths_host_ptr[i] = UInt32(cache_sizes[i])
         max_prompt_len = max(max_prompt_len, prompt_lens[i])
         max_context_len = max(max_context_len, cache_sizes[i] + prompt_lens[i])
 
@@ -317,8 +317,8 @@ def execute_matmul_kv_cache_ragged[
             lookup_table_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        max_prompt_len,
-        max_context_len,
+        UInt32(max_prompt_len),
+        UInt32(max_context_len),
     )
 
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -337,8 +337,8 @@ def execute_matmul_kv_cache_ragged[
             lookup_table_host_ptr,
             cache_len_runtime,
         ),
-        max_prompt_len,
-        max_context_len,
+        UInt32(max_prompt_len),
+        UInt32(max_context_len),
     )
 
     k_cache_host = kv_collection_host.get_key_cache(layer_idx)
@@ -531,8 +531,8 @@ def execute_matmul_k_cache_ragged[
         ),
         cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -544,8 +544,8 @@ def execute_matmul_k_cache_ragged[
         ),
         cache_lengths_table.cache_lengths.host_tensor(),
         paged_lut.host_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     k_cache_host = kv_collection_host.get_key_cache(layer_idx)
@@ -1031,8 +1031,8 @@ def execute_paged_fused_qkv_matmul[
         ),
         cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -1045,8 +1045,8 @@ def execute_paged_fused_qkv_matmul[
         ),
         cache_lengths_table.cache_lengths.host_tensor(),
         paged_lut.host_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     k_cache_host = kv_collection_host.get_key_cache(layer_idx)
@@ -1126,7 +1126,7 @@ def execute_cont_batch_fused_qkv_matmul[
     var max_context_length = 0
 
     for i in range(batch_size):
-        cache_lengths_host_ptr[i] = cache_sizes[i]
+        cache_lengths_host_ptr[i] = UInt32(cache_sizes[i])
         max_context_length = max(
             max_context_length, cache_sizes[i] + prompt_lens[i]
         )
@@ -1199,8 +1199,8 @@ def execute_cont_batch_fused_qkv_matmul[
             lookup_table_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        max_seq_length_batch,
-        max_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_context_length),
     )
 
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -1219,8 +1219,8 @@ def execute_cont_batch_fused_qkv_matmul[
             lookup_table_host_ptr,
             cache_len_runtime,
         ),
-        max_seq_length_batch,
-        max_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_context_length),
     )
 
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)

@@ -389,15 +389,12 @@ fn flare_mla_decoding_dispatch[
 
     @parameter
     if ctx.default_device_info == B200:
-        # For now, it is not partitioned for SM100
-        # TODO: add partitioning for SM100
-        var num_partitions_value: Int = 1
-        # convert fp8 KV to bf16 KV
         mla_decode_sm100_dispatch[
             q.dtype,
             q.layout,
             k_t,
             output.dtype,
+            output.layout,
             mask_t,
             score_mod_t,
             valid_length.layout,
@@ -415,7 +412,6 @@ fn flare_mla_decoding_dispatch[
             output,
             scale,
             batch_size,
-            num_partitions_value,
             max_cache_valid_length,
             max_prompt_len,
             valid_length,
@@ -1103,7 +1099,7 @@ fn mla_decoding_single_batch[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32,](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(score_head_idx),
                                     Int(score_row_with_start_pos),
@@ -1120,7 +1116,7 @@ fn mla_decoding_single_batch[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(score_head_idx),
                                         Int(score_row_with_start_pos),
@@ -1576,7 +1572,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin,](
+            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()

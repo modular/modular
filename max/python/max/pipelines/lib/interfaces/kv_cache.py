@@ -20,12 +20,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.kv_cache import (
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.kv_cache import PagedKVCacheManager, load_kv_managers
+from max.nn.legacy.kv_cache import KVCacheParamInterface, KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -35,14 +31,14 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class KVCacheMixin(Protocol):
-    def load_kv_manager(
+    def load_kv_managers(
         self,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         max_batch_size: int,
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> list[PagedKVCacheManager]:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -56,38 +52,13 @@ class KVCacheMixin(Protocol):
         Returns:
             A single KV cache manager.
         """
-        return load_kv_manager(
+        return load_kv_managers(
             params=kv_params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
             available_cache_memory=available_cache_memory,
             session=session,
         )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        huggingface_config: AutoConfig,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        available_cache_memory: int,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        return estimate_kv_cache_size(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            available_cache_memory=available_cache_memory,
-        )
-
-    @classmethod
-    @abstractmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the pipeline model."""
-        ...
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod

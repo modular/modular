@@ -26,7 +26,7 @@ from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
 
 def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:
     var mask = (1 << bits) - 1
-    return Int(not (i1 ^ i2) & mask)
+    return UInt8(Int(not (i1 ^ i2) & UInt64(mask)))
 
 
 def test_hash_byte_array():
@@ -89,7 +89,7 @@ def _test_hash_int_simd[dtype: DType](bits: Int = 4, max_num_same: Int = 2):
     num_same += same_low_bits(hash(c), hash(d), bits)
 
     assert_true(
-        num_same < max_num_same, "too little entropy in hash fn low bits"
+        num_same < UInt8(max_num_same), "too little entropy in hash fn low bits"
     )
 
 

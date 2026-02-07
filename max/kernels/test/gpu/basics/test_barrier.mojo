@@ -50,7 +50,7 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     var shared_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
 
     for i in range(buffer_size):
-        input_host[i] = i + constant_add
+        input_host[i] = Scalar[dtype](i) + constant_add
         output_host[i] = -1.0
         shared_host[i] = -999.0
 
@@ -76,8 +76,8 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.synchronize()
 
     for i in range(buffer_size):
-        assert_equal(output_host[i], 2 * constant_add + i)
-        assert_equal(shared_host[i], constant_add + i)
+        assert_equal(output_host[i], 2 * constant_add + Scalar[dtype](i))
+        assert_equal(shared_host[i], constant_add + Scalar[dtype](i))
 
     _ = input_buffer
     _ = shared_buffer

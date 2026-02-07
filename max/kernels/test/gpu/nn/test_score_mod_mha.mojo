@@ -58,23 +58,35 @@ fn generate_alibi_bias[
 
     @parameter
     if num_heads.is_power_of_two():
-        scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
+        scale = exp2(
+            -((head_idx + 1).cast[dtype]() * 8.0 / Scalar[dtype](num_heads))
+        )
     else:
         comptime floor_power_of_2 = prev_power_of_two(num_heads)
-        if head_idx < floor_power_of_2:
+        if head_idx < Scalar[DType.int](floor_power_of_2):
             scale = exp2(
-                -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
+                -(
+                    (head_idx + 1).cast[dtype]()
+                    * 8.0
+                    / Scalar[dtype](floor_power_of_2)
+                )
             )
         else:
             scale = exp2(
                 -(
-                    ((head_idx - floor_power_of_2) * 2 + 1).cast[dtype]()
+                    (
+                        (head_idx - Scalar[DType.int](floor_power_of_2)) * 2 + 1
+                    ).cast[dtype]()
                     * 8.0
-                    / (floor_power_of_2 * 2)
+                    / Scalar[dtype](floor_power_of_2 * 2)
                 )
             )
     var bias = (
-        -(max_prompt_len - 1 - k_idx - iota[DType.int, width]()).cast[dtype]()
+        -(
+            Scalar[DType.int](max_prompt_len - 1)
+            - k_idx
+            - iota[DType.int, width]()
+        ).cast[dtype]()
         * scale
     )
     return bias
@@ -186,8 +198,10 @@ def execute_flash_attention[
                 for q_idx in range(max_prompt_len):
                     for k_idx in range(max_context_len):
                         mask_host_tensor[b, h, q_idx, k_idx] = (
-                            0 if q_idx + cache_valid_length[b]
-                            >= k_idx else min_or_neg_inf[DType.float32]()
+                            0 if UInt32(q_idx) + cache_valid_length[b]
+                            >= UInt32(k_idx) else min_or_neg_inf[
+                                DType.float32
+                            ]()
                         )
 
     # Initialize causal mask with alibi bias
@@ -201,13 +215,15 @@ def execute_flash_attention[
                     for k_idx in range(max_context_len):
                         mask_host_mod_tensor[b, h, q_idx, k_idx] = (
                             generate_alibi_bias[DType.float32, 1, num_q_heads](
-                                h,
-                                q_idx,
-                                k_idx,
+                                Scalar[DType.int](h),
+                                Scalar[DType.int](q_idx),
+                                Scalar[DType.int](k_idx),
                                 max_context_len,
-                            ) if q_idx
+                            ) if UInt32(q_idx)
                             + cache_valid_length[b]
-                            >= k_idx else min_or_neg_inf[DType.float32]()
+                            >= UInt32(k_idx) else min_or_neg_inf[
+                                DType.float32
+                            ]()
                         )
 
     # Define layouts for output tensors
@@ -324,8 +340,8 @@ def execute_flash_attention[
         ),
         cache_lengths,
         lookup_table_tensor,
-        max_prompt_len,
-        max_context_len,
+        UInt32(max_prompt_len),
+        UInt32(max_context_len),
     )
 
     k_cache_device = kv_collection_device.get_key_cache(0)

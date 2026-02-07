@@ -29,13 +29,7 @@ class InsufficientBlocksError(Exception):
     """Exception raised when there are insufficient free blocks to satisfy an allocation."""
 
 
-# Note that we use 'None' as a string here instead of None because
-# as of Python 3.12, hash(None) returns a constant predictable value.
-# This could possibly make it easier to find and exploit hash
-# collisions. 'None' as a string will be hashed differently per process,
-# but consistently within the same process. This is the same as the
-# behavior of None prior to Python 3.12.
-DEFAULT_PARENT_HASH = hash("None")
+DEFAULT_PARENT_HASH = 0
 
 
 @traced

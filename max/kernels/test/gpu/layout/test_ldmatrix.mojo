@@ -156,11 +156,11 @@ fn check_ldmatrix_transposed_bf16[
 
     for m in range(M):
         for k in range(K):
-            a_host[m * K + k] = m * K + k
+            a_host[m * K + k] = Scalar[input_type](m * K + k)
 
     for k in range(K):
         for n in range(N):
-            b_host[k * N + n] = k * N + n
+            b_host[k * N + n] = Scalar[input_type](k * N + n)
 
     for i in range(M * N):
         c_host[i] = 0

@@ -23,6 +23,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/python/max/profiler",
         "//max/python/max/serve",
