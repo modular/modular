@@ -34,13 +34,6 @@ class GenerationOutput:
     along with request tracking and status information. It implements the
     PipelineOutput protocol by providing the required `is_done` property.
 
-    Attributes:
-        request_id: The unique identifier for the generation request.
-        final_status: The final status of the generation process.
-        output: A list of OutputImageContent objects representing the generated
-                images. Each item contains image data (URL or base64), format,
-                and other metadata.
-
     Example:
 
     .. code-block:: python
