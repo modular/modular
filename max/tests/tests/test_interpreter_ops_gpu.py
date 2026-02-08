@@ -1289,3 +1289,74 @@ class TestRandomNormalGPU:
         torch.testing.assert_close(
             torch.from_dlpack(result1), torch.from_dlpack(result2)
         )
+
+
+class TestRandomUniformGPU:
+    """Tests for random uniform op on GPU with interpreter."""
+
+    def test_random_uniform_gpu_shape_and_device(self) -> None:
+        """Test random uniform on GPU produces correct shape and device."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.uniform(
+                (3, 4), dtype=DType.float32, device=Accelerator()
+            )
+
+        result_torch = torch.from_dlpack(result)
+        assert result_torch.shape == (3, 4)
+        assert result_torch.dtype == torch.float32
+        assert result_torch.is_cuda
+
+    def test_random_uniform_gpu_statistics(self) -> None:
+        """Test random uniform on GPU has approximately correct statistics."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(123)
+            result = max_random.uniform(
+                (1000, 1000),
+                range=(2.0, 5.0),
+                dtype=DType.float32,
+                device=Accelerator(),
+            )
+
+        result_torch = torch.from_dlpack(result).float()
+        torch.testing.assert_close(
+            result_torch.mean(),
+            torch.tensor(3.5, device="cuda"),
+            atol=0.1,
+            rtol=0.1,
+        )
+        assert result_torch.min().item() >= 2.0
+        assert result_torch.max().item() <= 5.0
+
+    def test_random_uniform_gpu_deterministic(self) -> None:
+        """Test that same seed produces identical results on GPU."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result1 = max_random.uniform(
+                (5, 5), dtype=DType.float32, device=Accelerator()
+            )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result2 = max_random.uniform(
+                (5, 5), dtype=DType.float32, device=Accelerator()
+            )
+
+        torch.testing.assert_close(
+            torch.from_dlpack(result1), torch.from_dlpack(result2)
+        )

@@ -1825,3 +1825,84 @@ class TestRandomNormalOp:
         result_np = np.from_dlpack(result)
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
+
+
+class TestRandomUniformOp:
+    """Tests for random uniform op via max.random.uniform with interpreter."""
+
+    def test_random_uniform_shape_and_dtype(self) -> None:
+        """Test that random uniform produces correct shape and dtype."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.uniform(
+                (3, 4), dtype=DType.float32, device=CPU()
+            )
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (3, 4)
+        assert result_np.dtype == np.float32
+
+    def test_random_uniform_deterministic(self) -> None:
+        """Test that same seed produces identical results."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result1 = max_random.uniform(
+                (5, 5), dtype=DType.float32, device=CPU()
+            )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result2 = max_random.uniform(
+                (5, 5), dtype=DType.float32, device=CPU()
+            )
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(result1), np.from_dlpack(result2)
+        )
+
+    def test_random_uniform_statistics(self) -> None:
+        """Test that random uniform has approximately correct statistics."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(123)
+            result = max_random.uniform(
+                (1000, 1000),
+                range=(2.0, 5.0),
+                dtype=DType.float32,
+                device=CPU(),
+            )
+
+        result_np = np.from_dlpack(result)
+        # With 1M samples, statistics should be quite close
+        np.testing.assert_allclose(result_np.mean(), 3.5, atol=0.1)
+        assert result_np.min() >= 2.0
+        assert result_np.max() <= 5.0
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float64])
+    def test_random_uniform_dtypes(self, dtype: DType) -> None:
+        """Test random uniform with different float dtypes."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.uniform((10, 10), dtype=dtype, device=CPU())
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (10, 10)
+        assert result_np.dtype == dtype.to_numpy()

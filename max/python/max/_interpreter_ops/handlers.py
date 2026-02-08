@@ -895,3 +895,53 @@ def _handle_random_normal(
         target_device._device_context_ptr(),
     )
     return [output]
+
+
+@register_op_handler(mo.RandomUniformOp)
+def _handle_random_uniform(
+    op: mo.RandomUniformOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.random.uniform by dispatching to Mojo random uniform kernel.
+
+    Args:
+        op: The random uniform operation.
+        inputs: Input buffers - shape, lower_bound, upper_bound, seed
+            (all scalar/1D tensors on CPU per MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the random uniform tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # shape
+    assert isinstance(inputs[1], Buffer)  # lower_bound
+    assert isinstance(inputs[2], Buffer)  # upper_bound
+    assert isinstance(inputs[3], Buffer)  # seed
+
+    # Extract output shape from shape tensor (on CPU)
+    output_shape = tuple(inputs[0].to_numpy().tolist())
+
+    # Extract scalar params from CPU buffers
+    lower_val = float(inputs[1].to_numpy().item())
+    upper_val = float(inputs[2].to_numpy().item())
+    seed_val = int(inputs[3].to_numpy().item())
+
+    # Get dtype from MLIR type directly (safe with parametric shapes)
+    result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
+    output_dtype = result_mlir_type.dtype
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=output_shape,
+        dtype=output_dtype,
+        device=target_device,
+    )
+
+    ops.mojo_ops.RandomUniform(
+        output,
+        lower_val,
+        upper_val,
+        seed_val,
+        target_device._device_context_ptr(),
+    )
+    return [output]
