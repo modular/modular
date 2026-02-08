@@ -2734,6 +2734,11 @@ fn _memchr_impl[
     output = {}
 
 
+# TODO: Generalize _memchr/_memchr2 into a single variadic _memchr_any that
+# accepts N needle characters and builds the SIMD mask with a parameter loop,
+# similar to Rust's memchr crate which provides memchr, memchr2, and memchr3.
+
+
 @always_inline
 fn _memchr2[
     dtype: DType, //
