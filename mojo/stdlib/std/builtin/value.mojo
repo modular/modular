@@ -239,7 +239,7 @@ trait Defaultable(ImplicitlyDestructible):
 
 
 trait TrivialRegisterType(
-    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterType
+    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterPassable
 ):
     """A marker trait to denote the type to be register passable trivial.
 
@@ -266,7 +266,7 @@ trait TrivialRegisterType(
     pass
 
 
-trait RegisterType(Movable):
+trait RegisterPassable(Movable):
     """A marker trait to denote the type to be register passable.
 
      The compiler treats the type that conforms to this trait with the
@@ -289,7 +289,7 @@ trait RegisterType(Movable):
 
 
      ```mojo
-    struct Foo(RegisterType):
+    struct Foo(RegisterPassable):
         ...
      ```
 

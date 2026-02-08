@@ -3250,7 +3250,7 @@ struct DeviceExternalFunction:
         return Int(result)
 
 
-struct DeviceContext(ImplicitlyCopyable, RegisterType):
+struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 

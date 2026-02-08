@@ -14,7 +14,7 @@
 
 # Note: this code doesn't appear in the doc; it tests the assertions
 # in the doc.
-trait RegPassableTrait(RegisterType):
+trait RegPassableTrait(RegisterPassable):
     fn __init__(out self):
         ...
 

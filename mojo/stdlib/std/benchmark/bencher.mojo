@@ -1289,7 +1289,7 @@ struct _Metric(Copyable):
 
 
 @fieldwise_init
-struct Bencher(RegisterType):
+struct Bencher(RegisterPassable):
     """Defines a Bencher struct which facilitates the timing of a target function.
     """
 

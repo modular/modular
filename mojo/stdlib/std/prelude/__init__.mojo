@@ -145,7 +145,7 @@ from builtin.value import (
     ImplicitlyCopyable,
     Movable,
     materialize,
-    RegisterType,
+    RegisterPassable,
     TrivialRegisterType,
 )
 from builtin.variadics import (

@@ -1334,7 +1334,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
 
-struct MyIntReg2(ImplicitlyCopyable, RegisterType):
+struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
     var val: Int
 
     fn __init__(out self, val: Int):

@@ -294,7 +294,7 @@ struct TaskGroupContext(TrivialRegisterType):
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
-struct _TaskGroupBox(Copyable, RegisterType):
+struct _TaskGroupBox(Copyable, RegisterPassable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine

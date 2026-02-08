@@ -26,7 +26,7 @@ what we publish.
    The decorator will be removed after next release.
 
 - `@register_passable` is now deprecated,
-   conform to `RegisterType` trait instead.
+   conform to `RegisterPassable` trait instead.
    The decorator will be removed after next release.
 
 - Mojo now supports more flexible default arguments and parameters, which can
