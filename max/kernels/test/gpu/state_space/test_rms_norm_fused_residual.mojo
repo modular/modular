@@ -18,7 +18,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from random import rand
+from random import rand, Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_gpu
 from testing import TestSuite, assert_almost_equal
 
@@ -45,7 +45,13 @@ fn compute_rms_ref[
 
 fn run_rms_norm_fused_residual_gpu[
     dtype: DType, rank: Int
-](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
+](
+    ctx: DeviceContext,
+    shape: IndexList[rank],
+    rtol: Float64 = 0.01,
+    dropout_p: Float64 = 0.0,
+    seed: UInt64 = 0,
+) raises:
     """Test rms_norm_fused_residual GPU implementation."""
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
@@ -153,6 +159,8 @@ fn run_rms_norm_fused_residual_gpu[
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
 
+    var dropout_p_scalar = Scalar[dtype](dropout_p)
+
     # Run the GPU kernel
     rms_norm_fused_residual_gpu[
         input_fn,
@@ -166,6 +174,8 @@ fn run_rms_norm_fused_residual_gpu[
         epsilon,
         weight_offset,
         ctx,
+        dropout_p=dropout_p_scalar,
+        seed=seed,
     )
 
     # Copy results back
@@ -173,21 +183,38 @@ fn run_rms_norm_fused_residual_gpu[
     ctx.enqueue_copy(residual_output_h, residual_output_d)
     ctx.synchronize()
 
+    # Compute dropout scale
+    var dropout_scale = Scalar[dtype](1.0)
+    var zero_scalar = Scalar[dtype](0.0)
+    if dropout_p_scalar > zero_scalar:
+        var one_scalar = Scalar[dtype](1.0)
+        dropout_scale = one_scalar / (one_scalar - dropout_p_scalar)
+
     # Verify results
     for r in range(rows):
-        # Compute expected residual output (input + residual)
+        # Compute expected residual output: dropout(input) + residual
         var sum_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
         for c in range(cols):
             var idx = r * cols + c
-            sum_ptr[c] = input_h[idx] + residual_h[idx]
+            var input_val = input_h[idx]
+
+            # Apply the same deterministic dropout as the kernel
+            if dropout_p_scalar > zero_scalar:
+                var element_offset = UInt64(r) * UInt64(cols) + UInt64(c)
+                var generator = Random(seed=seed, offset=element_offset)
+                var rng = generator.step_uniform()
+                var rng_val = rng[0].cast[dtype]()
+                if rng_val >= dropout_p_scalar:
+                    input_val = input_val * dropout_scale
+                else:
+                    input_val = zero_scalar
+
+            sum_ptr[c] = input_val + residual_h[idx]
 
         # Verify residual output
         for c in range(cols):
             var idx = r * cols + c
-            var expected_residual = input_h[idx] + residual_h[idx]
-            assert_almost_equal(
-                expected_residual, residual_output_h[idx], rtol=rtol
-            )
+            assert_almost_equal(sum_ptr[c], residual_output_h[idx], rtol=rtol)
 
         # Compute RMS of the sum
         var rms_val = compute_rms_ref(sum_ptr, cols, epsilon)
@@ -287,4 +314,86 @@ fn test_rms_norm_fused_residual_gpu_many_rows() raises:
         return
     run_rms_norm_fused_residual_gpu[DType.float32](
         ctx, Index(32, 64), rtol=1e-3
+    )
+
+
+fn test_rms_norm_fused_residual_gpu_large_cols_loop() raises:
+    """Test rms_norm_fused_residual GPU when num_cols > block_dim * simd_width.
+
+    This exercises the loop in the first stage of the GPU kernel that populates
+    shared memory, ensuring all columns are written before the normalization
+    subkernel reads them.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # 4096 columns is large enough to require multiple loop iterations per
+    # thread on most GPU configurations.
+    run_rms_norm_fused_residual_gpu[DType.float32](
+        ctx, Index(2, 4096), rtol=1e-3
+    )
+
+
+fn test_rms_norm_fused_residual_gpu_bfloat16_large_cols_loop() raises:
+    """Test fused residual GPU with bfloat16 and large cols requiring loop."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_rms_norm_fused_residual_gpu[DType.bfloat16](
+        ctx, Index(2, 4096), rtol=1e-2
+    )
+
+
+# =============================================================================
+# Dropout tests (dropout_p > 0)
+# =============================================================================
+
+
+fn test_rms_norm_fused_residual_gpu_dropout_float32_2d() raises:
+    """Test rms_norm_fused_residual GPU with dropout enabled (float32, 2D)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_rms_norm_fused_residual_gpu[DType.float32](
+        ctx, Index(4, 16), rtol=1e-3, dropout_p=0.3, seed=42
+    )
+
+
+fn test_rms_norm_fused_residual_gpu_dropout_float32_3d() raises:
+    """Test rms_norm_fused_residual GPU with dropout enabled (float32, 3D)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_rms_norm_fused_residual_gpu[DType.float32](
+        ctx, Index(2, 3, 16), rtol=1e-3, dropout_p=0.5, seed=123
+    )
+
+
+fn test_rms_norm_fused_residual_gpu_dropout_float32_large_cols() raises:
+    """Test dropout path with large columns requiring loop iterations."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_rms_norm_fused_residual_gpu[DType.float32](
+        ctx, Index(2, 4096), rtol=1e-3, dropout_p=0.1, seed=7
+    )
+
+
+fn test_rms_norm_fused_residual_gpu_dropout_bfloat16() raises:
+    """Test rms_norm_fused_residual GPU with dropout enabled (bfloat16)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_rms_norm_fused_residual_gpu[DType.bfloat16](
+        ctx, Index(4, 64), rtol=1e-2, dropout_p=0.2, seed=99
+    )
+
+
+fn test_rms_norm_fused_residual_gpu_dropout_float16() raises:
+    """Test rms_norm_fused_residual GPU with dropout enabled (float16)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_rms_norm_fused_residual_gpu[DType.float16](
+        ctx, Index(4, 64), rtol=1e-2, dropout_p=0.4, seed=55
     )

@@ -17,6 +17,7 @@ from sys.info import CompilationTarget
 
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import alloc
+from random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
 from testing import TestSuite, assert_almost_equal
 
@@ -38,7 +39,12 @@ fn compute_rms_ref[
 
 fn run_rms_norm_fused_residual_cpu[
     dtype: DType, rank: Int
-](shape: IndexList[rank], rtol: Float64 = 0.001) raises:
+](
+    shape: IndexList[rank],
+    rtol: Float64 = 0.001,
+    dropout_p: Float64 = 0.0,
+    seed: UInt64 = 0,
+) raises:
     """Test rms_norm_fused_residual CPU implementation."""
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
@@ -123,16 +129,21 @@ fn run_rms_norm_fused_residual_cpu[
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
 
-    # Define residual read function (returns input + residual for normalization pass)
-    @__copy_capture(input_tensor, residual_tensor)
+    # Read from the residual output buffer written by the first pass.
+    # This correctly handles both the dropout and non-dropout paths:
+    # the first pass writes dropout(input) + residual into residual_output_tensor,
+    # and the normalization pass must read those same values.
+    @__copy_capture(residual_output_tensor)
     @always_inline
     @parameter
     fn residual_read_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        return input_tensor.load[width=width](
+        return residual_output_tensor.load[width=width](
             rebind[IndexList[rank]](coords)
-        ) + residual_tensor.load[width=width](rebind[IndexList[rank]](coords))
+        )
+
+    var dropout_p_scalar = Scalar[dtype](dropout_p)
 
     # Run the kernel
     rms_norm_fused_residual_cpu[
@@ -147,23 +158,42 @@ fn run_rms_norm_fused_residual_cpu[
         gamma_tensor,
         epsilon,
         weight_offset,
+        dropout_p=dropout_p_scalar,
+        seed=seed,
     )
+
+    # Compute dropout scale
+    var dropout_scale = Scalar[dtype](1.0)
+    var zero_scalar = Scalar[dtype](0.0)
+    if dropout_p_scalar > zero_scalar:
+        var one_scalar = Scalar[dtype](1.0)
+        dropout_scale = one_scalar / (one_scalar - dropout_p_scalar)
 
     # Verify results
     for r in range(rows):
-        # Compute expected residual output (input + residual)
+        # Compute expected residual output: dropout(input) + residual
         var sum_ptr = alloc[Scalar[dtype]](cols)
         for c in range(cols):
             var idx = r * cols + c
-            sum_ptr[c] = input_ptr[idx] + residual_ptr[idx]
+            var input_val = input_ptr[idx]
+
+            # Apply the same deterministic dropout as the kernel
+            if dropout_p_scalar > zero_scalar:
+                var element_offset = r * cols + c
+                var generator = Random(seed=seed, offset=UInt64(element_offset))
+                var rng = generator.step_uniform()
+                var rng_val = rng[0].cast[dtype]()
+                if rng_val >= dropout_p_scalar:
+                    input_val = input_val * dropout_scale
+                else:
+                    input_val = zero_scalar
+
+            sum_ptr[c] = input_val + residual_ptr[idx]
 
         # Verify residual output
         for c in range(cols):
             var idx = r * cols + c
-            var expected_residual = input_ptr[idx] + residual_ptr[idx]
-            assert_almost_equal(
-                expected_residual, residual_output_ptr[idx], rtol=rtol
-            )
+            assert_almost_equal(sum_ptr[c], residual_output_ptr[idx], rtol=rtol)
 
         # Compute RMS of the sum
         var rms_val = compute_rms_ref(sum_ptr, cols, epsilon)
@@ -213,6 +243,42 @@ fn test_rms_norm_fused_residual_bfloat16() raises:
     @parameter
     if not CompilationTarget.has_neon():
         run_rms_norm_fused_residual_cpu[DType.bfloat16](Index(4, 16), rtol=1e-2)
+
+
+# =============================================================================
+# Dropout tests (dropout_p > 0)
+# =============================================================================
+
+
+fn test_rms_norm_fused_residual_dropout_float32_2d() raises:
+    """Test rms_norm_fused_residual CPU with dropout enabled (float32, 2D)."""
+    run_rms_norm_fused_residual_cpu[DType.float32](
+        Index(4, 16), rtol=1e-3, dropout_p=0.3, seed=42
+    )
+
+
+fn test_rms_norm_fused_residual_dropout_float32_3d() raises:
+    """Test rms_norm_fused_residual CPU with dropout enabled (float32, 3D)."""
+    run_rms_norm_fused_residual_cpu[DType.float32](
+        Index(2, 3, 16), rtol=1e-3, dropout_p=0.5, seed=123
+    )
+
+
+fn test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
+    """Test CPU dropout path with larger column count."""
+    run_rms_norm_fused_residual_cpu[DType.float32](
+        Index(2, 128), rtol=1e-3, dropout_p=0.1, seed=7
+    )
+
+
+fn test_rms_norm_fused_residual_dropout_bfloat16() raises:
+    """Test rms_norm_fused_residual CPU with dropout enabled (bfloat16)."""
+
+    @parameter
+    if not CompilationTarget.has_neon():
+        run_rms_norm_fused_residual_cpu[DType.bfloat16](
+            Index(4, 16), rtol=1e-2, dropout_p=0.2, seed=99
+        )
 
 
 def main():

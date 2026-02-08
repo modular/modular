@@ -321,49 +321,57 @@ fn rms_norm_fused_residual_gpu_block[
         name="intermediate_shared_memory",
     ]()
     with PDL():
-        # First stage: apply dropout, add residual to input and store in shared memory
+        # First stage: apply dropout, add residual to input and store in shared memory.
+        # Loop to handle cases where num_cols > block_dim * simd_width,
+        # matching the loop structure in _rms_norm_gpu_block_subkernel.
         var tid = thread_idx.x
         var row = block_idx.x
-        var idx = tid * UInt(simd_width)
 
-        if idx < UInt(num_cols):
-            var input_val = input_fn[simd_width](Int(row), Int(idx))
-
-            # Apply dropout if enabled
-            var zero_scalar = Scalar[dtype](0.0)
-            if dropout_p > zero_scalar:
-                var one_scalar = Scalar[dtype](1.0)
-                var dropout_scale = one_scalar / (one_scalar - dropout_p)
-
-                for i in range(simd_width):
-                    if Int(idx) + i < num_cols:
-                        # Use element position as offset for RNG to ensure different values per element
-                        var element_offset = (
-                            UInt64(row) * UInt64(num_cols)
-                            + UInt64(idx)
-                            + UInt64(i)
-                        )
-                        var generator = Random(seed=seed, offset=element_offset)
-                        var rng = generator.step_uniform()
-                        var rng_val = rng[0].cast[dtype]()
-                        if rng_val >= dropout_p:
-                            input_val[i] = input_val[i] * dropout_scale
-                        else:
-                            input_val[i] = zero_scalar
-
-            var residual_val = residual_input_fn[simd_width](Int(row), Int(idx))
-            var residual_add_val = input_val + residual_val
-
-            # Output the pre-normalized value (x + residual) for prenorm mode
-            output_residual_fn[simd_width, align_of[SIMD[dtype, simd_width]]()](
-                Int(row), Int(idx), residual_add_val
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var idx = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
             )
 
-            # Store in shared memory for normalization
-            shared_mem.store[
-                width=simd_width,
-                alignment = align_of[SIMD[dtype, simd_width]](),
-            ](Int(idx), residual_add_val)
+            if idx < num_cols:
+                var input_val = input_fn[simd_width](Int(row), idx)
+
+                # Apply dropout if enabled
+                var zero_scalar = Scalar[dtype](0.0)
+                if dropout_p > zero_scalar:
+                    var one_scalar = Scalar[dtype](1.0)
+                    var dropout_scale = one_scalar / (one_scalar - dropout_p)
+
+                    for i in range(simd_width):
+                        if idx + i < num_cols:
+                            # Use element position as offset for RNG to ensure different values per element
+                            var element_offset = (
+                                UInt64(row) * UInt64(num_cols)
+                                + UInt64(idx)
+                                + UInt64(i)
+                            )
+                            var generator = Random(
+                                seed=seed, offset=element_offset
+                            )
+                            var rng = generator.step_uniform()
+                            var rng_val = rng[0].cast[dtype]()
+                            if rng_val >= dropout_p:
+                                input_val[i] = input_val[i] * dropout_scale
+                            else:
+                                input_val[i] = zero_scalar
+
+                var residual_val = residual_input_fn[simd_width](Int(row), idx)
+                var residual_add_val = input_val + residual_val
+
+                # Output the pre-normalized value (x + residual) for prenorm mode
+                output_residual_fn[
+                    simd_width, align_of[SIMD[dtype, simd_width]]()
+                ](Int(row), idx, residual_add_val)
+
+                # Store in shared memory for normalization
+                shared_mem.store[
+                    width=simd_width,
+                    alignment = align_of[SIMD[dtype, simd_width]](),
+                ](idx, residual_add_val)
 
         barrier()
 
