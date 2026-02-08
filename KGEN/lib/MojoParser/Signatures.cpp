@@ -852,8 +852,10 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
         }
         // Otherwise, it must be something part of the enclosing param list.
         if (!passingKind.has_value()) {
-          for (auto [idx, name] : llvm::enumerate(paramList.names)) {
-            if (paramUse.getName() == name) {
+          // Make sure to iterate over paramDeclAttrs (not names) because
+          // 'names' doesn't get mangled when params shadow.
+          for (auto [idx, decl] : llvm::enumerate(paramList.paramDeclAttrs)) {
+            if (paramUse.getName() == decl.getName()) {
               passingKind = paramList.passingKinds[idx];
               break;
             }
