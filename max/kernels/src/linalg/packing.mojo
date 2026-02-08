@@ -913,8 +913,6 @@ fn pack_transposed_b_ndbuffer[
 
 @fieldwise_init
 struct BTileGenerator[
-    mut: Bool,
-    //,
     config: KernelConfig,
     a_type: DType,
     b_type: DType,
@@ -922,7 +920,7 @@ struct BTileGenerator[
     shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    origin: Origin[mut=mut],
+    origin: ImmutOrigin,
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
