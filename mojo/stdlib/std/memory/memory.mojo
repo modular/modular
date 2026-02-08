@@ -58,8 +58,8 @@ fn get_active_mask[width: Int](evl: Int) -> SIMD[DType.bool, width]:
         evl: The effective vector length (number of active lanes).
 
     Returns:
-        A SIMD boolean vector where the first `evl` lanes are `true` (active)
-        and the remaining lanes are `false` (inactive).
+        A SIMD boolean vector where the first `evl` lanes are `True` (active)
+        and the remaining lanes are `False` (inactive).
     """
     return llvm_intrinsic["llvm.get.active.lane.mask", SIMD[DType.bool, width]](
         Int64(0), Int64(evl)
