@@ -18,7 +18,7 @@ constant memory that can be used for efficient data transfer between host and GP
 
 
 @fieldwise_init
-struct ConstantMemoryMapping(TrivialRegisterType):
+struct ConstantMemoryMapping(TrivialRegisterPassable):
     """Represents a mapping of constant memory between host and device.
 
     This struct encapsulates the information needed to manage constant memory

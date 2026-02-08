@@ -423,7 +423,7 @@ each tile on access.
 
 ```mojo
 # In tile_types.mojo - add a bridge payload
-struct BlockwiseFP8TilePayloadBridge[...](TilePayload, TrivialRegisterType):
+struct BlockwiseFP8TilePayloadBridge[...](TilePayload, TrivialRegisterPassable):
     """Bridge payload that wraps LayoutTensor arrays but returns TileTensor tiles."""
 
     # Store LayoutTensor-based arrays (from SMEM)
@@ -508,7 +508,7 @@ struct BlockwiseFP8TilePayloadBridge[
     b_tile_layout: LegacyLayout,
     a_scales_tile_layout: LegacyLayout,
     num_pipeline_stages: Int,
-](TilePayload, TrivialRegisterType):
+](TilePayload, TrivialRegisterPassable):
     """Bridge payload: wraps LayoutTensor arrays but returns TileTensor tiles."""
 
     # Store pointers from LayoutTensor arrays (zero-cost)
@@ -679,7 +679,7 @@ struct BlockScaledTilePayloadBridge[
     sfa_tile_layout: LegacyLayout,
     sfb_tile_layout: LegacyLayout,
     num_pipeline_stages: Int,
-](TilePayload, TrivialRegisterType):
+](TilePayload, TrivialRegisterPassable):
     """Bridge payload for block-scaled matmul with 4 tile types."""
 
     # Dual accessor methods

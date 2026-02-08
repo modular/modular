@@ -187,10 +187,10 @@ class DiffusionPipeline(ABC):
 
 @dataclass(kw_only=True)
 class PixelModelInputs:
-    """
-    A common input container for pixel-generation models.
+    """Common input container for pixel-generation models.
 
-    This dataclass is designed to provide a consistent set of fields used across multiple pixel pipelines/models.
+    Provides a consistent set of fields used across multiple pixel
+    pipelines and models.
     """
 
     tokens: TokenBuffer
@@ -355,11 +355,11 @@ class PixelModelInputs:
     """
 
     def __post_init__(self) -> None:
-        """
-        Basic invariant checks for core scalar fields.
+        """Runs basic invariant checks for core scalar fields.
 
-        Model-specific subclasses may override __post_init__ and call super().__post_init__()
-        to add stricter validations (e.g., requiring timesteps/sigmas/latents to be non-empty).
+        Model-specific subclasses may override and call ``super().__post_init__()``
+        to add stricter validations (e.g., requiring timesteps/sigmas/latents
+        to be non-empty).
         """
         if not isinstance(self.height, int) or self.height <= 0:
             raise ValueError(

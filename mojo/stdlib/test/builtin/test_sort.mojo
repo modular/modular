@@ -582,7 +582,7 @@ fn test_sort_empty_comparable_elements_list() raises:
 
 
 @fieldwise_init
-struct IntPair(TrivialRegisterType):
+struct IntPair(TrivialRegisterPassable):
     var x: Int
     var idx: Int
 

@@ -71,7 +71,7 @@ You should be aware of a few other observable effects:
    constructor](/mojo/manual/lifecycle/life#move-constructor).
 
 ## `@register_passable("trivial")`
-(now deprecated, conform to `TrivialRegisterType` trait instead)
+(now deprecated, conform to `TrivialRegisterPassable` trait instead)
 
 Most types that use `@register_passable` are just "bags of bits," which we call
 "trivial" types. These trivial types are simple and should be copied, moved, and
@@ -81,7 +81,7 @@ lifecycle methods except for the constructor:
 
 ```mojo
 @fieldwise_init
-struct Pair(TrivialRegisterType):
+struct Pair(TrivialRegisterPassable):
     var a: Int
     var b: Int
 ```

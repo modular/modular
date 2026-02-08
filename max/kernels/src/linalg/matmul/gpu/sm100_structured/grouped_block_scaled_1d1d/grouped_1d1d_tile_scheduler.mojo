@@ -39,7 +39,7 @@ from utils.index import Index, IndexList
 
 
 @fieldwise_init
-struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterType, Writable):
+struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
     """Work tile information for 1D-1D grouped matmul.
 
     Contains the coordinates and metadata for a single work tile:

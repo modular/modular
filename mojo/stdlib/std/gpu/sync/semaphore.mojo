@@ -47,7 +47,7 @@ fn _barrier_and(state: Bool) -> Bool:
     )
 
 
-struct Semaphore(TrivialRegisterType):
+struct Semaphore(TrivialRegisterPassable):
     """A device-wide semaphore implementation for GPUs.
 
     This struct provides atomic operations and memory barriers for inter-CTA synchronization.
@@ -129,7 +129,7 @@ struct Semaphore(TrivialRegisterType):
 
 struct NamedBarrierSemaphore[
     thread_count: Int32, id_offset: Int32, max_num_barriers: Int32
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """A device-wide semaphore implementation for NVIDIA GPUs with named barriers.
 
     It's using an acquire-release logic instead of atomic instructions for inter-CTA synchronization with a shared lock variable.

@@ -138,6 +138,7 @@ _B200_TESTS = [
     "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",
     "test_matmul_sm100_2sm_blockwise_fp8_part_b.mojo",
     "test_grouped_matmul_sm100_blockwise_fp8.mojo",
+    "test_blockwise_fp8_1d2d_structured.mojo",
     "test_batched_matmul_sm100_scaled.mojo",
     "test_matmul_sm100_epilogue.mojo",
     "test_matmul_sm100_swapAB_epilogue.mojo",
@@ -299,8 +300,6 @@ _GPU_MEMORY = {
         # KERN-2339: Tests disabled due to bounds check failures or other assertion issues
         enable_assertions = not src in [
             "test_warp_specialization_gemm.mojo",  # KERN-2339: assertions exception
-            "test_generated_sm90_matmul_ptx.mojo",  # KERN-2339: assertions exception
-            "test_ping_pong.mojo",  # Compilation timeout on MI355 with assertions
             "test_dual_gemm.mojo",  # KERN-2339: bounds check triggers on zero-sized edge tiles
         ],
         exec_properties = {

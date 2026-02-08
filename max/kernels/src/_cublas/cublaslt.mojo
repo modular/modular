@@ -146,7 +146,7 @@ fn cublasLtMatrixTransformDescCreate(
 
 
 @fieldwise_init
-struct Order(TrivialRegisterType):
+struct Order(TrivialRegisterPassable):
     """Enum for data ordering ."""
 
     var _value: Int32
@@ -237,7 +237,7 @@ fn cublasLtMatrixLayoutSetAttribute(
 
 
 @fieldwise_init
-struct ClusterShape(TrivialRegisterType):
+struct ClusterShape(TrivialRegisterPassable):
     """Thread Block Cluster size.
 
     Typically dimensioned similar to Tile, with the third coordinate unused at this time.
@@ -528,7 +528,7 @@ fn cublasLtHeuristicsCacheSetCapacity(capacity: Int) raises -> Result:
     ]()(capacity)
 
 
-struct MatmulAlgorithmCapability(TrivialRegisterType):
+struct MatmulAlgorithmCapability(TrivialRegisterPassable):
     """Capabilities Attributes that can be retrieved from an initialized Algo structure
     ."""
 
@@ -721,7 +721,7 @@ fn cublasLtGetStatusString(status: Result) raises -> UnsafePointer[Int8]:
 
 
 @fieldwise_init
-struct PointerMode(TrivialRegisterType):
+struct PointerMode(TrivialRegisterPassable):
     """UnsafePointer mode to use for alpha/beta ."""
 
     var _value: Int32
@@ -864,7 +864,7 @@ fn cublasLtMatmulAlgoCheck(
 
 
 @fieldwise_init
-struct Search(TrivialRegisterType):
+struct Search(TrivialRegisterPassable):
     """Matmul heuristic search mode
     ."""
 
@@ -938,7 +938,7 @@ struct Search(TrivialRegisterType):
 
 
 @fieldwise_init
-struct ReductionScheme(TrivialRegisterType):
+struct ReductionScheme(TrivialRegisterPassable):
     """Reduction scheme for portions of the dot-product calculated in parallel (a. k. a. "split - K").
     ."""
 
@@ -1050,7 +1050,7 @@ fn cublasLtMatrixLayoutGetAttribute(
     ]()(mat_layout, attr, buf, size_in_bytes, size_written)
 
 
-struct PreferenceOpaque(TrivialRegisterType):
+struct PreferenceOpaque(TrivialRegisterPassable):
     """Semi-opaque descriptor for cublasLtMatmulSelf() operation details
     ."""
 
@@ -1058,7 +1058,7 @@ struct PreferenceOpaque(TrivialRegisterType):
 
 
 @fieldwise_init
-struct cublasLtMatmulDescAttributes_t(TrivialRegisterType):
+struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable):
     """Matmul descriptor attributes to define details of the operation. ."""
 
     var _value: Int32
@@ -1718,7 +1718,7 @@ fn cublasLtMatrixLayoutInit_internal(
 
 
 @fieldwise_init
-struct Preference(TrivialRegisterType):
+struct Preference(TrivialRegisterPassable):
     """Algo search preference to fine tune the heuristic function. ."""
 
     var _value: Int32
@@ -1823,7 +1823,7 @@ struct Preference(TrivialRegisterType):
         return Int(self._value)
 
 
-struct MatmulAlgorithm(Defaultable, TrivialRegisterType):
+struct MatmulAlgorithm(Defaultable, TrivialRegisterPassable):
     """Semi-opaque algorithm descriptor (to avoid complicated alloc/free schemes).
 
     This structure can be trivially serialized and later restored for use with the same version of cuBLAS library to save
@@ -1840,7 +1840,7 @@ comptime cublasLtNumericalImplFlags_t = UInt64
 
 
 @fieldwise_init
-struct AlgorithmConfig(TrivialRegisterType):
+struct AlgorithmConfig(TrivialRegisterPassable):
     """Algo Configuration Attributes that can be set according to the Algo capabilities
     ."""
 
@@ -2011,7 +2011,7 @@ fn cublasLtMatmulAlgoGetHeuristic(
 
 
 @fieldwise_init
-struct InnerShape(TrivialRegisterType):
+struct InnerShape(TrivialRegisterPassable):
     """Inner size of the kernel.
 
     Represents various aspects of internal kernel design, that don't impact CUDA grid size but may have other more subtle
@@ -2056,7 +2056,7 @@ struct InnerShape(TrivialRegisterType):
 
 
 @fieldwise_init
-struct cublasLtMatmulMatrixScale_t(TrivialRegisterType):
+struct cublasLtMatmulMatrixScale_t(TrivialRegisterPassable):
     """Scaling mode for per-matrix scaling."""
 
     var _value: Int32
@@ -2122,7 +2122,7 @@ struct cublasLtMatmulMatrixScale_t(TrivialRegisterType):
 
 
 @fieldwise_init
-struct cublasLtBatchMode_t(TrivialRegisterType):
+struct cublasLtBatchMode_t(TrivialRegisterPassable):
     """Batch mode."""
 
     var _value: Int32
@@ -2158,7 +2158,7 @@ struct cublasLtBatchMode_t(TrivialRegisterType):
 
 
 @fieldwise_init
-struct LayoutAttribute(TrivialRegisterType):
+struct LayoutAttribute(TrivialRegisterPassable):
     """Attributes of memory layout ."""
 
     var _value: Int32
@@ -2363,7 +2363,7 @@ fn cublasLtLoggerSetLevel(level: Int16) raises -> Result:
 
 
 @fieldwise_init
-struct Stages(TrivialRegisterType):
+struct Stages(TrivialRegisterPassable):
     """Size and number of stages in which elements are read into shared memory.
 
     General order of stages IDs is sorted by stage size first and by number of stages second.
@@ -2617,7 +2617,7 @@ fn cublasLtMatmulAlgoInit(
 
 
 @fieldwise_init
-struct Epilogue(TrivialRegisterType):
+struct Epilogue(TrivialRegisterPassable):
     """Postprocessing options for the epilogue
     ."""
 
@@ -2758,7 +2758,7 @@ struct Epilogue(TrivialRegisterType):
         return Int(self._value)
 
 
-struct Descriptor(TrivialRegisterType):
+struct Descriptor(TrivialRegisterPassable):
     """Semi-opaque descriptor for cublasLtMatmul() operation details
     ."""
 
@@ -2790,7 +2790,7 @@ fn cublasLtMatrixLayoutCreate(
 
 
 @fieldwise_init
-struct PointerModeMask(TrivialRegisterType):
+struct PointerModeMask(TrivialRegisterPassable):
     """Mask to define pointer mode capability."""
 
     var _value: Int32
@@ -2831,7 +2831,7 @@ struct PointerModeMask(TrivialRegisterType):
         return Int(self._value)
 
 
-struct MatrixLayout(TrivialRegisterType):
+struct MatrixLayout(TrivialRegisterPassable):
     """Semi-opaque descriptor for matrix memory layout
     ."""
 
@@ -2859,7 +2859,7 @@ fn cublasLtMatmulDescCreate(
 
 
 @fieldwise_init
-struct Tile(TrivialRegisterType):
+struct Tile(TrivialRegisterPassable):
     """Tile size (in C/D matrix Rows x Cols).
 
     General order of tile IDs is sorted by size first and by first dimension second.
@@ -3615,7 +3615,7 @@ fn cublasLtMatmulPreferenceCreate(
     ]()(pref)
 
 
-struct cublasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterType):
+struct cublasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterPassable):
     """Results structure used by cublasLtMatmulGetAlgo.
 
     Holds returned configured algo descriptor and its runtime properties.
@@ -3815,7 +3815,7 @@ fn cublasLtMatmulPreferenceInit_internal(
     ]()(pref, size)
 
 
-struct Transform(TrivialRegisterType):
+struct Transform(TrivialRegisterPassable):
     """Semi-opaque descriptor for cublasLtMatrixTransform() operation details
     ."""
 
@@ -3823,7 +3823,7 @@ struct Transform(TrivialRegisterType):
 
 
 @fieldwise_init
-struct TransformDescriptor(TrivialRegisterType):
+struct TransformDescriptor(TrivialRegisterPassable):
     """Matrix transform descriptor attributes to define details of the operation.
     ."""
 

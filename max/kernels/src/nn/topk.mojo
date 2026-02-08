@@ -581,7 +581,9 @@ fn _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
 
 # Define the TopK_2 structure to keep track of the top element per thread
 @fieldwise_init
-struct TopK_2[T: DType, largest: Bool = True](Defaultable, TrivialRegisterType):
+struct TopK_2[T: DType, largest: Bool = True](
+    Defaultable, TrivialRegisterPassable
+):
     var p: Int  # flattened index of the element
     var u: Scalar[Self.T]  # value of the element
 

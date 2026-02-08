@@ -100,7 +100,7 @@ comptime cudnnRuntimeTag_t = NoneType
 
 @fieldwise_init
 struct cudnnSoftmaxMode_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_SOFTMAX_MODE_INSTANCE = Self(0)
@@ -158,7 +158,7 @@ fn cudnnCreate(
 
 @fieldwise_init
 struct cudnnReduceTensorIndices_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_REDUCE_TENSOR_NO_INDICES = Self(0)
@@ -338,7 +338,7 @@ fn cudnnSetPoolingNdDescriptor(
 
 
 @fieldwise_init
-struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterType, Writable):
+struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUDNN_REDUCE_TENSOR_ADD = Self(0)
     comptime CUDNN_REDUCE_TENSOR_MUL = Self(1)
@@ -445,7 +445,7 @@ fn cudnnLRNCrossChannelForward(
 
 @fieldwise_init
 struct cudnnDeterminism_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_NON_DETERMINISTIC = Self(0)
@@ -486,7 +486,7 @@ comptime cudnnActivationDescriptor_t = UnsafePointer[cudnnActivationStruct]
 
 
 @fieldwise_init
-struct cudnnStatus_t(Equatable, TrivialRegisterType, Writable):
+struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUDNN_STATUS_SUCCESS = Self(0)
     comptime CUDNN_STATUS_NOT_INITIALIZED = Self(1)
@@ -561,7 +561,7 @@ struct cudnnStatus_t(Equatable, TrivialRegisterType, Writable):
 
 @fieldwise_init
 struct cudnnCTCLossAlgo_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_CTC_LOSS_ALGO_DETERMINISTIC = Self(0)
@@ -621,7 +621,7 @@ fn cudnnGetFilter4dDescriptor(
 
 @fieldwise_init
 struct cudnnTensorFormat_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_TENSOR_NCHW = Self(0)
@@ -783,7 +783,9 @@ fn cudnnSetActivationDescriptor(
 
 
 @fieldwise_init
-struct cudnnNormAlgo_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnNormAlgo_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_NORM_ALGO_STANDARD = Self(0)
     comptime CUDNN_NORM_ALGO_PERSIST = Self(1)
@@ -819,7 +821,7 @@ struct cudnnNormAlgo_t(Equatable, Identifiable, TrivialRegisterType, Writable):
 
 @fieldwise_init
 struct cudnnOpTensorOp_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_OP_TENSOR_ADD = Self(0)
@@ -1113,7 +1115,7 @@ fn cudnnDeriveBNTensorDescriptor(
 
 @fieldwise_init
 struct cudnnActivationMode_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_ACTIVATION_SIGMOID = Self(0)
@@ -1193,7 +1195,7 @@ fn cudnnGetTensorSizeInBytes(
 
 @fieldwise_init
 struct cudnnConvolutionBwdDataAlgo_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_0 = Self(0)
@@ -1294,7 +1296,7 @@ comptime cudnnLRNDescriptor_t = UnsafePointer[cudnnLRNStruct]
 
 @fieldwise_init
 struct cudnnSamplerType_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_SAMPLER_BILINEAR = Self(0)
@@ -1354,7 +1356,9 @@ fn cudnnSpatialTfSamplerForward(
 
 
 @fieldwise_init
-struct cudnnNormMode_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnNormMode_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_NORM_PER_ACTIVATION = Self(0)
     comptime CUDNN_NORM_PER_CHANNEL = Self(1)
@@ -1463,7 +1467,9 @@ fn cudnnGetPooling2dDescriptor(
 
 
 @fieldwise_init
-struct cudnnNormOps_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnNormOps_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_NORM_OPS_NORM = Self(0)
     comptime CUDNN_NORM_OPS_NORM_ACTIVATION = Self(1)
@@ -1534,7 +1540,7 @@ comptime cudnnSpatialTransformerDescriptor_t = UnsafePointer[
 
 @fieldwise_init
 struct cudnnSoftmaxAlgorithm_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_SOFTMAX_FAST = Self(0)
@@ -1618,7 +1624,7 @@ fn cudnnGetStream(
 
 @fieldwise_init
 struct cudnnBatchNormOps_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_BATCHNORM_OPS_BN = Self(0)
@@ -1657,7 +1663,7 @@ struct cudnnBatchNormOps_t(
 
 
 @fieldwise_init
-struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterType, Writable):
+struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM = Self(0)
     comptime CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM = Self(1)
@@ -1865,7 +1871,7 @@ fn cudnnCreateActivationDescriptor(
 
 
 @fieldwise_init
-struct libraryPropertyType_t(TrivialRegisterType):
+struct libraryPropertyType_t(TrivialRegisterPassable):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
@@ -1902,7 +1908,9 @@ fn cudnnGetFilterSizeInBytes(
 
 
 @fieldwise_init
-struct cudnnLRNMode_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnLRNMode_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
@@ -2020,7 +2028,7 @@ fn cudnnGetAlgorithmDescriptor(
 
 @fieldwise_init
 struct cudnnFoldingDirection_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_TRANSFORM_FOLD = Self(0)
@@ -2078,7 +2086,7 @@ fn cudnnGetTensorNdDescriptor(
 
 @fieldwise_init
 struct cudnnErrQueryMode_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_ERRQUERY_RAWCODE = Self(0)
@@ -2183,7 +2191,7 @@ comptime cudnnCallback_t = fn(
 ) -> NoneType
 
 
-struct cudnnAlgorithmUnionStruct(TrivialRegisterType):
+struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
     var algo: OpaquePointer
 
 
@@ -2232,7 +2240,7 @@ fn cudnnSetTensor4dDescriptorEx(
 
 @fieldwise_init
 struct cudnnBatchNormMode_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_BATCHNORM_PER_ACTIVATION = Self(0)
@@ -2315,7 +2323,9 @@ fn cudnnScaleTensor(
 
 
 @fieldwise_init
-struct cudnnSeverity_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnSeverity_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_SEV_FATAL = Self(0)
     comptime CUDNN_SEV_ERROR = Self(1)
@@ -2359,7 +2369,9 @@ comptime cudnnDebug_t = cudnnDebugStruct
 
 
 @fieldwise_init
-struct cudnnMathType_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnMathType_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_DEFAULT_MATH = Self(0)
     comptime CUDNN_TENSOR_OP_MATH = Self(1)
@@ -2401,7 +2413,7 @@ struct cudnnMathType_t(Equatable, Identifiable, TrivialRegisterType, Writable):
 
 @fieldwise_init
 struct cudnnNanPropagation_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_NOT_PROPAGATE_NAN = Self(0)
@@ -2440,7 +2452,9 @@ comptime cudnnFilterDescriptor_t = UnsafePointer[cudnnFilterStruct]
 
 
 @fieldwise_init
-struct cudnnRNNAlgo_t(Equatable, Identifiable, TrivialRegisterType, Writable):
+struct cudnnRNNAlgo_t(
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUDNN_RNN_ALGO_STANDARD = Self(0)
     comptime CUDNN_RNN_ALGO_PERSIST_STATIC = Self(1)
@@ -2486,7 +2500,7 @@ struct cudnnRNNAlgo_t(Equatable, Identifiable, TrivialRegisterType, Writable):
 comptime cudnnOpTensorDescriptor_t = UnsafePointer[cudnnOpTensorStruct]
 
 
-struct Algorithm(TrivialRegisterType):
+struct Algorithm(TrivialRegisterPassable):
     var convFwdAlgo: cudnnConvolutionFwdAlgo_t
     var convBwdFilterAlgo: cudnnConvolutionBwdFilterAlgo_t
     var convBwdDataAlgo: cudnnConvolutionBwdDataAlgo_t
@@ -2561,7 +2575,7 @@ fn cudnnGetAlgorithmSpaceSize(
 
 
 @fieldwise_init
-struct cudnnDataType_t(Equatable, TrivialRegisterType, Writable):
+struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUDNN_DATA_FLOAT = Self(0)
     comptime CUDNN_DATA_DOUBLE = Self(1)
@@ -2717,7 +2731,7 @@ fn cudnnGetAlgorithmPerformance(
     ]()(algo_perf, algo_desc, status, time, memory)
 
 
-struct cudnnDebugStruct(TrivialRegisterType):
+struct cudnnDebugStruct(TrivialRegisterPassable):
     var cudnn_version: Int16
     var cudnnStatus: cudnnStatus_t
     var time_sec: Int16
@@ -2755,7 +2769,7 @@ comptime cudnnAlgorithm_t = cudnnAlgorithmUnionStruct
 
 @fieldwise_init
 struct cudnnIndicesType_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_32BIT_INDICES = Self(0)
@@ -3035,7 +3049,7 @@ fn cudnnNormalizationForwardInference(
 
 @fieldwise_init
 struct cudnnConvolutionBwdFilterAlgo_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0 = Self(0)
@@ -3190,7 +3204,7 @@ fn cudnnDestroyOpTensorDescriptor(
 
 @fieldwise_init
 struct cudnnPoolingMode_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_POOLING_MAX = Self(0)
@@ -3286,7 +3300,7 @@ fn cudnnGetDropoutDescriptor(
 
 @fieldwise_init
 struct cudnnDivNormMode_t(
-    Equatable, Identifiable, TrivialRegisterType, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)

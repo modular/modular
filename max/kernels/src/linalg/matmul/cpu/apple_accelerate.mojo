@@ -144,14 +144,14 @@ fn use_apple_accelerate_lib[
 
 
 @fieldwise_init
-struct _CBLASOrder(TrivialRegisterType):
+struct _CBLASOrder(TrivialRegisterPassable):
     var value: Int32
     comptime ROW_MAJOR = _CBLASOrder(101)
     comptime COL_MAJOR = _CBLASOrder(102)
 
 
 @fieldwise_init
-struct _CBLASTranspose(TrivialRegisterType):
+struct _CBLASTranspose(TrivialRegisterPassable):
     var value: Int32
     comptime NO_TRANSPOSE = _CBLASTranspose(111)
     comptime TRANSPOSE = _CBLASTranspose(112)

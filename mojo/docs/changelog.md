@@ -22,11 +22,11 @@ what we publish.
 ### Language enhancements
 
 - `@register_passable("trivial")` is now deprecated,
-   conform to `TrivialRegisterType` trait instead.
+   conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
 
 - `@register_passable` is now deprecated,
-   conform to `RegisterType` trait instead.
+   conform to `RegisterPassable` trait instead.
    The decorator will be removed after next release.
 
 - Mojo now supports more flexible default arguments and parameters, which can
@@ -206,7 +206,7 @@ what we publish.
   `Writable`.
 
 - All traits and structs with `@register_passable("trivial")` decorator are now
-  extending `TrivialRegisterType` trait. The decorator is removed from them.
+  extending `TrivialRegisterPassable` trait. The decorator is removed from them.
 
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.

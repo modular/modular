@@ -53,8 +53,7 @@ class MemoryEstimator:
     def static_memory_size(
         cls, model_weights_size: int, activation_memory_size: int
     ) -> int:
-        """
-        Calculate the static memory usage: model weights plus activations.
+        """Calculates static memory usage: model weights plus activations.
 
         Args:
             model_weights_size: Size of model weights.
@@ -73,8 +72,7 @@ class MemoryEstimator:
         model_config: MAXModelConfig,
         devices: list[Device],
     ) -> int:
-        """
-        Estimate the available KV cache memory after accounting for model weights and activations.
+        """Estimates available KV cache memory after model weights and activations.
 
         Args:
             model_weights_size: Size of model weights.
@@ -102,12 +100,11 @@ class MemoryEstimator:
         devices: list[Device],
         arch_config: ArchConfig,
     ) -> int | None:
-        """Compute the hard upper bound on tokens for a single request.
+        """Computes the hard upper bound on tokens for a single request.
 
         Mirrors the paged KV cache constraint: per replica, a request cannot
         exceed total pages per device times page size.
         """
-
         # In virtual device mode (cross-compilation), skip memory-based constraints
         # since we're only compiling and not actually running the model.
         if is_virtual_device_mode():
@@ -147,6 +144,7 @@ class MemoryEstimator:
         model_weights_size: int,
         activation_memory_size: int,
     ) -> None:
+        """Estimates memory footprint and validates max_length/max_batch_size fit."""
         is_draft_model = (
             pipeline_config.draft_model is not None
             and model_config is pipeline_config.draft_model
@@ -482,22 +480,25 @@ class MemoryEstimator:
         available_kv_cache_memory: int,
         devices: list[Device],
     ) -> None:
-        """If we've determined the current configuration won't fit in device memory,
-        this method provides a friendly error message suggesting a viable configuration.
+        """Suggests a viable configuration when the current one does not fit in memory.
 
-        The approach is to:
+        If the current configuration won't fit in device memory, provides a
+        friendly error message. The approach is to:
+
         1. Binary search max_length until we find a setting that works
         2. If user provided max_batch_size, binary search that too
         3. Generate appropriate suggestions based on this truth table:
 
-                                                            max_length
-                                         +----------------------+--------------------------+
-                                         | set by user          | set to default           |
-                        +----------------+======================+==========================+
-                        | set by user    ║ Recommend both       | Recommend max_batch_size |
-        max_batch_size  +----------------+----------------------+--------------------------+
-                        | set to default ║ Recommend max_length | Recommend both           |
-                        +----------------+----------------------+--------------------------+
+        .. code-block:: text
+
+                                                                max_length
+                                             +----------------------+--------------------------+
+                                             | set by user          | set to default           |
+                            +----------------+======================+==========================+
+                            | set by user    ║ Recommend both       | Recommend max_batch_size |
+            max_batch_size  +----------------+----------------------+--------------------------+
+                            | set to default ║ Recommend max_length | Recommend both           |
+                            +----------------+----------------------+--------------------------+
         """
         original_max_length = cast(int, pipeline_config.max_length)
         original_max_batch_size = cast(int, pipeline_config.max_batch_size)

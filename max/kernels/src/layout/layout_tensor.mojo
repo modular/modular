@@ -279,7 +279,7 @@ struct LayoutTensor[
 ](
     DevicePassable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
     _Expable,
 ):
@@ -1174,11 +1174,12 @@ struct LayoutTensor[
 
     @always_inline
     fn _elementwise_binary_with_broadcast[
+        other_mut: Bool,
+        //,
         func: fn(Self.element_type, Self.element_type) capturing -> (
             Self.element_type
         ),
         other_layout: Layout,
-        other_mut: Bool,
         other_origin: Origin[mut=other_mut],
         other_masked: Bool,
         other_alignment: Int,
@@ -1205,11 +1206,11 @@ struct LayoutTensor[
         patterns. The operation is performed in-place on this tensor.
 
         Parameters:
+            other_mut: Whether the other tensor is mutable.
             func: A binary function that takes two elements (one from each
                 tensor) and returns a single element as the result of the
                 operation.
             other_layout: The layout of the other tensor.
-            other_mut: Whether the other tensor is mutable.
             other_origin: The origin type of the other tensor.
             other_masked: Whether the other tensor is masked.
             other_alignment: The memory alignment of the other tensor.
@@ -2656,7 +2657,7 @@ struct LayoutTensor[
             A null `LayoutTensor` object.
         """
         return Self.StackTensorType(
-            UnsafePointer[
+            LegacyUnsafePointer[
                 Scalar[Self.dtype],
                 address_space = Self.address_space,
                 origin=MutExternalOrigin,
@@ -3686,7 +3687,9 @@ struct LayoutTensor[
         Self._compute_tile_layout[
             tile_size = Self.layout.shape[axis].value() // count, axis=axis
         ]()[0],
-        Self.origin,
+        # Splitting inherently introduces mutable aliases of the same origin -
+        # each chunk won't overlap, but the origin can't indicate that.
+        MutAnyOrigin,
         address_space = Self.address_space,
         element_layout = Self.element_layout,
         alignment = Self.alignment,
@@ -3756,7 +3759,7 @@ struct LayoutTensor[
                     tile_size = Self.layout.shape[axis].value() // count,
                     axis=axis,
                 ]()[0],
-                Self.origin,
+                MutAnyOrigin,
                 address_space = Self.address_space,
                 element_layout = Self.element_layout,
                 alignment = Self.alignment,
@@ -5282,8 +5285,11 @@ struct LayoutTensor[
     @always_inline
     fn distance(
         self,
-        addr: UnsafePointer[
-            Scalar[Self.dtype], address_space = Self.address_space, ...
+        addr: LegacyUnsafePointer[
+            mut=False,
+            Scalar[Self.dtype],
+            address_space = Self.address_space,
+            ...,
         ],
     ) -> Scalar[Self.linear_idx_type]:
         """Calculate the element-wise distance between this tensor's pointer
@@ -6051,7 +6057,7 @@ fn stack_allocation_like[
     ].stack_allocation()
 
 
-struct ThreadScope(TrivialRegisterType):
+struct ThreadScope(TrivialRegisterPassable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -8167,7 +8173,7 @@ struct LayoutTensorIter[
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,
-](Defaultable, TrivialRegisterType):
+](Defaultable, TrivialRegisterPassable):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `LayoutTensorIter` provides a way to iterate through memory according to a

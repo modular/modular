@@ -29,7 +29,7 @@ from format._utils import (
 )
 
 
-struct OwnedPointer[T: AnyType](RegisterType, Writable):
+struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
     """A safe, owning, smart pointer.
 
     This smart pointer is designed for cases where there is clear ownership

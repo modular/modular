@@ -179,7 +179,7 @@ class PipelineConfig(ConfigFileModel):
         default=None,
         description=(
             "Optional custom chat template to override the one shipped with the "
-            "HuggingFace model config. If a path is provided, the file is read "
+            "Hugging Face model config. If a path is provided, the file is read "
             "during config resolution and the content stored as a string. If "
             "None, the model's default chat template is used."
         ),
@@ -269,7 +269,9 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "Whether to enable the overlap scheduler. This feature allows the scheduler "
             "to run alongside GPU execution. This helps improve GPU utilization. "
-            "This is an experimental feature which may crash and burn."
+            "This is an experimental feature which may crash and burn. "
+            "This feature will be enabled by default for some selected architectures. "
+            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
         ),
     )
 
@@ -336,8 +338,7 @@ class PipelineConfig(ConfigFileModel):
         key_prefix: str = "",
         strip_prefix: bool = False,
     ) -> dict[str, Any]:
-        """
-        Extract kwargs that match a config class's fields.
+        """Extracts kwargs that match a config class's fields.
 
         Args:
             kwargs: Source kwargs dictionary (modified in place)
@@ -447,8 +448,7 @@ class PipelineConfig(ConfigFileModel):
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
     ) -> None:
-        """
-        Process remaining kwargs for other config classes.
+        """Processes remaining kwargs for other config classes.
 
         Args:
             unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
@@ -495,8 +495,7 @@ class PipelineConfig(ConfigFileModel):
         matched_kwargs: dict[str, Any],
         kv_cache_kwargs: dict[str, Any],
     ) -> None:
-        """
-        Create and set a config object with special handling for different config types.
+        """Creates and sets a config object with special handling for config types.
 
         Args:
             config_name: Name of the config attribute (e.g., "model")
@@ -624,6 +623,7 @@ class PipelineConfig(ConfigFileModel):
         return self
 
     def retrieve_chat_template(self) -> str | None:
+        """Returns the chat template string, or None if not set."""
         # Read the file content
         if self.chat_template is None:
             return None
@@ -666,10 +666,9 @@ class PipelineConfig(ConfigFileModel):
             ) from e
 
     def _resolve_chat_template(self) -> None:
-        """
-        Resolve chat_template if it's a Path object by reading the file content.
+        """Resolves chat_template if it is a Path by reading the file content.
 
-        This method handles the case where chat_template is a Path object,
+        Handles the case where chat_template is a Path object,
         validates that the file exists, reads its content, and stores the content
         as a string in the chat_template field.
 
@@ -700,9 +699,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
     def _import_custom_architectures(self) -> None:
-        """
-        Import custom model modules to add them to the registry.
-        """
+        """Imports custom model modules and adds them to the registry."""
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
@@ -735,10 +732,9 @@ class PipelineConfig(ConfigFileModel):
     def _validate_required_arguments_against_architecture(
         self, architecture: SupportedArchitecture
     ) -> None:
-        """
-        Validates and overrides config settings based on required_arguments from SupportedArchitecture.
+        """Validates and overrides config from architecture required_arguments.
 
-        This method checks the required_arguments dictionary from the architecture
+        Checks the required_arguments dictionary from the architecture
         and automatically overrides any config values that don't match, logging warnings
         when changes are made.
 
@@ -781,11 +777,10 @@ class PipelineConfig(ConfigFileModel):
                 continue
 
     def resolve(self) -> None:
-        """
-        Validates and resolves the config.
+        """Validates and resolves the config.
 
-        This method is called after the config is initialized, to ensure that all
-        config fields have been initialized to a valid state.
+        Called after the config is initialized to ensure all config fields
+        are in a valid state.
         """
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
@@ -834,17 +829,42 @@ class PipelineConfig(ConfigFileModel):
 
             self._validate_pipeline_config_for_speculative_decoding()
 
-        # Disable features that are not supported with the overlap scheduler.
+        self._validate_and_resolve_overlap_scheduler()
+
+    def _validate_and_resolve_overlap_scheduler(self) -> None:
+        if self.force:
+            return
+
+        # Automatically enable overlap scheduling for select architectures.
+        if not self.enable_overlap_scheduler:
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                huggingface_repo=self.model.huggingface_model_repo,
+                use_legacy_module=self.use_legacy_module,
+            )
+            if (
+                arch is not None
+                and arch.name == "LlamaForCausalLM_Legacy"
+                and self.pipeline_role == PipelineRole.PrefillAndDecode
+                and not self.sampling.enable_structured_output
+                and not self.sampling.enable_variable_logits
+                and not self.speculative
+                and not self.lora
+                and self.model.device_specs[0].device_type != "cpu"
+            ):
+                self.enable_overlap_scheduler = True
+                self.max_num_steps = 1
+                logger.info(
+                    f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
+                    "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+                )
+
+        # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.enable_overlap_scheduler:
             if self.pipeline_role != PipelineRole.PrefillAndDecode:
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
                     "It is only supported with the PrefillAndDecode pipeline role. "
                     f"Found {self.pipeline_role}."
-                )
-            if self.model.kv_cache.enable_prefix_caching:
-                raise ValueError(
-                    "Prefix caching is not supported with the Overlap scheduler."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
@@ -866,11 +886,13 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
+            if self.model.device_specs[0].device_type == "cpu":
+                raise ValueError(
+                    "Overlap scheduler is not supported with CPU models."
+                )
 
     def _validate_and_resolve_max_num_steps(self) -> None:
-        """
-        Validate and resolve the max_num_steps field. These are platform-specific.
-        """
+        """Validates and resolves the max_num_steps field (platform-specific)."""
         if self.max_num_steps < 0:
             if self.model.default_device_spec == DeviceSpec.cpu():
                 self.max_num_steps = 1
@@ -878,9 +900,7 @@ class PipelineConfig(ConfigFileModel):
                 self.max_num_steps = 10
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
-        """
-        Validate the pipeline configs when used in speculative decoding mode.
-        """
+        """Validates pipeline config when used in speculative decoding mode."""
         assert self.draft_model is not None
         assert self.speculative is not None
 
@@ -964,9 +984,10 @@ class PipelineConfig(ConfigFileModel):
     def _validate_and_resolve_remaining_pipeline_config(
         self, model_config: MAXModelConfig
     ) -> None:
-        """Update remaining pipeline config fields with appropriate values
-        if not provided. If invalid config is provided, error out with detailed
-        reason."""
+        """Updates remaining pipeline config fields if not provided.
+
+        Errors out with a detailed reason if invalid config is provided.
+        """
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
@@ -1125,12 +1146,11 @@ class PipelineConfig(ConfigFileModel):
         return self.model.graph_quantization_encoding
 
     def log_pipeline_info(self) -> None:
-        """Log comprehensive pipeline and KVCache configuration information.
+        """Logs comprehensive pipeline and KVCache configuration information.
 
         Retrieves all necessary information from self and the PIPELINE_REGISTRY.
         Raises an error if architecture is not found (which should not happen after config resolution).
         """
-
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
@@ -1505,6 +1525,7 @@ class AudioGenerationConfig(PipelineConfig):
     def from_flags(
         cls, audio_flags: dict[str, str], **config_flags: Any
     ) -> AudioGenerationConfig:
+        """Builds an AudioGenerationConfig from audio CLI flags and config kwargs."""
         audio_decoder = audio_flags.pop("audio_decoder", "")
         if not audio_decoder:
             raise ValueError(
