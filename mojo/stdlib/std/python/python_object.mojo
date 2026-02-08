@@ -92,7 +92,7 @@ struct PythonObject(
     Identifiable,
     ImplicitlyCopyable,
     Movable,
-    RegisterType,
+    RegisterPassable,
     SizedRaising,
     Writable,
 ):

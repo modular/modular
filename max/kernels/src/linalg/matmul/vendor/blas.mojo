@@ -113,7 +113,7 @@ from linalg.fp4_utils import (
 # ===----------------------------------------------------------------------===#
 
 
-struct Backend(Equatable, TrivialRegisterType, Writable):
+struct Backend(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)

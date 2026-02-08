@@ -439,7 +439,9 @@ fn st_matrix[
 
 
 # Shared memory operand descriptor.
-struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
+struct WGMMADescriptor[dtype: DType](
+    MMAOperandDescriptor, TrivialRegisterPassable
+):
     """Descriptor for shared memory operands used in warp group matrix multiply operations.
 
     This struct represents a descriptor that encodes information about shared memory layout

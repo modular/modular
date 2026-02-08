@@ -36,7 +36,7 @@ struct Consistency(
     ImplicitlyCopyable,
     Representable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
 ):
     """Represents the consistency model for atomic operations.
 

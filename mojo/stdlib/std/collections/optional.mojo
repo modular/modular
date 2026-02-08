@@ -49,7 +49,7 @@ struct _NoneType(ImplicitlyCopyable):
 
 @fieldwise_init
 struct EmptyOptionalError[T: AnyType](
-    ImplicitlyCopyable, RegisterType, Writable
+    ImplicitlyCopyable, RegisterPassable, Writable
 ):
     """An error type for when an empty `Optional` is accessed.
 
@@ -683,7 +683,7 @@ struct Optional[T: Movable](
 
 
 struct OptionalReg[T: __TypeOfAllTypes](
-    Boolable, Defaultable, DevicePassable, TrivialRegisterType
+    Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
 ):
     """A register-passable optional type.
 

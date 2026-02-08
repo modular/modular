@@ -29,7 +29,7 @@ struct CStringSlice[origin: ImmutOrigin](
     Defaultable,
     Equatable,
     ImplicitlyCopyable,
-    RegisterType,
+    RegisterPassable,
     Sized,
     Writable,
 ):

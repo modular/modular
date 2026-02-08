@@ -242,7 +242,7 @@ struct NDBuffer[
     ImplicitlyCopyable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """An N-dimensional buffer.

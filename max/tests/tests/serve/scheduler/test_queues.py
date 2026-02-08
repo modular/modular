@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import asyncio
 import queue
 import sys
 import time
@@ -24,17 +23,12 @@ import zmq
 from max.interfaces import (
     ImageMetadata,
     RequestID,
-    SchedulerError,
-    SchedulerResult,
     SharedMemoryArray,
     TokenBuffer,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.serve.worker_interface.zmq_interface import (
-    ZmqModelWorkerProxy,
-)
 from max.serve.worker_interface.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
@@ -404,55 +398,3 @@ def test_shared_memory_default_threshold_usage() -> None:
 
     # Large array should use shared memory (contain __shm__ marker)
     assert b"__shm__" in encoded
-
-
-@pytest.mark.asyncio
-async def test_engine_queue_stream_propagates_scheduler_error(
-    mocker: MockerFixture,
-) -> None:
-    """Test that stream() raises with error details including remote traceback."""
-    fake_traceback = (
-        "Traceback (most recent call last):\n"
-        '  File "pipeline.py", line 42, in execute\n'
-        "    result = model.forward(inputs)\n"
-        "RuntimeError: CUDA out of memory\n"
-    )
-    error_result: SchedulerResult[Any] = SchedulerResult(
-        is_done=True,
-        result=None,
-        error=SchedulerError(
-            error_type="RuntimeError",
-            error_message="CUDA out of memory",
-            traceback_str=fake_traceback,
-        ),
-    )
-
-    req_id = RequestID("test-error-request")
-    context = TextContext(
-        request_id=req_id,
-        max_length=50,
-        tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
-    )
-
-    response_queue = queue.Queue[dict[RequestID, SchedulerResult[Any]]]()
-    model_worker = ZmqModelWorkerProxy[TextContext, Any](
-        queue.Queue[TextContext](),
-        response_queue,
-        queue.Queue[list[RequestID]](),
-    )
-    response_queue.put({req_id: error_result})
-
-    worker_task = asyncio.create_task(model_worker.response_worker())
-    try:
-        with pytest.raises(RuntimeError) as exc_info:
-            async for _ in model_worker.stream(req_id, context):
-                pass
-    finally:
-        worker_task.cancel()
-
-    # Verify error message includes type, message, and remote traceback
-    error_msg = str(exc_info.value)
-    assert "RuntimeError" in error_msg
-    assert "CUDA out of memory" in error_msg
-    assert "Remote traceback:" in error_msg
-    assert "pipeline.py" in error_msg

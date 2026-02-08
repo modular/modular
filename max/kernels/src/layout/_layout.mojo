@@ -39,7 +39,7 @@ from .int_tuple import IntTuple
 from .layout import Layout as LegacyLayout
 
 
-trait TensorLayout(TrivialRegisterType):
+trait TensorLayout(TrivialRegisterPassable):
     comptime rank: Int
     comptime shape_known: Bool
     comptime stride_known: Bool
@@ -114,7 +114,7 @@ comptime RowMajorLayout[*shape_types: CoordLike] = Layout[
 struct Layout[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
-](ImplicitlyCopyable, TensorLayout, TrivialRegisterType):
+](ImplicitlyCopyable, TensorLayout, TrivialRegisterPassable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions

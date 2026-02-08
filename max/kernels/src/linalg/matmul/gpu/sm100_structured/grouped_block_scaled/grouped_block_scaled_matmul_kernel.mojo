@@ -111,7 +111,7 @@ comptime NUM_TENSORMAPS = 5
 
 
 @fieldwise_init
-struct GroupedTensormapSmem(TrivialRegisterType):
+struct GroupedTensormapSmem(TrivialRegisterPassable):
     """Shared memory pointers for tensormap descriptors.
 
     Points to 5 TMA descriptors (128 bytes each) in SMEM for dynamic updates:
@@ -178,7 +178,7 @@ struct GroupedTensormapSmem(TrivialRegisterType):
 
 
 @fieldwise_init
-struct GroupedTensormapManager(TrivialRegisterType):
+struct GroupedTensormapManager(TrivialRegisterPassable):
     """Manages tensormap SMEM state and updates for grouped GEMM.
 
     Handles the 4-step CuTe DSL update pattern:

@@ -614,7 +614,7 @@ If there is more than one candidate after applying these rules, the overload
 resolution fails. For example:
 
 ```mojo
-struct MyInt(TrivialRegisterType):
+struct MyInt(TrivialRegisterPassable):
     """A type that is implicitly convertible to `Int`."""
     var value: Int
 

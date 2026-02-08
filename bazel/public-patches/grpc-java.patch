@@ -1,0 +1,19 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index f28610058..456172ee3 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -66,14 +66,6 @@ use_repo(
+     "envoy_api",
+ )
+ 
+-grpc_repo_deps_ext = use_extension("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_repo_deps_ext")
+-
+-use_repo(
+-    grpc_repo_deps_ext,
+-    "com_envoyproxy_protoc_gen_validate",
+-    "opencensus_proto",
+-)
+-
+ maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+ 
+ maven.install(
