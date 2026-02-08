@@ -70,18 +70,16 @@ methods.
 """
 
 
-from bit import count_trailing_zeros
 from builtin.globals import global_constant
 from builtin.variadics import Variadic
-from collections.string.string_slice import get_static_string
+from collections.string.string_slice import _memchr, get_static_string
 from compile import get_type_name
-from math import align_down
-from memory import pack_bits
-from sys import is_compile_time, simd_width_of
+from memory import Span
 from utils import Variant
 
+
 # ===-----------------------------------------------------------------------===#
-# SIMD Helpers
+# Helpers
 # ===-----------------------------------------------------------------------===#
 
 
@@ -89,10 +87,10 @@ from utils import Variant
 fn _find_next_brace(
     ptr: UnsafePointer[mut=False, UInt8], start: Int, length: Int
 ) -> Int:
-    """Finds the index of the next `{` or `}` character using SIMD scanning.
+    """Finds the index of the next `{` or `}` character.
 
-    Uses vectorized comparison to process multiple bytes at once at runtime,
-    falling back to scalar iteration at compile time.
+    Delegates to `_memchr` (which uses SIMD internally) to search for each
+    brace character, then returns whichever occurs first.
 
     Args:
         ptr: Pointer to the format string bytes.
@@ -102,30 +100,16 @@ fn _find_next_brace(
     Returns:
         The index of the next brace character, or -1 if not found.
     """
-    if is_compile_time() or length - start < simd_width_of[DType.uint8]():
-        for i in range(start, length):
-            if ptr[i] == UInt8(ord("{")) or ptr[i] == UInt8(ord("}")):
-                return i
+    var remaining = Span[Byte](ptr=ptr + start, length=length - start)
+    var left = _memchr(remaining, UInt8(ord("{")))
+    var right = _memchr(remaining, UInt8(ord("}")))
+    if not left and not right:
         return -1
-
-    comptime w = simd_width_of[DType.bool]()
-    comptime left = SIMD[DType.uint8, w](UInt8(ord("{")))
-    comptime right = SIMD[DType.uint8, w](UInt8(ord("}")))
-
-    var vectorized_end = start + align_down(length - start, w)
-
-    for i in range(start, vectorized_end, w):
-        var block = ptr.load[width=w](i)
-        var bool_mask = block.eq(left) | block.eq(right)
-        var mask = pack_bits(bool_mask)
-        if mask:
-            return Int(type_of(mask)(i) + count_trailing_zeros(mask))
-
-    for i in range(vectorized_end, length):
-        if ptr[i] == UInt8(ord("{")) or ptr[i] == UInt8(ord("}")):
-            return i
-
-    return -1
+    if not left:
+        return Int(right) - Int(ptr)
+    if not right:
+        return Int(left) - Int(ptr)
+    return min(Int(left), Int(right)) - Int(ptr)
 
 
 # ===-----------------------------------------------------------------------===#
