@@ -7,9 +7,9 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:type scalar<f64>>>, scalar<f64>> : !TrivialRegisterType
+# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:type scalar<f64>>>, scalar<f64>> : !TrivialRegisterPassable
 
-struct MyInt(TrivialRegisterType):
+struct MyInt(TrivialRegisterPassable):
     var value: Int
 
     @always_inline("nodebug")
@@ -36,29 +36,29 @@ fn test_kw_args_overload(x: Int, y: Int):
 
 
 # COM: test parametric overload in the presence of keyword operands.
-fn take_kw_param_infer[A: TrivialRegisterType, B: TrivialRegisterType](a: A, b: B):
+fn take_kw_param_infer[A: TrivialRegisterPassable, B: TrivialRegisterPassable](a: A, b: B):
     pass
 
 
-fn take_kw_param_infer[B: TrivialRegisterType](a: MyInt, b: B):
+fn take_kw_param_infer[B: TrivialRegisterPassable](a: MyInt, b: B):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
 fn test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt):
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType,::TrivialRegisterType]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType,::TrivialRegisterType]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer[Int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType,::TrivialRegisterType]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer[Int, __mlir_type.`!pop.scalar<f64>`](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType]{{.*}}<:{{.*}}!Int>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType]{{.*}}<:{{.*}}!Int>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 
@@ -87,7 +87,7 @@ fn test_static_overload():
 # COM: Issue https://github.com/modular/mojo/issues/1408
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
-struct MyElement(TrivialRegisterType):
+struct MyElement(TrivialRegisterPassable):
     pass
 
 

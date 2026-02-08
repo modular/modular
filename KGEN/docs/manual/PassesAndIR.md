@@ -578,7 +578,7 @@ To see that last one, you can run this program through
 
 ```mojo
 @explicit_destroy("Can't destroy a MyTrait")
-trait MyTrait(TrivialRegisterType):
+trait MyTrait(TrivialRegisterPassable):
     fn bork(self):
         ...
 

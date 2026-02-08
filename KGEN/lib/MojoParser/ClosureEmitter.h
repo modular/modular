@@ -242,7 +242,7 @@ private:
   /// ImplicitlyDestructible trait is a parent of all closures. Cache its
   /// defining op.
   ClosureParent implicitlyDestructibleParent;
-  // TrivialRegisterType marks the state as register passable
+  // TrivialRegisterPassable marks the state as register passable
   ClosureParent trivialRegisterTypeParent;
   /// Copy trait is a parent of some closures. Cache its defining op.
   ClosureParent copyParent;

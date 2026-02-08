@@ -11,7 +11,7 @@
 
 
 @fieldwise_init
-struct Thing(TrivialRegisterType):
+struct Thing(TrivialRegisterPassable):
     @implicit
     fn __init__(out self, x: NMType):
         return
@@ -25,15 +25,15 @@ struct Thing(TrivialRegisterType):
 
 
 # COM: Test various things related to interfacing with generic types.
-fn anytype[T: TrivialRegisterType]():
+fn anytype[T: TrivialRegisterPassable]():
     pass
 
 
-fn anytype_arg[T: TrivialRegisterType](x: T):
+fn anytype_arg[T: TrivialRegisterPassable](x: T):
     pass
 
 
-fn anytype_result[T: TrivialRegisterType]() -> T:
+fn anytype_result[T: TrivialRegisterPassable]() -> T:
     pass
 
 
@@ -55,15 +55,15 @@ fn metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[::TrivialRegisterType]()"<:!TrivialRegisterType !Thing>>
+    # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[::TrivialRegisterPassable]()"<:!TrivialRegisterPassable !Thing>>
     comptime bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
-    # CHECK: call {{.*}}@"anytype_result[::TrivialRegisterType]()"<:{{.*}} !Thing>
+    # CHECK: call {{.*}}@"anytype_result[::TrivialRegisterPassable]()"<:{{.*}} !Thing>
     var v: Thing = anytype_result[Thing]()
 
     # COM: Test that argument type inference works correctly.
-    # CHECK: call {{.*}}@"anytype_arg[::TrivialRegisterType]($0)"<:{{.*}} !Thing>
+    # CHECK: call {{.*}}@"anytype_arg[::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>
     anytype_arg(v)
 
     # COM: Test inferring from a non-materializable type.
@@ -73,7 +73,7 @@ fn metatypes():
     # CHECK-NEXT: lit.ref.store [[NMVAL]], [[DNMVAL]]
     # CHECK-NEXT: [[IMMUT:%.*]] = lit.ref.immut [[DNMVAL]]
     # CHECK-NEXT: [[MVAL:%.*]] = lit.call {{.*}}@Thing::@"__init__{{.*}}([[IMMUT]])
-    # CHECK-NEXT: call {{.*}}@"anytype_arg[::TrivialRegisterType]($0)"<:{{.*}} !Thing>([[MVAL]])
+    # CHECK-NEXT: call {{.*}}@"anytype_arg[::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>([[MVAL]])
     anytype_arg(nm_alias)
 
 

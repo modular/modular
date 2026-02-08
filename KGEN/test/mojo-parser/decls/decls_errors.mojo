@@ -288,7 +288,7 @@ fn packArgOverload(x: Int):
 
 
 # expected-note @+1 {{function declared here}}
-fn first_and_rest[T: TrivialRegisterType, *Ts: AnyType](*values: *Ts):
+fn first_and_rest[T: TrivialRegisterPassable, *Ts: AnyType](*values: *Ts):
     pass
 
 
@@ -788,7 +788,7 @@ struct OtherInMemStruct:
   var y: InMemStruct # ok
 
 
-struct InvalidMember(TrivialRegisterType):
+struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
   fn __moveinit__(out self, deinit existing: Self): pass
@@ -953,7 +953,7 @@ trait EverythingIsWrongTrait:
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
 
-trait TraitWithParams[T: TrivialRegisterType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
+trait TraitWithParams[T: TrivialRegisterPassable]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
@@ -982,11 +982,11 @@ trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
         ...
 
 # struct implements CFMTrait but does not have f2().
-struct CFMStructFail(TrivialRegisterType, CFMTrait): # expected-error {{'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
+struct CFMStructFail(TrivialRegisterPassable, CFMTrait): # expected-error {{'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
   fn f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self: CFMStructFail, x: Int) -> None'}}
     pass
 
-struct NoTraits(TrivialRegisterType):
+struct NoTraits(TrivialRegisterPassable):
     pass
 
 fn trait_fn[T: CFMTrait]():

@@ -17,7 +17,7 @@ trait ConfigTrait:
         ...
 
     @staticmethod
-    fn trait_method_2[T: TrivialRegisterType](i: T) -> T:
+    fn trait_method_2[T: TrivialRegisterPassable](i: T) -> T:
         ...
 
 
@@ -37,7 +37,7 @@ struct Config(ConfigTrait):
 
     # Case 3: return a argument, but the type is parametric.
     @staticmethod
-    fn trait_method_2[T: TrivialRegisterType](i: T) -> T:
+    fn trait_method_2[T: TrivialRegisterPassable](i: T) -> T:
         return i
 
     fn __init__(out self):

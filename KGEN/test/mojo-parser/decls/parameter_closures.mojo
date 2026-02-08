@@ -21,7 +21,7 @@ struct BoxedInt(RegisterPassable):
         return self.value+rhs
 
 
-struct Param[T: TrivialRegisterType]:
+struct Param[T: TrivialRegisterPassable]:
     pass
 
 

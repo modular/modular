@@ -9,7 +9,7 @@ fn test(st: String):
     print(st)  # breakpoint
 
 
-struct Point(TrivialRegisterType):
+struct Point(TrivialRegisterPassable):
     var x: Int
     var y: Int
 

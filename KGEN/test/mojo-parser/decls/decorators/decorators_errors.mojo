@@ -334,12 +334,12 @@ trait NoDecorators:
 # deprecating @register_passable("trivial")
 # ===----------------------------------------------------------------------=== #
 
-# expected-warning @+1{{@register_passable("trivial") is deprecated, conform to TrivialRegisterType instead}}
+# expected-warning @+1{{@register_passable("trivial") is deprecated, conform to TrivialRegisterPassable instead}}
 @register_passable("trivial")
 trait DeprecatedRPTTrait:
     pass
 
-# expected-warning @+1{{@register_passable("trivial") is deprecated, conform to TrivialRegisterType instead}}
+# expected-warning @+1{{@register_passable("trivial") is deprecated, conform to TrivialRegisterPassable instead}}
 @register_passable("trivial")
 struct DeprecatedRPTStruct:
     pass

@@ -30,7 +30,7 @@ struct CacheAligned(Movable):
 # specified, the struct is NOT flattened to its element type during lowering,
 # preserving the alignment metadata.
 @align(32)
-struct AlignedTrivial(TrivialRegisterType):
+struct AlignedTrivial(TrivialRegisterPassable):
     var value: Int
 
     @always_inline
@@ -39,8 +39,8 @@ struct AlignedTrivial(TrivialRegisterType):
 
 
 # Struct for testing compile-time constants with alignment padding.
-# Uses TrivialRegisterType so it can be used in compile-time contexts.
-struct ContainsAlignedTrivialSecond(TrivialRegisterType):
+# Uses TrivialRegisterPassable so it can be used in compile-time contexts.
+struct ContainsAlignedTrivialSecond(TrivialRegisterPassable):
     var first: Int
     var second: AlignedTrivial  # @align(32) requires padding after first (8 bytes)
 
@@ -82,7 +82,7 @@ struct ContainsAlignedSecond:
 
 # Generic struct with alignment
 @align(128)
-struct AlignedGeneric[T: TrivialRegisterType]:
+struct AlignedGeneric[T: TrivialRegisterPassable]:
     var value: Self.T
 
     fn __init__(out self, value: Self.T):
@@ -398,7 +398,7 @@ fn test_compile_time_struct_constant() raises:
 
 # Struct containing an Optional with an aligned type.
 # Tests that Union types (which back Optional) respect @align on variants.
-# Uses AlignedTrivial which is TrivialRegisterType and thus Copyable.
+# Uses AlignedTrivial which is TrivialRegisterPassable and thus Copyable.
 struct ContainsOptionalAligned:
     var other: Int
     var opt: Optional[AlignedTrivial]

@@ -192,7 +192,7 @@ fn packBorrowed[*Ts: AnyType](*args: *Ts):
 
 
 # Ensure that parameters can be bound correctly.
-fn variadicParameter[*Ts: TrivialRegisterType](x: Int):
+fn variadicParameter[*Ts: TrivialRegisterPassable](x: Int):
     pass
 
 
@@ -220,9 +220,9 @@ fn usePacks(x: FloatDyn, y: Int):
 
     packBorrowed(Int(1)._mlir_value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<!TrivialRegisterType> [!Int, !FloatDyn]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn]>
     variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<!TrivialRegisterType> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<!TrivialRegisterPassable> []>
     variadicParameter(Int(2))
 
 

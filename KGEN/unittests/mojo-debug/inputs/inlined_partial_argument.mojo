@@ -15,7 +15,7 @@ fn use_ints(x: Int, y: Int):
 
 
 @fieldwise_init
-struct MyPair(TrivialRegisterType):
+struct MyPair(TrivialRegisterPassable):
     var x: Int
     var y: Int
 

@@ -122,7 +122,7 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     trait_pack(1, 2, 3)
 
 
-struct MyInt(TrivialRegisterType):
+struct MyInt(TrivialRegisterPassable):
     var value: Int
 
     @implicit
@@ -139,7 +139,7 @@ fn paramOverload(y: Int):
     pass
 
 
-fn paramOverload[x: Int, T: TrivialRegisterType](y: T):
+fn paramOverload[x: Int, T: TrivialRegisterPassable](y: T):
     pass
 
 
@@ -161,7 +161,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:variadic<!Int> [a, b]>(%x)
     paramOverload[a, b](x)
 
-struct VariadicStruct[*Ts: TrivialRegisterType]:
+struct VariadicStruct[*Ts: TrivialRegisterPassable]:
     fn __init__(out self):
         pass
 
@@ -170,15 +170,15 @@ struct VariadicStruct[*Ts: TrivialRegisterType]:
         pass
 
 
-fn take_variadic_struct[*Ts: TrivialRegisterType](a: VariadicStruct[*Ts]):
+fn take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 fn variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<!TrivialRegisterType> [!Int, !FloatDyn], :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn], :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<!TrivialRegisterType> [!Int, !FloatDyn]>>
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn]>>
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
@@ -201,7 +201,7 @@ fn callReturnParam() -> __mlir_type.index:
     return returnParameter[Int(3)._mlir_value]()
 
 
-fn paramRefFunc[T: TrivialRegisterType](x: T):
+fn paramRefFunc[T: TrivialRegisterPassable](x: T):
     pass
 
 
@@ -210,7 +210,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!TrivialRegisterType{{.*}}!lit.generator<("x": index) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!TrivialRegisterPassable{{.*}}!lit.generator<("x": index) -> index>>
     paramRefFunc(func)
 
 
@@ -272,7 +272,7 @@ struct RPStructWithInit(RegisterPassable):
     var y: Int
 
 
-struct RPStructWithInitTrivial(TrivialRegisterType):
+struct RPStructWithInitTrivial(TrivialRegisterPassable):
     var x: __mlir_type.index
 
 
@@ -554,7 +554,7 @@ fn raise_and_return(a: Error) raises -> Error:
 
 
 @fieldwise_init
-struct RaisingGetterSetter(TrivialRegisterType):
+struct RaisingGetterSetter(TrivialRegisterPassable):
     fn __getitem__(self, i: Int) raises -> FloatDyn:
         return 1.0
 
@@ -912,7 +912,7 @@ struct LegacyInOutInit:
 ##===----------------------------------------------------------------------===##
 
 
-struct Container[T: AnyType](TrivialRegisterType):
+struct Container[T: AnyType](TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[`!kgen.pointer<`, Self.T, `>`]
     var address: Self._mlir_type
 
@@ -1102,7 +1102,7 @@ fn closureParameterCaptures[
     pass
 
 
-struct HasParam[p: Int](TrivialRegisterType):
+struct HasParam[p: Int](TrivialRegisterPassable):
     pass
 
 
@@ -1112,7 +1112,7 @@ fn closureParameterInference[
     pass
 
 
-struct HasLifetimeParam[p: MutOrigin](TrivialRegisterType):
+struct HasLifetimeParam[p: MutOrigin](TrivialRegisterPassable):
     pass
 
 

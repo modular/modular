@@ -15,7 +15,7 @@ trait SomeTrait:
     pass
 
 
-struct ParamType[x: Int](TrivialRegisterType, SomeTrait):
+struct ParamType[x: Int](TrivialRegisterPassable, SomeTrait):
     pass
 
 
@@ -24,7 +24,7 @@ struct ParamType[x: Int](TrivialRegisterType, SomeTrait):
 ##===----------------------------------------------------------------------===##
 
 
-struct DependentParam[x: Int, y: ParamType[x]](TrivialRegisterType):
+struct DependentParam[x: Int, y: ParamType[x]](TrivialRegisterPassable):
     pass
 
 
@@ -67,7 +67,7 @@ struct InferredStruct[x: Int, //, y: Int, z: ParamType[x]]:
 
 
 struct InferredStructConversion[
-    x: Int, //, y: TrivialRegisterType, z: ParamType[x]
+    x: Int, //, y: TrivialRegisterPassable, z: ParamType[x]
 ]:
     pass
 
@@ -110,7 +110,7 @@ fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound_type = partially_bound_type[y]
 
-    # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!TrivialRegisterType !Int, :!lit.struct<#ParamType <:!Int x>> y>>
+    # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!TrivialRegisterPassable !Int, :!lit.struct<#ParamType <:!Int x>> y>>
     var inferred_type: InferredStructConversion[Int, y]
 
 

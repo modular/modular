@@ -127,10 +127,10 @@ trait CFMTraitParams:
 
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
-struct CFMStructParams[t1: TrivialRegisterType, t2: TrivialRegisterType](
+struct CFMStructParams[t1: TrivialRegisterPassable, t2: TrivialRegisterPassable](
     CFMTraitParams
 ):
-    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!TrivialRegisterType t1, :!TrivialRegisterType t2>>{{.*}}> read_mem)
+    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!TrivialRegisterPassable t1, :!TrivialRegisterPassable t2>>{{.*}}> read_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 
@@ -493,15 +493,15 @@ fn bind_regpassable_required_type():
 
 
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
-struct RegTrivialSpecial(TrivialRegisterType, AnyType, ImplicitlyCopyable):
+struct RegTrivialSpecial(TrivialRegisterPassable, AnyType, ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__moveinit__
     # CHECK: lit.fn @"__copyinit__
 
-# COM: TrivialRegisterType should behave the same as
+# COM: TrivialRegisterPassable should behave the same as
 # COM: @register_passable("trivial")
-struct RegTrivialSpecialWithTrait(TrivialRegisterType):
+struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__moveinit__
@@ -669,7 +669,7 @@ fn pass_up_trait[T: Father](x: T):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MovableType[T: Movable](TrivialRegisterType):
+struct MovableType[T: Movable](TrivialRegisterPassable):
     pass
 
 
@@ -682,7 +682,7 @@ struct Collection[T: InCollection]:
 
 
 # CHECK-LABEL: lit.struct.decl @Item
-struct Item(TrivialRegisterType, InCollection):
+struct Item(TrivialRegisterPassable, InCollection):
     pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}Movable
@@ -758,7 +758,7 @@ struct ABC(SomeTrait):
         pass
 
 
-struct ABCOptionalParamInt[dim_parametric: ABCDim](TrivialRegisterType):
+struct ABCOptionalParamInt[dim_parametric: ABCDim](TrivialRegisterPassable):
     fn __init__(out self):
         pass
 
@@ -902,7 +902,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
         self.take_any_type(a_value)
 
 
-struct ParamType[x: Int](TrivialRegisterType):
+struct ParamType[x: Int](TrivialRegisterPassable):
     pass
 
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
@@ -913,7 +913,7 @@ trait RGTrait(ImplicitlyDestructible, RegisterPassable):
     # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
-trait RGTrivialTrait(TrivialRegisterType):
+trait RGTrivialTrait(TrivialRegisterPassable):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"(%self: !kgen.param<:!RGTrivialTrait {{.*}}>) -> !kgen.none
     fn doSomething(self):
         ...
@@ -921,7 +921,7 @@ trait RGTrivialTrait(TrivialRegisterType):
 
 # https://github.com/modular/mojo/issues/3540: Using the output slot breaks trait conformance
 # CHECK-LABEL: lit.struct.decl @TestNamedResultConformance
-struct TestNamedResultConformance(TrivialRegisterType, Trait1):
+struct TestNamedResultConformance(TrivialRegisterPassable, Trait1):
 
     # CHECK: lit.fn @"f
     # CHECK-SAME: (%self: !TestNamedResultConformance) -> !TestNamedResultConformance
@@ -978,11 +978,11 @@ fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
 # This test ensure that overload resolution properly ignores methods coming
 # from parent traits when the child trait also has an equivalent definition.
 
-trait A(TrivialRegisterType):
+trait A(TrivialRegisterPassable):
     fn foo(self: Self):
       pass
 
-trait B(A, TrivialRegisterType):
+trait B(A, TrivialRegisterPassable):
     fn foo(self: Self):
       pass
 

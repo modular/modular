@@ -239,12 +239,12 @@ fn fn_with_overload(arg: Int):
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_parameter_references",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_parameter_references[arg1_type: TrivialRegisterType, arg2_type: TrivialRegisterType](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
+# CHECK:     "signature": "fn_with_parameter_references[arg1_type: TrivialRegisterPassable, arg2_type: TrivialRegisterPassable](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
 
 
 fn fn_with_parameter_references[
-    arg1_type: TrivialRegisterType,
-    arg2_type: TrivialRegisterType,
+    arg1_type: TrivialRegisterPassable,
+    arg2_type: TrivialRegisterPassable,
 ](
     func: __mlir_type[`(`, +arg1_type, `,`, +arg2_type, `) -> ()`],
     arg1: arg1_type,
@@ -626,20 +626,20 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK-NEXT:       "convention": "ref",
 
 
-# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: TrivialRegisterType) -> ref[ref_arg1] TrivialRegisterType"
+# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: TrivialRegisterPassable) -> ref[ref_arg1] TrivialRegisterPassable"
 fn fn_with_anon_refs(
-    ref ref_arg1: TrivialRegisterType,
-) -> ref[ref_arg1] TrivialRegisterType:
+    ref ref_arg1: TrivialRegisterPassable,
+) -> ref[ref_arg1] TrivialRegisterPassable:
     pass
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: TrivialRegisterType) -> ref[life] TrivialRegisterType",
+# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: TrivialRegisterPassable) -> ref[life] TrivialRegisterPassable",
 fn fn_with_named_refs[
     life: MutOrigin
-](ref[life] ref_arg1: TrivialRegisterType) -> ref[
+](ref[life] ref_arg1: TrivialRegisterPassable) -> ref[
     origin_of(ref_arg1)
-] TrivialRegisterType:
+] TrivialRegisterPassable:
     pass
 
 
@@ -749,7 +749,7 @@ fn parametric_ref_origin[b: Int](ref c: Int):
 struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # CHECK: "signature": "__getitem__(self) -> ref[MutAnyOrigin, address_space] T",
     fn __getitem__(
         self,

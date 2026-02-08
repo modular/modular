@@ -6,13 +6,13 @@
 # RUN: mojo %s
 
 # Test that the default Equatable implementation works for single-field
-# structs of TrivialRegisterType.
+# structs of TrivialRegisterPassable.
 
 from testing import assert_true, assert_false
 
 
 @fieldwise_init
-struct SingleFieldTrivial(Equatable, TrivialRegisterType):
+struct SingleFieldTrivial(Equatable, TrivialRegisterPassable):
     var value: Int
 
 

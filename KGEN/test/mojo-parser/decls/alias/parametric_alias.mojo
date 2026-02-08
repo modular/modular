@@ -74,10 +74,10 @@ struct MyStruct[a: Int, b: Int](MyTrait):
 # usages
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"__SomeImpl{{.*}}": !lit.generator<<"Trait": !TrivialRegisterType, "T": !kgen.param<:!TrivialRegisterType *(0,0)>>!kgen.param<:!TrivialRegisterType *(0,0)>> = <#kgen.gen<*(0,1)>>
-comptime __SomeImpl[Trait: TrivialRegisterType, T: Trait] = T
-# CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !TrivialRegisterType>!lit.generator<<"T": !kgen.param<:!TrivialRegisterType *(1,0)>>!kgen.param<:!TrivialRegisterType *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
-comptime Some[Trait: TrivialRegisterType] = __SomeImpl[Trait]
+# CHECK: lit.alias.decl *"__SomeImpl{{.*}}": !lit.generator<<"Trait": !TrivialRegisterPassable, "T": !kgen.param<:!TrivialRegisterPassable *(0,0)>>!kgen.param<:!TrivialRegisterPassable *(0,0)>> = <#kgen.gen<*(0,1)>>
+comptime __SomeImpl[Trait: TrivialRegisterPassable, T: Trait] = T
+# CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !TrivialRegisterPassable>!lit.generator<<"T": !kgen.param<:!TrivialRegisterPassable *(1,0)>>!kgen.param<:!TrivialRegisterPassable *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
+comptime Some[Trait: TrivialRegisterPassable] = __SomeImpl[Trait]
 
 # CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Int> @std::@builtin::@stubs::@Int::@"__add__(::Int,::Int)", *(0,0), *(0,0)), {_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)})>>
 comptime myDouble[x: Int] = myDependentDefaultAdd[x]

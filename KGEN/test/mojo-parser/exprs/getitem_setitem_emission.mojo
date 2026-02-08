@@ -66,28 +66,28 @@ fn test_setitem[x: Int](a: WeirdArray, idx: Int):
 
 # CHECK-LABEL: lit.fn @"test_getitem_slice
 fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType #type_value
-    # CHECK-SAME: :!TrivialRegisterType #type_value, :!TrivialRegisterType #type_value>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterPassable #type_value
+    # CHECK-SAME: :!TrivialRegisterPassable #type_value, :!TrivialRegisterPassable #type_value>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType #type_value, :!TrivialRegisterType #type_value,
-    # CHECK-SAME: :!TrivialRegisterType #type_value>{{.*}}(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterPassable #type_value, :!TrivialRegisterPassable #type_value,
+    # CHECK-SAME: :!TrivialRegisterPassable #type_value>{{.*}}(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[::]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType !Int,
-    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType #type_value>(%i, %j, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterPassable !Int,
+    # CHECK-SAME: :!TrivialRegisterPassable !Int, :!TrivialRegisterPassable #type_value>(%i, %j, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType #type_value,
-    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType !Int>(%none{{.*}}, %i, %j, {{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterPassable #type_value,
+    # CHECK-SAME: :!TrivialRegisterPassable !Int, :!TrivialRegisterPassable !Int>(%none{{.*}}, %i, %j, {{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:i:j]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType !Int,
-    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType !Int>(%i, %j, %k, {{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterPassable !Int,
+    # CHECK-SAME: :!TrivialRegisterPassable !Int, :!TrivialRegisterPassable !Int>(%i, %j, %k, {{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
 

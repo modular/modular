@@ -72,7 +72,7 @@ fn colon_instead_of_equal():
   # expected-error @below {{attribute spec requires a keyword parameter; did you mean 'value=...'?}}
   _ = __mlir_op.`lit.crazy`[value:index42]()
 
-struct Int(TrivialRegisterType):
+struct Int(TrivialRegisterPassable):
   var value : __mlir_type.index
 
 # Issue #7307: Error message can be improved when a user accidentally uses = instead of :

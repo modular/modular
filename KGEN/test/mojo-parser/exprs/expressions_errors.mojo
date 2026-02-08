@@ -80,7 +80,7 @@ fn trait_var():
     var type = SomeTrait
 
 
-fn reg_type_func() -> TrivialRegisterType:
+fn reg_type_func() -> TrivialRegisterPassable:
     # expected-error @below {{dynamic type values not permitted yet}}
     return Int
 
@@ -90,7 +90,7 @@ fn mem_type_func() -> AnyType:
     return SomeType
 
 
-fn takes_reg_type(t: TrivialRegisterType):
+fn takes_reg_type(t: TrivialRegisterPassable):
     pass
 
 
@@ -197,8 +197,8 @@ fn test_func_type():
     comptime float6: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6a: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[T: TrivialRegisterType](mut *T) capturing -> None}}
-    comptime float7: fn[T: TrivialRegisterType](mut *T) capturing -> None = test_func_type
+    # expected-error @below {{fn[T: TrivialRegisterPassable](mut *T) capturing -> None}}
+    comptime float7: fn[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
     comptime f1: fn (a: Int, Int) -> Int
@@ -255,7 +255,7 @@ struct MemoryOnlyPair:
 struct NonCopyable:
   fn __init__(out self): pass
 
-fn generic_on_type_ok[T: TrivialRegisterType](): pass
+fn generic_on_type_ok[T: TrivialRegisterPassable](): pass
 
 def testLValuesRvalues() -> None:
   # Test with lvalues
@@ -293,8 +293,8 @@ def testLValuesRvalues() -> None:
 
   var mpPair = MemoryOnlyPair()
 
-  # expected-error @+1 {{cannot bind type 'MemoryOnlyPair' to trait 'TrivialRegisterType'}}
-  comptime T: TrivialRegisterType = MemoryOnlyPair
+  # expected-error @+1 {{cannot bind type 'MemoryOnlyPair' to trait 'TrivialRegisterPassable'}}
+  comptime T: TrivialRegisterPassable = MemoryOnlyPair
 
 # expected-note @+1 {{function declared here}}
 fn badRef(mut val: Int):
@@ -466,7 +466,7 @@ struct TwoAndThreeList:
    # expected-note @below {{missing 3 required positional arguments: 'a', 'b', 'c'}}
    fn __init__(out self, a: Int, b: Int, c: Int, __list_literal__: ()): pass
 
-struct SimpleRange(TrivialRegisterType):
+struct SimpleRange(TrivialRegisterPassable):
     fn __init__(out self): pass
     fn __len__(self) -> Int:
         pass
@@ -1070,7 +1070,7 @@ fn sugar_test():
 
 
 # PR5618 - Compiler crash when should be implicit conversion error
-struct MemberAliasSugarCrash(TrivialRegisterType):
+struct MemberAliasSugarCrash(TrivialRegisterPassable):
     comptime ValueType = Int
     var _value: Self.ValueType
 

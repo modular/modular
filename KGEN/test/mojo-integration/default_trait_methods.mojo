@@ -152,7 +152,7 @@ struct AAStruct(AATrait1, AATrait2):
 
 
 @fieldwise_init
-struct ParamRP[x: Int, y: Int](TrivialRegisterType):
+struct ParamRP[x: Int, y: Int](TrivialRegisterPassable):
     var z: Int
 
 

@@ -7,7 +7,7 @@
 
 
 @fieldwise_init
-struct Index(TrivialRegisterType):
+struct Index(TrivialRegisterPassable):
     pass
 
 

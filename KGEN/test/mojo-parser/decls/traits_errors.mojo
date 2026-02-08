@@ -91,7 +91,7 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
 
 
 # expected-note@+1 {{trait 'TrivialTrait' declared here}}
-trait TrivialTrait(TrivialRegisterType):
+trait TrivialTrait(TrivialRegisterPassable):
     # expected-note@+1 {{required function 'doSomething' is not implemented}}
     fn doSomething(self):
         ...

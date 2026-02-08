@@ -12,7 +12,7 @@ fn getFloat() -> Float32:
 
 
 @fieldwise_init
-struct ARegisterPassableStruct(TrivialRegisterType):
+struct ARegisterPassableStruct(TrivialRegisterPassable):
     var int: Int
     var f32: Float32
     var another_int: Int
@@ -45,7 +45,7 @@ struct AStruct:
 
 
 @fieldwise_init("implicit")
-struct ParamStruct[T: TrivialRegisterType]:
+struct ParamStruct[T: TrivialRegisterPassable]:
     var t: Self.T
 
 

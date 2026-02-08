@@ -9,7 +9,7 @@
 from sys import argv
 
 
-trait RGTrivialTrait(TrivialRegisterType):
+trait RGTrivialTrait(TrivialRegisterPassable):
     fn doSomething(self):
         ...
 
