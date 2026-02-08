@@ -923,6 +923,53 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         return Self(unsafe_from_utf8=self._slice[span])
 
+    fn __getitem__[I: Indexer, //](self, *, codepoint: I) -> Self:
+        """Gets the character at the specified position.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+
+        var c_idx = normalize_index["StringSlice"](
+            codepoint, self.byte_length()
+        )
+        # NOTE: Edge case: when the element at idx 0 in a string is fetched and
+        # it's a multi-byte sequence, the code would assume it's an ascii
+        # sequence. Fetch 1 more byte (when not OOB) just to have a continuation
+        # byte and force the code to go into the clipped branch
+        var i0_multi_case = Int(c_idx == 0 and self.byte_length() > 1)
+        var span = self._slice[: c_idx + 1 + i0_multi_case]
+        var c_count = len(span) - _count_utf8_continuation_bytes(span)
+        if likely(c_count == len(span)):  # ASCII
+            return Self(ptr=self._slice.unsafe_ptr() + c_idx, length=1)
+        elif c_count == c_idx + 1:  # clipped the multi-byte sequence
+            var b_idx = c_idx
+            while _is_utf8_continuation_byte(self._slice[b_idx]):
+                b_idx -= 1
+            var length = Int(
+                _utf8_first_byte_sequence_length(self._slice[b_idx])
+            )
+            return Self(unsafe_from_utf8=self._slice[b_idx : b_idx + length])
+        else:  # keep going forward
+            var b_idx = c_idx + 1
+            while _is_utf8_continuation_byte(self._slice[b_idx]):
+                b_idx += 1
+            for s in Self(
+                unsafe_from_utf8=self._slice[b_idx:]
+            ).codepoint_slices():
+                if c_count == c_idx:
+                    return s
+                c_count += 1
+            debug_assert(False, "codepoint index is out of bounds")
+            return Self()
+
     fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
