@@ -174,30 +174,8 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        batch_request_ids = [
-            context.request_id for context in inputs.flat_batch
-        ]
-
         # Execute the batch.
-        try:
-            responses = self.pipeline.execute(inputs)
-        except Exception as exc:
-            logger.exception("Exception during pipeline execution")
-
-            # Send error results to ALL requests in the batch
-            self.response_queue.put_nowait(
-                {
-                    req_id: SchedulerResult.from_error(exc)
-                    for req_id in batch_request_ids
-                }
-            )
-
-            # Release all requests from batch constructor
-            for req_id in batch_request_ids:
-                if self.batch_constructor.contains(req_id):
-                    self.batch_constructor.release_request(req_id)
-
-            return len(batch_request_ids)
+        responses = self.pipeline.execute(inputs)
 
         # Filter out all responses for requests that are already released.
         # We can get a response for a request that is already released due to

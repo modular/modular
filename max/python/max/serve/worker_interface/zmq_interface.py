@@ -114,30 +114,12 @@ class ZmqModelWorkerProxy(
 
         Opens a channel for the request, yields each result as it becomes available,
         and closes the channel when the stream ends.
-
-        Raises:
-            RuntimeError: If the pipeline execution failed. The error message
-                contains the exception type and message from the scheduler.
         """
         with self._open_channel(req_id, data) as queue:
             # queue.get() will wait until an item is available.
-            # This will exit when no result is passed in the SchedulerResult,
-            # the SchedulerResult states that we should stop the stream,
-            # or when an error occurred during pipeline execution.
-            while True:
-                item = await queue.get()
-
-                # Check for error FIRST - propagate pipeline failures to caller
-                if item.error is not None:
-                    raise RuntimeError(
-                        f"Pipeline error ({item.error.error_type}): "
-                        f"{item.error.error_message}\n\n"
-                        f"Remote traceback:\n{item.error.traceback_str}"
-                    )
-
-                if item.result is None:
-                    break
-
+            # This will exit when no result is passed in the SchedulerResult.
+            # or the SchedulerResult states that we should stop the stream.
+            while (item := await queue.get()).result is not None:
                 yield item.result
 
                 if item.is_done:
