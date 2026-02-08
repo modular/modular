@@ -2735,6 +2735,73 @@ fn _memchr_impl[
 
 
 @always_inline
+fn _memchr2[
+    dtype: DType, //
+](
+    source: Span[mut=False, Scalar[dtype], ...],
+    char1: Scalar[dtype],
+    char2: Scalar[dtype],
+) -> source.UnsafePointerType:
+    """Finds the first occurrence of either `char1` or `char2` in `source`.
+
+    This is like `_memchr` but searches for two byte values simultaneously in a
+    single SIMD pass, avoiding the overhead of two separate scans.
+
+    Args:
+        source: The span of data to search through.
+        char1: The first byte value to search for.
+        char2: The second byte value to search for.
+
+    Returns:
+        A pointer to the first occurrence of either character, or a null
+        pointer if neither is found.
+    """
+    if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
+        var ptr = source.unsafe_ptr()
+
+        for i in range(len(source)):
+            if ptr[i] == char1 or ptr[i] == char2:
+                return ptr + i
+        return {}
+    else:
+        return _memchr2_impl(source, char1, char2)
+
+
+@always_inline
+fn _memchr2_impl[
+    dtype: DType, //
+](
+    source: Span[mut=False, Scalar[dtype], ...],
+    char1: Scalar[dtype],
+    char2: Scalar[dtype],
+    out output: source.UnsafePointerType,
+):
+    var haystack = source.unsafe_ptr()
+    var length = len(source)
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var needle1 = SIMD[dtype, bool_mask_width](char1)
+    var needle2 = SIMD[dtype, bool_mask_width](char2)
+    var vectorized_end = align_down(length, bool_mask_width)
+
+    for i in range(0, vectorized_end, bool_mask_width):
+        var block = haystack.load[width=bool_mask_width](i)
+        var bool_mask = block.eq(needle1) | block.eq(needle2)
+        var mask = pack_bits(bool_mask)
+        if mask:
+            output = haystack + Int(
+                type_of(mask)(i) + count_trailing_zeros(mask)
+            )
+            return
+
+    for i in range(vectorized_end, length):
+        if haystack[i] == char1 or haystack[i] == char2:
+            output = haystack + i
+            return
+
+    output = {}
+
+
+@always_inline
 fn _memmem[
     dtype: DType, //
 ](

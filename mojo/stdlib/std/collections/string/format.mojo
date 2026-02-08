@@ -72,7 +72,7 @@ methods.
 
 from builtin.globals import global_constant
 from builtin.variadics import Variadic
-from collections.string.string_slice import _memchr, get_static_string
+from collections.string.string_slice import _memchr2, get_static_string
 from compile import get_type_name
 from memory import Span
 from utils import Variant
@@ -89,8 +89,8 @@ fn _find_next_brace(
 ) -> Int:
     """Finds the index of the next `{` or `}` character.
 
-    Delegates to `_memchr` (which uses SIMD internally) to search for each
-    brace character, then returns whichever occurs first.
+    Delegates to `_memchr2` (which uses SIMD internally) to search for both
+    brace characters simultaneously in a single pass.
 
     Args:
         ptr: Pointer to the format string bytes.
@@ -101,15 +101,10 @@ fn _find_next_brace(
         The index of the next brace character, or -1 if not found.
     """
     var remaining = Span[Byte](ptr=ptr + start, length=length - start)
-    var left = _memchr(remaining, UInt8(ord("{")))
-    var right = _memchr(remaining, UInt8(ord("}")))
-    if not left and not right:
+    var result = _memchr2(remaining, UInt8(ord("{")), UInt8(ord("}")))
+    if not result:
         return -1
-    if not left:
-        return Int(right) - Int(ptr)
-    if not right:
-        return Int(left) - Int(ptr)
-    return min(Int(left), Int(right)) - Int(ptr)
+    return Int(result) - Int(ptr)
 
 
 # ===-----------------------------------------------------------------------===#
