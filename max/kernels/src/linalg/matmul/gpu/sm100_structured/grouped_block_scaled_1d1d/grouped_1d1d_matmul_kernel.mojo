@@ -46,6 +46,7 @@ from gpu.primitives.cluster import (
 from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout, LayoutTensor
+from ..structured_kernels.tile_types import lt_to_tt, lt_to_tt_1d
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -439,20 +440,22 @@ struct Grouped1D1DMatmulKernel[
             Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
         ],
         # Offset tensors for 1D-1D addressing
-        a_offsets: LayoutTensor[
+        a_offsets_lt: LayoutTensor[
             DType.uint32, Self.offsets_layout, MutAnyOrigin
         ],
-        a_scale_offsets: LayoutTensor[
+        a_scale_offsets_lt: LayoutTensor[
             DType.uint32, Self.a_scale_offsets_layout, MutAnyOrigin
         ],
-        expert_ids: LayoutTensor[
+        expert_ids_lt: LayoutTensor[
             DType.int32, Self.expert_ids_layout, MutAnyOrigin
         ],
-        expert_scales: LayoutTensor[
+        expert_scales_lt: LayoutTensor[
             DType.float32, Self.expert_scales_layout, MutAnyOrigin
         ],
         # C tensor for bounds-checked stores (full tensor layout)
-        c_device: LayoutTensor[Self.c_type, Self.c_device_layout, MutAnyOrigin],
+        c_device_lt: LayoutTensor[
+            Self.c_type, Self.c_device_layout, MutAnyOrigin
+        ],
         # Number of active experts
         num_active_experts: Int,
         # K dimension for iteration
@@ -463,6 +466,13 @@ struct Grouped1D1DMatmulKernel[
         Uses grid-constant TMAs with offset-based addressing for 1D-1D layout.
         """
         Self.validate_config()
+
+        # Convert kernel args to TileTensor
+        var a_offsets = lt_to_tt_1d(a_offsets_lt)
+        var a_scale_offsets = lt_to_tt_1d(a_scale_offsets_lt)
+        var expert_ids = lt_to_tt_1d(expert_ids_lt)
+        var expert_scales = lt_to_tt_1d(expert_scales_lt)
+        var c_device = lt_to_tt(c_device_lt)
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
@@ -554,7 +564,7 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== Work Iterator Setup =====
         var work_iter = Self.WorkIterator(
-            num_active_experts, a_offsets, expert_ids, expert_scales
+            num_active_experts, a_offsets_lt, expert_ids_lt, expert_scales_lt
         )
 
         # ===== TMA LOAD WARP =====
@@ -581,7 +591,7 @@ struct Grouped1D1DMatmulKernel[
                                 tiles,
                                 peer_cta_coord,
                                 ctx,
-                                a_scale_offsets,
+                                a_scale_offsets_lt,
                                 UInt32(k_tile),
                                 elect_one_cta,
                             )
@@ -660,7 +670,7 @@ struct Grouped1D1DMatmulKernel[
                         Self.epilogue(
                             c_tiles,
                             c_tma_op,
-                            c_device,
+                            c_device_lt,
                             output_stage,
                             ctx,
                         )

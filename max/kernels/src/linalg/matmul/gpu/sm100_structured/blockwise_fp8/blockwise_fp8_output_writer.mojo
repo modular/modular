@@ -82,12 +82,11 @@ struct BlockwiseFP8TileWriter[
     )
 
     # ========== Tile Array Types ==========
-    # LayoutTensor-based C tile array (used internally for .tile[] operations)
-    comptime CTileArray = SMemTileArray[
+    # LayoutTensor (for bounds-checked write path)
+    comptime CTileArrayLT = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
-    # TileTensor-based C tile array (for TileTensor overloads)
-    comptime CTileArrayTT = SMemTileArray2DRowMajor[
+    comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type,
         Self.c_smem_dim0,
         Self.c_smem_dim1,
@@ -147,15 +146,13 @@ struct BlockwiseFP8TileWriter[
             Self.mma_shape,
             cluster_size,
         ],
-        c_tiles: Self.CTileArrayTT,
+        c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
         c_coord: Tuple[UInt, UInt],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM."""
-        # Convert TileTensor array to LayoutTensor array via shared pointer
-        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
         Self._write_impl[c_layout, c_desc_layout, cluster_size](
-            accum, c_tiles_lt, c_tma_op, c_coord
+            accum, c_tiles, c_tma_op, c_coord
         )
 
     # ========== Internal Implementation ==========
@@ -274,7 +271,7 @@ struct BlockwiseFP8TileWriter[
             Self.mma_shape,
             cluster_size,
         ],
-        c_tiles: Self.CTileArrayTT,
+        c_tiles: Self.CTileArray,
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -297,7 +294,7 @@ struct BlockwiseFP8TileWriter[
             expert_scale: Per-expert output scaling factor.
             c_tensor: C tensor in GMEM (for bounds-checked stores).
         """
-        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+        var c_tiles_lt = Self.CTileArrayLT(c_tiles.ptr)
         Self._write_absolute_impl[c_tensor_layout, cluster_size](
             accum, c_tiles_lt, m_abs, n_abs, m_end, expert_scale, c_tensor
         )
@@ -316,7 +313,7 @@ struct BlockwiseFP8TileWriter[
             Self.mma_shape,
             cluster_size,
         ],
-        c_tiles: Self.CTileArray,
+        c_tiles: Self.CTileArrayLT,
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,

@@ -31,6 +31,9 @@ from gpu.memory import AddressSpace
 from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
+from layout._coord import Coord, Idx
+from layout._layout import TensorLayout
+from layout._tile_tensor import TileTensor
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
@@ -179,14 +182,13 @@ struct BlockwiseFP8Accumulator[
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
-        b_scales_layout: Layout,
         a_scales_dtype: DType,
         # A-scales tile dimensions
         a_scales_dim0: Int,
         a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: LayoutTensor[b_scales_dtype, b_scales_layout, MutAnyOrigin],
+        b_scales: TileTensor[b_scales_dtype, _, MutAnyOrigin],
         a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,
@@ -254,17 +256,25 @@ struct BlockwiseFP8Accumulator[
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
 
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales[b_scale_idx0, k_iter].cast[Self.accum_type]()
+                b_scales.ptr.load(
+                    b_scales.layout(Coord(Idx(b_scale_idx0), Idx(k_iter)))
+                ).cast[Self.accum_type]()
             )
             if b_scale_next_n < Self.MMA_N:
                 b_scale_1 = rebind[Scalar[Self.accum_type]](
-                    b_scales[b_scale_idx0 + 1, k_iter].cast[Self.accum_type]()
+                    b_scales.ptr.load(
+                        b_scales.layout(
+                            Coord(Idx(b_scale_idx0 + 1), Idx(k_iter))
+                        )
+                    ).cast[Self.accum_type]()
                 )
             else:
                 b_scale_1 = 0.0
         else:
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales[bn, k_iter].cast[Self.accum_type]()
+                b_scales.ptr.load(
+                    b_scales.layout(Coord(Idx(bn), Idx(k_iter)))
+                ).cast[Self.accum_type]()
             )
             b_scale_1 = 0.0
 

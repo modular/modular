@@ -151,7 +151,7 @@ struct Conv2dSmem[
     comptime ActTileArray = Self.InputTiles.ATileArray
     comptime FilterTileArray = Self.InputTiles.BTileArray
     comptime OutTileArray = Self.OutputTiles.CTileArray
-    comptime SrcTileArray = Self.SourceTiles.SrcTileArrayLT  # Source C tiles
+    comptime SrcTileArray = Self.SourceTiles.SrcTileArray  # Source C tiles (TileTensor)
 
     # ========== Storage Fields ==========
     var input_tiles: Self.InputTiles
@@ -172,7 +172,7 @@ struct Conv2dSmem[
     @always_inline
     fn out_tiles(ref[AddressSpace.SHARED] self) -> Self.OutTileArray:
         """Get output tiles."""
-        return self.output_tiles.c_tiles_tt()
+        return self.output_tiles.c_tiles()
 
     @always_inline
     fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
