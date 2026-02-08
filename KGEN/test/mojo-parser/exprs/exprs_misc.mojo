@@ -487,7 +487,7 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
 
 
 # MOCO-1987: Parser error when temporary PythonObject appears in or expression
-struct RPType(ImplicitlyCopyable, RegisterType):
+struct RPType(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         pass
 

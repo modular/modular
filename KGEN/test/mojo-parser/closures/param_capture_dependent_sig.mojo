@@ -9,7 +9,7 @@
 
 
 @fieldwise_init
-struct Foo[B: Int](ImplicitlyCopyable, RegisterType):
+struct Foo[B: Int](ImplicitlyCopyable, RegisterPassable):
     pass
 
 

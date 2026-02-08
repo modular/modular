@@ -27,7 +27,7 @@ struct MyType(PackageTrait):
 
 
 # CHECK: lit.struct.decl @MyRegType({{.*}}PackageTrait
-struct MyRegType(PackageTrait, RegisterType):
+struct MyRegType(PackageTrait, RegisterPassable):
     fn method(self):
         pass
 

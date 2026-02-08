@@ -791,7 +791,7 @@ bool isRegisterTypeHelper(const ASTType &asttype, llvm::SMLoc loc,
 
 bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {
   return isRegisterTypeHelper(
-      *this, loc, shared, "RegisterType", [](Operation *op) {
+      *this, loc, shared, "RegisterPassable", [](Operation *op) {
         bool result = false;
         TypeSwitch<Operation &>(*op).Case<StructDeclOp, TraitDeclOp>(
             [&](auto op) { result = op.isRegisterPassable(); });

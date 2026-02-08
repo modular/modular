@@ -17,7 +17,7 @@ struct Empty(TrivialRegisterType):
 ##===----------------------------------------------------------------------===##
 
 @fieldwise_init
-struct StructWithIntParam[size: Int](RegisterType):
+struct StructWithIntParam[size: Int](RegisterPassable):
     pass
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
@@ -139,7 +139,7 @@ fn implConversion[a: StructWithIntParam[42]]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !DType>
-struct Pair[dt: DType](RegisterType):
+struct Pair[dt: DType](RegisterPassable):
  # CHECK: lit.struct.field a : {{.*}}#SIMD <:!DType dt, :!Int {{.*}}42{{.*}}>{{.*}}>
  # CHECK: lit.struct.field b : !Int
   var a : SIMD[Self.dt, 42]
@@ -649,7 +649,7 @@ fn testUseOfAliases():
   # CHECK: lit.alias.decl *"y{{.*}}": !Int = <{{.*}}44
   comptime y = A[2].member
 
-struct MyDType(RegisterType):
+struct MyDType(RegisterPassable):
   var state : Int
 
   fn __copyinit__(out self, existing: Self):
@@ -896,7 +896,7 @@ fn testParameterEvaluator():
 fn takeAbstraction2(value: Abstraction[2]):
     return
 
-struct AnotherAbstraction[a: Int](RegisterType):
+struct AnotherAbstraction[a: Int](RegisterPassable):
     var value : Abstraction[Self.a + 1]
 
     fn __init__(out self):
@@ -1171,7 +1171,7 @@ fn reference_params_through_struct():
     foo[MultiStruct[1, 2, 3].p3]()
 
 
-struct DependentParam[x: Int, y: ParamType[x]](RegisterType):
+struct DependentParam[x: Int, y: ParamType[x]](RegisterPassable):
     pass
 
 

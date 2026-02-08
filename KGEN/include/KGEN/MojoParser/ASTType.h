@@ -162,7 +162,7 @@ public:
   bool isMovableFrom(ASTExprAnd<CValue> value, SharedState &shared) const;
 
   /// Return true if this type is register passable or conforms to
-  /// RegisterType trait.
+  /// RegisterPassable trait.
   /// Note: this resolves the body of a struct type.
   bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 

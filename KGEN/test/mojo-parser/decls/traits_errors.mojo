@@ -103,7 +103,7 @@ trait MemTraitViolation(TrivialTrait):
         ...
 
 
-trait NonTrivialRGTrait(RegisterType):
+trait NonTrivialRGTrait(RegisterPassable):
     fn bar(self):
         ...
 

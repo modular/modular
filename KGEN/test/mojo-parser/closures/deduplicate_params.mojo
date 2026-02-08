@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct C[B: Int](RegisterType):
+struct C[B: Int](RegisterPassable):
     fn get(self) -> Int:
         pass
 

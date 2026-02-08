@@ -818,12 +818,12 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
 
 
 trait TrivialRegisterType(
-    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterType
+    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterPassable
 ):
     pass
 
 
-trait RegisterType(Movable):
+trait RegisterPassable(Movable):
     pass
 
 
@@ -983,7 +983,7 @@ struct VariadicPack[
     is_owned: Bool,
     element_trait: type_of(AnyType),
     *element_types: element_trait,
-](RegisterType):
+](RegisterPassable):
     comptime _mlir_pack_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
         Self.element_trait,
@@ -1010,7 +1010,7 @@ struct VariadicPack[
 
 struct __ParameterClosureCaptureList[
     fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable, RegisterType):
+](ImplicitlyCopyable, RegisterPassable):
     comptime type = __mlir_type.`!kgen.pointer<none>`
     var value: Self.type
 

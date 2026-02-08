@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
-struct RP_NotTrivial(RegisterType):
+struct RP_NotTrivial(RegisterPassable):
     pass
 
 

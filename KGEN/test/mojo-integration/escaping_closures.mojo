@@ -24,7 +24,7 @@ fn makes_escaping_closure(m: Int) -> fn(n: Int) escaping -> Int:
 
 
 @fieldwise_init
-struct Foo[a: Int](ImplicitlyCopyable, RegisterType):
+struct Foo[a: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
     fn get(self) -> Int:
@@ -56,7 +56,7 @@ struct Bar[C: Int, D: Int]:
 
 
 @fieldwise_init
-struct Bat[A: Int](ImplicitlyCopyable, RegisterType):
+struct Bat[A: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
     fn get[B: Int](self) -> fn(y: Int) escaping -> Bar[B, Self.A]:
@@ -106,7 +106,7 @@ fn captureCallable[
 
 
 @fieldwise_init
-struct C[B: DType](ImplicitlyCopyable, RegisterType):
+struct C[B: DType](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
     fn get(self) -> Int:

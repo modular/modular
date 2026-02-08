@@ -179,7 +179,7 @@ struct VariadicPack[
     origin: Origin[elt_is_mutable],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
-](RegisterType): ...
+](RegisterPassable): ...
 ```
 
 that `_AnyTypeMetaType = type_of(AnyType)` means that `element_trait` can be

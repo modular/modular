@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct Thing[x: Int](RegisterType):
+struct Thing[x: Int](RegisterPassable):
     pass
 
 
