@@ -24,13 +24,15 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-trait MaybeZeroSized(TrivialRegisterType):
+trait MaybeZeroSized(TrivialRegisterPassable):
     fn value(self) -> S:
         ...
 
 
 @fieldwise_init
-struct ZeroSized(DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable):
+struct ZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
+):
     comptime device_type: AnyType = Self
 
     fn _to_device_type[
@@ -55,7 +57,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable):
 
 @fieldwise_init
 struct NotZeroSized(
-    DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
 ):
     comptime device_type: AnyType = Self
 

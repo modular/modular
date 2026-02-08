@@ -472,9 +472,11 @@ class TextBatchConstructor:
 
         replica_idx = min(
             range(self.num_replicas),
-            key=lambda idx: len(self.replicas[idx].ce_reqs)
-            + len(self.replicas[idx].tg_reqs)
-            + external_requests_per_replica[idx],
+            key=lambda idx: (
+                len(self.replicas[idx].ce_reqs)
+                + len(self.replicas[idx].tg_reqs)
+                + external_requests_per_replica[idx]
+            ),
         )
         return replica_idx
 
@@ -565,9 +567,8 @@ class TextBatchConstructor:
             del replica.tg_reqs[request_id]
         elif request_id in replica.deferred_lora_requests:
             del replica.deferred_lora_requests[request_id]
-        # Note: Request might not be in any queue if it was moved to a batch
-        # during construct_batch() and then an exception occurred during execution.
-        # In this case, we still need to release pipeline resources and clean up tracking.
+        # Request may already be in an active batch and therefore not appear in
+        # any pending queue; continue cleanup in that case.
 
         # Clean up LoRA state if no other request uses this adapter.
         # Note: We only check the current replica because LoRA currently requires

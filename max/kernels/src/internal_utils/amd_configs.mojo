@@ -16,7 +16,7 @@ from internal_utils import Table, TuningConfig
 
 # Setting up HW-specific tuning parameters
 @fieldwise_init
-struct TuningConfigAMD(TrivialRegisterType, TuningConfig):
+struct TuningConfigAMD(TrivialRegisterPassable, TuningConfig):
     # keys
     var m: Int
     var n: Int

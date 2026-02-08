@@ -14,7 +14,7 @@
 
 struct __ParameterClosureCaptureList[
     fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable, RegisterType):
+](ImplicitlyCopyable, RegisterPassable):
     var value: __mlir_type.`!kgen.pointer<none>`
 
     # Parameter closure invariant requires this function be marked 'capturing'.

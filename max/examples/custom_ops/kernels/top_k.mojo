@@ -28,7 +28,7 @@ from utils.numerics import min_or_neg_inf
 
 
 @fieldwise_init
-struct TopKElement[T: DType](Comparable, TrivialRegisterType):
+struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
     """Stores the value with it's index."""
 
     var idx: Int32

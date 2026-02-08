@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct RuntimeStruct(TrivialRegisterType):
+struct RuntimeStruct(TrivialRegisterPassable):
     var value: Int
 
     @implicit
@@ -22,7 +22,7 @@ struct RuntimeStruct(TrivialRegisterType):
 
 
 @nonmaterializable(RuntimeStruct)
-struct ParamStruct[param_value: Int](TrivialRegisterType):
+struct ParamStruct[param_value: Int](TrivialRegisterPassable):
     fn __init__(out self):
         pass
 

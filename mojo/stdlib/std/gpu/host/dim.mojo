@@ -16,7 +16,7 @@ from utils.index import IndexList
 
 
 @fieldwise_init("implicit")
-struct Dim(Stringable, TrivialRegisterType, Writable):
+struct Dim(Stringable, TrivialRegisterPassable, Writable):
     """Represents a dimension with up to three components (x, y, z).
 
     This struct is commonly used to represent grid and block dimensions

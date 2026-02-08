@@ -50,15 +50,15 @@ class SpeculativeConfig(ConfigFileModel):
     MAXConfig file."""
 
     def is_eagle(self) -> bool:
-        """Whether the speculative method is eagle i.e. it shares embedding and lm_head weights between the target and draft models and only takes the last hidden state from the target model"""
+        """Returns whether the speculative method is EAGLE (shared embedding/lm_head)."""
         return self.speculative_method == SpeculativeMethod.EAGLE
 
     def is_standalone(self) -> bool:
-        """Whether the speculative method is a standalone model"""
+        """Returns whether the speculative method is a standalone model."""
         return self.speculative_method == SpeculativeMethod.STANDALONE
 
     def is_mtp(self) -> bool:
-        """Whether the speculative method is MTP"""
+        """Returns whether the speculative method is MTP."""
         return self.speculative_method == SpeculativeMethod.MTP
 
     @classmethod

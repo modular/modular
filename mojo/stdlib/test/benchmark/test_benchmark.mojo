@@ -86,7 +86,7 @@ def test_stopping_criteria():
     assert_true(Float64(t3) / 1e9 <= Float64(ub_big))
 
 
-struct SomeStruct(TrivialRegisterType):
+struct SomeStruct(TrivialRegisterPassable):
     var x: Int
     var y: Int
 
@@ -96,7 +96,7 @@ struct SomeStruct(TrivialRegisterType):
         self.y = 4
 
 
-struct SomeTrivialStruct(TrivialRegisterType):
+struct SomeTrivialStruct(TrivialRegisterPassable):
     var x: Int
     var y: Int
 

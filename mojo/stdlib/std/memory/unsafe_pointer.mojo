@@ -187,7 +187,7 @@ struct UnsafePointer[
     ImplicitlyCopyable,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """`UnsafePointer` represents an indirect reference to one or more values
