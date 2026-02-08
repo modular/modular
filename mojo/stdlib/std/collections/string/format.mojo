@@ -70,11 +70,63 @@ methods.
 """
 
 
+from bit import count_trailing_zeros
 from builtin.globals import global_constant
 from builtin.variadics import Variadic
 from collections.string.string_slice import get_static_string
 from compile import get_type_name
+from math import align_down
+from memory import pack_bits
+from sys import is_compile_time, simd_width_of
 from utils import Variant
+
+# ===-----------------------------------------------------------------------===#
+# SIMD Helpers
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _find_next_brace(
+    ptr: UnsafePointer[mut=False, UInt8], start: Int, length: Int
+) -> Int:
+    """Finds the index of the next `{` or `}` character using SIMD scanning.
+
+    Uses vectorized comparison to process multiple bytes at once at runtime,
+    falling back to scalar iteration at compile time.
+
+    Args:
+        ptr: Pointer to the format string bytes.
+        start: The byte offset to start searching from.
+        length: The total byte length of the format string.
+
+    Returns:
+        The index of the next brace character, or -1 if not found.
+    """
+    if is_compile_time() or length - start < simd_width_of[DType.uint8]():
+        for i in range(start, length):
+            if ptr[i] == UInt8(ord("{")) or ptr[i] == UInt8(ord("}")):
+                return i
+        return -1
+
+    comptime w = simd_width_of[DType.bool]()
+    comptime left = SIMD[DType.uint8, w](UInt8(ord("{")))
+    comptime right = SIMD[DType.uint8, w](UInt8(ord("}")))
+
+    var vectorized_end = start + align_down(length - start, w)
+
+    for i in range(start, vectorized_end, w):
+        var block = ptr.load[width=w](i)
+        var bool_mask = block.eq(left) | block.eq(right)
+        var mask = pack_bits(bool_mask)
+        if mask:
+            return Int(type_of(mask)(i) + count_trailing_zeros(mask))
+
+    for i in range(vectorized_end, length):
+        if ptr[i] == UInt8(ord("{")) or ptr[i] == UInt8(ord("}")):
+            return i
+
+    return -1
+
 
 # ===-----------------------------------------------------------------------===#
 # Formatter
@@ -341,24 +393,27 @@ struct _FormatUtils:
 
         var entries = List[EntryType]()
         var start = Optional[Int](None)
-        var skip_next = False
         var fmt_ptr = format.unsafe_ptr()
         var fmt_len = format.byte_length()
         var total_estimated_entry_byte_width = 0
 
-        for i in range(fmt_len):
-            if skip_next:
-                skip_next = False
-                continue
+        var i = 0
+        while True:
+            var next = _find_next_brace(fmt_ptr, i, fmt_len)
+            if next == -1:
+                break
+            i = next
             if fmt_ptr[i] == `{`:
                 if not start:
                     start = i
+                    i += 1
                     continue
                 if i - start.value() != 1:
                     raise Error(l_err)
                 # python escapes double curlies
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
+                i += 1
                 continue
             elif fmt_ptr[i] == `}`:
                 if not start:
@@ -366,7 +421,7 @@ struct _FormatUtils:
                     if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
-                        skip_next = True
+                        i += 2
                         continue
                     # if it is not an escaped one, it is an error
                     raise Error(r_err)
@@ -396,6 +451,7 @@ struct _FormatUtils:
                     total_estimated_entry_byte_width += 8  # guessing
                 entries.append(current_entry^)
                 start = None
+            i += 1
 
         if raised_automatic_index:
             raise Error("Automatic indexing require more args in *args")
