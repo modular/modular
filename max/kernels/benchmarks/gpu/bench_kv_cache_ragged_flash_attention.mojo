@@ -130,19 +130,19 @@ def execute_kv_cache_ragged_flash_attention[
             for i in range(batch_size):
                 var curr_seq_length: UInt32
                 if use_random_seq_lengths:
-                    curr_seq_length = random_ui64(1, seq_len).cast[
+                    curr_seq_length = random_ui64(1, UInt64(seq_len)).cast[
                         DType.uint32
                     ]()
                 else:
-                    curr_seq_length = seq_len
+                    curr_seq_length = UInt32(seq_len)
 
                 var curr_cache_length: UInt32
                 if use_random_cache_lengths:
-                    curr_cache_length = random_ui64(1, cache_len).cast[
+                    curr_cache_length = random_ui64(1, UInt64(cache_len)).cast[
                         DType.uint32
                     ]()
                 else:
-                    curr_cache_length = cache_len
+                    curr_cache_length = UInt32(cache_len)
 
                 max_context_length = max(
                     max_context_length, curr_cache_length + curr_seq_length
@@ -154,11 +154,10 @@ def execute_kv_cache_ragged_flash_attention[
                 total_seq_len += curr_seq_length
 
                 flop_count += Int(
-                    4
-                    * num_q_heads
+                    UInt32(4 * num_q_heads)
                     * (curr_cache_length + curr_seq_length)
                     * curr_seq_length
-                    * head_dim
+                    * UInt32(head_dim)
                 )
 
             row_offsets_host[batch_size] = total_seq_len
@@ -235,7 +234,7 @@ def execute_kv_cache_ragged_flash_attention[
         var block_idx_set = Set[Int]()
         var idx = 0
         while idx < batch_size:
-            var randval = Int(random_ui64(0, num_blocks - 1))
+            var randval = Int(random_ui64(0, UInt64(num_blocks - 1)))
             if randval in block_idx_set:
                 continue
 

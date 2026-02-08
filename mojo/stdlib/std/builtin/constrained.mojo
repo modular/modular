@@ -40,7 +40,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
     ```mojo
     fn half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
-        __comptime_assert dtype.is_numeric(), "dtype must be numeric."
+        comptime assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
     def main():
@@ -80,7 +80,7 @@ fn constrained[cond: Bool]():
     Parameters:
         cond: The bool value to assert.
     """
-    __comptime_assert cond, "param assertion failed"
+    comptime assert cond, "param assertion failed"
 
 
 @always_inline("nodebug")
@@ -102,7 +102,7 @@ fn _constrained_conforms_to[
     # Construct a message like:
     #     List(Equatable) conformance requires Foo(Equatable) conformance, which
     #     is not satisfied.
-    __comptime_assert cond, StaticString(
+    comptime assert cond, StaticString(
         _get_kgen_string[
             parent_type_name,
             "(",
@@ -149,7 +149,7 @@ fn _constrained_field_conforms_to[
     # Construct a message like:
     #     Could not derive Equatable for Point - member field `x: Int` does not
     #     implement Equatable
-    __comptime_assert cond, StaticString(
+    comptime assert cond, StaticString(
         _get_kgen_string[
             "Could not derive ",
             ParentConformsTo,

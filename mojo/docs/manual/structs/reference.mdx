@@ -3,8 +3,8 @@ title: Self-referential structs
 sidebar_position: 2
 description: Mojo structs can't directly contain themselves. Learn how to use pointers to build linked lists, trees, and other self-referential data structures.
 ---
-Some data structures don’t fit well with value semantics. Lists, trees,
-and graphs all need nodes that point to each other. You can’t build these by
+Some data structures don't fit well with value semantics. Lists, trees,
+and graphs all need nodes that point to each other. You can't build these by
 nesting one value inside another, because the type would keep growing forever.
 
 In Mojo, you build these shapes with pointers, heap allocation, and manual
@@ -25,7 +25,7 @@ struct Node:
 ```
 
 Each `struct` has a fixed layout. If `Node` held another `Node` directly, the
-compiler wouldn’t know how much space to reserve. Optional fields don’t help,
+compiler wouldn't know how much space to reserve. Optional fields don't help,
 because the outer value still needs room for the inner one.
 
 Pointers solve this problem. Pointers have a fixed size, and they let values
@@ -66,7 +66,7 @@ new `Node` memory allocations into place.
 
 ## Building nodes
 
-Here’s the key pattern you’ll use in many reference structures:
+Here's the key pattern you'll use in many reference structures:
 
 1. Allocate space.
 1. Construct a value-holding node.
@@ -137,7 +137,7 @@ it as an instance method.
 
 ## Cleaning up
 
-Because you allocate each node yourself, you’re also responsible
+Because you allocate each node yourself, you're also responsible
 for freeing it. This cleanup walks the chain and frees each node
 after destroying its pointee:
 
@@ -151,7 +151,7 @@ fn free_chain(self):
         current = next_node
 ```
 
-The “head” node stays allocated unless you explicitly free it yourself:
+The "head" node stays allocated unless you explicitly free it yourself:
 
 ```mojo
 list_head[].free_chain()
@@ -168,7 +168,7 @@ the parent list handles node allocation and freeing. Because
 it owns the nodes, it also performs cleanup in its
 [destructor](/mojo/manual/lifecycle/death/).
 
-Here’s a small example based on the Mojo Standard Library that
+Here's a small example based on the Mojo Standard Library that
 shows how to deinitialize `self`:
 
 ```mojo
@@ -287,7 +287,7 @@ one one two three five eight
 
 ## What next?
 
-* Learn more about **pointers and memory safety** in Mojo’s
+* Learn more about **pointers and memory safety** in Mojo's
   [UnsafePointer](/mojo/std/memory/unsafe_pointer/UnsafePointer/)
   and [lifetime and origin rules](/mojo/manual/values/lifetimes/) guides.
 * Learn more about how to **manage cleanup** in the Mojo

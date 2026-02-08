@@ -511,7 +511,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
           True if ptr == expected and ptr was updated to desired. False otherwise.
         """
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
@@ -604,7 +604,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             rhs: Value to max.
         """
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
@@ -629,7 +629,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Args:
             rhs: Value to max.
         """
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
@@ -660,7 +660,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             rhs: Value to min.
         """
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
@@ -687,7 +687,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             rhs: Value to min.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
@@ -712,7 +712,7 @@ fn _compare_exchange_integral_impl[
     expected_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     desired: Scalar[dtype],
 ) -> Bool:
-    __comptime_assert dtype.is_integral(), "the input type must be integral"
+    comptime assert dtype.is_integral(), "the input type must be integral"
 
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = failure_ordering.__mlir_attr(),

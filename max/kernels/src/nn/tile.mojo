@@ -51,15 +51,15 @@ fn tile[
                  input tensor rank.
         output: The output tensor. Has the same dimensions and type as input.
     """
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input and output must have the same rank"
 
-    __comptime_assert (
+    comptime assert (
         input.rank <= 4
     ), "Currently only inputs of up to three dimensions are supported."
 
-    __comptime_assert (
+    comptime assert (
         repeats.rank == 1 and type_repeats == DType.int64
     ), "Rank of repeats tensor needs to be one-dimensional and of int64 type."
 
@@ -266,7 +266,7 @@ fn tile_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
+    comptime assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.

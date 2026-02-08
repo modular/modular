@@ -410,12 +410,16 @@ def test_binary_search():
         assert_true(view._binary_search_index(1))
         assert_equal(view._binary_search_index(1).value(), 1)
         view = Span(data)
-        assert_true(view._binary_search_index(max_val))
-        assert_equal(view._binary_search_index(max_val).value(), UInt(max_val))
-        view = Span(data)[: len(data) - 1]
-        assert_true(view._binary_search_index(max_val - 1))
+        assert_true(view._binary_search_index(Scalar[dtype](max_val)))
         assert_equal(
-            view._binary_search_index(max_val - 1).value(), UInt(max_val - 1)
+            view._binary_search_index(Scalar[dtype](max_val)).value(),
+            UInt(max_val),
+        )
+        view = Span(data)[: len(data) - 1]
+        assert_true(view._binary_search_index(Scalar[dtype](max_val - 1)))
+        assert_equal(
+            view._binary_search_index(Scalar[dtype](max_val - 1)).value(),
+            UInt(max_val - 1),
         )
 
     _test[DType.uint8]()

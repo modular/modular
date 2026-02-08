@@ -19,8 +19,8 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext, HostBuffer
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
+from layout._coord import Coord, Idx
+from layout._layout import Layout, row_major
 from layout._tile_tensor import TileTensor
 from nn.concat import _concat_gpu_elementwise
 
@@ -91,12 +91,7 @@ fn bench_concat[
 
     # Create input tuple for kernel
     var inputs = StaticTuple[
-        TileTensor[
-            shape_types = input0_device.shape_types,
-            stride_types = input0_device.stride_types,
-            type,
-            ImmutAnyOrigin,
-        ],
+        TileTensor[type, input0_device.LayoutType, ImmutAnyOrigin],
         num_inputs,
     ](
         input0_device.as_any_origin().as_immut(),
@@ -118,12 +113,7 @@ fn bench_concat[
     )
 
     var inputs_host = StaticTuple[
-        TileTensor[
-            shape_types = input0_host.shape_types,
-            stride_types = input0_host.stride_types,
-            type,
-            MutAnyOrigin,
-        ],
+        TileTensor[type, input0_host.LayoutType, MutAnyOrigin],
         num_inputs,
     ](
         input0_host.as_any_origin(),
@@ -170,8 +160,8 @@ fn bench_concat[
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
             var in_coord = Coord(coords)
-            __comptime_assert out_coord.rank == output_host.rank
-            __comptime_assert in_coord.rank == input.rank
+            comptime assert out_coord.rank == output_host.rank
+            comptime assert in_coord.rank == input.rank
             if output_host.load[width=1](out_coord) != input.load[width=1](
                 in_coord
             ):

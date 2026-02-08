@@ -347,34 +347,40 @@ def test_pointer_arithmetic():
 def test_load_and_store_simd():
     var ptr = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(16):
-        ptr[i] = i
+        ptr[i] = Int8(i)
     for i in range(0, 16, 4):
         var vec = ptr.load[width=4](i)
-        assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
+        assert_equal(
+            vec,
+            SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
+        )
     ptr.free()
 
     var ptr2 = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(0, 16, 4):
         ptr2.store(i, SIMD[DType.int8, 4](i))
     for i in range(16):
-        assert_equal(ptr2[i], i // 4 * 4)
+        assert_equal(ptr2[i], Int8(i // 4 * 4))
     ptr2.free()
 
 
 def test_volatile_load_and_store_simd():
     var ptr = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(16):
-        ptr[i] = i
+        ptr[i] = Int8(i)
     for i in range(0, 16, 4):
         var vec = ptr.load[width=4, volatile=True](i)
-        assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
+        assert_equal(
+            vec,
+            SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
+        )
     ptr.free()
 
     var ptr2 = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(0, 16, 4):
         ptr2.store[volatile=True](i, SIMD[DType.int8, 4](i))
     for i in range(16):
-        assert_equal(ptr2[i], i // 4 * 4)
+        assert_equal(ptr2[i], Int8(i // 4 * 4))
     ptr2.free()
 
 

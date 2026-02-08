@@ -188,8 +188,8 @@ struct DType(
     )
     """Represents the 8-bit `E8M0Fnu` floating point format.
 
-    This type is defined in the
-    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+    This type is defined in section 5.4 of the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf),
     encoded as `eeeeeeee`:
 
     - (e)xponent: 8 bits
@@ -689,7 +689,7 @@ struct DType(
         Returns:
             The mantissa width.
         """
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
@@ -707,7 +707,7 @@ struct DType(
         Returns:
             The max exponent.
         """
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
@@ -737,7 +737,7 @@ struct DType(
         Returns:
             The exponent width.
         """
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
@@ -1021,7 +1021,7 @@ fn _scientific_notation_digits[
 
 @always_inline
 fn _int_type_of_width[width: Int]() -> DType:
-    __comptime_assert width in (
+    comptime assert width in (
         8,
         16,
         32,
@@ -1052,7 +1052,7 @@ fn _int_type_of_width[width: Int]() -> DType:
 
 @always_inline
 fn _uint_type_of_width[width: Int]() -> DType:
-    __comptime_assert width in (
+    comptime assert width in (
         8,
         16,
         32,

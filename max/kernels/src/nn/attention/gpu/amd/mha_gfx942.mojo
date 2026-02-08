@@ -133,7 +133,7 @@ __extension Attention:
     fn mha_prefill(
         mut self,
     ):
-        __comptime_assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter
@@ -241,7 +241,7 @@ __extension Attention:
         ],
         num_partitions: Int,
     ):
-        __comptime_assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter

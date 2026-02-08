@@ -955,7 +955,7 @@ def test_layout_tensor_iterator_print():
     comptime buf_size = 16
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
-        storage[i] = i
+        storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(2, 2)
     var iter = LayoutTensorIter[
         DType.int16,

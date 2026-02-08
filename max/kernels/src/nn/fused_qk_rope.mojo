@@ -73,8 +73,8 @@ fn rope_q_proj[
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
-    __comptime_assert q_proj.rank == rank
-    __comptime_assert output.rank == rank
+    comptime assert q_proj.rank == rank
+    comptime assert output.rank == rank
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
     var pos_re = idx
     var pos_im = idx
@@ -184,9 +184,9 @@ fn fused_qk_rope[
         output: Output tensor for Q with RoPE applied, same shape as q_proj.
         context: Optional device context for GPU execution.
     """
-    __comptime_assert q_proj.rank == 4
-    __comptime_assert freqs_cis.rank == 2
-    __comptime_assert output.rank == 4
+    comptime assert q_proj.rank == 4
+    comptime assert freqs_cis.rank == 2
+    comptime assert output.rank == 4
 
     comptime kv_params = cache_t.kv_params
 
@@ -204,7 +204,7 @@ fn fused_qk_rope[
     fn rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 4, "Invalid rank passed to rope kernel"
+        comptime assert rank == 4, "Invalid rank passed to rope kernel"
 
         @parameter
         if width == 1:
@@ -260,7 +260,7 @@ fn fused_qk_rope[
     comptime kernel_simd_width = gcd(
         target_simd_width, Int(kv_params.head_size)
     )
-    __comptime_assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     @parameter
     if is_cpu[target]():
@@ -303,10 +303,10 @@ fn fused_qk_rope_ragged[
     for DeepSeek models where only part of each head undergoes rotary
     transformation.
     """
-    __comptime_assert q_proj.rank == 3, "q_proj must be rank 3"
-    __comptime_assert freqs_cis.rank == 2, "freqs_cis must be rank 2"
-    __comptime_assert output.rank == 3, "output must be rank 3"
-    __comptime_assert (
+    comptime assert q_proj.rank == 3, "q_proj must be rank 3"
+    comptime assert freqs_cis.rank == 2, "freqs_cis must be rank 2"
+    comptime assert output.rank == 3, "output must be rank 3"
+    comptime assert (
         input_row_offsets.rank == 1
     ), "input_row_offsets must be rank 1"
     comptime kv_params = cache_t.kv_params
@@ -324,18 +324,16 @@ fn fused_qk_rope_ragged[
     comptime unroped_dim = q_head_size - rope_dim
     comptime has_nope = unroped_dim > 0
 
-    __comptime_assert (
+    comptime assert (
         freqs_cis.layout.shape[1] != UNKNOWN_VALUE
     ), "Need static shape for freqs_cis"
-    __comptime_assert rope_dim <= q_head_size and rope_dim <= Int(
-        k_head_size
-    ), (
+    comptime assert rope_dim <= q_head_size and rope_dim <= Int(k_head_size), (
         "rope_dim must be smaller or equal to head size, but got rope_dim = "
         + String(rope_dim)
         + " and head_size = "
         + String(k_head_size)
     )
-    __comptime_assert (
+    comptime assert (
         rope_dim == q_head_size and rope_dim == Int(k_head_size)
     ) or interleaved, (
         "Partial RoPE operation only supported for interleaved pattern"
@@ -349,7 +347,7 @@ fn fused_qk_rope_ragged[
     fn rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
         @parameter
         if width == 1:
@@ -452,11 +450,11 @@ fn fused_qk_rope_ragged[
 
         @parameter
         for i in range(len(mrope_section.value())):
-            __comptime_assert (
+            comptime assert (
                 Int(mrope_section.value()[i]) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    __comptime_assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     @parameter
     if is_cpu[target]():

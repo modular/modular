@@ -21,7 +21,8 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from sys import external_call, size_of
+from ffi import external_call
+from sys import size_of
 
 from gpu._utils import to_llvm_ptr
 from gpu.host.device_context import (
@@ -77,16 +78,18 @@ struct TensorMapDataType(TrivialRegisterType):
 
         Parameters:
             dtype: The Mojo data type to convert. Must be one of `DType.float32`,
-                `DType.bfloat16`, or `DType.float8_e4m3fn`.
+                `DType.float16`, `DType.bfloat16`, `DType.uint8`,
+                `DType.float8_e4m3fn`, or `DType.float8_e8m0fnu`.
 
         Constraints:
-            The dtype must be float32, bfloat16, or float8_e4m3fn.
+            The dtype must be one of the supported types listed above.
 
         Returns:
             The corresponding `TensorMapDataType` value.
         """
-        __comptime_assert dtype in (
+        comptime assert dtype in (
             DType.float32,
+            DType.float16,
             DType.bfloat16,
             DType.uint8,
             DType.float8_e4m3fn,
@@ -96,6 +99,8 @@ struct TensorMapDataType(TrivialRegisterType):
         @parameter
         if dtype == DType.float32:
             return Self.FLOAT32
+        elif dtype == DType.float16:
+            return Self.FLOAT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
         else:
@@ -123,6 +128,7 @@ struct TensorMapInterleave(TrivialRegisterType):
 @fieldwise_init("implicit")
 struct TensorMapSwizzle(
     Equatable,
+    Hashable,
     ImplicitlyCopyable,
     Intable,
     Stringable,

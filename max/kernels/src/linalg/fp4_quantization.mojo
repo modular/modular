@@ -95,14 +95,14 @@ fn quantize_dynamic_scaled_fp4fp8[
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
-    __comptime_assert in_dtype in (
+    comptime assert in_dtype in (
         DType.bfloat16,
     ), "input dtype should be bfloat16"
 
-    __comptime_assert (
+    comptime assert (
         out_dtype == DType.uint8
         and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         and scales_dtype == DType.float8_e4m3fn
@@ -119,9 +119,9 @@ fn quantize_dynamic_scaled_fp4fp8[
 
     @parameter
     if SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE:
-        __comptime_assert N % SF_VECTOR_SIZE == 0, "N must be a multiple of 32"
+        comptime assert N % SF_VECTOR_SIZE == 0, "N must be a multiple of 32"
     else:
-        __comptime_assert (
+        comptime assert (
             N % (SF_VECTOR_SIZE // 2) == 0
         ), "N must be a multiple of 8"
 
@@ -189,19 +189,19 @@ fn quantize_dynamic_scaled_fp4fp8_kernel[
     num_cols_padded: Int,
     tensor_sf: Float32,
 ):
-    __comptime_assert SF_VECTOR_SIZE in (16, 32) and ELEMENTS_PER_THREAD == 8, (
+    comptime assert SF_VECTOR_SIZE in (16, 32) and ELEMENTS_PER_THREAD == 8, (
         "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) and MXFP8"
         " (SF_VECTOR_SIZE = 32) with 8 elements per thread"
     )
 
     comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
-    __comptime_assert NUM_THREADS_PER_SF in (
+    comptime assert NUM_THREADS_PER_SF in (
         2,
         4,
     ), "NUM_THREADS_PER_SF must be 2 or 4"
     comptime OUTPUT_WIDTH = 4 if out_dtype == DType.uint8 else 8
 
-    __comptime_assert (
+    comptime assert (
         input.shape[1]() % ELEMENTS_PER_THREAD == 0
     ), "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4/MXFP8)"
 
@@ -340,10 +340,10 @@ fn block_scales_interleave_fp4[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
 ) raises:
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
-    __comptime_assert scales_dtype in (
+    comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
 
@@ -441,19 +441,17 @@ fn naive_block_scaled_matmul[
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
-    __comptime_assert (
-        transpose_b
-    ), "Only transpose_b = True is supported for now"
-    __comptime_assert accum_type in (
+    comptime assert transpose_b, "Only transpose_b = True is supported for now"
+    comptime assert accum_type in (
         DType.float32,
     ), "Only float32 is supported for accumulation for scaled matmul"
-    __comptime_assert (
+    comptime assert (
         a_type == b_type
     ), "Only same input dtype is supported for block scaled matmul"
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type
     ), "input A and B scales dtype should be same for block scaled matmul"
-    __comptime_assert (
+    comptime assert (
         scaling_kind == UMMAKind.KIND_MXF4NVF4
         and a_type == DType.uint8
         and a_scales_type == NVFP4_SF_DTYPE
@@ -468,7 +466,7 @@ fn naive_block_scaled_matmul[
         " NVFP4 scales and MXF8F6F4 scaling kind is supported for MXFP8 input"
         " dtype with MXFP8 scales for block scaled matmul"
     )
-    __comptime_assert c_type in (DType.bfloat16, DType.float32), (
+    comptime assert c_type in (DType.bfloat16, DType.float32), (
         "Only bfloat16 or float32 is supported for output dtype for block"
         " scaled matmul matmul"
     )
@@ -670,24 +668,24 @@ fn quantize_dynamic_block_scaled[
     tensor_sf: Float32,  # tensor-wise scale factor
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
-    __comptime_assert in_dtype in (
+    comptime assert in_dtype in (
         DType.bfloat16,
     ), "input dtype should be bfloat16"
-    __comptime_assert out_dtype in (
+    comptime assert out_dtype in (
         DType.uint8,
         DType.float8_e4m3fn,
     ), "output dtype should be uint8 or float8_e4m3fn"
-    __comptime_assert scales_dtype in (
+    comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
         MXFP8_SF_DTYPE,
     ), (
         "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) or"
         " MXFP8_SF_DTYPE (float8_e8m0fnu)"
     )
-    __comptime_assert (
+    comptime assert (
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         or SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     ), (
@@ -708,13 +706,13 @@ fn quantize_dynamic_block_scaled[
     comptime output_layout = output_tensor.layout
     comptime is_fp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-    __comptime_assert is_fp4 or is_fp8, "invalid scaling kind"
+    comptime assert is_fp4 or is_fp8, "invalid scaling kind"
 
     comptime static_N = input_layout.shape[1].value()
 
     @parameter
     if is_fp4:
-        __comptime_assert (
+        comptime assert (
             output_layout.shape[1].value() == input_layout.shape[1].value() // 2
         ), (
             "output.dim(1) must be equal to input.dim(1) // 2 (each output"
@@ -731,7 +729,7 @@ fn quantize_dynamic_block_scaled[
             tensor_sf=tensor_sf,
         )
     else:
-        __comptime_assert (
+        comptime assert (
             static_N % (SF_VECTOR_SIZE // 2) == 0
         ), "input.dim(1) must be a multiple of (SF_VECTOR_SIZE // 2)"
 
@@ -760,10 +758,10 @@ fn block_scales_interleave[
     input_scales_device: NDBuffer[scales_dtype, 2, MutAnyOrigin, _],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
-    __comptime_assert scales_dtype in (
+    comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now."
 
@@ -824,7 +822,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
     comptime SF_K_GROUP_SIZE: UInt = SF_VECTOR_SIZE * SF_ATOM_K
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
 
-    __comptime_assert (
+    comptime assert (
         STAGE_GROUP_SIZE == 64
         and NUM_PIPELINES_STAGES == 1
         and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
@@ -832,7 +830,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
         "STAGE_GROUP_SIZE must be 64 and NUM_PIPELINES_STAGES must be 1 and"
         " SF_VECTOR_SIZE must be 16"
     )
-    __comptime_assert (
+    comptime assert (
         scales_dtype == NVFP4_SF_DTYPE
     ), "scales_dtype must be float8_e4m3fn"
 
@@ -1049,11 +1047,11 @@ fn quantize_dynamic_scaled_fp4_async[
     input_tensor: LayoutTensor[input_dtype, input_layout, MutAnyOrigin],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input_dtype == DType.bfloat16
     ), "input_dtype must be bfloat16"
 
-    __comptime_assert (
+    comptime assert (
         output_dtype == DType.uint8
         and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         and scales_dtype == NVFP4_SF_DTYPE
@@ -1070,11 +1068,11 @@ fn quantize_dynamic_scaled_fp4_async[
     var N = input_tensor.dim(1)
 
     comptime output_N = output_layout.shape[1].value()
-    __comptime_assert (
+    comptime assert (
         output_N % 32 == 0
     ), "output_tensor N must be a multiple of 32"
     comptime input_N = input_layout.shape[1].value()
-    __comptime_assert (
+    comptime assert (
         input_N // output_N == 2
     ), "input_tensor N must be a multiple of 2 * output_tensor N"
 
@@ -1095,11 +1093,11 @@ fn quantize_dynamic_scaled_fp4_async[
         __tile_layout = Layout.row_major(output_tma_tile_shape),
     ](ctx, output_tensor)
 
-    __comptime_assert scales_tensor.rank == 5, "scales must be 5D tensors"
+    comptime assert scales_tensor.rank == 5, "scales must be 5D tensors"
 
-    __comptime_assert scales_layout.shape[2].value() == SF_ATOM_M[0], ""
-    __comptime_assert scales_layout.shape[3].value() == SF_ATOM_M[1], ""
-    __comptime_assert scales_layout.shape[4].value() == SF_ATOM_K, ""
+    comptime assert scales_layout.shape[2].value() == SF_ATOM_M[0], ""
+    comptime assert scales_layout.shape[3].value() == SF_ATOM_M[1], ""
+    comptime assert scales_layout.shape[4].value() == SF_ATOM_K, ""
 
     comptime scales_4d_layout[layout: Layout] = Layout.row_major(
         layout.shape[0].value(),
@@ -1205,17 +1203,17 @@ fn block_scaled_matmul[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         scales_dtype == NVFP4_SF_DTYPE
     ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
 
-    __comptime_assert (
+    comptime assert (
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
@@ -1228,20 +1226,20 @@ fn block_scaled_matmul[
     comptime sfa_layout = a_scales.layout
     comptime sfb_layout = b_scales.layout
 
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
     ), "Both A and B scales must have the same shape in K dimension"
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[2].value()
         == sfb_layout.shape[2].value()
         == SF_ATOM_M[0]
     ), ""
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[3].value()
         == sfb_layout.shape[3].value()
         == SF_ATOM_M[1]
     ), ""
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
     ), ""
 
@@ -1294,34 +1292,34 @@ fn block_scaled_matmul_with_epilogue[
     operations.
     """
 
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         scales_dtype == NVFP4_SF_DTYPE
     ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
 
-    __comptime_assert SF_VECTOR_SIZE in (
+    comptime assert SF_VECTOR_SIZE in (
         NVFP4_SF_VECTOR_SIZE,
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
     ), "Both A and B scales must have the same shape in K dimension"
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[2].value()
         == sfb_layout.shape[2].value()
         == SF_ATOM_M[0]
     ), ""
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[3].value()
         == sfb_layout.shape[3].value()
         == SF_ATOM_M[1]
     ), ""
-    __comptime_assert (
+    comptime assert (
         sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
     ), ""
 

@@ -23,10 +23,10 @@ from memory import memcmp
 from collections.string.string_slice import _get_kgen_string
 from math import iota
 from sys import _libc as libc
+from ffi import external_call
 from sys import (
     align_of,
     codegen_unreachable,
-    external_call,
     env_get_string,
     is_compile_time,
     is_gpu,

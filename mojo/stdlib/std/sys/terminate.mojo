@@ -14,7 +14,7 @@
 
 
 from sys import _libc as libc
-from sys.ffi import c_int
+from ffi import c_int
 
 
 fn exit():

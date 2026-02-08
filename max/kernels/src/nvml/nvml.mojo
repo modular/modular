@@ -15,8 +15,8 @@
 from collections.string.string_slice import _to_string_list
 from os import abort
 from pathlib import Path
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
 from memory import stack_allocation, LegacyUnsafePointer
 

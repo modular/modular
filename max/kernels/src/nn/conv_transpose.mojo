@@ -37,7 +37,7 @@ from algorithm import (
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE
 from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
@@ -111,12 +111,12 @@ fn conv_transpose_naive[
         pad_h: Padding in height dimension.
         pad_w: Padding in width dimension.
     """
-    __comptime_assert output.rank == 5
-    __comptime_assert input.rank == 5
-    __comptime_assert filter.rank == 5
-    __comptime_assert output.element_size == 1
-    __comptime_assert input.element_size == 1
-    __comptime_assert filter.element_size == 1
+    comptime assert output.rank == 5
+    comptime assert input.rank == 5
+    comptime assert filter.rank == 5
+    comptime assert output.element_size == 1
+    comptime assert input.element_size == 1
+    comptime assert filter.element_size == 1
 
     var N = Int(input.dim[0]())  # Number of images (num. batches)
 
@@ -217,21 +217,23 @@ fn conv_transpose_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert strides.rank == 1
-    __comptime_assert pads.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert output_pads.rank == 1
+    comptime assert strides.rank == 1
+    comptime assert pads.rank == 1
+    comptime assert dilations.rank == 1
+    comptime assert output_pads.rank == 1
 
     if input.rank != 4 and input.rank != 5:
         raise Error("[conv_transpose] requires (input_rank == 4 or 5)")
     if input.rank != kernel.rank:
         raise Error("[conv_transpose] requires (input_rank == kernel_rank)")
-    if strides.dim(0) != input.rank - 2 or dilations.dim(0) != input.rank - 2:
+    if strides.dim(0) != Scalar[strides.linear_idx_type](
+        input.rank - 2
+    ) or dilations.dim(0) != Scalar[dilations.linear_idx_type](input.rank - 2):
         raise Error(
             "[conv_transpose] requires (len(strides) == len(dilations) =="
             " input_rank - 2)"
         )
-    if pads.dim(0) != 2 * (input.rank - 2):
+    if pads.dim(0) != Scalar[pads.linear_idx_type](2 * (input.rank - 2)):
         raise Error(
             "[conv_transpose] requires (len(paddings) == 2 * (input rank - 2))"
         )
@@ -383,12 +385,9 @@ struct ConvTransposedPacked[
     filter_linear_idx_type: DType,
     output_element_shape_types: Variadic.TypesOfTrait[CoordLike],
     output_linear_idx_type: DType,
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    filter_shape_types: Variadic.TypesOfTrait[CoordLike],
-    filter_stride_types: Variadic.TypesOfTrait[CoordLike],
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
+    FilterLayoutType: TensorLayout,
+    OutputLayoutType: TensorLayout,
     conv_attr_rank: Int,
     //,
     input_origin: Origin[mut=input_mut],
@@ -401,25 +400,22 @@ struct ConvTransposedPacked[
     elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](ImplicitlyCopyable):
     var output: TileTensor[
-        shape_types = Self.output_shape_types,
-        stride_types = Self.output_stride_types,
         Self.output_type,
+        Self.OutputLayoutType,
         Self.output_origin,
         element_shape_types = Self.output_element_shape_types,
         linear_idx_type = Self.output_linear_idx_type,
     ]
     var input: TileTensor[
-        shape_types = Self.input_shape_types,
-        stride_types = Self.input_stride_types,
         Self.input_type,
+        Self.InputLayoutType,
         Self.input_origin,
         element_shape_types = Self.input_element_shape_types,
         linear_idx_type = Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
-        shape_types = Self.filter_shape_types,
-        stride_types = Self.filter_stride_types,
         Self.filter_type,
+        Self.FilterLayoutType,
         Self.filter_origin,
         element_shape_types = Self.filter_element_shape_types,
         linear_idx_type = Self.filter_linear_idx_type,
@@ -438,9 +434,8 @@ struct ConvTransposedPacked[
     fn run(
         output: TileTensor[
             mut=True,
-            shape_types = Self.output_shape_types,
-            stride_types = Self.output_stride_types,
             Self.output_type,
+            Self.OutputLayoutType,
             Self.output_origin,
             element_shape_types = Self.output_element_shape_types,
             linear_idx_type = Self.output_linear_idx_type,
@@ -448,9 +443,8 @@ struct ConvTransposedPacked[
             ...,
         ],
         input: TileTensor[
-            shape_types = Self.input_shape_types,
-            stride_types = Self.input_stride_types,
             Self.input_type,
+            Self.InputLayoutType,
             Self.input_origin,
             element_shape_types = Self.input_element_shape_types,
             linear_idx_type = Self.input_linear_idx_type,
@@ -458,9 +452,8 @@ struct ConvTransposedPacked[
             ...,
         ],
         filter: TileTensor[
-            shape_types = Self.filter_shape_types,
-            stride_types = Self.filter_stride_types,
             Self.filter_type,
+            Self.FilterLayoutType,
             Self.filter_origin,
             element_shape_types = Self.filter_element_shape_types,
             linear_idx_type = Self.filter_linear_idx_type,
@@ -469,12 +462,12 @@ struct ConvTransposedPacked[
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
     ) raises:
-        __comptime_assert input.rank - 2 == Self.conv_attr_rank
+        comptime assert input.rank - 2 == Self.conv_attr_rank
         comptime simd_size = simd_width_of[Self.output_type]()
         comptime micro_kernel_shape = get_micro_kernel_shape[
             Self.conv_attr_rank,
-            Int(Self.output_shape_types[output.rank - 2].static_value),  # WO
-            Int(Self.output_shape_types[output.rank - 1].static_value),  # F
+            Int(Self.OutputLayoutType.static_shape[output.rank - 2]),  # WO
+            Int(Self.OutputLayoutType.static_shape[output.rank - 1]),  # F
             Self.conv_attr,
             simd_size,
         ]()
@@ -490,7 +483,7 @@ struct ConvTransposedPacked[
 
         @parameter
         if Self.conv_attr.num_groups != UNKNOWN_VALUE:
-            __comptime_assert (
+            comptime assert (
                 Self.conv_attr.num_groups == 1
             ), "Don't support grouped transposed conv for now."
 
@@ -740,7 +733,7 @@ struct ConvTransposedPacked[
         # print("pad effect", left_pad_impact_end, right_pad_impact_start)
 
         @parameter
-        if Variadic.size(Self.input_shape_types) == 4:
+        if Self.InputLayoutType.rank == 4:
             self.input_space_loop_2d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -759,7 +752,7 @@ struct ConvTransposedPacked[
                 left_pad_impact_end,
                 right_pad_impact_start,
             )
-        elif Variadic.size(Self.input_shape_types) == 5:
+        elif Self.InputLayoutType.rank == 5:
             self.input_space_loop_3d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -968,7 +961,7 @@ struct ConvTransposedPacked[
             var output_ptr = output_base
 
             @parameter
-            if Variadic.size(Self.input_shape_types) == 4:  # 2D ConvTransposed.
+            if Self.InputLayoutType.rank == 4:  # 2D ConvTransposed.
                 for ho in range(self.conv_shape.ho()):
                     for wo in range(self.conv_shape.wo()):
                         epilogue(
@@ -976,9 +969,7 @@ struct ConvTransposedPacked[
                         )
                         output_ptr += self.conv_shape.f
 
-            elif (
-                Variadic.size(Self.input_shape_types) == 5
-            ):  # 3D ConvTransposed.
+            elif Self.InputLayoutType.rank == 5:  # 3D ConvTransposed.
                 for do in range(self.conv_shape.do()):
                     for ho in range(self.conv_shape.ho()):
                         for wo in range(self.conv_shape.wo()):
@@ -1058,7 +1049,7 @@ fn update_w_tile_2d[
 
             @parameter
             if effected_by_padding:
-                __comptime_assert (
+                comptime assert (
                     micro_kernel_height == 1
                 ), "The tile must only have 1 point when effected bypadding."
                 var wo_nbr = howo[1] + s * conv_shape.dilation[1]
@@ -1156,7 +1147,7 @@ fn update_w_tile_3d[
 
                 @parameter
                 if effected_by_padding:
-                    __comptime_assert micro_kernel_height == 1
+                    comptime assert micro_kernel_height == 1
                     var wo_nbr = howo[2] + s * conv_shape.dilation[2]
                     if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                         continue
@@ -1418,9 +1409,9 @@ fn conv_transposed_cpu[
     fn description_fn() -> String:
         # fmt: off
         return String(
-            trace_arg("input", coord_to_index_list(input.layout.shape)),
-            ";", trace_arg("filter", coord_to_index_list(filter.layout.shape)),
-            ";", trace_arg("output", coord_to_index_list(output.layout.shape)),
+            trace_arg("input", coord_to_index_list(input.layout.shape_coord())),
+            ";", trace_arg("filter", coord_to_index_list(filter.layout.shape_coord())),
+            ";", trace_arg("output", coord_to_index_list(output.layout.shape_coord())),
             ";group=1",
             ";stride=", stride,
             ";padding_d=", Index(0, 0),
@@ -1429,7 +1420,7 @@ fn conv_transposed_cpu[
         )
         # fmt: on
 
-    __comptime_assert not filter_is_cfrs, "Filter layout CFRS is not supported"
+    comptime assert not filter_is_cfrs, "Filter layout CFRS is not supported"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv_transposed",
@@ -1455,7 +1446,7 @@ fn conv_transposed_cpu[
 
             @parameter
             for i in range(packed_filter_rank):
-                packed_filter_shape[i] = filter.layout.shape[i].value()
+                packed_filter_shape[i] = filter.layout.shape[i]().value()
 
         var packed_filter = TileTensor(
             packed_filter_ptr,
@@ -1556,7 +1547,7 @@ fn conv_transposed_gpu[
 
         var output_tmp = TileTensor(output_tmp_data, output.layout)
 
-        conv_transposed_cudnn[input_type, filter_type, output_type,](
+        conv_transposed_cudnn[input_type, filter_type, output_type](
             input,
             filter,
             output_tmp,
@@ -1579,12 +1570,12 @@ fn conv_transposed_gpu[
 
         elementwise[
             epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-        ](coord_to_index_list(output.layout.shape), ctx)
+        ](coord_to_index_list(output.layout.shape_coord()), ctx)
 
         _ = output_tmp_data^
 
     else:
-        conv_transposed_cudnn[input_type, filter_type, output_type,](
+        conv_transposed_cudnn[input_type, filter_type, output_type](
             input,
             filter,
             output,
@@ -1656,12 +1647,12 @@ fn _conv_transposed_cudnn[
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
             cudnn_handle[].ptr_conv_desc,
-            padding[0],
-            padding[1],
-            stride[0],
-            stride[1],
-            dilation[0],
-            dilation[1],
+            Int16(padding[0]),
+            Int16(padding[1]),
+            Int16(stride[0]),
+            Int16(stride[1]),
+            Int16(dilation[0]),
+            Int16(dilation[1]),
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )

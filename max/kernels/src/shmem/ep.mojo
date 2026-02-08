@@ -29,7 +29,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import size_of
-from sys.ffi import external_call
+from ffi import external_call
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
@@ -108,7 +108,7 @@ fn ep_dispatch_async_kernel_api[
     n_nodes: Int,
     target: StaticString,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     atomic_counters: LayoutTensor[DType.int32, ...],
     input_tokens: LayoutTensor,
@@ -145,11 +145,11 @@ fn ep_dispatch_async_kernel_api[
         context: Device context pointer
     """
 
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
-    __comptime_assert (
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert (
         input_tokens.shape[1]() == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
-    __comptime_assert (
+    comptime assert (
         topk_ids.shape[1]() == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
 
@@ -302,7 +302,7 @@ fn ep_dispatch_wait_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
@@ -395,7 +395,7 @@ fn ep_fused_dispatch_kernel_api[
     fused_shared_expert: Bool,
     target: StaticString,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     token_handler: token_fmt_type,
     row_offsets: LayoutTensor[DType.uint32, ...],
@@ -445,14 +445,14 @@ fn ep_fused_dispatch_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
-    __comptime_assert dispatch_dtype == DType.bfloat16
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert dispatch_dtype == DType.bfloat16
 
     # Ensure the shape for the input tensors are correct
-    __comptime_assert (
+    comptime assert (
         input_tokens.shape[1]() == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
-    __comptime_assert (
+    comptime assert (
         topk_ids.shape[1]() == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
 
@@ -572,7 +572,7 @@ fn ep_combine_async_kernel_api[
     n_nodes: Int,
     target: StaticString,
     fused_shared_expert: Bool = False,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     atomic_counters: LayoutTensor[DType.int32, ...],
     input_tokens: LayoutTensor[combine_dtype, ...],
@@ -621,8 +621,8 @@ fn ep_combine_async_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
-    __comptime_assert (
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert (
         input_tokens.shape[1]() == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
 
@@ -676,17 +676,20 @@ fn ep_combine_async_kernel_api[
         task_id=get_safe_task_id(context),
     ):
         var func = gpu_ctx.compile_function[combine_async, combine_async]()
-        var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
-        # Don't initialize the module repeatedly
-        if not Int(global_cache_lookup(cached_module_key)):
-            shmem_module_init(func)
-            global_cache_insert(
-                cached_module_key,
-                UnsafePointer[NoneType, MutExternalOrigin](
-                    unsafe_from_address=1
-                ),
-            )
+        @parameter
+        if use_shmem:
+            var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    UnsafePointer[NoneType, MutExternalOrigin](
+                        unsafe_from_address=1
+                    ),
+                )
 
         var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
@@ -770,9 +773,9 @@ fn ep_combine_wait_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
     # Ensure the shape for the output tensor is correct
-    __comptime_assert (
+    comptime assert (
         output_tokens.shape[1]() == hidden_size
     ), "EP combine: output tokens shape doesn't match hidden size."
 
@@ -865,7 +868,7 @@ fn ep_fused_combine_kernel_api[
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
     fused_shared_expert: Bool = False,
-    use_shmem: Bool = True,
+    use_shmem: Bool = (n_nodes > 1),
 ](
     output_tokens: LayoutTensor[combine_dtype, ...],
     atomic_counters: LayoutTensor[DType.int32, ...],
@@ -913,12 +916,12 @@ fn ep_fused_combine_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
     # Ensure the shape for the tensors are correct
-    __comptime_assert (
+    comptime assert (
         input_tokens.shape[1]() == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
-    __comptime_assert (
+    comptime assert (
         output_tokens.shape[1]() == hidden_size
     ), "EP combine: output tokens shape doesn't match hidden size."
 

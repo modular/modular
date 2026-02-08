@@ -18,7 +18,7 @@
 
 
 from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 
 # TODO Refactor -- we should decide on and put them into a more common file
@@ -37,7 +37,7 @@ fn _fill[
     value: Scalar[dtype],
     count: Int,
 ):
-    _ = TileTensor[dtype, layout](dst, row_major(Idx(count))).fill(value)
+    _ = TileTensor(dst, row_major(Idx(count))).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -281,11 +281,13 @@ fn pad_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert paddings_buf.rank == 1, "paddings_buf must be of rank 1"
+    comptime assert paddings_buf.rank == 1, "paddings_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
-    if paddings_buf.dim[0]() != 2 * input_buf.rank:
+    if paddings_buf.dim[0]() != Scalar[paddings_buf.linear_idx_type](
+        2 * input_buf.rank
+    ):
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
@@ -301,7 +303,7 @@ fn pad_shape[
 
 
 fn _do_pad[
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     //,
     dtype: DType,
     paddings_type: DType,
@@ -311,15 +313,15 @@ fn _do_pad[
         ],
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
         UnsafePointer[Scalar[paddings_type]],
-        IndexList[Variadic.size(output_shape_types)],
+        IndexList[OutputLayoutType.rank],
         UnsafePointer[mut=True, Scalar[DType.int]],
         UnsafePointer[Scalar[DType.int]],
     ) capturing[_] -> None,
 ](
     output: TileTensor[
         mut=True,
-        shape_types=output_shape_types,
         dtype,
+        OutputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
@@ -838,7 +840,7 @@ fn pad_repeat[
 
     @parameter
     for i in range(output.rank):
-        loop_bounds[i] = IndexList[2](0, input.layout.shape[i].value())
+        loop_bounds[i] = IndexList[2](0, input.layout.shape[i]().value())
 
     var non_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
 

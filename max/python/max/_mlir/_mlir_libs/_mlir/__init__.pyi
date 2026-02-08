@@ -27,6 +27,13 @@ def register_operation(
     Produce a class decorator for registering an Operation class as part of a dialect
     """
 
+def register_op_adaptor(
+    op_class: type, *, replace: bool = False
+) -> Callable[[type[T]], type[T]]:
+    """
+    Produce a class decorator for registering an OpAdaptor class for an operation.
+    """
+
 def register_type_caster(
     typeid: _mlir.ir.TypeID, *, replace: bool = False
 ) -> Callable[[Callable[[T], U]], Callable[[T], U]]:

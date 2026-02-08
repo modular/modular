@@ -70,7 +70,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
         ...
 
 

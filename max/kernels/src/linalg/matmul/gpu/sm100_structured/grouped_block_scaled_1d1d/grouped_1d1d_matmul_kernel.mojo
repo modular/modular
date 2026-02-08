@@ -66,8 +66,8 @@ from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
     InputConsumerStage,
-    BlockScaledTilePayload,
     OutputTilePipeline,
+    BlockScaledTilePayload,
 )
 from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
 from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
@@ -266,16 +266,25 @@ struct Grouped1D1DMatmulKernel[
     ]
 
     # ========== Tile Pipeline Types ==========
+    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
 
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.SmemType.sfa_smem_layout,
-        Self.SmemType.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
+        # SFA tile dimensions
+        Self.SmemType.SFA_DIM0,
+        Self.SmemType.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SmemType.SFB_DIM0,
+        Self.SmemType.SFB_DIM1,
         Self.SmemType.num_pipeline_stages,
     ]
 
@@ -342,7 +351,8 @@ struct Grouped1D1DMatmulKernel[
         num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_layout = Self.SmemType.c_smem_layout,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
@@ -469,9 +479,9 @@ struct Grouped1D1DMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var tmem_addr_storage = smem.tmem_addr().ptr
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var tmem_addr_storage = smem.pipelines.tmem_addr().ptr
 
         # Create input pipeline with tile payload
         var tile_payload = Self.TilePayload(
@@ -489,9 +499,11 @@ struct Grouped1D1DMatmulKernel[
         )
 
         # Peer CTA coordinates for multicast
-        var peer_rank_n = UInt(block_rank_in_cluster() % Self.CLUSTER_N)
+        var peer_rank_n = UInt(block_rank_in_cluster() % UInt32(Self.CLUSTER_N))
         var peer_rank_m = UInt(
-            block_rank_in_cluster() // Self.CLUSTER_N % Self.CLUSTER_M
+            block_rank_in_cluster()
+            // UInt32(Self.CLUSTER_N)
+            % UInt32(Self.CLUSTER_M)
         )
         var peer_m_rank = peer_rank_m % UInt(Self.cta_group)
         var peer_cta_coord = (peer_rank_n, peer_rank_m, peer_m_rank)
@@ -516,21 +528,23 @@ struct Grouped1D1DMatmulKernel[
             Self.InputTilePipelineType.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
 
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
-            smem.tmem_dealloc().ptr[].init(
-                WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group
+            smem.pipelines.tmem_dealloc().ptr[].init(
+                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group)
             )
 
         fence_mbarrier_init()
@@ -581,11 +595,11 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== MMA WARP =====
         if WarpRole1D1D.is_mma():
-            var tmem = Self.Tmem.allocate(smem.tmem_addr())
+            var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             var tmem_region = Self.TmemRegion(tmem)
@@ -627,11 +641,11 @@ struct Grouped1D1DMatmulKernel[
         if WarpRole1D1D.is_epilogue():
             Self.MmaEpilogueSync.wait()
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             with epi_ctx:
@@ -710,35 +724,39 @@ struct Grouped1D1DMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
-                var a_tile, b_tile, sfa_tile, sfb_tile = (
-                    tiles.payload().get_tile[Self.config.k_group_size](
-                        tiles.stage(), jj
-                    )
-                )
+                # Get tiles as TileTensor
+                var a_tt, b_tt, sfa_tt, sfb_tt = tiles.payload().get_tile[
+                    Self.config.k_group_size
+                ](tiles.stage(), jj)
 
-                var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                # Peer CTA slice using TileTensor pattern (ptr + layout)
+                var a_peer_tt = type_of(a_tt)(
+                    a_tt.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tt.layout,
                 )
-                var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                var b_peer_tt = type_of(b_tt)(
+                    b_tt.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tt.layout,
                 )
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
+                # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load[Self.cta_group](
-                    a_peer_tile,
+                    a_peer_tt,
                     barrier[0],
                     (k_coord, a_gmem_m_coord),
                     UInt16((1 << Self.CLUSTER_M) - 1),
                 )
                 b_tma_op.async_multicast_load[Self.cta_group](
-                    b_peer_tile,
+                    b_peer_tt,
                     barrier[0],
                     (k_coord, b_gmem_n_coord),
                     UInt16((1 << Self.CLUSTER_N) - 1),
                 )
 
                 # Scale factor load with offset
+                # TMA 4D now has TileTensor overload - pass tiles directly
                 var a_scale_offset = rebind[Scalar[DType.uint32]](
                     a_scale_offsets[Int(group_idx)]
                 )
@@ -746,12 +764,14 @@ struct Grouped1D1DMatmulKernel[
                     a_scale_offset
                 )
                 sfa_tma_op.async_copy_4d[Self.cta_group](
-                    sfa_tile,
+                    sfa_tt,
                     barrier[0],
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         sfa_m_coord,
                     ),
                 )
@@ -760,12 +780,14 @@ struct Grouped1D1DMatmulKernel[
                     Int(n_coord) + Int(expert_id) * Self.static_N
                 ) // SF_MN_GROUP_SIZE
                 sfb_tma_op.async_copy_4d[Self.cta_group](
-                    sfb_tile,
+                    sfb_tt,
                     barrier[0],
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         sfb_n_coord,
                     ),
                 )
@@ -797,11 +819,10 @@ struct Grouped1D1DMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
-                var a_tile, b_tile, sfa_tile, sfb_tile = (
-                    tiles.payload().get_tile[Self.config.k_group_size](
-                        tiles.stage(), jj
-                    )
-                )
+                # Get tiles as TileTensor
+                var a_tt, b_tt, sfa_tt, sfb_tt = tiles.payload().get_tile[
+                    Self.config.k_group_size
+                ](tiles.stage(), jj)
 
                 var tile_idx = (
                     Int(tiles.stage()) * Self.config.k_group_size + jj
@@ -812,11 +833,13 @@ struct Grouped1D1DMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
+                # MMA has TileTensor overload - pass tiles directly
+                # (layout is extracted from TileTensor type parameters)
                 mma_op.mma(
-                    a_tile,
-                    b_tile,
-                    sfa_tile,
-                    sfb_tile,
+                    a_tt,
+                    b_tt,
+                    sfa_tt,
+                    sfb_tt,
                     tmem_addr,
                     sfa_tmem_offset,
                     sfb_tmem_offset,

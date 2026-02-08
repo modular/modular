@@ -108,7 +108,7 @@ fn _dispatch_max_num_blocks[
         return x.ngpus == -1 and x.num_bytes == -1
 
     comptime default_idx = allreduce_table.query_index[rule_eq_arch_default]()
-    __comptime_assert len(default_idx) > 0
+    comptime assert len(default_idx) > 0
     comptime default_entry = allreduce_table.configs[default_idx[0]]
     var default_num_blocks = default_entry.num_blocks
 

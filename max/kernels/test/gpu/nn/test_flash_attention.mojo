@@ -91,8 +91,8 @@ fn test[
         depth,
     )
 
-    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
-    __comptime_assert (
+    comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    comptime assert (
         against_gpu_naive or mask_rank == 3
     ), "Testing against cpu requires mask of rank 3."
 
@@ -123,21 +123,27 @@ fn test[
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
-                    q_ptr[(i * num_heads + h) * depth + j] = i * depth + j
+                    q_ptr[(i * num_heads + h) * depth + j] = Scalar[qkv_type](
+                        i * depth + j
+                    )
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
-                    k_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+                    k_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
+                        qkv_type
+                    ](i * depth + j)
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
-                    v_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+                    v_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
+                        qkv_type
+                    ](i * depth + j)
 
         @parameter
         if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
-                    mask_ptr[i * num_keys + j] = (
+                    mask_ptr[i * num_keys + j] = Scalar[mask_type](
                         (seq_len - i) * num_keys + num_keys - j
                     )
         else:
@@ -145,7 +151,7 @@ fn test[
                 var mask_head_ptr = mask_ptr + h * seq_len * num_keys
                 for i in range(seq_len):
                     for j in range(num_keys):
-                        mask_head_ptr[i * num_keys + j] = (
+                        mask_head_ptr[i * num_keys + j] = Scalar[mask_type](
                             (seq_len - i) * num_keys + num_keys - j
                         )
 
@@ -198,7 +204,7 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        __comptime_assert (
+        comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](

@@ -14,8 +14,8 @@ modular_py_test(
         exclude = [
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
-            "test_interpreter_gpu.py",
             "test_interpreter_ops.py",
+            "test_interpreter_ops_gpu.py",
         ],
     ),
     args = [
@@ -32,6 +32,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -69,35 +70,37 @@ modular_py_test(
 
 modular_py_test(
     name = "test_interpreter_ops",
+    timeout = "long",
     srcs = ["test_interpreter_ops.py"],
     ignore_extra_deps = [
         "//max/python/max:interpreter",
     ],
     deps = [
         "//max/python/max:interpreter",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )
 
 modular_py_test(
-    name = "test_interpreter_gpu",
-    srcs = ["test_interpreter_gpu.py"],
+    name = "test_interpreter_ops_gpu",
+    timeout = "long",
+    srcs = ["test_interpreter_ops_gpu.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
     ignore_extra_deps = [
         "//max/python/max/engine",
     ],
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
-        "//max/python/max:interpreter",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
-        requirement("numpy"),
         requirement("torch"),
     ],
 )

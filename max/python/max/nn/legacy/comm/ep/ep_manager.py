@@ -686,7 +686,7 @@ class EPCommInitializer:
         Args:
             session: Inference session used to compile and execute the graph.
         """
-        logger.info("Initializing SHMEM context and allocating SHMEM memory...")
+        logger.info("Initializing EP communication infrastructure...")
         logger.info(
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self._estimate_ep_memory_usage())}"
         )

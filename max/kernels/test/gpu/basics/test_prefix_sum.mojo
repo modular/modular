@@ -48,7 +48,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
 
     for i in range(size):
-        in_host[i] = i
+        in_host[i] = UInt64(i)
         out_host[i] = 0
 
     # Create device buffers and copy input data
@@ -76,9 +76,9 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
         @parameter
         if exclusive:
-            expected = i * (i - 1) // 2
+            expected = UInt64(i * (i - 1) // 2)
         else:
-            expected = i * (i + 1) // 2
+            expected = UInt64(i * (i + 1) // 2)
 
         assert_equal(
             out_host[i],
@@ -121,7 +121,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
 
     for i in range(size):
-        in_host[i] = i
+        in_host[i] = UInt64(i)
         out_host[i] = 0
 
     # Create device buffers and copy input data
@@ -151,9 +151,9 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
         @parameter
         if exclusive:
-            expected = i * (i - 1) // 2
+            expected = UInt64(i * (i - 1) // 2)
         else:
-            expected = i * (i + 1) // 2
+            expected = UInt64(i * (i + 1) // 2)
 
         assert_equal(
             out_host[i],

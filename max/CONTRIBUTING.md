@@ -20,7 +20,7 @@ effectively toward the continued improvement of MAX.
 For technical details on developing for MAX and models, see the following
 document:
 
-- [Developing the MAX framework](./development.md) covers building,
+- [Developing the MAX framework](/max/docs/development.md) covers building,
   testing, and other information you’ll need to work in the MAX framework.
 
 ### Changes we *accept*

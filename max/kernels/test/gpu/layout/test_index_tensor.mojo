@@ -45,7 +45,9 @@ def execute_index_tensor_test[
     var actual_output_tensor = TileTensor(
         actual_output_device,
         row_major(
-            expected_output_device.layout.shape.make_dynamic[DType.int64]()
+            expected_output_device.layout.shape_coord().make_dynamic[
+                DType.int64
+            ]()
         ),
     )
     # Convert all tensors to dynamic layouts before calling the kernel
@@ -61,10 +63,10 @@ def execute_index_tensor_test[
     # check that our shapes are consistent and that the contents of the output are consistent
     assert_true(
         rebind[IndexList[actual_output_tensor.rank]](
-            coord_to_index_list(actual_output_tensor.layout.shape)
+            coord_to_index_list(actual_output_tensor.layout.shape_coord())
         )
         == rebind[IndexList[actual_output_tensor.rank]](
-            coord_to_index_list(expected_output_device.layout.shape)
+            coord_to_index_list(expected_output_device.layout.shape_coord())
         )
     )
     with actual_output_device.map_to_host() as actual_output_host:
@@ -94,7 +96,7 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     # Initialize with sequential data for test purposes.
     with input.map_to_host() as input_host:
         for i in range(dim_0 * dim_1 * dim_2):
-            input_host[i] = i
+            input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))
@@ -166,7 +168,7 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     # Initialize with sequential data for test purposes.
     with input.map_to_host() as input_host:
         for i in range(dim_0 * dim_1 * dim_2 * dim_3):
-            input_host[i] = i
+            input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))

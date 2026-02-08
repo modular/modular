@@ -2,19 +2,13 @@ load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
 package(default_visibility = ["//docs:__subpackages__"])
 
-# TODO(GEX-3156): Investigate and enable on Apple GPU
-_APPLE_GPU_INCOMPATIBLE = select({
-    "//:apple_gpu": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
-
 MOJO_SRCS = glob(["*.mojo"])
 
 [
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
-        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "@mojo//:std",
         ],

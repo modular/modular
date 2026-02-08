@@ -22,7 +22,7 @@ mojo_test(
     tags = ["gpu"],
     target_compatible_with = select({
         "//:h100_gpu": ["//:has_multi_gpu"],
-        "//:b200_gpu": ["//:has_multi_gpu"],
+        # "//:b200_gpu": ["//:has_multi_gpu"], # TODO(INFRA-2158): re-enable once multimem working on B200
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

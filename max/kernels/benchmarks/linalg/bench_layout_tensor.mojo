@@ -88,9 +88,9 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 64  # N must be a multiple of this
     comptime tile_k = 4  # K must be a multiple of this
 
-    __comptime_assert M % tile_m == 0, "M must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "M must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
     @parameter
     fn calc_row(m0: Int):
@@ -140,9 +140,9 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 64
     comptime tile_k = 4
 
-    __comptime_assert M % tile_m == 0, "N must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "N must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
     @parameter
     fn calc_row(m_1: Int):
@@ -160,10 +160,10 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
-                            __comptime_assert (
+                            comptime assert (
                                 type_of(dst_view).layout.stride[1] == 1
                             ), "elements of dst should be contiguous"
-                            __comptime_assert (
+                            comptime assert (
                                 type_of(rhs_view).layout.stride[1] == 1
                             ), "elements of rhs should be contiguous"
 
@@ -205,9 +205,9 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 64
     comptime tile_k = 4
 
-    __comptime_assert M % tile_m == 0, "N must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "N must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
     @parameter
     fn calc_row(m_1: Int):
@@ -231,7 +231,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
-                            __comptime_assert (
+                            comptime assert (
                                 type_of(dst_view).layout.stride[1] == 1
                             ), "elements of dst should be contiguous"
 
@@ -264,11 +264,11 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 16
     comptime tile_k = 128
 
-    __comptime_assert M % tile_m == 0, "N must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "N must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    __comptime_assert (
+    comptime assert (
         tile_k % vec_size == 0
     ), "tile_k must be a multiple of vec_size"
 

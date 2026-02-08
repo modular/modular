@@ -23,7 +23,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
+struct RasterOrder(
+    Equatable, Hashable, Stringable, TrivialRegisterType, Writable
+):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -283,14 +285,14 @@ struct TileScheduler[
 
         comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
 
-        num_waves_executed = FastUInt(Int(self.idx)) / log_num_grids
-        idx_in_wave = FastUInt(Int(self.idx)) % log_num_grids
+        num_waves_executed = FastUInt(self.idx) / log_num_grids
+        idx_in_wave = FastUInt(self.idx) % log_num_grids
 
         num_waves_executed_m = (
-            FastUInt(Int(num_waves_executed)) / self.log_num_waves_n
+            FastUInt(num_waves_executed) / self.log_num_waves_n
         )
         num_waves_executed_n = (
-            FastUInt(Int(num_waves_executed)) % self.log_num_waves_n
+            FastUInt(num_waves_executed) % self.log_num_waves_n
         )
 
         # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
@@ -298,8 +300,8 @@ struct TileScheduler[
         wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
         wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
 
-        m_in_wave = FastUInt(Int(idx_in_wave)) / log_grid_shape
-        n_in_wave = FastUInt(Int(idx_in_wave)) % log_grid_shape
+        m_in_wave = FastUInt(idx_in_wave) / log_grid_shape
+        n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
 
         return (
             UInt(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),
