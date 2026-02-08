@@ -1571,3 +1571,49 @@ class TestTransferOpsGPU:
         assert torch.equal(result_torch, x_torch)
         # alwaysElideSameDeviceCopy=False should produce a copy, not alias.
         assert out_buf._data_ptr() != input_buf._data_ptr()
+
+
+class TestSoftmaxGPU:
+    """Tests for softmax and logsoftmax on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_softmax_gpu(self, dtype: DType) -> None:
+        """Test softmax on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.randn(3, 4, 5, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.softmax(x, axis=-1)
+
+        expected = torch.softmax(x_torch, dim=-1)
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_logsoftmax_gpu(self, dtype: DType) -> None:
+        """Test logsoftmax on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.randn(3, 4, 5, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.logsoftmax(x, axis=-1)
+
+        expected = torch.log_softmax(x_torch, dim=-1)
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )

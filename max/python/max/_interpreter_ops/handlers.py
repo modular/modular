@@ -836,6 +836,49 @@ for op_type in ops.REDUCE:
     register_op_handler(op_type)(reduce_handler(op_type))
 
 
+# Softmax operations
+
+
+def softmax_handler(op_type: type) -> OpHandler:
+    op_binding = ops.SOFTMAX[op_type]
+
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
+
+        assert isinstance(inputs[0], Buffer)
+        assert isinstance(inputs[1], Buffer)
+
+        input_buffer = inputs[0]
+        axis_buffer = inputs[1]
+
+        # Extract axis value from the axis tensor (scalar si64)
+        axis = int(axis_buffer.to_numpy().item())
+
+        # Output shape is the same as input (not reduced)
+        output = Buffer(
+            shape=input_buffer.shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        op_binding(
+            output, input_buffer, axis, target_device._device_context_ptr()
+        )
+
+        return [output]
+
+    return handler
+
+
+for op_type in ops.SOFTMAX:
+    register_op_handler(op_type)(softmax_handler(op_type))
+
+
 # Range operations
 
 

@@ -1669,6 +1669,97 @@ class TestReduceOps:
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
 
 
+def _numpy_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    """Numerically stable softmax reference implementation."""
+    x_shifted = x - np.max(x, axis=axis, keepdims=True)
+    e_x = np.exp(x_shifted)
+    return e_x / np.sum(e_x, axis=axis, keepdims=True)
+
+
+def _numpy_logsoftmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    """Numerically stable logsoftmax reference implementation."""
+    x_shifted = x - np.max(x, axis=axis, keepdims=True)
+    return x_shifted - np.log(
+        np.sum(np.exp(x_shifted), axis=axis, keepdims=True)
+    )
+
+
+class TestSoftmaxOps:
+    """Tests for softmax and logsoftmax Mojo ops."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_softmax_last_axis_3d(self, dtype: DType) -> None:
+        """Test softmax on the last axis of a 3D tensor."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.softmax(x, axis=-1)
+
+        expected = _numpy_softmax(x_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_softmax_2d(self, dtype: DType) -> None:
+        """Test softmax on a 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.softmax(x, axis=-1)
+
+        expected = _numpy_softmax(x_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_logsoftmax_last_axis_3d(self, dtype: DType) -> None:
+        """Test logsoftmax on the last axis of a 3D tensor."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.logsoftmax(x, axis=-1)
+
+        expected = _numpy_logsoftmax(x_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_logsoftmax_2d(self, dtype: DType) -> None:
+        """Test logsoftmax on a 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.logsoftmax(x, axis=-1)
+
+        expected = _numpy_logsoftmax(x_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
 class TestBroadcastBinaryOps:
     """Tests for implicit broadcasting in binary ops on CPU.
 
