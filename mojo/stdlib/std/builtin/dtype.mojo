@@ -34,7 +34,7 @@ struct DType(
     KeyElement,
     Representable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Represents a data type specification and provides methods for working

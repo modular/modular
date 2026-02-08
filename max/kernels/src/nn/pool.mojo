@@ -28,7 +28,7 @@ from .shapes import get_sliding_window_out_dim
 
 # Pooling method.
 @fieldwise_init
-struct PoolMethod(TrivialRegisterType):
+struct PoolMethod(TrivialRegisterPassable):
     var value: Int
     comptime MAX = PoolMethod(0)  # Max pooling.
     comptime AVG = PoolMethod(1)  # Average pooling not counting padded regions.

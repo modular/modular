@@ -90,6 +90,7 @@ class KVCacheConfig(ConfigFileModel):
 
     @property
     def cache_dtype(self) -> DType:
+        """Returns the data type used for KV cache storage."""
         return self._cache_dtype
 
     @classmethod

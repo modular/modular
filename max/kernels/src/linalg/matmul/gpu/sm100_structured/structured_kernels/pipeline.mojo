@@ -90,7 +90,7 @@ comptime MbarPtr = UnsafePointer[
 ]
 
 
-struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
+struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
     """A producer-consumer pipeline using shared memory barriers to
     enforce synchronization (between producer and consumer warps).
 

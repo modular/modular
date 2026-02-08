@@ -51,7 +51,7 @@ comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
 
 @fieldwise_init
-struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterType, Writable):
+struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterPassable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 

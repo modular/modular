@@ -655,7 +655,7 @@ perspective, Mojo doesn't need special support for these written in a struct.
 Usually, these values are so tiny that they should be passed around in CPU
 registers, not indirectly through memory.
 
-As such, Mojo provides a trait `TrivialRegisterType` to declare these types of
+As such, Mojo provides a trait `TrivialRegisterPassable` to declare these types of
 values. Conforming to this trait tells Mojo that the
 type should be copyable and movable, but that it has no user-defined logic for
 this (no custom copy constructor or move constructor). It also tells Mojo to
@@ -665,7 +665,7 @@ benefits.
 You'll see this decorator on types like `Int` in the standard library:
 
 ```mojo
-struct Int(TrivialRegisterType):
+struct Int(TrivialRegisterPassable):
     ...
 ```
 

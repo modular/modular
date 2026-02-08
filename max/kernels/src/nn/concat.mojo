@@ -111,7 +111,7 @@ fn memcpy_or_fuse[
 
 
 @fieldwise_init
-struct _Span(TrivialRegisterType):
+struct _Span(TrivialRegisterPassable):
     var start: Int
     var end: Int
 
@@ -126,7 +126,7 @@ struct _Span(TrivialRegisterType):
 
 @fieldwise_init
 struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     var data: UnsafePointer[Int8, Self.origin]
     var h: Int

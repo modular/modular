@@ -29,7 +29,7 @@ from hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-struct UMMAKind(Hashable, Stringable, TrivialRegisterType, Writable):
+struct UMMAKind(Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -528,7 +528,7 @@ fn _get_mxf8f6f4_mma_shape[
 
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Descriptor for UMMA instructions.
 
     This struct represents a descriptor that encodes information about UMMA instructions.
@@ -1009,7 +1009,7 @@ struct UMMAInsDescriptor[
 # ===----------------------------------------------------------------------=== #
 
 
-struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
+struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1161,7 +1161,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
         return Self(self.desc + UInt64((offset >> 4) & Self.mask_14_bits))
 
 
-struct MMASmemDescriptorPair(TrivialRegisterType):
+struct MMASmemDescriptorPair(TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout

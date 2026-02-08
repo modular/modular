@@ -40,8 +40,8 @@ fn _static_tuple_construction_checks[size: Int]():
     ), "number of elements in `StaticTuple` must be >= 0"
 
 
-struct StaticTuple[element_type: TrivialRegisterType, size: Int](
-    Defaultable, DevicePassable, Sized, TrivialRegisterType
+struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
+    Defaultable, DevicePassable, Sized, TrivialRegisterPassable
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
 

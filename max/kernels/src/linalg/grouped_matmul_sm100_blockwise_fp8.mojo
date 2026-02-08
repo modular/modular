@@ -2328,24 +2328,6 @@ fn grouped_matmul_dynamic_scaled_fp8[
             num_active_experts,
             ctx,
         )
-
-        # comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
-        # grouped_matmul_sm100_blockwise_scaled_fp8[
-        #     transpose_b=transpose_b,
-        #     umma_shape=umma_shape,
-        #     block_tile_shape=block_tile_shape,
-        # ](
-        #     c_tensor,
-        #     a_tensor,
-        #     b_tensor,
-        #     a_scales_tensor,
-        #     b_scales_tensor,
-        #     a_offsets_tensor,
-        #     expert_ids_tensor,
-        #     max_num_tokens_per_expert,
-        #     num_active_experts,
-        #     ctx,
-        # )
         return
 
     else:
