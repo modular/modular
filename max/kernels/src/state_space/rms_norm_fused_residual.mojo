@@ -630,6 +630,7 @@ fn _rms_norm_fused_residual_impl[
 # Public API
 # ===----------------------------------------------------------------------=== #
 
+
 @always_inline
 fn rms_norm_fused_residual[
     dtype: DType,
