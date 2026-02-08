@@ -360,7 +360,7 @@ fn _do_pad[
 
 
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -600,7 +600,7 @@ fn _memcpy_regions_fast[
 
 
 struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     var pre_pad: Int
     var post_pad: Int

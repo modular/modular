@@ -137,7 +137,7 @@ struct TileLoaderLDS[
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
     load_width: Int = simd_width_of[dtype](),
     use_full_tile_width: Bool = False,  # FP8 row-major mode
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Cooperative global→LDS tile loader with swizzle support.
 
     Loads tiles from global memory to LDS using AMDBufferResource which provides

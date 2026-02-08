@@ -28,7 +28,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 
 
 @fieldwise_init
-struct Attribute(Equatable, TrivialRegisterType, Writable):
+struct Attribute(Equatable, TrivialRegisterPassable, Writable):
     """Represents GPU kernel function attributes.
 
     This struct defines constants for various function attributes that can be queried
@@ -178,7 +178,7 @@ struct Attribute(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct FuncAttribute(Equatable, TrivialRegisterType):
+struct FuncAttribute(Equatable, TrivialRegisterPassable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
     This struct represents function attributes that can be set or queried for GPU kernels,

@@ -37,7 +37,7 @@ comptime ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
-struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
+struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
@@ -52,7 +52,7 @@ struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct ncclRedOp_t(TrivialRegisterType):
+struct ncclRedOp_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclSum = Self(0)
 
@@ -61,7 +61,7 @@ struct ncclRedOp_t(TrivialRegisterType):
 
 
 @fieldwise_init
-struct ncclDataType_t(TrivialRegisterType):
+struct ncclDataType_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclFloat16 = Self(6)
     comptime ncclFloat32 = Self(7)

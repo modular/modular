@@ -326,7 +326,7 @@ that it needs to work with as well as element type:
 
 ```mojo
     @value
-    struct MutablePointer[type: AnyType, life: Lifetime](TrivialRegisterType):
+    struct MutablePointer[type: AnyType, life: Lifetime](TrivialRegisterPassable):
         alias pointer_type = __mlir_type[...]
         var address: pointer_type
 
@@ -381,7 +381,7 @@ We may also want to wire up the prefix star operator into a dunder method.
 
 ```mojo
     @value
-    struct MutableArraySlice[type: AnyType, life: Lifetime](TrivialRegisterType):
+    struct MutableArraySlice[type: AnyType, life: Lifetime](TrivialRegisterPassable):
         var ptr: MutablePointer[type, life]
         var size: Int
 

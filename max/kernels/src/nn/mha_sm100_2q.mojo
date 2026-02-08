@@ -210,7 +210,7 @@ struct STMatrixLayout[
     *,
     num_threads: Int,
     accum_type_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """
     Layout for using `st_matrix` for writing the final accumulator to smem.
     """
@@ -288,7 +288,7 @@ struct STMatrixOffsets[
     curr_repeat: Int,
     cumulative_repeat: Int,
     m_mma: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime STLayout = STMatrixLayout[
         Self.BM,
         Self.BN,
@@ -329,7 +329,7 @@ struct TMemTile[
     dtype_: DType,
     BM: Int,
     BN: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime dtype: DType = Self.dtype_
     comptime dtype_size = size_of[Self.dtype]()
     # alias layout_t = STMatrixLayout[
@@ -617,7 +617,7 @@ struct SM100TensorAccumulatorSS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
     num_stages: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # This performs C = A @ B
     # where A is BM x BK and B is BN x BK if k major, else BK x BN.
     # `BK` is broken into `num_stages` and pipelined.
@@ -726,7 +726,7 @@ struct SM100TensorAccumulatorTS[
     cta_group: Int = 1,
     num_stages: Int = 1,
     padded_BK: Int = BK,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
@@ -815,7 +815,7 @@ struct SM100TensorAccumulatorTS[
             )
 
 
-struct FA4Config(TrivialRegisterType):
+struct FA4Config(TrivialRegisterPassable):
     var MMA_M: Int
     var BM: Int
     var BN: Int
@@ -2173,7 +2173,7 @@ fn _mha_sm100_enqueue[
 
 
 struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     """
     Unified pipeline for K, V, and KV tile barrier management.
@@ -2244,7 +2244,7 @@ comptime VPipeline = StagedPipeline[_, 1]
 comptime KVPipeline = StagedPipeline
 
 
-struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
+struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
     var mbar: MBarType
     var smem: SharedMemTensor[Self.dtype, Self.layout]
 
@@ -2269,7 +2269,7 @@ struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
 
 
 struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     """Unified producer pipeline for K and V TMA loading.
 
@@ -2414,7 +2414,7 @@ comptime VProducerPipeline = TMAProducerPipeline[_, _, False]
 
 
 struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     """Unified consumer pipeline for K and V TMA consumption.
 
@@ -2539,7 +2539,7 @@ struct RolePipeline[
     is_producer: Bool = True,
     producer_sub_stages: Int = 1,
     consumer_sub_stages: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """
     Unified producer/consumer pipeline for barrier synchronization.
 
@@ -2671,7 +2671,7 @@ comptime ProducerPipeline = RolePipeline[_, True, _, _]
 comptime ConsumerPipeline = RolePipeline[_, False, _, _]
 
 
-struct MBarPipeline[number_of_stages: Int](TrivialRegisterType):
+struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
@@ -2922,7 +2922,7 @@ struct FA4MiscMBars[
     num_kv_stages: Int = 2,
     separate_kv: Bool = True,
     use_order_barriers: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
     This struct consolidates all mbarrier management including:
@@ -3140,7 +3140,7 @@ struct SM100MHA2Q[
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()

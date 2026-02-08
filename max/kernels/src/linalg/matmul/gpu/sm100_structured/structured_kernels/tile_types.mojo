@@ -272,7 +272,7 @@ struct SMemTileArrayWithLayout[
     tile_layout: Layout,
     num_tiles: Int,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles with explicit Layout (preserves swizzle info).
 
     Unlike SMemTileArray2D which uses row_major internally, this type preserves
@@ -401,7 +401,7 @@ struct SMemTileArray[
     stride_types: Variadic.TypesOfTrait[CoordLike],
     num_tiles: Int,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles with variadic shape/stride type parameters.
 
     This is the TileTensor equivalent of the LayoutTensor-based SMemTileArray
@@ -608,7 +608,7 @@ struct SMemTileArray2D[
     num_tiles: Int,
     swizzle_bytes: Int = 128,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles in shared memory with swizzled K-major layout.
 
     The tiles use `internal_k_major` layout with configurable swizzle, matching
@@ -780,7 +780,7 @@ struct SMemTileArray2DRowMajor[
     dim1: Int,
     num_tiles: Int,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles in shared memory with row_major layout.
 
     Unlike SMemTileArray2D which uses swizzled internal_k_major layout, this
@@ -931,7 +931,7 @@ struct BlockwiseFP8TilePayload[
     a_scales_dim1: Int,
     # Pipeline stages
     num_pipeline_stages: Int,
-](TilePayload, TrivialRegisterType):
+](TilePayload, TrivialRegisterPassable):
     """TileTensor-based tile payload for blockwise FP8 matmul.
 
     Unlike BlockScaledTilePayload, this only stores A-scales in SMEM.

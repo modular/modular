@@ -33,7 +33,7 @@ struct TileLoaderTMAIm2col[
     /,
     *,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """TMA tile loader using hardware im2col for implicit GEMM convolution.
 
     Uses a TMATensorTileIm2col descriptor (cuTensorMapEncodeIm2col) to perform

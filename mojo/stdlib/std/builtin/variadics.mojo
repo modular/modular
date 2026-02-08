@@ -385,7 +385,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: TrivialRegisterType](
+struct _VariadicListIter[type: TrivialRegisterPassable](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
@@ -419,8 +419,8 @@ struct _VariadicListIter[type: TrivialRegisterType](
         return (len, {len})
 
 
-struct VariadicList[type: TrivialRegisterType](
-    Iterable, Sized, TrivialRegisterType
+struct VariadicList[type: TrivialRegisterPassable](
+    Iterable, Sized, TrivialRegisterPassable
 ):
     """A utility class to access homogeneous variadic function arguments.
 

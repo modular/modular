@@ -27,7 +27,7 @@ from utils import Index, IndexList
 from builtin.device_passable import DevicePassable
 
 
-trait MHAOperand(DevicePassable, TrivialRegisterType):
+trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     comptime dtype: DType
@@ -100,7 +100,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterType):
 
 struct KVCacheMHAOperand[
     cache_t: KVCacheT,
-](MHAOperand, TrivialRegisterType):
+](MHAOperand, TrivialRegisterPassable):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
@@ -208,7 +208,7 @@ struct KVCacheMHAOperand[
 
 
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
-    MHAOperand, TrivialRegisterType
+    MHAOperand, TrivialRegisterPassable
 ):
     """An implementation for LayoutTensor arguments to MHA kernels."""
 
@@ -325,7 +325,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
 
 
 struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
-    MHAOperand, TrivialRegisterType
+    MHAOperand, TrivialRegisterPassable
 ):
     """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 

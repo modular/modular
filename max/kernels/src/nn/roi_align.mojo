@@ -18,7 +18,7 @@ from layout._tile_tensor import TileTensor
 from utils.numerics import min_or_neg_inf
 
 
-struct Weighted2DPoint[dtype: DType](TrivialRegisterType):
+struct Weighted2DPoint[dtype: DType](TrivialRegisterPassable):
 
     """Utility class to wrap 2-d point coordinates and floating point weight for
     bilinear interpolation.

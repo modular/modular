@@ -58,7 +58,7 @@ from ..structured_kernels.pipeline import ProducerConsumerPipeline
 struct GroupedAdvanceContext[
     work_origin: MutOrigin,
     idx_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager that returns current work and advances on exit.
 
     This follows the same pattern as the working kernel's WaitAndAdvanceContext:
@@ -107,7 +107,7 @@ struct GroupedAdvanceContext[
 
 @fieldwise_init
 struct GroupedWorkInfo(
-    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterType, Writable
+    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterPassable, Writable
 ):
     """Work info for grouped GEMM with group-specific metadata.
 
@@ -192,7 +192,7 @@ struct GroupedWorkIterator[
     tile_k: Int,
     max_groups: Int,
     cta_group: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator for grouped GEMM.
 
     This iterator traverses tiles across all groups, tracking when groups change
@@ -464,7 +464,7 @@ struct GroupedTileScheduler[
     max_groups: Int,
     num_stages: Int = 0,
     cta_group: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Tile scheduler for grouped block-scaled GEMM.
 
     Uses linear tile iteration to map tiles across groups. Does not use CLC
@@ -548,7 +548,7 @@ struct GroupedTileScheduler[
 
 struct GroupedCLCWaitAndAdvanceContext[
     work_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for waiting on CLC barrier and advancing work iterator.
 
     Encapsulates CLC response barrier synchronization:
@@ -596,7 +596,7 @@ struct GroupedCLCWorkIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator for grouped GEMM with CLC barrier support.
 
     This iterator combines grouped GEMM features with CLC-based synchronization
@@ -895,7 +895,7 @@ struct GroupedCLCSchedulerIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Scheduler warp iterator for grouped GEMM with CLC.
 
     The scheduler warp produces work items for other warps via CLC.

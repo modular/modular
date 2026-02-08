@@ -257,7 +257,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(TrivialRegisterType):
+struct PrefetchLocality(TrivialRegisterPassable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -287,7 +287,7 @@ struct PrefetchLocality(TrivialRegisterType):
         self.value = Int32(value)
 
 
-struct PrefetchRW(TrivialRegisterType):
+struct PrefetchRW(TrivialRegisterPassable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -321,7 +321,7 @@ struct PrefetchRW(TrivialRegisterType):
 
 
 # LLVM prefetch cache type
-struct PrefetchCache(TrivialRegisterType):
+struct PrefetchCache(TrivialRegisterPassable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -342,7 +342,7 @@ struct PrefetchCache(TrivialRegisterType):
         self.value = Int32(value)
 
 
-struct PrefetchOptions(Defaultable, TrivialRegisterType):
+struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -818,7 +818,7 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
+struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
 
     var _mlir_value: Self._mlir_type
@@ -844,7 +844,7 @@ struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
+fn expect[T: TrivialRegisterPassable, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 

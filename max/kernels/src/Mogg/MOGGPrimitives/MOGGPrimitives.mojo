@@ -58,7 +58,7 @@ fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
 # just create a C++ function for it. For the time being, this is safe because of
 # the `constrained` and `static_assert` we added to ensure the type has the
 # right byte size.
-struct StateContext(TrivialRegisterType):
+struct StateContext(TrivialRegisterPassable):
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
     This is currently meant as a mojo-side container for GML::StateContext."""
 
@@ -1321,7 +1321,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
 
-struct MyIntReg(TrivialRegisterType):
+struct MyIntReg(TrivialRegisterPassable):
     var val: Int
 
     fn __init__(out self, val: Int):

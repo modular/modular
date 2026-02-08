@@ -108,7 +108,7 @@ struct MLA_SM100_Decode_KV_FP8[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9

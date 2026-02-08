@@ -704,7 +704,7 @@ comptime AppleMetalFamily = AcceleratorArchitectureFamily(
 
 
 @fieldwise_init
-struct AcceleratorArchitectureFamily(TrivialRegisterType):
+struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
     """Defines common defaults for a GPU architecture family.
 
     This struct captures the shared characteristics across GPUs in the same
@@ -733,7 +733,7 @@ struct AcceleratorArchitectureFamily(TrivialRegisterType):
 
 
 @fieldwise_init
-struct Vendor(Equatable, TrivialRegisterType, Writable):
+struct Vendor(Equatable, TrivialRegisterPassable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility

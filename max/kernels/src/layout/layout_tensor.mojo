@@ -279,7 +279,7 @@ struct LayoutTensor[
 ](
     DevicePassable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
     _Expable,
 ):
@@ -6057,7 +6057,7 @@ fn stack_allocation_like[
     ].stack_allocation()
 
 
-struct ThreadScope(TrivialRegisterType):
+struct ThreadScope(TrivialRegisterPassable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -8173,7 +8173,7 @@ struct LayoutTensorIter[
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,
-](Defaultable, TrivialRegisterType):
+](Defaultable, TrivialRegisterPassable):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `LayoutTensorIter` provides a way to iterate through memory according to a

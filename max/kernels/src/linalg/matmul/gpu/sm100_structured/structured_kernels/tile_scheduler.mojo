@@ -36,7 +36,7 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -105,7 +105,7 @@ struct AdvanceAfterWorkContext[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
 
     - __enter__: Returns current work_info for use in the block
@@ -154,7 +154,7 @@ struct AdvanceAfterWorkContext[
 
 struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for waiting on CLC barrier and advancing work iterator.
 
     Encapsulates the CLC response barrier synchronization:
@@ -200,7 +200,7 @@ struct WorkIterator[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator that owns work_info and pipeline state.
 
     Each warp creates its own WorkIterator which internally manages both
@@ -314,7 +314,7 @@ struct SchedulerWorkIterator[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Work iterator for Scheduler warp - owns work_info and both pipeline states.
 
     The Scheduler warp uniquely needs to:
@@ -420,7 +420,7 @@ struct TileScheduler[
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]

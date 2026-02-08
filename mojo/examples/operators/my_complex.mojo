@@ -19,7 +19,7 @@ struct Complex(
     Equatable,
     Representable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Represents a complex value.

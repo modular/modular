@@ -66,7 +66,7 @@ fn _check_scheduler_constraints[
 
 
 @fieldwise_init
-struct ReductionMode(TrivialRegisterType):
+struct ReductionMode(TrivialRegisterPassable):
     var _value: Int32
 
     # CTAs perform reduction in a serialized fashion so we will have deterministic numeric behavior
@@ -98,7 +98,7 @@ struct SplitKTileScheduler[
     cluster_shape: IndexList[2],
     raster_order: RasterOrder,
     reduction_mode: ReductionMode = ReductionMode.Deterministic,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     var prob_shape: IndexList[3]  # M x N x K
     var block_id_in_cluster: IndexList[2]
     var blocks_per_problem: UInt32

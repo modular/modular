@@ -21,7 +21,7 @@ from os import abort
 
 
 @fieldwise_init
-struct Handle(Defaultable, Equatable, TrivialRegisterType):
+struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer
 
     fn __init__(out self):
@@ -29,7 +29,7 @@ struct Handle(Defaultable, Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Operation(Equatable, TrivialRegisterType):
+struct Operation(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime NONE = Self(111)
@@ -44,7 +44,7 @@ struct Operation(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterType):
+struct Fill(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime UPPER = Self(121)
@@ -59,7 +59,7 @@ struct Fill(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Diagonal(Equatable, TrivialRegisterType):
+struct Diagonal(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime NON_UNIT = Self(131)
@@ -73,7 +73,7 @@ struct Diagonal(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Side(Equatable, TrivialRegisterType):
+struct Side(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime LEFT = Self(141)
@@ -88,7 +88,7 @@ struct Side(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct DataType(Equatable, TrivialRegisterType):
+struct DataType(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime F16_R = Self(150)
@@ -136,7 +136,7 @@ struct DataType(Equatable, TrivialRegisterType):
         return Int(self._value)
 
 
-struct ComputeType(Equatable, TrivialRegisterType):
+struct ComputeType(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime F32 = Self(300)
@@ -154,7 +154,7 @@ struct ComputeType(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Status(Equatable, TrivialRegisterType, Writable):
+struct Status(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime SUCCESS = Self(0)
@@ -223,7 +223,7 @@ struct Status(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct PointerMode(Equatable, TrivialRegisterType):
+struct PointerMode(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime HOST = Self(0)
@@ -237,12 +237,12 @@ struct PointerMode(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct MallocBase(TrivialRegisterType):
+struct MallocBase(TrivialRegisterPassable):
     var _value: Int32
 
 
 @fieldwise_init
-struct Algorithm(Equatable, TrivialRegisterType):
+struct Algorithm(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime STANDARD = Self(0)
@@ -256,7 +256,7 @@ struct Algorithm(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct GEAMExOp(Equatable, TrivialRegisterType):
+struct GEAMExOp(Equatable, TrivialRegisterPassable):
     var _value: Int32
 
     comptime MIN_PLUS = Self(0)

@@ -100,8 +100,8 @@ comptime MbarPtr = SMemPtr[SharedMemBarrier]
 # ============================================================================
 
 
-trait TilePayload(TrivialRegisterType):
-    """Trait for tile payload types. Must be extend TrivialRegisterType."""
+trait TilePayload(TrivialRegisterPassable):
+    """Trait for tile payload types. Must be extend TrivialRegisterPassable."""
 
     pass
 
@@ -299,7 +299,7 @@ struct BlockwiseFP8TilePayload[
     a_scales_dim1: Int,
     # Pipeline stages
     num_pipeline_stages: Int,
-](TilePayload, TrivialRegisterType):
+](TilePayload, TrivialRegisterPassable):
     """Tile payload for blockwise FP8 matmul (A, B, A-scales tiles).
 
     Unlike BlockScaledTilePayload, this only stores A-scales in SMEM.
@@ -384,7 +384,7 @@ struct InputTilePipeline[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Tile pipeline with configurable payload type.
 
     Separates synchronization from tile storage. The Payload parameter
@@ -621,7 +621,7 @@ struct InputProducerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Handle for producer tile access - works as context manager or linear-style.
 
     Two usage patterns:
@@ -710,7 +710,7 @@ struct InputConsumerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Handle for consumer tile access - works as context manager or linear-style.
 
     Two usage patterns:
@@ -800,7 +800,7 @@ struct InputProducer[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Producer view for TMA Load warp. Use acquire() to get stages."""
 
     comptime PipelineType = InputTilePipeline[
@@ -886,7 +886,7 @@ struct InputConsumer[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Consumer view for MMA warp. Use acquire() to get stages."""
 
     comptime PipelineType = InputTilePipeline[
@@ -975,7 +975,7 @@ struct TilePipeline[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Staged tile storage with producer-consumer synchronization for SM100.
 
     Manages a fixed set of pipeline stages (not a FIFO queue) where:
@@ -1141,7 +1141,7 @@ struct StandardProducerStage[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager for producer tile access with encapsulated stage indexing.
     """
 
@@ -1240,7 +1240,7 @@ struct StandardConsumerStage[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager for consumer tile access with encapsulated stage indexing.
     """
 
@@ -1335,7 +1335,7 @@ struct StandardTileProducer[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Producer view for TMA Load warp (standard tile pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
@@ -1412,7 +1412,7 @@ struct StandardTileConsumer[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Consumer view for MMA warp (standard tile pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
@@ -1469,7 +1469,7 @@ struct OutputStage[
     num_stages: Int,
     stage_stride: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Acquired output stage with TMEM handle and pipeline reference."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
@@ -1519,7 +1519,7 @@ struct OutputTilePipeline[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Pipeline for MMA→Epilogue TMEM stage synchronization."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
@@ -1734,7 +1734,7 @@ struct OutputProducer[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Producer view for MMA warp (output pipeline)."""
 
     comptime TilePipelineType = OutputTilePipeline[
@@ -1775,7 +1775,7 @@ struct OutputConsumer[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Consumer view for epilogue warp (output pipeline)."""
 
     comptime TilePipelineType = OutputTilePipeline[
@@ -1969,7 +1969,7 @@ struct OutputKPipeline[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-K-iteration view of OutputTilePipeline.
 
     Unlike standard producer()/consumer() which signal once per tile (after
@@ -2035,7 +2035,7 @@ struct MmaKStage[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-K stage context for MMA warp in blockwise FP8.
 
     __enter__: Acquires stage, waits for epilogue to release previous stage
@@ -2080,7 +2080,7 @@ struct PerKConsumerStage[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager for per-K epilogue consumption.
 
     __enter__: Acquires stage, waits for MMA to complete this K iteration
@@ -2149,7 +2149,7 @@ struct EpilogueKStage[
     stage_stride_cols: Int,
     cta_group: Int,
     num_input_stages: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-K stage for epilogue warp in blockwise FP8.
 
     Returned from `EpilogueKContext.__enter__()`. Bundles:
@@ -2203,7 +2203,7 @@ struct EpilogueKContext[
     stage_stride_cols: Int,
     cta_group: Int,
     num_input_stages: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-K context manager for epilogue warp in blockwise FP8.
 
     Bundles output pipeline (MMA→Epilogue sync) and input pipeline (A-scales)

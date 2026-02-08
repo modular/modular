@@ -14,7 +14,7 @@
 
 @always_inline("builtin")
 fn _select_register_value[
-    T: TrivialRegisterType
+    T: TrivialRegisterPassable
 ](condition: Bool, lhs: T, rhs: T) -> T:
     """Choose one value based on a condition, without IR-level branching.
     Use this over normal `if` branches to reduce the size of the generated IR.

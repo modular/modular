@@ -39,7 +39,7 @@ fn test_register_passable_type():
 
 # Ensure that we can define a register-passable trivial type that conforms to a
 # register-passable trait
-struct RegPassableType2(RegPassableTrait, TrivialRegisterType):
+struct RegPassableType2(RegPassableTrait, TrivialRegisterPassable):
     fn __init__(out self):
         pass
 
@@ -47,7 +47,7 @@ struct RegPassableType2(RegPassableTrait, TrivialRegisterType):
         print("Hello from a register passable type!")
 
 
-trait RegPassableTrivialTrait(TrivialRegisterType):
+trait RegPassableTrivialTrait(TrivialRegisterPassable):
     fn __init__(out self, value: Int = 0):
         ...
 
@@ -55,7 +55,7 @@ trait RegPassableTrivialTrait(TrivialRegisterType):
         ...
 
 
-struct RegPassableTrivialType(RegPassableTrivialTrait, TrivialRegisterType):
+struct RegPassableTrivialType(RegPassableTrivialTrait, TrivialRegisterPassable):
     var value: Int
 
     fn __init__(out self, value: Int = 0):

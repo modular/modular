@@ -429,7 +429,7 @@ fn device_sampling_from_prob[
     return aggregate + aggregate_local
 
 
-struct ValueCount[T: DType](Defaultable, TrivialRegisterType):
+struct ValueCount[T: DType](Defaultable, TrivialRegisterPassable):
     """A struct that holds a value and a count, used for block reductions.
 
     This is useful for computing both the sum of values and the count

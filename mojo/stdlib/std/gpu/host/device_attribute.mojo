@@ -29,7 +29,7 @@ for examples that retrieve `DeviceAttribute` values.
 
 
 @fieldwise_init("implicit")
-struct DeviceAttribute(TrivialRegisterType):
+struct DeviceAttribute(TrivialRegisterPassable):
     """
     Represents CUDA device attributes that can be queried from a GPU device.
 

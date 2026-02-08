@@ -269,7 +269,7 @@ that are not known at compile time or have not been specified.
 
 
 struct _IntTupleIter[origin: ImmutOrigin](
-    Iterable, Iterator, TrivialRegisterType
+    Iterable, Iterator, TrivialRegisterPassable
 ):
     """Iterator for traversing elements of an IntTuple."""
 

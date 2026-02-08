@@ -71,7 +71,7 @@ struct MatmulTileWriter[
         elementwise_compute_lambda_type
     ] = None,
     swapAB: Bool = False,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime N = Self.layout.shape[1].value()
     comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
         1

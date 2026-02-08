@@ -34,7 +34,7 @@ comptime check_blackwell_constraint = constrained[
 """Compile-time constraint ensuring Blackwell hardware is targeted."""
 
 
-struct TensorMemory(TrivialRegisterType):
+struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[
@@ -214,7 +214,7 @@ fn tcgen05_ld[
     @parameter
     @always_inline("nodebug")
     fn call_ld_intrinsic[
-        pack_type: TrivialRegisterType
+        pack_type: TrivialRegisterPassable
     ]() -> SIMD[dtype, width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."

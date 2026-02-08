@@ -18,9 +18,9 @@ These are Mojo built-ins, so you don't need to import them.
 
 @always_inline("builtin")
 fn rebind[
-    src_type: TrivialRegisterType,
+    src_type: TrivialRegisterPassable,
     //,
-    dest_type: TrivialRegisterType,
+    dest_type: TrivialRegisterPassable,
 ](src: src_type) -> dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
@@ -120,7 +120,7 @@ Parameters:
 
 @always_inline
 fn trait_downcast[
-    T: TrivialRegisterType, //, Trait: type_of(AnyType)
+    T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
 ](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving

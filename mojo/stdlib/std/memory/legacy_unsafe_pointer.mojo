@@ -61,7 +61,7 @@ struct LegacyUnsafePointer[
     ImplicitlyCopyable,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """`LegacyUnsafePointer` is a deprecated pointer type that is replaced by

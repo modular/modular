@@ -135,7 +135,7 @@ fn wait_on_dependent_grids():
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
-struct PDLLevel(Defaultable, TrivialRegisterType):
+struct PDLLevel(Defaultable, TrivialRegisterPassable):
     """Programmatic Dependency Launch (PDL) level."""
 
     var _level: Int

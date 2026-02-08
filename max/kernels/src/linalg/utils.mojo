@@ -65,7 +65,7 @@ struct KernelConfig:
         self.packed_shape = packed_shape
 
 
-struct MicroKernelShape(TrivialRegisterType):
+struct MicroKernelShape(TrivialRegisterPassable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -78,7 +78,7 @@ struct MicroKernelShape(TrivialRegisterType):
 
 
 @fieldwise_init
-struct GemmShape(TrivialRegisterType):
+struct GemmShape(TrivialRegisterPassable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -730,7 +730,7 @@ fn packA_i8mm[
 
 
 @fieldwise_init
-struct InnerKernelID(TrivialRegisterType):
+struct InnerKernelID(TrivialRegisterPassable):
     comptime DEFAULT = InnerKernelID(0)
     comptime VNNI = InnerKernelID(1)
     comptime NEON = InnerKernelID(2)

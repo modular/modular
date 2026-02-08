@@ -64,7 +64,7 @@ from std.bit import log2_floor
 
 
 # Import ThreadInfo from matmul_output
-struct ThreadInfo(TrivialRegisterType):
+struct ThreadInfo(TrivialRegisterPassable):
     """Thread identification within the warp group."""
 
     var warp_id: UInt
@@ -101,7 +101,7 @@ struct ThreadInfo(TrivialRegisterType):
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
 
-struct TileCoordinates(TrivialRegisterType):
+struct TileCoordinates(TrivialRegisterPassable):
     """Helper struct for managing tile coordinate offsets.
 
     This struct encapsulates corner and split coordinates used in epilogue
@@ -138,7 +138,7 @@ struct TileCoordinates(TrivialRegisterType):
         )
 
 
-trait SMemTileWriter(TrivialRegisterType):
+trait SMemTileWriter(TrivialRegisterPassable):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing tiles from shared memory to global memory,
@@ -168,7 +168,7 @@ struct TileWriterTMA[
     tma_layout: Layout,
     desc_layout: Layout,
     //,
-](SMemTileWriter, TrivialRegisterType):
+](SMemTileWriter, TrivialRegisterPassable):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
     This writer uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
@@ -244,7 +244,7 @@ struct TileWriterThreadwise[
     simd_size: Int,
     half_tile: Bool = False,  # Handle masked x2 case,
     swapAB: Bool = False,
-](SMemTileWriter, TrivialRegisterType):
+](SMemTileWriter, TrivialRegisterPassable):
     comptime _dtype = Self.dtype
 
     comptime DstType = LayoutTensor[
@@ -387,7 +387,7 @@ struct TileWriterThreadwise[
             )
 
 
-trait RegTileWriter(TrivialRegisterType):
+trait RegTileWriter(TrivialRegisterPassable):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing register tiles to memory

@@ -117,7 +117,7 @@ struct ReduceScatterConfig[
     simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     var stride: Int
     var part: Int
     var remainder: Int

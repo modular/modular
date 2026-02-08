@@ -1207,7 +1207,7 @@ This means we can use the
 [`@register_passable("trivial")`](/mojo/manual/decorators/register-passable/#register_passabletrivial)
 decorator, which declares that the type can be trivially copied, moved, and
 destroyed—and doesn't need a copy constructor, move constructor, or destructor.
-(This decorator is now deprecated, conform to the `TrivialRegisterType` trait
+(This decorator is now deprecated, conform to the `TrivialRegisterPassable` trait
 instead.)
 
 For the time being, we'll also use the
@@ -1217,7 +1217,7 @@ for each field).
 
 ```mojo
 @fieldwise_init
-struct Complex(TrivialRegisterType):
+struct Complex(TrivialRegisterPassable):
     var re: Float64
     var im: Float64
 ```
@@ -1238,7 +1238,7 @@ As a convenience, let's add an explicit constructor to handle the case of
 creating a `Complex` instance with an imaginary component of 0.
 
 ```mojo
-struct Complex(TrivialRegisterType):
+struct Complex(TrivialRegisterPassable):
     var re: Float64
     var im: Float64
 
@@ -1275,7 +1275,7 @@ traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 struct Complex(
     Writable,
     Stringable,
-     TrivialRegisterType
+     TrivialRegisterPassable
 ):
     # ...
 

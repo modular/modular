@@ -423,7 +423,7 @@ struct OwnedDLHandle(Movable):
 
 
 @fieldwise_init
-struct _DLHandle(Boolable, Copyable, TrivialRegisterType):
+struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     """Represents a non-owning reference to a dynamically linked library.
 
     `_DLHandle` is a lightweight, trivially copyable reference to a dynamic

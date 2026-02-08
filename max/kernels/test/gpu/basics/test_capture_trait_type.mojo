@@ -17,7 +17,7 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from utils import IndexList
 
 
-trait BaseT(TrivialRegisterType):
+trait BaseT(TrivialRegisterPassable):
     fn get_val(self, idx: Int) -> Float32:
         ...
 

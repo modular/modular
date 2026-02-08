@@ -42,7 +42,7 @@ from ffi import (
 from memory import Span
 
 
-struct FileDescriptor(TrivialRegisterType, Writer):
+struct FileDescriptor(TrivialRegisterPassable, Writer):
     """File descriptor of a file."""
 
     var value: Int

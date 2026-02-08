@@ -89,7 +89,7 @@ from ..structured_kernels.output_writer import TileWriter
 # =============================================================================
 
 
-struct WarpRole1D1D(TrivialRegisterType):
+struct WarpRole1D1D(TrivialRegisterPassable):
     """Warp role for 1D-1D kernel with 3-warp specialization.
 
     Thread layout (192 threads total) - matches original kernel:

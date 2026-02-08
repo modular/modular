@@ -65,7 +65,7 @@ struct TileTensor[
     element_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
         ComptimeInt[1]
     ],
-](DevicePassable, ImplicitlyCopyable, TrivialRegisterType, Writable):
+](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     comptime rank = Self.LayoutType.rank
     comptime element_size = Coord[*Self.element_shape_types].static_product
     comptime ElementType = SIMD[Self.dtype, Self.element_size]

@@ -198,7 +198,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters
@@ -500,7 +500,7 @@ struct BlockScaledMatmulConfig[
     sfa_dtype: DType,
     sfb_dtype: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters

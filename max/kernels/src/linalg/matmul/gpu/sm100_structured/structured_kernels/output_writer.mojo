@@ -94,7 +94,7 @@ struct TileWriter[
     ] = None,
     register_based_epilogue: Bool = True,
     batched: Bool = False,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Output tile writer for SM100 matmul epilogue.
 
     Stores pointer to TMA descriptor. SMEM tiles passed per-call.

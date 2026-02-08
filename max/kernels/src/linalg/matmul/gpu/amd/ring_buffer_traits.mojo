@@ -66,7 +66,7 @@ fn increment_counter_if_first_thread(
 # ===----------------------------------------------------------------------=== #
 
 
-trait SyncStrategy(TrivialRegisterType):
+trait SyncStrategy(TrivialRegisterPassable):
     """Interface for synchronization strategies between producers and consumers.
 
     All methods have the same signature regardless of the specific implementation,

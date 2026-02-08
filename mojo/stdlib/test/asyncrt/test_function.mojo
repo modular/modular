@@ -22,7 +22,7 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-struct TwoS(TrivialRegisterType):
+struct TwoS(TrivialRegisterPassable):
     var s0: S
     var s1: S
 

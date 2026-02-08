@@ -37,7 +37,7 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -94,7 +94,7 @@ struct AdvanceAfterWorkContextSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue)."""
 
     comptime SchedulerType = TileScheduler[
@@ -141,7 +141,7 @@ struct AdvanceAfterWorkContextSplitK[
 
 struct WaitAndAdvanceContextSplitK[
     work_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for waiting on CLC barrier and advancing work iterator (Split-K).
 
     Encapsulates the CLC response barrier synchronization:
@@ -183,7 +183,7 @@ struct WorkIteratorSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator for split-K that owns work_info and pipeline state.
     Throttle pipeline is obtained from the scheduler.
     """
@@ -283,7 +283,7 @@ struct SchedulerWorkIteratorSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Work iterator for Scheduler warp (split-K) - owns work_info and both states.
     Throttle pipeline is obtained from the scheduler.
     """
@@ -370,7 +370,7 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime UnderlyingScheduler = B200TileScheduler[
         Self.num_stages,
         Self.cluster_shape,

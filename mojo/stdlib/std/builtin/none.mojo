@@ -21,7 +21,7 @@ struct NoneType(
     ImplicitlyCopyable,
     Representable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Represents the absence of a value."""

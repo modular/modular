@@ -29,7 +29,7 @@ from utils import IndexList, StaticTuple
 from gpu.intrinsics import load_acquire, store_release
 
 
-trait Enum(TrivialRegisterType):
+trait Enum(TrivialRegisterPassable):
     @always_inline
     fn value(self) -> Int:
         ...
@@ -104,7 +104,7 @@ struct SMemBuffer[
     BN: Int,
     WM: Int,
     WN: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
 
     """Manages shared memory and returns 2D tile slices of the buffer."""
 
@@ -147,7 +147,7 @@ struct SMemBuffer[
         return self.buffer.tile[Self.BM, Self.BN](0, stage)
 
 
-struct AMDSharedMemoryBarrier(TrivialRegisterType):
+struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
     var __repr: Int32
 
     @always_inline
@@ -180,7 +180,7 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
             ]()
 
 
-struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
+struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
@@ -218,7 +218,7 @@ struct MMAConfig[
     OutType: DType,
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime mma = TensorCore[
         Self.OutType,
         Self.InType,
@@ -256,7 +256,7 @@ struct AmdTileOperator[
     mma_shape: IndexList[3],
     swizzle: Optional[Swizzle] = None,
     transpose_b: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Manages tensor core operations for matrix multiplication on AMD GPUs.
 
     This operator handles loading matrix fragments from shared memory to registers

@@ -1062,7 +1062,7 @@ fn load_volatile[
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
-struct AMDBufferResource(TrivialRegisterType):
+struct AMDBufferResource(TrivialRegisterPassable):
     """128-bit descriptor for a buffer resource on AMD GPUs.
 
     Used for buffer_load/buffer_store instructions.

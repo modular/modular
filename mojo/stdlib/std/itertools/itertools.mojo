@@ -35,7 +35,7 @@ from builtin.variadics import Variadic
 
 
 @fieldwise_init
-struct _CountIterator(Iterable, Iterator, TrivialRegisterType):
+struct _CountIterator(Iterable, Iterator, TrivialRegisterPassable):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self

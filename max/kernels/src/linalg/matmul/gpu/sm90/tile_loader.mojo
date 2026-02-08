@@ -44,7 +44,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-trait TileLoader(TrivialRegisterType):
+trait TileLoader(TrivialRegisterPassable):
     """Base trait for tile loading mechanisms in matrix multiplication.
 
     This trait defines the interface for loading tiles from global memory
@@ -70,7 +70,7 @@ trait TileLoader(TrivialRegisterType):
         ...
 
 
-trait BarrierHandler(TrivialRegisterType):
+trait BarrierHandler(TrivialRegisterPassable):
     """Handles barrier lifecycle for different transfer mechanisms.
 
     Separates barrier management from tile loading:

@@ -40,7 +40,7 @@ fn _suspend_async[body: fn(AnyCoroutine) capturing -> None]():
 # ===----------------------------------------------------------------------=== #
 
 
-struct _CoroutineContext(TrivialRegisterType):
+struct _CoroutineContext(TrivialRegisterPassable):
     """The default context for a Coroutine, capturing the resume function
     callback and parent Coroutine. The resume function will typically just
     resume the parent. May be overwritten by other context types with different

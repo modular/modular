@@ -59,7 +59,7 @@ from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
-struct WarpRole[has_scheduler: Bool = True](TrivialRegisterType):
+struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     var _role: Int32
 
     comptime Mma = Self(6) if Self.has_scheduler else Self(5)

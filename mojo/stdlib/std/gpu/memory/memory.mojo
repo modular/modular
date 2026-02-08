@@ -70,7 +70,7 @@ from ..intrinsics import Scope
 
 
 @fieldwise_init
-struct CacheOperation(Equatable, TrivialRegisterType):
+struct CacheOperation(Equatable, TrivialRegisterPassable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -193,7 +193,7 @@ struct CacheOperation(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, TrivialRegisterType):
+struct CacheEviction(Equatable, TrivialRegisterPassable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -290,7 +290,7 @@ struct CacheEviction(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterType):
+struct Fill(Equatable, TrivialRegisterPassable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -345,7 +345,7 @@ struct Fill(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Consistency(Equatable, TrivialRegisterType):
+struct Consistency(Equatable, TrivialRegisterPassable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -423,7 +423,7 @@ struct Consistency(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, TrivialRegisterType):
+struct ReduceOp(Equatable, TrivialRegisterPassable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -835,7 +835,7 @@ fn async_copy_wait_all():
 
 @always_inline
 fn external_memory[
-    dtype: TrivialRegisterType,
+    dtype: TrivialRegisterPassable,
     *,
     address_space: AddressSpace,
     alignment: Int,
