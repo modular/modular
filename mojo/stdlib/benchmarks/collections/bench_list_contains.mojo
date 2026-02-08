@@ -127,7 +127,7 @@ fn bench_list_contains_uint8[size: Int](mut b: Bencher) raises:
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main():
-    var m = Bench(BenchConfig(num_repetitions=5))
+    var m = Bench(BenchConfig(num_repetitions=50))
     comptime sizes = (10, 50, 100, 1000, 10_000, 100_000)
 
     @parameter
