@@ -600,9 +600,9 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
                             + (xBC_start + x_channel)
                         )
                         var wt_off = x_channel * width + w
-                        conv_sum_x += Float32(
-                            zxbcdt_h[xbc_off]
-                        ) * Float32(conv_weight_h[wt_off])
+                        conv_sum_x += Float32(zxbcdt_h[xbc_off]) * Float32(
+                            conv_weight_h[wt_off]
+                        )
                 var x_val = silu_ref(conv_sum_x)
 
                 # --- Step 4: Causal conv1d for B and C channels ---
@@ -621,15 +621,13 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
                                 + (xBC_start + B_ch)
                             )
                             var wt_off = B_ch * width + w
-                            B_conv += Float32(
-                                zxbcdt_h[xbc_off]
-                            ) * Float32(conv_weight_h[wt_off])
+                            B_conv += Float32(zxbcdt_h[xbc_off]) * Float32(
+                                conv_weight_h[wt_off]
+                            )
                     B_vals[n] = silu_ref(B_conv)
 
                     # C channel: dim + ngroups*dstate + group_id*dstate + n
-                    var C_ch = (
-                        dim + ngroups * dstate + group_id * dstate + n
-                    )
+                    var C_ch = dim + ngroups * dstate + group_id * dstate + n
                     var C_conv = Float32(conv_bias_h[C_ch])
                     for w in range(width):
                         var input_t = t - (width - 1 - w)
@@ -640,9 +638,9 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
                                 + (xBC_start + C_ch)
                             )
                             var wt_off = C_ch * width + w
-                            C_conv += Float32(
-                                zxbcdt_h[xbc_off]
-                            ) * Float32(conv_weight_h[wt_off])
+                            C_conv += Float32(zxbcdt_h[xbc_off]) * Float32(
+                                conv_weight_h[wt_off]
+                            )
                     C_vals[n] = silu_ref(C_conv)
 
                 # --- Step 5: Selective scan ---
@@ -665,17 +663,13 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
                         out_val = out_val * norm_val * silu_ref(z_val)
                     else:
                         var gated = out_val * silu_ref(z_val)
-                        var norm_val = (
-                            rsqrt(gated * gated + eps) * rmsnorm_w
-                        )
+                        var norm_val = rsqrt(gated * gated + eps) * rmsnorm_w
                         out_val = gated * norm_val
                 else:
                     out_val = out_val * silu_ref(z_val)
 
                 # Store reference output: (batch, seqlen, dim) row-major
-                var out_offset = (
-                    b_idx * seqlen * dim + t * dim + d_idx
-                )
+                var out_offset = b_idx * seqlen * dim + t * dim + d_idx
                 output_ref_h[out_offset] = Scalar[dtype](out_val)
 
     # Compare CPU output vs reference
