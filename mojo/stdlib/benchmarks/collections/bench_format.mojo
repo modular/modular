@@ -59,6 +59,22 @@ fn bench_format_literal[literal_len: Int](mut b: Bencher) raises:
 
 
 @parameter
+fn bench_format_runtime_short(mut b: Bencher) raises:
+    """Runtime format with a typical short format string."""
+    var fmt = String("Hello, {}! I am {} years old and I like {}.")
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for _ in range(1_000):
+            var res = fmt.format("World", 42, "Mojo")
+            keep(res)
+
+    b.iter[call_fn]()
+    keep(Bool(fmt))
+
+
+@parameter
 fn bench_format_comptime_short(mut b: Bencher):
     """Compile-time format string with short literals."""
 
@@ -109,6 +125,9 @@ def main():
     )
     m.bench_function[bench_format_literal[4096]](
         BenchId("bench_format_literal[4096B x 4]")
+    )
+    m.bench_function[bench_format_runtime_short](
+        BenchId("bench_format_runtime_short")
     )
     m.bench_function[bench_format_comptime_short](
         BenchId("bench_format_comptime_short")
