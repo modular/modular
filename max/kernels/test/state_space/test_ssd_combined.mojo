@@ -18,6 +18,7 @@ from layout import (
     RuntimeLayout,
 )
 from layout._fillers import random
+from math import exp, exp2, log
 from memory import alloc
 from state_space.selective_scan import (
     ssd_combined_cpu,
@@ -26,8 +27,24 @@ from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
 
-
 comptime MAX_DSTATE = 16
+comptime LOG2E = 1.4426950408889634
+
+
+@always_inline
+fn softplus_ref(val: Float32) -> Float32:
+    """Reference softplus: log(1 + exp(x)) with numerical stability."""
+    if val > 20.0:
+        return val
+    return log(Float32(1.0) + exp(val))
+
+
+@always_inline
+fn silu_ref(val: Float32) -> Float32:
+    """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
+    if val < -20.0:
+        return 0.0
+    return val / (Float32(1.0) + exp(-val))
 
 
 fn run_ssd_combined[
@@ -222,20 +239,104 @@ fn run_ssd_combined[
         weight_offset,
     )
 
-    # Basic sanity check: output should not be all zeros
-    # Check a few sample outputs to verify kernel executed
-    var has_nonzero = False
-    var sample_size = min(10, batch * dim * seqlen)
-    for i in range(sample_size):
-        var val = Float32(output_h.ptr[i])
-        if abs(val) > 1e-8:
-            has_nonzero = True
-            break
+    # Reference implementation for numerical verification
+    var ref_size = batch * dim * seqlen
+    var output_ref_heap = alloc[Scalar[dtype]](ref_size)
+    var out_z_ref_heap = alloc[Scalar[dtype]](ref_size)
+    for i in range(ref_size):
+        output_ref_heap[i] = Scalar[dtype](0)
+        out_z_ref_heap[i] = Scalar[dtype](0)
 
-    if not has_nonzero:
-        raise Error(
-            "Output is all zeros - kernel may not be executing correctly"
+    for b_idx in range(batch):
+        for d_idx in range(dim):
+            var group_id = d_idx // group_size
+
+            # Pre-load A values with LOG2E scaling (matches kernel)
+            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            for n in range(dstate):
+                A_ref[n] = Float32(A_h.ptr[d_idx * dstate + n]) * LOG2E
+
+            # Load per-dim scalars
+            var gamma_val = Float32(gamma_h.ptr[d_idx])
+            var D_val = Float32(0)
+            if has_D:
+                D_val = Float32(D_h.ptr[d_idx])
+            var delta_bias_val = Float32(0)
+            if has_delta_bias:
+                delta_bias_val = Float32(delta_bias_h.ptr[d_idx])
+            var weight_offset_val = Float32(weight_offset)
+
+            # Initialize state to zero
+            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+
+            for t in range(seqlen):
+                var off_3d = b_idx * dim * seqlen + d_idx * seqlen + t
+                var u_val = Float32(u_h.ptr[off_3d])
+                var delta_val = Float32(delta_h.ptr[off_3d])
+                var residual_val = Float32(residual_h.ptr[off_3d])
+
+                if has_delta_bias:
+                    delta_val += delta_bias_val
+                if delta_softplus:
+                    delta_val = softplus_ref(delta_val)
+
+                var delta_u = delta_val * u_val
+
+                # Load B, C values
+                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                for n in range(dstate):
+                    var bc_offset = (
+                        b_idx * n_groups * dstate * seqlen
+                        + group_id * dstate * seqlen
+                        + n * seqlen
+                        + t
+                    )
+                    B_vals[n] = Float32(B_h.ptr[bc_offset])
+                    C_vals[n] = Float32(C_h.ptr[bc_offset])
+
+                # State update: state = state * exp2(A * delta) + B * delta * u
+                var a_t = exp2(A_ref * delta_val)
+                var b_t = B_vals * delta_u
+                state_ref = state_ref * a_t + b_t
+
+                # Compute selective scan output
+                var ss_output = (state_ref * C_vals).reduce_add()
+
+                if has_D:
+                    ss_output += D_val * u_val
+
+                # Combine with residual and apply gamma scaling
+                var combined = residual_val + ss_output
+                var normalized = combined * (gamma_val + weight_offset_val)
+
+                if has_z:
+                    var z_val = Float32(z_h.ptr[off_3d])
+                    var out_z_val = normalized * silu_ref(z_val)
+                    out_z_ref_heap[off_3d] = Scalar[dtype](out_z_val)
+                    normalized = out_z_val
+
+                output_ref_heap[off_3d] = Scalar[dtype](normalized)
+
+    # Compare kernel output vs reference
+    for i in range(ref_size):
+        assert_almost_equal(
+            output_h.ptr[i],
+            output_ref_heap[i],
+            rtol=rtol,
         )
+
+    # Verify out_z when z gating is enabled
+    if has_z:
+        for i in range(ref_size):
+            assert_almost_equal(
+                out_z_h.ptr[i],
+                out_z_ref_heap[i],
+                rtol=rtol,
+            )
+
+    output_ref_heap.free()
+    out_z_ref_heap.free()
 
     # Cleanup
     output_heap.free()

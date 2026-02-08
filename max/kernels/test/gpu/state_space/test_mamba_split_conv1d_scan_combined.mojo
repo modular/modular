@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from math import ceildiv, exp, exp2, log, rsqrt
 
 from gpu.host import DeviceContext
 from layout import (
@@ -29,6 +29,25 @@ from state_space.selective_scan import (
 from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
+
+comptime MAX_DSTATE = 16
+comptime LOG2E = 1.4426950408889634
+
+
+@always_inline
+fn softplus_ref(val: Float32) -> Float32:
+    """Reference softplus: log(1 + exp(x)) with numerical stability."""
+    if val > 20.0:
+        return val
+    return log(Float32(1.0) + exp(val))
+
+
+@always_inline
+fn silu_ref(val: Float32) -> Float32:
+    """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
+    if val < -20.0:
+        return 0.0
+    return val / (Float32(1.0) + exp(-val))
 
 
 fn run_mamba_split_conv1d_scan_combined_gpu[
@@ -52,7 +71,6 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     comptime dstate = DSTATE
-    var group_size = dim // nheads
     var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
@@ -497,13 +515,178 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         ctx.enqueue_copy(output_gpu_h, output_gpu_d)
     ctx.synchronize()
 
-    # Compare results
+    # Compare GPU output vs CPU output
     for i in range(output_size):
         assert_almost_equal(
             output_cpu_h[i],
             output_gpu_h[i],
             rtol=rtol,
         )
+
+    # ===--- Reference implementation for numerical verification ---=== #
+    # Mirrors the kernel's 6-stage pipeline:
+    # 1. Split zxbcdt -> z, xBC, dt
+    # 2. Causal conv1d on x, B, C channels with SiLU activation
+    # 3. Selective scan (SSM recurrence)
+    # 4. Gating with z (optional RMSNorm)
+    # 5. Store output (no outproj in current tests)
+    var flattened_size = batch * seqlen * dim
+    var output_ref_h = alloc[Scalar[dtype]](flattened_size)
+    for i in range(flattened_size):
+        output_ref_h[i] = Scalar[dtype](0)
+
+    # Channel offsets within zxbcdt
+    var z_start = 0
+    var xBC_start = dim
+    var dt_start_ch = 2 * dim + 2 * ngroups * dstate
+
+    for b_idx in range(batch):
+        for d_idx in range(dim):
+            var h = d_idx // headdim
+            var p = d_idx % headdim
+            var group_id = h // ngroups if ngroups > 1 else 0
+
+            # Pre-load A value (same for all DSTATE entries within a head)
+            var A_val_raw = Float32(A_h[h])
+            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            for n in range(dstate):
+                A_ref[n] = A_val_raw * LOG2E
+
+            # Load D value: D is (nheads, headdim)
+            var D_val = Float32(0)
+            if has_D:
+                D_val = Float32(D_h[h * headdim + p])
+
+            # Load dt_bias for this head
+            var dt_bias_val = Float32(dt_bias_h[h])
+
+            # Load rmsnorm weight for this dim
+            var rmsnorm_w = Float32(0)
+            if has_rmsnorm:
+                rmsnorm_w = Float32(rmsnorm_weight_h[d_idx])
+
+            # Initialize state for selective scan
+            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+
+            for t in range(seqlen):
+                # --- Step 1: Load z from zxbcdt ---
+                var z_offset = (
+                    b_idx * seqlen * zxbcdt_channels
+                    + t * zxbcdt_channels
+                    + (z_start + d_idx)
+                )
+                var z_val = Float32(zxbcdt_h[z_offset])
+
+                # --- Step 2: Load dt, apply bias and softplus ---
+                var dt_offset = (
+                    b_idx * seqlen * zxbcdt_channels
+                    + t * zxbcdt_channels
+                    + (dt_start_ch + h)
+                )
+                var dt_val = Float32(zxbcdt_h[dt_offset])
+                dt_val += dt_bias_val
+                if delta_softplus:
+                    dt_val = softplus_ref(dt_val)
+
+                # --- Step 3: Causal conv1d for x channel ---
+                var x_channel = d_idx
+                var conv_sum_x = Float32(conv_bias_h[x_channel])
+                for w in range(width):
+                    var input_t = t - (width - 1 - w)
+                    if input_t >= 0:
+                        var xbc_off = (
+                            b_idx * seqlen * zxbcdt_channels
+                            + input_t * zxbcdt_channels
+                            + (xBC_start + x_channel)
+                        )
+                        var wt_off = x_channel * width + w
+                        conv_sum_x += Float32(
+                            zxbcdt_h[xbc_off]
+                        ) * Float32(conv_weight_h[wt_off])
+                var x_val = silu_ref(conv_sum_x)
+
+                # --- Step 4: Causal conv1d for B and C channels ---
+                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                for n in range(dstate):
+                    # B channel: dim + group_id * dstate + n (in xBC space)
+                    var B_ch = dim + group_id * dstate + n
+                    var B_conv = Float32(conv_bias_h[B_ch])
+                    for w in range(width):
+                        var input_t = t - (width - 1 - w)
+                        if input_t >= 0:
+                            var xbc_off = (
+                                b_idx * seqlen * zxbcdt_channels
+                                + input_t * zxbcdt_channels
+                                + (xBC_start + B_ch)
+                            )
+                            var wt_off = B_ch * width + w
+                            B_conv += Float32(
+                                zxbcdt_h[xbc_off]
+                            ) * Float32(conv_weight_h[wt_off])
+                    B_vals[n] = silu_ref(B_conv)
+
+                    # C channel: dim + ngroups*dstate + group_id*dstate + n
+                    var C_ch = (
+                        dim + ngroups * dstate + group_id * dstate + n
+                    )
+                    var C_conv = Float32(conv_bias_h[C_ch])
+                    for w in range(width):
+                        var input_t = t - (width - 1 - w)
+                        if input_t >= 0:
+                            var xbc_off = (
+                                b_idx * seqlen * zxbcdt_channels
+                                + input_t * zxbcdt_channels
+                                + (xBC_start + C_ch)
+                            )
+                            var wt_off = C_ch * width + w
+                            C_conv += Float32(
+                                zxbcdt_h[xbc_off]
+                            ) * Float32(conv_weight_h[wt_off])
+                    C_vals[n] = silu_ref(C_conv)
+
+                # --- Step 5: Selective scan ---
+                var a_t = exp2(dt_val * A_ref)
+                var b_t = B_vals * dt_val
+                state_ref = state_ref * a_t + b_t
+                var ss_output = (state_ref * C_vals).reduce_add()
+
+                if has_D:
+                    ss_output += D_val * x_val
+
+                # --- Step 6: Apply gating and optional RMSNorm ---
+                var out_val = ss_output
+                if has_rmsnorm:
+                    var eps = Float32(0.001)
+                    if norm_before_gate:
+                        var norm_val = (
+                            rsqrt(out_val * out_val + eps) * rmsnorm_w
+                        )
+                        out_val = out_val * norm_val * silu_ref(z_val)
+                    else:
+                        var gated = out_val * silu_ref(z_val)
+                        var norm_val = (
+                            rsqrt(gated * gated + eps) * rmsnorm_w
+                        )
+                        out_val = gated * norm_val
+                else:
+                    out_val = out_val * silu_ref(z_val)
+
+                # Store reference output: (batch, seqlen, dim) row-major
+                var out_offset = (
+                    b_idx * seqlen * dim + t * dim + d_idx
+                )
+                output_ref_h[out_offset] = Scalar[dtype](out_val)
+
+    # Compare CPU output vs reference
+    for i in range(flattened_size):
+        assert_almost_equal(
+            output_cpu_h[i],
+            output_ref_h[i],
+            rtol=rtol,
+        )
+
+    output_ref_h.free()
 
     # Cleanup
     zxbcdt_h.free()
