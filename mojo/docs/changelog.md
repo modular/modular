@@ -219,6 +219,9 @@ what we publish.
   instead of the previously deprecated `Float64`. Use explicit `Float64` casts
   for floating-point division.
 
+- Documentation for `SIMD.__round__` now clarifies the pre-existing behavior
+  that ties are rounded to the nearest even, not away from zero.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
