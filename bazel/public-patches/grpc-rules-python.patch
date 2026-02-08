@@ -1,0 +1,137 @@
+commit df8dfcafb6456733127a6a3941e945b5e6075eba
+Author:     Keith Smiley <keithbsmiley@gmail.com>
+AuthorDate: Fri Sep 12 20:42:27 2025 +0000
+Commit:     Keith Smiley <keithbsmiley@gmail.com>
+CommitDate: Fri Sep 12 20:44:42 2025 +0000
+
+    [bazel] Use python rules from rules_python
+    
+    This is required for the upcoming bazel 9.x release.
+
+diff --git a/bazel/cython_library.bzl b/bazel/cython_library.bzl
+index f20f98fd49..8210b015a8 100644
+--- a/bazel/cython_library.bzl
++++ b/bazel/cython_library.bzl
+@@ -13,6 +13,8 @@
+ # limitations under the License.
+ """Custom rules for gRPC Python"""
+ 
++load("@rules_python//python:defs.bzl", "py_library")
++
+ # Adapted with modifications from
+ # tensorflow/tensorflow/core/platform/default/build_config.bzl
+ # Native Bazel rules don't exist yet to compile Cython code, but rules have
+@@ -85,7 +87,7 @@ def pyx_library(name, deps = [], py_deps = [], srcs = [], **kwargs):
+     data += kwargs.pop("data", [])
+ 
+     # Now create a py_library with these shared objects as data.
+-    native.py_library(
++    py_library(
+         name = name,
+         srcs = py_srcs,
+         deps = py_deps,
+diff --git a/bazel/gevent_test.bzl b/bazel/gevent_test.bzl
+index e861eca65d..2d4ae154ee 100644
+--- a/bazel/gevent_test.bzl
++++ b/bazel/gevent_test.bzl
+@@ -16,6 +16,7 @@ Houses py_grpc_gevent_test.
+ """
+ 
+ load("@grpc_python_dependencies//:requirements.bzl", "requirement")
++load("@rules_python//python:defs.bzl", "py_library", "py_test")
+ 
+ _GRPC_LIB = "//src/python/grpcio/grpc:grpcio"
+ 
+@@ -48,7 +49,7 @@ def py_grpc_gevent_test(
+     supplied_python_version = kwargs.pop("python_version", "")
+     if supplied_python_version and supplied_python_version != "PY3":
+         fail("py_grpc_gevent_test only supports python_version=PY3")
+-    native.py_library(
++    py_library(
+         name = lib_name,
+         srcs = srcs,
+     )
+@@ -72,8 +73,7 @@ def py_grpc_gevent_test(
+     # TODO(https://github.com/grpc/grpc/issues/27542): Remove once gevent is deemed non-flaky.
+     if "flaky" in kwargs:
+         kwargs.pop("flaky")
+-
+-    native.py_test(
++    py_test(
+         name = name + ".gevent",
+         args = [name],
+         data = data,
+diff --git a/bazel/grpc_build_system.bzl b/bazel/grpc_build_system.bzl
+index 0fc2e1d061..d0c0f3af19 100644
+--- a/bazel/grpc_build_system.bzl
++++ b/bazel/grpc_build_system.bzl
+@@ -33,6 +33,7 @@ load("@build_bazel_rules_apple//apple/testing/default_runner:ios_test_runner.bzl
+ load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+ load("@com_google_protobuf//bazel:upb_proto_library.bzl", "upb_proto_library", "upb_proto_reflection_library")
+ load("@rules_proto//proto:defs.bzl", "proto_library")
++load("@rules_python//python:defs.bzl", "py_binary")
+ load("//bazel:cc_grpc_library.bzl", "cc_grpc_library")
+ load("//bazel:copts.bzl", "GRPC_DEFAULT_COPTS")
+ load("//bazel:experiments.bzl", "EXPERIMENTS", "EXPERIMENT_ENABLES", "EXPERIMENT_POLLERS")
+@@ -718,7 +719,7 @@ def grpc_py_binary(
+         testonly = False,
+         python_version = "PY2",
+         **kwargs):
+-    native.py_binary(
++    py_binary(
+         name = name,
+         srcs = srcs,
+         testonly = testonly,
+diff --git a/bazel/internal_python_rules.bzl b/bazel/internal_python_rules.bzl
+index a6c4e18ef8..da8056f7f2 100644
+--- a/bazel/internal_python_rules.bzl
++++ b/bazel/internal_python_rules.bzl
+@@ -13,6 +13,7 @@
+ # limitations under the License.
+ """Python-related rules intended only for use internal to the repo."""
+ 
++load("@rules_python//python:defs.bzl", "py_test")
+ load("//bazel:gevent_test.bzl", "py_grpc_gevent_test")
+ load("//bazel:logging_threshold_test.bzl", "py_grpc_logging_threshold_test")
+ 
+@@ -23,7 +24,7 @@ def internal_py_grpc_test(name, **kwargs):
+       name: The name of the test.
+       **kwargs: Any additional arguments to add to the test.
+     """
+-    native.py_test(
++    py_test(
+         name = name + ".native",
+         python_version = "PY3",
+         **kwargs
+diff --git a/bazel/logging_threshold_test.bzl b/bazel/logging_threshold_test.bzl
+index 7ffc1ec040..5f16decb1d 100644
+--- a/bazel/logging_threshold_test.bzl
++++ b/bazel/logging_threshold_test.bzl
+@@ -15,6 +15,8 @@
+ Houses py_grpc_logging_threshold_test.
+ """
+ 
++load("@rules_python//python:defs.bzl", "py_library", "py_test")
++
+ _COPIED_MAIN_SUFFIX = ".logging_threshold.main"
+ 
+ def py_grpc_logging_threshold_test(
+@@ -42,7 +44,7 @@ def py_grpc_logging_threshold_test(
+     data = [] if data == None else data
+ 
+     lib_name = name + ".logging_threshold.lib"
+-    native.py_library(
++    py_library(
+         name = lib_name,
+         srcs = srcs,
+     )
+@@ -59,8 +61,7 @@ def py_grpc_logging_threshold_test(
+         outs = [copied_main_filename],
+         cmd = "cp $< $@",
+     )
+-
+-    native.py_test(
++    py_test(
+         name = name + ".logging_threshold",
+         args = ["$(location //bazel:_single_module_tester)", name],
+         data = data + ["//bazel:_single_module_tester"],
