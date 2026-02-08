@@ -60,14 +60,14 @@ def _initialize_ragged_inputs[
     var total_length = 0
     var max_seq_length_batch = -1
     for i in range(batch_size):
-        input_row_offsets_host_ptr[i] = total_length
+        input_row_offsets_host_ptr[i] = UInt32(total_length)
 
         var curr_len = prompt_lens[i]
         total_length += curr_len
         if curr_len > max_seq_length_batch:
             max_seq_length_batch = curr_len
 
-    input_row_offsets_host_ptr[batch_size] = total_length
+    input_row_offsets_host_ptr[batch_size] = UInt32(total_length)
     var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
@@ -230,8 +230,8 @@ def execute_matmul_k_cache_ragged_scale[
         ),
         cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -243,8 +243,8 @@ def execute_matmul_k_cache_ragged_scale[
         ),
         cache_lengths_table.cache_lengths.host_tensor(),
         paged_lut.host_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)

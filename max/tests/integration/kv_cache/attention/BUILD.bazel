@@ -1,0 +1,167 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "attention_tests",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_attention_no_opaque.py",
+        ],
+    ),
+    tags = [
+        "external-exclusive",  # Times out if run with too many other tests
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/tests/integration/graph:modular_graph_test",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_gpu_tests",
+    timeout = "long",
+    srcs = glob(
+        ["*_gpu.py"],
+        exclude = [
+            "test_attention_fp8_amd_gpu.py",
+            "test_ragged_attention_gpu.py",
+        ],
+    ) + ["conftest.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "18",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/tests/integration/graph:modular_graph_test",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "ragged_attention_gpu_tests",
+    timeout = "long",
+    srcs = [
+        "conftest.py",
+        "test_ragged_attention_gpu.py",
+    ],
+    args = [
+        "-n",
+        "auto",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "18",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Used for parallelizing tests
+        requirement("pytest-xdist"),
+    ],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/graph:modular_graph_test",
+        requirement("torch"),
+        requirement("hypothesis"),
+        requirement("pytest-xdist"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_no_opaque_tests",
+    timeout = "long",
+    srcs = ["test_attention_no_opaque.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_amd_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_attention_fp8_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

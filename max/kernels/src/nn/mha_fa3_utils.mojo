@@ -72,7 +72,7 @@ from builtin.device_passable import DevicePassable
 from utils import StaticTuple
 
 
-trait OptionalPointer(Copyable, TrivialRegisterType):
+trait OptionalPointer(Copyable, TrivialRegisterPassable):
     comptime dtype: DType
     comptime is_null: Bool
 
@@ -131,7 +131,7 @@ struct Pack[
     KVRowOffsetsType: OptionalPointer,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-](Copyable, DevicePassable, TrivialRegisterType):
+](Copyable, DevicePassable, TrivialRegisterPassable):
     var mask: Self.MaskType
     var score_mod: Self.ScoreModType
     var scheduler: Self.SchedulerType
@@ -180,7 +180,7 @@ struct MHAPosition[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == q_num_heads`.
@@ -461,7 +461,7 @@ fn get_seq_info[
     return scheduler.unsafe_seq_info(tile_summary, state)
 
 
-struct PositionSummary(TrivialRegisterType):
+struct PositionSummary(TrivialRegisterPassable):
     var num_keys: UInt32
     var score_row: UInt32
 

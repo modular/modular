@@ -25,11 +25,11 @@ fn _validate_bytes(slice: Span[Byte]) raises:
         raise Error("CStringSlice has interior nul byte")
 
 
-@register_passable
 struct CStringSlice[origin: ImmutOrigin](
     Defaultable,
     Equatable,
     ImplicitlyCopyable,
+    RegisterPassable,
     Sized,
     Writable,
 ):

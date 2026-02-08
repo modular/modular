@@ -34,7 +34,7 @@ struct DType(
     KeyElement,
     Representable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Represents a data type specification and provides methods for working
@@ -188,8 +188,8 @@ struct DType(
     )
     """Represents the 8-bit `E8M0Fnu` floating point format.
 
-    This type is defined in the
-    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+    This type is defined in section 5.4 of the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf),
     encoded as `eeeeeeee`:
 
     - (e)xponent: 8 bits

@@ -22,9 +22,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any, overload
 
-from max import mlir
 from max._core import Attribute, Operation
 from max._core.dialects import builtin
+from max._mlir_context import (
+    MLIRThreadPoolExecutor,
+    call_with_default_mlir_context,
+)
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
@@ -101,6 +104,10 @@ class CustomOpLibrary:
     Mojo operation will be modified in-place.
 
     For more information, see the [custom ops for PyTorch](/max/tutorials/custom-kernels-pytorch) tutorial.
+
+    Args:
+        kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
+            your custom op kernels, or the corresponding library object.
     """
 
     _kernel_library: KernelLibrary
@@ -109,27 +116,17 @@ class CustomOpLibrary:
     _ops_lock: threading.Lock
 
     def __init__(self, kernel_library: Path | KernelLibrary) -> None:
-        """
-        Args:
-            kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
-              your custom op kernels, or the corresponding library object.
-        """
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
         if isinstance(kernel_library, KernelLibrary):
             self._kernel_library = kernel_library
         else:
-            context = mlir.Context()
-            self._kernel_library = KernelLibrary(context)
-            self._kernel_library.load_paths(context, [kernel_library])
+            self._kernel_library = KernelLibrary()
+            self._kernel_library.load_paths([kernel_library])
 
         self._session = InferenceSession(devices=devices)
         self._ops = {}
         self._ops_lock = threading.Lock()
-
-    @property
-    def _context(self) -> mlir.Context:
-        return self._kernel_library._context
 
     def __getattr__(self, attr: str) -> CustomOp:
         """Get a custom op from the library registered with the given name."""
@@ -221,6 +218,18 @@ class CustomOp:
         return num_dps_outputs.value
 
     def op(self, *args: TensorValue, result_types: Sequence[TensorType]):  # noqa: ANN201
+        """Builds a MAX graph custom op with the given inputs and output types.
+
+        The device is inferred from the input or result types, or defaults to
+        CPU.
+
+        Args:
+            *args: The input graph tensor values to the custom op.
+            result_types: The types of the op's output tensors.
+
+        Returns:
+            The graph value(s) produced by the custom op.
+        """
         # Infer custom op device from inputs
         device = next(
             itertools.chain(
@@ -255,7 +264,6 @@ class CustomOp:
         Returns:
             inspect.Signature: The Python-level signature for the custom op.
         """
-
         op = self.kernel
         num_dps_outputs = self.num_outputs
 
@@ -327,10 +335,6 @@ class MaxOp:
         )
 
     @property
-    def _context(self) -> mlir.Context:
-        return self.library._context
-
-    @property
     def torch_signature(self) -> inspect.Signature:
         """Computes the signature of the generated PyTorch custom op."""
         if isinstance(self.fn, CustomOp):
@@ -376,7 +380,6 @@ class MaxOp:
         with Graph(
             self.name,
             input_types=graph_types,
-            context=self._context,
             kernel_library=self.library._kernel_library,
         ) as graph:
             # Awkward design, there's probably a better way here
@@ -409,7 +412,7 @@ class MaxOp:
         # is invoked for the first time.
         model_cache: dict[str, futures.Future[Model]] = {}
         model_cache_lock = threading.Lock()
-        executor = futures.ThreadPoolExecutor()
+        executor = MLIRThreadPoolExecutor()
 
         signature: inspect.Signature = self.torch_signature
         mutated_args = list(signature.parameters.keys())[: self.num_outputs]
@@ -438,6 +441,7 @@ class MaxOp:
                     )
 
                     graph = self.graph(input_types, output_types)
+
                     model_cache[key] = model_future = executor.submit(
                         self.library._session.load, graph
                     )
@@ -469,9 +473,12 @@ class MaxOp:
             # In eager mode, the fake_tensor function will not be called,
             # so we call it here.
             # registered_fake with real inputs will create buffers for the outputs
-            model = compiled_model(args)
-            converted = [fast_from_dlpack(arg) for arg in args]
-            model.execute(*converted)
+            def execute() -> None:
+                model = compiled_model(args)
+                converted = [fast_from_dlpack(arg) for arg in args]
+                model.execute(*converted)
+
+            call_with_default_mlir_context(execute)
 
         name = f"max::torch.{self.name}"
         callable.__signature__ = signature  # type: ignore
@@ -592,7 +599,7 @@ def graph_op(
     def decorator(
         fn: Callable[..., Iterable[Value[Any]] | Value[Any] | None],
     ) -> CustomOpDef:
-        library = kernel_library or KernelLibrary(mlir.Context())
+        library = kernel_library or KernelLibrary()
         op = MaxOp(
             fn,
             name or fn.__name__,

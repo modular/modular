@@ -95,16 +95,13 @@ fn bench_reducescatter[
     # Total input size per GPU
     var input_length = num_bytes // size_of[dtype]()
 
-    # Use ReduceScatterConfig to compute per-GPU partition info (w/ dummy args)
-    var rs_config = ReduceScatterConfig[dtype, ngpus](input_length, 0, 1, 0)
+    # Use ReduceScatterConfig to compute per-GPU partition info (w/ dummy nthreads)
+    var rs_config = ReduceScatterConfig[dtype, ngpus](input_length, 0)
     var output_lengths = List[Int](capacity=ngpus)
     var rank_starts = List[Int](capacity=ngpus)
     for gpu_idx in range(ngpus):
-        rank_starts.append(gpu_idx * rs_config.part)
-        if gpu_idx == ngpus - 1:
-            output_lengths.append(rs_config.largest_part)
-        else:
-            output_lengths.append(rs_config.part)
+        rank_starts.append(rs_config.rank_start(gpu_idx))
+        output_lengths.append(rs_config.rank_part(gpu_idx))
 
     comptime num_buffers = 1 if use_multimem else ngpus
 

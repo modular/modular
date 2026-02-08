@@ -176,7 +176,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     ImplicitlyCopyable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A base struct that implements size agnostic index functions.

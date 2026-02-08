@@ -26,7 +26,7 @@ from utils import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Chain(Boolable, Defaultable, TrivialRegisterType):
+struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
@@ -39,7 +39,7 @@ struct _Chain(Boolable, Defaultable, TrivialRegisterType):
         return Bool(self.storage)
 
 
-struct _AsyncContext(TrivialRegisterType):
+struct _AsyncContext(TrivialRegisterPassable):
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
@@ -276,7 +276,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
 
 
 @fieldwise_init
-struct TaskGroupContext(TrivialRegisterType):
+struct TaskGroupContext(TrivialRegisterPassable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -294,8 +294,7 @@ struct TaskGroupContext(TrivialRegisterType):
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
-@register_passable
-struct _TaskGroupBox(Copyable):
+struct _TaskGroupBox(Copyable, RegisterPassable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine
@@ -429,7 +428,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceContextPtr(Defaultable, TrivialRegisterType):
+struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -487,7 +486,7 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterType):
         return self[]
 
 
-struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterType):
+struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
     """A fixed-size collection of `DeviceContextPtr` objects.
 
     This struct provides a lightweight, register-passable container for a fixed number

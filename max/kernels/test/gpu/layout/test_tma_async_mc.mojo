@@ -82,7 +82,7 @@ fn test_tma_mcast_load_kernel[
     fence_mbarrier_init()
 
     if thread_idx.x == 0:
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         if rank_n == 0:
             var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)
             tma_tile.async_multicast_load(
@@ -134,8 +134,8 @@ def test_tma_multicast_load_row_major[
         dst_layout,  # dst layout
         type_of(tma_tensor).layout,  # smem layout
         type_of(tma_tensor).layout,  # thread layout
-        CLUSTER_M,
-        CLUSTER_N,
+        UInt32(CLUSTER_M),
+        UInt32(CLUSTER_N),
     ]
 
     ctx.enqueue_function[kernel, kernel](
@@ -217,15 +217,19 @@ fn test_tma_sliced_multicast_load_kernel[
     fence_mbarrier_init()
 
     if thread_idx.x == 0:
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         var slice_cord = Int(
-            UInt32(block_idx.y) * tileM
-            + Int(block_rank % CLUSTER_N) * tileM // CLUSTER_N
+            UInt32(block_idx.y) * UInt32(tileM)
+            + UInt32(Int(block_rank % CLUSTER_N) * tileM) // CLUSTER_N
         )
         var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)
         tma_tile.async_multicast_load(
             type_of(tile)(
-                tile.ptr + (block_rank % CLUSTER_N) * tileM * tileN // CLUSTER_N
+                tile.ptr
+                + (block_rank % CLUSTER_N)
+                * UInt32(tileM)
+                * UInt32(tileN)
+                // CLUSTER_N
             ),
             mbar[0],
             (UInt(0), UInt(slice_cord)),
@@ -273,8 +277,8 @@ def test_tma_sliced_multicast_load_row_major[
         dst_layout,  # dst layout
         Layout.row_major(tileM, tileN),
         Layout.row_major(tileM, tileN),
-        CLUSTER_M,
-        CLUSTER_N,
+        UInt32(CLUSTER_M),
+        UInt32(CLUSTER_N),
         type_of(tma_tensor).layout,  # smem layout
     ]
 

@@ -645,13 +645,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         var c_tiles = smem.c_tiles()
         var a_scales_tiles = smem.a_scales_tiles()
 
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var clc_full = smem.clc_mbars_full()
-        var clc_empty = smem.clc_mbars_empty()
-        var clc_throttle = smem.clc_throttle_mbars()
-        var clc_response_arr = smem.clc_response()
-        var tmem_addr_arr = smem.tmem_addr()
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var clc_full = smem.pipelines.clc_full()
+        var clc_empty = smem.pipelines.clc_empty()
+        var clc_throttle = smem.pipelines.clc_throttle()
+        var clc_response_arr = smem.pipelines.clc_response()
+        var tmem_addr_arr = smem.pipelines.tmem_addr()
         var tmem_addr_storage = tmem_addr_arr.ptr
 
         var tile_payload = Self.TilePayload(a_tiles, b_tiles, a_scales_tiles)
@@ -659,7 +659,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             input_barriers, tile_payload
         )
 
-        var ctx = Self.Context(smem.tmem_addr().ptr)
+        var ctx = Self.Context(smem.pipelines.tmem_addr().ptr)
 
         # ===== Barrier Initialization =====
         if ctx.elect_one_warp and ctx.elect_one_thread:
@@ -693,7 +693,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 Int32(Self.clc_throttle_consumer_arv_count),
             )
 
-            smem.tmem_dealloc().ptr[].init(
+            smem.pipelines.tmem_dealloc().ptr[].init(
                 Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
@@ -770,9 +770,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         if WarpRole.is_mma():
             # Create linear handle - allocates TMEM, signals sync barrier
             var mma_handle = Self.MmaHandle.create(
-                smem.tmem_addr(),
+                smem.pipelines.tmem_addr(),
                 accum_barriers,
-                smem.tmem_dealloc(),
+                smem.pipelines.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )
 
@@ -806,9 +806,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             # Create linear handle - reads TMEM address from shared memory
             var epi_handle = Self.EpilogueHandle.create(
-                smem.tmem_addr(),
+                smem.pipelines.tmem_addr(),
                 accum_barriers,
-                smem.tmem_dealloc(),
+                smem.pipelines.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )
 

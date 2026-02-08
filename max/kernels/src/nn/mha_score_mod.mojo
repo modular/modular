@@ -24,7 +24,7 @@ from utils.index import IndexList
 from builtin.device_passable import DevicePassable
 
 
-trait ScoreModTrait(Copyable, DevicePassable, TrivialRegisterType):
+trait ScoreModTrait(Copyable, DevicePassable, TrivialRegisterPassable):
     """The ScoreMod trait desctribes score_mod for mha kernel like alibi bias.
     """
 
@@ -52,7 +52,7 @@ trait ScoreModTrait(Copyable, DevicePassable, TrivialRegisterType):
 @fieldwise_init
 struct AlibiScoreMod[
     num_heads: Int,
-](ScoreModTrait, TrivialRegisterType):
+](ScoreModTrait, TrivialRegisterPassable):
     """AlibiScoreMod adds the appropriate ALiBi constant bias to attention score.
     """
 
@@ -154,7 +154,7 @@ struct AlibiScoreMod[
 
 
 @fieldwise_init
-struct IdentityScoreMod(ScoreModTrait, TrivialRegisterType):
+struct IdentityScoreMod(ScoreModTrait, TrivialRegisterPassable):
     """IdentityScoreMod simply returns attention score."""
 
     comptime name_str: String = "no_pos"

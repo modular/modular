@@ -443,7 +443,10 @@ In some cases, the compiler may not track these automatic conformances
 correctly. If you run into an issue, add the traits to your struct explicitly.
 
 `@register_passable("trivial")` decorator is deprecated. Please extend with
-`TrivialRegisterType` trait instead.
+`TrivialRegisterPassable` trait instead.
+
+`@register_passable` decorator is also deprecated. Please extend with
+`RegisterPassable` trait instead.
 
 :::
 

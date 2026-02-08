@@ -13,6 +13,7 @@
 """Tests for Dim algebra operations."""
 
 import pytest
+from max._core.dialects import kgen
 from max.graph import AlgebraicDim, Dim, Graph, StaticDim, SymbolicDim
 
 
@@ -93,37 +94,32 @@ class TestStaticDimAlgebraNoContext:
             Dim(10) // Dim(0)
 
 
-class TestSymbolicDimAlgebraNoContext:
-    """Tests for symbolic Dim algebra outside of a Graph context.
+class TestSymbolicDimAlgebraDefaultContext:
+    """Symbolic dim algebra works with the default context active."""
 
-    Symbolic dim arithmetic requires an MLIR context and should raise
-    a helpful error message when attempted outside a Graph context.
-    """
+    def test_symbolic_dim_add(self) -> None:
+        result = Dim("batch") + 1
+        assert isinstance(result, AlgebraicDim)
+        assert "batch" in str(result)
 
-    def test_symbolic_dim_add_raises_helpful_error(self) -> None:
-        """Symbolic dim addition raises TypeError with workaround hint."""
-        with pytest.raises(TypeError, match="graph context"):
-            Dim("batch") + Dim(10)
+    def test_symbolic_dim_mul(self) -> None:
+        result = Dim("seq_len") * 2
+        assert isinstance(result, AlgebraicDim)
+        assert "seq_len" in str(result)
 
-    def test_symbolic_dim_add_raises_mentions_lazy(self) -> None:
-        """Error message mentions F.lazy() workaround."""
-        with pytest.raises(TypeError, match=r"F\.lazy"):
-            Dim("batch") + 1
+    def test_symbolic_dim_floordiv(self) -> None:
+        result = Dim("dim") // 4
+        assert isinstance(result, AlgebraicDim)
+        assert "dim" in str(result)
 
-    def test_symbolic_dim_add_raises_mentions_graph(self) -> None:
-        """Error message mentions Graph context workaround."""
-        with pytest.raises(TypeError, match="Graph"):
-            Dim("seq_len") * 2
+    def test_algebraic_dim_reused_between_graphs(self) -> None:
+        with Graph("test_reuse_1"):
+            dim = Dim("batch") + 1
 
-    def test_symbolic_dim_mul_raises(self) -> None:
-        """Symbolic dim multiplication raises outside Graph context."""
-        with pytest.raises(TypeError, match="graph context"):
-            Dim("dim") * Dim(4)
-
-    def test_symbolic_dim_floordiv_raises(self) -> None:
-        """Symbolic dim floor division raises outside Graph context."""
-        with pytest.raises(TypeError, match="graph context"):
-            Dim("dim") // 4
+        with Graph("test_reuse_2"):
+            result = dim + 2
+            assert isinstance(result, AlgebraicDim)
+            assert "batch" in str(result)
 
 
 class TestDimAlgebraInsideGraphContext:
@@ -198,3 +194,95 @@ class TestDimTypes:
         d = SymbolicDim("batch")
         with pytest.raises(TypeError, match="static dims"):
             int(d)
+
+    def test_symbolic_dim_from_symbolic_dim_returns_same(self) -> None:
+        """SymbolicDim from SymbolicDim returns the same object."""
+        original = SymbolicDim("batch")
+        result = SymbolicDim(original)
+        assert result is original
+
+    def test_algebraic_dim_from_algebraic_dim_returns_same(self) -> None:
+        """AlgebraicDim from AlgebraicDim returns the same object."""
+        original = AlgebraicDim(
+            kgen.ParamOperatorAttr(
+                kgen.POC.add, [Dim("batch").to_mlir(), Dim(10).to_mlir()]
+            )
+        )
+        result = AlgebraicDim(original)
+        assert result is original
+
+    def test_static_dim_from_static_dim_returns_same(self) -> None:
+        """StaticDim from StaticDim returns the same object."""
+        original = StaticDim(5)
+        result = StaticDim(original)
+        assert result is original
+
+    @pytest.mark.parametrize("to_type", [StaticDim, SymbolicDim, AlgebraicDim])
+    @pytest.mark.parametrize(
+        "from_value",
+        [
+            SymbolicDim("batch"),
+            AlgebraicDim(
+                kgen.ParamOperatorAttr(
+                    kgen.POC.add, [Dim("batch").to_mlir(), Dim(10).to_mlir()]
+                )
+            ),
+            StaticDim(3),
+        ],
+    )
+    def test_constructing_dim_subclass_from_different_dim_subclass(
+        self, to_type: type, from_value: Dim
+    ) -> None:
+        """Constructing a dim subclass from a different dim subclass raises"""
+        if isinstance(from_value, to_type):
+            pytest.skip("Not considering construction from the same subclass")
+        with pytest.raises(TypeError):
+            to_type(from_value)
+
+    def test_constructing_algebraic_dim_from_invalid_type(self) -> None:
+        """Constructing an AlgebraicDim from an invalid type raises."""
+        with pytest.raises(
+            TypeError,
+            match=r"AlgebraicDim.__init__ only accepts kgen.ParamOperatorAttr or AlgebraicDim, got StaticDim",
+        ):
+            AlgebraicDim(StaticDim(5))  # type: ignore
+
+    def test_constructing_symbolic_dim_from_invalid_type(self) -> None:
+        """Constructing a SymbolicDim from an invalid type raises."""
+        with pytest.raises(
+            TypeError,
+            match=r"SymbolicDim.__init__ only accepts str or SymbolicDim, got StaticDim",
+        ):
+            SymbolicDim(StaticDim(5))  # type: ignore
+
+    def test_constructing_static_dim_from_invalid_type(self) -> None:
+        """Constructing a StaticDim from an invalid type raises."""
+        with pytest.raises(
+            TypeError,
+            match=r"StaticDim.__init__ only accepts int or StaticDim, got SymbolicDim",
+        ):
+            StaticDim(SymbolicDim("batch"))  # type: ignore
+
+    def test_constructing_static_dim_from_str_raises(self) -> None:
+        """Constructing a StaticDim from a str raises rather than creating a SymbolicDim."""
+        with pytest.raises(
+            TypeError,
+            match=r"StaticDim.__init__ only accepts int or StaticDim, got str",
+        ):
+            StaticDim("5")  # type: ignore
+
+    def test_constructing_symbolic_dim_from_int_raises(self) -> None:
+        """Constructing a SymbolicDim from an int raises rather than creating a StaticDim."""
+        with pytest.raises(
+            TypeError,
+            match=r"SymbolicDim.__init__ only accepts str or SymbolicDim, got int",
+        ):
+            SymbolicDim(5)  # type: ignore
+
+    def test_constructing_algebraic_dim_from_int_raises(self) -> None:
+        """Constructing an AlgebraicDim from an int raises rather than creating a StaticDim."""
+        with pytest.raises(
+            TypeError,
+            match=r"AlgebraicDim.__init__ only accepts kgen.ParamOperatorAttr or AlgebraicDim, got int",
+        ):
+            AlgebraicDim(5)  # type: ignore

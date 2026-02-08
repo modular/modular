@@ -302,11 +302,11 @@ def test_matmul[
 
     for i in range(m):
         for p in range(k):
-            a[IndexList[2]((i, p))] = Scalar[a_type](0.001) * i
+            a[IndexList[2]((i, p))] = Scalar[a_type](0.001) * Scalar[a_type](i)
 
     for p in range(n if transpose_b else k):
         for j in range(k if transpose_b else n):
-            b[IndexList[2]((p, j))] = Scalar[b_type](0.002) * p
+            b[IndexList[2]((p, j))] = Scalar[b_type](0.002) * Scalar[b_type](p)
             if b_packed and not transpose_b:
                 bp[IndexList[2]((j, p))] = b[IndexList[2]((p, j))]
             else:
@@ -480,7 +480,7 @@ fn bmm_naive(
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c[batch, i, j] += val
+                c[batch, i, j] += Scalar[c.dtype](val)
 
 
 def test_batched_matmul[
@@ -502,12 +502,12 @@ def test_batched_matmul[
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[batch, i, j] = (i + j) * Scalar[a.type](0.001)
+                a[batch, i, j] = Scalar[a.dtype](i + j) * Scalar[a.type](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[batch, i, j] = (i + k) * Scalar[b.type](0.001)
+                b[batch, i, j] = Scalar[b.dtype](i + k) * Scalar[b.type](0.001)
 
     for batch in range(batches):
         for i in range(m):

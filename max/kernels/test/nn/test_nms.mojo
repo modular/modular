@@ -20,7 +20,7 @@ from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from utils import IndexList
 
 
-struct BoxCoords[dtype: DType](TrivialRegisterType):
+struct BoxCoords[dtype: DType](TrivialRegisterPassable):
     var y1: Scalar[Self.dtype]
     var x1: Scalar[Self.dtype]
     var y2: Scalar[Self.dtype]

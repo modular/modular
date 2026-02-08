@@ -36,7 +36,7 @@ from builtin.device_passable import DevicePassable
 
 
 @fieldwise_init("implicit")
-struct TensorMapDataType(TrivialRegisterType):
+struct TensorMapDataType(TrivialRegisterPassable):
     """Data type enumeration for TMA tensor map descriptors.
 
     Specifies the element data type for TMA operations. The TMA hardware supports
@@ -78,16 +78,18 @@ struct TensorMapDataType(TrivialRegisterType):
 
         Parameters:
             dtype: The Mojo data type to convert. Must be one of `DType.float32`,
-                `DType.bfloat16`, or `DType.float8_e4m3fn`.
+                `DType.float16`, `DType.bfloat16`, `DType.uint8`,
+                `DType.float8_e4m3fn`, or `DType.float8_e8m0fnu`.
 
         Constraints:
-            The dtype must be float32, bfloat16, or float8_e4m3fn.
+            The dtype must be one of the supported types listed above.
 
         Returns:
             The corresponding `TensorMapDataType` value.
         """
         comptime assert dtype in (
             DType.float32,
+            DType.float16,
             DType.bfloat16,
             DType.uint8,
             DType.float8_e4m3fn,
@@ -97,6 +99,8 @@ struct TensorMapDataType(TrivialRegisterType):
         @parameter
         if dtype == DType.float32:
             return Self.FLOAT32
+        elif dtype == DType.float16:
+            return Self.FLOAT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
         else:
@@ -104,7 +108,7 @@ struct TensorMapDataType(TrivialRegisterType):
 
 
 @fieldwise_init("implicit")
-struct TensorMapInterleave(TrivialRegisterType):
+struct TensorMapInterleave(TrivialRegisterPassable):
     """Interleave mode for TMA tensor map descriptors.
 
     Specifies how data elements are interleaved in memory for TMA operations.
@@ -124,10 +128,11 @@ struct TensorMapInterleave(TrivialRegisterType):
 @fieldwise_init("implicit")
 struct TensorMapSwizzle(
     Equatable,
+    Hashable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Swizzle mode for TMA tensor map descriptors.
@@ -219,7 +224,7 @@ struct TensorMapSwizzle(
 
 
 @fieldwise_init("implicit")
-struct TensorMapL2Promotion(TrivialRegisterType):
+struct TensorMapL2Promotion(TrivialRegisterPassable):
     """L2 cache promotion hint for TMA tensor map descriptors.
 
     Specifies how much data to promote into the L2 cache during TMA operations.
@@ -240,7 +245,7 @@ struct TensorMapL2Promotion(TrivialRegisterType):
 
 
 @fieldwise_init("implicit")
-struct TensorMapFloatOOBFill(TrivialRegisterType):
+struct TensorMapFloatOOBFill(TrivialRegisterPassable):
     """Out-of-bounds fill mode for floating-point TMA operations.
 
     Specifies how out-of-bounds memory accesses are handled for floating-point

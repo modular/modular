@@ -57,7 +57,7 @@ struct BackToBackMatmulConfig[
     src_type: DType,
     transpose_b: Bool = False,
     transpose_c: Bool = False,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # A is MxK
     # B is KxL
     # C is LxN
@@ -496,9 +496,10 @@ fn b2b_gemm[
                 comptime src_idx = type_of(d_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = (
-                    swizzle(d_smem_frag_offset + src_idx_base) + src_idx_diff
-                )
+                var swizzled_idx = swizzle(
+                    d_smem_frag_offset
+                    + Scalar[d_smem_frag.linear_idx_type](src_idx_base)
+                ) + Scalar[d_smem_frag.linear_idx_type](src_idx_diff)
 
                 comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
 
@@ -509,10 +510,18 @@ fn b2b_gemm[
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
                 var m = Int(
-                    (thread_offset + dst_idx) // type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    // type_of(thread_offset)(N)
                 )
                 var n = Int(
-                    (thread_offset + dst_idx) % type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    % type_of(thread_offset)(N)
                 )
                 if m < Int(M) and n < Int(N):
                     epilogue(
@@ -556,10 +565,18 @@ fn b2b_gemm[
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
                 var m = Int(
-                    (thread_offset + dst_idx) // type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    // type_of(thread_offset)(N)
                 )
                 var n = Int(
-                    (thread_offset + dst_idx) % type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    % type_of(thread_offset)(N)
                 )
                 if m < Int(M) and n < Int(N):
                     var vec = (d_reg_frag.ptr + src_idx).load[
@@ -621,7 +638,7 @@ fn multistage_b2b_gemm[
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
+                UInt32(smem_use)
             ),
         )
     except e:
@@ -703,10 +720,10 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     for k in range(K):
         for l in range(L):
             # mat_b.tensor[k, l] = 1
-            mat_b_tensor[k, l] = l + k * L
+            mat_b_tensor[k, l] = BFloat16(l + k * L)
     for l in range(L):
         for n in range(N):
-            mat_c_tensor[l, n] = ((n * L + l) * 0.125).cast[src_type]()
+            mat_c_tensor[l, n] = (Float64((n * L + l)) * 0.125).cast[src_type]()
             # mat_c.tensor[l, n] = n + l * N
     matmul_naive(host_ab, mat_a_tensor, mat_b_tensor)
     for m in range(M):

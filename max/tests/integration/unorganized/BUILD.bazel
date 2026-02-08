@@ -1,0 +1,413 @@
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "tests-pure",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_bfloat16_utils.py",
+        "test_context.py",
+        "test_cumsum.py",
+        "test_disable_auto_sync.py",
+        "test_dtype.py",
+        "test_engine.py",
+        "test_explicit_device.py",
+        "test_graph_telemetry.py",
+        "test_huggingface_utilities.py",
+        "test_is_inf.py",
+        "test_is_nan.py",
+        "test_load_weights.py",
+        "test_logits_processor.py",
+        "test_lora.py",
+        "test_lora_model.py",
+        "test_memory_estimation.py",
+        "test_registry.py",
+        "test_speculative_config.py",
+        "test_telemetry.py",
+        "test_weight_path_parser.py",
+    ],
+    data = [
+        "//max/tests/integration/Inputs:inputs",
+        "//max/tests/integration/Inputs:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        # Optional dep of max.graph, used to test loading weights
+        requirement("gguf"),
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/mlir",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common:registry",
+        requirement("gguf"),
+        requirement("huggingface-hub"),
+        requirement("hypothesis"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+# TODO (SERVOPT-900): Move these tests back into tests-pure once they stop reaching out to HF
+modular_py_test(
+    name = "tests-pure-hf",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_config_pure.py",
+        "test_use_legacy_module.py",
+    ],
+    data = [
+        "//max/tests/integration/Inputs:inputs",
+        "//max/tests/integration/Inputs:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+    },
+    env_inherit = ["HF_TOKEN"],
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "manual",  # TODO(SERVOPT-900)
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common:registry",
+    ],
+)
+
+modular_py_test(
+    name = "test_logits_processor_gpu",
+    srcs = [
+        "conftest.py",
+        "test_logits_processor_gpu.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_engine_device_graph",
+    srcs = [
+        "test_engine_device_graph.py",
+    ],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_pinned",
+    srcs = [
+        "test_graph_pinned.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test-speculative-decoding",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_speculative_decoding.py",
+    ],
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//max/tests/integration/Inputs:inputs",
+        "//max/tests/integration/Inputs:pytest_inputs",
+    ],
+    env = {"MODULAR_PATH": "."},
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common:registry",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_eagle_hidden_states_ops",
+    size = "large",
+    srcs = [
+        "test_eagle_hidden_states_ops.py",
+    ],
+    env = {"MODULAR_PATH": "."},
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_eagle_index_tracking",
+    srcs = ["test_eagle_index_tracking.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test-speculative-decoding-rejection",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_speculative_decoding_rejection.py",
+    ],
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//max/tests/integration/Inputs:inputs",
+        "//max/tests/integration/Inputs:pytest_inputs",
+    ],
+    env = {"MODULAR_PATH": "."},
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test-sampling",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "sampling/test_build_token_frequency_csr.py",
+        "sampling/test_gumbel_sampling.py",
+        "sampling/test_sampling.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("llguidance"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "tests-hf",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_config.py",
+    ],
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//max/tests/integration/Inputs:inputs",
+        "//max/tests/integration/Inputs:pytest_inputs",
+    ],
+    env = {"MODULAR_PATH": "."},
+    env_inherit = ["HF_TOKEN"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
+        "no-pydeps",  # TODO: Fix and re-enable
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/python/max",
+        "//max/python/max/entrypoints",
+        "//max/tests/integration/test_common",
+    ],
+)
+
+modular_py_test(
+    name = "tests-fail-weight-loading",
+    srcs = [
+        "test_load_weights_no_deps.py",
+    ],
+    data = [
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+    },
+    ignore_extra_deps = [
+        # FIXME: GEX-1846
+        "//max/python/max/engine",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_multi_py_version_test(
+    name = "test_load_library",
+    srcs = ["test_load_library.py"],
+    deps = [
+        "//max/python/max:_core",
+    ],
+)

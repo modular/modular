@@ -59,7 +59,9 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     var flattened_length = len(in_host)
     for i in range(2):
         for j in range(8):
-            in_host[_linear_index(Index(i, j), Index(2, 8))] = i + j
+            in_host[_linear_index(Index(i, j), Index(2, 8))] = Scalar[dtype](
+                i + j
+            )
 
     var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
@@ -135,7 +137,9 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     var flattened_length = len(in_host)
     for i in range(3):
         for j in range(3):
-            in_host[_linear_index(Index(i, j), Index(3, 3))] = i + j
+            in_host[_linear_index(Index(i, j), Index(3, 3))] = Scalar[dtype](
+                i + j
+            )
 
     var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
@@ -203,9 +207,9 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     for i in range(2):
         for j in range(4):
             for k in range(5):
-                in_host[_linear_index(Index(i, j, k), Index(2, 4, 5))] = (
-                    i * 4 * 5 + j * 5 + k
-                )
+                in_host[_linear_index(Index(i, j, k), Index(2, 4, 5))] = Scalar[
+                    dtype
+                ](i * 4 * 5 + j * 5 + k)
 
     var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)

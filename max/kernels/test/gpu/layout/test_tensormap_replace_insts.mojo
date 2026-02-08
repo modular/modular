@@ -80,7 +80,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
@@ -235,7 +235,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
@@ -387,7 +387,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
             2,
             0,
         ](
-            smem_desc, block_size
+            smem_desc, UInt32(block_size)
         )
 
     # Ensure warp is converged before issuing tensormap fence release
@@ -405,7 +405,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier

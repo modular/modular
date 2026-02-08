@@ -85,7 +85,6 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
         return self
 
 
-@register_passable
 struct PythonObject(
     Boolable,
     ConvertibleToPython,
@@ -93,6 +92,7 @@ struct PythonObject(
     Identifiable,
     ImplicitlyCopyable,
     Movable,
+    RegisterPassable,
     SizedRaising,
     Writable,
 ):

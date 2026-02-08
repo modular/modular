@@ -21,7 +21,7 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -267,7 +267,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             }
         return state_dict
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -276,7 +276,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -287,9 +287,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         if len(self.devices) > 1:
             # Flatten kv types for each device
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
             signals = Signals(
                 devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
@@ -298,14 +295,14 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *flattened_kv_types,
+                *kv_inputs,
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *kv_inputs[0],
+                *kv_inputs,
             )
 
     def _unflatten_kv_inputs(

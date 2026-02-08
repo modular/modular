@@ -23,6 +23,13 @@ class GreedySimplifyRegionLevel(enum.Enum):
 
     AGGRESSIVE = 2
 
+class DialectConversionFoldingMode(enum.Enum):
+    NEVER = 0
+
+    BEFORE_PATTERNS = 1
+
+    AFTER_PATTERNS = 2
+
 class PatternRewriter:
     @property
     def ip(self) -> max._mlir._mlir_libs._mlir.ir.InsertionPoint:
@@ -72,8 +79,59 @@ class RewritePatternSet:
           benefit: The benefit of the pattern, defaulting to 1.
         """
 
+    def add_conversion(
+        self,
+        root: object,
+        fn: Callable,
+        type_converter: TypeConverter,
+        benefit: int = 1,
+    ) -> None:
+        """
+        Add a new conversion pattern on the specified root operation,
+        using the provided callable for matching and rewriting,
+        and assign it the given benefit.
+
+        Args:
+          root: The root operation to which this pattern applies.
+                This may be either an OpView subclass (e.g., ``arith.AddIOp``) or
+                an operation name string (e.g., ``"arith.addi"``).
+          fn: The callable to use for matching and rewriting,
+              which takes an operation, its adaptor,
+              the type converter and a pattern rewriter as arguments.
+              The match is considered successful iff the callable returns
+              a value where ``bool(value)`` is ``False`` (e.g. ``None``).
+              If possible, the operation is cast to its corresponding OpView subclass
+              before being passed to the callable.
+          type_converter: The type converter to convert types in the IR.
+          benefit: The benefit of the pattern, defaulting to 1.
+        """
+
     def freeze(self) -> FrozenRewritePatternSet:
         """Freeze the pattern set into a frozen one."""
+
+class ConversionPatternRewriter(PatternRewriter):
+    pass
+
+class ConversionTarget:
+    def __init__(self, context: Context | None = None) -> None: ...
+    def add_legal_op(self, *ops) -> None:
+        """Mark the given operations as legal."""
+
+    def add_illegal_op(self, *ops) -> None:
+        """Mark the given operations as illegal."""
+
+    def add_legal_dialect(self, *dialects) -> None:
+        """Mark the given dialects as legal."""
+
+    def add_illegal_dialect(self, *dialects) -> None:
+        """Mark the given dialect as illegal."""
+
+class TypeConverter:
+    def __init__(self) -> None:
+        """Create a new TypeConverter."""
+
+    def add_conversion(self, convert: Callable) -> None:
+        """Register a type conversion function."""
 
 class PDLResultList:
     @overload
@@ -155,6 +213,25 @@ class GreedyRewriteConfig:
     @enable_constant_cse.setter
     def enable_constant_cse(self, arg: bool, /) -> None: ...
 
+class ConversionConfig:
+    def __init__(self) -> None:
+        """Create a conversion config with defaults"""
+
+    @property
+    def folding_mode(self) -> DialectConversionFoldingMode:
+        """folding behavior during dialect conversion"""
+
+    @folding_mode.setter
+    def folding_mode(self, arg: DialectConversionFoldingMode, /) -> None: ...
+    @property
+    def build_materializations(self) -> bool:
+        """
+        Whether the dialect conversion attempts to build source/target materializations
+        """
+
+    @build_materializations.setter
+    def build_materializations(self, arg: bool, /) -> None: ...
+
 class FrozenRewritePatternSet:
     pass
 
@@ -185,3 +262,19 @@ def walk_and_apply_patterns(
     """
     Applies the given patterns to the given op by a fast walk-based driver.
     """
+
+def apply_partial_conversion(
+    op: max._mlir._mlir_libs._mlir.ir._OperationBase,
+    target: ConversionTarget,
+    set: FrozenRewritePatternSet,
+    config: ConversionConfig | None = None,
+) -> None:
+    """Applies a partial conversion on the given operation."""
+
+def apply_full_conversion(
+    op: max._mlir._mlir_libs._mlir.ir._OperationBase,
+    target: ConversionTarget,
+    set: FrozenRewritePatternSet,
+    config: ConversionConfig | None = None,
+) -> None:
+    """Applies a full conversion on the given operation."""

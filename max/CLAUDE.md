@@ -39,16 +39,16 @@ SDK, APIs, and tools. The SDK provides:
 ./bazelw test //max/...
 
 # Run specific test suites
-./bazelw test //max/tests/integration/API/python/graph
-./bazelw test //max/tests/integration/pipelines/python/llama3:test_cross_attention
+./bazelw test //max/tests/integration/graph
+./bazelw test //max/tests/integration/architectures/llama3:test_cross_attention
 
 # Run tests with specific arguments
 ./bazelw test --test_arg=-k --test_arg=test_attention \
-  //max/tests/integration/pipelines/python/llama3:test_cross_attention
+  //max/tests/integration/architectures/llama3:test_cross_attention
 
 # Run GPU tests remotely
-bt-h100 //max/tests/integration/pipelines/python/llama3:tests_gpu
-bt-b200 //max/tests/integration/pipelines/python/llama3:tests_gpu
+bt-h100 //max/tests/integration/architectures/llama3:tests_gpu
+bt-b200 //max/tests/integration/architectures/llama3:tests_gpu
 ```
 
 ## Key SDK Components
@@ -143,15 +143,15 @@ class YourModelConfig(HFModelConfig):
 
 ### Unit Tests
 
-- Graph API tests: `//max/tests/integration/API/python/graph`
-- Pipeline tests: `//max/tests/integration/pipelines/python`
+- Graph API tests: `//max/tests/integration/graph`
+- Pipeline tests: `//max/tests/integration`
 - Serving tests: `//max/tests/integration/serve`
 
 ### Integration Tests
 
 ```bash
 # Test full pipeline execution
-./bazelw test //max/tests/integration/pipelines/python:test_llama3
+./bazelw test //max/tests/integration:test_llama3
 
 # Test serving infrastructure
 ./bazelw test //max/tests/integration/serve:test_tinyllama_serving_cpu
@@ -175,7 +175,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
 
 ```bash
 # 1. Generate logits with MAX pipeline
-./bazelw run //max/tests/integration/pipelines/python:generate_llm_logits -- \
+./bazelw run //max/tests/integration:generate_llm_logits -- \
   --device gpu \
   --framework max \
   --pipeline gemma3-1b \
@@ -183,7 +183,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
   --output /tmp/max-logits.json
 
 # 2. Generate logits with PyTorch reference
-./bazelw run //max/tests/integration/pipelines/python:generate_llm_logits -- \
+./bazelw run //max/tests/integration:generate_llm_logits -- \
   --device gpu \
   --framework torch \
   --pipeline gemma3-1b \
@@ -191,7 +191,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
   --output /tmp/torch-logits.json
 
 # 3. Compare the logits
-./bazelw run //max/tests/integration/pipelines/python:verify -- \
+./bazelw run //max/tests/integration:verify -- \
   --eval-metric cos,kl,tol \
   --relative-tolerance 1e-2 \
   --absolute-tolerance 1e-5 \
@@ -200,7 +200,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
   /tmp/max-logits.json /tmp/torch-logits.json
 
 # Run verification pipeline directly (combines all steps)
-./bazelw run //max/tests/integration/pipelines/python:verify_pipelines -- \
+./bazelw run //max/tests/integration:verify_pipelines -- \
   --pipeline Gemma-3-1B-bfloat16 \
   --devices='gpu'
 
@@ -260,7 +260,7 @@ When investigating model issues or comparing configurations between models:
    ```
 
 3. **Model versions are locked in**:
-   - Check `max/tests/integration/pipelines/python/hf-repo-lock.tsv` for
+   - Check `max/tests/integration/hf-repo-lock.tsv` for
      exact revision hashes
    - This ensures reproducible builds and tests
 

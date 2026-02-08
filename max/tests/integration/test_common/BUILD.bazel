@@ -1,0 +1,345 @@
+# Common code shared by different pipeline tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "test_common",
+    testonly = True,
+    srcs = ["__init__.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],  # This is a meta-target, which sort of goes against the point of the pydeps test
+    deps = [
+        requirement("pytest"),
+        requirement("numpy"),
+        ":context_utils",
+        ":distance_metrics",
+        ":evaluate",
+        ":evaluate_embeddings",
+        ":github_utils",
+        ":graph_utils",
+        ":lora_utils",
+        ":mocks",
+        ":ndarray_from_tensor_type",
+        ":numerics",
+        ":numpy_encoder",
+        ":pipeline_cli_utils",
+        ":pipeline_model_dummy",
+        ":process_isolation",
+        ":registry",
+        ":storage",
+        ":test_data",
+        ":torch_hooks",
+        ":torch_utils",
+        ":verify_utils",
+    ] + select({
+        "//:nvidia_gpu": [":vllm_utils"],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_library(
+    name = "ndarray_from_tensor_type",
+    testonly = True,
+    srcs = ["ndarray_from_tensor_type.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_library(
+    name = "numpy_encoder",
+    testonly = True,
+    srcs = ["numpy_encoder.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "test_data",
+    testonly = True,
+    srcs = ["test_data.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/support",
+    ],
+)
+
+modular_py_library(
+    name = "distance_metrics",
+    testonly = True,
+    srcs = ["distance_metrics.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        requirement("scipy"),
+    ],
+)
+
+modular_py_library(
+    name = "evaluate",
+    testonly = True,
+    srcs = ["evaluate.py"],
+    imports = [".."],
+    deps = [
+        ":numerics",
+        ":test_data",
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+    ],
+)
+
+modular_py_library(
+    name = "evaluate_embeddings",
+    testonly = True,
+    srcs = ["evaluate_embeddings.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+    ],
+)
+
+modular_py_library(
+    name = "github_utils",
+    testonly = True,
+    srcs = ["github_utils.py"],
+    imports = [".."],
+)
+
+modular_py_library(
+    name = "graph_utils",
+    testonly = True,
+    srcs = ["graph_utils.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        requirement("nvitop"),
+    ],
+)
+
+modular_py_library(
+    name = "context_utils",
+    testonly = True,
+    srcs = ["context_utils.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+    ],
+)
+
+modular_py_library(
+    name = "registry",
+    testonly = True,
+    srcs = ["registry.py"],
+    imports = [".."],
+    deps = [
+        requirement("pytest"),
+        requirement("typing-extensions"),
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_cli_utils",
+    testonly = True,
+    srcs = ["pipeline_cli_utils.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_model_dummy",
+    testonly = True,
+    srcs = ["pipeline_model_dummy.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "torch_utils",
+    testonly = True,
+    srcs = ["torch_utils.py"],
+    ignore_extra_deps = [
+        requirement("accelerate"),  # Required to run torch models on GPU.
+    ],
+    imports = [".."],
+    deps = [
+        ":numerics",
+        ":test_data",
+        requirement("accelerate"),  # Required to run torch models on GPU.
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "vllm_utils",
+    testonly = True,
+    srcs = ["vllm_utils.py"],
+    # These imports are only available when running on NVIDIA GPUs with vllm
+    # installed. They are loaded lazily inside functions and are not available
+    # in the default //conditions:default build configuration.
+    ignore_unresolved_imports = [
+        "huggingface_hub",
+        "huggingface_hub.hf_hub_download",
+        "test_common.vllm_hook_core",
+    ],
+    imports = [".."],
+    deps = [
+        ":test_data",
+        requirement("numpy"),
+    ] + select({
+        "//:nvidia_gpu": [
+            requirement("ninja"),
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_library(
+    name = "numerics",
+    testonly = True,
+    srcs = ["numerics.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_library(
+    name = "mocks",
+    testonly = True,
+    srcs = [
+        "mocks/__init__.py",
+        "mocks/memory_estimation.py",
+        "mocks/pipeline_config.py",
+        "mocks/pipeline_model.py",
+        "mocks/tokenizer.py",
+    ],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+        requirement("typing-extensions"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "process_isolation",
+    testonly = True,
+    srcs = [
+        "process_isolation.py",
+    ],
+    imports = [".."],
+)
+
+modular_py_library(
+    name = "verify_utils",
+    testonly = True,
+    srcs = [
+        "custom_args.py",
+        "table.py",
+        "verify_utils.py",
+    ],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        requirement("rich"),
+        requirement("scipy"),
+    ],
+)
+
+modular_py_library(
+    name = "lora_utils",
+    testonly = True,
+    srcs = ["lora_utils.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("safetensors"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "torch_hooks",
+    testonly = True,
+    srcs = ["torch_print_hook.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/nn/legacy/hooks:base_print_hook",
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "storage",
+    testonly = True,
+    srcs = ["storage.py"],
+    ignore_unresolved_imports = ["botocore"],
+    imports = [".."],
+    deps = [
+        requirement("boto3"),
+        requirement("pillow"),
+    ],
+)

@@ -266,6 +266,27 @@ fn _amdgpu_matmul_config_from_block_shape[
     var num_warps: UInt = 1
     var num_warp_k_partitions: UInt = 1
 
+    # TODO(KERN-2432): Merge these configurations into the below logic.
+    if block_m == 16 and a_type.is_float8() and transpose_b:
+        if block_n == 32:
+            return MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(16, 32, 256),
+                warp_tile_shape=Index(16, 32, 256),
+                mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+                num_pipeline_stages=1,
+                num_warp_k_partitions=4,
+                pdl_level=pdl_level,
+            )
+        if block_n == 64:
+            return MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(16, 64, 1024),
+                warp_tile_shape=Index(16, 16, 1024),
+                mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+                num_pipeline_stages=1,
+                num_warp_k_partitions=1,
+                pdl_level=pdl_level,
+            )
+
     if block_m <= 32 and block_n <= 32:
         # Attempt to increase the number of warp_k partitions to improve processor
         # utilization. A single warp needs to read two block_k buffers, so double
