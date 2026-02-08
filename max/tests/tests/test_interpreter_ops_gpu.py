@@ -24,9 +24,11 @@ import torch
 from max import _realization_context as rc
 from max import functional as F
 from max import random as max_random
+from max._interpreter import MOInterpreter
 from max._realization_context import set_seed
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
+from max.graph import DeviceRef, Graph, TensorType
 from max.tensor import Tensor, realization_context
 
 # Mapping from MAX DType to torch dtype
@@ -1360,3 +1362,212 @@ class TestRandomUniformGPU:
         torch.testing.assert_close(
             torch.from_dlpack(result1), torch.from_dlpack(result2)
         )
+
+
+class TestTransferOpsGPU:
+    """Tests for GPU transfer operations via Tensor.to() with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_cpu_to_gpu(self, dtype: DType) -> None:
+        """Test transferring a tensor from CPU to GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        gpu = Accelerator()
+
+        x_torch_cpu = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch_dtype, device="cpu"
+        )
+        x = Tensor.from_dlpack(x_torch_cpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(gpu)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_cpu.to("cuda")
+        assert torch.equal(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_gpu_to_cpu(self, dtype: DType) -> None:
+        """Test transferring a tensor from GPU to CPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+
+        x_torch_gpu = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch_dtype, device="cuda"
+        )
+        x = Tensor.from_dlpack(x_torch_gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(CPU())
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_gpu.to("cpu")
+        assert torch.equal(result_torch, expected)
+
+    def test_cpu_to_gpu_2d(self) -> None:
+        """Test transferring a 2D tensor from CPU to GPU."""
+        gpu = Accelerator()
+
+        x_torch_cpu = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        x = Tensor.from_dlpack(x_torch_cpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(gpu)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_cpu.to("cuda")
+        assert torch.equal(result_torch, expected)
+
+    def test_gpu_to_cpu_2d(self) -> None:
+        """Test transferring a 2D tensor from GPU to CPU."""
+        x_torch_gpu = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        x = Tensor.from_dlpack(x_torch_gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(CPU())
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_gpu.to("cpu")
+        assert torch.equal(result_torch, expected)
+
+    def test_cpu_to_gpu_large_tensor(self) -> None:
+        """Test transferring a larger tensor from CPU to GPU."""
+        gpu = Accelerator()
+
+        x_torch_cpu = torch.randn(64, 128, dtype=torch.float32, device="cpu")
+        x = Tensor.from_dlpack(x_torch_cpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(gpu)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_cpu.to("cuda")
+        assert torch.equal(result_torch, expected)
+
+    def test_transfer_preserves_data_roundtrip(self) -> None:
+        """Test CPU -> GPU -> CPU preserves data exactly."""
+        gpu = Accelerator()
+
+        x_torch = torch.tensor(
+            [1.0, -2.5, 3.14, 0.0, -100.0],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y_gpu = x.to(gpu)
+            y_cpu = y_gpu.to(CPU())
+
+        result_torch = torch.from_dlpack(y_cpu)
+        assert torch.equal(result_torch, x_torch)
+
+    def test_same_device_elide_true_aliases(self) -> None:
+        """Test same-device transfer with alwaysElideSameDeviceCopy=True aliases."""
+        from max._core.dialects import m, mo
+
+        gpu_ref = DeviceRef.GPU(0)
+        input_type = TensorType(DType.float32, [4], gpu_ref)
+
+        with Graph("same_device_transfer", input_types=[input_type]) as g:
+            x = g.inputs[0]
+            in_chain = g.always_ready_chain
+            (result, _) = g._add_op_generated(
+                mo.TransferOp,
+                x,
+                m.DeviceRefAttr("gpu", 0),
+                in_chain,
+                always_elide_same_device_copy=True,
+            )
+            g.output(result)
+
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+        input_buf = Buffer.from_dlpack(x_torch)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(g, [input_buf])
+
+        out_buf = outputs[0]
+        assert isinstance(out_buf, Buffer)
+        result_torch = torch.from_dlpack(out_buf)
+        assert torch.equal(result_torch, x_torch)
+        # alwaysElideSameDeviceCopy=True should alias, not copy.
+        assert out_buf._data_ptr() == input_buf._data_ptr()
+
+    def test_same_device_elide_false_copies(self) -> None:
+        """Test same-device transfer with alwaysElideSameDeviceCopy=False copies."""
+        from max._core.dialects import m, mo
+
+        gpu_ref = DeviceRef.GPU(0)
+        input_type = TensorType(DType.float32, [4], gpu_ref)
+
+        with Graph("same_device_elide_false", input_types=[input_type]) as g:
+            x = g.inputs[0]
+            in_chain = g.always_ready_chain
+            (result, _) = g._add_op_generated(
+                mo.TransferOp,
+                x,
+                m.DeviceRefAttr("gpu", 0),
+                in_chain,
+                always_elide_same_device_copy=False,
+            )
+            g.output(result)
+
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+        input_buf = Buffer.from_dlpack(x_torch)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(g, [input_buf])
+
+        out_buf = outputs[0]
+        assert isinstance(out_buf, Buffer)
+        result_torch = torch.from_dlpack(out_buf)
+        assert torch.equal(result_torch, x_torch)
+        # alwaysElideSameDeviceCopy=False should produce a copy, not alias.
+        assert out_buf._data_ptr() != input_buf._data_ptr()

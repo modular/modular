@@ -212,6 +212,54 @@ def _handle_mutable_load(
     return [inputs[0], None]
 
 
+# Transfer operations
+
+
+@register_op_handler(mo.TransferOp)
+def _handle_transfer(
+    op: mo.TransferOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Handle mo.transfer by transferring buffer between devices.
+
+    TransferOp transfers tensor contents between devices (e.g. CPU<->GPU).
+    When source and destination devices match and alwaysElideSameDeviceCopy is
+    True, the result aliases the input. When the flag is False, a copy is made.
+
+    Args:
+        op: The transfer operation.
+        inputs: Input buffers - first is the tensor to transfer, second is the
+            chain (None).
+
+    Returns:
+        List containing the transferred tensor buffer and None for the chain.
+    """
+    assert isinstance(inputs[0], Buffer)
+    input_buffer = inputs[0]
+    target_device = _get_target_device(op)
+
+    if input_buffer.device == target_device:
+        if op.always_elide_same_device_copy:
+            # Alias: return the input buffer directly (no copy).
+            return [input_buffer, None]
+        # Flag is False: copy on the same device via broadcast to same shape.
+        output = Buffer(
+            shape=input_buffer.shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+        ops.mojo_ops.StaticBroadcastTo(
+            output,
+            input_buffer,
+            list(input_buffer.shape),
+            target_device._device_context_ptr(),
+        )
+        return [output, None]
+
+    # Cross-device transfer
+    # TransferOp produces (tensor, chain)
+    return [input_buffer.to(target_device), None]
+
+
 # Shape operations
 
 

@@ -72,11 +72,7 @@ modular_py_test(
     name = "test_interpreter_ops",
     timeout = "long",
     srcs = ["test_interpreter_ops.py"],
-    ignore_extra_deps = [
-        "//max/python/max:interpreter",
-    ],
     deps = [
-        "//max/python/max:interpreter",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -91,16 +87,15 @@ modular_py_test(
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
-    ignore_extra_deps = [
-        "//max/python/max/engine",
-    ],
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
+        "//max/python/max:_core",
+        "//max/python/max:interpreter",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("torch"),
     ],
 )
