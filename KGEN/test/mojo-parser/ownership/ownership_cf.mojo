@@ -427,7 +427,7 @@ fn testInfiniteloop():
 
 
 @fieldwise_init
-struct TrivialRange(TrivialRegisterType, Iterator):
+struct TrivialRange(TrivialRegisterPassable, Iterator):
     comptime Element = Int
 
     fn __iter__(self) -> Self:

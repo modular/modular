@@ -77,9 +77,9 @@ def foo(bar: Bar):
 
 
 # COM: Test that a register_passable closure capturing a non trivial
-# COM: register_passable type does NOT conform to TrivialRegisterType.
+# COM: register_passable type does NOT conform to TrivialRegisterPassable.
 # expected-note @below {{function declared here}}
-fn takeTrivialRegisterType[T: TrivialRegisterType](impl: T):
+fn takeTrivialRegisterType[T: TrivialRegisterPassable](impl: T):
     pass
 
 
@@ -87,7 +87,7 @@ def testNonTrivialClosureNotTrivialRegisterType(bar: Bar):
     fn closure() unified register_passable {var bar} -> Int:
         return bar.x
 
-    # expected-error-re @below {{'{{.*}}' does not conform to trait 'TrivialRegisterType'}}
+    # expected-error-re @below {{'{{.*}}' does not conform to trait 'TrivialRegisterPassable'}}
     takeTrivialRegisterType(closure)
 
 

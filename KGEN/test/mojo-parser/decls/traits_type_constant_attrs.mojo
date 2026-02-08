@@ -6,17 +6,17 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-trait SubTraitT(TrivialRegisterType):
+trait SubTraitT(TrivialRegisterPassable):
     fn subget(self) -> Int:
         ...
 
 
-trait SubTraitT2(TrivialRegisterType):
+trait SubTraitT2(TrivialRegisterPassable):
     fn subget2(self) -> Int:
         ...
 
 
-trait MainTraitT(TrivialRegisterType):
+trait MainTraitT(TrivialRegisterPassable):
     comptime ret_type: SubTraitT
     comptime anything: AnyType
 
@@ -24,7 +24,7 @@ trait MainTraitT(TrivialRegisterType):
         ...
 
 
-trait MainTraitT2(TrivialRegisterType):
+trait MainTraitT2(TrivialRegisterPassable):
     comptime ret_type: SubTraitT2
 
     fn get2(self) -> Self.ret_type:
@@ -32,7 +32,7 @@ trait MainTraitT2(TrivialRegisterType):
 
 
 @fieldwise_init
-struct ImplT(SubTraitT, SubTraitT2, TrivialRegisterType):
+struct ImplT(SubTraitT, SubTraitT2, TrivialRegisterPassable):
     fn subget(self) -> Int:
         return 0
 
@@ -44,7 +44,7 @@ struct ImplT(SubTraitT, SubTraitT2, TrivialRegisterType):
 
 
 @fieldwise_init
-struct MainImplT(MainTraitT, MainTraitT2, TrivialRegisterType):
+struct MainImplT(MainTraitT, MainTraitT2, TrivialRegisterPassable):
     # CHECK: lit.alias.decl *"ret_type{{.*}}": !mt_ImplT = <!ImplT>
     comptime ret_type = ImplT
     # CHECK: lit.alias.decl *"anything{{.*}}": !mt_Int = <!Int>

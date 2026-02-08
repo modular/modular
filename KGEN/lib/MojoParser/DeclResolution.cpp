@@ -2673,7 +2673,7 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
       // MOCO-3189: Mark deprecated and remove after 26.2.
       shared.emitWarning(decorator->getLoc(),
                          "@register_passable(\"trivial\") is deprecated, "
-                         "conform to TrivialRegisterType instead");
+                         "conform to TrivialRegisterPassable instead");
       traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
       return success();
     }
@@ -2716,7 +2716,7 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
         // MOCO-3189: Mark deprecated and remove after 26.2.
         shared.emitWarning(decorator->getLoc(),
                            "@register_passable(\"trivial\") is deprecated, "
-                           "conform to TrivialRegisterType instead");
+                           "conform to TrivialRegisterPassable instead");
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
         if (ASTDecl *decl = shared.lookupBuiltinTrait(
                 "ImplicitlyCopyable", structDecl.getParentDecl(),
@@ -3175,7 +3175,7 @@ static void processRegisterPassableDecorator(
       StringRef regTypeName = "RegisterPassable";
       if (isTrivial) {
         trivialSuffix = "(\"trivial\")";
-        regTypeName = "TrivialRegisterType";
+        regTypeName = "TrivialRegisterPassable";
       }
 
       auto diag = resolver.emitError(structOp.getLoc())
@@ -3316,9 +3316,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (conformsToTrait("RegisterPassable"))
     structOp.setConvention(TypeConvention::RegisterPassable);
 
-  // TrivialRegisterType conforms to RegisterPassable, so should set this after
-  // setting RegisterPassable.
-  if (conformsToTrait("TrivialRegisterType"))
+  // TrivialRegisterPassable conforms to RegisterPassable, so should set this
+  // after setting RegisterPassable.
+  if (conformsToTrait("TrivialRegisterPassable"))
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   // If the struct is @register_passable, check invariants imposed by it before
@@ -3669,9 +3669,9 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (conformsToTrait("RegisterPassable"))
     traitOp.setConvention(TypeConvention::RegisterPassable);
 
-  // TrivialRegisterType conforms to RegisterPassable, so should set this after
-  // setting RegisterPassable.
-  if (conformsToTrait("TrivialRegisterType"))
+  // TrivialRegisterPassable conforms to RegisterPassable, so should set this
+  // after setting RegisterPassable.
+  if (conformsToTrait("TrivialRegisterPassable"))
     traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   // Check if the trait conforms to ImplicitlyDestructible by checking the

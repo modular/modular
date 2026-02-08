@@ -777,7 +777,7 @@ bool isRegisterTypeHelper(const ASTType &asttype, llvm::SMLoc loc,
       return true;
   }
 
-  // Check whether the type conforms to `TrivialRegisterType` trait.
+  // Check whether the type conforms to `TrivialRegisterPassable` trait.
   ASTDecl *traitDecl =
       shared.lookupBuiltinTrait(traitName, typeDecl, typeDecl->getLoc());
 
@@ -802,7 +802,7 @@ bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {
 bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
                                     SharedState &shared) const {
   return isRegisterTypeHelper(
-      *this, loc, shared, "TrivialRegisterType", [](Operation *op) {
+      *this, loc, shared, "TrivialRegisterPassable", [](Operation *op) {
         bool result = false;
         TypeSwitch<Operation &>(*op).Case<StructDeclOp, TraitDeclOp>(
             [&](auto op) { result = op.isRegisterPassableTrivial(); });

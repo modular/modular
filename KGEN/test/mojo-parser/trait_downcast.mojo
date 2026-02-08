@@ -20,8 +20,8 @@ trait ToCastInto:
 
 
 # CHECK-LABEL: lit.fn @"trait_downcast_reg_type
-fn trait_downcast_reg_type[T: TrivialRegisterType](x: T):
-    # CHECK: lit.var.decl "y" var : !lit.ref<:!ToCastInto downcast(:!AnyType !kgen.param<:!TrivialRegisterType T>), mut *"y`1">
+fn trait_downcast_reg_type[T: TrivialRegisterPassable](x: T):
+    # CHECK: lit.var.decl "y" var : !lit.ref<:!ToCastInto downcast(:!AnyType !kgen.param<:!TrivialRegisterPassable T>), mut *"y`1">
     var y = trait_downcast[ToCastInto](x)
     y.test()
 

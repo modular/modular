@@ -7,7 +7,7 @@
 from debug_test_utils import keep_alive
 
 
-struct Point(TrivialRegisterType):
+struct Point(TrivialRegisterPassable):
     var x: Int
     var y: Int
 

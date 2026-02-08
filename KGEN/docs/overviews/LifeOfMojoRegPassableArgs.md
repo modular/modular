@@ -9,7 +9,7 @@ a function** by value. In contrast, values that are not RP (and all `ref` and
 `mut` arguments/results) are passed indirectly in memory.
 
 > Note: Mojo has `@register_passable("trivial")`
-(now deprecated in favor of TrivialRegisterType trait)
+(now deprecated in favor of TrivialRegisterPassable trait)
  as well, which isn't really
 relevant to this doc. “Trivial” guarantees that the type has a trivial copy and
 move constructor, which means that it can be copied or moved with memcpy. We

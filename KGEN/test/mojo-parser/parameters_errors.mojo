@@ -445,7 +445,7 @@ fn autoparams_variadic(*x: MemParamType):
     pass
 
 # expected-note @below {{'InferredParam' declared here}}
-struct InferredParam[p: Int, //, T: TrivialRegisterType, use: ParamType[p]]:
+struct InferredParam[p: Int, //, T: TrivialRegisterPassable, use: ParamType[p]]:
     pass
 
 
@@ -529,7 +529,7 @@ fn unused_init_self_param():
     var slice = UnusedInitSelfParam()
 
 
-struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterType):
+struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
     # expected-note @below {{function declared here}}
     fn __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 

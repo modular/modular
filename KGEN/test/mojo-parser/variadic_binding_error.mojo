@@ -43,7 +43,7 @@ fn foo():
 
 
 struct ParamSubst[
-    T: TrivialRegisterType,
+    T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.variadic<`, T, `>`],
 ]:
     pass

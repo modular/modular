@@ -82,7 +82,7 @@ fn test_inline_by_ref(mut a: AlwaysInlineByRef):
     a.do_by_ref()
 
 
-struct AIBuiltinPair(TrivialRegisterType):
+struct AIBuiltinPair(TrivialRegisterPassable):
     var a: Int
     var b: Int
 
@@ -226,7 +226,7 @@ fn register_internal(x: StaticString):
 @register_internal("custom.op")
 @deprecated("DecoratorOrder1")
 @fieldwise_init
-struct DecoratorOrder1(TrivialRegisterType):
+struct DecoratorOrder1(TrivialRegisterPassable):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder2
@@ -237,7 +237,7 @@ struct DecoratorOrder1(TrivialRegisterType):
 @deprecated("DecoratorOrder2")
 @register_internal("custom.op")
 @fieldwise_init
-struct DecoratorOrder2(TrivialRegisterType):
+struct DecoratorOrder2(TrivialRegisterPassable):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder3
@@ -248,7 +248,7 @@ struct DecoratorOrder2(TrivialRegisterType):
 @fieldwise_init
 @deprecated("DecoratorOrder3")
 @register_internal("custom.op")
-struct DecoratorOrder3(TrivialRegisterType):
+struct DecoratorOrder3(TrivialRegisterPassable):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder4
@@ -259,7 +259,7 @@ struct DecoratorOrder3(TrivialRegisterType):
 @fieldwise_init
 @register_internal("custom.op")
 @deprecated("DecoratorOrder4")
-struct DecoratorOrder4(TrivialRegisterType):
+struct DecoratorOrder4(TrivialRegisterPassable):
     var a: Int
 
 
@@ -341,7 +341,7 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable_RegisterPassable_TrivialRegisterType) register_passable_trivial
+# CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable_RegisterPassable_TrivialRegisterPassable) register_passable_trivial
 
 # CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
@@ -359,7 +359,7 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 # CHECK-NEXT: lit.return %none : !kgen.none
 
 @fieldwise_init
-struct ValueRegTrivial(TrivialRegisterType, Copyable):
+struct ValueRegTrivial(TrivialRegisterPassable, Copyable):
     var a: __mlir_type.index
 
 
@@ -411,7 +411,7 @@ struct Foo(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> pos_vararg>
 @fieldwise_init
-struct ParamVarArg[*I: Int](TrivialRegisterType):
+struct ParamVarArg[*I: Int](TrivialRegisterPassable):
     pass
 
 
@@ -439,7 +439,7 @@ struct NotSynthetic(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @VarArgInit
 @fieldwise_init
-struct VarArgInit(TrivialRegisterType):
+struct VarArgInit(TrivialRegisterPassable):
     var a: Int
 
     # CHECK: lit.fn @"__init__(decorators::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>> read_mem|pos_vararg

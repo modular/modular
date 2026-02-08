@@ -167,7 +167,7 @@ public:
   bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is trivial register passable
-  /// or conforms to TrivialRegisterType trait.
+  /// or conforms to TrivialRegisterPassable trait.
   /// Note: this resolves the body of a struct type.
   bool isTrivialRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 

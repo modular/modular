@@ -590,8 +590,8 @@ fn useIt[TT: DoIt, C:fn(x:TT) unified](impl: C):
 
 # // -----
 
-# Verify the trait alias includes TrivialRegisterType conformance.
-# CHECK-DAG: [[TRAIT:!passable[^=]*TrivialRegisterType]] = !lit.trait<@"fn() -> Int register_passable",{{.*}}@std::@builtin::@stubs::@TrivialRegisterType>
+# Verify the trait alias includes TrivialRegisterPassable conformance.
+# CHECK-DAG: [[TRAIT:!passable[^=]*TrivialRegisterPassable]] = !lit.trait<@"fn() -> Int register_passable",{{.*}}@std::@builtin::@stubs::@TrivialRegisterPassable>
 
 
 # CHECK: lit.struct.decl @"fn() -> Int_Mova_Impl_Copy_Impl_Devi"<impl: [[TRAIT]]

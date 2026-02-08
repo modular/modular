@@ -628,7 +628,7 @@ def def_borrowed(a: MemExample) -> None:
 
 
 # https://github.com/modularml/modular/issues/24161
-struct AddrSpace(TrivialRegisterType):
+struct AddrSpace(TrivialRegisterPassable):
     var _value: __mlir_type.index
     @always_inline("builtin")
     @implicit
@@ -637,7 +637,7 @@ struct AddrSpace(TrivialRegisterType):
     fn value(self) -> __mlir_type.index:
         return self._value
 @fieldwise_init
-struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`](TrivialRegisterType):
+struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`](TrivialRegisterPassable):
     var value: __mlir_type[
         `!kgen.pointer<`, MemExample, `, `, Self.addrspace._value, `>`
     ]

@@ -309,7 +309,7 @@ fn test_expr_not_doc_string():
 ##===----------------------------------------------------------------------===##
 
 
-struct TypeA(TrivialRegisterType):
+struct TypeA(TrivialRegisterPassable):
     fn __merge_with__[other_type: type_of(TypeB)](self) -> TypeB:
         pass
 
@@ -317,12 +317,12 @@ struct TypeA(TrivialRegisterType):
         pass
 
 
-struct TypeB(TrivialRegisterType):
+struct TypeB(TrivialRegisterPassable):
     fn __merge_with__[other_type: type_of(Int)](self) -> Int:
         pass
 
 
-struct TypeC(TrivialRegisterType):
+struct TypeC(TrivialRegisterPassable):
     fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
@@ -330,12 +330,12 @@ struct TypeC(TrivialRegisterType):
         pass
 
 
-struct TypeD(TrivialRegisterType):
+struct TypeD(TrivialRegisterPassable):
     fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
 
-struct TypeE(TrivialRegisterType):
+struct TypeE(TrivialRegisterPassable):
     @implicit
     fn __init__(out self, other: TypeD):
         pass

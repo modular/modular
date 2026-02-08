@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct Point(TrivialRegisterType):
+struct Point(TrivialRegisterPassable):
     var x: Int
     var y: Int
 

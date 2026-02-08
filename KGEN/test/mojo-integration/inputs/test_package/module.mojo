@@ -48,7 +48,7 @@ fn trait_method[T: UsedInPackageTrait]():
 
 
 # COM: Create a thunk that is only referenced in this module.
-struct _PrivateReg(TrivialRegisterType, UsedInPackageTrait):
+struct _PrivateReg(TrivialRegisterPassable, UsedInPackageTrait):
     fn method(self):
         pass
 

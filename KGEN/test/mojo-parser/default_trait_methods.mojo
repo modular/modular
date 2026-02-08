@@ -8,7 +8,7 @@
 
 
 @fieldwise_init
-struct RP(TrivialRegisterType):
+struct RP(TrivialRegisterPassable):
     pass
 
 
@@ -57,7 +57,7 @@ struct Bar(Foo):
 
 
 @fieldwise_init
-struct Zork(TrivialRegisterType):
+struct Zork(TrivialRegisterPassable):
     pass
 
 
@@ -82,7 +82,7 @@ struct TAA(AA1):
 
 # Test parameterized types in default trait methods
 @fieldwise_init
-struct ParamRPType[x: Int, y: Int](TrivialRegisterType):
+struct ParamRPType[x: Int, y: Int](TrivialRegisterPassable):
     var value: Int
 
 

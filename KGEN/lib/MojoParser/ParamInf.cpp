@@ -583,7 +583,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   //     rank: Int,
   //     origin: Origin[mut=mut],
   //     ...
-  // ](TrivialRegisterType):
+  // ](TrivialRegisterPassable):
   //   @implicit
   //   fn __init__(
   //       out self,
