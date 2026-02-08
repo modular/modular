@@ -1739,6 +1739,10 @@ struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT]]:
     fn foo[P: XOrigin[Self.MUT]](self):
         pass
 
+# The two mut parameters shadow confusing the inferred param added by XOrigin.
+struct MutConflict[mut: Bool]:
+    comptime Something[mut: Bool, //, a: XOrigin[mut=mut]] = Int
+
 struct HasInferred[a: XOrigin]:
     fn also_has_inferred[b: XOrigin](self):
         pass
