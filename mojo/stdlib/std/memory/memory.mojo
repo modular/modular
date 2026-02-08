@@ -46,6 +46,7 @@ from algorithm import vectorize
 # ===-----------------------------------------------------------------------===#
 
 
+@doc_private
 @always_inline("nodebug")
 fn get_active_mask[width: Int](evl: Int) -> SIMD[DType.bool, width]:
     """Generates a mask with the first `evl` lanes active.
