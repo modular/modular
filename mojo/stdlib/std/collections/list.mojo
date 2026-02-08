@@ -25,7 +25,7 @@ from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
 from os import abort
-from sys import is_compile_time, simd_width_of, size_of
+from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from memory import Pointer, memcpy
@@ -542,8 +542,9 @@ struct List[T: Copyable](
     ](self: List[Scalar[dtype], ...], value: Scalar[dtype]) -> Bool:
         """Verify if a given value is present in the list.
 
-        Uses SIMD vectorized comparison for improved performance when
-        searching through lists of scalar types.
+        Delegates to `Span.__contains__` which uses SIMD vectorized
+        comparison for improved performance when searching through lists
+        of scalar types.
 
         Parameters:
             dtype: The DType of the elements in the list.
@@ -561,35 +562,7 @@ struct List[T: Copyable](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        var count = len(self)
-        var ptr = self.unsafe_ptr()
-
-        if is_compile_time():
-            for i in range(count):
-                if ptr[i] == value:
-                    return True
-            return False
-
-        comptime simd_width = simd_width_of[dtype]()
-        var needle = SIMD[dtype, simd_width](value)
-
-        if count < simd_width:
-            for i in range(count):
-                if ptr[i] == value:
-                    return True
-            return False
-
-        var last = count - simd_width
-
-        for i in range(0, last, simd_width):
-            if any(ptr.load[width=simd_width](i).eq(needle)):
-                return True
-
-        # Handle last (possibly overlapping) chunk.
-        if any(ptr.load[width=simd_width](last).eq(needle)):
-            return True
-
-        return False
+        return value in Span(self)
 
     fn __mul__[
         _T: Copyable & ImplicitlyDestructible, //
