@@ -7,7 +7,7 @@
 
 
 @fieldwise_init
-struct RegPassable(ImplicitlyCopyable, RegisterType):
+struct RegPassable(ImplicitlyCopyable, RegisterPassable):
     var v: Float32
     var w: Float32
 

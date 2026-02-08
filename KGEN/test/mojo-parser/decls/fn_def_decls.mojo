@@ -124,7 +124,7 @@ struct MemoryOnly(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct NonTrivialReg(ImplicitlyCopyable, RegisterType):
+struct NonTrivialReg(ImplicitlyCopyable, RegisterPassable):
     pass
 
 

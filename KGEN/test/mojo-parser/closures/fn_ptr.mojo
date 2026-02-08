@@ -11,7 +11,7 @@ struct Mem:
     pass
 
 
-struct Reg(RegisterType):
+struct Reg(RegisterPassable):
     pass
 
 

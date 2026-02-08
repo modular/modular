@@ -671,7 +671,7 @@ fn loop_any_origin(var mem: MemExample, cond: Bool):
 
 
 # 4694: or/and handling of comparisons on PythonObject
-struct PyObjLike(RegisterType):
+struct PyObjLike(RegisterPassable):
     fn __copyinit__(out self, existing: Self):
         pass
 

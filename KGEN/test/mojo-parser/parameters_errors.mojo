@@ -421,7 +421,7 @@ fn pass_no_traits(x: NoTraitsType):
 
 
 @fieldwise_init
-struct ParamType[p: Int](RegisterType):
+struct ParamType[p: Int](RegisterPassable):
     pass
 
 

@@ -349,12 +349,12 @@ struct DeprecatedRPTStruct:
 # deprecating @register_passable
 # ===----------------------------------------------------------------------=== #
 
-# expected-warning @+1{{@register_passable is deprecated, conform to RegisterType instead}}
+# expected-warning @+1{{@register_passable is deprecated, conform to RegisterPassable instead}}
 @register_passable
 trait DeprecatedRPTrait:
     pass
 
-# expected-warning @+1{{@register_passable is deprecated, conform to RegisterType instead}}
+# expected-warning @+1{{@register_passable is deprecated, conform to RegisterPassable instead}}
 @register_passable
 struct DeprecatedRPStruct:
     pass

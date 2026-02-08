@@ -45,7 +45,7 @@ fn use_inout(mut x: MemExample):
     pass
 
 
-struct RegExample(ImplicitlyCopyable, RegisterType):
+struct RegExample(ImplicitlyCopyable, RegisterPassable):
     var regstate: Int
 
     fn __init__(out self):
@@ -270,7 +270,7 @@ struct TwoRegs(ImplicitlyCopyable):
         self.reg2 = existing.reg2
 
 
-struct TwoRegsRP(RegisterType):
+struct TwoRegsRP(RegisterPassable):
     var reg1: RegExample
     var reg2: RegExample
 

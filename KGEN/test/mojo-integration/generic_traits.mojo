@@ -21,7 +21,7 @@ struct MemType(SimpleTrait):
         return __mlir_attr.`1:index`
 
 
-struct RegType(RegisterType, SimpleTrait):
+struct RegType(RegisterPassable, SimpleTrait):
     @staticmethod
     @always_inline
     fn bar() -> Index:
@@ -100,7 +100,7 @@ fn like_father_like(value: Son):
     take_father(value)
 
 
-struct SomeType(ImplicitlyCopyable, RegisterType):
+struct SomeType(ImplicitlyCopyable, RegisterPassable):
     fn __del__(deinit self):
         pass
 

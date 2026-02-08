@@ -721,7 +721,7 @@ struct TestVarDeinitErrors:
   fn __moveinit__(out self, var x: String): pass
 
 
-struct WrongType(RegisterType):
+struct WrongType(RegisterPassable):
   # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
   def __init__(self: None): pass
@@ -777,8 +777,8 @@ struct MLIRAttrWithinStruct:
 # In register structs may only have stored properties of other in-reg values.
 struct InMemStruct: pass
 
-# expected-error @+1 {{all members of '@register_passable' (RegisterType) struct must themselves be '@register_passable' (RegisterType)}}
-struct InRegStruct(RegisterType):
+# expected-error @+1 {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
+struct InRegStruct(RegisterPassable):
   var x: Int # ok
   # expected-error @+1 {{cannot synthesize __moveinit__ because field 'y' has non-copyable and non-movable type 'InMemStruct'}}
   var y: InMemStruct # expected-note {{'y' declared with type 'InMemStruct'}}
@@ -881,7 +881,7 @@ struct NotRegisterPassable:
 # Don't crash on emitting methods when the struct itself is erroneous.
 
 @fieldwise_init
-struct Outer34551(ImplicitlyCopyable, RegisterType): # expected-error {{all members of '@register_passable' (RegisterType) struct must themselves be '@register_passable' (RegisterType)}}
+struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
     # expected-error @below {{cannot synthesize __moveinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
@@ -893,26 +893,26 @@ struct Outer34551(ImplicitlyCopyable, RegisterType): # expected-error {{all memb
     fn __del__(deinit self):
         _ = self._inner ^
 
-struct StructWithoutBody(RegisterType):
+struct StructWithoutBody(RegisterPassable):
     pass
 
 @fieldwise_init
-struct OkayStruct(ImplicitlyCopyable, RegisterType):
+struct OkayStruct(ImplicitlyCopyable, RegisterPassable):
 # expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
 @fieldwise_init
-struct ExplicitlyCopyableStructWithNonCopyableBody(Copyable, RegisterType):
+struct ExplicitlyCopyableStructWithNonCopyableBody(Copyable, RegisterPassable):
 # expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
-struct ExplicitlyCopyableStructWithoutBody(Copyable, RegisterType):
+struct ExplicitlyCopyableStructWithoutBody(Copyable, RegisterPassable):
     pass
 
 @fieldwise_init
-struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterType):
+struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterPassable):
   # expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'ExplicitlyCopyableStructWithoutBody'}}
     var begin: ExplicitlyCopyableStructWithoutBody
 
@@ -1069,7 +1069,7 @@ struct Inner:
     pass
 
 @fieldwise_init
-struct Outer(RegisterType): # expected-error {{all members of '@register_passable' (RegisterType) struct must themselves be '@register_passable' (RegisterType)}}
+struct Outer(RegisterPassable): # expected-error {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
     # expected-error @+1{{cannot synthesize __moveinit__ because field 'inner' has non-copyable and non-movable type 'Inner'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 

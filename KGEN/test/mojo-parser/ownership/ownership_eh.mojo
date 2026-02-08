@@ -25,7 +25,7 @@ def use_and_raise(x: Int):
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}RegExample::@"__del__
-struct RegExample(ImplicitlyCopyable, RegisterType):
+struct RegExample(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         return
 
@@ -243,7 +243,7 @@ fn propagate_reg_error() raises:
 
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
-struct BigRegExample(RegisterType):
+struct BigRegExample(RegisterPassable):
     var a: RegExample
     var b: RegExample
 

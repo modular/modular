@@ -36,7 +36,7 @@ struct MemExample(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @RegExample
-struct RegExample(ImplicitlyCopyable, RegisterType):
+struct RegExample(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         return
 
@@ -122,7 +122,7 @@ fn self_copy(mut x: MemoryMovableCopyable):
     x = x
 
 
-struct RegUniqueMovable(RegisterType):
+struct RegUniqueMovable(RegisterPassable):
     fn __init__(out self):
         return
 
@@ -130,7 +130,7 @@ struct RegUniqueMovable(RegisterType):
         pass
 
 
-struct RegMovableCopyable(ImplicitlyCopyable, RegisterType):
+struct RegMovableCopyable(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         return
 

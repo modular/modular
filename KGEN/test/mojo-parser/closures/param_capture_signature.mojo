@@ -8,7 +8,7 @@
 
 
 @fieldwise_init
-struct Foo[a: Int](ImplicitlyCopyable, RegisterType):
+struct Foo[a: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
     fn get(self) -> Int:

@@ -283,7 +283,7 @@ trait TraitForReg:
 
 
 # CHECK-LABEL: lit.struct.decl @RegTraitType
-struct RegTraitType(RegisterType, TraitForReg):
+struct RegTraitType(RegisterPassable, TraitForReg):
     # CHECK-LABEL: lit.fn @"__init__
     # CHECK-SAME: (%x: !Int) -> !RegTraitType
     @implicit
@@ -325,7 +325,7 @@ trait ChangedResultTypeTrait:
 # COM: The calling convention rewrite results in a decl with two "overloads" that
 # COM: differ only in result type. Ensure that the thunk gets selected.
 # CHECK-LABEL: lit.struct.decl @ChangedResultTypeStruct
-struct ChangedResultTypeStruct(ChangedResultTypeTrait, RegisterType):
+struct ChangedResultTypeStruct(ChangedResultTypeTrait, RegisterPassable):
     # CHECK-LABEL: lit.fn @"result_type()"() -> !ChangedResultTypeStruct
     @staticmethod
     fn result_type() -> Self:
@@ -349,7 +349,7 @@ trait SimpleTraitMethod:
         ...
 
 
-struct VariadicTrait[*I: Int](RegisterType, SimpleTraitMethod):
+struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
     fn foo(self):
         pass
 
@@ -378,7 +378,7 @@ trait ThunkAmbiguity:
         ...
 
 
-struct ThunkAmbiguityRP(RegisterType, ThunkAmbiguity):
+struct ThunkAmbiguityRP(RegisterPassable, ThunkAmbiguity):
     fn mismatched_arg(self):
         pass
 
@@ -408,7 +408,7 @@ trait OwnedArguments:
 
 
 # CHECK-LABEL: lit.struct.decl @NoDtor
-struct NoDtor(OwnedArguments, DefaultConstructible, RegisterType):
+struct NoDtor(OwnedArguments, DefaultConstructible, RegisterPassable):
     fn take(var self, var x: RegTraitType):
         pass
 
@@ -448,8 +448,8 @@ trait SimpleTraitB:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoThunks
-# CHECK-SAME: (!AnyType_ImplicitlyDestructible_Movable_RegisterType_SimpleTraitA_SimpleTraitB)
-struct TwoThunks(RegisterType, SimpleTraitA, SimpleTraitB):
+# CHECK-SAME: (!AnyType_ImplicitlyDestructible_Movable_RegisterPassable_SimpleTraitA_SimpleTraitB)
+struct TwoThunks(RegisterPassable, SimpleTraitA, SimpleTraitB):
     # CHECK: lit.fn @"method({{.*}}TwoThunks)"
     fn method(self):
         pass
@@ -508,7 +508,7 @@ struct RegTrivialSpecialWithTrait(TrivialRegisterType):
     # CHECK: lit.fn @"__copyinit__
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
-struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterType):
+struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
     fn __copyinit__(out self, existing: Self):
         pass
 
@@ -806,7 +806,7 @@ trait Makeable:
         ...
 
 
-struct MakeNamedResult(Makeable, RegisterType):
+struct MakeNamedResult(Makeable, RegisterPassable):
     @staticmethod
     fn make(out out: Self):
         pass
@@ -906,7 +906,7 @@ struct ParamType[x: Int](TrivialRegisterType):
     pass
 
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
-trait RGTrait(ImplicitlyDestructible, RegisterType):
+trait RGTrait(ImplicitlyDestructible, RegisterPassable):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     fn doSomething(self):
         ...

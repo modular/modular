@@ -367,7 +367,7 @@ fn call_param_inference_unrelated_error():
 
 
 @fieldwise_init
-struct MyRPStruct(RegisterType):
+struct MyRPStruct(RegisterPassable):
     var a: Int
 
     fn __del__(deinit self):
@@ -375,7 +375,7 @@ struct MyRPStruct(RegisterType):
 
 
 @fieldwise_init
-struct MyRPStruct2(RegisterType):
+struct MyRPStruct2(RegisterPassable):
     var b: MyRPStruct
 
     fn __del__(deinit self):

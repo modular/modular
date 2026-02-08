@@ -2660,9 +2660,9 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       // MOCO-3233: Mark deprecated and remove after 26.2.
-      shared.emitWarning(
-          decorator->getLoc(),
-          "@register_passable is deprecated, conform to RegisterType instead");
+      shared.emitWarning(decorator->getLoc(),
+                         "@register_passable is deprecated, conform to "
+                         "RegisterPassable instead");
       traitOp.setConvention(TypeConvention::RegisterPassable);
       return success();
     }
@@ -2690,9 +2690,9 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       // MOCO-3233: Mark deprecated and remove after 26.2.
-      shared.emitWarning(
-          decorator->getLoc(),
-          "@register_passable is deprecated, conform to RegisterType instead");
+      shared.emitWarning(decorator->getLoc(),
+                         "@register_passable is deprecated, conform to "
+                         "RegisterPassable instead");
       structOp.setConvention(TypeConvention::RegisterPassable);
       // RP types implicitly conforms to Movable
       if (ASTDecl *decl = shared.lookupBuiltinTrait(
@@ -3172,7 +3172,7 @@ static void processRegisterPassableDecorator(
     if (fieldType.getRegisterPassability(fieldDecl->getLoc(), resolver.shared) <
         structPassability) {
       StringRef trivialSuffix;
-      StringRef regTypeName = "RegisterType";
+      StringRef regTypeName = "RegisterPassable";
       if (isTrivial) {
         trivialSuffix = "(\"trivial\")";
         regTypeName = "TrivialRegisterType";
@@ -3313,10 +3313,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (synthesizedDtor && !hasNonTrivialDestructor)
     structOp.setDestructorAttr({});
 
-  if (conformsToTrait("RegisterType"))
+  if (conformsToTrait("RegisterPassable"))
     structOp.setConvention(TypeConvention::RegisterPassable);
 
-  // TrivialRegisterType conforms to RegisterType, so should set this after
+  // TrivialRegisterType conforms to RegisterPassable, so should set this after
   // setting RegisterPassable.
   if (conformsToTrait("TrivialRegisterType"))
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
@@ -3666,10 +3666,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
            });
   };
 
-  if (conformsToTrait("RegisterType"))
+  if (conformsToTrait("RegisterPassable"))
     traitOp.setConvention(TypeConvention::RegisterPassable);
 
-  // TrivialRegisterType conforms to RegisterType, so should set this after
+  // TrivialRegisterType conforms to RegisterPassable, so should set this after
   // setting RegisterPassable.
   if (conformsToTrait("TrivialRegisterType"))
     traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
