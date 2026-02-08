@@ -335,7 +335,7 @@ struct Span[
             True if the value is contained in the list, False otherwise.
         """
 
-        comptime widths: InlineArray[Int, 6] = [256, 128, 64, 32, 16, 8]
+        comptime widths: InlineArray[Int, 8] = [256, 128, 64, 32, 16, 8, 4, 2]
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0
