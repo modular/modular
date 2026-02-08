@@ -57,7 +57,7 @@ struct BackToBackMatmulConfig[
     src_type: DType,
     transpose_b: Bool = False,
     transpose_c: Bool = False,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # A is MxK
     # B is KxL
     # C is LxN

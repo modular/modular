@@ -43,7 +43,7 @@ fn _sign(x: Int) -> Int:
 
 
 struct _ZeroStartingRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -90,7 +90,7 @@ struct _ZeroStartingRange(
 
 
 struct _SequentialRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -136,7 +136,9 @@ struct _SequentialRange(
 
 
 @fieldwise_init
-struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
+struct _StridedRangeIterator(
+    Iterable, Iterator, Sized, TrivialRegisterPassable
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -185,7 +187,7 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
 
 
 struct _StridedRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -389,7 +391,7 @@ fn _scalar_range_bounds[
 
 
 struct _ZeroStartingScalarRange[dtype: DType](
-    Iterable, TrivialRegisterType, Iterator & ImplicitlyCopyable
+    Iterable, TrivialRegisterPassable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -451,7 +453,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
 
 struct _SequentialScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterType
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -500,7 +502,7 @@ struct _SequentialScalarRange[dtype: DType](
 
 @fieldwise_init
 struct _StridedScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterType
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]

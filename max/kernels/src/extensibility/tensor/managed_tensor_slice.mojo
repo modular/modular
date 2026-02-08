@@ -661,7 +661,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, Stringable, TrivialRegisterType, Writable):
+](DevicePassable, Stringable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -1506,7 +1506,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](Sized, TrivialRegisterType):
+](Sized, TrivialRegisterPassable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 

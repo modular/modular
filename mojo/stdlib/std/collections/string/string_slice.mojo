@@ -476,7 +476,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Representable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A non-owning view into encoded string data.

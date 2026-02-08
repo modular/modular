@@ -132,7 +132,7 @@ comptime NVTXVersion = 2
 
 
 @fieldwise_init
-struct Color(Intable, TrivialRegisterType):
+struct Color(Intable, TrivialRegisterPassable):
     var _value: Int
 
     comptime FORMAT = 1  # ARGB
@@ -176,7 +176,7 @@ struct Color(Intable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct _C_EventAttributes(TrivialRegisterType):
+struct _C_EventAttributes(TrivialRegisterPassable):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -221,7 +221,7 @@ fn color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-struct EventAttributes(TrivialRegisterType):
+struct EventAttributes(TrivialRegisterPassable):
     var _value: _C_EventAttributes
 
     @always_inline
@@ -253,7 +253,7 @@ struct EventAttributes(TrivialRegisterType):
 
 
 struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     comptime fn_type = Self.type
 

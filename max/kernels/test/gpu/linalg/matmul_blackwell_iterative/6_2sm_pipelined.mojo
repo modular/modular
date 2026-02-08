@@ -76,7 +76,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole(TrivialRegisterPassable):
     var _role: Int32
 
     comptime MainLoad = Self(4)

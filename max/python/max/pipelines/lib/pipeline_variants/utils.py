@@ -74,15 +74,18 @@ def update_context_and_prepare_responses(
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
 ) -> dict[RequestID, TextGenerationOutput]:
-    """
-    Update the context objects and prepare the response objects for each context in the batch after generation.
+    """Updates context objects and prepares response objects after generation.
 
     Args:
-        generated_tokens_host: Array of generated tokens on the host, indexed as [batch, step].
-        batch_log_probabilities: List of per-step log probability outputs (or None), each entry is a list per batch for that step.
-        flat_batch: List of generation contexts, one per request, matching batch dimension.
+        generated_tokens_host: Array of generated tokens on the host, indexed
+            as [batch, step].
+        flat_batch: List of generation contexts, one per request, matching
+            batch dimension.
         num_steps: Number of generation steps to process for each context.
+        batch_log_probabilities: List of per-step log probability outputs (or
+            None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
+        overwrite_future: Whether to overwrite future tokens in the context.
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.

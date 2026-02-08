@@ -126,15 +126,15 @@ def render_bars(
     throughput_cols: Sequence[str],
     bar_width: int = 40,
 ) -> None:
-    """Render Unicode bar chart grouped by all secondary pivots."""
+    """Render Unicode bar chart grouped by secondary pivot."""
     if display_df.empty:
         console.print("[yellow]No results to display.[/yellow]")
         return
 
     max_time = display_df["time_ms"].max()
 
-    # Determine grouping: 2+ pivots -> group by all except first, compare by first
-    group_cols = list(pivot_cols[1:]) if len(pivot_cols) >= 2 else []
+    # Determine grouping: 2+ pivots -> group by second, compare by first
+    group_col = pivot_cols[1] if len(pivot_cols) >= 2 else None
     compare_col = pivot_cols[0] if pivot_cols else None
 
     def render_group(df: pd.DataFrame) -> None:
@@ -164,17 +164,11 @@ def render_bars(
                 f"  {label:12} {bar} {row['time']}{tput_str}{rel_str}"
             )
 
-    if group_cols:
+    if group_col:
         # Convert unhashable types for groupby
-        groupby_keys = [display_df[c].apply(_to_hashable) for c in group_cols]
-        for group_vals, group_df in display_df.groupby(groupby_keys):
-            # group_vals is a single value when 1 group col, tuple when multiple
-            if not isinstance(group_vals, tuple):
-                group_vals = (group_vals,)
-            group_label = ", ".join(
-                f"{c}={v}" for c, v in zip(group_cols, group_vals, strict=True)
-            )
-            console.print(f"[bold]{group_label}:[/bold]")
+        groupby_col = display_df[group_col].apply(_to_hashable)
+        for group_val, group_df in display_df.groupby(groupby_col):
+            console.print(f"[bold]{group_col}={group_val}:[/bold]")
             render_group(group_df)
             console.print()
     else:

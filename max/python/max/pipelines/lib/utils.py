@@ -95,13 +95,15 @@ class CompilationTimer:
 
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:
-    """
-    Given an upper bound and an optional default value, returns a final value
-    that cannot exceed the upper bound.
+    """Returns a value not exceeding the upper bound.
+
+    Given an upper bound and an optional default value, returns the default
+    if it is within bound, otherwise the upper bound (or raises if default
+    exceeds the bound).
 
     Args:
-        default: The default value to use, or None to use the upper bound.
         upper_bound: The upper bound to use.
+        default: The default value to use, or None to use the upper bound.
 
     Raises:
         ValueError: If the provided default value exceeds the upper bound.

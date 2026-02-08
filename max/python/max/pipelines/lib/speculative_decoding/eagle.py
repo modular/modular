@@ -497,6 +497,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         num_steps: int,
         model_inputs: ModelInputs,
     ) -> tuple[int, Buffer, Buffer, Buffer, Buffer | list[Buffer]]:
+        """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
             self._create_sampling_parameters(batch, self.draft_devices[0])
@@ -590,6 +591,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         npt.NDArray[np.integer[Any]],
         npt.NDArray[np.integer[Any]] | None,
     ]:
+        """Verifies draft tokens against the target model and returns accepted indices."""
         # KV alloc must happen inside reserve_token_space_for_batch so the
         # KV manager sees the expanded token count. prepare_initial_token_inputs
         # must happen outside because it accesses ctx.tokens.active which
