@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import fma
 from memory import alloc
 from os import abort
 from sys import CompilationTarget, simd_width_of
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import _Global, OwnedDLHandle
 
 from algorithm import elementwise, vectorize
 from algorithm.functional import (
@@ -38,7 +38,7 @@ from ...utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 
-comptime cblas_gemm_type = fn (
+comptime cblas_gemm_type = fn(
     _CBLASOrder,
     _CBLASTranspose,
     _CBLASTranspose,
@@ -97,7 +97,7 @@ fn _init_dylib() -> OwnedDLHandle:
 fn _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
-    __comptime_assert (
+    comptime assert (
         CompilationTarget.is_macos()
     ), "operating system must be macOS"
     return _ffi_get_dylib_function[
@@ -144,14 +144,14 @@ fn use_apple_accelerate_lib[
 
 
 @fieldwise_init
-struct _CBLASOrder(TrivialRegisterType):
+struct _CBLASOrder(TrivialRegisterPassable):
     var value: Int32
     comptime ROW_MAJOR = _CBLASOrder(101)
     comptime COL_MAJOR = _CBLASOrder(102)
 
 
 @fieldwise_init
-struct _CBLASTranspose(TrivialRegisterType):
+struct _CBLASTranspose(TrivialRegisterPassable):
     var value: Int32
     comptime NO_TRANSPOSE = _CBLASTranspose(111)
     comptime TRANSPOSE = _CBLASTranspose(112)
@@ -246,7 +246,7 @@ fn apple_gemv[
     *,
     b_packed: Bool,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
     a: NDBuffer[_, 2, _, _],
@@ -292,7 +292,7 @@ fn apple_gemv[
     @__copy_capture(c, a, b, K)
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
-        for n in range(start_row, end_row):
+        for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.type, simd_width]()
             var acc_scalar = Scalar[c.type]()
 
@@ -350,7 +350,7 @@ fn apple_gemv[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     cblas_gemm_fn: cblas_gemm_type,
     c: NDBuffer[mut=True, ...],
@@ -424,7 +424,7 @@ fn apple_matmul[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
     @parameter
     if a.type == b.type == c.type == DType.float32:
@@ -448,7 +448,7 @@ fn apple_matmul[
 fn apple_batched_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: OptionalReg[
+    elementwise_epilogue_fn: Optional[
         batched_matmul_elementwise_epilogue_type
     ] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
@@ -493,7 +493,7 @@ fn apple_batched_matmul[
 
         apple_matmul[
             transpose_b=transpose_b,
-            elementwise_lambda_fn = OptionalReg[
-                matmul_elementwise_epilogue_type
-            ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
+            elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
+                elementwise_lambda_2d
+            ) if elementwise_epilogue_fn else None,
         ](cblas_gemm, c2, a2, b2)

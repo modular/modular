@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -61,13 +61,13 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     if fill_strategy == FillStrategy.LINSPACE:
         for i in range(n):
-            vec_host[i] = i
+            vec_host[i] = Float32(i)
     elif fill_strategy == FillStrategy.NEG_LINSPACE:
         for i in range(n):
-            vec_host[i] = -i
+            vec_host[i] = Float32(-i)
     elif fill_strategy == FillStrategy.SYMMETRIC_LINSPACE:
         for i in range(n):
-            vec_host[i] = i - n // 2
+            vec_host[i] = Float32(i - n // 2)
     elif fill_strategy == FillStrategy.ZEROS:
         for i in range(n):
             vec_host[i] = 0

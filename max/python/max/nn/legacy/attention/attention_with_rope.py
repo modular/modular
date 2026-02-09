@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,11 +38,14 @@ from max.nn.legacy.kernels import (
 from ..clamp import clamp
 from ..comm import Allreduce
 from ..kernels import (
+    block_scales_interleave,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     fused_qkv_ragged_matmul_quantized,
+    fused_qkv_ragged_matmul_scaled_float4,
     fused_qkv_ragged_matmul_scaled_float8,
+    quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     unfused_qkv_ragged_matmul_gguf_quantized,
@@ -472,12 +475,17 @@ class AttentionWithRope(Module, Shardable):
                 and self.q_proj.weight_scale is not None
                 and self.k_proj.weight_scale is not None
                 and self.v_proj.weight_scale is not None
+                and self.q_proj.weight_scale.rank != 2
+                and self.k_proj.weight_scale.rank != 2
+                and self.v_proj.weight_scale.rank != 2
             ):
                 wq = wq * self.q_proj.weight_scale.to(wq.device)
                 wk = wk * self.k_proj.weight_scale.to(wk.device)
                 wv = wv * self.v_proj.weight_scale.to(wv.device)
 
             wqkv = ops.concat((wq, wk, wv))
+            if self.float8_config and self.float8_config.is_nvfp4:
+                return wqkv
             if self.float8_config and self.float8_config.is_static:
                 assert self.qkv_weight_scale is not None
 
@@ -558,12 +566,37 @@ class AttentionWithRope(Module, Shardable):
 
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
-        if self.float8_config.is_dynamic:
+        if self.float8_config.is_dynamic or weight_scale.rank == 2:
             # In the dynamic scaling case, return the weight scales directly.
             return weight_scale
 
         # Static case: return a scalar max QKV weight scale.
         return ops.max(weight_scale).reshape([])
+
+    @property
+    def qkv_weight_scale_2(self) -> TensorValue | None:
+        """The max of q, k, and v scale input vectors."""
+        if not self.float8_config or self.float8_config.is_dynamic:
+            return None
+
+        if self.stacked_qkv:
+            raise NotImplementedError(
+                "QKV input scale not implemented for stacked_qkv=True"
+            )
+
+        assert self.q_proj.weight_scale_2 is not None
+        assert self.k_proj.weight_scale_2 is not None
+        assert self.v_proj.weight_scale_2 is not None
+
+        return ops.max(
+            ops.concat(
+                (
+                    self.q_proj.weight_scale_2.reshape((1,)),
+                    self.k_proj.weight_scale_2.reshape((1,)),
+                    self.v_proj.weight_scale_2.reshape((1,)),
+                )
+            )
+        ).reshape(())
 
     def __call__(
         self,
@@ -580,8 +613,39 @@ class AttentionWithRope(Module, Shardable):
         wqkv_bias = (
             self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
         )
+        if self.float8_config and self.float8_config.is_nvfp4:
+            input_scale = self.qkv_input_scale
+            weight_scale = self.qkv_weight_scale
+            weight_scale_2 = self.qkv_weight_scale_2
+            assert input_scale is not None
+            assert weight_scale_2 is not None
 
-        if self.float8_config:
+            x, x_scales = quantize_dynamic_block_scaled_fp4(
+                x,
+                tensor_sf=1.0 / input_scale,
+                scales_type=DType.float8_e4m3fn,
+                out_type=DType.uint8,  # fp4-e2m1fnX2
+            )
+
+            weight_scale = weight_scale.to(x.device)
+            weight_scale = block_scales_interleave(
+                weight_scale,
+            )
+
+            xq = fused_qkv_ragged_matmul_scaled_float4(
+                self.kv_params,
+                input=x,
+                input_row_offsets=input_row_offsets,
+                wqkv=wqkv,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale,
+                tensor_sf=input_scale * weight_scale_2,
+            )
+
+        elif self.float8_config:
             # FP8 path
             weight_scale = self.qkv_weight_scale
             if self.float8_config.is_static:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from sys import size_of, has_amd_gpu_accelerator
+from sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from itertools import product
 
 from buffer import NDBuffer
@@ -25,9 +25,14 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
+from gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceMulticastBuffer,
+    get_gpu_target,
+)
 from testing import assert_almost_equal, assert_true
-from collections.optional import OptionalReg
+from collections import Optional
 
 from utils import IndexList, StaticTuple
 
@@ -35,9 +40,13 @@ from utils import IndexList, StaticTuple
 comptime test_lengths = (
     0,  # No elements
     8 * 1024,  # Small latency bound
+    8 * 1024 + 8,  # Ragged: small +8-element offset over base
+    8 * 1024 + 24,  # Ragged: larger +24-element offset over base
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
     16 * 1024 * 1024,  # Bandwidth bound
+    16 * 1024 * 1024 + 8,  # Ragged: small +8-element offset over base
+    16 * 1024 * 1024 + 24,  # Ragged: larger +24-element offset over base
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
@@ -62,8 +71,8 @@ fn allreduce_test[
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -179,7 +188,7 @@ fn allreduce_test[
     # Precompute expected sum across GPUs for verification.
     var expected_sum = Scalar[dtype](0)
     for i in range(ngpus):
-        expected_sum += i + 1
+        expected_sum += Scalar[dtype](i + 1)
 
     group_start()
 
@@ -187,7 +196,7 @@ fn allreduce_test[
     for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
-            output_lambda = OptionalReg[elementwise_epilogue_type](
+            output_lambda = Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
@@ -374,7 +383,7 @@ def allreduce_naive_test() -> None:
 
     var expected = Float32(0)
     for i in range(ngpus):
-        expected += i + 1
+        expected += Float32(i + 1)
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
 
     for i in range(ngpus):
@@ -409,6 +418,16 @@ fn run_allreduce_sweep[
         comptime dtype = test_dtypes[dtype_idx]
         comptime length = test_lengths[length_idx]
         comptime use_custom_epilogue = epilogue_idx == 1
+
+        # Some checks for raggedness
+        comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
+        constrained[
+            length % simd_width == 0, "Length must be multiple of simd_width"
+        ]()
+        comptime quickreduce_tile_shape = simd_width * 8 * 256
+        if use_quickreduce and (length % quickreduce_tile_shape != 0):
+            # Quickreduce requires full tiles (a quickreduce specific concept)
+            continue
 
         print(
             _get_test_str[

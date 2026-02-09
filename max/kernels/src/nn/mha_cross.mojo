@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,16 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import Layout, TensorLayout, row_major
+from layout._tile_tensor import TileTensor
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
@@ -32,19 +31,19 @@ from utils.numerics import get_accum_type
 
 @always_inline
 fn _bmm0_bs[
-    q_layout: Layout,
-    kv_layout: Layout,
+    QLayoutType: TensorLayout,
+    KVLayoutType: TensorLayout,
     //,
     cache_t: KVCacheT,
     mask_t: MHAMask,
     q_type: DType,
     p_type: DType,
 ](
-    p_ptr: UnsafePointer[Scalar[p_type]],
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
+    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, MutAnyOrigin],
+    kv_input_row_offsets: TileTensor[DType.uint32, KVLayoutType, MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -56,6 +55,9 @@ fn _bmm0_bs[
     group: Int,
     mask_functor: mask_t,
 ):
+    comptime assert q_input_row_offsets.rank == 1
+    comptime assert kv_input_row_offsets.rank == 1
+
     # total_context_length
     var x = global_idx.x
     # prompt_length
@@ -138,18 +140,18 @@ fn _bmm0_bs[
 
 @always_inline
 fn _bmm1_bs[
-    q_layout: Layout,
-    kv_layout: Layout,
+    QLayoutType: TensorLayout,
+    KVLayoutType: TensorLayout,
     //,
     cache_t: KVCacheT,
     p_type: DType,
     output_type: DType,
 ](
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    p_ptr: UnsafePointer[Scalar[p_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
+    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, MutAnyOrigin],
+    kv_input_row_offsets: TileTensor[DType.uint32, KVLayoutType, MutAnyOrigin],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,
@@ -157,6 +159,9 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
+    comptime assert q_input_row_offsets.rank == 1
+    comptime assert kv_input_row_offsets.rank == 1
+
     comptime v_type = cache_t.dtype
     comptime kv_num_heads = cache_t.kv_params.num_heads
 
@@ -221,13 +226,13 @@ fn mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[DType.uint32, ...],
+    output: TileTensor[address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_input_row_offsets: TileTensor[DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
     v: cache_t,
-    kv_input_row_offsets: LayoutTensor[DType.uint32, ...],
+    kv_input_row_offsets: TileTensor[DType.uint32, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -256,17 +261,17 @@ fn mha_cross_gpu_naive[
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
     """
-    __comptime_assert rank == 3, "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert rank == 3, "only support rank 3 inputs for ragged inputs."
+    comptime assert (
         q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](
-        UInt(Int(q.layout.shape[rank - 2])),
-        UInt(Int(q.layout.shape[rank - 1])),
+        UInt(Int(q.static_shape[rank - 2])),
+        UInt(Int(q.static_shape[rank - 1])),
     )
 
     comptime num_heads = Int(config.num_heads)
@@ -274,7 +279,7 @@ fn mha_cross_gpu_naive[
     comptime kv_num_heads = cache_t.kv_params.num_heads
     comptime group = config.num_heads // kv_num_heads
     var kv_max_seq_len = Int(k.max_prompt_length())
-    var batch_size = q_input_row_offsets.dim[0]() - 1
+    var batch_size = Int(q_input_row_offsets.dim[0]()) - 1
     var max_cache_size = Int(k.max_context_length())
 
     comptime q_type = q.dtype
@@ -289,17 +294,17 @@ fn mha_cross_gpu_naive[
     )
 
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_buffer = LayoutTensor[p_type, Layout.row_major[3]()](
+    var p_buffer = TileTensor(
         p_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_heads, q_max_seq_len, num_keys)
+        row_major(
+            (Idx(batch_size * num_heads), Idx(q_max_seq_len), Idx(num_keys))
         ),
     )
-    var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.size(), owning=False)
+    var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.numel(), owning=False)
 
     comptime kernel_0 = _bmm0_bs[
-        q_layout = q.layout,
-        kv_layout = kv_input_row_offsets.layout,
+        QLayoutType = q.LayoutType,
+        KVLayoutType = kv_input_row_offsets.LayoutType,
         type_of(k),
         mask_t,
         q_type,
@@ -333,18 +338,23 @@ fn mha_cross_gpu_naive[
     fn input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        return p_buffer.load[width=_simd_width](rebind[IndexList[3]](coords))
+        var p_coord = Coord(coords)
+        comptime assert p_coord.rank == p_buffer.rank
+        return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](
-        Index(batch_size * num_heads, q_max_seq_len, num_keys), p_buffer, 2, ctx
+        Index(batch_size * num_heads, q_max_seq_len, num_keys),
+        p_buffer.to_layout_tensor(),
+        2,
+        ctx,
     )
     var output_device = DeviceBuffer[output.dtype](
-        ctx, output.ptr, output.size(), owning=False
+        ctx, output.ptr, output.numel(), owning=False
     )
 
     comptime kernel_1 = _bmm1_bs[
-        q_layout = q.layout,
-        kv_layout = kv_input_row_offsets.layout,
+        QLayoutType = q.LayoutType,
+        KVLayoutType = kv_input_row_offsets.LayoutType,
         type_of(v),
         p_type,
         output.dtype,

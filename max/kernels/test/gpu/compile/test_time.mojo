@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import perf_counter_ns, sleep, time_function
+from time import global_perf_counter_ns, perf_counter_ns, sleep, time_function
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
@@ -24,23 +24,87 @@ fn clock_functions():
 
 
 @always_inline
-fn _verify_clock_functions(asm: StringSlice) raises -> None:
+fn _verify_clock_functions_nvidia(asm: StringSlice) raises -> None:
     assert_false("mov.u32" in asm)
     assert_true("mov.u64" in asm)
+
+
+@always_inline
+fn _verify_clock_functions_amd(asm: StringSlice) raises -> None:
+    # AMD uses s_memtime for perf_counter_ns cycle counter.
+    assert_true("s_memtime" in asm)
 
 
 def test_clock_functions_sm80():
     var asm = _compile_code[
         clock_functions, target = get_gpu_target["sm_80"]()
     ]().asm
-    _verify_clock_functions(asm)
+    _verify_clock_functions_nvidia(asm)
 
 
 def test_clock_functions_sm90():
     var asm = _compile_code[
         clock_functions, target = get_gpu_target["sm_90"]()
     ]().asm
-    _verify_clock_functions(asm)
+    _verify_clock_functions_nvidia(asm)
+
+
+def test_clock_functions_gfx942():
+    var asm = _compile_code[
+        clock_functions, target = get_gpu_target["gfx942"]()
+    ]().asm
+    _verify_clock_functions_amd(asm)
+
+
+def test_clock_functions_gfx950():
+    var asm = _compile_code[
+        clock_functions, target = get_gpu_target["gfx950"]()
+    ]().asm
+    _verify_clock_functions_amd(asm)
+
+
+fn global_clock_functions():
+    _ = global_perf_counter_ns()
+
+
+@always_inline
+fn _verify_global_clock_functions_nvidia(asm: StringSlice) raises -> None:
+    # NVIDIA uses globaltimer for global_perf_counter_ns.
+    assert_true("globaltimer" in asm)
+
+
+@always_inline
+fn _verify_global_clock_functions_amd(asm: StringSlice) raises -> None:
+    # AMD uses s_memrealtime for global_perf_counter_ns (constant-speed clock).
+    assert_true("s_memrealtime" in asm)
+
+
+def test_global_clock_functions_sm80():
+    var asm = _compile_code[
+        global_clock_functions, target = get_gpu_target["sm_80"]()
+    ]().asm
+    _verify_global_clock_functions_nvidia(asm)
+
+
+def test_global_clock_functions_sm90():
+    var asm = _compile_code[
+        global_clock_functions, target = get_gpu_target["sm_90"]()
+    ]().asm
+    _verify_global_clock_functions_nvidia(asm)
+
+
+def test_global_clock_functions_gfx942():
+    var asm = _compile_code[
+        global_clock_functions, target = get_gpu_target["gfx942"]()
+    ]().asm
+    _verify_global_clock_functions_amd(asm)
+
+
+def test_global_clock_functions_gfx950():
+    var asm = _compile_code[
+        global_clock_functions, target = get_gpu_target["gfx950"]()
+    ]().asm
+    _verify_global_clock_functions_amd(asm)
 
 
 fn time_functions(some_value: Int) -> Int:
@@ -76,6 +140,12 @@ def test_time_functions_sm90():
     _verify_time_functions(asm)
 
 
+# Note: AMD time_functions tests are omitted because the test function has a
+# non-void return type which is not supported by AMD GPU calling conventions
+# in this compile test context. The core timing functionality for AMD is
+# verified through the clock_functions and sleep_function tests.
+
+
 fn sleep_function():
     # Sleep for 1 second - this should generate a loop with nanosleep
     # since NVIDIA's nanosleep has a max duration of 1ms.
@@ -83,7 +153,7 @@ fn sleep_function():
 
 
 @always_inline
-fn _verify_sleep_function(asm: StringSlice) raises -> None:
+fn _verify_sleep_function_nvidia(asm: StringSlice) raises -> None:
     # Verify the nanosleep instruction is present.
     assert_true("nanosleep" in asm, "Expected nanosleep instruction in PTX")
     # Verify globaltimer read is present (used to track elapsed time).
@@ -92,24 +162,41 @@ fn _verify_sleep_function(asm: StringSlice) raises -> None:
     assert_true("bra" in asm, "Expected branch instruction for sleep loop")
 
 
+@always_inline
+fn _verify_sleep_function_amd(asm: StringSlice) raises -> None:
+    # Verify s_memrealtime is used for timing (constant-speed clock).
+    assert_true("s_memrealtime" in asm, "Expected s_memrealtime for timing")
+    # Verify s_sleep instruction is present.
+    assert_true("s_sleep" in asm, "Expected s_sleep instruction")
+
+
 def test_sleep_function_sm80():
     var asm = _compile_code[
         sleep_function, target = get_gpu_target["sm_80"]()
     ]().asm
-    _verify_sleep_function(asm)
+    _verify_sleep_function_nvidia(asm)
 
 
 def test_sleep_function_sm90():
     var asm = _compile_code[
         sleep_function, target = get_gpu_target["sm_90"]()
     ]().asm
-    _verify_sleep_function(asm)
+    _verify_sleep_function_nvidia(asm)
+
+
+def test_sleep_function_gfx942():
+    var asm = _compile_code[
+        sleep_function, target = get_gpu_target["gfx942"]()
+    ]().asm
+    _verify_sleep_function_amd(asm)
+
+
+def test_sleep_function_gfx950():
+    var asm = _compile_code[
+        sleep_function, target = get_gpu_target["gfx950"]()
+    ]().asm
+    _verify_sleep_function_amd(asm)
 
 
 def main():
-    test_clock_functions_sm80()
-    test_clock_functions_sm90()
-    test_time_functions_sm80()
-    test_time_functions_sm90()
-    test_sleep_function_sm80()
-    test_sleep_function_sm90()
+    TestSuite.discover_tests[__functions_in_module()]().run()

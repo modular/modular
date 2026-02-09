@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -214,7 +214,7 @@ def _test_iter_bounds[
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()
@@ -670,7 +670,7 @@ def test_compile_time_dict():
     fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
-            res[String(i)] = i
+            res[String(i)] = Int32(i)
         return res^
 
     comptime my_dict = _get_dict()
@@ -678,7 +678,7 @@ def test_compile_time_dict():
     @parameter
     for i in range(N):
         comptime val = my_dict.get(String(i)).value()
-        assert_equal(val, i)
+        assert_equal(val, Int32(i))
 
 
 # FIXME: Dictionaries should be equatable when their keys/values are.

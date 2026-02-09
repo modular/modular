@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv
 from sys import align_of
 
@@ -22,6 +21,7 @@ from internal_utils import assert_almost_equal, assert_with_measure
 from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
+from collections import OptionalReg
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -51,10 +51,10 @@ fn test_matmul_sm90[
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     default_epilogue: Bool = False,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    measure_threshold: OptionalReg[Float64] = None,
+    measure_threshold: Optional[Float64] = None,
     backend: Backend = Backend.CUBLAS,
     k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
@@ -202,7 +202,7 @@ fn test_matmul_sm90[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    comptime elf = OptionalReg[elementwise_epilogue_type](
+    comptime elf = Optional[elementwise_epilogue_type](
         epilogue_fn
     ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 

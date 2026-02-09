@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -420,34 +420,62 @@ def test_offset():
 def test_load_and_store_simd():
     var ptr = alloc[Int8](16)
     for i in range(16):
-        ptr[i] = i
+        ptr[i] = Int8(i)
     for i in range(0, 16, 4):
         var vec = ptr.load[width=4](i)
-        assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
+        assert_equal(
+            vec,
+            SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
+        )
     ptr.free()
 
     var ptr2 = alloc[Int8](16)
     for i in range(0, 16, 4):
         ptr2.store(i, SIMD[DType.int8, 4](i))
     for i in range(16):
-        assert_equal(ptr2[i], i // 4 * 4)
+        assert_equal(ptr2[i], Int8(i // 4 * 4))
     ptr2.free()
+
+
+def test_load_and_store_simd_bool():
+    # Regression test: storing SIMD[DType.bool, N] with width > 1 then
+    # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
+    var p = alloc[Scalar[DType.bool]](4)
+
+    p.store(0, SIMD[DType.bool, 2](True, False))
+    assert_true(p[0])
+    assert_false(p[1])
+    for i in range(2):
+        assert_equal(p.load[width=2](0)[i], p[i])
+
+    p.store(0, SIMD[DType.bool, 4](False, True, True, False))
+    assert_false(p[0])
+    assert_true(p[1])
+    assert_true(p[2])
+    assert_false(p[3])
+    for i in range(4):
+        assert_equal(p.load[width=4](0)[i], p[i])
+
+    p.free()
 
 
 def test_volatile_load_and_store_simd():
     var ptr = alloc[Int8](16)
     for i in range(16):
-        ptr[i] = i
+        ptr[i] = Int8(i)
     for i in range(0, 16, 4):
         var vec = ptr.load[width=4, volatile=True](i)
-        assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
+        assert_equal(
+            vec,
+            SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
+        )
     ptr.free()
 
     var ptr2 = alloc[Int8](16)
     for i in range(0, 16, 4):
         ptr2.store[volatile=True](i, SIMD[DType.int8, 4](i))
     for i in range(16):
-        assert_equal(ptr2[i], i // 4 * 4)
+        assert_equal(ptr2[i], Int8(i // 4 * 4))
     ptr2.free()
 
 
@@ -543,7 +571,7 @@ def test_unsafe_mut_cast():
     assert_true(_mutable.mut)
 
 
-fn _ref_to[origin: ImmutOrigin](ref [origin]to: String):
+fn _ref_to[origin: ImmutOrigin](ref[origin] to: String):
     pass
 
 

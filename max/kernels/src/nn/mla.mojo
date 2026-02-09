@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,9 +16,6 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from nn.mha_utils import DynamicInt
 from math.constants import log2e
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     align_of,
     has_nvidia_gpu_accelerator,
@@ -27,6 +24,7 @@ from sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
+    env_get_int,
     CompilationTarget,
 )
 
@@ -109,7 +107,8 @@ from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
 from gpu.host.info import B200, GPUInfo
-from nn.mla_decode_sm100 import mla_decode_sm100
+from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
+
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -152,7 +151,7 @@ fn flare_mla_decoding[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -169,14 +168,14 @@ fn flare_mla_decoding[
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert (
+    comptime assert (
         ragged or rank == 4
     ), "only support rank 4 inputs for non-ragged inputs."
-    __comptime_assert (
+    comptime assert (
         not ragged or rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
-        q.dtype == cache_t.dtype == output.dtype
+    comptime assert (
+        q.dtype == output.dtype
     ), "Q, K, V, output should have same type."
 
     @always_inline
@@ -256,9 +255,9 @@ fn flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
-    __comptime_assert q.rank == 4, "only support rank 4 inputs."
+    comptime assert q.rank == 4, "only support rank 4 inputs."
 
     comptime kv_num_heads = Int(k.layout.shape[2])
 
@@ -277,7 +276,7 @@ fn flare_mla_decoding[
     var valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutExternalOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -347,31 +346,31 @@ fn flare_mla_decoding_dispatch[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime group = config.num_heads // UInt(kv_num_heads)
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
+    comptime assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
     comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
-    __comptime_assert (
+    comptime assert (
         depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576
     ), "flareMLA_decoding only supports head_dim == 576."
-    __comptime_assert (
+    comptime assert (
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
-    __comptime_assert (
+    comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
-    __comptime_assert q.dtype.is_half_float(), "Only support half precision."
+    comptime assert q.dtype.is_half_float(), "Only support half precision."
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known for opaque KVCache types, we only check Q.
-    __comptime_assert q.layout.shape.all_known[
+    comptime assert q.layout.shape.all_known[
         q.rank - 2, q.rank
     ](), "Need num_heads and head_dim to be static for Q."
 
@@ -393,8 +392,8 @@ fn flare_mla_decoding_dispatch[
         # For now, it is not partitioned for SM100
         # TODO: add partitioning for SM100
         var num_partitions_value: Int = 1
-
-        mla_decode_sm100[
+        # convert fp8 KV to bf16 KV
+        mla_decode_sm100_dispatch[
             q.dtype,
             q.layout,
             k_t,
@@ -424,6 +423,7 @@ fn flare_mla_decoding_dispatch[
             score_mod_functor,
             ctx,
         )
+
     else:
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
@@ -483,7 +483,9 @@ fn flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        comptime nullptr = UnsafePointer[Scalar[accum_type]]()
+        comptime nullptr = UnsafePointer[
+            Scalar[accum_type], MutExternalOrigin
+        ]()
 
         var num_partitions_value: Int = 1
         var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
@@ -511,7 +513,10 @@ fn flare_mla_decoding_dispatch[
             block_dim=(num_threads, 1, 1),
             shared_mem_bytes=shared_mem_bytes,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
+                UInt32(
+                    ctx.default_device_info.shared_memory_per_multiprocessor
+                    - 4096
+                )
             ),
         )
 
@@ -542,11 +547,11 @@ fn mla_decoding[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     num_partitions: Int,
@@ -706,11 +711,11 @@ fn mla_decoding_single_batch[
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: UInt,
     num_partitions: UInt,
@@ -721,7 +726,7 @@ fn mla_decoding_single_batch[
 ):
     """Flash attention v2 algorithm."""
     comptime k_type = k_t.dtype
-    __comptime_assert q_type == k_type
+    comptime assert q_type == k_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -732,11 +737,11 @@ fn mla_decoding_single_batch[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    __comptime_assert (
+    comptime assert (
         not decoding_warp_split_k
     ), "mla_decoding doesn't support warp split-k."
 
@@ -941,7 +946,7 @@ fn mla_decoding_single_batch[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var k_ptr = k.block_paged_ptr[Int(BN)](
-            batch_idx, kv_tile_start_row, kv_head_idx, 0
+            UInt32(batch_idx), UInt32(kv_tile_start_row), kv_head_idx, 0
         )
 
         comptime kv_gmem_layout = Layout(
@@ -1043,9 +1048,13 @@ fn mla_decoding_single_batch[
             static_num_iters = Int(rope_dim // BK),
         ](
             p_reg_tile,
-            q_smem_iter.next_unsafe(Int(nope_dim // BK)),
+            q_smem_iter.next_unsafe(
+                q_smem_iter.linear_uint_type(Int(nope_dim // BK))
+            ),
             k_rope_smem_iter,
-            q_smem_iter.next_unsafe(Int(nope_dim // BK)),
+            q_smem_iter.next_unsafe(
+                q_smem_iter.linear_uint_type(Int(nope_dim // BK))
+            ),
             k_rope_smem_iter,
             Int(nope_dim // BK),
         )
@@ -1094,7 +1103,7 @@ fn mla_decoding_single_batch[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32,](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(score_head_idx),
                                     Int(score_row_with_start_pos),
@@ -1111,7 +1120,7 @@ fn mla_decoding_single_batch[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(score_head_idx),
                                         Int(score_row_with_start_pos),
@@ -1355,11 +1364,11 @@ fn flare_mla_prefill[
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert rank == 3, "only support ragged inputs"
-    __comptime_assert (
-        q.dtype == cache_t.dtype == output.dtype
+    comptime assert rank == 3, "only support ragged inputs"
+    comptime assert (
+        q.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1479,7 +1488,7 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,  # TODO: remove this flag when we support ragged inputs
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1505,11 +1514,11 @@ fn flare_mla_prefill[
         ]
     ] = None,
 ) raises:
-    __comptime_assert rank == 3, "only support ragged inputs"
-    __comptime_assert (
+    comptime assert rank == 3, "only support ragged inputs"
+    comptime assert (
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1567,7 +1576,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin,](
+            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
@@ -1662,9 +1671,9 @@ fn flare_mla_prefill_dispatch[
     comptime group = config.num_heads // UInt(kv_num_heads)
     comptime rank = output.layout.rank()
 
-    __comptime_assert q_depth == Int(q.layout.shape[rank - 1])
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
-    __comptime_assert (
+    comptime assert q_depth == Int(q.layout.shape[rank - 1])
+    comptime assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
+    comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "flareMLA_prefill currently only supports Nvidia and AMD GPUs."
 
@@ -1692,17 +1701,17 @@ fn flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime is_sm100_available = ctx.default_device_info == B200 and use_fa4
+    comptime fa4_enabled = ctx.default_device_info == B200 and use_fa4
 
     @parameter
-    if is_sm100_available:
+    if fa4_enabled:
         mla_sm100_prefill[
             config=config,
             group = Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
             use_score_mod=use_score_mod,
-            _is_cache_length_accurate=True,
+            _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](
             output,
             q,
@@ -1787,11 +1796,11 @@ fn mla_prefill[
     use_score_mod: Bool = False,
     _ndbuffer_mha_operand: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
@@ -1839,9 +1848,9 @@ fn mla_prefill[
 
     @parameter
     if _ndbuffer_mha_operand:
-        start_pos = k_rope.cache_length(Int(batch_idx)) - seq_len
+        start_pos = UInt32(k_rope.cache_length(Int(batch_idx)) - seq_len)
     else:
-        start_pos = k_rope.cache_length(Int(batch_idx))
+        start_pos = UInt32(k_rope.cache_length(Int(batch_idx)))
 
     if cache_offsets:
         var cache_offsets_nd = cache_offsets.value()
@@ -1916,11 +1925,11 @@ fn mla_prefill_single_batch[
     cache_depth: Int = 576,
     use_score_mod: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[mut=True, Scalar[q_type]],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -1935,7 +1944,7 @@ fn mla_prefill_single_batch[
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
     comptime k_rope_type = k_rope_t.dtype
-    __comptime_assert (
+    comptime assert (
         q_type == k_type and k_type == v_type and k_type == k_rope_type
     )
 
@@ -1954,7 +1963,7 @@ fn mla_prefill_single_batch[
 
     comptime cache_num_heads = num_heads // UInt(group)
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2031,7 +2040,7 @@ fn mla_prefill_single_batch[
     var q_tile_num_rows = min(
         UInt32(BM), UInt32(seq_len) - q_tile_idx * UInt32(BM)
     )
-    var q_offset = q_depth * (
+    var q_offset = UInt32(q_depth) * (
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
 
@@ -2150,7 +2159,9 @@ fn mla_prefill_single_batch[
 
     @parameter
     for q_id in range(q_depth // Int(BK)):
-        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
+        var q_smem_tile = q_smem_iter.next_unsafe(
+            q_smem_iter.linear_uint_type(q_id)
+        )[]
 
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
@@ -2184,7 +2195,7 @@ fn mla_prefill_single_batch[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    Int(kv_tile_start_row + cache_start_pos),
+                    Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -2219,7 +2230,10 @@ fn mla_prefill_single_batch[
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[Int(BN)](
-                batch_idx, kv_tile_start_row, Int(head_idx), 0
+                UInt32(batch_idx),
+                UInt32(kv_tile_start_row),
+                UInt32(Int(head_idx)),
+                0,
             ),
             kv_runtime_layout,
         )
@@ -2235,7 +2249,10 @@ fn mla_prefill_single_batch[
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[Int(BN)](
-                batch_idx, kv_tile_start_row, Int(head_idx), 0
+                UInt32(batch_idx),
+                UInt32(kv_tile_start_row),
+                UInt32(Int(head_idx)),
+                0,
             ),
             kv_runtime_layout,
         )
@@ -2268,10 +2285,10 @@ fn mla_prefill_single_batch[
             masked = not not_last_iter,
         ](
             k_rope.block_paged_ptr[Int(BN)](
-                batch_idx,
-                kv_tile_start_row + cache_start_pos,
-                Int(head_idx // group),
-                cache_depth - rope_depth,
+                UInt32(batch_idx),
+                UInt32(kv_tile_start_row) + cache_start_pos,
+                UInt32(Int(head_idx // UInt32(group))),
+                UInt32(cache_depth - rope_depth),
             ),
             k_rope_runtime_layout,
         )
@@ -2324,7 +2341,9 @@ fn mla_prefill_single_batch[
 
         @parameter
         for k_id in range(depth // BK, q_depth // Int(BK)):
-            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
+            var k_smem_tile = k_smem_iter.next_unsafe(
+                k_smem_iter.linear_uint_type(k_id)
+            )[]
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
@@ -2392,15 +2411,19 @@ fn mla_prefill_single_batch[
                     )
 
                     # Offset to current thread's fragment
-                    mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
-                    mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                    mask_frag_row += lane // UInt32(MMA_N // p_frag_simdwidth)
+                    mask_frag_col += (
+                        lane * UInt32(p_frag_simdwidth) % UInt32(MMA_N)
+                    )
 
                     @parameter
                     for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_row = (
-                            mask_block_row + mask_frag_row + i * MMA_M // 2
+                            mask_block_row
+                            + mask_frag_row
+                            + UInt32(i * MMA_M // 2)
                         )
                         var score_col = mask_frag_col
 
@@ -2461,7 +2484,7 @@ fn mla_prefill_single_batch[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row + cache_start_pos,
+                    UInt32(kv_tile_start_row) + cache_start_pos,
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -2843,9 +2866,11 @@ fn mla_prefill_plan_kernel[
     @parameter
     for chunk_idx in range(MAX_CHUNKS):
         if chunk_idx < start_chunk:
-            buffer_row_offsets[chunk_idx, seq_idx] = buffer_size
+            buffer_row_offsets[chunk_idx, seq_idx] = UInt32(buffer_size)
         elif chunk_idx == start_chunk:
-            buffer_row_offsets[chunk_idx, seq_idx] = seq_start_pos % buffer_size
+            buffer_row_offsets[chunk_idx, seq_idx] = UInt32(
+                seq_start_pos % buffer_size
+            )
         else:
             buffer_row_offsets[chunk_idx, seq_idx] = 0
 
@@ -2855,7 +2880,7 @@ fn mla_prefill_plan_kernel[
             seq_len_left,
             buffer_size - Int(buffer_row_offsets[chunk_idx, seq_idx]),
         )
-        processed_seq_len += chunk_len
+        processed_seq_len += UInt32(chunk_len)
         seq_len_left -= chunk_len
 
     # If this is the last sequence in the batch
@@ -2867,13 +2892,13 @@ fn mla_prefill_plan_kernel[
         @parameter
         for chunk_idx in range(MAX_CHUNKS):
             if chunk_idx < end_chunk:
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = buffer_size
-                buffer_lengths[chunk_idx] = buffer_size
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(buffer_size)
+                buffer_lengths[chunk_idx] = Int32(buffer_size)
             elif chunk_idx == end_chunk:
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = (
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
                     seq_end_pos % buffer_size
                 )
-                buffer_lengths[chunk_idx] = seq_end_pos % buffer_size
+                buffer_lengths[chunk_idx] = Int32(seq_end_pos % buffer_size)
             else:
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
                 buffer_lengths[chunk_idx] = -1
@@ -2903,7 +2928,7 @@ fn _k_cache_to_buffer[
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads
-    __comptime_assert num_heads == 1, "num_heads should be equal to 1"
+    comptime assert num_heads == 1, "num_heads should be equal to 1"
 
     @always_inline
     @parameter
@@ -2911,7 +2936,7 @@ fn _k_cache_to_buffer[
     fn copy_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 2, "rank should be equal to 2"
+        comptime assert rank == 2, "rank should be equal to 2"
 
         var idx = rebind[IndexList[2]](idx_arg)
         var global_token_idx = idx[0]
@@ -2921,7 +2946,7 @@ fn _k_cache_to_buffer[
         )
 
         var token_idx = Int(
-            global_token_idx
+            UInt32(global_token_idx)
             - buffer_row_offsets[batch_idx][0]
             + cache_offsets[batch_idx][0]
         )
@@ -2929,7 +2954,9 @@ fn _k_cache_to_buffer[
         var head_dim_idx = idx[1]
 
         var cache_val = rebind[SIMD[dtype, width]](
-            k_cache.load[width=width](batch_idx, 0, token_idx, head_dim_idx)
+            k_cache.load[width=width](
+                batch_idx, 0, token_idx, head_dim_idx
+            ).cast[dtype]()
         )
 
         buffer.store(idx, cache_val)

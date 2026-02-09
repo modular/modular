@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,13 +45,13 @@ fn linspace_fill[
     dtype: DType, rank: Int, shape: DimList
 ](mut buff: NDBuffer[mut=True, dtype, rank, _, shape]):
     for i in range(buff.size()):
-        buff.data[i] = i
+        buff.data[i] = Scalar[dtype](i)
 
 
 fn print_buff[
     dtype: DType, rank: Int, shape: DimList
 ](buff: NDBuffer[dtype, rank, _, shape]):
-    __comptime_assert rank == 2, "rank-2 buffer is expected"
+    comptime assert rank == 2, "rank-2 buffer is expected"
     for m in range(buff.dim(0)):
         for n in range(buff.dim(1)):
             print(buff[m, n], end=" ")

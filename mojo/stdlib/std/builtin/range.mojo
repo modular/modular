@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -43,7 +43,7 @@ fn _sign(x: Int) -> Int:
 
 
 struct _ZeroStartingRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -90,7 +90,7 @@ struct _ZeroStartingRange(
 
 
 struct _SequentialRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -136,7 +136,9 @@ struct _SequentialRange(
 
 
 @fieldwise_init
-struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
+struct _StridedRangeIterator(
+    Iterable, Iterator, Sized, TrivialRegisterPassable
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -185,7 +187,7 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
 
 
 struct _StridedRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -389,7 +391,7 @@ fn _scalar_range_bounds[
 
 
 struct _ZeroStartingScalarRange[dtype: DType](
-    Iterable, TrivialRegisterType, Iterator & ImplicitlyCopyable
+    Iterable, TrivialRegisterPassable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -438,7 +440,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
     @always_inline
     fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
-        __comptime_assert (
+        comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
         return range(
@@ -451,7 +453,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
 
 struct _SequentialScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterType
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -488,7 +490,7 @@ struct _SequentialScalarRange[dtype: DType](
 
     @always_inline
     fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
-        __comptime_assert (
+        comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
         return range(self.end - 1, self.start - 1, Scalar[Self.dtype](-1))
@@ -500,7 +502,7 @@ struct _SequentialScalarRange[dtype: DType](
 
 @fieldwise_init
 struct _StridedScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterType
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -534,7 +536,7 @@ struct _StridedScalarRange[dtype: DType](
 
     @always_inline
     fn __len__(self) -> Scalar[Self.dtype]:
-        __comptime_assert Self.dtype.is_integral(), "dtype must be integral"
+        comptime assert Self.dtype.is_integral(), "dtype must be integral"
 
         @parameter
         if Self.dtype.is_unsigned():

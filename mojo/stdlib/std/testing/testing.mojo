@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -134,6 +134,44 @@ fn assert_equal[
         )
 
 
+@always_inline
+fn assert_equal[
+    T: Equatable & Writable,
+    //,
+    __disambiguate: NoneType = None,
+](
+    lhs: T,
+    rhs: T,
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that the input values are equal. If it is not then an Error
+    is raised.
+
+    Parameters:
+        T: The type of the input values.
+        __disambiguate: A temporary dummy parameter to disambiguate the function
+            from the other `assert_equal` function.
+
+    Args:
+        lhs: The lhs of the equality.
+        rhs: The rhs of the equality.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
 # TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
 
@@ -204,6 +242,41 @@ fn assert_equal(
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
             rhs.__str__(),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
+@always_inline
+fn assert_equal[
+    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+](
+    lhs: Tuple[*lhs_types],
+    rhs: Tuple[*rhs_types],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that two tuples are equal. If not, an Error is raised.
+
+    Parameters:
+        lhs_types: The types of the elements in the left tuple.
+        rhs_types: The types of the elements in the right tuple.
+
+    Args:
+        lhs: The left-hand side tuple.
+        rhs: The right-hand side tuple.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            repr(lhs),
+            repr(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -282,15 +355,59 @@ fn assert_not_equal[
 
 
 @always_inline
-fn assert_not_equal(
-    lhs: String,
-    rhs: String,
+fn assert_not_equal[
+    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+](
+    lhs: Tuple[*lhs_types],
+    rhs: Tuple[*rhs_types],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that two tuples are not equal. If they are, an Error is raised.
+
+    Parameters:
+        lhs_types: The types of the elements in the left tuple.
+        rhs_types: The types of the elements in the right tuple.
+
+    Args:
+        lhs: The left-hand side tuple.
+        rhs: The right-hand side tuple.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs == rhs:
+        raise _assert_cmp_error["`left != right` comparison"](
+            repr(lhs),
+            repr(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
+@always_inline
+fn assert_not_equal[
+    T: Equatable & Writable,
+    //,
+    __disambiguate: NoneType = None,
+](
+    lhs: T,
+    rhs: T,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
 ) raises:
     """Asserts that the input values are not equal. If it is not then an
-    an Error is raised.
+    Error is raised.
+
+    Parameters:
+        T: The type of the input values.
+        __disambiguate: A temporary dummy parameter to disambiguate the function
+            from the other `assert_not_equal` function.
 
     Args:
         lhs: The lhs of the inequality.
@@ -303,7 +420,10 @@ fn assert_not_equal(
     """
     if lhs == rhs:
         raise _assert_cmp_error["`left != right` comparison"](
-            lhs, rhs, msg=msg, loc=location.or_else(call_location())
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
         )
 
 
@@ -347,7 +467,7 @@ fn assert_almost_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.bool or dtype.is_integral() or dtype.is_floating_point()
     ), "type must be boolean, integral, or floating-point"
 
@@ -437,7 +557,7 @@ fn assert_is_not[
 
 
 fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
-    """Colorizes a string by highlighting characters that differ from another string.
+    """Colorizes a string by highlighting codepoints that differ from another string.
 
     Parameters:
         color: The color to use for highlighting differences.
@@ -450,14 +570,15 @@ fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
         A string with differences highlighted in the specified color.
     """
     var result = String()
-    for i in range(len(s)):
-        var char = s[byte=i]
-        if i < len(other) and char == other[byte=i]:
-            # Characters match - no color
-            result += char
+    var other_codepoints = other.codepoints()
+    for s_codepoint in s.codepoints():
+        var other_codepoint = other_codepoints.next()
+        if other_codepoint and s_codepoint == other_codepoint.value():
+            # Codepoints match - no color
+            result.append(s_codepoint)
         else:
-            # Character differs - apply color
-            result += String(Text[color](char))
+            # Codepoint differs or other string is shorter - apply color
+            result += String(Text[color](s_codepoint))
     return result
 
 

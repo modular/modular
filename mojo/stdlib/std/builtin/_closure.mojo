@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable
 struct __ParameterClosureCaptureList[
     fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable):
+](ImplicitlyCopyable, RegisterPassable):
     var value: __mlir_type.`!kgen.pointer<none>`
 
     # Parameter closure invariant requires this function be marked 'capturing'.

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,7 +31,7 @@ fn winograd_1d_convolution_3[
     input_len: Int,
 ):
     # TODO: Current implementation requires input_len >= 4
-    __comptime_assert filter_len == 3
+    comptime assert filter_len == 3
     # TODO
     # I expected to have to reverse the filter, but
     # internal conv seems not to do that
@@ -61,7 +61,7 @@ fn test[dtype: DType](C: Int):  # Input Len
     print("== test_conv1d_winograd")
 
     # TODO: make assert dynamic
-    # __comptime_assert C >= 4
+    # comptime assert C >= 4
     comptime S: Int = 3  # Filter len
 
     var O: Int = C - S + 1  # Output len (method="same")

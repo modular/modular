@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,9 +18,9 @@ process creation, output capture, and resource cleanup automatically.
 """
 
 import sys._libc as libc
-from sys import external_call
+from ffi import external_call
 from sys._libc import FILE_ptr, pclose, popen
-from sys.ffi import c_char
+from ffi import c_char
 from sys.info import CompilationTarget
 
 from memory import Span

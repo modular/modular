@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
 from math import align_down, ceildiv
 from sys import (
     align_of,
@@ -65,8 +64,8 @@ from ._multistage_gemm_gpu import (
 from .amd import gemm_kernel_amd
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
-from .sm100_structured.dispatch import matmul_dispatch_sm100
-from .sm100_structured.matmul import matmul_sm100_fallback
+from .sm100_structured.default.dispatch import matmul_dispatch_sm100
+from .sm100_structured.default.matmul import matmul_sm100_fallback
 
 comptime logger = Logger()
 
@@ -76,7 +75,7 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: UnsafePointer[Scalar[c_type]],
@@ -198,7 +197,7 @@ fn matmul_kernel_naive[
     b_layout: Layout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -266,6 +265,27 @@ fn _amdgpu_matmul_config_from_block_shape[
     var block_k = _bk_base[a_type, True]()
     var num_warps: UInt = 1
     var num_warp_k_partitions: UInt = 1
+
+    # TODO(KERN-2432): Merge these configurations into the below logic.
+    if block_m == 16 and a_type.is_float8() and transpose_b:
+        if block_n == 32:
+            return MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(16, 32, 256),
+                warp_tile_shape=Index(16, 32, 256),
+                mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+                num_pipeline_stages=1,
+                num_warp_k_partitions=4,
+                pdl_level=pdl_level,
+            )
+        if block_n == 64:
+            return MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(16, 64, 1024),
+                warp_tile_shape=Index(16, 16, 1024),
+                mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+                num_pipeline_stages=1,
+                num_warp_k_partitions=1,
+                pdl_level=pdl_level,
+            )
 
     if block_m <= 32 and block_n <= 32:
         # Attempt to increase the number of warp_k partitions to improve processor
@@ -372,13 +392,11 @@ fn _matmul_gpu[
     //,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     pdl_level: PDLLevel = PDLLevel(),
     register_based_epilogue: Bool = True,
 ](
@@ -449,9 +467,7 @@ fn _matmul_gpu[
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
-    comptime elementwise_lambda_wrapper = OptionalReg[
-        elementwise_epilogue_type
-    ](
+    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
         compute_lambda_wrapper
     ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
 
@@ -697,7 +713,7 @@ fn _matmul_gpu[
 
                         @parameter
                         for M in Ms:
-                            if M <= m:
+                            if M <= Int32(m):
                                 comptime key = String(
                                     M, "_", static_N, "_", static_K
                                 )
@@ -802,7 +818,7 @@ fn split_k_reduce[
     work_space_type: DType,
     c_layout: Layout,
     work_space_layout: Layout,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[mut=True, c_type, c_layout],
     work_space: LayoutTensor[work_space_type, work_space_layout],
@@ -853,7 +869,7 @@ fn multistage_gemm[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],
@@ -926,7 +942,7 @@ fn multistage_gemm[
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                UInt32(config.shared_mem_usage())
             ),
         )
 
@@ -942,7 +958,7 @@ fn multistage_gemm[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],
@@ -1019,7 +1035,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    runtime_config.shared_mem_usage()
+                    UInt32(runtime_config.shared_mem_usage())
                 ),
             )
 
@@ -1087,6 +1103,6 @@ fn multistage_gemm[
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                UInt32(config.shared_mem_usage())
             ),
         )

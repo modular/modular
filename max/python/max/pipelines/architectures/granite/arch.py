@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,6 +24,7 @@ from max.pipelines.lib import (
 
 from ..llama3 import weight_adapters
 from ..llama3.model import Llama3Model
+from ..llama3.model_config import Llama3Config
 
 granite_arch = SupportedArchitecture(
     name="GraniteForCausalLM_Legacy",
@@ -46,4 +47,5 @@ granite_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Llama3Config,
 )

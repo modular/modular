@@ -1,0 +1,175 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""WIP Test Suite for Unit Testing the TextGenerationPipeline."""
+
+import asyncio
+import logging
+from unittest.mock import MagicMock, patch
+
+import hf_repo_lock
+import numpy as np
+from max.driver import DeviceSpec
+from max.interfaces import (
+    ImageMetadata,
+    RequestID,
+    SamplingParams,
+    TextGenerationInputs,
+    TextGenerationRequest,
+)
+from max.pipelines.core import TextContext
+from max.pipelines.lib import generate_local_model_path
+from max.support.image import hash_image
+from test_common.mocks import (
+    MockTextTokenizer,
+    retrieve_mock_text_generation_pipeline,
+)
+
+REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
+
+logger = logging.getLogger("max.pipelines")
+
+
+def test_mock_text_tokenizer() -> None:
+    tokenizer = MockTextTokenizer()
+    test_prompt = "This is a test prompt"
+
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError:
+        logger.warning(
+            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
+
+    request = TextGenerationRequest(
+        request_id=RequestID("request_0"),
+        model_name=model_path,
+        prompt=test_prompt,
+    )
+
+    new_context = asyncio.run(tokenizer.new_context(request))
+
+    assert len(new_context.tokens) == len(test_prompt)
+
+    decoded = asyncio.run(tokenizer.decode(new_context.tokens.active))
+    assert test_prompt == decoded
+
+
+def test_text_generation_image_metadata() -> None:
+    image_metadata = ImageMetadata(
+        start_idx=0,
+        end_idx=2,
+        pixel_values=np.array([99]),
+    )
+    assert image_metadata.image_hash is None
+
+    # Prefix caching enabled by default
+    image_metadata = ImageMetadata(
+        start_idx=0,
+        end_idx=2,
+        pixel_values=np.array([99]),
+        image_hash=hash_image(np.array([99])),
+    )
+    assert image_metadata.image_hash is not None
+
+
+@patch("max.graph.weights.weights_format")
+@patch("max.graph.weights.load_weights")
+def test_text_generation_pipeline(
+    mock_load_weights: MagicMock, weights_format: MagicMock
+) -> None:
+    mock_load_weights.return_value = None
+    weights_format.return_value = None
+    max_length = 512
+    eos_token = 998
+
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError:
+        logger.warning(
+            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
+
+    with (
+        retrieve_mock_text_generation_pipeline(
+            vocab_size=1000,
+            eos_token=eos_token,
+            eos_prob=0.05,  # On average, one in every 20 tokens will be an eos token.
+            max_length=max_length,
+            device_specs=[DeviceSpec(device_type="cpu", id=0)],
+        ) as (tokenizer, pipeline)
+    ):
+        prompts = [
+            # These next two prompts should definitely generate at least 1 and 4 tokens.
+            # Using them to ensure we return the correct number of new tokens.
+            "The definition of hypothetical is ",
+            "The definition of hypothetical is ",
+            "This is a test prompt",
+            "This is a slightly longer test prompt " * 2,
+            "This is a very very long test prompt " * 4,
+        ]
+        _max_new_tokens = [1, 4, 25, 100, None]
+        context_batch = {}
+        max_new_tokens = {}
+        for i, prompt in enumerate(prompts):
+            id = RequestID(f"request_{i}")
+            max_new_tokens[id] = _max_new_tokens[i]
+            sampling_params = SamplingParams(max_new_tokens=max_new_tokens[id])
+            request = TextGenerationRequest(
+                request_id=id,
+                model_name=model_path,
+                prompt=prompt,
+                sampling_params=sampling_params,
+            )
+
+            context_batch[id] = asyncio.run(tokenizer.new_context(request))
+
+        length = {context.request_id: 0 for context in context_batch.values()}
+        while True:
+            # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
+            inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+                batches=[list(context_batch.values())], num_steps=1
+            )
+            output = pipeline.execute(inputs)
+            assert len(output) == len(context_batch)
+
+            for response in output.values():
+                length[response.request_id] = len(response.tokens)
+                # Check that we are not overrunning, the request max new tokens
+                if _max := max_new_tokens[response.request_id]:
+                    assert length[response.request_id] <= _max
+
+                assert length[response.request_id] < max_length
+
+                if response.is_done:
+                    del context_batch[response.request_id]
+
+            # Break
+            if not context_batch:
+                break
+
+        # These two prompts should generate the full max new tokens.
+        for response in output.values():
+            if max_new_tokens[response.request_id] is not None:
+                assert (
+                    length[response.request_id]
+                    == max_new_tokens[response.request_id]
+                )

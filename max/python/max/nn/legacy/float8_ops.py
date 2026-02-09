@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -48,6 +48,11 @@ def matmul_float4(
     Returns:
         The output tensor in bf16.
     """
+    if not float8_config.is_nvfp4:
+        raise ValueError(
+            "matmul_float4 only supports modelopt NVFP4 quantization"
+        )
+
     x, x_scales = quantize_dynamic_block_scaled_fp4(
         x,
         tensor_sf=1.0 / input_scale,
@@ -94,6 +99,11 @@ def matmul_float8(
     Returns:
         The output tensor.
     """
+    if float8_config.is_nvfp4:
+        raise ValueError(
+            "matmul_float8 does not support modelopt NVFP4 quantization"
+        )
+
     weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
         weight, weight_scale
     )

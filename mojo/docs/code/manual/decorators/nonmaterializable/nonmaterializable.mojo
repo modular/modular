@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct RuntimeStruct(TrivialRegisterType):
+struct RuntimeStruct(TrivialRegisterPassable):
     var value: Int
 
     @implicit
@@ -22,7 +22,7 @@ struct RuntimeStruct(TrivialRegisterType):
 
 
 @nonmaterializable(RuntimeStruct)
-struct ParamStruct[param_value: Int](TrivialRegisterType):
+struct ParamStruct[param_value: Int](TrivialRegisterPassable):
     fn __init__(out self):
         pass
 

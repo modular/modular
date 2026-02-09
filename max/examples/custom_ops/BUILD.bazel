@@ -40,6 +40,14 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
+    name = "eager_vector_addition",
+    srcs = ["eager_vector_addition.py"],
+    extra_deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+custom_op_example_py_binary(
     name = "top_k",
     srcs = ["top_k.py"],
     # TODO: enable when test won't generate external memory on Apple GPU
@@ -59,12 +67,6 @@ custom_op_example_py_binary(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-)
-
-custom_op_example_py_binary(
-    name = "causal_conv1d",
-    srcs = ["causal_conv1d.py"],
-    tags = ["manual"],  # TODO: Fix this flaky test
 )
 
 custom_op_example_py_binary(

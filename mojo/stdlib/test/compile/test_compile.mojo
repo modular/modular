@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -108,7 +108,7 @@ def test_cross_compile():
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
     fn test_kernel():
-        __comptime_assert (
+        comptime assert (
             _cdna_4_or_newer()
         ), "test_kernel is only supported on CDNA4+"
 

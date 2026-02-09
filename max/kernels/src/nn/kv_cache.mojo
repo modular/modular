@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,16 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
-from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
+from collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -27,7 +23,10 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout, IntTuple
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -270,11 +269,6 @@ fn _fused_qkv_matmul_kv_cache[
     )
 
 
-comptime embed_fn_type = fn[dtype: DType, width: Int] (
-    IndexList[4], SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
-
-
 @always_inline
 fn _fused_qkv_matmul_kv_cache_impl[
     dtype: DType,
@@ -282,8 +276,6 @@ fn _fused_qkv_matmul_kv_cache_impl[
     //,
     *,
     target: StaticString,
-    q_embed_fn: OptionalReg[embed_fn_type] = None,
-    k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -319,7 +311,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     comptime cache_t = collection_t.CacheType
     comptime cache_dtype = cache_t.dtype
 
-    __comptime_assert cache_dtype == dtype, (
+    comptime assert cache_dtype == dtype, (
         "Expected cache dtype "
         + String(cache_dtype)
         + " to match input dtype "
@@ -355,7 +347,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
         # Skip writing to cache for padded positions
         var valid_len_for_batch_vec = valid_lengths[Int(b_idx)]
-        __comptime_assert valid_len_for_batch_vec.size == 1
+        comptime assert valid_len_for_batch_vec.size == 1
         var valid_len_for_batch = UInt(valid_len_for_batch_vec[0])
         if t_idx >= valid_len_for_batch:
             return
@@ -397,7 +389,7 @@ fn _matmul_common[
     //,
     *,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -429,7 +421,7 @@ fn _matmul_common[
 
     @parameter
     if is_cpu[target]():
-        var c_ptr = UnsafePointer[Scalar[dtype]].alloc(BS * SEQ_LEN * N)
+        var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
 
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
@@ -437,7 +429,7 @@ fn _matmul_common[
         )
     else:
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            UnsafePointer[Scalar[dtype]](),
+            UnsafePointer[Scalar[dtype], MutExternalOrigin](),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
@@ -926,180 +918,18 @@ fn _flash_attention_dispatch_materialized_mask[
 # ===-----------------------------------------------------------------------===#
 
 
-def rms_norm_kv_cache_ragged_continuous_batching[
-    dtype: DType,
-    params: KVCacheStaticParams,
-    //,
-    target: StaticString,
-    multiply_before_cast: Bool,
-    per_head_norm: Bool,
-](
-    kv_collection: ContinuousBatchingKVCacheCollection[
-        dtype,
-        params,
-    ],
-    gamma: LayoutTensor[dtype, ...],
-    epsilon: Scalar[dtype],
-    weight_offset: Scalar[dtype],
-    layer_idx: UInt32,
-    total_seq_len: UInt32,
-    input_row_offsets: LayoutTensor[DType.uint32, ...],
-    context: DeviceContextPtr,
-):
-    """Performs RMSNorm in place on new entries in the key cache.
-
-    This is done by first creating the ragged tensor weight_shape
-    (total_seq_len, num_heads, head_dim) of the new token tensor.
-    To do this we need to pass in `total_seq_len` on host.
-    Then, using `input_row_offsets` we find the corresponding batch and token
-    index, and use that together with the static head and channel indices to
-    store to/load from the key cache.
-    This uses the input/output lambdas on the RMSNorm kernel.
-
-    This function could apply RMSNorm to a subset of dimensions in each head,
-    determined by the size of the gamma tensor. In this case, it operates on a
-    ragged tensor view of the key cache with shape (total_seq_len, num_heads,
-    rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
-    head_size.
-
-    `weight_offset` is a constant offset argument added to the learned weights
-    at runtime. Here, we don't use any offset, so we pass in a zero scalar.
-
-    `multiply_before_cast` is a boolean parameter that determines whether to
-    multiply the normalized values by the gamma tensor before casting to the
-    output dtype or not. We set it to `True` by default.
-    """
-    # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    comptime rank = 3 if per_head_norm else 2
-    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    var kv_params = k_cache.kv_params
-    comptime rms_norm_cols = Int(gamma.layout.shape[0])
-
-    __comptime_assert (
-        gamma.layout.shape[0] != UNKNOWN_VALUE
-    ), "Need static shape for gamma"
-    __comptime_assert (
-        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
-        or not per_head_norm
-    ), "Length of gamma must be smaller or equal to head size"
-
-    var shape = IndexList[rank]()
-    shape[0] = Int(total_seq_len)
-
-    @parameter
-    if per_head_norm:
-        shape[1] = Int(kv_params.num_heads)
-        shape[2] = rms_norm_cols
-    else:
-        shape[1] = rms_norm_cols
-
-    @always_inline
-    @parameter
-    @__copy_capture(k_cache, input_row_offsets)
-    fn key_cache_input_fn[
-        width: Int, rank_: Int
-    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            rank_ == rank
-        ), "rms_norm_key_cache input lambda index should have rank " + String(
-            rank
-        )
-
-        var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
-
-        var cache_length = k_cache.cache_length(batch_idx)
-        var cache_token_idx = token_idx + cache_length
-
-        var head_idx: Int
-        var head_dim_idx: Int
-
-        @parameter
-        if per_head_norm:
-            head_idx = idx[1]
-            head_dim_idx = idx[2]
-        else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
-
-        return k_cache.load[width=width](
-            bs=batch_idx,
-            tok_idx=cache_token_idx,
-            head_idx=head_idx,
-            head_dim_idx=head_dim_idx,
-        )
-
-    @always_inline
-    @parameter
-    @__copy_capture(k_cache)
-    fn key_cache_output_fn[
-        width: Int, alignment: Int
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
-
-        var cache_length = k_cache.cache_length(batch_idx)
-        var cache_token_idx = token_idx + cache_length
-
-        var head_idx: Int
-        var head_dim_idx: Int
-
-        @parameter
-        if per_head_norm:
-            head_idx = idx[1]
-            head_dim_idx = idx[2]
-        else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
-
-        k_cache.store(
-            bs=batch_idx,
-            tok_idx=cache_token_idx,
-            head_idx=head_idx,
-            head_dim_idx=head_dim_idx,
-            val=val,
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "rms_norm_kv_cache_ragged_continuous_batching_nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        task_id=get_safe_task_id(context),
-    ):
-        _rms_norm_impl[
-            dtype,
-            rank,
-            key_cache_input_fn,
-            key_cache_output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            shape,
-            gamma,
-            epsilon,
-            weight_offset,
-            context,
-        )
-
-
 def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
     page_size: Int,
+    cache_dtype: DType,
     //,
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
 ](
     kv_collection: PagedKVCacheCollection[
-        dtype,
+        cache_dtype,
         params,
         page_size,
     ],
@@ -1140,10 +970,10 @@ def rms_norm_kv_cache_ragged_paged[
     var kv_params = k_cache.kv_params
     comptime rms_norm_cols = Int(gamma.layout.shape[0])
 
-    __comptime_assert (
+    comptime assert (
         gamma.layout.shape[0] != UNKNOWN_VALUE
     ), "Need static shape for gamma"
-    __comptime_assert (
+    comptime assert (
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
         or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
@@ -1164,7 +994,7 @@ def rms_norm_kv_cache_ragged_paged[
     fn key_cache_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             rank_ == rank
         ), "rms_norm_key_cache input lambda index should have rank " + String(
             rank
@@ -1174,7 +1004,9 @@ def rms_norm_kv_cache_ragged_paged[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1195,7 +1027,7 @@ def rms_norm_kv_cache_ragged_paged[
             tok_idx=cache_token_idx,
             head_idx=head_idx,
             head_dim_idx=head_dim_idx,
-        )
+        ).cast[dtype]()
 
     @always_inline
     @parameter
@@ -1207,7 +1039,9 @@ def rms_norm_kv_cache_ragged_paged[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1227,7 +1061,7 @@ def rms_norm_kv_cache_ragged_paged[
             tok_idx=cache_token_idx,
             head_idx=head_idx,
             head_dim_idx=head_dim_idx,
-            val=val,
+            val=val.cast[cache_dtype](),
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -1246,7 +1080,7 @@ def rms_norm_kv_cache_ragged_paged[
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
-            gamma,
+            TileTensor(gamma.ptr, row_major(Coord(Idx(gamma.size())))),
             epsilon,
             weight_offset,
             context,
@@ -1274,7 +1108,7 @@ def _print_cache[
     var num_to_print: Int = 7 if is_print_compact else Int.MAX
     for b_idx in range(valid_lengths.dim[0]()):
         var total_cache_length = Int(
-            valid_lengths[b_idx] + cache.cache_length(b_idx)
+            valid_lengths[b_idx] + UInt32(cache.cache_length(b_idx))
         )
         for t_idx in range(min(num_to_print, total_cache_length)):
             for h in range(kv_params.num_heads):
@@ -1372,9 +1206,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ):
-    var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_collection.blocks.size()
-    )
+    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
     ](
@@ -1390,9 +1222,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.blocks.size(),
     )
 
-    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.cache_lengths.size()
-    )
+    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
     var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
         cache_lengths_ptr,
         RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
@@ -1405,9 +1235,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.cache_lengths.size(),
     )
 
-    var lookup_table_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.lookup_table.size()
-    )
+    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
     var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
         lookup_table_ptr,
         RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
@@ -1428,9 +1256,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.max_cache_length,
     )
 
-    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
-        valid_lengths.size()
-    )
+    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
@@ -1487,9 +1313,7 @@ def print_kv_cache_paged_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ):
-    var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_collection.blocks.size()
-    )
+    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
     ](
@@ -1504,9 +1328,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.blocks.ptr,
         kv_collection.blocks.size(),
     )
-    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.cache_lengths.size()
-    )
+    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
     var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
         cache_lengths_ptr,
         RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
@@ -1518,9 +1340,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.cache_lengths.ptr,
         kv_collection.cache_lengths.size(),
     )
-    var lookup_table_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.lookup_table.size()
-    )
+    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
     var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
         lookup_table_ptr,
         RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
@@ -1539,9 +1359,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
-    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
-        valid_lengths.size()
-    )
+    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
@@ -1624,7 +1442,7 @@ fn generic_get_continuous_cache[
 
 
 fn generic_get_paged_cache[
-    dtype: DType
+    dtype: DType,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6],
     cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
@@ -1679,7 +1497,9 @@ fn generic_get_paged_cache[
 
 
 fn generic_get_paged_cache[
-    dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
     cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],

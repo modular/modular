@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -52,7 +52,7 @@ fn calculate_coordinate[
     comptime coalesced_tile = tile_shape.product_flatten()
     comptime smem_tiler = Layout(coalesced_tile)
 
-    __comptime_assert global_layout.rank() == smem_tiler.rank()
+    comptime assert global_layout.rank() == smem_tiler.rank()
 
     comptime rank = global_layout.rank()
 
@@ -349,7 +349,7 @@ def test_tma_load[
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
     OOB_access: Bool = False,
 ](ctx: DeviceContext):
-    __comptime_assert (
+    comptime assert (
         depth(global_shape) == depth(load_shape) and depth(load_shape) == 1
     ), "Global shape and SMEM shape must have the same depth"
 
@@ -357,7 +357,7 @@ def test_tma_load[
     comptime total_smem_elements = smem_layout.size()
     comptime total_load_elements = product(load_shape)
 
-    __comptime_assert (
+    comptime assert (
         total_smem_elements % total_load_elements == 0
     ), "shared memory shape must be divisble by load shape"
 

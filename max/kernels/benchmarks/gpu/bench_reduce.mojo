@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,9 +42,9 @@ fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
 
 
 fn run_reduce[
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
@@ -64,7 +64,7 @@ fn run_reduce[
     # H100 has 50MB L2, MI300x has 256MB infinity cache.
     # Use 128 MiB to exceed 2x H100 L2, and 512 MiB option for MI300x.
     comptime MB_512 = 512 * 1024 * 1024
-    __comptime_assert MB_512 % align == 0, (
+    comptime assert MB_512 % align == 0, (
         "Cache busting allocation size must be a multiple of dtype SIMD"
         " alignment."
     )
@@ -88,7 +88,7 @@ fn run_reduce[
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals[i] = shape[axis] * Scalar[dtype](1)
+        expected_vals[i] = Scalar[dtype](shape[axis]) * Scalar[dtype](1)
 
     var multi_in_buffer = ctx.enqueue_create_buffer[dtype](in_cache_elems)
     var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
@@ -105,9 +105,7 @@ fn run_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            reduction_idx < num_reductions
-        ), "invalid reduction idx"
+        comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 

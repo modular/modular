@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,10 +30,13 @@ from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
+from ..common_layers.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
 from .layers.rms_norm import GptOssRMSNorm
-from .layers.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
 from .layers.transformer_block import GptOssTransformerBlock
 from .model_config import GptOssConfig
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,6 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import OptionalReg
 from sys import (
     align_of,
     bit_width_of,
@@ -43,7 +42,7 @@ comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
+](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
 ]
 
@@ -65,10 +64,9 @@ fn epilogue_test_fn[
     for i in range(width):
         bias[i] = (
             0.5
-            + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                dtype
-            ]()
-        )
+            + Float64(idx[0] + idx[1] + i)
+            / Float64(dim_space[0] + dim_space[1])
+        ).cast[dtype]()
 
     return val + bias
 
@@ -94,7 +92,7 @@ fn test[
     arange_a: Bool = False,
     arange_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
-    config: OptionalReg[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
+    config: Optional[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
     M: Optional[Int] = None,
     N: Optional[Int] = None,
     K: Optional[Int] = None,
@@ -106,7 +104,7 @@ fn test[
     rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
-    __comptime_assert Bool(N) and Bool(
+    comptime assert Bool(N) and Bool(
         K
     ), "This test currently requires static N and K."
 
@@ -293,7 +291,7 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[2](m, Int(n)),
+            IndexList[2](m, n),
             ctx,
         )
     ctx.synchronize()

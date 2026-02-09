@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,17 +15,14 @@ from os import abort
 
 
 @fieldwise_init
-struct LibraryProperty(Equatable, TrivialRegisterType):
+struct LibraryProperty(Equatable, TrivialRegisterPassable):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
     comptime PATCH_LEVEL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:
@@ -43,7 +40,7 @@ struct LibraryProperty(Equatable, TrivialRegisterType):
 
 @fieldwise_init
 struct Status(
-    Equatable, Identifiable, Stringable, TrivialRegisterType, Writable
+    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUFFT_INVALID_PLAN = Self(1)
@@ -65,10 +62,7 @@ struct Status(
     comptime CUFFT_NOT_SUPPORTED = Self(16)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -127,7 +121,9 @@ struct Status(
 
 
 @fieldwise_init
-struct Type(Equatable, Identifiable, Stringable, TrivialRegisterType, Writable):
+struct Type(
+    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
+):
     var _value: Int8
     comptime CUFFT_R2C = Self(0x2A)
     comptime CUFFT_C2R = Self(0x2C)
@@ -137,10 +133,7 @@ struct Type(Equatable, Identifiable, Stringable, TrivialRegisterType, Writable):
     comptime CUFFT_Z2Z = Self(0x69)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -175,16 +168,13 @@ struct Type(Equatable, Identifiable, Stringable, TrivialRegisterType, Writable):
 
 @fieldwise_init
 struct Compatibility(
-    Equatable, Identifiable, Stringable, TrivialRegisterType, Writable
+    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -209,17 +199,14 @@ struct Compatibility(
 
 @fieldwise_init
 struct Property(
-    Equatable, Identifiable, Stringable, TrivialRegisterType, Writable
+    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
     comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other

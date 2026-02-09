@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -48,7 +48,7 @@ def test_constant_mem(ctx: DeviceContext):
 
         @parameter
         for i in range(n):
-            ptr[i] = i
+            ptr[i] = Float32(i)
         return ptr
 
     fn static_constant_kernel[n: Int](data: UnsafePointer[Float32]):
@@ -65,7 +65,7 @@ def test_constant_mem(ctx: DeviceContext):
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
-            assert_equal(res_host[i], i)
+            assert_equal(res_host[i], Float32(i))
 
 
 def test_constant_mem_via_func(ctx: DeviceContext):
@@ -80,11 +80,11 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
         @parameter
         for i in range(n):
-            ptr[i] = i
+            ptr[i] = Float32(i)
         return ptr
 
     fn static_constant_kernel[
-        get_constant_memory: fn () -> UnsafePointer[
+        get_constant_memory: fn() -> UnsafePointer[
             Float32, address_space = AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32]):
@@ -101,7 +101,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
-            assert_equal(res_host[i], i)
+            assert_equal(res_host[i], Float32(i))
 
 
 def test_external_constant_mem(ctx: DeviceContext):
@@ -157,7 +157,7 @@ def test_external_constant_mem(ctx: DeviceContext):
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
-            assert_equal(res_host[i], i)
+            assert_equal(res_host[i], Float32(i))
 
 
 def main():

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,7 +29,7 @@ from hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-struct UMMAKind(Hashable, Stringable, TrivialRegisterType, Writable):
+struct UMMAKind(Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -124,18 +124,6 @@ struct UMMAKind(Hashable, Stringable, TrivialRegisterType, Writable):
         else:
             writer.write("kind::unknown")
 
-    @always_inline
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying UMMAKind value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self._value)
-
 
 @always_inline
 fn _constrained_mma_m[
@@ -155,7 +143,7 @@ fn _constrained_mma_m[
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    __comptime_assert mma_m in mma_m_valid, String(
+    comptime assert mma_m in mma_m_valid, String(
         "Invalid MMA M: ",
         mma_m,
         " , MMA M has to be ",
@@ -190,7 +178,7 @@ fn _constrained_mma_n[
     comptime lower_bound = mma_n_range[0]
     comptime upper_bound = mma_n_range[1]
 
-    __comptime_assert (
+    comptime assert (
         mma_n >= lower_bound
         and mma_n <= upper_bound
         and mma_n % multiple_of == 0
@@ -540,7 +528,7 @@ fn _get_mxf8f6f4_mma_shape[
 
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Descriptor for UMMA instructions.
 
     This struct represents a descriptor that encodes information about UMMA instructions.
@@ -631,7 +619,7 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        __comptime_assert (
+        comptime assert (
             d_type == DType.float32
             and a_type == DType.float32
             and b_type == DType.float32
@@ -670,11 +658,11 @@ struct UMMAInsDescriptor[
         comptime available_d_types = (DType.float32, DType.float16)
         comptime available_operand_types = (DType.bfloat16, DType.float16)
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -719,11 +707,11 @@ struct UMMAInsDescriptor[
             DType.float8_e5m2,
         )
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -1021,7 +1009,7 @@ struct UMMAInsDescriptor[
 # ===----------------------------------------------------------------------=== #
 
 
-struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
+struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1173,7 +1161,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
         return Self(self.desc + UInt64((offset >> 4) & Self.mask_14_bits))
 
 
-struct MMASmemDescriptorPair(TrivialRegisterType):
+struct MMASmemDescriptorPair(TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1366,11 +1354,11 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
@@ -1555,7 +1543,7 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
@@ -1642,7 +1630,7 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
@@ -1730,11 +1718,11 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
@@ -1813,12 +1801,12 @@ fn mma_arrive[
         mbar_ptr: Pointer to the mbar.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1846,12 +1834,12 @@ fn mma_arrive_multicast[
         cta_mask: Mask of ctas to signal.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

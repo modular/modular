@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,8 +45,8 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
@@ -115,8 +115,8 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
@@ -151,8 +151,8 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
@@ -165,8 +165,8 @@ fn matmul[
     b: NDBuffer[_, 2, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
-    __comptime_assert is_valid_target[target](), "unsupported target"
-    __comptime_assert not transpose_a, "transpose_a not yet supported"
+    comptime assert is_valid_target[target](), "unsupported target"
+    comptime assert not transpose_a, "transpose_a not yet supported"
     debug_assert(
         is_cpu[target]() or Bool(ctx),
         "expected DeviceContext to be provided if target != cpu",
@@ -225,7 +225,7 @@ fn matmul[
                         coords, rebind[SIMD[c.type, _width]](output)
                     )
 
-            comptime elementwise_lambda_wrapper = OptionalReg[
+            comptime elementwise_lambda_wrapper = Optional[
                 elementwise_epilogue_type
             ](
                 compute_lambda_wrapper

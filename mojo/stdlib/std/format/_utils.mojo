@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,8 +17,10 @@ standard library for formatting and writing data. These utilities are not
 intended for public use and may change without notice.
 """
 
+from builtin.constrained import _constrained_conforms_to
 from io.io import _printf
 from os import abort
+from reflection.type_info import _unqualified_type_name
 from sys import align_of, size_of
 from sys.info import is_gpu
 from sys.param_env import env_get_int
@@ -27,14 +29,111 @@ from bit import byte_swap
 from memory import Span, bitcast, memcpy
 
 
+fn constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
+    @parameter
+    for i in range(Variadic.size(Ts)):
+        comptime T = Ts[i]
+        _constrained_conforms_to[
+            conforms_to(T, Writable),
+            Parent=Parent,
+            Element=T,
+            ParentConformsTo="Writable",
+        ]()
+
+
+struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
+    """A writer that handles sequences of elements with separators.
+
+    This writer ensures separators are only inserted between elements, even
+    when an element's write_to() method calls write() multiple times.
+    """
+
+    var writer: Pointer[Self.W, Self.origin]
+    var is_first_element: Bool
+    var at_element_start: Bool
+    var sep: StaticString
+
+    fn __init__(out self, ref[Self.origin] writer: Self.W, sep: StaticString):
+        self.writer = Pointer(to=writer)
+        self.is_first_element = True
+        self.at_element_start = True
+        self.sep = sep
+
+    @always_inline
+    fn next_element(mut self):
+        """Mark the start of the next element in the sequence."""
+        self.at_element_start = True
+
+    @always_inline
+    fn write_string(mut self, string: StringSlice):
+        self.write(string)
+
+    @always_inline
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        if self.at_element_start:
+            if not self.is_first_element:
+                self.writer[].write_string(self.sep)
+            self.is_first_element = False
+            self.at_element_start = False
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self.writer[])
+
+
+# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
+@always_inline
+fn write_sequence_to[
+    W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
+](
+    mut writer: W,
+    start: StaticString = "[",
+    end: StaticString = "]",
+    sep: StaticString = ", ",
+):
+    """Writes a sequence of elements to a writer using a callback function.
+
+    This function writes elements by repeatedly calling the provided `ElementFn`
+    callback until it raises `StopIteration`. Each element is separated by the
+    specified separator, and the sequence is enclosed by opening and closing
+    delimiters.
+
+    This is useful for writing sequences where the elements are generated
+    dynamically (e.g., from an iterator) rather than being known at compile time.
+
+    Parameters:
+        W: The writer type. Must conform to `Writer`.
+        ElementFn: A callback function that writes a single element. It receives
+            a mutable writer and should raise `StopIteration` when the sequence
+            is exhausted.
+
+    Args:
+        writer: The writer to write to.
+        start: The starting delimiter (default: `"["`).
+        end: The ending delimiter (default: `"]"`).
+        sep: The separator between elements (default: `", "`).
+    """
+    writer.write_string(start)
+
+    var sequence_writer = _SequenceWriter(writer, sep)
+
+    while True:
+        try:
+            ElementFn(sequence_writer)
+            sequence_writer.next_element()
+        except:
+            break
+    writer.write_string(end)
+
+
 @always_inline
 fn write_sequence_to[
     *Ts: Writable,
 ](
     mut writer: Some[Writer],
     *args: *Ts,
-    open: StaticString,
-    close: StaticString,
+    start: StaticString,
+    end: StaticString,
     sep: StaticString = ", ",
 ):
     """Writes a sequence of writable values to a writer with delimiters.
@@ -48,49 +147,84 @@ fn write_sequence_to[
     Args:
         writer: The writer to write to.
         args: The variadic list of values to write.
-        open: The opening delimiter.
-        close: The closing delimiter.
+        start: The starting delimiter.
+        end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
-    write_sequence_to(writer, pack=args, open=open, close=close, sep=sep)
+    args._write_to(writer, start=start, end=end, sep=sep)
 
 
+# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 fn write_sequence_to[
-    *Ts: Writable,
+    size: Int,
+    ElementFn: fn[i: Int](mut Some[Writer]) capturing,
 ](
     mut writer: Some[Writer],
-    pack: VariadicPack[_, Writable, *Ts],
-    open: StaticString,
-    close: StaticString,
+    open: StaticString = "[",
+    close: StaticString = "]",
     sep: StaticString = ", ",
 ):
-    """Writes a sequence of writable values from a pack to a writer with delimiters.
+    """Writes a compile-time sized sequence of elements using an indexed callback.
 
-    This function formats a variadic pack of writable values as a delimited
-    sequence, writing each element separated by the specified separator and
+    This function writes a fixed number of elements determined at compile time by
+    calling the provided callback function for each index from 0 to `size - 1`.
+    Each element is separated by the specified separator, and the sequence is
     enclosed by opening and closing delimiters.
 
+    This overload is useful when you have a compile-time known number of elements
+    and need to generate each element based on its index.
+
     Parameters:
-        Ts: Types of the values in the pack. Must conform to `Writable`.
+        size: The number of elements in the sequence (must be known at compile time).
+        ElementFn: A callback function that writes a single element given its index.
+            It receives a mutable writer and the index as a compile-time parameter.
 
     Args:
         writer: The writer to write to.
-        pack: The variadic pack of values to write.
-        open: The opening delimiter.
-        close: The closing delimiter.
-        sep: The separator between items (default: `", "`).
+        open: The opening delimiter (default: `"["`).
+        close: The closing delimiter (default: `"]"`).
+        sep: The separator between elements (default: `", "`).
     """
     writer.write_string(open)
 
     @parameter
-    for i in range(pack.__len__()):
+    for i in range(size):
 
         @parameter
         if i != 0:
             writer.write_string(sep)
-        pack[i].write_to(writer)
+        ElementFn[i=i](writer)
+
     writer.write_string(close)
+
+
+@fieldwise_init
+struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
+    """A wrapper type that writes a comma-separated list of type names."""
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        @parameter
+        fn elements[i: Int](mut writer: Some[Writer]):
+            writer.write_string(_unqualified_type_name[Self.Types[i]]())
+
+        write_sequence_to[
+            size = Variadic.size(Self.Types),
+            ElementFn=elements,
+        ](writer, open="", close="")
+
+
+@always_inline
+fn write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
+    comptime assert conforms_to(T, Writable), "T must be Writable"
+    trait_downcast[Writable](t).write_repr_to(writer)
+
+
+@always_inline
+fn write_to[T: AnyType](t: T, mut writer: Some[Writer]):
+    comptime assert conforms_to(T, Writable), "T must be Writable"
+    trait_downcast[Writable](t).write_to(writer)
 
 
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
@@ -109,7 +243,7 @@ struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
     var _value: Pointer[Self.T, Self.o]
 
     @always_inline
-    fn __init__(out self, ref [Self.o]value: Self.T):
+    fn __init__(out self, ref[Self.o] value: Self.T):
         """Constructs a `Repr` wrapper around a reference to a value.
 
         Args:
@@ -146,7 +280,7 @@ struct Named[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
     var _value: Pointer[Self.T, Self.o]
 
     @always_inline
-    fn __init__(out self, name: StaticString, ref [Self.o]value: Self.T):
+    fn __init__(out self, name: StaticString, ref[Self.o] value: Self.T):
         """Constructs a `Named` wrapper for a field.
 
         Args:
@@ -187,7 +321,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
     var _writer: Pointer[Self.T, Self.o]
 
     @always_inline
-    fn __init__(out self, ref [Self.o]writer: Self.T, name: StaticString):
+    fn __init__(out self, ref[Self.o] writer: Self.T, name: StaticString):
         """Constructs a `FormatStruct` and writes the struct name.
 
         Args:
@@ -198,7 +332,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         self._writer = Pointer(to=writer)
 
     @always_inline
-    fn params[*Ts: Writable](self, *args: *Ts) -> ref [self] Self:
+    fn params[*Ts: Writable](self, *args: *Ts) -> ref[self] Self:
         """Writes type parameters in bracket notation `[param1, param2, ...]`.
 
         This method is used to write compile-time parameters of a parameterized
@@ -213,7 +347,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
-        write_sequence_to(self._writer[], args, open="[", close="]")
+        args._write_to(self._writer[], start="[", end="]")
         return self
 
     @always_inline
@@ -230,7 +364,29 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
-        write_sequence_to(self._writer[], args, open="(", close=")")
+        args._write_to(self._writer[], start="(", end=")")
+
+    # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
+    @always_inline
+    fn fields[FieldsFn: fn[T: Writer](mut T) capturing](self):
+        """Writes field values in parentheses using a callback function.
+
+        This overload is used when field values need to be generated dynamically
+        (e.g., from an iterator) rather than being known at compile time. The
+        callback function receives the writer and is responsible for writing all
+        field content between the opening and closing parentheses.
+
+        This is useful for writing collections or other types where the number of
+        fields isn't known at compile time or where you need custom control over
+        field formatting.
+
+        Parameters:
+            FieldsFn: A callback function that writes the field content. It
+                receives a mutable writer.
+        """
+        self._writer[].write_string("(")
+        FieldsFn(self._writer[])
+        self._writer[].write_string(")")
 
 
 comptime HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
@@ -302,7 +458,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
     fn as_string_slice[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> StringSlice[origin]:
+    ](ref[origin] self) -> StringSlice[origin]:
         return StringSlice(
             unsafe_from_utf8=Span(
                 ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
@@ -321,7 +477,7 @@ struct _WriteBufferStack[
     var pos: Int
     var writer: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [Self.origin]writer: Self.W):
+    fn __init__(out self, ref[Self.origin] writer: Self.W):
         self.data = InlineArray[UInt8, Int(Self.stack_buffer_bytes)](
             uninitialized=True
         )
@@ -464,7 +620,7 @@ fn _write_hex[
     ```
     """
 
-    __comptime_assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
+    comptime assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
 
     comptime `\\` = Byte(ord("\\"))
     comptime `x` = Byte(ord("x"))

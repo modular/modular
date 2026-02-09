@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from itertools import product
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
 
@@ -23,11 +24,11 @@ from utils import IndexList
 def test_where_size():
     print("== test_where_size")
     comptime rank = 3
-    comptime values_shape = Layout.row_major(3, 2, 1)
-    var values_stack = InlineArray[Float32, values_shape.size()](
+    comptime values_shape = row_major[3, 2, 1]()
+    var values_stack = InlineArray[Float32, values_shape.product()](
         uninitialized=True
     )
-    var values = LayoutTensor[DType.float32, values_shape](values_stack)
+    var values = TileTensor(values_stack, values_shape)
 
     values[0, 0, 0] = 1.0
     values[0, 1, 0] = 2.0
@@ -36,16 +37,8 @@ def test_where_size():
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    comptime layout_unknown = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     var output_shape = arg_nonzero_shape[DType.float32, True](
-        LayoutTensor[DType.float32, layout_unknown,](
-            values_stack,
-            RuntimeLayout[layout_unknown].row_major(
-                IndexList[3](3, 2, 1),
-            ),
-        )
+        values.make_dynamic[DType.int64]()
     )
 
     assert_equal(output_shape[0], 3)
@@ -56,11 +49,11 @@ def test_where_size():
 def test_where_size_bool():
     print("== test_where_size_bool")
     comptime rank = 3
-    comptime values_shape = Layout.row_major(3, 2, 1)
-    var values_stack = InlineArray[Scalar[DType.bool], values_shape.size()](
+    comptime values_shape = row_major[3, 2, 1]()
+    var values_stack = InlineArray[Scalar[DType.bool], values_shape.product()](
         uninitialized=True
     )
-    var values = LayoutTensor[DType.bool, values_shape](values_stack)
+    var values = TileTensor(values_stack, values_shape)
 
     values[0, 0, 0] = True
     values[0, 1, 0] = True
@@ -69,16 +62,8 @@ def test_where_size_bool():
     values[2, 0, 0] = Scalar[DType.bool](False)
     values[2, 1, 0] = Scalar[DType.bool](True)
 
-    comptime layout_unknown = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     var output_shape = arg_nonzero_shape[DType.bool, True](
-        LayoutTensor[DType.bool, layout_unknown,](
-            values_stack,
-            RuntimeLayout[layout_unknown].row_major(
-                IndexList[3](3, 2, 1),
-            ),
-        )
+        values.make_dynamic[DType.int64]()
     )
 
     assert_equal(output_shape[0], 3)
@@ -89,11 +74,11 @@ def test_where_size_bool():
 def test_where():
     print("== test_where")
     comptime rank = 3
-    comptime values_shape = Layout.row_major(3, 2, 1)
-    var values_stack = InlineArray[Float32, values_shape.size()](
+    comptime values_shape = row_major[3, 2, 1]()
+    var values_stack = InlineArray[Float32, values_shape.product()](
         uninitialized=True
     )
-    var values = LayoutTensor[DType.float32, values_shape](values_stack)
+    var values = TileTensor(values_stack, values_shape)
 
     values[0, 0, 0] = 1.0
     values[0, 1, 0] = 2.0
@@ -103,16 +88,16 @@ def test_where():
     values[2, 1, 0] = -3.0
 
     var computed_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
-    var computed_outputs = LayoutTensor[
-        DType.int,
-        Layout.row_major(3, 3),
-    ](computed_stack)
+    var computed_outputs = TileTensor[DType.int,](
+        computed_stack,
+        row_major[3, 3](),
+    )
 
     var golden_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
-    var golden_outputs = LayoutTensor[
-        DType.int,
-        Layout.row_major(3, 3),
-    ](golden_stack)
+    var golden_outputs = TileTensor[DType.int,](
+        golden_stack,
+        row_major[3, 3](),
+    )
 
     golden_outputs[0, 0] = 0
     golden_outputs[0, 1] = 0
@@ -124,23 +109,9 @@ def test_where():
     golden_outputs[2, 1] = 1
     golden_outputs[2, 2] = 0
 
-    comptime layout_unknown_3d = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
-    comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     arg_nonzero(
-        LayoutTensor[DType.float32, layout_unknown_3d](
-            values_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(
-                IndexList[3](3, 2, 1),
-            ),
-        ),
-        LayoutTensor[DType.int, layout_unknown_2d](
-            computed_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(
-                IndexList[2](3, 3),
-            ),
-        ),
+        values.make_dynamic[DType.int64](),
+        computed_outputs.make_dynamic[DType.int64](),
     )
 
     for i, j in product(range(3), range(3)):
@@ -154,9 +125,7 @@ def test_where_1d():
     comptime num_indices = 6
 
     var values_stack = InlineArray[Float32, num_elements](uninitialized=True)
-    var values = LayoutTensor[DType.float32, Layout.row_major(num_elements)](
-        values_stack
-    )
+    var values = TileTensor(values_stack, row_major[num_elements]())
 
     values[0] = 0.0
     values[1] = 1.0
@@ -174,18 +143,14 @@ def test_where_1d():
     var computed_stack = InlineArray[Scalar[DType.int], num_indices](
         uninitialized=True
     )
-    var computed_outputs = LayoutTensor[
-        DType.int,
-        Layout.row_major(num_indices, 1),
-    ](computed_stack)
+    var computed_outputs = TileTensor(
+        computed_stack, row_major[num_indices, 1]()
+    )
 
     var golden_stack = InlineArray[Scalar[DType.int], num_indices](
         uninitialized=True
     )
-    var golden_outputs = LayoutTensor[
-        DType.int,
-        Layout.row_major(num_indices),
-    ](golden_stack)
+    var golden_outputs = TileTensor(golden_stack, row_major[num_indices]())
 
     golden_outputs[0] = 1
     golden_outputs[1] = 3
@@ -194,22 +159,9 @@ def test_where_1d():
     golden_outputs[4] = 9
     golden_outputs[5] = 11
 
-    comptime layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
-    comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, 1)
-
     arg_nonzero(
-        LayoutTensor[DType.float32, layout_unknown_1d](
-            values_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(
-                IndexList[1](num_elements),
-            ),
-        ),
-        LayoutTensor[DType.int, layout_unknown_2d](
-            computed_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(
-                IndexList[2](num_indices, 1),
-            ),
-        ),
+        values.make_dynamic[DType.int64](),
+        computed_outputs.make_dynamic[DType.int64](),
     )
 
     for i in range(num_indices):
@@ -220,11 +172,11 @@ def test_where_1d():
 def test_where_bool():
     print("== test_where_bool")
     comptime rank = 3
-    comptime values_shape = Layout.row_major(3, 2, 1)
-    var values_stack = InlineArray[Scalar[DType.bool], values_shape.size()](
-        uninitialized=True
-    )
-    var values = LayoutTensor[DType.bool, values_shape](values_stack)
+    comptime values_shape = row_major[3, 2, 1]()
+    var values_stack = InlineArray[
+        Scalar[DType.bool], Int(values_shape.product())
+    ](uninitialized=True)
+    var values = TileTensor(values_stack, values_shape)
 
     values[0, 0, 0] = True
     values[0, 1, 0] = True
@@ -234,16 +186,10 @@ def test_where_bool():
     values[2, 1, 0] = True
 
     var computed_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
-    var computed_outputs = LayoutTensor[
-        DType.int,
-        Layout.row_major(3, 3),
-    ](computed_stack)
+    var computed_outputs = TileTensor(computed_stack, row_major[3, 3]())
 
     var golden_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
-    var golden_outputs = LayoutTensor[
-        DType.int,
-        Layout.row_major(3, 3),
-    ](golden_stack)
+    var golden_outputs = TileTensor(golden_stack, row_major[3, 3]())
 
     golden_outputs[0, 0] = 0
     golden_outputs[0, 1] = 0
@@ -255,24 +201,9 @@ def test_where_bool():
     golden_outputs[2, 1] = 1
     golden_outputs[2, 2] = 0
 
-    comptime layout_unknown_3d = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
-    comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
     arg_nonzero(
-        LayoutTensor[DType.bool, layout_unknown_3d](
-            values_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(
-                IndexList[3](3, 2, 1),
-            ),
-        ),
-        LayoutTensor[DType.int, layout_unknown_2d](
-            computed_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(
-                IndexList[2](3, 3),
-            ),
-        ),
+        values.make_dynamic[DType.int64](),
+        computed_outputs.make_dynamic[DType.int64](),
     )
 
     for i, j in product(range(3), range(3)):

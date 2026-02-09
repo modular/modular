@@ -112,7 +112,7 @@ At any given time, a pointer can be in one of several states:
 
 - Pointing to initialized memory. You can initialize an allocated, uninitialized
   pointer by moving or copying an existing value into the memory. Or you can get
-  a pointer to an  existing value by calling the constructor with the `to`
+  a pointer to an existing value by calling the constructor with the `to`
   keyword argument.
 
   ```mojo
@@ -284,7 +284,7 @@ Disposing of a pointer without freeing the associated memory can result in a
 memory leak—where your program keeps taking more and more memory, because not
 all allocated memory is being freed.
 
-On the other hand, if  you have multiple copies of a pointer accessing the same
+On the other hand, if you have multiple copies of a pointer accessing the same
 memory, you need to make sure you only call `free()` on one of them. Freeing the
 same memory twice is also an error.
 
@@ -479,7 +479,7 @@ be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
-from sys.ffi import external_call
+from ffi import external_call
 
 def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[
@@ -556,7 +556,7 @@ Big-endian or most-significant byte (MSB) ordering is the opposite: in the
 32-bit case, 00 00 03 E9. MSB ordering is frequently used in file formats and
 when transmitting data over the network. You can use the
 [`byte_swap()`](/mojo/std/bit/bit/byte_swap) function to swap the byte
-order of  a SIMD value from big-endian to little-endian or the reverse. For
+order of a SIMD value from big-endian to little-endian or the reverse. For
 example, if the method above was reading big-endian data, you'd just need to
 change a single line:
 

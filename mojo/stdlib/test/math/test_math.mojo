@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,6 +29,7 @@ from math import (
     exp2,
     factorial,
     floor,
+    fma,
     frexp,
     gcd,
     iota,
@@ -278,11 +279,11 @@ def test_iota():
     var buff = vector.unsafe_ptr()
     iota(buff, length, offset)
     for i in range(length):
-        assert_equal(vector[i], offset + i)
+        assert_equal(vector[i], Int32(offset + i))
 
     iota(vector, offset)
     for i in range(length):
-        assert_equal(vector[i], offset + i)
+        assert_equal(vector[i], Int32(offset + i))
 
     var vector2 = List[Int](unsafe_uninit_length=length)
 
@@ -436,7 +437,9 @@ def _test_log_impl[
     assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
 
 
-def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log2_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
@@ -456,7 +459,9 @@ def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log1p_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log1p_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log1p(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol
@@ -523,7 +528,7 @@ def test_log1p():
 
 def test_gcd():
     var l = [2, 4, 6, 8, 16]
-    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(gcd(Span[Int](il)), 2)
     assert_equal(gcd(2, 4, 6, 8, 16), 2)
     assert_equal(gcd(l), 2)
@@ -556,7 +561,7 @@ def test_lcm():
     assert_equal(lcm(0, 4), 0)
     assert_equal(lcm(5, 33), 165)
     assert_equal(lcm(-34, -56, -32), 3808)
-    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(lcm(Span[Int](il)), 48)
     assert_equal(lcm(345, 623, 364, 84, 93), 346475220)
     assert_equal(lcm(0, 0), 0)
@@ -634,6 +639,29 @@ def test_clamp():
     assert_equal(
         clamp(SIMD[DType.float32, 4](0, 1, 3, 4), 0, 1),
         SIMD[DType.float32, 4](0, 1, 1, 1),
+    )
+
+
+def test_fma():
+    # Test Int overload
+    assert_equal(fma(5, 3, 2), 17)  # 5*3 + 2 = 17
+    assert_equal(fma(-2, 3, 4), -2)  # -2*3 + 4 = -2
+    assert_equal(fma(0, 100, 5), 5)  # 0*100 + 5 = 5
+
+    # Test UInt (uses SIMD overload since UInt = Scalar[DType.uint])
+    assert_equal(fma(UInt(5), UInt(3), UInt(2)), UInt(17))
+    assert_equal(fma(UInt(1000000), UInt(1000), UInt(500)), UInt(1000000500))
+    assert_equal(fma(UInt(0), UInt(100), UInt(5)), UInt(5))
+
+    # Test SIMD overload with float
+    assert_almost_equal(fma(Float32(2.5), Float32(4.0), Float32(1.5)), 11.5)
+    assert_almost_equal(
+        fma(
+            SIMD[DType.float32, 4](1, 2, 3, 4),
+            SIMD[DType.float32, 4](2, 2, 2, 2),
+            SIMD[DType.float32, 4](1, 1, 1, 1),
+        ),
+        SIMD[DType.float32, 4](3, 5, 7, 9),
     )
 
 

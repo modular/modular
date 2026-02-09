@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -135,7 +135,7 @@ fn wait_on_dependent_grids():
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
-struct PDLLevel(Defaultable, TrivialRegisterType):
+struct PDLLevel(Defaultable, TrivialRegisterPassable):
     """Programmatic Dependency Launch (PDL) level."""
 
     var _level: Int

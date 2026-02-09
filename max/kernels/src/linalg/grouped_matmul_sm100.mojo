@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer, bitcast
 
@@ -86,7 +86,7 @@ from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole(TrivialRegisterPassable):
     var _role: Int32
 
     comptime Mma = Self(5)
@@ -195,9 +195,10 @@ fn load_AB[
     var phase = producer_phase.phase()
     mma_mbar[stage].wait(phase)
 
-    var a_gmem_slice_coord = (
-        Int32(peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0])
-        + expert_ids[Int(scheduler.current_group_idx)] * scheduler.static_MN
+    var a_gmem_slice_coord = Int32(
+        peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
+    ) + expert_ids[Int(scheduler.current_group_idx)] * Int32(
+        scheduler.static_MN
     )
     var b_gmem_slice_coord = (
         peer_cta_coord[1] * UInt(b_tma_rows)
@@ -217,7 +218,7 @@ fn load_AB[
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[stage].expect_bytes(expected_bytes)
+            tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
@@ -327,7 +328,7 @@ fn stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.layout.stride[0].value()
     comptime stride1 = dst.layout.stride[1].value()
-    __comptime_assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
+    comptime assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
     comptime shape0 = dst.layout.shape[
         1
     ].value() if not transpose_c else dst.layout.shape[0].value()
@@ -366,7 +367,7 @@ fn stsm_helper[
     @parameter
     for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_tile_offset
-        var offset = swizzle(stsm_lane_offset + n_offset)
+        var offset = swizzle(stsm_lane_offset + UInt32(n_offset))
         var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
             dst.dtype
         ]()
@@ -393,7 +394,7 @@ fn multi_stage_store_C[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
 ](
     c_iter: LayoutTensorIter[
@@ -429,7 +430,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # assume N dimension is static
     comptime simd_size = simd_width_of[c_type]()
@@ -480,7 +481,7 @@ fn multi_stage_store_C[
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
-        var stage_tmem_addr = tmem_offset + (stage * stageN)
+        var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
         var upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -580,7 +581,7 @@ fn multi_stage_store_C[
 
         comptime has_elementwise_lambda = Bool(elementwise_lambda_fn)
 
-        if not has_elementwise_lambda and n_inbound_size >= stageN:
+        if not has_elementwise_lambda and n_inbound_size >= UInt32(stageN):
             if elect_one_warp and lane == 0:
                 fence_async_view_proxy()
 
@@ -623,10 +624,10 @@ fn multi_stage_store_C[
             else:
                 c_tma_op.wait_group[0]()
         else:
-            __comptime_assert (
+            comptime assert (
                 transpose_c
             ), "Unaligned handling only supports transpose_c"
-            __comptime_assert MMA_M == 256 or cta_group == 1, (
+            comptime assert MMA_M == 256 or cta_group == 1, (
                 "Unaligned handling only supports MMA_M == 256 or cta_group =="
                 " 1. Got "
                 + String(MMA_M)
@@ -641,7 +642,7 @@ fn multi_stage_store_C[
                 chunk_num, stageN, vec_chunkM
             )
             comptime thread_num = num_output_warps * WARP_SIZE
-            __comptime_assert logical_c_layout.size() % thread_num == 0, (
+            comptime assert logical_c_layout.size() % thread_num == 0, (
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
                 + String(logical_c_layout.size())
                 + "."
@@ -654,24 +655,23 @@ fn multi_stage_store_C[
                 comptime thread_offset = v * thread_num
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
                 # idx2crd but RuntimeTuple.idx2crd is too hard to use
-                var vec_chunkM_idx = thread_index % vec_chunkM
-                var rest = thread_index // vec_chunkM
-                var n_idx = rest % stageN
-                if n_idx >= min(n_inbound_size, stageN):
+                var vec_chunkM_idx = thread_index % UInt32(vec_chunkM)
+                var rest = thread_index // UInt32(vec_chunkM)
+                var n_idx = rest % UInt32(stageN)
+                if n_idx >= min(n_inbound_size, UInt32(stageN)):
                     continue
-                var src_idx = simd_size * thread_index
+                var src_idx = UInt32(simd_size) * thread_index
                 var c_smem_idx = swizzle(src_idx)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 var val_vec = (c_smem_tile.ptr + c_smem_idx).load[
                     width=simd_size, alignment=alignment
                 ]()
-                var chunk_idx = rest // stageN
+                var chunk_idx = rest // UInt32(stageN)
                 var n = UInt32(coord_n) + n_idx
-                var m = (
-                    UInt32(work_tile_coord[0])
-                    + (chunk_idx * vec_chunkM + vec_chunkM_idx) * simd_size
-                )
-                if m < cM:
+                var m = UInt32(work_tile_coord[0]) + (
+                    chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
+                ) * UInt32(simd_size)
+                if m < UInt32(cM):
 
                     @parameter
                     if elementwise_lambda_fn:
@@ -680,7 +680,9 @@ fn multi_stage_store_C[
                             c_type, simd_size, alignment=alignment
                         ](Index(n, m), val_vec)
                     else:
-                        (c.ptr + n * cM + m).store[alignment=alignment](val_vec)
+                        (c.ptr + n * UInt32(cM) + m).store[alignment=alignment](
+                            val_vec
+                        )
 
         @parameter
         if stage > 0 or stage == num_stages - 1:
@@ -711,20 +713,20 @@ fn zero_output[
     # Note that output_tile_shape is always the proper C tile shape independent of transpose_c.
     comptime output_N = output_tile_shape[1]
     comptime stride = c.layout.stride[0].value()
-    var ptr = c.ptr + coord[1] * stride + coord[0]
-    __comptime_assert thread_num * simd_size >= output_N, (
+    var ptr = c.ptr + coord[1] * UInt32(stride) + coord[0]
+    comptime assert thread_num * simd_size >= output_N, (
         "output_N must be less than thread_num * simd_size. Got "
         + String(output_N)
         + "."
     )
     comptime row_thread_num = UInt32(output_N // simd_size)
     comptime cN = c.shape[1]()
-    var row_boundary = (cN - coord[0]) // simd_size
+    var row_boundary = (UInt32(cN) - coord[0]) // UInt32(simd_size)
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var zero_vec = SIMD[c_type, simd_size](0.0)
     var M = group_end_idx - coord[1]
     if UInt32(thread_idx.x) < min(row_thread_num, row_boundary):
-        for i in range(min(M, output_tile_shape[0])):
+        for i in range(min(M, UInt32(output_tile_shape[0]))):
             (ptr + thread_idx.x * UInt(simd_size)).store[alignment=alignment](
                 zero_vec
             )
@@ -764,7 +766,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
 ](
     num_active_experts: Int,
@@ -776,7 +778,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
-    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != DType.float32, "c_type cannot be float32"
 
     comptime num_output_warps = 4
 
@@ -913,15 +915,15 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // cta_group + cluster_shape[1] - 1
+                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
 
         @parameter
         for i in range(num_accum_pipeline_stages):
             accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
-            accum_empty_mbar[i].init(accum_pipeline_consumer_arv_count)
+            accum_empty_mbar[i].init(Int32(accum_pipeline_consumer_arv_count))
 
-        tmem_dealloc_mbar[].init(EPILOGUE_THREADS * cta_group)
+        tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * cta_group))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -981,12 +983,12 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
     @parameter
     for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -996,7 +998,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
     var mma_complete_mask = self_mask | peer_mask
 
-    var num_iters: UInt32 = ceildiv(mnk[2], BK)
+    var num_iters: UInt32 = ceildiv(mnk[2], UInt32(BK))
 
     if WarpRole.is_main_load():
         while not work_info.is_done():
@@ -1042,10 +1044,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             producer_phase.step()
 
     if WarpRole.is_mma():
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
         syncwarp()
         # non blocking, arrives and proceeds
-        named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
         tmem_addr = ptr_tmem_addr[0]
 
@@ -1064,7 +1066,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 var accum_phase = accum_pipeline_producer_state.phase()
 
                 accum_empty_mbar[accum_index].wait(accum_phase)
-                var tmem_offset = tmem_addr + (accum_index * stage_stride_cols)
+                var tmem_offset = tmem_addr + (
+                    accum_index * UInt32(stage_stride_cols)
+                )
 
                 for i in range(num_iters):
                     consumer_main_loop[
@@ -1094,7 +1098,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     if cta_group == 2:
                         mma_arrive_multicast[cta_group](
                             accum_full_mbar + accum_index,
-                            mma_complete_mask,
+                            UInt16(mma_complete_mask),
                         )
                     else:
                         mma_arrive(accum_full_mbar + accum_index)
@@ -1102,15 +1106,15 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_pipeline_producer_state.step()
             work_info = next_work_info
 
-        tcgen05_release_allocation_lock[cta_group]()
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
 
         # wait for epilogue to finish
         tmem_dealloc_mbar[].wait()
 
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
-        named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
         tmem_addr = ptr_tmem_addr[0]
 
         # while work_info.is_valid():
@@ -1187,7 +1191,7 @@ fn grouped_matmul_sm100_persistent[
     num_pipeline_stages: Optional[UInt] = None,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -1259,7 +1263,7 @@ fn _grouped_matmul_sm100_persistent[
     transpose_c: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
@@ -1269,7 +1273,7 @@ fn _grouped_matmul_sm100_persistent[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -1279,7 +1283,7 @@ fn _grouped_matmul_sm100_persistent[
     comptime BN = MMA_N // cta_group
     comptime BK = config.block_tile_shape[2]
 
-    __comptime_assert (MMA_M != 128) or (
+    comptime assert (MMA_M != 128) or (
         MMA_N % 32 == 0
     ), "if MMA_M is 128, then MMA_N must be a multiple of 32"
 
@@ -1323,7 +1327,7 @@ fn _grouped_matmul_sm100_persistent[
         == 32 else TensorMapSwizzle.SWIZZLE_32B
     )
     # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
-    __comptime_assert (
+    comptime assert (
         not (transpose_c and cta_group == 2)
     ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
     var c_tma_op = create_tensor_tile[
@@ -1377,13 +1381,13 @@ fn _grouped_matmul_sm100_persistent[
         smem_leftover // producer_consumer_smem_per_stage
     )
 
-    __comptime_assert (
+    comptime assert (
         max_pipeline_stages >= 1
     ), "Max pipeline stages must be at least 1"
 
     @parameter
     if num_pipeline_stages:
-        __comptime_assert (
+        comptime assert (
             num_pipeline_stages.value() <= max_pipeline_stages
         ), "Pipeline stage must be less than or equal to max pipeline stages"
 
@@ -1415,7 +1419,9 @@ fn _grouped_matmul_sm100_persistent[
         config.mma_shape,
         transpose_b=transpose_b,
         cluster_shape = StaticTuple[Int32, 3](
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            Int32(cluster_shape[0]),
+            Int32(cluster_shape[1]),
+            Int32(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -1429,7 +1435,7 @@ fn _grouped_matmul_sm100_persistent[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    __comptime_assert (
+    comptime assert (
         cluster_shape[1] == 1
     ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
 
@@ -1439,7 +1445,7 @@ fn _grouped_matmul_sm100_persistent[
         1,
     )
 
-    var mnk = StaticTuple[UInt32, 3](M, N, K)
+    var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     ctx.enqueue_function[kernel, kernel](
         num_active_experts,
@@ -1454,5 +1460,7 @@ fn _grouped_matmul_sm100_persistent[
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
         block_dim=(32 * 6),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.interfaces import TextGenerationRequest
+from max.interfaces import PipelineTask, TextGenerationRequest
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
@@ -51,6 +51,8 @@ def patch_pipeline_registry_context_type(
 
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 

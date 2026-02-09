@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,8 +18,9 @@ from sys.info import _current_target
 from algorithm import elementwise
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
-from layout.int_tuple import fill_like
+from layout._coord import Coord, CoordLike, coord_to_index_list
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major, TensorLayout
 
 from utils import IndexList, StaticTuple
 
@@ -29,21 +30,23 @@ from utils import IndexList, StaticTuple
 
 
 fn split[
+    OutputLayoutType: TensorLayout,
+    //,
     dtype: DType,
     num_outputs: Int,
     target: StaticString,
     trace_description: StaticString,
-    outputs_origin: MutOrigin,
-    outputs_layout: Layout,
+    output_origin: MutOrigin,
 ](
-    input: LayoutTensor[dtype, ...],
+    input: TileTensor[dtype, ...],
     axis: Int,
     outputs: StaticTuple[
-        LayoutTensor[dtype, outputs_layout, outputs_origin], num_outputs
+        TileTensor[dtype, OutputLayoutType, output_origin],
+        num_outputs,
     ],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == outputs[0].rank
     ), "Input and outputs must have the same rank."
 
@@ -63,7 +66,7 @@ fn split[
 
     @parameter
     for i in range(num_outputs):
-        output_sizes[i] = outputs[i].dim(axis)
+        output_sizes[i] = Int(outputs[i].dim(axis))
 
     @__copy_capture(output_sizes)
     @parameter
@@ -95,19 +98,11 @@ fn split[
             else:
                 output_coords[i] = input_coords[i]
 
-        var idx = input.runtime_layout(
-            RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](
-                input_coords
-            )
-        )
+        var idx = input.layout(Coord(input_coords))
 
         var value = input.ptr.load[width=width](idx)
 
-        var output_ptr_idx = outputs[output_idx].runtime_layout(
-            RuntimeTuple[
-                fill_like(outputs[output_idx].layout.shape, UNKNOWN_VALUE)
-            ](output_coords)
-        )
+        var output_ptr_idx = outputs[output_idx].layout(Coord(output_coords))
 
         outputs[output_idx].ptr.store(output_ptr_idx, value)
 
@@ -125,11 +120,11 @@ fn split[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](input.runtime_layout.shape.value, ctx)
+        ](coord_to_index_list(input.layout.shape_coord()), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](input.runtime_layout.shape.value, ctx)
+        ](coord_to_index_list(input.layout.shape_coord()), ctx)

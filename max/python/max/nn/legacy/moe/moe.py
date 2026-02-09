@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,7 +29,7 @@ from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
 from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
-from ..layer import LayerList, Module, Shardable
+from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 
 
@@ -44,6 +44,7 @@ class MoEGate(Module):
         num_experts_per_token: int,
         dtype: DType,
         is_sharding: bool = False,
+        linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
         """
         Args:
@@ -61,7 +62,7 @@ class MoEGate(Module):
         self.dtype = dtype
 
         if not is_sharding:
-            self.gate_score = Linear(
+            self.gate_score = linear_cls(
                 in_dim=hidden_dim,
                 out_dim=num_experts,
                 dtype=dtype,
@@ -148,6 +149,9 @@ class MoE(Module, Shardable):
     experts: LayerList
     """The list of experts."""
 
+    _all_experts: list[Layer]
+    """The list of all experts when using expert parallel strategy."""
+
     shard_devices: list[DeviceRef] = []
     """The list of devices the MoE layer was sharded to."""
 
@@ -162,6 +166,7 @@ class MoE(Module, Shardable):
         num_experts_per_token: int,
         moe_dim: int,
         gate_cls: Callable[..., MoEGate] = MoEGate,
+        mlp_cls: Callable[..., MLP] = MLP,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
         ep_size: int = 1,
@@ -193,6 +198,7 @@ class MoE(Module, Shardable):
         self.num_experts_per_token = num_experts_per_token
         self.moe_dim = moe_dim
         self.gate_cls = gate_cls
+        self.mlp_cls = mlp_cls
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
@@ -212,7 +218,7 @@ class MoE(Module, Shardable):
             assert shared_experts_dim > 0, (
                 "shared_experts_dim must be greater than 0"
             )
-            self.shared_experts = MLP(
+            self.shared_experts = mlp_cls(
                 dtype=dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,
@@ -232,19 +238,19 @@ class MoE(Module, Shardable):
             self._init_experts()
 
     def _init_experts(self) -> None:
-        self.experts = LayerList(
-            [
-                MLP(
-                    dtype=self.dtype,
-                    quantization_encoding=None,
-                    hidden_dim=self.hidden_dim,
-                    feed_forward_length=self.moe_dim,
-                    devices=self.devices,
-                    float8_config=self.float8_config,
-                )
-                for _ in range(self.num_experts)
-            ]
-        )
+        self._all_experts = [
+            self.mlp_cls(
+                dtype=self.dtype,
+                quantization_encoding=None,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.moe_dim,
+                devices=self.devices,
+                float8_config=self.float8_config,
+            )
+            for _ in range(self.num_experts)
+        ]
+
+        self.experts = LayerList(self._all_experts)
 
     @property
     def ep_batch_manager(self) -> EPBatchManager:
@@ -335,6 +341,9 @@ class MoE(Module, Shardable):
                 is_sharding=True,
             )
 
+            # Keep a reference to the original experts for sharded instances.
+            sharded._all_experts = self._all_experts
+
             # Replace layers and weights with sharded versions.
             sharded.gate = gate_shards[shard_idx]
             if self.has_shared_experts:
@@ -392,6 +401,8 @@ class MoE(Module, Shardable):
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
+        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
+        k_dim = gate_list[0].shape[1]
         if not self.shard_devices:
             shard = ops.stack(gate_up_list, axis=0)
         else:
@@ -402,7 +413,7 @@ class MoE(Module, Shardable):
                 devices=self.shard_devices,
             )[self.shard_index]
 
-        return shard.reshape([len(gate_list), -1, self.hidden_dim])
+        return shard.reshape([len(gate_list), -1, k_dim])
 
     @property
     def down_proj(self) -> TensorValue:

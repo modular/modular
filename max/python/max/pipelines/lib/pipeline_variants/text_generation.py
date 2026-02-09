@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,17 +20,18 @@ import json
 import logging
 from os import environ
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Any, Generic, cast
 
 import llguidance.hf
 import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
-from max.driver import Buffer, load_devices
+from max.driver import Accelerator, Buffer, Device, load_devices
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
+    DUMMY_REQUEST_ID,
     BatchLogitsProcessor,
     LogProbabilities,
     Pipeline,
@@ -42,8 +43,10 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.interfaces.tokens import TokenBuffer
+from max.nn.legacy import ReturnLogits
 from max.nn.legacy.kv_cache import KVCacheInputsSequence
-from max.nn.legacy.transformer import ReturnLogits
+from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
@@ -71,7 +74,7 @@ logger = logging.getLogger("max.pipelines")
 
 @dataclasses.dataclass
 class BatchInfo:
-    """Information about a batch of requests passed to the pipeline"""
+    """Information about a batch of requests passed to the pipeline."""
 
     past_seq_lens: list[int]
     """Coordinated list of past sequence lengths (i.e. context lengths)"""
@@ -83,11 +86,22 @@ class BatchInfo:
     """Number of steps to do in the pipeline"""
 
 
-class TextGenerationPipeline(
+class TextGenerationPipelineInterface(
     Pipeline[
         TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
     ],
     GenerateMixin[TextGenerationContextType, TextGenerationRequest],
+    Generic[TextGenerationContextType],
+):
+    """Interface for text generation pipelines."""
+
+    # TODO: Get rid of these fields
+    _devices: list[Device]
+    _pipeline_model: PipelineModel[TextGenerationContextType]
+
+
+class TextGenerationPipeline(
+    TextGenerationPipelineInterface[TextGenerationContextType],
     Generic[TextGenerationContextType],
 ):
     """Generalized token generator pipeline."""
@@ -126,6 +140,12 @@ class TextGenerationPipeline(
         self._pipeline_config = pipeline_config
         model_config = pipeline_config.model
         huggingface_config = model_config.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"Text generation pipeline requires a HuggingFace config for '{model_config.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
 
         self._devices = load_devices(model_config.device_specs)
         self._tokenizer = tokenizer
@@ -211,6 +231,8 @@ class TextGenerationPipeline(
             )
             self._sampler_with_bitmask = None
 
+        self._pre_capture_execution_trace()
+
     @property
     def pipeline_config(self) -> PipelineConfig:
         """Return the pipeline configuration."""
@@ -233,6 +255,69 @@ class TextGenerationPipeline(
     ) -> list[Any]:
         """Return the list of KV cache managers backing this pipeline."""
         return [self._pipeline_model.kv_manager]
+
+    def _pre_capture_execution_trace(self) -> None:
+        if not self._pipeline_config.device_graph_capture:
+            return
+
+        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
+        if kv_manager is None:
+            return
+
+        if self._pipeline_config.model.data_parallel_degree != 1:
+            logger.info(
+                "Device graph pre-capture skipped for data parallel degree %d.",
+                self._pipeline_config.model.data_parallel_degree,
+            )
+            return
+
+        dummy_len = min(
+            self._pipeline_config.max_batch_input_tokens,
+            self._pipeline_model.max_seq_len,
+        )
+        if dummy_len <= 0:
+            return
+
+        tokens = TokenBuffer(np.zeros(dummy_len, dtype=np.int64))
+        context = TextContext(
+            max_length=self._pipeline_model.max_seq_len,
+            tokens=tokens,
+            eos_token_ids=self._eos_token_id,
+            model_name=self._pipeline_config.model.model_name,
+            request_id=DUMMY_REQUEST_ID,
+        )
+        typed_context = cast(TextGenerationContextType, context)
+        try:
+            kv_manager.claim(typed_context.request_id, replica_idx=0)
+            kv_manager.alloc(typed_context, num_steps=1, replica_idx=0)
+            kv_cache_inputs = kv_manager.get_runtime_inputs(
+                [[typed_context]], num_steps=1
+            )
+            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+                replica_batches=[[typed_context]],
+                kv_cache_inputs=KVCacheInputsSequence(
+                    kv_cache_inputs=kv_cache_inputs
+                ),
+                return_n_logits=1,
+            )
+            next_tokens = Buffer.from_numpy(np.zeros((1,), dtype=np.int64)).to(
+                self._devices[0]
+            )
+            next_inputs = self._pipeline_model.prepare_next_token_inputs(
+                next_tokens=next_tokens,
+                prev_model_inputs=model_inputs,
+            )
+            self._pipeline_model.pre_capture_execution_trace(
+                [model_inputs, next_inputs],
+                batch_size=1,
+            )
+            # Flush pending capture events before releasing dummy KV buffers.
+            logger.info(
+                "Flushing device events after device-graph pre-capture."
+            )
+            Accelerator(id=self._devices[0].id).synchronize()
+        finally:
+            kv_manager.release(typed_context.request_id, replica_idx=0)
 
     def update_for_structured_output(
         self,
@@ -288,10 +373,10 @@ class TextGenerationPipeline(
     def initialize_bitmask(
         self, batch: list[TextGenerationContextType]
     ) -> npt.NDArray[np.int32] | None:
-        """Allocate a per-request token bitmask for structured decoding.
+        """Allocates a per-request token bitmask for structured decoding.
 
         Args:
-            batch_size: Number of requests in the batch.
+            batch: The generation contexts for the batch.
 
         Returns:
             A bitmask array of shape [batch_size, vocab_size] if structured
@@ -390,9 +475,9 @@ class TextGenerationPipeline(
     def _maybe_sort_loras(
         self, batch: list[TextGenerationContextType]
     ) -> list[TextGenerationContextType]:
-        """
-        Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
-        to be adjacent to each other.
+        """Optionally sorts the batch by LoRA IDs.
+
+        Requests that use the same LoRA are placed adjacent to each other.
         """
         if self._pipeline_model._lora_manager is None:
             return batch
@@ -440,8 +525,11 @@ class TextGenerationPipeline(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
+        """Processes the batch and returns decoded tokens.
+
+        Given a batch, executes the graph for num_steps in a multi-step
+        scenario, then decodes the tokens and returns the list of decoded
+        tokens.
         """
         device0 = self._devices[0]
         pinned = not device0.is_host
@@ -449,6 +537,20 @@ class TextGenerationPipeline(
         model_inputs, num_steps, bitmask, flat_batch = self.prepare_batch(
             inputs.batches, inputs.num_steps
         )
+
+        replica_batch_sizes = [len(batch) for batch in inputs.batches]
+        active_replica_idx = None
+        if sum(replica_batch_sizes) == 1:
+            active_replica_idx = next(
+                (
+                    replica_idx
+                    for replica_idx, batch_size in enumerate(
+                        replica_batch_sizes
+                    )
+                    if batch_size > 0
+                ),
+                None,
+            )
 
         batch_processors: list[BatchLogitsProcessor] = []
         if len(flat_batch) > 0:
@@ -481,8 +583,9 @@ class TextGenerationPipeline(
             with Tracer(f"multistep_execution_loop_step_{i}"):
                 # Execute the model and get next tokens.
                 try:
-                    model_outputs = self._pipeline_model.execute(
-                        model_inputs=curr_step_inputs
+                    model_outputs = self._pipeline_model.execute_with_capture(
+                        model_inputs=curr_step_inputs,
+                        batch_size=len(flat_batch),
                     )
                 except Exception:
                     batch_size = len(flat_batch)
@@ -580,11 +683,12 @@ class TextGenerationPipeline(
             # Allocate a pinned tensor on the host for faster async d2h transfer
             # speeds. If the model is on host, then fall back to normal pageable
             # memory.
+            # Note that we do not want to `disable_auto_sync()` here.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
                 device=device0,
-                pinned=not device0.is_host,
+                pinned=pinned,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # We assume that the call to `.to_numpy()` will insert a device

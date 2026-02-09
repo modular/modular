@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -93,7 +93,7 @@ comptime EllipsisType = __mlir_type.`!lit.ellipsis`
 """The type of the `...` literal."""
 
 
-struct Origin[*, mut: Bool](TrivialRegisterType):
+struct Origin[*, mut: Bool](TrivialRegisterPassable):
     """This represents a origin reference for a memory value.
 
     Parameters:

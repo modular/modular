@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,12 +16,12 @@
 import enum
 import inspect
 import os
+import types
 from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
-import typing_extensions
 from max import mlir
 from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
@@ -212,7 +212,7 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
-    def capture(self, *inputs: Buffer) -> None:
+    def capture(self, *inputs: Buffer) -> list[Buffer]:
         """
         Capture execution into a device graph for the given inputs.
 
@@ -228,7 +228,9 @@ class Model:
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
-    def _capture(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
+    def _capture(
+        self, inputs: Sequence[max._core.driver.Buffer]
+    ) -> list[max._core.driver.Buffer]:
         """Capture execution into a device graph."""
 
     def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
@@ -258,7 +260,7 @@ class InferenceSession:
     ) -> Model: ...
     def compile_from_object(
         self,
-        model: typing_extensions.CapsuleType,
+        model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
     ) -> Model: ...

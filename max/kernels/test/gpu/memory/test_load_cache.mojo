@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 
 from gpu.host.compile import _compile_code
 from gpu.memory import CacheEviction, CacheOperation, load
@@ -26,7 +25,7 @@ fn load_value[
     dtype: DType = DType.uint32,
     width: Int = 1,
     read_only: Bool = False,
-    prefetch_size: OptionalReg[Int] = None,
+    prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -64,8 +64,11 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         num_steps: int,
         tokens_to_generate: dict[RequestID, int],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
+        """Processes the batch and returns decoded tokens.
+
+        Given a batch, executes the graph for num_steps in a multi-step
+        scenario, then decodes the tokens holistically and returns the list
+        of decoded tokens.
         """
         if not batch or num_steps == 0:
             return {}

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -256,8 +256,8 @@ def execute_flash_attention[
         ),
         cache_lengths_device,
         lookup_table_tensor,
-        max_prompt_len,
-        max_context_len,
+        UInt32(max_prompt_len),
+        UInt32(max_context_len),
     )
 
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -313,9 +313,9 @@ def execute_flash_attention[
             var ref_out_tensor = LayoutTensor[dtype, output_static_layout](
                 ref_out_host, output_runtime_layout
             )
-            for bs in range(Int(batch_size)):
+            for bs in range(batch_size):
                 for s in range(Int(valid_length[bs])):
-                    for h in range(Int(num_q_heads)):
+                    for h in range(num_q_heads):
                         for hd in range(kv_params.head_size):
                             assert_almost_equal(
                                 ref_out_tensor[bs, s, h, Int(hd)],

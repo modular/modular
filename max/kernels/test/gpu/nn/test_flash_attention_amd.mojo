@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import isclose
 from random import rand
 from sys import argv, env_get_bool
@@ -52,7 +51,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -80,8 +79,8 @@ fn test[
         depth,
     )
 
-    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
-    __comptime_assert (
+    comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    comptime assert (
         against_gpu_naive or mask_rank == 3
     ), "Testing against cpu requires mask of rank 3."
 
@@ -170,7 +169,7 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        __comptime_assert (
+        comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
@@ -284,7 +283,9 @@ fn test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
 
@@ -497,7 +498,7 @@ fn test_context_encoding[
 fn test_decoding[
     batch_size: Int,
     depth: Int,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.

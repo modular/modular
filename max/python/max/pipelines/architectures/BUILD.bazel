@@ -17,7 +17,9 @@ modular_py_library(
         requirement("huggingface-hub"),  # For Mistral, should we be circumventing the cache here?
         requirement("numpy"),
         requirement("pillow"),
+        requirement("pydantic"),
         requirement("requests"),
+        requirement("tqdm"),
         # TODO: These are required for the llama3.1 model. Remove them if
         # possible.
         requirement("transformers"),

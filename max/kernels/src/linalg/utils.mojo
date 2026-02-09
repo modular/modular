@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,11 +29,11 @@ from utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> None
+](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime elementwise_compute_lambda_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 struct KernelConfig:
@@ -65,7 +65,7 @@ struct KernelConfig:
         self.packed_shape = packed_shape
 
 
-struct MicroKernelShape(TrivialRegisterType):
+struct MicroKernelShape(TrivialRegisterPassable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -78,7 +78,7 @@ struct MicroKernelShape(TrivialRegisterType):
 
 
 @fieldwise_init
-struct GemmShape(TrivialRegisterType):
+struct GemmShape(TrivialRegisterPassable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -131,9 +131,9 @@ struct GemmShape(TrivialRegisterType):
         """
 
         # We only want a 2D tensor for now
-        __comptime_assert c.rank == 2
-        __comptime_assert a.rank == 2
-        __comptime_assert b.rank == 2
+        comptime assert c.rank == 2
+        comptime assert a.rank == 2
+        comptime assert b.rank == 2
 
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
@@ -285,7 +285,7 @@ fn _get_tile_n_k[
     transpose_b: Bool,
     layout: Layout,
 ](b: LayoutTensor[b_type, layout, _, ...]) -> IndexList[2]:
-    __comptime_assert b.rank == 2
+    comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
 
     @parameter
@@ -640,9 +640,11 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 @always_inline
 fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
+    # Output must be 32-bit integer (int32 or uint32) since i8mm produces 4-wide
+    # SIMD vectors.
     return (
-        # Return False for now until i8mm is fully ready.
         CompilationTarget.has_neon_int8_matmul()
+        and (c_type == DType.int32 or c_type == DType.uint32)
         and (
             (a_type == DType.uint8 and b_type == DType.uint8)
             or (a_type == DType.uint8 and b_type == DType.int8)
@@ -671,7 +673,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () raises capturing [_] -> None,
+    func: fn[x: Bool]() raises capturing[_] -> None,
 ](m: Int, n: Int, k: Int) raises:
     if get_kernel_type(m, n, k):
         func[True]()
@@ -680,7 +682,7 @@ fn dispatch_get_kernel_type[
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () capturing [_] -> None,
+    func: fn[x: Bool]() capturing[_] -> None,
 ](m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()
@@ -728,7 +730,7 @@ fn packA_i8mm[
 
 
 @fieldwise_init
-struct InnerKernelID(TrivialRegisterType):
+struct InnerKernelID(TrivialRegisterPassable):
     comptime DEFAULT = InnerKernelID(0)
     comptime VNNI = InnerKernelID(1)
     comptime NEON = InnerKernelID(2)
@@ -805,7 +807,7 @@ fn apply_epilogue[
     # Scalar case
     # TODO: 1D vector is included, should handle it in a separate branch.
     else:
-        __comptime_assert dst_element_layout.rank() == 1
+        comptime assert dst_element_layout.rank() == 1
 
         @parameter
         for i in range(src.layout.size() * src.element_size):

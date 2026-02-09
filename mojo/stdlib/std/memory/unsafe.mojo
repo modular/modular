@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -69,7 +69,7 @@ fn bitcast[
         A new SIMD value with the specified type and width with a bitcopy of the
         source SIMD value.
     """
-    __comptime_assert (
+    comptime assert (
         bit_width_of[SIMD[dtype, width]]() == bit_width_of[type_of(val)]()
     ), "the source and destination types must have the same bitwidth"
 
@@ -78,25 +78,25 @@ fn bitcast[
     @parameter
     if not is_nvidia_gpu() and not is_amd_gpu():
         # Arm doesnt support casting between float16 and two ints.
-        __comptime_assert not (
+        comptime assert not (
             src_dtype == DType.float16
             and src_width == 1
             and dtype == DType.int8
             and width == 2
         ), "Can't cast a float16 directly to a 2 x i8"
-        __comptime_assert not (
+        comptime assert not (
             src_dtype == DType.float16
             and src_width == 1
             and dtype == DType.uint8
             and width == 2
         ), "Can't cast a float16 directly to a 2 x ui8"
-        __comptime_assert not (
+        comptime assert not (
             src_dtype == DType.int8
             and src_width == 2
             and dtype == DType.float16
             and width == 1
         ), "Can't cast a 2 x i8 directly to a float16"
-        __comptime_assert not (
+        comptime assert not (
             src_dtype == DType.uint8
             and src_width == 2
             and dtype == DType.float16
@@ -183,7 +183,7 @@ fn pack_bits[
     Returns:
         A new integer scalar which has the same bitwidth as the bool vector.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_unsigned() and _llvm_bitwidth(dtype) * width == src_width
     ), (
         "the logical bitwidth of the bool vector must be the same as the"

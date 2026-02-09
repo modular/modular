@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -80,7 +80,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
@@ -235,7 +235,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
@@ -387,7 +387,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
             2,
             0,
         ](
-            smem_desc, block_size
+            smem_desc, UInt32(block_size)
         )
 
     # Ensure warp is converged before issuing tensormap fence release
@@ -405,7 +405,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
@@ -429,7 +429,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     comptime cta_tile_M = cta_tile_layout.shape[0].value()
     comptime cta_tile_N = cta_tile_layout.shape[1].value()
 
-    __comptime_assert N == cta_tile_N, (
+    comptime assert N == cta_tile_N, (
         "for this test number of columns in src layout should be equal to"
         " number of columns in cta tile layout"
     )

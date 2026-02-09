@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -91,7 +91,7 @@ from .int_tuple import (
 # ===-----------------------------------------------------------------------===#
 
 
-trait LayoutTrait(Copyable):
+trait LayoutTrait(Copyable, ImplicitlyDestructible):
     """Defines the interface for mapping between logical coordinates and memory indices.
 
     The `LayoutTrait` provides a common interface for all layout types, including
@@ -1216,7 +1216,7 @@ fn composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
 
     if is_tuple(layout_b.shape):
         var r = Layout()
-        for layoutB_i in layout_b:
+        for var layoutB_i in layout_b:
             r.append(composition(layout_a.copy(), layoutB_i^))
         return r^
 
@@ -1356,7 +1356,7 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
 
 @always_inline
 fn apply_tiler[
-    func: fn (var Layout, var Layout) -> Layout
+    func: fn(var Layout, var Layout) -> Layout
 ](var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Applies a layout transformation function to each element of a layout with a tiler.
 
@@ -1487,16 +1487,17 @@ fn blocked_product(
 ) -> Layout:
     """Creates a blocked layout by combining two layouts.
 
-    This function creates a hierarchical blocked layout by combining a base layout
-    with a block layout. The result is a layout where each element of the base
-    layout is replaced by a block defined by the second layout.
+    This function creates a hierarchical blocked layout by combining an inner
+    (block) and an outer (base) layout. The result is a layout where each
+    element of the outer layout is replaced by a block defined by the
+    inner layout.
 
     This is particularly useful for creating tiled layouts for efficient
     cache utilization in tensor operations like matrix multiplication.
 
     Args:
-        layout_a: The base layout to be blocked.
-        layout_b: The block layout defining the structure within each block.
+        layout_a: Inner layout. The layout for an individual block, or tile.
+        layout_b: Outer layout. The layout of the tiles in the output layout.
         coalesce_output: Whether to coalesce the output layout. Default is False.
 
     Returns:
@@ -1976,23 +1977,25 @@ fn expand_modes_alike(
                 new_stride_a.append(uc[1])
                 new_stride_b.append(uc[2])
 
-        return InlineArray[IntTuple, 3](new_shape, new_stride_a, new_stride_b)
+        return [new_shape, new_stride_a, new_stride_b]
     elif shape_a.is_tuple():
-        return InlineArray[IntTuple, 3](
+        return [
             shape_a.owned_copy(),
             stride_a.owned_copy(),
             expand_strides(shape_a, stride_b.value()),
-        )
+        ]
     elif shape_b.is_tuple():
-        return InlineArray[IntTuple, 3](
+        return [
             shape_b.owned_copy(),
             expand_strides(shape_b.owned_copy(), stride_a.value()),
             stride_b.owned_copy(),
-        )
+        ]
     else:
-        return InlineArray[IntTuple, 3](
-            shape_b.owned_copy(), stride_a.owned_copy(), stride_b.owned_copy()
-        )
+        return [
+            shape_b.owned_copy(),
+            stride_a.owned_copy(),
+            stride_b.owned_copy(),
+        ]
 
 
 fn expand_modes_alike(
@@ -2043,7 +2046,7 @@ fn expand_modes_alike(
     var uc = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
     )
-    return InlineArray[Layout, 2](Layout(uc[0], uc[1]), Layout(uc[0], uc[2]))
+    return [Layout(uc[0], uc[1]), Layout(uc[0], uc[2])]
 
 
 fn right_inverse(layout: Layout) -> Layout:

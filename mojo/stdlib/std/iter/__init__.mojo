@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -77,7 +77,7 @@ trait Iterable:
 
 
 @fieldwise_init
-struct StopIteration(TrivialRegisterType, Writable):
+struct StopIteration(TrivialRegisterPassable, Writable):
     """A custom error type for Iterator's that run out of elements."""
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -89,7 +89,7 @@ struct StopIteration(TrivialRegisterType, Writable):
         writer.write("StopIteration")
 
 
-trait Iterator(Movable):
+trait Iterator(ImplicitlyDestructible, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
@@ -679,7 +679,7 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: fn (var InnerIteratorType.Element) -> OutputType,
+    function: fn(var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator):
     comptime Element = Self.OutputType
     comptime IteratorType[
@@ -715,8 +715,8 @@ fn map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,
-](ref [origin]iterable: IterableType) -> _MapIterator[
+    function: fn(var IterableType.IteratorType[origin].Element) -> ResultType,
+](ref[origin] iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function
 ]:
     """Returns an iterator that applies `function` to each element of the input

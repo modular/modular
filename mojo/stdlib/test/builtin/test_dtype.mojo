@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -85,7 +85,7 @@ fn test_representable() raises:
 
 fn test_is_xxx() raises:
     fn _is_category[
-        test: fn (DType) -> Bool,
+        test: fn(DType) -> Bool,
         true_dtypes: List[DType],
     ]() raises:
         @parameter

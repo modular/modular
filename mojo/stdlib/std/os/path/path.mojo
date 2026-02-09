@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,9 +23,9 @@ from os.path import isdir
 from collections.string.string_slice import _unsafe_strlen
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import CompilationTarget, external_call
+from ffi import MAX_PATH, c_char, external_call, get_errno
+from sys import CompilationTarget
 from sys._libc import realpath as libc_realpath
-from sys.ffi import MAX_PATH, c_char, get_errno
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -603,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables = InlineArray[Int, 17](
+    comptime shell_variables: InlineArray[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),
@@ -621,7 +621,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("7"),
         ord("8"),
         ord("9"),
-    )
+    ]
     return Int(byte) in materialize[shell_variables]()
 
 

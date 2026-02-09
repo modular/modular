@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ from bit.mask import is_negative
 ```
 """
 
-from sys.info import size_of, bit_width_of
+from sys.info import bit_width_of
 
 
 @always_inline
@@ -50,17 +50,10 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
         A bitmask filled with `1` if the value is negative, filled with `0`
         otherwise.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_integral() and dtype.is_signed()
     ), "This function is for signed integral types."
-
-    # HACK(#5003): remove this workaround
-    comptime d = dtype if dtype != DType.int else (
-        DType.int32 if size_of[dtype]() == 4 else DType.int64
-    )
-    return (value.cast[d]() >> SIMD[d, value.size](bit_width_of[d]() - 1)).cast[
-        dtype
-    ]()
+    return value >> SIMD[dtype, value.size](bit_width_of[dtype]() - 1)
 
 
 @always_inline

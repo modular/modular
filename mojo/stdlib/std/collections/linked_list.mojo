@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,6 +20,7 @@ traversal.
 """
 
 from collections._index_normalization import normalize_index
+import format._utils as fmt
 from os import abort
 
 from builtin.constrained import _constrained_conforms_to
@@ -125,7 +126,7 @@ struct _LinkedListIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         if not self.curr:
             raise StopIteration()
         var old = self.curr
@@ -692,7 +693,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
                 curr = curr[].prev
             return curr
 
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Get the element at the specified index.
 
         Parameters:
@@ -762,6 +763,20 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         return len(self) != 0
 
+    fn _write_self_to[
+        f: fn(Self.ElementType, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
+
+        var iterator = self.__iter__()
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            f(iterator.__next__(), w)
+
+        fmt.write_sequence_to[ElementFn=iterate](writer)
+        _ = iterator^
+
     fn __str__(self) -> String:
         """Convert the list to its string representation.
 
@@ -772,7 +787,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(n) in len(self).
         """
         var writer = String()
-        self._write(writer)
+        self.write_to(writer)
         return writer
 
     fn __repr__(self) -> String:
@@ -785,52 +800,34 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(n) in len(self).
         """
         var writer = String()
-        self._write(writer, prefix="LinkedList(", suffix=")")
+        self.write_repr_to(writer)
         return writer
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write the list to the given writer.
 
         Constraints:
-            ElementType must conform to `Representable`.
+            ElementType must conform to `Writable`.
 
         Args:
             writer: The writer to write the list to.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
         """
-        self._write(writer)
+        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
 
-    @no_inline
-    fn _write[
-        W: Writer
-    ](
-        self: Self,
-        mut writer: W,
-        *,
-        prefix: String = "[",
-        suffix: String = "]",
-    ):
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr representation of this LinkedList to a Writer.
 
-        if not self:
-            return writer.write(prefix, suffix)
+        Constraints:
+            ElementType must conform to `Writable`.
 
-        var curr = self._head
-        writer.write(prefix)
-        for i in range(len(self)):
-            if i:
-                writer.write(", ")
-            ref representable_element = trait_downcast[Representable](
-                curr[].value
-            )
-            writer.write(repr(representable_element))
-            curr = curr[].next
-        writer.write(suffix)
+        Args:
+            writer: The writer to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+
+        fmt.FormatStruct(writer, "LinkedList").params(
+            fmt.TypeNames[Self.ElementType](),
+        ).fields[FieldsFn=write_fields]()

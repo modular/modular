@@ -88,271 +88,271 @@ TEST_RESOURCES = {
     "//max/kernels/test/quantization:test_qmatmul_k.mojo.test": {
         "cpu": 4,
     },
-    "//max/tests/integration/API/python/graph:test_matmul_packed": {
+    "//max/tests/integration/graph:test_matmul_packed": {
         "memory": 5897,
     },
-    "//max/tests/integration/API/python/graph:test_reduce_add": {
+    "//max/tests/integration/graph:test_reduce_add": {
         "memory": 1890,
     },
-    "//max/tests/integration/API/python/interfaces:test_hash_image": {
+    "//max/tests/integration/interfaces:test_hash_image": {
         "cpu": 6,
         "memory": 360,
     },
-    "//max/tests/integration/API/python/interfaces:test_queue": {
+    "//max/tests/integration/interfaces:test_queue": {
         "cpu": 5,
         "memory": 360,
     },
-    "//max/tests/integration/API/python/interfaces:test_serialization": {
+    "//max/tests/integration/interfaces:test_serialization": {
         "cpu": 5,
         "memory": 360,
     },
-    "//max/tests/integration/API/python/interfaces:test_tokens": {
+    "//max/tests/integration/interfaces:test_tokens": {
         "cpu": 5,
         "memory": 360,
     },
-    "//max/tests/integration/API/python/interfaces:text_generation/test_text_generation_request": {
+    "//max/tests/integration/interfaces:text_generation/test_text_generation_request": {
         "cpu": 5,
         "memory": 360,
     },
-    "//max/tests/integration/API/python/nn/module_v3:norm/test_rms_norm": {
+    "//max/tests/integration/nn/module_v3:norm/test_rms_norm": {
         "cpu": 3,
         "memory": 21602,
     },
-    "//max/tests/integration/API/python/nn/module_v3:rope/test_rope": {
+    "//max/tests/integration/nn/module_v3:rope/test_rope": {
         "cpu": 4,
         "memory": 29830,
     },
-    "//max/tests/integration/API/python/nn/module_v3:test_embedding": {
+    "//max/tests/integration/nn/module_v3:test_embedding": {
         "cpu": 4,
         "memory": 16103,
     },
-    "//max/tests/integration/API/python/nn/module_v3:test_linear": {
+    "//max/tests/integration/nn/module_v3:test_linear": {
         "cpu": 3,
         "memory": 15871,
     },
-    "//max/tests/integration/API/python/nn/module_v3:test_module": {
+    "//max/tests/integration/nn/module_v3:test_module": {
         "cpu": 7,
         "memory": 42461,
     },
-    "//max/tests/integration/API/python/nn/module_v3:test_sequential": {
+    "//max/tests/integration/nn/module_v3:test_sequential": {
         "cpu": 3,
         "memory": 5680,
     },
-    "//max/tests/integration/API/python/tensor:test_arange": {
+    "//max/tests/integration/tensor:test_arange": {
         "cpu": 4,
         "memory": 43294,
     },
-    "//max/tests/integration/API/python/tensor:test_functional_binary": {
+    "//max/tests/integration/tensor:test_functional_binary": {
         "cpu": 5,
         "memory": 44612,
     },
-    "//max/tests/integration/API/python/tensor:test_functional_custom": {
+    "//max/tests/integration/tensor:test_functional_custom": {
         "cpu": 8,
         "memory": 4387,
     },
-    "//max/tests/integration/API/python/tensor:test_functional_other": {
+    "//max/tests/integration/tensor:test_functional_other": {
         "cpu": 7,
         "memory": 117646,
     },
-    "//max/tests/integration/API/python/tensor:test_functional_reduction": {
+    "//max/tests/integration/tensor:test_functional_reduction": {
         "cpu": 8,
         "memory": 13848,
     },
-    "//max/tests/integration/API/python/tensor:test_functional_unary": {
+    "//max/tests/integration/tensor:test_functional_unary": {
         "cpu": 6,
         "memory": 58646,
     },
-    "//max/tests/integration/API/python/tensor:test_random": {
+    "//max/tests/integration/tensor:test_random": {
         "cpu": 5,
         "memory": 29461,
     },
-    "//max/tests/integration/API/python/tensor:test_tensor_elemwise": {
+    "//max/tests/integration/tensor:test_tensor_elemwise": {
         "cpu": 7,
         "memory": 111186,
     },
-    "//max/tests/integration/API/python/tensor:test_tensor_matmul": {
+    "//max/tests/integration/tensor:test_tensor_matmul": {
         "cpu": 5,
         "memory": 12228,
     },
-    "//max/tests/integration/API/python/tensor:test_tensor_repr": {
+    "//max/tests/integration/tensor:test_tensor_repr": {
         "cpu": 7,
         "memory": 42664,
     },
-    "//max/tests/integration/API/python:test_load_library": {
+    "//max/tests/integration/unorganized:test_load_library": {
         "cpu": 5,
     },
-    "//max/tests/integration/API/python:test_load_library_3.10": {
+    "//max/tests/integration/unorganized:test_load_library_3.10": {
         "cpu": 7,
     },
-    "//max/tests/integration/API/python:test_load_library_3.11": {
+    "//max/tests/integration/unorganized:test_load_library_3.11": {
         "cpu": 7,
     },
-    "//max/tests/integration/API/python:test_load_library_3.13": {
+    "//max/tests/integration/unorganized:test_load_library_3.13": {
         "cpu": 7,
         "memory": 127,
     },
-    "//max/tests/integration/API/python:test_load_library_3.14": {
+    "//max/tests/integration/unorganized:test_load_library_3.14": {
         "cpu": 6,
     },
-    "//max/tests/integration/API/python:tests-fail-weight-loading": {
+    "//max/tests/integration/unorganized:tests-fail-weight-loading": {
         "cpu": 5,
     },
-    "//max/tests/integration/pipelines/python/dataprocessing:test_causal_attention_mask": {
+    "//max/tests/integration/dataprocessing:test_causal_attention_mask": {
         "memory": 360,
     },
-    "//max/tests/integration/pipelines/python/dataprocessing:test_causal_attention_mask_with_alibi": {
+    "//max/tests/integration/dataprocessing:test_causal_attention_mask_with_alibi": {
         "memory": 475,
     },
-    "//max/tests/integration/pipelines/python/dataprocessing:test_collate_batch": {
+    "//max/tests/integration/dataprocessing:test_collate_batch": {
         "cpu": 2,
         "memory": 360,
     },
-    "//max/tests/integration/pipelines/python/dataprocessing:test_max_tokens_to_generate": {
+    "//max/tests/integration/dataprocessing:test_max_tokens_to_generate": {
         "cpu": 5,
         "memory": 360,
     },
-    "//max/tests/integration/pipelines/python/kv_cache/attention:attention_no_opaque_tests": {
+    "//max/tests/integration/kv_cache/attention:attention_no_opaque_tests": {
         "cpu": 2,
         "memory": 4325,
     },
-    "//max/tests/integration/pipelines/python/kv_cache/attention:attention_tests": {
+    "//max/tests/integration/kv_cache/attention:attention_tests": {
         "cpu": 2,
         "memory": 6932,
     },
-    "//max/tests/integration/pipelines/python/kv_cache/transfer_engine:test_notification_latency": {
+    "//max/tests/integration/kv_cache/transfer_engine:test_notification_latency": {
         "cpu": 2,
         "memory": 2078,
     },
-    "//max/tests/integration/pipelines/python/kv_cache/transfer_engine:test_send_recv": {
+    "//max/tests/integration/kv_cache/transfer_engine:test_send_recv": {
         "cpu": 3,
         "memory": 710,
     },
-    "//max/tests/integration/pipelines/python/kv_cache:embedding": {
+    "//max/tests/integration/kv_cache:embedding": {
         "cpu": 8,
         "memory": 21692,
     },
-    "//max/tests/integration/pipelines/python/kv_cache:test_kv_cache_matmul": {
+    "//max/tests/integration/kv_cache:test_kv_cache_matmul": {
         "cpu": 2,
         "memory": 19446,
     },
-    "//max/tests/integration/pipelines/python/kv_cache:test_memory_estimation": {
+    "//max/tests/integration/kv_cache:test_memory_estimation": {
         "cpu": 2,
         "memory": 295,
     },
-    "//max/tests/integration/pipelines/python/kv_cache:test_prefix_caching": {
+    "//max/tests/integration/kv_cache:test_prefix_caching": {
         "memory": 2448,
     },
-    "//max/tests/integration/pipelines/python/kv_cache:test_print_kv_cache": {
+    "//max/tests/integration/kv_cache:test_print_kv_cache": {
         "cpu": 2,
         "memory": 13339,
     },
-    "//max/tests/integration/pipelines/python/kv_cache:test_rms_norm_key_cache": {
+    "//max/tests/integration/kv_cache:test_rms_norm_key_cache": {
         "cpu": 2,
         "memory": 5705,
     },
-    "//max/tests/integration/pipelines/python/mistral3:tests": {
+    "//max/tests/integration/architectures/mistral3:tests": {
         "cpu": 2,
         "memory": 721,
     },
-    "//max/tests/integration/pipelines/python/nn/kv_cache:test_block_hasher": {
+    "//max/tests/integration/nn/kv_cache:test_block_hasher": {
         "cpu": 2,
         "memory": 875,
     },
-    "//max/tests/integration/pipelines/python/nn/kv_cache:test_cache_params": {
+    "//max/tests/integration/nn/kv_cache:test_cache_params": {
         "cpu": 2,
         "memory": 296,
     },
-    "//max/tests/integration/pipelines/python/nn/kv_cache:test_data_parallelism_utils": {
+    "//max/tests/integration/nn/kv_cache:test_data_parallelism_utils": {
         "memory": 295,
     },
-    "//max/tests/integration/pipelines/python/nn/kv_cache:test_kv_cache_manager": {
+    "//max/tests/integration/nn/kv_cache:test_kv_cache_manager": {
         "memory": 2587,
     },
-    "//max/tests/integration/pipelines/python/nn/norm:norm_tests": {
+    "//max/tests/integration/nn/norm:norm_tests": {
         "memory": 3623,
     },
-    "//max/tests/integration/pipelines/python/nn:test_conv": {
+    "//max/tests/integration/nn:test_conv": {
         "cpu": 3,
         "memory": 21245,
     },
-    "//max/tests/integration/pipelines/python/nn:test_identity": {
+    "//max/tests/integration/nn:test_identity": {
         "cpu": 8,
         "memory": 8041,
     },
-    "//max/tests/integration/pipelines/python/nn:test_layer_hook": {
+    "//max/tests/integration/nn:test_layer_hook": {
         "cpu": 8,
         "memory": 8842,
     },
-    "//max/tests/integration/pipelines/python/nn:test_mlp": {
+    "//max/tests/integration/nn:test_mlp": {
         "cpu": 8,
         "memory": 55325,
     },
-    "//max/tests/integration/pipelines/python/nn:test_print_hook": {
+    "//max/tests/integration/nn:test_print_hook": {
         "cpu": 6,
         "memory": 10141,
     },
-    "//max/tests/integration/pipelines/python/pipelines:test_compute_log_probabilities": {
+    "//max/tests/integration/pipelines:test_compute_log_probabilities": {
         "cpu": 2,
         "memory": 2149,
     },
-    "//max/tests/integration/pipelines/python/pipelines:test_lora_graph_inputs": {
+    "//max/tests/integration/pipelines:test_lora_graph_inputs": {
         "cpu": 2,
         "memory": 859,
     },
-    "//max/tests/integration/pipelines/python/pipelines:test_pipeline_lora_sorting": {
+    "//max/tests/integration/pipelines:test_pipeline_lora_sorting": {
         "cpu": 2,
         "memory": 896,
     },
-    "//max/tests/integration/pipelines/python/pipelines:test_text_generation_pipeline": {
+    "//max/tests/integration/pipelines:test_text_generation_pipeline": {
         "cpu": 2,
         "memory": 2246,
     },
-    "//max/tests/integration/pipelines/python/qwen2_5vl:test_compute_scatter_gather_indices": {
+    "//max/tests/integration/architectures/qwen2_5vl:test_compute_scatter_gather_indices": {
         "cpu": 2,
         "memory": 776,
     },
-    "//max/tests/integration/pipelines/python/qwen2_5vl:test_vision_functions": {
+    "//max/tests/integration/architectures/qwen2_5vl:test_vision_functions": {
         "memory": 14933,
     },
-    "//max/tests/integration/pipelines/python/qwen3vl:test_vision_functions": {
+    "//max/tests/integration/architectures/qwen3vl:test_vision_functions": {
         "cpu": 2,
         "memory": 935,
     },
-    "//max/tests/integration/pipelines/python/whisper:whisper": {
+    "//max/tests/integration/architectures/whisper:whisper": {
         "cpu": 2,
         "memory": 935,
     },
-    "//max/tests/integration/pipelines/python:test_compare_tensors": {
+    "//max/tests/integration/accuracy:test_compare_tensors": {
         "memory": 2370,
     },
-    "//max/tests/integration/pipelines/python:test_debug_model": {
+    "//max/tests/integration/accuracy:test_debug_model": {
         "cpu": 2,
         "memory": 893,
     },
-    "//max/tests/integration/pipelines/python:test_debug_utils": {
+    "//max/tests/integration/accuracy:test_debug_utils": {
         "cpu": 2,
         "memory": 911,
     },
-    "//max/tests/integration/pipelines/python:test_hf_config_overrides": {
+    "//max/tests/integration/tools:test_hf_config_overrides": {
         "cpu": 2,
         "memory": 743,
     },
-    "//max/tests/integration/pipelines/python:test_hf_repo_lock": {
+    "//max/tests/integration:test_hf_repo_lock": {
         "cpu": 2,
         "memory": 894,
     },
-    "//max/tests/integration/pipelines/python:test_pipelines_cli_help": {
+    "//max/tests/integration/cli:test_pipelines_cli_help": {
         "cpu": 2,
         "memory": 775,
     },
-    "//max/tests/integration/pipelines/python:test_pipelines_cli_json_lightweight": {
+    "//max/tests/integration/cli:test_pipelines_cli_json_lightweight": {
         "memory": 748,
     },
-    "//max/tests/integration/pipelines/python:test_pipelines_cli_lightweight": {
+    "//max/tests/integration/cli:test_pipelines_cli_lightweight": {
         "cpu": 2,
         "memory": 778,
     },
-    "//max/tests/integration/pipelines/python:test_pipelines_lm_eval": {
+    "//max/tests/integration/accuracy:test_pipelines_lm_eval": {
         "cpu": 2,
         "memory": 8350,
     },

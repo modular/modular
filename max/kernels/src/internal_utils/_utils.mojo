@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv, floor
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -65,7 +65,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             not Self.dim.is_dynamic()
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
@@ -74,7 +74,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         self.value = v
 
 
-struct InitializationType(DevicePassable, Equatable, TrivialRegisterType):
+struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -90,10 +90,6 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterType):
     @staticmethod
     fn get_type_name() -> String:
         return "InitializationType"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -130,7 +126,7 @@ fn bench_compile_time[
     func: func_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
-    __comptime_assert emission_kind in ("asm", "llvm", "ptx")
+    comptime assert emission_kind in ("asm", "llvm", "ptx")
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
@@ -191,7 +187,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     @parameter
     for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
-        __comptime_assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
+        comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
         @parameter
         if name_unsafe_ptr[i] == x_ptr:
@@ -286,7 +282,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-struct Mode(Stringable, TrivialRegisterType):
+struct Mode(Stringable, TrivialRegisterPassable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -435,7 +431,7 @@ fn init_vector_launch[
     length: Int,
     init_type: InitializationType,
     context: DeviceContext,
-    value: OptionalReg[Scalar[dtype]] = None,
+    value: Optional[Scalar[dtype]] = None,
 ) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array

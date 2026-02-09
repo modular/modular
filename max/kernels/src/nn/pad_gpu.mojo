@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,13 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout import Layout, RuntimeLayout, LayoutTensor
-from layout.runtime_tuple import idx2crd, crd2idx, RuntimeTuple
+from layout._coord import Coord, Idx
+from layout._layout import TensorLayout, Layout
+from layout._tile_tensor import TileTensor
 from math import ceildiv
 from sys.info import align_of
 from utils.index import IndexList
@@ -31,7 +30,7 @@ fn _fill_strides_indexlist[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    __comptime_assert rank > 0
+    comptime assert rank > 0
     strides[rank - 1] = 1
 
     @parameter
@@ -46,25 +45,14 @@ fn _fill_strides_indexlist[
 @always_inline
 fn get_row_offset[
     dtype: DType,
-    tensor_layout: Layout,
 ](
-    input_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    output_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    input_tensor: TileTensor[dtype, ...],
+    output_tensor: TileTensor[mut=True, dtype, ...],
     row_length: Int,
     row: Int,
 ) -> Int:
-    var coord = idx2crd(
-        RuntimeTuple(row * row_length),
-        input_tensor.runtime_layout.shape,
-        input_tensor.runtime_layout.stride,
-    )
-
-    var offset = crd2idx(
-        coord,
-        output_tensor.runtime_layout.shape,
-        output_tensor.runtime_layout.stride,
-    )
-
+    var coord = input_tensor.layout.idx2crd(row * row_length)
+    var offset = output_tensor.layout(coord)
     return Int(offset)
 
 
@@ -73,7 +61,7 @@ fn scalar_copy_row[
     dtype: DType,
 ](
     input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     row_length: Int,
     threads_per_row: Int,
 ):
@@ -88,7 +76,7 @@ fn vector_copy_row[
     simd_width: Int,
 ](
     input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     scaled_row_length: Int,
     row_length: Int,
     threads_per_row: Int,
@@ -121,10 +109,15 @@ fn vector_copy_row[
 
 
 fn padded_copy_kernel[
-    dtype: DType, tensor_layout: Layout, simd_width: Int
+    InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    dtype: DType,
+    simd_width: Int,
 ](
-    input_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    output_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    input_tensor: TileTensor[dtype, InputLayoutType, input_origin],
+    output_tensor: TileTensor[dtype, OutputLayoutType, output_origin],
     rows_per_sm: Int,
     total_rows: Int,
     row_length: Int,
@@ -158,19 +151,20 @@ fn padded_copy_kernel[
 
 fn _pad_constant_impl[
     dtype: DType,
-    tensor_layout: Layout,
     simd_width: Int = 1,
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    output_tensor: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    input_tensor: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    output_tensor: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
-    var row_length = input_tensor.dim(input_tensor.rank - 1)
-    var total_rows = input_tensor.size() // row_length
+    var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
+    var total_rows = input_tensor.numel() // row_length
 
-    __comptime_assert threads_per_row > 0 and max_threads % threads_per_row == 0
+    comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
@@ -187,10 +181,17 @@ fn _pad_constant_impl[
 
     var scaled_row_length = (row_length // simd_width) * simd_width
     comptime block_rows = max_threads // threads_per_row
-    comptime kernel = padded_copy_kernel[dtype, tensor_layout, simd_width]
+    comptime kernel = padded_copy_kernel[
+        input_origin = ImmutOrigin(input_tensor.origin),
+        InputLayoutType = input_tensor.LayoutType,
+        output_origin = output_tensor.origin,
+        OutputLayoutType = output_tensor.LayoutType,
+        dtype=dtype,
+        simd_width=simd_width,
+    ]
 
     ctx.enqueue_function_experimental[kernel](
-        input_tensor,
+        input_tensor.as_immut(),
         output_tensor,
         rows_per_block,
         total_rows,
@@ -204,7 +205,7 @@ fn _pad_constant_impl[
 fn pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype]],
     output_shape: IndexList[rank],
     input: UnsafePointer[Scalar[dtype]],
     input_shape: IndexList[rank],
@@ -255,14 +256,9 @@ fn pad_constant[
     _fill_strides_indexlist[rank](input_shape, input_strides)
     _fill_strides_indexlist[rank](output_shape, output_strides)
 
-    comptime tensor_layout = Layout.row_major[rank]()
-
-    var input_tensor = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+    var input_tensor = TileTensor(
         input,
-        RuntimeLayout[tensor_layout](
-            input_shape,
-            input_strides,
-        ),
+        Layout(Coord(input_shape), Coord(input_strides)),
     )
 
     var pre_pad_offset = 0
@@ -272,15 +268,12 @@ fn pad_constant[
 
     var adjusted_output_ptr = output + pre_pad_offset
 
-    var output_tensor = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
+    var output_tensor = TileTensor(
         adjusted_output_ptr,
-        RuntimeLayout[tensor_layout](
-            input_shape,
-            output_strides,
-        ),
+        Layout(Coord(input_shape), Coord(output_strides)),
     )
 
-    _pad_constant_impl[dtype, tensor_layout](
+    _pad_constant_impl[dtype](
         input_tensor,
         output_tensor,
         ctx,
@@ -291,8 +284,9 @@ fn get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: LayoutTensor[DType.int, Layout(2 * rank)],
+    paddings: TileTensor[DType.int, ...],
 ) -> IndexList[rank]:
+    comptime assert paddings.rank == 1 and paddings.static_shape[0] == 2 * rank
     var output_shape = IndexList[rank]()
     for i in range(rank):
         var before = paddings[2 * i]

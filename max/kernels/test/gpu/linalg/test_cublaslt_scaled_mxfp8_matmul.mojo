@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn test_scaled_mxfp8_cublaslt[
     output_type: DType,
     transpose_b: Bool,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
-    __comptime_assert (
+    comptime assert (
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled FP8 matmul"
 

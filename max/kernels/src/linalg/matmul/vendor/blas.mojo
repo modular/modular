@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from sys import has_amd_gpu_accelerator, size_of
-from sys.ffi import _get_global_or_null, external_call
+from ffi import _get_global_or_null, external_call
 
 import _rocblas
 from _cublas.cublas import (
@@ -113,7 +113,7 @@ from linalg.fp4_utils import (
 # ===----------------------------------------------------------------------===#
 
 
-struct Backend(Equatable, TrivialRegisterType, Writable):
+struct Backend(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -123,7 +123,7 @@ struct Backend(Equatable, TrivialRegisterType, Writable):
     comptime HIPBLASLT = Self(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -257,20 +257,20 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         return False
 
     fn _get_cublas(self) -> Self._cublas_type:
-        __comptime_assert Self.resolved_backend in (
+        comptime assert Self.resolved_backend in (
             Backend.CUBLAS,
             Backend.CUBLASLT,
         ), "backend must be CUBLAS/CUBLASLT"
         return self._handle[Self._cublas_type]
 
     fn _get_rocblas(self) -> Self._rocblas_type:
-        __comptime_assert (
+        comptime assert (
             Self.resolved_backend is Backend.ROCBLAS
         ), "backend must be ROCBLAS"
         return self._handle[Self._rocblas_type]
 
     fn _get_hipblaslt(self) -> Self._hipblaslt_type:
-        __comptime_assert (
+        comptime assert (
             Self.resolved_backend is Backend.HIPBLASLT
         ), "backend must be HIPBLASLT"
         return self._handle[Self._hipblaslt_type]
@@ -375,7 +375,7 @@ fn matmul[
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a.type](ctx),
             c_tensor,
@@ -424,7 +424,7 @@ fn matmul[
     batch_size: Int = 1,
 ) raises:
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tensor,
@@ -599,7 +599,7 @@ fn _cublas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    __comptime_assert a_type == b_type and (
+    comptime assert a_type == b_type and (
         a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
@@ -656,24 +656,24 @@ fn _cublas_matmul[
                 handle,
                 _convert_to_cublas_transpose(transpose_b),
                 _convert_to_cublas_transpose(transpose_a),
-                N,
-                M,
-                K,
+                Int32(N),
+                Int32(M),
+                Int32(K),
                 LegacyUnsafePointer(to=alpha)
                 .bitcast[NoneType]()
                 .as_unsafe_pointer(),
                 UnsafePointer(b.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[b_type](),
-                K if transpose_b else N,
+                Int32(K) if transpose_b else Int32(N),
                 UnsafePointer(a.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a_type](),
-                M if transpose_a else K,
+                Int32(M) if transpose_a else Int32(K),
                 LegacyUnsafePointer(to=beta)
                 .bitcast[NoneType]()
                 .as_unsafe_pointer(),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c_type](),
-                N,
+                Int32(N),
                 compute_type,
                 Algorithm.DEFAULT,
             ),
@@ -698,24 +698,24 @@ fn _cublas_matmul[
             handle,
             _convert_to_cublas_transpose(transpose_a),
             _convert_to_cublas_transpose(transpose_b),
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             LegacyUnsafePointer(to=alpha)
             .bitcast[NoneType]()
             .as_unsafe_pointer(),
             UnsafePointer(a.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[a_type](),
-            M,
+            Int32(M),
             UnsafePointer(b.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[b_type](),
-            N if transpose_b else K,
+            Int32(N) if transpose_b else Int32(K),
             LegacyUnsafePointer(to=beta)
             .bitcast[NoneType]()
             .as_unsafe_pointer(),
             UnsafePointer(c.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[c_type](),
-            M,
+            Int32(M),
             compute_type,
             Algorithm.DEFAULT,
         ),
@@ -762,7 +762,7 @@ fn _rocblas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    __comptime_assert a_type == b_type and (
+    comptime assert a_type == b_type and (
         a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
@@ -798,23 +798,23 @@ fn _rocblas_matmul[
                 handle,
                 _convert_to_rocblas_transpose(transpose_b),
                 _convert_to_rocblas_transpose(transpose_a),
-                N,
-                M,
-                K,
+                Int32(N),
+                Int32(M),
+                Int32(K),
                 LegacyUnsafePointer(to=alpha).bitcast[NoneType](),
                 UnsafePointer(b.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(b_type),
-                K if transpose_b else N,
+                Int32(K) if transpose_b else Int32(N),
                 UnsafePointer(a.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(a_type),
-                K,
+                Int32(K),
                 LegacyUnsafePointer(to=beta).bitcast[NoneType](),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(c_type),
-                N,
+                Int32(N),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(c_type),
-                N,
+                Int32(N),
                 compute_type,
                 _rocblas.rocblas.types.Algorithm.STANDARD,
                 0,
@@ -827,23 +827,23 @@ fn _rocblas_matmul[
             handle,
             _convert_to_rocblas_transpose(transpose_a),
             _convert_to_rocblas_transpose(transpose_b),
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             LegacyUnsafePointer(to=alpha).bitcast[NoneType](),
             UnsafePointer(a.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(a_type),
-            M,
+            Int32(M),
             UnsafePointer(b.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(b_type),
-            N if transpose_b else K,
+            Int32(N) if transpose_b else Int32(K),
             LegacyUnsafePointer(to=beta).bitcast[NoneType](),
             UnsafePointer(c.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(c_type),
-            M,
+            Int32(M),
             UnsafePointer(c.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(c_type),
-            M,
+            Int32(M),
             compute_type,
             _rocblas.rocblas.types.Algorithm.STANDARD,
             0,
@@ -890,7 +890,7 @@ fn _cublasLt_matmul[
     var N = d.dim(1)
     var K = a.dim(1)
 
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
         DType.bfloat16,
@@ -902,11 +902,11 @@ fn _cublasLt_matmul[
         " types."
     )
 
-    __comptime_assert a_type == b_type, "A and B must have the same type"
+    comptime assert a_type == b_type, "A and B must have the same type"
 
     @parameter
     if a_type.is_float8():
-        __comptime_assert not (a_type == b_type == DType.float8_e5m2), (
+        comptime assert not (a_type == b_type == DType.float8_e5m2), (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"
         )
@@ -1123,9 +1123,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             LegacyUnsafePointer(to=_adesc),
             _convert_to_cublas_datatype[a_type](),
-            K,
-            N if c_row_major else M,
-            K,
+            UInt64(K),
+            UInt64(N) if c_row_major else UInt64(M),
+            Int64(K),
         ),
         msg="failed to create cublasLtMatrixLayout for adesc",
     )
@@ -1135,9 +1135,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             LegacyUnsafePointer(to=_bdesc),
             _convert_to_cublas_datatype[b_type](),
-            K,
-            M if c_row_major else N,
-            K,
+            UInt64(K),
+            UInt64(M) if c_row_major else UInt64(N),
+            Int64(K),
         ),
         msg="failed to create cublasLtMatrixLayout for bdesc",
     )
@@ -1147,9 +1147,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             LegacyUnsafePointer(to=_ddesc),
             _convert_to_cublas_datatype[d_type](),
-            N if c_row_major else M,
-            M if c_row_major else N,
-            N if c_row_major else M,
+            UInt64(N) if c_row_major else UInt64(M),
+            UInt64(M) if c_row_major else UInt64(N),
+            Int64(N) if c_row_major else Int64(M),
         ),
         msg="failed to create cublasLtMatrixLayout for ddesc",
     )
@@ -1159,9 +1159,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             LegacyUnsafePointer(to=_cdesc),
             _convert_to_cublas_datatype[d_type](),
-            N if c_row_major else M,
-            M if c_row_major else N,
-            N if c_row_major else M,
+            UInt64(N) if c_row_major else UInt64(M),
+            UInt64(M) if c_row_major else UInt64(N),
+            Int64(N) if c_row_major else Int64(M),
         ),
         msg="failed to create cublasLtMatrixLayout for cdesc",
     )
@@ -1310,7 +1310,7 @@ fn _hipblasLt_matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float32,
         DType.float16,
         DType.bfloat16,
@@ -1320,7 +1320,7 @@ fn _hipblasLt_matmul[
         DType.float8_e5m2fnuz,
     ), "Unsupported data type. Please extend it if you need more data types."
 
-    __comptime_assert a_type == b_type, "A and B must have the same type"
+    comptime assert a_type == b_type, "A and B must have the same type"
 
     @always_inline
     @parameter
@@ -1335,9 +1335,9 @@ fn _hipblasLt_matmul[
             hipblasLtMatrixLayoutCreate(
                 LegacyUnsafePointer(to=_desc),
                 _convert_to_hip_datatype[buf_type](),
-                buf.dim(1),
-                buf.dim(0),
-                buf.dim(1),
+                UInt64(buf.dim(1)),
+                UInt64(buf.dim(0)),
+                Int64(buf.dim(1)),
             )
         )
         return _desc
@@ -1375,9 +1375,15 @@ fn _hipblasLt_matmul[
 
     # set batch size accordingly
     if batch_size > 1:
-        set_matrix_layout_batch_size(_adesc, batch_size, a.dim(0) * a.dim(1))
-        set_matrix_layout_batch_size(_bdesc, batch_size, b.dim(0) * b.dim(1))
-        set_matrix_layout_batch_size(_ddesc, batch_size, d.dim(0) * d.dim(1))
+        set_matrix_layout_batch_size(
+            _adesc, batch_size, Int64(a.dim(0) * a.dim(1))
+        )
+        set_matrix_layout_batch_size(
+            _bdesc, batch_size, Int64(b.dim(0) * b.dim(1))
+        )
+        set_matrix_layout_batch_size(
+            _ddesc, batch_size, Int64(d.dim(0) * d.dim(1))
+        )
 
     var transa = (
         hipblasOperation_t.OP_T if transpose_a else hipblasOperation_t.OP_N

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -57,7 +57,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
         for r in range(4):
             for c in range(4):
-                if sram_tensor[r, c] != r * 16 + Int(col_offset) + c:
+                if sram_tensor[r, c] != Float32(r * 16 + Int(col_offset) + c):
                     flag[] = False
 
     comptime kernel = copy_to_sram_test_kernel[tensor_layout]

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,6 +24,10 @@ from typing import Any, cast
 import click
 import torch
 from max.entrypoints.cli import DevicesOptionType
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from max.tests.integration.tools.debugging_utils import run_debug_model
 from max.tests.integration.tools.hf_config_overrides import (
     create_layer_overrides,
@@ -42,7 +46,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--framework",
     "framework_name",
-    type=click.Choice(["max", "torch"]),
+    type=click.Choice(["max", "torch", "vllm"]),
     default="max",
     help="Framework to run pipeline with",
 )
@@ -172,7 +176,9 @@ def main(
 
     try:
         run_debug_model(
-            device_specs=DevicesOptionType.device_specs(device_type),
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
+            ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,

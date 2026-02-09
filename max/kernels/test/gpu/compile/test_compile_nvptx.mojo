@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ fn kernel(x: Int) -> Int:
     return Int(thread_idx.x)
 
 
-fn parametric[f: fn (Int) -> Int]() -> Int:
+fn parametric[f: fn(Int) -> Int]() -> Int:
     return f(42)
 
 

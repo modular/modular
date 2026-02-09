@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -54,12 +54,12 @@ fn test_distribute() raises:
         # Fill the fragment positions with the thread id (0..3)
         for i in range(2):
             for j in range(2):
-                frag[(Idx(i), Idx(j))] = counter
+                frag[(Idx(i), Idx(j))] = UInt32(counter)
                 counter += 1
 
     var expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
     for i in range(16):
-        assert_equal(ptr[i], expected[i])
+        assert_equal(ptr[i], UInt32(expected[i]))
 
 
 fn test_distribute_with_swizzle() raises:
@@ -101,7 +101,7 @@ fn test_distribute_with_swizzle() raises:
         # Write thread ID to each position in the fragment
         for i in range(2):
             for j in range(2):
-                frag[(Idx(i), Idx(j))] = th_id
+                frag[(Idx(i), Idx(j))] = UInt32(th_id)
 
     # Thread layout row_major[2, 2] has strides [2, 1]
     # Thread 0: coord (0, 0) -> base offset 0*4 + 0*1 = 0, swizzle(0) = 0
@@ -170,8 +170,8 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
 
         for i in range(2):
             for j in range(2):
-                frag_no_swizzle[(Idx(i), Idx(j))] = th_id
-                frag_with_swizzle[(Idx(i), Idx(j))] = th_id
+                frag_no_swizzle[(Idx(i), Idx(j))] = UInt32(th_id)
+                frag_with_swizzle[(Idx(i), Idx(j))] = UInt32(th_id)
 
     # Verify that the two arrays are different (swizzle changes layout)
     var differ = False
@@ -201,7 +201,7 @@ fn test_tile() raises:
 
             for i in range(2):
                 for j in range(2):
-                    current_tile[(Idx(i), Idx(j))] = counter
+                    current_tile[(Idx(i), Idx(j))] = UInt32(counter)
                     counter += 1
 
     # Expected layout after tiling:
@@ -211,7 +211,7 @@ fn test_tile() raises:
     # Tile (1,1): values 12,13,14,15 -> positions [10,11], [14,15]
     var expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
     for i in range(16):
-        assert_equal(data[i], expected[i])
+        assert_equal(data[i], UInt32(expected[i]))
 
 
 def test_tensor_span_constructor():
@@ -225,8 +225,8 @@ def test_tensor_span_constructor():
 def test_fill():
     var stack = InlineArray[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
-    for i in range(tensor.layout.shape[0].value()):
-        for j in range(tensor.layout.shape[1].value()):
+    for i in range(tensor.layout.shape[0]().value()):
+        for j in range(tensor.layout.shape[1]().value()):
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
 
 
@@ -234,8 +234,8 @@ def test_fill_large():
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = InlineArray[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
-    for i in range(tensor.layout.shape[0].value()):
-        for j in range(tensor.layout.shape[1].value()):
+    for i in range(tensor.layout.shape[0]().value()):
+        for j in range(tensor.layout.shape[1]().value()):
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
 
 
@@ -246,7 +246,7 @@ fn test_slice() raises:
 
     # Initialize with values 0-15 in row-major order
     for i in range(16):
-        data_2d[i] = i
+        data_2d[i] = Int32(i)
 
     # Create 4x4 tensor:
     # [0  1  2  3]
@@ -261,14 +261,14 @@ fn test_slice() raises:
     var sliced = tensor_2d.slice[1:3, 1:3]()
 
     # Verify slice dimensions
-    assert_equal(sliced.layout.shape[0].value(), 2)
-    assert_equal(sliced.layout.shape[1].value(), 2)
+    assert_equal(sliced.layout.shape[0]().value(), 2)
+    assert_equal(sliced.layout.shape[1]().value(), 2)
 
     # Verify slice values - use runtime indices since slice returns runtime shapes
-    assert_equal(sliced[(0, 0)], 5)
-    assert_equal(sliced[(0, 1)], 6)
-    assert_equal(sliced[(1, 0)], 9)
-    assert_equal(sliced[(1, 1)], 10)
+    assert_equal(sliced[0, 0], 5)
+    assert_equal(sliced[0, 1], 6)
+    assert_equal(sliced[1, 0], 9)
+    assert_equal(sliced[1, 1], 10)
 
     # Test that slice is a view (modifying slice affects original)
     sliced[(Idx(0), Idx(0))] = 99
@@ -276,17 +276,17 @@ fn test_slice() raises:
 
     # Test different slice ranges
     var top_left = tensor_2d.slice[0:2, 0:2]()
-    assert_equal(top_left[(0, 0)], 0)
-    assert_equal(top_left[(0, 1)], 1)
-    assert_equal(top_left[(1, 0)], 4)
-    assert_equal(top_left[(1, 1)], 99)  # Modified earlier
+    assert_equal(top_left[0, 0], 0)
+    assert_equal(top_left[0, 1], 1)
+    assert_equal(top_left[1, 0], 4)
+    assert_equal(top_left[1, 1], 99)  # Modified earlier
 
     # Test slice with start=0 (should work with default)
     var first_row = tensor_2d.slice[0:1, 0:4]()
-    assert_equal(first_row.layout.shape[0].value(), 1)
-    assert_equal(first_row.layout.shape[1].value(), 4)
-    assert_equal(first_row[(0, 0)], 0)
-    assert_equal(first_row[(0, 3)], 3)
+    assert_equal(first_row.layout.shape[0]().value(), 1)
+    assert_equal(first_row.layout.shape[1]().value(), 4)
+    assert_equal(first_row[0, 0], 0)
+    assert_equal(first_row[0, 3], 3)
 
 
 fn test_slice_3d() raises:
@@ -295,7 +295,7 @@ fn test_slice_3d() raises:
     var data_3d = InlineArray[Int32, 64](uninitialized=True)
 
     for i in range(64):
-        data_3d[i] = i
+        data_3d[i] = Int32(i)
 
     var tensor_3d = TileTensor(data_3d, row_major[4, 4, 4]())
 
@@ -303,19 +303,19 @@ fn test_slice_3d() raises:
     var sliced_3d = tensor_3d.slice[1:3, 1:3, 1:3]()
 
     # Verify dimensions
-    assert_equal(sliced_3d.layout.shape[0].value(), 2)
-    assert_equal(sliced_3d.layout.shape[1].value(), 2)
-    assert_equal(sliced_3d.layout.shape[2].value(), 2)
+    assert_equal(sliced_3d.layout.shape[0]().value(), 2)
+    assert_equal(sliced_3d.layout.shape[1]().value(), 2)
+    assert_equal(sliced_3d.layout.shape[2]().value(), 2)
 
     # Verify some values - use runtime indices
     # Original tensor[1][1][1] = 1*16 + 1*4 + 1 = 21
-    assert_equal(sliced_3d[(0, 0, 0)], 21)
+    assert_equal(sliced_3d[0, 0, 0], 21)
 
     # Original tensor[1][1][2] = 1*16 + 1*4 + 2 = 22
-    assert_equal(sliced_3d[(0, 0, 1)], 22)
+    assert_equal(sliced_3d[0, 0, 1], 22)
 
     # Original tensor[2][2][2] = 2*16 + 2*4 + 2 = 42
-    assert_equal(sliced_3d[(1, 1, 1)], 42)
+    assert_equal(sliced_3d[1, 1, 1], 42)
 
     # Test that it's a view
     sliced_3d[(Idx(0), Idx(0), Idx(0))] = 999
@@ -364,7 +364,7 @@ fn test_vectorize() raises:
 
     # Initialize with sequential values
     for i in range(256):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = TileTensor(data, row_major[16, 16]())
 
@@ -372,30 +372,30 @@ fn test_vectorize() raises:
     var vectorized = tensor.vectorize[4, 4]()
 
     # Verify vectorized tensor shape: 16/4 x 16/4 = 4x4
-    assert_equal(vectorized.layout.shape[0].value(), 4)
-    assert_equal(vectorized.layout.shape[1].value(), 4)
+    assert_equal(vectorized.layout.shape[0]().value(), 4)
+    assert_equal(vectorized.layout.shape[1]().value(), 4)
 
     # Verify vectorized tensor strides: original_stride * vector_shape
     # Original row-major 16x16 has strides [16, 1]
     # Vectorized strides should be [16*4, 1*4] = [64, 4]
-    assert_equal(vectorized.layout.stride[0].value(), 64)
-    assert_equal(vectorized.layout.stride[1].value(), 4)
+    assert_equal(vectorized.layout.stride[0]().value(), 64)
+    assert_equal(vectorized.layout.stride[1]().value(), 4)
 
-    # Verify that vectorized[i, j] points to the start of the (i,j) 4x4 block
-    # Block (0, 0) starts at element 0
-    assert_equal(vectorized[(Idx(0), Idx(0))], 0)
+    # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
+    # Block (0, 0) starts at element 0 - check first element of the SIMD vector
+    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)
 
     # Block (0, 1) starts at element 4 (column offset by vector width)
-    assert_equal(vectorized[(Idx(0), Idx(1))], 4)
+    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)
 
     # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
-    assert_equal(vectorized[(Idx(1), Idx(0))], 64)
+    assert_equal(vectorized[(Idx(1), Idx(0))][0], 64)
 
     # Block (1, 1) starts at element 68
-    assert_equal(vectorized[(Idx(1), Idx(1))], 68)
+    assert_equal(vectorized[(Idx(1), Idx(1))][0], 68)
 
     # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
-    assert_equal(vectorized[(Idx(3), Idx(3))], 204)
+    assert_equal(vectorized[(Idx(3), Idx(3))][0], 204)
 
 
 fn test_vectorize_non_square() raises:
@@ -403,7 +403,7 @@ fn test_vectorize_non_square() raises:
     var data = InlineArray[Int32, 64](uninitialized=True)
 
     for i in range(64):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 8x8 tensor
     var tensor = TileTensor(data, row_major[8, 8]())
@@ -412,18 +412,22 @@ fn test_vectorize_non_square() raises:
     var vectorized = tensor.vectorize[2, 4]()
 
     # Shape should be 8/2 x 8/4 = 4x2
-    assert_equal(vectorized.layout.shape[0].value(), 4)
-    assert_equal(vectorized.layout.shape[1].value(), 2)
+    assert_equal(vectorized.layout.shape[0]().value(), 4)
+    assert_equal(vectorized.layout.shape[1]().value(), 2)
 
     # Strides should be [8*2, 1*4] = [16, 4]
-    assert_equal(vectorized.layout.stride[0].value(), 16)
-    assert_equal(vectorized.layout.stride[1].value(), 4)
+    assert_equal(vectorized.layout.stride[0]().value(), 16)
+    assert_equal(vectorized.layout.stride[1]().value(), 4)
 
-    # Verify block positions
-    assert_equal(vectorized[(Idx(0), Idx(0))], 0)  # Block (0,0) at element 0
-    assert_equal(vectorized[(Idx(0), Idx(1))], 4)  # Block (0,1) at element 4
-    assert_equal(vectorized[(Idx(1), Idx(0))], 16)  # Block (1,0) at element 16
-    assert_equal(vectorized[(Idx(3), Idx(1))], 52)  # Block (3,1) at element 52
+    # Verify block positions - check first element of each SIMD vector
+    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)  # Block (0,0) at element 0
+    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)  # Block (0,1) at element 4
+    assert_equal(
+        vectorized[(Idx(1), Idx(0))][0], 16
+    )  # Block (1,0) at element 16
+    assert_equal(
+        vectorized[(Idx(3), Idx(1))][0], 52
+    )  # Block (3,1) at element 52
 
 
 fn test_vectorize_1d() raises:
@@ -431,7 +435,7 @@ fn test_vectorize_1d() raises:
     var data = InlineArray[Int32, 16](uninitialized=True)
 
     for i in range(16):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 16-element 1D tensor
     var tensor = TileTensor(data, row_major[16]())
@@ -440,23 +444,23 @@ fn test_vectorize_1d() raises:
     var vectorized = tensor.vectorize[4]()
 
     # Shape should be 16/4 = 4
-    assert_equal(vectorized.layout.shape[0].value(), 4)
+    assert_equal(vectorized.layout.shape[0]().value(), 4)
 
     # Stride should be 1*4 = 4
-    assert_equal(vectorized.layout.stride[0].value(), 4)
+    assert_equal(vectorized.layout.stride[0]().value(), 4)
 
-    # Verify block positions
-    assert_equal(vectorized[(Idx(0),)], 0)
-    assert_equal(vectorized[(Idx(1),)], 4)
-    assert_equal(vectorized[(Idx(2),)], 8)
-    assert_equal(vectorized[(Idx(3),)], 12)
+    # Verify block positions - check first element of each SIMD vector
+    assert_equal(vectorized[(Idx(0),)][0], 0)
+    assert_equal(vectorized[(Idx(1),)][0], 4)
+    assert_equal(vectorized[(Idx(2),)][0], 8)
+    assert_equal(vectorized[(Idx(3),)][0], 12)
 
 
 def test_indexing():
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]())
-    assert_equal(tensor[(Int32(0), Int64(0))], 1)
-    assert_equal(tensor[(Int(1), Int64(0))], 3)
+    assert_equal(tensor[Int32(0), Int64(0)], 1)
+    assert_equal(tensor[Int(1), Int64(0)], 3)
 
 
 def test_to_layout_tensor_square():
@@ -488,7 +492,9 @@ def test_to_layout_tensor_3d():
 
 def test_to_layout_tensor_3d_dynamic():
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx[64](), Idx[8](), Idx(4))))
+    var tensor = TileTensor(
+        stack, row_major((Idx[64](), Idx[8](), Idx(Int(4))))
+    )
     var lt = tensor.to_layout_tensor()
     assert_equal(
         materialize[lt.layout](),
@@ -509,7 +515,7 @@ fn test_coalesce_2d() raises:
 
     # Initialize with sequential values
     for i in range(16):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 4x4 tensor
     var tensor = TileTensor(data, row_major[4, 4]())
@@ -518,14 +524,14 @@ fn test_coalesce_2d() raises:
     var coalesced = tensor.coalesce()
 
     # Verify coalesced tensor shape: 4*4 = 16
-    assert_equal(coalesced.layout.shape[0].value(), 16)
+    assert_equal(coalesced.layout.shape[0]().value(), 16)
 
     # Verify coalesced tensor stride: 1
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify elements are accessible in order
     for i in range(16):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_coalesce_3d() raises:
@@ -533,7 +539,7 @@ fn test_coalesce_3d() raises:
     var data = InlineArray[Int32, 24](uninitialized=True)
 
     for i in range(24):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 2x3x4 tensor
     var tensor = TileTensor(data, row_major[2, 3, 4]())
@@ -542,14 +548,14 @@ fn test_coalesce_3d() raises:
     var coalesced = tensor.coalesce()
 
     # Verify coalesced tensor shape: 2*3*4 = 24
-    assert_equal(coalesced.layout.shape[0].value(), 24)
+    assert_equal(coalesced.layout.shape[0]().value(), 24)
 
     # Verify coalesced tensor stride: 1
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify elements are accessible in order
     for i in range(24):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_coalesce_1d() raises:
@@ -557,7 +563,7 @@ fn test_coalesce_1d() raises:
     var data = InlineArray[Int32, 8](uninitialized=True)
 
     for i in range(8):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 8-element 1D tensor
     var tensor = TileTensor(data, row_major[8]())
@@ -566,12 +572,12 @@ fn test_coalesce_1d() raises:
     var coalesced = tensor.coalesce()
 
     # Verify shape and stride unchanged
-    assert_equal(coalesced.layout.shape[0].value(), 8)
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.shape[0]().value(), 8)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify elements
     for i in range(8):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_coalesce_element_size() raises:
@@ -579,7 +585,7 @@ fn test_coalesce_element_size() raises:
     var data = InlineArray[Int32, 16](uninitialized=True)
 
     for i in range(16):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 4x4 tensor
     var tensor = TileTensor(data, row_major[4, 4]())
@@ -591,20 +597,20 @@ fn test_coalesce_element_size() raises:
     var coalesced = tensor.coalesce()
 
     # Verify coalesced shape: 4*4 = 16
-    assert_equal(coalesced.layout.shape[0].value(), 16)
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.shape[0]().value(), 16)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify element_size is still 1 (coalesced from 1)
     assert_equal(coalesced.element_size, 1)
 
     # Verify all elements accessible
     for i in range(16):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_to_nd_buffer_partially_dynamic() raises:
     var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx(4), Idx[4]())))
+    var tensor = TileTensor(stack, row_major((Idx(Int(4)), Idx[4]())))
     var buffer = tensor._to_ndbuffer()
     assert_equal(buffer.shape.at[0](), Dim())
     assert_equal(buffer.shape.at[1](), Dim(4))
@@ -614,7 +620,7 @@ fn test_to_nd_buffer_partially_dynamic() raises:
 
 fn test_to_nd_buffer_fully_dynamic() raises:
     var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx(8), Idx(2))))
+    var tensor = TileTensor(stack, row_major((Idx(Int(8)), Idx(Int(2)))))
     var buffer = tensor._to_ndbuffer()
     assert_equal(buffer.shape.at[0](), Dim())
     assert_equal(buffer.shape.at[1](), Dim())

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -107,7 +107,7 @@ def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]):
         for col in range(GRID_WIDTH):
             var v = tensor[row, col]
             if v < MAX_ITERATIONS:
-                var idx = Int(v % len(sr))
+                var idx = Int(v % Int32(len(sr)))
                 var p = sr[byte=idx]
                 print(p, end="")
             else:

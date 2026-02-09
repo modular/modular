@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -275,8 +275,10 @@ struct TestCopyIterator[
 
     var counter: Observable[CopyOrigin = Self.CopyOrigin]
 
-    fn __init__(out self, ref [Self.CopyOrigin]copies: Int):
-        self.counter = Observable(copies=Pointer(to=copies))
+    fn __init__(out self, ref[Self.CopyOrigin] copies: Int):
+        self.counter = Observable[CopyOrigin = Self.CopyOrigin](
+            copies=Pointer(to=copies)
+        )
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
         return None

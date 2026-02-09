@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -36,6 +36,4 @@ fn test_value_for_gpu_element[
         test_value_for_gpu_element[DType.float32](1, 0)
     """
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](
-        Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)
-    )
+    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)

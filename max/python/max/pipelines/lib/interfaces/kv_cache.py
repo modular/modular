@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,18 +15,13 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import Pipeline
-from max.kv_cache import (
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.kv_cache import PagedKVCacheManager, load_kv_managers
+from max.nn.legacy.kv_cache import KVCacheParamInterface, KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -36,14 +31,14 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class KVCacheMixin(Protocol):
-    def load_kv_manager(
+    def load_kv_managers(
         self,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         max_batch_size: int,
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> list[PagedKVCacheManager]:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -57,38 +52,13 @@ class KVCacheMixin(Protocol):
         Returns:
             A single KV cache manager.
         """
-        return load_kv_manager(
+        return load_kv_managers(
             params=kv_params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
             available_cache_memory=available_cache_memory,
             session=session,
         )
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        huggingface_config: AutoConfig,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        available_cache_memory: int,
-    ) -> int:
-        """Estimates the size of the kv cache in bytes."""
-        return estimate_kv_cache_size(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            available_cache_memory=available_cache_memory,
-        )
-
-    @classmethod
-    @abstractmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the pipeline model."""
-        ...
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod
@@ -103,37 +73,3 @@ class KVCacheMixin(Protocol):
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
         ...
-
-
-def get_paged_manager(
-    pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager | None:
-    """Get the paged KV cache manager from a pipeline, if available.
-
-    Args:
-        pipeline: The pipeline to extract the KV cache manager from.
-
-    Returns:
-        The paged KV cache manager if available, None otherwise.
-    """
-    if hasattr(pipeline, "_pipeline_model") and hasattr(
-        pipeline._pipeline_model, "kv_manager"
-    ):
-        kv_manager = pipeline._pipeline_model.kv_manager
-        # Accept standard PagedKVCacheManager
-        if isinstance(kv_manager, PagedKVCacheManager):
-            return kv_manager
-        # Duck-type acceptance for multimodal managers exposing the same interface
-        required_attrs = [
-            "alloc",
-            "fetch",
-            "step",
-            "release",
-            "contains",
-            "device_tensors",
-            "total_num_pages",
-        ]
-        if all(hasattr(kv_manager, a) for a in required_attrs):
-            return kv_manager
-
-    return None

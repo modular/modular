@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,14 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements `Path` and related functions.
+"""Path manipulation module.
+
+This module defines a platform-independent API for working with filesystem
+paths. `Path`, its core type, represents a filesystem path. It exposes
+operations such as path composition, existence checks, file I/O, and
+access to file attributes.
+
+To use these features import the `Path` type from this module.
+
+Example:
+
+```mojo
+from pathlib import Path
+var p = Path("a") / "b" / "c.txt"
+print(p)  # a/b/c.txt
+```
 """
 
 import os
 from hashlib.hasher import Hasher
 from os import PathLike, listdir, stat_result
-from sys import CompilationTarget, external_call
-from sys.ffi import c_char
+from ffi import c_char, external_call
+from sys import CompilationTarget
 
 from reflection import call_location
 
@@ -34,16 +49,13 @@ fn cwd() raises -> Path:
     Raises:
         If the operation fails.
 
-    Examples:
+    Example:
 
     ```mojo
     from pathlib import cwd
 
-    try:
-        var string_path = cwd()
-        print(string_path)
-    except e:
-        print(e)
+    var string_path = cwd()
+    print(string_path)
     ```
     """
     comptime MAX_CWD_BUFFER_SIZE = 1024
@@ -239,16 +251,12 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
-
-        try:
-            p = Path()       # Path to cwd
-            print(p.stat())  # os.stat_result(...)
-        except e:
-            print(e)
+        var p = Path()       # Path to cwd
+        print(p.stat())      # os.stat_result(...)
         ```
         """
         return os.stat(self)
@@ -273,12 +281,12 @@ struct Path(
         Returns:
           True if the path exists on disk and False otherwise.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
 
-        var p = Path("./path-to-nowhere")
+        var p = Path("./path/to/nowhere/does-not-exist")
         print("Exists" if p.exists() else "Does not exist") # Does not exist
         ```
         """
@@ -295,16 +303,14 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_true
 
-        try:
-            var p = Path("~")
-            assert_true(p.expanduser() == Path.home())
-        except e:
-            print(e)
+        var p = Path("~")
+        assert_true(p.expanduser() == Path.home())
         ```
         """
         return os.path.expanduser(self)
@@ -320,16 +326,14 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_true
 
-        try:
-            var p = Path("~")
-            assert_true(p.expanduser() == Path.home())
-        except e:
-            print(e)
+        var p = Path("~")
+        assert_true(p.expanduser() == Path.home())
         ```
         """
         return os.path.expanduser("~")
@@ -341,15 +345,14 @@ struct Path(
           Return True if the path points to a directory (or a link pointing to
           a directory).
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_false
 
-        try:
-            assert_true(Path.home().is_dir())
-        except e:
-            print(e)
+        var p = Path.home()
+        assert_true(p.is_dir())
         ```
         """
         return os.path.isdir(self)
@@ -361,15 +364,14 @@ struct Path(
           Return True if the path points to a file (or a link pointing to
           a file).
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_false
 
-        try:
-            assert_false(Path.home().is_file())
-        except e:
-            print(e)
+        var p = Path.home()
+        assert_false(p.is_file())
         ```
         """
         return os.path.isfile(self)
@@ -383,19 +385,16 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
 
-        try:
-            var p = Path("testfile")
-            p.write_text("test passes")
-            if p.exists():
-                var contents = p.read_text()
-                print(contents) # test passes
-        except e:
-            print(e)
+        var p = Path("testfile.txt")
+        p.write_text("Hello Mojo")
+        if p.exists():
+            var contents = p.read_text()
+            print(contents) # Hello Mojo
         ```
         """
         with open(self, "r") as f:
@@ -410,19 +409,17 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_true
 
-        try:
-            var p = Path("testfile")
-            p.write_text("test passes")
-            if p.exists():
-                var contents = p.read_bytes()
-                assert_true(contents[0] == 116)
-        except e:
-            print(e)
+        var p = Path("testfile.txt")
+        p.write_text("test")
+        if p.exists():
+            var contents = p.read_bytes()
+            assert_true(contents[0] == 116)
         ```
         """
         with open(self, "r") as f:
@@ -440,19 +437,16 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
 
-        try:
-            var p = Path("testfile")
-            p.write_text("test passes")
-            if p.exists():
-                var contents = p.read_text()
-                print(contents) # test passes
-        except e:
-            print(e)
+        var p = Path("testfile")
+        p.write_text("Hello")
+        if p.exists():
+            var contents = p.read_text()
+            print(contents) # Hello
         ```
         """
         with open(self, "w") as f:
@@ -467,20 +461,17 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
 
-        try:
-            var p = Path("testfile")
-            var s = "Hello"
-            p.write_bytes(s.as_bytes())
-            if p.exists():
-                var contents = p.read_text()
-                print(contents) # Hello
-        except e:
-            print(e)
+        var p = Path("testfile")
+        var s = "Hello"
+        p.write_bytes(s.as_bytes())
+        if p.exists():
+            var contents = p.read_text()
+            print(contents) # Hello
         ```
         """
         with open(self, "w") as f:
@@ -494,17 +485,18 @@ struct Path(
         Returns:
             The path's extension.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_true
 
-        try:
-            var p = Path("testfile.txt")
-            print(p.suffix())
-            assert_true(p.suffix() == ".txt")
-        except e:
-            print(e)
+        var p = Path("testfile.txt")
+        print(p.suffix())
+        assert_true(p.suffix() == ".txt")
+
+        p = Path(".hiddenfile")
+        assert_true(p.suffix() == "") # No suffix
         ```
         """
         # +2 to skip both `DIR_SEPARATOR` and the first ".".
@@ -529,16 +521,24 @@ struct Path(
             The path concatenation with the pathsegments using the
             directory separator.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path
         from tempfile import gettempdir
+        from testing import assert_true
 
-        var p = Path(gettempdir().or_else("/tmp/")) # Both end with trailing /
-        var path = p.joinpath("intermediate/") # Trailing / for intermediate
-        path = path.joinpath("tempfile.txt")   # No / for file name
-        print(path) # legal path
+        # gettmpdir() has no guarantee of trailing /
+        # Use joinpath to ensure path construction
+        var p = Path("/tmp")
+        p = p.joinpath("testdir")  # No trailing /
+        p = p.joinpath("testfile.txt")
+        assert_true(p == Path("/tmp/testdir/testfile.txt"))
+
+        p = Path("/tmp/")
+        p = p.joinpath("testdir/")  # Trailing /
+        p = p.joinpath("testfile.txt")
+        assert_true(p == Path("/tmp/testdir/testfile.txt"))
         ```
         """
         if len(pathsegments) == 0:
@@ -560,16 +560,13 @@ struct Path(
         Raises:
             If the operation fails.
 
-        Examples:
+        Example:
 
         ```mojo
         from pathlib import Path, cwd
 
-        try:
-            for item in cwd().listdir():
-                print(item) # each item name in working directory
-        except e:
-            print(e)
+        for item in cwd().listdir():
+            print(item) # each item name in working directory
         ```
         """
 
@@ -583,32 +580,33 @@ struct Path(
     fn name(self) -> String:
         """Returns the name of the path.
 
-        Examples:
+        Returns:
+            The name of the path.
+
+        Example:
 
         ```mojo
         from pathlib import Path
 
         Path("a/path/foo.txt").name()  # returns "foo.txt"
         ```
-
-        Returns:
-            The name of the path.
         """
         return os.path.basename(self)
 
     fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
-        Examples:
+        Returns:
+            The parts of the path separated by `DIR_SEPARATOR`.
+
+        Example:
 
         ```mojo
         from pathlib import Path
+        from testing import assert_true
 
-        for p in Path("a/path/foo.txt").parts():
-            print(p) # a, path, foo.txt
+        for p, q in zip(Path("a/path/foo.txt").parts(), ["a", "path", "foo.txt"]):
+            assert_true(p == q)
         ```
-
-        Returns:
-            The parts of the path separated by `DIR_SEPARATOR`.
         """
         return self.path.split(DIR_SEPARATOR)

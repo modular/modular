@@ -28,6 +28,11 @@ _EXTRA_COPTS = {
     ],
 }
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 _EXTRA_CONSTRAINTS = {
     "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled
     "test_cluster_dims_attribute.mojo": ["//:h100_gpu"],
@@ -44,34 +49,16 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_fp8_mma_sync.mojo": ["//:h100_gpu"],
     "test_wmma.mojo": ["//:nvidia_gpu"],
     "test_wmma_amd.mojo": ["//:amd_gpu"],
-    "test_debug_assert_gpu_error.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2405
-    "test_print_elementwise.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
-    "test_print.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2405
-    "test_capture_trait_type.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2405
-    "test_printf.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2405
-    "test_launch_binary.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # Requires metallib tool which may not be available on Mac
-    "test_init_vector_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: KERN-2360 - MetalAIRPass address space propagation bug
+    "test_debug_assert_gpu_error.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_print_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2366
+    "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_capture_trait_type.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_printf.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_launch_binary.mojo": _APPLE_GPU_INCOMPATIBLE,  # Requires metallib tool which may not be available on Mac
+    "test_init_vector_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2360 - MetalAIRPass address space propagation bug
+    "test_prefix_sum.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
+    "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
+    "test_simd_reduction.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
 }
 
 [

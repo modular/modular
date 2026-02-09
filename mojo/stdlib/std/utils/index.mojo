@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -56,7 +56,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 fn _int_tuple_binary_apply[
-    binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
+    binary_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -90,7 +90,7 @@ fn _int_tuple_binary_apply[
 
 @always_inline
 fn _int_tuple_compare[
-    comp_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Bool,
+    comp_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -126,7 +126,7 @@ fn _int_tuple_compare[
 
 @always_inline
 fn _bool_tuple_reduce[
-    reduce_fn: fn (Bool, Bool) -> Bool,
+    reduce_fn: fn(Bool, Bool) -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
     value.
@@ -176,7 +176,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     ImplicitlyCopyable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A base struct that implements size agnostic index functions.
@@ -208,7 +208,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             data: The StaticTuple to construct the IndexList from.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = data
@@ -224,11 +224,11 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             elems: The tuple to copy from.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         comptime num_elements = type_of(elems).__len__()
-        __comptime_assert (
+        comptime assert (
             Self.size == num_elements
         ), "[IndexList] mismatch in the number of elements"
 
@@ -249,7 +249,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             __list_literal__: Specifies that this constructor can be used for
                list literals.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
 
@@ -262,7 +262,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             fill: The elem to splat into the tuple.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
@@ -274,7 +274,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             values: The list of values.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         var num_elements = len(values)
@@ -692,9 +692,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The list casted to the target type.
         """
-        __comptime_assert (
-            dtype.is_integral()
-        ), "the target type must be integral"
+        comptime assert dtype.is_integral(), "the target type must be integral"
         result = {}
 
         @parameter
@@ -741,22 +739,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             The host type's name.
         """
         return String("IndexList[", Self.size, ",", Self.element_type, "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name. For example, because DeviceBuffer's
-        device_type is UnsafePointer, DeviceBuffer[DType.float32]'s
-        get_device_type_name() should return something like
-        "UnsafePointer[Float32]". This is used for error messages
-        when passing types to the device.
-        TODO: This method will be retired soon when better kernel call error
-        messages arrive.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
 
 
 # ===-----------------------------------------------------------------------===#

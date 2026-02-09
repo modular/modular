@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -95,9 +95,9 @@ def execute_kv_cache_ragged_matmul[
         for i in range(batch_size):
             var length: UInt32
             if use_random_lengths:
-                length = random_ui64(1, seq_len).cast[DType.uint32]()
+                length = random_ui64(1, UInt64(seq_len)).cast[DType.uint32]()
             else:
-                length = seq_len
+                length = UInt32(seq_len)
 
             prefix_sums_host[i] = length
             total_seq_len += length
@@ -205,7 +205,7 @@ def execute_kv_cache_ragged_matmul[
         var block_idx_set = Set[Int]()
         var idx = 0
         while idx < batch_size:
-            var randval = Int(random_ui64(0, num_blocks - 1))
+            var randval = Int(random_ui64(0, UInt64(num_blocks - 1)))
             if randval in block_idx_set:
                 continue
 
@@ -253,8 +253,8 @@ def execute_kv_cache_ragged_matmul[
                 lookup_table_runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_context_length),
     )
 
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)

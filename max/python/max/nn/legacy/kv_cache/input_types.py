@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,16 +16,27 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeGuard, TypeVar, overload
+from typing import (
+    Any,
+    Generic,
+    Protocol,
+    TypeAlias,
+    TypeGuard,
+    overload,
+    runtime_checkable,
+)
 
 from max.driver import Buffer
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
+from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
 
+T = TypeVar("T", default=Any)
+
 
 @dataclass
-class NestedIterableDataclass:
+class NestedIterableDataclass(Generic[T]):
     """
     Base class for input symbols for KV cache managers.
 
@@ -36,17 +47,19 @@ class NestedIterableDataclass:
     .. code-block:: python
 
         @dataclass
-        class PagedCacheValues(NestedIterableDataclass):
+        class PagedCacheValues(NestedIterableDataclass[TensorType]):
             kv_blocks: TensorType
             cache_lengths: TensorType
             lookup_table: TensorType
             max_lengths: TensorType
     """
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[T]:
         """Iterates through each field in order."""
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
+            if value is None:
+                continue
             if isinstance(value, NestedIterableDataclass):
                 yield from value
             else:
@@ -55,21 +68,97 @@ class NestedIterableDataclass:
     def __getitem__(self, index: int | slice) -> Any:
         return list(self)[index]
 
+    def flatten(self) -> list[T]:
+        return list(self)
+
+
+@runtime_checkable
+class InputSymbolInterface(Protocol):
+    def flatten(self) -> list[TensorType | BufferType]: ...
+
+
+IterableInputSymbols: TypeAlias = NestedIterableDataclass[
+    TensorType | BufferType
+]
+
 
 @dataclass
-class PagedCacheInputSymbols(NestedIterableDataclass):
+class PagedCacheInputSymbols(IterableInputSymbols, InputSymbolInterface):
     kv_blocks: BufferType
     cache_lengths: TensorType
     lookup_table: TensorType
     max_lengths: TensorType
+    kv_scales: BufferType | None = None  # KV scales for FP8 quantization
 
 
 @dataclass
-class PagedCacheValues(NestedIterableDataclass):
+class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     kv_blocks: BufferValue
     cache_lengths: TensorValue
     lookup_table: TensorValue
     max_lengths: TensorValue
+    kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
+
+
+@dataclass
+class PagedCacheInputSymbolsByReplica(
+    Sequence[PagedCacheInputSymbols], InputSymbolInterface
+):
+    """A class that holds the symbolic inputs for the paged ache for all replicas.
+
+    This is separate from `MultiKVCacheInputSymbols` for more convenient typing.
+    """
+
+    values: list[PagedCacheInputSymbols]
+
+    def __iter__(self) -> Iterator[PagedCacheInputSymbols]:
+        return iter(self.values)
+
+    @overload
+    def __getitem__(self, index: int) -> PagedCacheInputSymbols: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[PagedCacheInputSymbols]: ...
+
+    def __getitem__(self, index: int | slice) -> Any:
+        return self.values[index]
+
+    def __len__(self) -> int:
+        return len(self.values)
+
+    def flatten(self) -> list[TensorType | BufferType]:
+        items = []
+        for item in self.values:
+            items.extend(item.flatten())
+        return items
+
+
+@dataclass
+class MultiKVCacheInputSymbols(
+    Sequence[InputSymbolInterface], InputSymbolInterface
+):
+    values: list[InputSymbolInterface]
+
+    def __iter__(self) -> Iterator[InputSymbolInterface]:
+        return iter(self.values)
+
+    @overload
+    def __getitem__(self, index: int) -> InputSymbolInterface: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[InputSymbolInterface]: ...
+
+    def __getitem__(self, index: int | slice) -> Any:
+        return self.values[index]
+
+    def __len__(self) -> int:
+        return len(self.values)
+
+    def flatten(self) -> list[TensorType | BufferType]:
+        items = []
+        for item in self.values:
+            items.extend(item.flatten())
+        return items
 
 
 _T = TypeVar("_T")
@@ -101,6 +190,8 @@ class KVCacheInputs:
         """Iterates through each Type in order."""
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
+            if value is None:
+                continue
             if isinstance(value, KVCacheInputs):
                 yield from value
             elif _is_sequence_of(value, KVCacheInputs):
@@ -144,6 +235,7 @@ class RaggedKVCacheInputs(KVCacheInputs):
     cache_lengths: Buffer
     lookup_table: Buffer
     max_lengths: Buffer
+    kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
 
 
 @dataclass

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ from utils import IndexList, product
 
 
 @fieldwise_init
-struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterType):
+struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterPassable):
     var shape: IndexList[Self.rank]
 
     fn __getitem__(self, idx: Int) -> Int:

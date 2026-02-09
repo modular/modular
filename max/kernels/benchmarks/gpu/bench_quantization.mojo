@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
 )
 from linalg.fp4_quantization import (
-    quantize_dynamic_scaled_fp4,
+    quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
 )
 from internal_utils import arg_parse
@@ -138,7 +138,7 @@ fn bench_1d1d_quantization[
                     input_tensor.as_any_origin(),
                 )
             else:
-                quantize_dynamic_scaled_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     ctx,
                     output_tensor.as_any_origin(),
                     scales_tensor.as_any_origin(),

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -50,9 +50,8 @@ def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
         var lower, upper = iter.bounds()
         assert_equal(len - i, lower)
         assert_equal(len - i, upper.value())
-        # FIXME(MOCO-3012): Why is applying `^` required here?
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()
@@ -330,7 +329,7 @@ def test_scalar_range():
     append_many(expected_elements, 2, 6, 10, 14)
     actual_elements = List[UInt8]()
     for e in r:
-        actual_elements.append(e)
+        actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)
 
 

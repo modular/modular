@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@ from gpu.intrinsics import mulhi
 from sys.info import bit_width_of
 
 
-struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
+struct FastDiv[dtype: DType](Stringable, TrivialRegisterPassable, Writable):
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,
@@ -56,7 +56,7 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
             divisor: The divisor to use for fast division.
                 Defaults to 1.
         """
-        __comptime_assert (
+        comptime assert (
             bit_width_of[Self.dtype]() <= 32
         ), "larger types are not currently supported"
         self._div = Scalar[Self.uint_type](divisor)

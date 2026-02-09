@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -386,7 +386,7 @@ fn test_warp_shuffle_up(val: Float32) -> Float32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += warp.shuffle_up(res, 1 << mask)
+        res += warp.shuffle_up(res, UInt32(1 << mask))
     return res
 
 
@@ -417,7 +417,7 @@ fn test_warp_shuffle_down(val: Int32) -> Int32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += warp.shuffle_down(res, 1 << mask)
+        res += warp.shuffle_down(res, UInt32(1 << mask))
     return res
 
 
@@ -453,7 +453,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
     @parameter
     for mask in reversed(range(limit)):
-        res += warp.shuffle_xor(res, 1 << mask)
+        res += warp.shuffle_xor(res, UInt32(1 << mask))
     return res
 
 
@@ -496,7 +496,7 @@ fn block_reduce(val: Float32) -> Float32:
 
     return warp_sum_reduce(
         shared.load(lane) if thread_idx.x
-        < UInt(block_dim.x // UInt(WARP_SIZE)) else 0
+        < block_dim.x // UInt(WARP_SIZE) else 0
     )
 
 

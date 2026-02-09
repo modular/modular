@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,10 +21,15 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVCacheStrategy,
+)
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -63,7 +68,12 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     first_k_dense_replace: int = 3
     norm_topk_prob: bool = True
     hidden_act: str = "silu"
+
     max_position_embeddings: int = 4096
+    """Maximum positional embeddings as defined by the original model."""
+    max_seq_len: int = 163840
+    """Maximum sequence length as defined by the MAX Engine pipeline configuration."""
+
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = False
     rope_theta: float = 10000.0
@@ -104,7 +114,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
+        return self.max_seq_len
 
     @staticmethod
     def construct_kv_params(
@@ -119,6 +129,16 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         if data_parallel_degree not in (1, len(devices)):
             raise ValueError(
                 "data_parallel_degree must be 1 or match the number of devices"
+            )
+
+        kvcache_quant_config = None
+        if kv_cache_config.cache_dtype in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ):
+            # Configure the KVCacheParams quantization parameters.
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32, quantization_granularity=32
             )
         return KVCacheParams(
             dtype=cache_dtype,
@@ -136,6 +156,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            kvcache_quant_config=kvcache_quant_config,
         )
 
     @staticmethod
@@ -159,12 +180,18 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             An initialized DeepseekV3Config instance.
         """
         config = pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
         kv_cache_config = pipeline_config.model.kv_cache
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = quantization_encoding.dtype
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -177,6 +204,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
+        )
+
+        max_seq_len = upper_bounded_default(
+            upper_bound=config.max_position_embeddings,
+            default=pipeline_config.max_length,
         )
 
         return cls(
@@ -208,6 +240,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
             max_position_embeddings=config.max_position_embeddings,
+            max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=config.rope_theta,

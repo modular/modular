@@ -1,0 +1,54 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# This file is a modified version of the original chartqa.yaml file.
+# We remove the <image> tag, it's the server's responsibility to provide the
+# the special image tokens, not the client.
+
+dataset_path: HuggingFaceM4/ChartQA
+test_split: test
+output_type: generate_until
+task: chartqa
+doc_to_image:
+  - image
+doc_to_text: |
+  {{query}}
+  Analyze the image and question carefully, using step-by-step reasoning.
+  First, describe any image provided in detail. Then, present your reasoning. And finally your final answer in this format:
+  Final Answer: <answer>
+  where <answer> follows the following instructions:
+  - <answer> should should be a single phrase or number.
+  - <answer> should not paraphrase or reformat the text in the image.
+  - If <answer> is a ratio, it should be a decimal value like 0.25 instead of 1:4.
+  - If the question is a Yes/No question, <answer> should be Yes/No.
+  - If <answer> is a number, it should not contain any units.
+  - If <answer> is a percentage, it should include a % sign.
+  - If <answer> is an entity, it should include the full label from the graph.
+  IMPORTANT: Remember, to end your answer with Final Answer: <answer>.
+doc_to_target: "{{ label[0] }}"
+generation_kwargs:
+  until: []
+  temperature: 0.0
+  do_sample: false
+  max_gen_toks: 512
+metric_list:
+  - metric: !function utils.exact_match
+    aggregation: mean
+    higher_is_better: true
+  - metric: !function utils.relaxed_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: !function utils.anywhere_accuracy
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 0.0

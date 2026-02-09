@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
 from math import ceildiv
 from random import random_ui64
 
@@ -25,6 +24,8 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 
 from utils import IndexList
+
+from kv_cache_test_utils import PagedLookupTable
 
 
 fn test_kv_cache_radd[
@@ -69,8 +70,8 @@ fn test_kv_cache_radd[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets_host[i] = total_length
-        cache_lengths_host[i] = cache_lens[i]
+        input_row_offsets_host[i] = UInt32(total_length)
+        cache_lengths_host[i] = UInt32(cache_lens[i])
         max_full_context_length = max(
             max_full_context_length, cache_lens[i] + prompt_lens[i]
         )
@@ -79,13 +80,13 @@ fn test_kv_cache_radd[
         if i >= num_active_loras_slice_start:
             input_row_offsets_slice_host[
                 i - num_active_loras_slice_start
-            ] = total_length
+            ] = UInt32(total_length)
             total_slice_length += prompt_lens[i]
 
         total_length += prompt_lens[i]
 
-    input_row_offsets_host[batch_size] = total_length
-    input_row_offsets_slice_host[num_active_loras] = total_length
+    input_row_offsets_host[batch_size] = UInt32(total_length)
+    input_row_offsets_slice_host[num_active_loras] = UInt32(total_length)
 
     num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
@@ -120,47 +121,21 @@ fn test_kv_cache_radd[
         kv_block_paged_host_ptr, kv_block_paged_shape
     )
     kv_block_paged_host.fill(1)
-    var paged_lut_shape = IndexList[2](
-        batch_size, ceildiv(max_full_context_length, page_size)
-    )
-    var paged_lut_size = batch_size * ceildiv(
-        max_full_context_length, page_size
-    )
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
-    var paged_lut_host = NDBuffer[DType.uint32, 2](
-        paged_lut_host_ptr, paged_lut_shape
-    )
-    paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        seq_len = cache_lens[bs] + prompt_lens[bs]
 
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
+    var paged_lut = PagedLookupTable[page_size].build(
+        prompt_lens, cache_lens, max_full_context_length, num_paged_blocks, ctx
+    )
 
     var kv_block_paged_device = ctx.enqueue_create_buffer[dtype](
         kv_block_paged_size
     )
     ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_size
-    )
-    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
 
     var kv_block_paged_device_nd = NDBuffer[dtype, 6](
         kv_block_paged_device.unsafe_ptr(), kv_block_paged_shape
     )
     var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
         cache_lengths_device.unsafe_ptr(), batch_size
-    )
-    var paged_lut_device_nd = NDBuffer[DType.uint32, 2](
-        paged_lut_device.unsafe_ptr(), paged_lut_shape
     )
     var input_row_offsets_slice_device_nd = NDBuffer[DType.uint32, 1](
         input_row_offsets_slice_device.unsafe_ptr(), num_active_loras + 1
@@ -187,15 +162,9 @@ fn test_kv_cache_radd[
                 cache_lengths_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-            paged_lut_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device_nd.dynamic_shape.canonicalize(),
-                paged_lut_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        max_prompt_length,
-        max_full_context_length,
+        paged_lut.device_tensor(),
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     var a_shape = IndexList[2](total_slice_length, num_heads * head_dim * 2)
@@ -205,7 +174,7 @@ fn test_kv_cache_radd[
         dtype, 2, _, DimList(Dim(), num_heads * head_dim * 2)
     ](a_host_ptr, a_shape)
     for i in range(a_host.num_elements()):
-        a_host.data[i] = i
+        a_host.data[i] = Scalar[dtype](i)
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     ctx.enqueue_copy(a_device, a_host_ptr)
     var a_device_nd = NDBuffer[
@@ -235,8 +204,8 @@ fn test_kv_cache_radd[
                 input_row_offsets_slice_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        num_active_loras_slice_start,
-        layer_idx,
+        UInt32(num_active_loras_slice_start),
+        UInt32(layer_idx),
         ctx,
     )
     ctx.synchronize()
@@ -266,15 +235,9 @@ fn test_kv_cache_radd[
                 cache_lengths_host.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-            paged_lut_host.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_host.dynamic_shape.canonicalize(),
-                paged_lut_host.dynamic_stride.canonicalize(),
-            ),
-        ),
-        max_prompt_length,
-        max_full_context_length,
+        paged_lut.host_tensor(),
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
@@ -335,7 +298,7 @@ fn test_kv_cache_radd[
                 for d in range(head_dim):
                     var k_val = k_cache_host.load[width=1](i, h, actual_len, d)
                     var expected_k_val = 1 + arange_counter
-                    if k_val != expected_k_val:
+                    if k_val != Scalar[dtype](expected_k_val):
                         raise Error(
                             "Mismatch in output for k, expected "
                             + String(expected_k_val)
@@ -349,7 +312,7 @@ fn test_kv_cache_radd[
                 for d in range(head_dim):
                     var v_val = v_cache_host.load[width=1](i, h, actual_len, d)
                     var expected_v_val = 1 + arange_counter
-                    if v_val != expected_v_val:
+                    if v_val != Scalar[dtype](expected_v_val):
                         raise Error(
                             "Mismatch in output for v, expected "
                             + String(expected_v_val)
@@ -365,36 +328,35 @@ fn test_kv_cache_radd[
     cache_lengths_host_ptr.free()
     input_row_offsets_slice_host_ptr.free()
     kv_block_paged_host_ptr.free()
-    paged_lut_host_ptr.free()
     a_host_ptr.free()
     _ = cache_lengths_device^
     _ = input_row_offsets_slice_device^
     _ = kv_block_paged_device^
-    _ = paged_lut_device^
+    _ = paged_lut^
     _ = a_device^
 
 
 def main():
     with DeviceContext() as ctx:
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 1](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[1](10),
             IndexList[1](40),
             1,

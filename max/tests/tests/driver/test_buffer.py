@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,6 +41,11 @@ def test_tensor() -> None:
     tensor2 = Buffer(DType.float32, shape)
     shape[0] = 1
     assert (2, 3) == tensor2.shape
+
+
+@pytest.mark.parametrize("dtype", list(DType))
+def test_allocate(dtype: DType) -> None:
+    buffer = Buffer(shape=[2], dtype=dtype, device=CPU())
 
 
 def test_get_and_set() -> None:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,10 +16,17 @@ import subprocess
 import sys
 
 
+def update_pip() -> None:
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "pip"]
+    )
+
+
 def install_pip_package(package: str) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 
 if __name__ == "__main__":
-    install_pip_package("sgl-kernel")
+    update_pip()
     install_pip_package("sglang[all]")
+    install_pip_package("sgl-kernel")

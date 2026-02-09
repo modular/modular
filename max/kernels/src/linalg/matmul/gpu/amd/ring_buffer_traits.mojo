@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -66,7 +66,7 @@ fn increment_counter_if_first_thread(
 # ===----------------------------------------------------------------------=== #
 
 
-trait SyncStrategy(TrivialRegisterType):
+trait SyncStrategy(TrivialRegisterPassable):
     """Interface for synchronization strategies between producers and consumers.
 
     All methods have the same signature regardless of the specific implementation,

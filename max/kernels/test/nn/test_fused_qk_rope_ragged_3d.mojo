@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -40,7 +40,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     """Verifies fused_qk_rope_ragged with 3D position_ids and mrope sections
     against golden values computed with PyTorch.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.float32
     ), "goldens only for float32, currently"
 
@@ -53,7 +53,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     var lookup_table: List[UInt32] = [0, 1]
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
-        __comptime_assert len(items) > 0, "empty list in _max"
+        comptime assert len(items) > 0, "empty list in _max"
         items_dyn = materialize[items]()
         max_item = items_dyn[0]
         for i in range(1, len(items_dyn)):
@@ -61,7 +61,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
                 max_item = items_dyn[i]
         return max_item
 
-    __comptime_assert max_seq_len > (
+    comptime assert max_seq_len > (
         seq_len + Int(_max[DType.uint32, items=start_positions]())
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
@@ -129,7 +129,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
             ),
         ),
         max_seq_length=seq_len,
-        max_cache_length=max_cache_len_in_batch,
+        max_cache_length=UInt32(max_cache_len_in_batch),
     )
 
     # Create and initialize query buffer.
@@ -147,7 +147,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         ),
     )
     for i in range(batch_size):
-        input_row_offsets[i] = i * seq_len
+        input_row_offsets[i] = UInt32(i * seq_len)
     input_row_offsets[batch_size] = batch_size * seq_len
 
     # Create position_ids tensor for testing explicit position encoding

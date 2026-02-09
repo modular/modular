@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -148,7 +148,7 @@ from utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Batch(TrivialRegisterType):
+struct Batch(TrivialRegisterPassable):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -172,7 +172,11 @@ struct Batch(TrivialRegisterType):
         Returns:
             The average duration of the batch.
         """
-        return self.duration / self.iterations / Float64(Unit._divisor(unit))
+        return (
+            Float64(self.duration)
+            / Float64(self.iterations)
+            / Float64(Unit._divisor(unit))
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -252,7 +256,7 @@ struct Report(Copyable, Defaultable):
         for i in range(len(self.runs)):
             if self.runs[i]._is_significant:
                 duration += self.runs[i].duration
-        return duration / Unit._divisor(unit)
+        return Float64(duration) / Float64(Unit._divisor(unit))
 
     fn mean(self, unit: String = Unit.s) -> Float64:
         """
@@ -322,7 +326,9 @@ struct Report(Copyable, Defaultable):
             "Total: " + String(self.duration(unit)),
             "Iters: " + String(self.iters()),
             "Warmup Total: "
-            + String(self.warmup_duration / Unit._divisor(unit)),
+            + String(
+                Float64(self.warmup_duration) / Float64(Unit._divisor(unit))
+            ),
             "Fastest Mean: " + String(self.min(unit)),
             "Slowest Mean: " + String(self.max(unit)),
             "",
@@ -357,7 +363,9 @@ struct Report(Copyable, Defaultable):
                 "Mean:",
                 self.runs[i].mean(unit),
             )
-            print("Duration:", self.runs[i].duration / divisor)
+            print(
+                "Duration:", Float64(self.runs[i].duration) / Float64(divisor)
+            )
             print()
 
 
@@ -366,8 +374,8 @@ struct Report(Copyable, Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int](
-    TrivialRegisterType
+struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
+    TrivialRegisterPassable
 ):
     var num_warmup_iters: Int
     var max_iters: Int
@@ -397,7 +405,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int](
 
 @always_inline
 fn run[
-    *, func1: fn () raises -> None
+    *, func1: fn() raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -452,7 +460,7 @@ fn run[
 
 @always_inline
 fn run[
-    *, func2: fn () -> None
+    *, func2: fn() -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -498,7 +506,7 @@ fn run[
 
 @always_inline
 fn run[
-    func3: fn () raises capturing [_] -> None
+    func3: fn() raises capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -553,7 +561,7 @@ fn run[
 
 @always_inline
 fn run[
-    *, func4: fn () capturing [_] -> None
+    *, func4: fn() capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -692,7 +700,7 @@ fn _is_significant_measurement(
 
 @always_inline
 fn _run_impl_fixed[
-    timing_fn: fn (num_iters: Int) raises capturing [_] -> Int
+    timing_fn: fn(num_iters: Int) raises capturing[_] -> Int
 ](fixed_iterations: Int) raises -> Report:
     # Only run 'timing_fn' for the fixed number of iterations and return the report.
     var report = Report()

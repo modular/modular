@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,12 +28,12 @@ from max.nn.legacy.kv_cache import (
 )
 from max.tensor import Tensor
 
+from ...common_layers.rotary_embedding import YarnRotaryEmbedding
 from .functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from .rotary_embedding import YarnRotaryEmbedding
 
 
 class GptOssAttention(Module[..., Tensor]):

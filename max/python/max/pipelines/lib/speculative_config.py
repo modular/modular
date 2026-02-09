@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,6 +30,7 @@ class SpeculativeMethod(str, Enum):
 
     STANDALONE = "standalone"
     EAGLE = "eagle"
+    MTP = "mtp"
 
 
 class SpeculativeConfig(ConfigFileModel):
@@ -49,12 +50,16 @@ class SpeculativeConfig(ConfigFileModel):
     MAXConfig file."""
 
     def is_eagle(self) -> bool:
-        """Whether the speculative method is eagle i.e. it shares embedding and lm_head weights between the target and draft models and only takes the last hidden state from the target model"""
+        """Returns whether the speculative method is EAGLE (shared embedding/lm_head)."""
         return self.speculative_method == SpeculativeMethod.EAGLE
 
     def is_standalone(self) -> bool:
-        """Whether the speculative method is a standalone model"""
+        """Returns whether the speculative method is a standalone model."""
         return self.speculative_method == SpeculativeMethod.STANDALONE
+
+    def is_mtp(self) -> bool:
+        """Returns whether the speculative method is MTP."""
+        return self.speculative_method == SpeculativeMethod.MTP
 
     @classmethod
     def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,12 @@ These are Mojo built-ins, so you don't need to import them.
 
 @nonmaterializable(Float64)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
-    Boolable, Defaultable, Floatable, Intable, Stringable, TrivialRegisterType
+    Boolable,
+    Defaultable,
+    Floatable,
+    Intable,
+    Stringable,
+    TrivialRegisterPassable,
 ):
     """Mojo floating point literal type.
 

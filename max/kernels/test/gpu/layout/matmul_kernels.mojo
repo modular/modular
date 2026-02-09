@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,7 +35,7 @@ comptime NRUN = 1
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -1100,7 +1100,7 @@ fn matmul_kernel_tc[
     ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    __comptime_assert (
+    comptime assert (
         WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
     ), "Warp tile should be an integer multiple of instruction shape"
 

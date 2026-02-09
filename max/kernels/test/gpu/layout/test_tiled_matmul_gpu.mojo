@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -447,9 +447,9 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     var mat_b_ptr = UnsafePointer[Float32].alloc(K * N)
 
     for i in range(M * K):
-        mat_a_ptr[i] = i
+        mat_a_ptr[i] = Float32(i)
     for i in range(K * N):
-        mat_b_ptr[i] = i
+        mat_b_ptr[i] = Float32(i)
     for i in range(M * N):
         mat_c_ptr[i] = 0
 

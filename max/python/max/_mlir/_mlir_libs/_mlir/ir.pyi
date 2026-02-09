@@ -3,6 +3,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import enum
+import types
 from collections.abc import Callable, Iterator, Sequence
 from typing import TypeVar, overload
 
@@ -554,6 +555,23 @@ class OpView(_OperationBase):
         Parses a specific, generated OpView based on class level attributes.
         """
 
+class OpAdaptor:
+    @overload
+    def __init__(self, operands: list, attributes: OpAttributeMap) -> None:
+        """Creates an OpAdaptor with the given operands and attributes."""
+
+    @overload
+    def __init__(self, operands: list, opview: OpView) -> None:
+        """Creates an OpAdaptor with the given operands and operation view."""
+
+    @property
+    def operands(self) -> list:
+        """Returns the operands of the adaptor."""
+
+    @property
+    def attributes(self) -> OpAttributeMap:
+        """Returns the attributes of the adaptor."""
+
 class Region:
     @property
     def blocks(self) -> BlockList:
@@ -903,7 +921,7 @@ class Value(Generic[_T]):
         """Dumps a debug representation of the object to stderr."""
 
     @property
-    def owner(self) -> OpView:
+    def owner(self) -> OpView | Block:
         """
         Returns the owner of the value (`Operation` for results, `Block` for arguments).
         """
@@ -2260,14 +2278,14 @@ class IntegerAttr(Attribute):
     """(arg: object, /) -> str"""
 
     @staticmethod
-    def get(type: Type, value: int) -> IntegerAttr:
+    def get(type: Type, value: object) -> IntegerAttr:
         """Gets an uniqued integer attribute associated to a type"""
 
     @property
-    def value(self) -> int:
+    def value(self) -> object:
         """Returns the value of the integer attribute"""
 
-    def __int__(self) -> int:
+    def __int__(self) -> object:
         """Converts the value of the integer attribute to a Python int"""
 
 class IntegerSetAttr(Attribute):
@@ -2425,7 +2443,7 @@ class InferTypeOpInterface:
         self,
         operands: list | None = None,
         attributes: Attribute | None = None,
-        properties: typing_extensions.CapsuleType | None = None,
+        properties: types.CapsuleType | None = None,
         regions: Sequence[Region] | None = None,
         context: Context | None = None,
         loc: Location | None = None,
@@ -2496,7 +2514,7 @@ class InferShapedTypeOpInterface:
         self,
         operands: list | None = None,
         attributes: Attribute | None = None,
-        regions: typing_extensions.CapsuleType | None = None,
+        regions: types.CapsuleType | None = None,
         properties: Sequence[Region] | None = None,
         context: Context | None = None,
         loc: Location | None = None,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -40,7 +40,7 @@ fn print_tile_tensor(tensor: LayoutTensor):
 fn print_mode2_shape2_tensor[
     layout: Layout, dtype: DType
 ](tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
-    __comptime_assert (
+    comptime assert (
         len(layout) == 2
         and len(layout.shape[0]) == 2
         and len(layout.shape[1]) == 2
@@ -799,7 +799,7 @@ fn test_distribute_vectorized():
     # This will become easier when we can vectorize nested layout.
     ptr = stack_allocation[64 * 32, DType.float32, alignment=16]()
     for i in range(64 * 32):
-        ptr[i] = i
+        ptr[i] = Float32(i)
 
     tensor_4x16x64 = LayoutTensor[
         DType.float32,
@@ -1429,7 +1429,7 @@ fn test_slice_with_offsets():
     ].stack_allocation[stack_alignment=16]()
 
     for i in range(4 * 3 * 2):
-        tensor_4x3x2_row_major.ptr[i] = i
+        tensor_4x3x2_row_major.ptr[i] = Float32(i)
 
     # CHECK: slice-of[0:3,:2,0]
     # CHECK: 0.0 2.0
@@ -1509,7 +1509,7 @@ fn test_layout_tensor_iterator():
 
     var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
-        arr[i] = i
+        arr[i] = Float32(i)
 
     comptime layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
 
@@ -1610,7 +1610,7 @@ fn test_nested_layout_tensor_iterator():
 
     var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
-        arr[i] = i
+        arr[i] = Float32(i)
 
     # Here we define a float32 tensor (64 * TN, 2 * TK):
     #              K

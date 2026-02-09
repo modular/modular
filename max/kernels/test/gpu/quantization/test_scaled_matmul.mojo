@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -137,7 +137,7 @@ fn test_matmul_dynamic_scaled_fp8[
 
     @parameter
     fn stride_from_shape[shape: DimList]() -> DimList:
-        __comptime_assert len(shape) == 2, "rank must be 2"
+        comptime assert len(shape) == 2, "rank must be 2"
         return DimList(shape.at[1](), 1)
 
     var a_ndbuffer = NDBuffer[

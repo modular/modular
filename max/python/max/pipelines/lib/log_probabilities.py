@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -105,6 +105,8 @@ def compute_log_probabilities_ragged(
             omitted only if all 'batch_echo' values are False.
         next_token_logits: (batch_dim, vocab_dim) tensor full of tensor logits
             for the next token in each batch item.
+        tokens: (total_tokens,) flat token array for the batch; indices
+            per batch given by input_row_offsets.
         sampled_tokens: (batch_dim,) tensor of sampled token per batch
         batch_top_n: Number of top log probabilities to return per input in
             the batch. For any element where `top_n == 0`, the

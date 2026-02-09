@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,7 +39,7 @@ fn vec_func(
     var tid = global_idx.x
     if tid >= UInt(len):
         return
-    output[tid] = in0[tid] + in1[tid] + supplement
+    output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
 def test_is_compatible(ctx: DeviceContext):
@@ -56,7 +56,7 @@ fn test_basic(ctx: DeviceContext) raises:
 
     # Initialize inputs
     for i in range(length):
-        in0_host[i] = i
+        in0_host[i] = Float32(i)
         in1_host[i] = 2
 
     # Device memory buffers for the kernel input and output
@@ -167,10 +167,6 @@ struct ToLegacyUnsafePointer(Copyable, DevicePassable):
     fn get_type_name() -> String:
         return ""
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return ""
-
 
 @fieldwise_init
 struct ToUnsafePointer(Copyable, DevicePassable):
@@ -181,10 +177,6 @@ struct ToUnsafePointer(Copyable, DevicePassable):
 
     @staticmethod
     fn get_type_name() -> String:
-        return ""
-
-    @staticmethod
-    fn get_device_type_name() -> String:
         return ""
 
 

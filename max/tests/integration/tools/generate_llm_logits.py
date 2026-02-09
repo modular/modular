@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,6 +29,10 @@ from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -177,7 +181,9 @@ def main(
         )
     try:
         generate_llm_logits(
-            device_specs=DevicesOptionType.device_specs(device_type),
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
+            ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,
@@ -210,7 +216,7 @@ def generate_llm_logits(
     """Output logits to a file for a model based on a fixed set of prompts.
 
     The resulting logit golden files for two different frameworks can be used
-    with //max/tests/integration/pipelines/python/llama3/verify to check their
+    with //max/tests/integration/architectures/llama3/verify to check their
     similarity.
 
     """

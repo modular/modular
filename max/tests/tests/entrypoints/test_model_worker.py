@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,8 +35,8 @@ from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 
 @pytest.fixture
@@ -62,6 +62,8 @@ def patch_pipeline_registry_context_type(
 
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 
@@ -98,7 +100,7 @@ async def test_model_worker_propagates_exception(
             mock_pipeline_config,
             settings=settings,
             metric_client=NoopClient(),
-            scheduler_zmq_configs=SchedulerZmqConfigs(
+            model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION,
                 context_type=TextContext,
             ),
@@ -139,7 +141,7 @@ async def test_model_worker_propagates_construction_exception(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
             settings=settings,
-            scheduler_zmq_configs=SchedulerZmqConfigs(
+            model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION,
                 context_type=TextContext,
             ),
@@ -178,7 +180,7 @@ async def test_model_worker_start_timeout(
             mock_pipeline_config,
             settings=settings,
             metric_client=NoopClient(),
-            scheduler_zmq_configs=SchedulerZmqConfigs(
+            model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
         ):

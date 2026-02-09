@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,6 +31,7 @@ from max.interfaces import (
     GenerationStatus,
     Pipeline,
     PipelinesFactory,
+    PipelineTask,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -58,6 +59,8 @@ def patch_pipeline_registry_context_type(
 
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 
@@ -269,7 +272,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
     # Mock decode to return combined tokens text
     pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
-    pipeline.engine_queue.stream = mock_stream
+    pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
 
     # Patch METRICS and call the real next_token_chunk method.

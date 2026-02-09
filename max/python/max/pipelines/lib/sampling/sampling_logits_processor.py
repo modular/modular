@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -49,6 +49,26 @@ class FrequencyData:
     sequence's data."""
 
 
+def to_pinned_host_buffer(
+    values: Sequence[Any], device: Device, dtype: DType = DType.float32
+) -> Buffer:
+    pinned = not device.is_host
+
+    buffer = Buffer(
+        shape=(len(values),),
+        dtype=dtype,
+        device=device,
+        pinned=pinned,
+    )
+
+    if pinned:
+        buffer.disable_auto_sync()
+
+    buffer_np = buffer.to_numpy()
+    buffer_np[:] = values
+    return buffer
+
+
 class FusedSamplingProcessor:
     """Applies sampling parameters to logits and stores the chosen tokens."""
 
@@ -58,6 +78,7 @@ class FusedSamplingProcessor:
     generated_tokens: Buffer
     """The generated tokens that have been sampled so far."""
 
+    @traced
     def __init__(
         self,
         sampler: Model,
@@ -107,68 +128,49 @@ class FusedSamplingProcessor:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            self.generated_tokens.disable_auto_sync()
 
-        # temperature is a tensor of shape (batch_size,)
-        temperature_host = Buffer(
-            shape=(batch_size,),
-            dtype=DType.float32,
+        temperature_host = to_pinned_host_buffer(
+            [context.sampling_params.temperature for context in context_batch],
             device=device,
-            pinned=pinned,
         )
-        temperature_np = temperature_host.to_numpy()
-        temperature_np[:] = [
-            context.sampling_params.temperature for context in context_batch
-        ]
         self.temperature = temperature_host.to(device)
 
         # top_k is a tensor of shape (batch_size,)
-        top_k_host = Buffer(
-            shape=(batch_size,),
-            dtype=DType.int64,
+        top_k_host = to_pinned_host_buffer(
+            [context.sampling_params.top_k for context in context_batch],
             device=device,
-            pinned=pinned,
+            dtype=DType.int64,
         )
-        top_k_np = top_k_host.to_numpy()
-        top_k_np[:] = [
-            context.sampling_params.top_k for context in context_batch
-        ]
         self.top_k = top_k_host.to(device)
 
         # max_k is a scalar 0-d tensor. It does not need to be pinned since it
         # is not copied to the device.
-        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
+        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
         self.max_k = Buffer.from_numpy(max_k_np)
 
         # top_p is a tensor of shape (batch_size,)
-        top_p_host = Buffer(
-            shape=(batch_size,),
-            dtype=DType.float32,
+        top_p_host = to_pinned_host_buffer(
+            [context.sampling_params.top_p for context in context_batch],
             device=device,
-            pinned=pinned,
         )
-        top_p_np = top_p_host.to_numpy()
-        top_p_np[:] = [
-            context.sampling_params.top_p for context in context_batch
-        ]
         self.top_p = top_p_host.to(device)
 
         # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
         # is not copied to the device.
-        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
         self.min_top_p = Buffer.from_numpy(min_top_p_np)
 
         # seed is a tensor of shape (batch_size,)
-        seed_host = Buffer(
-            shape=(batch_size,),
-            dtype=DType.uint64,
+        seed_host = to_pinned_host_buffer(
+            [
+                context.sampling_params.seed + len(context.tokens)
+                for context in context_batch
+            ],
             device=device,
-            pinned=pinned,
+            dtype=DType.uint64,
         )
-        seed_np = seed_host.to_numpy()
-        seed_np[:] = [
-            context.sampling_params.seed + len(context.tokens)
-            for context in context_batch
-        ]
         self.seed = seed_host.to(device)
 
         self.frequency_data: list[FrequencyData] | None = None
@@ -226,6 +228,7 @@ class FusedSamplingProcessor:
         self.step_counter = 0
 
     def __call__(self, inputs: BatchProcessorInputs) -> None:
+        """Processes the batch logits and updates generated tokens and seed."""
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
 
@@ -282,7 +285,8 @@ def _build_token_frequency_csr(
     device: Device,
     include_prompt: bool = False,
 ) -> FrequencyData:
-    """Build a CSR matrix of token frequency in the batch.
+    """Builds a CSR matrix of token frequency in the batch.
+
     The original matrix is (batch_size, vocab_size), where each element is
     the number of times a token appears in the batch.
 

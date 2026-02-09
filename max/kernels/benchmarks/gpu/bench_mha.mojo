@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import align_up, isclose, rsqrt
 from random import rand
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of
@@ -208,8 +207,7 @@ fn run_mha[
                     IdentityScoreMod(),
                     scale,
                     ctx,
-                    num_partitions if num_partitions
-                    > 0 else OptionalReg[Int](None),
+                    num_partitions if num_partitions > 0 else Optional[Int](),
                 )
 
             b.iter_custom[_kernel_launch](ctx)
@@ -285,7 +283,7 @@ fn run_mha[
         IdentityScoreMod(),
         scale,
         ctx,
-        num_partitions if num_partitions > 0 else OptionalReg[Int](None),
+        num_partitions if num_partitions > 0 else Optional[Int](),
     )
 
     ctx.synchronize()

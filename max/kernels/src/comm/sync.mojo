@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 
 from utils import StaticTuple
 from sys import size_of
-from sys.ffi import _Global, external_call
+from ffi import _Global, external_call
 
 from gpu.host import DeviceContext
 from gpu import (
@@ -108,7 +108,7 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 
 
 @fieldwise_init
-struct Signal(TrivialRegisterType):
+struct Signal:
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
 
     This struct provides counter-based synchronization between thread blocks on different GPUs.
@@ -180,7 +180,7 @@ fn _multi_gpu_barrier[
     Implementation ported from VLLM's _multi_gpu_barrier in
     https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh#L169-L198
     """
-    __comptime_assert (
+    comptime assert (
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
@@ -188,7 +188,7 @@ fn _multi_gpu_barrier[
     if not is_start:
         barrier()
 
-    __comptime_assert not (
+    comptime assert not (
         need_fence and is_start
     ), "Start barrier should not need fence"
     comptime flag_t = Signal.flag_t

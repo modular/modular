@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,62 +11,46 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
+from memory import UnsafePointer
 from nn.argmaxmin import argmax, argmin
-
-from utils.index import IndexList
 
 
 # CHECK-LABEL: test_argn
-fn test_argn() raises:
+def test_argn():
     print("== test_argn")
 
     comptime size = 93
 
-    var vector_stack = InlineArray[Int32, size](uninitialized=True)
-    var vector = LayoutTensor[DType.int32, Layout.row_major(size)](vector_stack)
-    var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
-    var output = LayoutTensor[DType.int, Layout.row_major(1)](output_stack)
+    comptime vector_shape = row_major[size]()
+    var vector_stack = InlineArray[Int32, vector_shape.product()](
+        uninitialized=True
+    )
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    comptime output_shape = row_major[1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+        uninitialized=True
+    )
+    var output = TileTensor(output_stack, output_shape)
 
     for i in range(size):
-        vector[i] = i
+        vector[i] = Int32(i)
 
     argmax(
-        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
-            vector_stack,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](size)
-            ),
-        ),
+        vector.make_dynamic[DType.int64](),
         0,
-        LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
-            output_stack,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](1)
-            ),
-        ),
+        output.make_dynamic[DType.int64](),
     )
 
     # CHECK: argmax = 92
     print("argmax = ", output[0])
 
     argmin(
-        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE),](
-            vector_stack,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](size)
-            ),
-        ),
+        vector.make_dynamic[DType.int64](),
         0,
-        LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
-            output_stack,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](1)
-            ),
-        ),
+        output.make_dynamic[DType.int64](),
     )
 
     # CHECK: argmin = 0
@@ -74,40 +58,33 @@ fn test_argn() raises:
 
 
 # CHECK-LABEL: test_argn_2
-fn test_argn_2() raises:
+def test_argn_2():
     print("== test_argn_2")
 
     comptime batch_size = 4
     comptime size = 91
 
-    var vector_stack = InlineArray[Float32, batch_size * size](
+    comptime vector_shape = row_major[batch_size, size]()
+    var vector_stack = InlineArray[Float32, vector_shape.product()](
         uninitialized=True
     )
-    var vector = LayoutTensor[
-        DType.float32, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, size)
-        ),
-    )
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
-    )
+    var output = TileTensor(output_stack, output_shape)
 
     for i in range(batch_size):
         for j in range(size):
-            vector[i, j] = j
+            vector[i, j] = Float32(j)
 
-    argmax(vector, 1, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 90
     # CHECK: argmax = 90
@@ -116,7 +93,11 @@ fn test_argn_2() raises:
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
 
-    argmin(vector, 1, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     # CHECK: argmin = 0
@@ -127,51 +108,46 @@ fn test_argn_2() raises:
 
 
 # CHECK-LABEL: test_argn_2_test_2
-fn test_argn_2_test_2() raises:
+def test_argn_2_test_2():
     print("== test_argn_2_test_2")
 
     comptime batch_size = 2
     comptime size = 3
 
-    var vector_stack = InlineArray[Float32, batch_size * size](
+    comptime vector_shape = row_major[batch_size, size]()
+    var vector_stack = InlineArray[Float32, vector_shape.product()](
         uninitialized=True
     )
-    var vector = LayoutTensor[
-        DType.float32,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, size)
-        ),
-    )
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
-    )
+    var output = TileTensor(output_stack, output_shape)
 
     for i in range(batch_size):
         for j in range(size):
-            vector[i, j] = i * size + j
+            vector[i, j] = Float32(i * size + j)
             if i % 2:
                 vector[i, j] *= -1
 
-    argmax(vector, 1, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 2
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
 
-    argmin(vector, 1, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     # CHECK: argmin = 2
@@ -180,51 +156,46 @@ fn test_argn_2_test_2() raises:
 
 
 # CHECK-LABEL: test_argn_2_neg_axis
-fn test_argn_2_neg_axis() raises:
+def test_argn_2_neg_axis():
     print("== test_argn_2_neg_axis")
 
     comptime batch_size = 2
     comptime size = 3
 
-    var vector_stack = InlineArray[Float32, batch_size * size](
+    comptime vector_shape = row_major[batch_size, size]()
+    var vector_stack = InlineArray[Float32, vector_shape.product()](
         uninitialized=True
     )
-    var vector = LayoutTensor[
-        DType.float32,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, size)
-        ),
-    )
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
-    )
+    var output = TileTensor(output_stack, output_shape)
 
     for i in range(batch_size):
         for j in range(size):
-            vector[i, j] = i * size + j
+            vector[i, j] = Float32(i * size + j)
             if i % 2:
                 vector[i, j] *= -1
 
-    argmax(vector, -1, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        -1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 2
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
 
-    argmin(vector, -1, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        -1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     # CHECK: argmin = 2
@@ -233,48 +204,43 @@ fn test_argn_2_neg_axis() raises:
 
 
 # CHECK-LABEL: test_argn_test_zeros
-fn test_argn_test_zeros() raises:
+def test_argn_test_zeros():
     print("== test_argn_test_zeros")
 
     comptime batch_size = 1
     comptime size = 16
 
-    var vector_stack = InlineArray[Float32, batch_size * size](
+    comptime vector_shape = row_major[batch_size, size]()
+    var vector_stack = InlineArray[Float32, vector_shape.product()](
         uninitialized=True
     )
-    var vector = LayoutTensor[
-        DType.float32,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, size)
-        ),
-    )
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
-    )
+    var output = TileTensor(output_stack, output_shape)
 
     for i in range(batch_size):
         for j in range(size):
             vector[i, j] = 0
 
-    argmax(vector, 1, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
 
-    argmin(vector, 1, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     for i in range(batch_size):
@@ -282,34 +248,23 @@ fn test_argn_test_zeros() raises:
 
 
 # CHECK-LABEL: test_argn_test_identity
-fn test_argn_test_identity() raises:
+def test_argn_test_identity():
     print("== test_argn_test_identity")
 
     comptime batch_size = 3
     comptime size = 5
 
-    var vector_stack = InlineArray[Int64, batch_size * size](uninitialized=True)
-    var vector = LayoutTensor[
-        DType.int64,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, size)
-        ),
-    )
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    comptime vector_shape = row_major[batch_size, size]()
+    var vector_stack = InlineArray[Int64, vector_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+        uninitialized=True
     )
+    var output = TileTensor(output_stack, output_shape)
 
     for i in range(batch_size):
         for j in range(size):
@@ -319,7 +274,11 @@ fn test_argn_test_identity() raises:
     vector[2, 3] = 1
     vector[2, 4] = 1
 
-    argmax(vector, 1, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 0
     print("argmax = ", output[0, 0])
@@ -328,7 +287,11 @@ fn test_argn_test_identity() raises:
     # CHECK: argmax = 3
     print("argmax = ", output[2, 0])
 
-    argmin(vector, 1, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     # CHECK: argmin = 0
@@ -338,50 +301,44 @@ fn test_argn_test_identity() raises:
 
 
 # CHECK-LABEL: test_argn_3d_identity
-fn test_argn_3d_identity() raises:
+def test_argn_3d_identity():
     print("== test_argn_3d_identity")
 
     comptime batch_size = 2
     comptime seq_len = 2
     comptime hidden_dim = 5
 
-    comptime vector_shape = Layout.row_major(batch_size, seq_len, hidden_dim)
-    var vector_stack = InlineArray[Int64, vector_shape.size()](
+    comptime vector_shape = row_major[batch_size, seq_len, hidden_dim]()
+    var vector_stack = InlineArray[Int64, vector_shape.product()](
         uninitialized=True
     )
-    var vector = LayoutTensor[
-        DType.int64,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        vector_stack,
-        RuntimeLayout[
-            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
-        ].row_major(IndexList[3](batch_size, seq_len, hidden_dim)),
-    ).fill(
-        0
-    )
+    var vector = TileTensor(vector_stack, vector_shape)
 
-    var output_stack = InlineArray[Scalar[DType.int], batch_size * seq_len](
+    for i in range(batch_size):
+        for j in range(seq_len):
+            for k in range(hidden_dim):
+                vector[i, j, k] = 0
+
+    comptime output_shape = row_major[batch_size, seq_len, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int,
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
-    ](
-        output_stack,
-        RuntimeLayout[
-            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
-        ].row_major(IndexList[3](batch_size, seq_len, 1)),
-    ).fill(
-        0
-    )
+    var output = TileTensor(output_stack, output_shape)
+
+    for i in range(batch_size):
+        for j in range(seq_len):
+            output[i, j, 0] = 0
 
     vector[0, 1, 4] = 1
     vector[1, 0, 1] = 1
     vector[1, 0, 2] = 1
     vector[1, 1, 3] = 1
 
-    argmax(vector, 2, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        2,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 0
     print("argmax = ", output[0, 0, 0])
@@ -392,7 +349,11 @@ fn test_argn_3d_identity() raises:
     # CHECK: argmax = 3
     print("argmax = ", output[1, 1, 0])
 
-    argmin(vector, 2, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        2,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     # CHECK: argmin = 0
@@ -403,39 +364,30 @@ fn test_argn_3d_identity() raises:
             print("argmin = ", output[i, j, 0])
 
 
-fn test_argn_less_than_simd() raises:
+def test_argn_less_than_simd():
     print("== test_argn_less_than_simd")
 
     comptime batch_size = 2
     comptime hidden_dim = 3  # assumes simd_width of 4
 
-    var vector_stack = InlineArray[Int64, batch_size * hidden_dim](
+    comptime vector_shape = row_major[batch_size, hidden_dim]()
+    var vector_stack = InlineArray[Int64, vector_shape.product()](
         uninitialized=True
     )
-    var vector = LayoutTensor[
-        DType.int64, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, hidden_dim)
-        ),
-    ).fill(
-        0
-    )
+    var vector = TileTensor(vector_stack, vector_shape)
 
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    for i in range(batch_size):
+        for j in range(hidden_dim):
+            vector[i, j] = 0
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
-    ).fill(
-        0
-    )
+    var output = TileTensor(output_stack, output_shape)
+
+    for i in range(batch_size):
+        output[i, 0] = 0
 
     vector[0, 0] = 0
     vector[0, 1] = 1
@@ -444,14 +396,22 @@ fn test_argn_less_than_simd() raises:
     vector[1, 1] = 4
     vector[1, 2] = 3
 
-    argmax(vector, 1, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 2
     print("argmax = ", output[0, 0])
     # CHECK: argmax = 0
     print("argmax = ", output[1, 0])
 
-    argmin(vector, 1, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        1,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 0
     print("argmin = ", output[0, 0])
@@ -460,7 +420,7 @@ fn test_argn_less_than_simd() raises:
 
 
 # CHECK-LABEL: test_argn_simd_edge_case
-fn test_argn_simd_index_order() raises:
+def test_argn_simd_index_order():
     print("== test_argn_simd_edge_case")
 
     # Checks the case where the maximal value is found in two simd_chunks, where
@@ -472,68 +432,66 @@ fn test_argn_simd_index_order() raises:
     #          ^        ^
     comptime size = 17
 
-    var vector_stack = InlineArray[Int32, size](uninitialized=True)
-    var vector = LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
-        vector_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](size)
-        ),
-    ).fill(0)
-    var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
-    var output = LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](1)
-        ),
+    comptime vector_shape = row_major[size]()
+    var vector_stack = InlineArray[Int32, vector_shape.product()](
+        uninitialized=True
     )
+    var vector = TileTensor(vector_stack, vector_shape)
+
+    for i in range(size):
+        vector[i] = 0
+
+    comptime output_shape = row_major[1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+        uninitialized=True
+    )
+    var output = TileTensor(output_stack, output_shape)
 
     vector[5] = 1
     vector[4] = -1
     vector[8] = -1
     vector[9] = 1
 
-    argmax(vector, 0, output)
+    argmax(
+        vector.make_dynamic[DType.int64](),
+        0,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmax = 5
     print("argmax = ", output[0])
 
-    argmin(vector, 0, output)
+    argmin(
+        vector.make_dynamic[DType.int64](),
+        0,
+        output.make_dynamic[DType.int64](),
+    )
 
     # CHECK: argmin = 4
     print("argmin = ", output[0])
 
 
 # CHECK-LABEL: test_argn_parallelize
-fn test_argn_parallelize() raises:
+def test_argn_parallelize():
     print("== test_argn_parallelize")
 
-    # Checks argn's performance when the size of the LayoutTensor exceeds the threshold to enable parallelism
+    # Checks argn's performance when the size of the TileTensor exceeds the threshold to enable parallelism
     comptime batch_size = 8
     comptime hidden_dim = 16384
 
-    var input_ptr = UnsafePointer[Float32].alloc(batch_size * hidden_dim)
-    var input = LayoutTensor[
-        DType.float32, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
-        input_ptr,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, hidden_dim)
-        ),
-    ).fill(
-        0
-    )
+    comptime input_shape = row_major[batch_size, hidden_dim]()
+    var input_ptr = alloc[Float32](input_shape.product())
+    var input = TileTensor(input_ptr, input_shape)
 
-    var output_stack = InlineArray[Scalar[DType.int], batch_size](
+    for i in range(batch_size):
+        for j in range(hidden_dim):
+            input[i, j] = 0
+
+    comptime output_shape = row_major[batch_size, 1]()
+    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
-    var output = LayoutTensor[
-        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
-        output_stack,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            IndexList[2](batch_size, 1)
-        ),
-    )
+    var output = TileTensor(output_stack, output_shape)
 
     input[0, 10] = 100
     input[0, 100] = -100
@@ -552,7 +510,9 @@ fn test_argn_parallelize() raises:
     input[7, 40] = -100
     input[7, 400] = 100
 
-    argmax(input, 1, output)
+    argmax(
+        input.make_dynamic[DType.int64](), 1, output.make_dynamic[DType.int64]()
+    )
 
     # CHECK: argmax = 10
     print("argmax = ", output[0, 0])
@@ -571,7 +531,9 @@ fn test_argn_parallelize() raises:
     # CHECK: argmax = 400
     print("argmax = ", output[7, 0])
 
-    argmin(input, 1, output)
+    argmin(
+        input.make_dynamic[DType.int64](), 1, output.make_dynamic[DType.int64]()
+    )
 
     # CHECK: argmin = 100
     print("argmin = ", output[0, 0])

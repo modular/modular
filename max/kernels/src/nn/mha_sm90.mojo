@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
+from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -144,32 +141,32 @@ fn mha_sm90_dispatch[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
-    __comptime_assert (
+    comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
     comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
+    var q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
-        num_queries_per_block=OptionalReg[UInt](64),
-        num_keys_per_block=OptionalReg[UInt](config.num_keys_per_block),
-        BK=OptionalReg[UInt](config.BK),
+        num_queries_per_block=Optional[UInt](64),
+        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
+        BK=Optional[UInt](config.BK),
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    __comptime_assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
+    comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
         BM
     )
-    __comptime_assert (
+    comptime assert (
         BK % 64 == 0
     ), "H100 requires BK%64==0 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     comptime num_threads = new_config.num_threads[True]()
-    __comptime_assert num_threads % 128 == 0
+    comptime assert num_threads % 128 == 0
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,
@@ -179,7 +176,7 @@ fn mha_sm90_dispatch[
     comptime persistent = 0 if PartitionType.do_partition else env_get_int[
         "USE_EXPERIMENTAL_KERNELS", 0
     ]()
-    __comptime_assert new_config.algorithm == FlashAttentionAlgorithm(3)
+    comptime assert new_config.algorithm == FlashAttentionAlgorithm(3)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -227,7 +224,7 @@ fn mha_sm90_dispatch[
     @parameter
     if persistent == 0:
         comptime SchedulerType = TransientScheduler[
-            UInt32(scheduler_tile_shape), num_scheduler_heads
+            UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[
@@ -274,7 +271,7 @@ fn mha_sm90_dispatch[
         )
     elif persistent == 2:
         comptime SchedulerType = TileScheduler[
-            UInt32(scheduler_tile_shape), num_scheduler_heads
+            UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[
@@ -321,7 +318,9 @@ fn mha_sm90_dispatch[
         )
     else:
         comptime SchedulerType = QueuedTileScheduler[
-            UInt32(scheduler_tile_shape), num_scheduler_heads, decoding=decoding
+            UInt32(scheduler_tile_shape),
+            UInt32(num_scheduler_heads),
+            decoding=decoding,
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
@@ -947,7 +946,7 @@ fn _mha_sm90[
         BN = Int(config.block_n()),
         BK = Int(config.padded_depth),
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
@@ -991,7 +990,7 @@ fn _mha_sm90[
     comptime num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
     comptime pipeline_stages = Int(config.num_pipeline_stages)
     var tid = UInt32(thread_idx.x)
-    var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
+    var warp_group_idx: UInt32 = warp.broadcast(tid // UInt32(WARPGROUP_SIZE))
 
     mask = pack.mask
     score_mod = pack.score_mod
@@ -1002,11 +1001,13 @@ fn _mha_sm90[
     max_seq_len = pack.max_seq_len
     partition = pack.partition
 
-    __comptime_assert num_warps_m == (
+    comptime assert num_warps_m == (
         num_consumer_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    var warp_id: UInt32 = warp.broadcast((tid - WARPGROUP_SIZE) // WARP_SIZE)
+    var warp_id: UInt32 = warp.broadcast(
+        (tid - UInt32(WARPGROUP_SIZE)) // UInt32(WARP_SIZE)
+    )
     var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.
@@ -1061,13 +1062,16 @@ fn _mha_sm90[
     comptime MMA_K = 16
     comptime WM = config.WM
     comptime num_m_mmas = WM // MMA_M
-    __comptime_assert num_m_mmas == 1, "FIXME: life this constraint"
+    comptime assert num_m_mmas == 1, "FIXME: life this constraint"
     # alias WN = config.WN
     # alias num_n_mmas = WN // MMA_N
     comptime num_n_mmas = 1
     # alias num_k_mmas = BK // MMA_K
 
     comptime accum_type = get_accum_type[kv_type]()
+    comptime assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
     comptime p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE
     comptime o_frag_size = MMA_M * Int(MMA_N1) // WARP_SIZE
     comptime frag_simdwidth = 2
@@ -1178,13 +1182,13 @@ fn _mha_sm90[
     comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
 
     @parameter
     if not SinkType.is_null:
-        sink_weights_ptr = rebind[UnsafePointer[Scalar[kv_type]]](
-            sink_weights.value()
-        )
+        sink_weights_ptr = rebind[
+            UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
+        ](sink_weights.value())
 
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     consumed_mbar_kv = produced_mbar_kv + pipeline_stages
@@ -1391,7 +1395,7 @@ fn _mha_sm90[
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]:
-            return {q_smem + q_size * q_idx}
+            return {q_smem + UInt32(q_size) * q_idx}
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
@@ -1487,7 +1491,7 @@ fn _mha_sm90[
             wgmma_0.wgmma[
                 Int(num_consumer),
                 scale_c=0,
-                num_k_iters = OptionalReg[Int](
+                num_k_iters = Optional[Int](
                     Int(ceildiv(depth, UInt(wgmma_0.mma_shape[2])))
                 ),
             ](
@@ -1601,7 +1605,9 @@ fn _mha_sm90[
                 for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
 
-            var output_ptr: UnsafePointer[Scalar[output_type]] = o_ptr_arg
+            var output_ptr: UnsafePointer[
+                Scalar[output_type], MutAnyOrigin
+            ] = o_ptr_arg
 
             @parameter
             if decoding and PartitionType.do_partition:
@@ -1616,7 +1622,7 @@ fn _mha_sm90[
                 num_rows = MMA_M // 2, row_size = Int(BN), access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            comptime q_tile_size: UInt32 = q_smem_size // 2
+            comptime q_tile_size: UInt32 = UInt32(q_smem_size // 2)
 
             # ensure all threads have finished reading `q_smem`
             named_barrier[Int32(num_consumer_threads)]()

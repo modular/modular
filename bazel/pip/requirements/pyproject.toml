@@ -5,9 +5,10 @@ requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settin
 dependencies = [
   "levenshtein",
   "absl-py",
+  "aioboto3",
   "aiofiles",
   "aiohttp",
-  "anyio",
+  "anyio>=4.12.1",
   "asgiref",
   "async-asgi-testclient",
   "boto3",
@@ -16,6 +17,7 @@ dependencies = [
   "cyclopts",
   "datasets",
   "device-smi",
+  "diffusers",
   "docutils",
   "einops",
   "einx",
@@ -92,6 +94,8 @@ dependencies = [
   "tomli",
   "tqdm",
   "transformers>=4.57",
+  "types-aioboto3[essential]",
+  "types-boto3[essential]",
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
@@ -172,11 +176,11 @@ amd = [
 ]
 
 cpu = [
-  "torch==2.9.0",
+  "torch==2.9.1",
   "torchaudio",
-  "torchvision==0.24.0+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "torchvision==0.24.0; platform_machine != 'x86_64'",
-  "triton==3.5.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1; platform_machine != 'x86_64'",
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]>=0.4.9.1",
@@ -190,14 +194,14 @@ cpu = [
 ]
 
 nvidia = [
-  "torch==2.9.0",
+  "torch==2.9.1",
   "torchaudio",
-  "torchvision==0.24.0",
-  "triton==3.5.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1",
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "compressed-tensors; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "vllm==0.12.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "vllm==0.14.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 
   "accelerate",
   "flashinfer-cubin",
@@ -235,27 +239,27 @@ override-dependencies = [
 
 [tool.uv.sources]
 torch = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torch-2.9.1.dev20251204%2Brocm7.0.2.lw.git351ff442-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torch-2.9.1.dev20251204%2Brocm7.0.2.lw.git351ff442-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchvision = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchvision-0.24.0%2Brocm7.0.2.gitb919bd0c-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchvision-0.24.0%2Brocm7.0.2.gitb919bd0c-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchaudio = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchaudio-2.9.0%2Brocm7.0.2.gite3c6ee2b-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchaudio-2.9.0%2Brocm7.0.2.gite3c6ee2b-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 triton = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/triton-3.5.1%2Brocm7.0.2.gita272dfa8-cp312-cp312-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/triton-3.5.1%2Brocm7.0.2.gita272dfa8-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 gptqmodel = [
-  { url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },
+  { url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp313-cp313-linux_x86_64.whl" },
 ]
 
 [[tool.uv.index]]

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,13 +47,10 @@ from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
     call_ep_combine,
     call_ep_combine_async,
-    call_ep_combine_async_fused_shared_expert,
     call_ep_combine_wait,
     call_ep_dispatch,
     call_ep_dispatch_async,
-    call_ep_dispatch_fp8,
     call_ep_dispatch_wait,
-    call_ep_dispatch_wait_fp8,
     call_ep_init,
 )
 
@@ -279,7 +276,11 @@ class EPBatchManager:
         start_idx = end_idx
 
     def ep_dispatch_async(
-        self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
+        self,
+        input_tokens: TensorValue,
+        topk_ids: TensorValue,
+        device_id: int,
+        input_scales: TensorValue | None = None,
     ) -> None:
         """Initiate Expert Parallelism token dispatch phase (async).
 
@@ -292,6 +293,8 @@ class EPBatchManager:
             topk_ids: Top-k expert IDs for the current device. A TensorValue with
                 shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            input_scales: Optional input scales tensor. Required for NVFP4
+                dispatch.
         """
         DISPATCH_GROUP = 0
         # Store the symbolic token numbers of each device for the combine phase
@@ -304,6 +307,7 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
+            input_scales=input_scales,
         )
 
         if self.config.fused_shared_expert:
@@ -326,8 +330,7 @@ class EPBatchManager:
             - output_tokens: Aggregated tokens ready for grouped matmul computation.
                 Shape: (max_recv_tokens, hidden_size).
             - output_scales: Aggregated scales ready for grouped matmul computation.
-                Only returned when we use FP8 quantization.
-                Shape: (hidden_size // block_size, max_recv_tokens).
+                Only returned for quantized dispatch. Shape depends on format.
             - expert_start_indices: Row offsets for grouped matmul computation.
                 Shape: (n_local_experts + 1,).
             - expert_ids: Local expert IDs for the grouped computation.
@@ -337,13 +340,7 @@ class EPBatchManager:
         """
         DISPATCH_GROUP = 0
 
-        dispatch_fn = (
-            call_ep_dispatch_wait_fp8
-            if self.config.dispatch_fp8_config is not None
-            else call_ep_dispatch_wait
-        )
-
-        results = dispatch_fn(
+        results = call_ep_dispatch_wait(
             self.atomic_counters[DISPATCH_GROUP][device_id],
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
@@ -381,33 +378,16 @@ class EPBatchManager:
             "Source info is not set, you should call ep_dispatch_wait() first."
         )
 
-        if self.config.fused_shared_expert:
-            dispatch_dim = self._dispatch_dim[device_id]
-            assert dispatch_dim is not None, (
-                "Dispatch dimension is not set, you should call ep_dispatch_async() first."
-            )
-            self._shared_expert_outputs[device_id] = (
-                call_ep_combine_async_fused_shared_expert(
-                    input_tokens,
-                    src_info,
-                    self.atomic_counters[0][device_id],
-                    self.send_buf_ptrs[COMBINE_GROUP],
-                    self.recv_buf_ptrs[COMBINE_GROUP],
-                    self.recv_count_ptrs[COMBINE_GROUP],
-                    self.config,
-                    dispatch_dim,
-                )
-            )
-        else:
-            call_ep_combine_async(
-                input_tokens,
-                src_info,
-                self.atomic_counters[0][device_id],
-                self.send_buf_ptrs[COMBINE_GROUP],
-                self.recv_buf_ptrs[COMBINE_GROUP],
-                self.recv_count_ptrs[COMBINE_GROUP],
-                self.config,
-            )
+        self._shared_expert_outputs[device_id] = call_ep_combine_async(
+            input_tokens,
+            src_info,
+            self.atomic_counters[0][device_id],
+            self.send_buf_ptrs[COMBINE_GROUP],
+            self.recv_buf_ptrs[COMBINE_GROUP],
+            self.recv_count_ptrs[COMBINE_GROUP],
+            self.config,
+            self._dispatch_dim[device_id],
+        )
 
         # reset src_info to None to avoid reusing it for the next batch
         self._src_info[device_id] = None
@@ -459,7 +439,11 @@ class EPBatchManager:
     # ===-------------------------------------------------------------------===#
 
     def ep_dispatch(
-        self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
+        self,
+        input_tokens: TensorValue,
+        topk_ids: TensorValue,
+        device_id: int,
+        input_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Execute fused Expert Parallelism token dispatch (async + wait).
 
@@ -477,6 +461,8 @@ class EPBatchManager:
             topk_ids: Top-k expert IDs for the current device. A TensorValue
                 with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            input_scales: Optional input scales tensor. Needed for NVFP4
+                dispatch.
 
         Returns:
             A tuple containing:
@@ -497,13 +483,7 @@ class EPBatchManager:
         # Store the symbolic token numbers for the combine phase
         self._dispatch_dim[device_id] = input_tokens.shape[0]
 
-        dispatch_fn = (
-            call_ep_dispatch_fp8
-            if self.config.dispatch_dtype.is_float8()
-            else call_ep_dispatch
-        )
-
-        results = dispatch_fn(
+        results = call_ep_dispatch(
             input_tokens,
             topk_ids,
             self.atomic_counters[DISPATCH_GROUP][device_id],
@@ -511,6 +491,7 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
+            input_scales=input_scales,
         )
 
         # The last element is the src_info, we need to store it for the
@@ -705,7 +686,7 @@ class EPCommInitializer:
         Args:
             session: Inference session used to compile and execute the graph.
         """
-        logger.info("Initializing SHMEM context and allocating SHMEM memory...")
+        logger.info("Initializing EP communication infrastructure...")
         logger.info(
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self._estimate_ep_memory_usage())}"
         )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -100,7 +100,7 @@ struct _SpanIter[
         return self.copy()
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> ref [Self.origin] Self.T:
+    fn __next__(mut self) raises StopIteration -> ref[Self.origin] Self.T:
         @parameter
         if Self.forward:
             if self.index >= len(self.src):
@@ -116,7 +116,12 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
+struct Span[
+    mut: Bool,
+    //,
+    T: Copyable,
+    origin: Origin[mut=mut],
+](
     Boolable,
     Defaultable,
     DevicePassable,
@@ -179,17 +184,6 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#
@@ -226,7 +220,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
 
     @always_inline
     @implicit
-    fn __init__(out self, ref [Self.origin]list: List[Self.T, ...]):
+    fn __init__(out self, ref[Self.origin] list: List[Self.T, ...]):
         """Construct a `Span` from a `List`.
 
         Args:
@@ -239,7 +233,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     @implicit
     fn __init__[
         size: Int, //
-    ](out self, ref [Self.origin]array: InlineArray[Self.T, size]):
+    ](out self, ref[Self.origin] array: InlineArray[Self.T, size]):
         """Construct a `Span` from an `InlineArray`.
 
         Parameters:
@@ -261,7 +255,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> ref [Self.origin] Self.T:
+    fn __getitem__[I: Indexer](self, idx: I) -> ref[Self.origin] Self.T:
         """Get a reference to an element in the span.
 
         Args:
@@ -344,7 +338,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
             True if the value is contained in the list, False otherwise.
         """
 
-        comptime widths = InlineArray[Int, 6](256, 128, 64, 32, 16, 8)
+        comptime widths: InlineArray[Int, 6] = [256, 128, 64, 32, 16, 8]
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0
@@ -468,7 +462,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         return rebind[Self.Immutable](self)
 
     @always_inline
-    fn unsafe_get(self, idx: Some[Indexer]) -> ref [Self.origin] Self.T:
+    fn unsafe_get(self, idx: Some[Indexer]) -> ref[Self.origin] Self.T:
         """Get a reference to the element at `index` without bounds checking.
 
         Args:
@@ -730,7 +724,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         dtype: DType,
         O: MutOrigin,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
 
@@ -763,9 +757,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         dtype: DType,
         O: MutOrigin,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -802,7 +796,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     fn count[
         dtype: DType,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype]]) -> UInt:
         """Count the amount of times the function returns `True`.
 
@@ -878,7 +872,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         return Optional(cursor) if value == needle else None
 
     fn binary_search_by[
-        func: fn (Self.T) -> Int,
+        func: fn(Self.T) -> Int,
     ](self: Span[Self.T, Self.origin]) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,8 +28,8 @@ fn _run_memset[
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Scalar[dtype](i)
+        out_host[i] = Scalar[dtype](length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(on_dev)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -593,6 +593,10 @@ class TokenBuffer:
         # Reset the processing offset to 0
         if self._processing_offset != 0:
             self.apply_processing_offset(0)
+
+    def overwrite_last_token(self, token: int) -> None:
+        """Overwrite the last token in the buffer."""
+        self.array[self._current_length - 1] = token
 
     # ============================================================================
     # Completion Tracking

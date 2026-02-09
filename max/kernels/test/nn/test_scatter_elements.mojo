@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -54,9 +54,17 @@ def main():
             output_ptr, IndexList[2](3, 3)
         )
 
-        var expected = InlineArray[Float32, 9](
-            Float32(2.0), 1.1, 0.0, 1.0, 0.0, 2.2, 0.0, 2.1, 1.2
-        )
+        var expected: InlineArray[Float32, 9] = [
+            Float32(2.0),
+            1.1,
+            0.0,
+            1.0,
+            0.0,
+            2.2,
+            0.0,
+            2.1,
+            1.2,
+        ]
 
         @always_inline
         @parameter
@@ -86,7 +94,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -108,7 +116,13 @@ def main():
             output_ptr, IndexList[2](1, 5)
         )
 
-        var expected = InlineArray[Float32, 5](Float32(1.0), 1.1, 3.0, 2.1, 5.0)
+        var expected: InlineArray[Float32, 5] = [
+            Float32(1.0),
+            1.1,
+            3.0,
+            2.1,
+            5.0,
+        ]
 
         @always_inline
         @parameter
@@ -138,7 +152,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -160,7 +174,13 @@ def main():
             output_ptr, IndexList[2](1, 5)
         )
 
-        var expected = InlineArray[Float32, 5](Float32(1.0), 1.1, 2.1, 4.0, 5.0)
+        var expected: InlineArray[Float32, 5] = [
+            Float32(1.0),
+            1.1,
+            2.1,
+            4.0,
+            5.0,
+        ]
 
         @always_inline
         @parameter
@@ -190,7 +210,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -212,7 +232,13 @@ def main():
             output_ptr, IndexList[2](1, 5)
         )
 
-        var expected = InlineArray[Float32, 5](Float32(1.0), 2.1, 3.0, 4.0, 5.0)
+        var expected: InlineArray[Float32, 5] = [
+            Float32(1.0),
+            2.1,
+            3.0,
+            4.0,
+            5.0,
+        ]
 
         @always_inline
         @parameter

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -633,11 +633,27 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 exp = _elementwise_unary(rmo.mo_exp)
-"""
-Computes the elementwise exp function of a symbolic tensor.
+exp.__doc__ = """
+Computes the elementwise exp (exponential) function of a symbolic tensor.
 
-Creates a new op node to compute the elementwise exp function of a
+Creates a new op node to compute the elementwise exponential function of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
+The exp function is fundamental in neural networks, used in attention
+mechanisms, activation functions, and probability distributions.
+
+.. code-block:: python
+
+    import max.functional as F
+    from max.tensor import Tensor
+
+    # Create input tensor
+    x = Tensor.constant([0.0, 1.0, 2.0])
+
+    # Compute exponential
+    result = F.exp(x)
+    print(result)
+    # Output: [1.0, 2.718..., 7.389...]
+    # (e^0 = 1, e^1 ≈ 2.718, e^2 ≈ 7.389)
 
 ``exp`` is defined as ``exp(x) = e^x``, where ``e`` is Euler's number.
 
@@ -803,11 +819,27 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
 
 
 log = _elementwise_unary(rmo.mo_log)
-"""
+log.__doc__ = """
 Computes the elementwise natural logarithm of a symbolic tensor.
 
 Creates a new op node to compute the elementwise natural logarithm of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
+The natural logarithm is used in loss functions, normalization, and
+probability calculations in machine learning.
+
+.. code-block:: python
+
+    import max.functional as F
+    from max.tensor import Tensor
+
+    # Create input tensor (positive values only)
+    x = Tensor.constant([1.0, 2.718, 7.389, 20.0])
+
+    # Compute natural logarithm
+    result = F.log(x)
+    print(result)
+    # Output: [0.0, 1.0, 2.0, 2.996...]
+    # (log(1) = 0, log(e) = 1, log(e^2) = 2)
 
 The natural logarithm function ``log`` is defined as the inverse of the
 exponential function ``exp()``. In other words, it computes the value ``y`` in
@@ -895,11 +927,31 @@ Raises:
 """
 
 relu = _elementwise_unary(rmo.mo_relu)
-"""
-Computes the elementwise relu of a symbolic tensor.
+relu.__doc__ = """
+Computes the elementwise ReLU (Rectified Linear Unit) of a symbolic tensor.
 
-Creates a new op node to compute the elementwise relu of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+Creates a new op node to compute the elementwise ReLU of a symbolic tensor
+and adds it to the graph, returning the symbolic result. ReLU is defined as
+``relu(x) = max(0, x)``, setting all negative values to zero while leaving
+positive values unchanged.
+
+ReLU is one of the most common activation functions in neural networks due to
+its computational efficiency and effectiveness in addressing the vanishing
+gradient problem.
+
+.. code-block:: python
+
+    import max.functional as F
+    from max.tensor import Tensor
+
+    # Create input with negative and positive values
+    x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+
+    # Apply ReLU activation
+    result = F.relu(x)
+    print(result)
+    # Output: [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]
+    # Negative values become 0, positive values unchanged
 
 Args:
     value: The symbolic tensor to use as the input to the relu
@@ -916,10 +968,30 @@ Raises:
 
 def sigmoid(x: TensorValue) -> TensorValue:
     """
-    Computes the elementwise sigmoid of a symbolic tensor.
+    Computes the elementwise sigmoid activation of a symbolic tensor.
 
-    Creates a new op node to compute the elementwise sigmoid of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
+    Creates a new op node to compute the elementwise sigmoid of a symbolic
+    tensor and adds it to the graph, returning the symbolic result. Sigmoid
+    is defined as ``sigmoid(x) = 1 / (1 + exp(-x))``, mapping all input values
+    to the range (0, 1).
+
+    The sigmoid function is commonly used for binary classification tasks and
+    as an activation function in neural networks, particularly in output layers
+    for probability prediction.
+
+    .. code-block:: python
+
+        import max.functional as F
+        from max.tensor import Tensor
+
+        # Create input tensor
+        x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+
+        # Apply sigmoid activation
+        result = F.sigmoid(x)
+        print(result)
+        # Output: [[0.119, 0.269, 0.5], [0.731, 0.881, 0.953]]
+        # All values mapped to range (0, 1)
 
     Args:
         value: The symbolic tensor to use as the input to the sigmoid
@@ -1075,11 +1147,33 @@ Raises:
 """
 
 sqrt = _elementwise_unary(rmo.mo_sqrt)
-"""
-Computes the elementwise sqrt of a symbolic tensor.
+sqrt.__doc__ = """
+Computes the elementwise square root of a symbolic tensor.
 
-Creates a new op node to compute the elementwise sqrt of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+Creates a new op node to compute the elementwise square root of a symbolic
+tensor and adds it to the graph, returning the symbolic result. Square root
+is commonly used in normalization operations, distance calculations, and
+implementing mathematical operations like standard deviation.
+
+.. code-block:: python
+
+    import max.functional as F
+    from max.tensor import Tensor
+
+    # Create tensor with positive values
+    x = Tensor.constant([1.0, 4.0, 9.0, 16.0])
+
+    # Compute square root
+    result = F.sqrt(x)
+    print(result)
+    # Output: [1.0, 2.0, 3.0, 4.0]
+
+    # Note: sqrt requires non-negative values
+    # For tensors with negative values, use abs first:
+    y = Tensor.constant([1.0, -4.0, 9.0, -16.0])
+    result2 = F.sqrt(F.abs(y))
+    print(result2)
+    # Output: [1.0, 2.0, 3.0, 4.0]
 
 Args:
     value: The symbolic tensor to use as the input to the sqrt
@@ -1112,11 +1206,32 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 tanh = _elementwise_unary(rmo.mo_tanh)
-"""
-Computes the elementwise tanh of a symbolic tensor.
+tanh.__doc__ = """
+Computes the elementwise tanh (hyperbolic tangent) of a symbolic tensor.
 
-Creates a new op node to compute the elementwise tanh of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+Creates a new op node to compute the elementwise tanh of a symbolic tensor
+and adds it to the graph, returning the symbolic result. Tanh is defined as
+``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, mapping all input
+values to the range (-1, 1).
+
+The tanh function is commonly used as an activation function in recurrent
+neural networks (RNNs) and as a hidden layer activation in feedforward networks.
+Unlike sigmoid which maps to (0, 1), tanh is zero-centered, which can help
+with gradient flow during training.
+
+.. code-block:: python
+
+    import max.functional as F
+    from max.tensor import Tensor
+
+    # Create input tensor
+    x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+
+    # Apply tanh activation
+    result = F.tanh(x)
+    print(result)
+    # Output: [[-0.964, -0.762, 0.0], [0.762, 0.964, 0.995]]
+    # All values mapped to range (-1, 1)
 
 Args:
     value: The symbolic tensor to use as the input to the tanh

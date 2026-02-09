@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-struct RasterOrder(TrivialRegisterType):
+struct RasterOrder(TrivialRegisterPassable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -37,7 +37,7 @@ struct RasterOrder(TrivialRegisterType):
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -101,7 +101,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, MutAnyOrigin
@@ -118,8 +118,8 @@ struct TileScheduler[
     )
     var current_dynamic_dim_cumsum: UInt32
     var block_idx_start: UInt32
-    comptime num_static_dim_blocks: UInt32 = ceildiv(
-        Self.static_MN, Self.tile_shape[Self.static_dim]
+    comptime num_static_dim_blocks: UInt32 = UInt32(
+        ceildiv(Self.static_MN, Self.tile_shape[Self.static_dim])
     )
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
@@ -132,10 +132,10 @@ struct TileScheduler[
             DType.uint32, Self.offsets_layout, MutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        __comptime_assert Self.cta_group == Self.cluster[0], (
+        comptime assert Self.cta_group == Self.cluster[0], (
             "cta_group must be equal to cluster M size. Got cta_group = "
             + String(Self.cta_group)
             + " and cluster M size = "
@@ -143,7 +143,7 @@ struct TileScheduler[
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
-        __comptime_assert (
+        comptime assert (
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0
@@ -180,7 +180,7 @@ struct TileScheduler[
 
         # Trim to the next group
         while True:
-            if self.current_group_idx >= self.num_active_experts:
+            if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 

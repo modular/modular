@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,6 +35,7 @@ deepseekV3_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
         SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float4_e2m1fnx2: [KVCacheStrategy.PAGED],
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,

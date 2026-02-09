@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_char
+from ffi import c_char
 
 from testing import (
     assert_equal,
@@ -264,11 +264,11 @@ def test_layout():
 
     # Test non-empty StringLiteral C string
     var ptr = "hello".as_c_string_slice().unsafe_ptr()
-    assert_equal(ptr[0], ord("h"))
-    assert_equal(ptr[1], ord("e"))
-    assert_equal(ptr[2], ord("l"))
-    assert_equal(ptr[3], ord("l"))
-    assert_equal(ptr[4], ord("o"))
+    assert_equal(ptr[0], Int8(ord("h")))
+    assert_equal(ptr[1], Int8(ord("e")))
+    assert_equal(ptr[2], Int8(ord("l")))
+    assert_equal(ptr[3], Int8(ord("l")))
+    assert_equal(ptr[4], Int8(ord("o")))
     assert_equal(ptr[5], 0)  # Verify NUL terminated
 
 
@@ -347,9 +347,9 @@ def test_ascii_ljust():
 
 
 def test_center():
-    assert_equal("hello".center(4), "hello")
-    assert_equal("hello".center(8), " hello  ")
-    assert_equal("hello".center(8, "*"), "*hello**")
+    assert_equal("hello".ascii_center(4), "hello")
+    assert_equal("hello".ascii_center(8), " hello  ")
+    assert_equal("hello".ascii_center(8, "*"), "*hello**")
 
 
 def test_float_conversion():

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,16 +13,17 @@
 
 from random import seed
 
-from layout import Layout, LayoutTensor
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.randn import random_normal
 
 
 fn test_random_normal():
     seed(0)
 
-    comptime out_shape = Layout.row_major(2, 2)
+    comptime out_shape = row_major[2, 2]()
     var output_stack = InlineArray[Float32, 4](uninitialized=True)
-    var output = LayoutTensor[DType.float32, out_shape](output_stack).fill(0)
+    var output = TileTensor(output_stack, out_shape).fill(0)
 
     random_normal[DType.float32, 0.0, 1.0](output)
     # CHECK-LABEL: == test_random_normal

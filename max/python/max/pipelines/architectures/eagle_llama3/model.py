@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -74,7 +74,10 @@ class EagleLlama3Model(LlamaModelBase):
         assert (
             hasattr(model_inputs, "hidden_states")
             and model_inputs.hidden_states is not None
-        ), "EAGLE model requires hidden_states in model_inputs"
+            and isinstance(model_inputs.hidden_states, Buffer)
+        ), (
+            "EAGLE model requires hidden_states as a single Buffer in model_inputs"
+        )
 
         model_outputs = self.model.execute(
             model_inputs.tokens,

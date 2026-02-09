@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,7 +55,7 @@ fn multistage_gemm_simple[
 
     var gemm_kernel = ctx.compile_function_experimental[gemm_kernel_type](
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
+            UInt32(config.shared_mem_usage())
         ),
     )
 

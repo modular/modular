@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,6 +23,7 @@ from linalg.fp8_quantization import (
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from sys import has_nvidia_gpu_accelerator
 from testing import assert_equal
 
 from utils import Index, IndexList
@@ -203,7 +204,7 @@ fn test_dynamic_fp8_quant[
             for j in range(group_size):
                 group_max = max(
                     group_max,
-                    abs(in_host[i, j + group_idx * Int(group_size)][0]),
+                    abs(in_host[i, j + group_idx * group_size][0]),
                 )
 
             var scale_factor: Scalar[scales_dtype]
@@ -228,8 +229,8 @@ fn test_dynamic_fp8_quant[
             )
 
             for j in range(group_size):
-                var in_val = in_host[i, j + group_idx * Int(group_size)]
-                var out_val = out_host[i, j + group_idx * Int(group_size)]
+                var in_val = in_host[i, j + group_idx * group_size]
+                var out_val = out_host[i, j + group_idx * group_size]
                 assert_equal(
                     out_val.cast[DType.float32](),
                     (in_val.cast[accum_dtype]() * scale_factor_recip)
@@ -238,7 +239,7 @@ fn test_dynamic_fp8_quant[
                     msg="At ["
                     + String(i)
                     + ", "
-                    + String(j + group_idx * Int(group_size))
+                    + String(j + group_idx * group_size)
                     + "]",
                 )
 
@@ -352,9 +353,7 @@ fn test_batched_dynamic_fp8_quant[
                     group_max = max(
                         group_max,
                         abs(
-                            in_host[
-                                batch_idx, i, j + group_idx * Int(group_size)
-                            ][0]
+                            in_host[batch_idx, i, j + group_idx * group_size][0]
                         ),
                     )
 
@@ -371,10 +370,10 @@ fn test_batched_dynamic_fp8_quant[
 
                 for j in range(group_size):
                     var in_val = in_host[
-                        batch_idx, i, j + group_idx * Int(group_size)
+                        batch_idx, i, j + group_idx * group_size
                     ]
                     var out_val = out_host[
-                        batch_idx, i, j + group_idx * Int(group_size)
+                        batch_idx, i, j + group_idx * group_size
                     ]
 
                     assert_equal(
@@ -385,7 +384,7 @@ fn test_batched_dynamic_fp8_quant[
                         msg="At ["
                         + String(i)
                         + ", "
-                        + String(j + group_idx * Int(group_size))
+                        + String(j + group_idx * group_size)
                         + "]",
                     )
 
@@ -534,27 +533,30 @@ def main():
             K = Int(544),
         ](ctx, 128, 1024, 544)
 
-        test_dynamic_fp8_quant[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
-            DType.float8_e8m0fnu,
-            128,
-            M=None,
-            N = Int(1024),
-        ](ctx, 43, 1024)
-        test_dynamic_fp8_quant[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
-            DType.float8_e8m0fnu,
-            128,
-            M=None,
-            N = Int(16384),
-        ](ctx, 3, 16384)
-        test_dynamic_fp8_quant[
-            DType.float8_e4m3fn,
-            DType.float32,
-            DType.float8_e8m0fnu,
-            128,
-            M=None,
-            N = Int(576),
-        ](ctx, 1, 576)
+        # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                DType.float8_e8m0fnu,
+                128,
+                M=None,
+                N = Int(1024),
+            ](ctx, 43, 1024)
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                DType.float8_e8m0fnu,
+                128,
+                M=None,
+                N = Int(16384),
+            ](ctx, 3, 16384)
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fn,
+                DType.float32,
+                DType.float8_e8m0fnu,
+                128,
+                M=None,
+                N = Int(576),
+            ](ctx, 1, 576)

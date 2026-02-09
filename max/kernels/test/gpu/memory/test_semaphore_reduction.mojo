@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn semaphore_vector_reduce[
         lx = 0
     else:
         lx = Int(block_idx + 1)
-    sema.release(lx)
+    sema.release(Int32(lx))
 
 
 fn run_vector_reduction[
@@ -132,7 +132,7 @@ fn semaphore_matrix_reduce[
         lx = 0
     else:
         lx = Int(block_idx + 1)
-    sema.release(lx)
+    sema.release(Int32(lx))
 
 
 fn run_matrix_reduction[

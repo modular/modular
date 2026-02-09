@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from collections.string.string_slice import get_static_string
 from math import align_up, ceildiv
 from sys.info import align_of, simd_width_of
@@ -70,7 +70,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
         ...
 
 
@@ -79,9 +79,9 @@ fn elementwise_epilogue_c_tile[
     dtype: DType,
     origin: MutOrigin,
     c_shape: DimList,
-    func: fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    func: fn[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing -> None,
 ](
     offset: GemmShape,
     tile_len: GemmShape,
@@ -113,7 +113,7 @@ fn tiled_matmul_run[
     c: NDBuffer[mut=True, _, 2, _, _],
     a: NDBuffer[_, 2, _, _],
     b: NDBuffer[_, 2, _, _],
-    elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
+    elementwise_epilogue_fn: fn(GemmShape, GemmShape) escaping -> None,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
 ):
@@ -143,8 +143,8 @@ fn tiled_matmul_run[
     ](
         alg,
         c,
-        a,
-        b,
+        a.get_immutable(),
+        b.get_immutable(),
         tile_n_k,
         global_tile_offset,
         global_tile_shape,
@@ -156,7 +156,7 @@ fn tiled_matmul_run[
             b.shape,
             transpose_b,
             b_packed,
-        ].get(b, tile_n_k),
+        ].get(b.get_immutable(), tile_n_k),
         elementwise_epilogue_fn,
     )
     matmul._outer_k_loop()
@@ -165,9 +165,6 @@ fn tiled_matmul_run[
 # Tiled Matmul Implementation.
 @fieldwise_init
 struct TiledMatmul[
-    a_mut: Bool,
-    b_mut: Bool,
-    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
@@ -175,10 +172,10 @@ struct TiledMatmul[
     kernel_id: InnerKernelID,
     a_type: DType,
     a_shape: DimList,
-    a_origin: Origin[mut=a_mut],
+    a_origin: ImmutOrigin,
     b_type: DType,
     b_shape: DimList,
-    b_origin: Origin[mut=b_mut],
+    b_origin: ImmutOrigin,
     c_type: DType,
     c_shape: DimList,
     c_origin: MutOrigin,
@@ -215,7 +212,7 @@ struct TiledMatmul[
         Self.b_origin,
     ]
 
-    var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
+    var elementwise_epilogue_fn: fn(GemmShape, GemmShape) escaping -> None
 
     fn _outer_m_loop[
         tile_kernel_cols: Int
@@ -414,7 +411,7 @@ struct TiledMatmul[
 @always_inline
 fn _small_matmul[
     transpose_b: Bool,
-    epilogue_wrapper: OptionalReg[elementwise_epilogue_type],
+    epilogue_wrapper: Optional[elementwise_epilogue_type],
 ](
     a: NDBuffer[_, 2, _, _],
     b: NDBuffer[_, 2, _, _],
@@ -428,8 +425,8 @@ fn _small_matmul[
 
     @parameter
     if transpose_b:
-        for m in range(M):
-            for n in range(N):
+        for var m in range(M):
+            for var n in range(N):
                 var acc_vector = SIMD[c.type, simd_width]()
                 var acc_scalar = Scalar[c.type]()
 
@@ -482,9 +479,9 @@ fn _small_matmul[
         @always_inline
         @parameter
         fn accum_out_row[
-            output_func: fn[dtype: DType, width: Int] (
+            output_func: fn[dtype: DType, width: Int](
                 IndexList[2], SIMD[dtype, width]
-            ) capturing [_] -> None,
+            ) capturing[_] -> None,
         ](m: Int, k: Int):
             var a_val = a[m, k].cast[c.type]()
 
@@ -510,7 +507,7 @@ fn _matmul_cpu_impl[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
@@ -681,7 +678,7 @@ fn matmul[
     *,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
 ](
@@ -777,7 +774,7 @@ fn _submatmul_sequential_sync[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
@@ -793,12 +790,13 @@ fn _submatmul_sequential_sync[
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
         @parameter
         if elementwise_lambda_fn:
+            comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
                 c.type,
                 c.origin,
                 c.shape,
-                elementwise_lambda_fn.value(),
+                func,
             ](
                 offset,
                 shape,
@@ -829,7 +827,7 @@ fn _submatmul_sequential_sync[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],

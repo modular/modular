@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -33,7 +33,6 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from collections import OptionalReg
 from sys import is_compile_time, simd_width_of, size_of
 
 from bit import log2_floor
@@ -305,7 +304,7 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-struct Swizzle(LayoutTrait, Stringable, TrivialRegisterType, Writable):
+struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -421,7 +420,10 @@ struct Swizzle(LayoutTrait, Stringable, TrivialRegisterType, Writable):
         Returns:
             The swizzled scalar value.
         """
-        return offset ^ shiftr(offset & self.yyy_mask, self.shift)
+        return offset ^ shiftr(
+            offset & Scalar[offset.dtype](self.yyy_mask),
+            Scalar[offset.dtype](self.shift),
+        )
 
     @always_inline
     fn size(self) -> Int:
@@ -490,7 +492,7 @@ fn make_ldmatrix_swizzle[
     comptime type_size = size_of[dtype]()
     comptime bytes_row = row_size * type_size
 
-    __comptime_assert (
+    comptime assert (
         bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0
     ), (
         "Row sizes should be multiples of 32 banks, or multiple"
@@ -531,7 +533,7 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     comptime base = log2_floor(access_size)
     comptime shifts = log2_floor(row_size) - base
 
-    __comptime_assert shifts > 0, "Negative shifts in swizzling likely a bug."
+    comptime assert shifts > 0, "Negative shifts in swizzling likely a bug."
 
     return Swizzle(bits, base, shifts)
 
@@ -571,7 +573,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
 
 
 struct ComposedLayout[
-    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: OptionalReg[Int] = 0
+    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: Optional[Int] = 0
 ](LayoutTrait):
     """Layout composed of two layouts applied sequentially.
 
@@ -602,7 +604,7 @@ struct ComposedLayout[
             layout_a: The first layout.
             layout_b: The second layout.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.offset or Self.offset.value() >= 0
         ), "Requires non-negative offset if present"
         self.layout_a = layout_a^
@@ -647,7 +649,7 @@ struct ComposedLayout[
         Returns:
             The transformed index.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.offset
         ), "Static offset set; runtime offset not allowed."
         return self.layout_b(offset_val + self.layout_a(idx))

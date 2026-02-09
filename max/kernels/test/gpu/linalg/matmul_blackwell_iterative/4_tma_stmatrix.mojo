@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -97,7 +97,7 @@ fn kernel_4[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     num_iters: Int,
 ):
-    __comptime_assert num_threads == 128 or num_threads == 256
+    comptime assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -177,13 +177,13 @@ fn kernel_4[
     comptime b_size = b_smem_layout.size()
     comptime c_size = c_smem_layout.size()
 
-    __comptime_assert (
+    comptime assert (
         (a_size * size_of[a_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (c_size * size_of[c_type]()) % 128
     ) == 0, "preserve alignment"
 
@@ -260,15 +260,15 @@ fn kernel_4[
     for i in range(num_iters):
         # load A and B from global memory to shared memory
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             @parameter
             for j in range(BK // 64):
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
-                __comptime_assert ((a_offset * size_of[a_type]()) % 128) == 0
-                __comptime_assert ((b_offset * size_of[b_type]()) % 128) == 0
+                comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
+                comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
@@ -300,7 +300,9 @@ fn kernel_4[
                 comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
 
                 # use c_scale=0 for the first mma only on the first iteration to initialize
-                var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
+                var c_scale_value: UInt32 = UInt32(
+                    0 if (i == 0 and j == 0) else 1
+                )
                 mma(
                     adesc + a_offset,
                     bdesc + b_offset,
@@ -428,7 +430,7 @@ fn blackwell_kernel_4[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -476,8 +478,10 @@ fn blackwell_kernel_4[
         K // BK,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        shared_mem_bytes=smem_use,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -655,9 +659,11 @@ def test_blackwell_kernel_4[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")

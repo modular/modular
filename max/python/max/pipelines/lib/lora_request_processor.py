@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,7 +28,7 @@ from max.interfaces.lora import (
     LoRAResponse,
     LoRAStatus,
 )
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 if TYPE_CHECKING:
     from .lora import LoRAManager
@@ -37,11 +37,14 @@ logger = logging.getLogger("max.serve")
 
 
 class LoRARequestProcessor:
-    """
-    Processes LoRA requests by delegating operations to a LoRAManager.
+    """Processes LoRA requests by delegating operations to a LoRAManager.
 
-    This class acts as a bridge between the LoRA queue system and the LoRA manager,
+    Acts as a bridge between the LoRA queue system and the LoRA manager,
     processing load/unload/list operations and returning appropriate responses.
+
+    Args:
+        manager: The LoRAManager instance to handle operations.
+        zmq_endpoint_base: Base endpoint string for ZMQ request/response sockets.
     """
 
     def __init__(
@@ -49,12 +52,6 @@ class LoRARequestProcessor:
         manager: LoRAManager,
         zmq_endpoint_base: str,
     ):
-        """
-        Initialize the LoRA request processor.
-
-        Args:
-            manager: The LoRAManager instance to handle operations.
-        """
         self.manager = manager
 
         self._request_socket = ZmqPullSocket[tuple[RequestID, LoRARequest]](
@@ -78,8 +75,7 @@ class LoRARequestProcessor:
                 break
 
     def _handle_lora_request(self, request: LoRARequest) -> LoRAResponse:
-        """
-        Handle a single LoRA request with thread-safe access.
+        """Handles a single LoRA request with thread-safe access.
 
         Args:
             request: The LoRA request to process.

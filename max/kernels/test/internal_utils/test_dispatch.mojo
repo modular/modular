@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,11 +60,11 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
 
     comptime m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
     comptime expected_m_values: List[Int] = [1, 2, 16]
-    __comptime_assert len(m_values) == len(expected_m_values)
+    comptime assert len(m_values) == len(expected_m_values)
 
     @parameter
     for i in range(len(m_values)):
-        __comptime_assert m_values[i] == expected_m_values[i]
+        comptime assert m_values[i] == expected_m_values[i]
 
     @parameter
     for i in range(1, len(m_values)):
@@ -142,11 +142,11 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
         65536,
         128000,
     ]
-    __comptime_assert len(m_values) == len(expected_m_values)
+    comptime assert len(m_values) == len(expected_m_values)
 
     @parameter
     for i in range(len(m_values)):
-        __comptime_assert m_values[i] == expected_m_values[i]
+        comptime assert m_values[i] == expected_m_values[i]
 
     @parameter
     for i in range(1, len(m_values)):

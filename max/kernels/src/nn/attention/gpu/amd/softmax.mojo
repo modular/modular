@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -173,11 +173,11 @@ struct Softmax[
                     @parameter
                     for row in range(Self.frag_num_rows):
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         # warp scratch has layout row_major(num_warps, num_rows). The
@@ -197,11 +197,11 @@ struct Softmax[
                     @parameter
                     for row in range(Self.frag_num_rows):
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         @parameter
@@ -299,11 +299,11 @@ struct Softmax[
                     for row in range(Self.frag_num_rows):
                         # Each thread handle two rows in the mma output.
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         warp_scratch[
@@ -323,11 +323,11 @@ struct Softmax[
                     @parameter
                     for row in range(Self.frag_num_rows):
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         self.score_frag_rowsum[col_tile, row] = 0
@@ -414,7 +414,7 @@ struct Softmax[
         ].value() // (Self.num_colwise_tiles * Self.num_rowwise_tiles)
         # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
         # FIXME: require `warp_split_k` when delaying inter-warp communication.
-        __comptime_assert (
+        comptime assert (
             num_output_replications == 1
             or num_output_replications % Self.num_rowwise_warps == 0
         )

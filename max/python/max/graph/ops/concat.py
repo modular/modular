@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,13 +28,45 @@ def concat(
 ) -> TensorValue:
     """Concatenates a list of symbolic tensors along an axis.
 
+    Joins multiple tensors along a specified dimension. This operation requires
+    the functional API since it operates on multiple tensors. All input tensors
+    must have the same rank and the same size in all dimensions except the
+    concatenation axis.
+
+    .. code-block:: python
+
+        import max.functional as F
+        from max.tensor import Tensor
+
+        # Create two 2x2 matrices
+        a = Tensor.constant([[1, 2], [3, 4]])
+        b = Tensor.constant([[5, 6], [7, 8]])
+
+        # Concatenate along axis 0 (rows) - stacks vertically
+        vertical = F.concat([a, b], axis=0)
+        print(f"Concatenated along axis 0: {vertical.shape}")
+        # Output: Concatenated along axis 0: [Dim(4), Dim(2)]
+        print(vertical)
+        # [[1, 2],
+        #  [3, 4],
+        #  [5, 6],
+        #  [7, 8]]
+
+        # Concatenate along axis 1 (columns) - joins horizontally
+        horizontal = F.concat([a, b], axis=1)
+        print(f"Concatenated along axis 1: {horizontal.shape}")
+        # Output: Concatenated along axis 1: [Dim(2), Dim(4)]
+        print(horizontal)
+        # [[1, 2, 5, 6],
+        #  [3, 4, 7, 8]]
+
     Args:
-        original_vals: A list of symbolic tensor values. Each tensor must have the same
+        original_vals: The list of symbolic tensor values to concatenate. Each tensor must have the same
             dtype and rank, and must have the same dimension size for each
             dimension other than ``axis``.
         axis: The axis to concatenate along. If negative, indexes relative
             to the end of the tensor shape. For instance, ``concat(vs, -1)``
-            will concat along the last dimension.
+            will concatenate along the last dimension.
 
     Returns:
         A new symbolic tensor representing the concatenation result. It will

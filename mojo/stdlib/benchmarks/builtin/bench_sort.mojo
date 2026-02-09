@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -253,7 +253,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
         @always_inline
         @parameter
         fn preproc():
-            randomize_list(list, count, delta)
+            randomize_list(list, count, UInt8(delta))
 
         @always_inline
         @parameter
@@ -271,7 +271,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
         @always_inline
         @parameter
         fn preproc():
-            randomize_list(list, count, delta)
+            randomize_list(list, count, UInt8(delta))
 
         @always_inline
         @parameter

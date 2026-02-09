@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string.string_slice import _to_string_list, get_static_string
-from sys.info import size_of
+from sys.info import size_of, simd_width_of
 
 from testing import assert_equal, assert_false, assert_true, assert_raises
 from testing import TestSuite
@@ -85,11 +85,11 @@ fn test_string_literal_byte_span() raises:
     comptime slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
-    assert_equal(slc[0], ord("H"))
-    assert_equal(slc[1], ord("e"))
-    assert_equal(slc[2], ord("l"))
-    assert_equal(slc[3], ord("l"))
-    assert_equal(slc[4], ord("o"))
+    assert_equal(slc[0], Byte(ord("H")))
+    assert_equal(slc[1], Byte(ord("e")))
+    assert_equal(slc[2], Byte(ord("l")))
+    assert_equal(slc[3], Byte(ord("l")))
+    assert_equal(slc[4], Byte(ord("o")))
 
 
 fn test_string_byte_span() raises:
@@ -97,11 +97,11 @@ fn test_string_byte_span() raises:
     var str_slice = string.as_bytes_mut()
 
     assert_equal(len(str_slice), 5)
-    assert_equal(str_slice[0], ord("H"))
-    assert_equal(str_slice[1], ord("e"))
-    assert_equal(str_slice[2], ord("l"))
-    assert_equal(str_slice[3], ord("l"))
-    assert_equal(str_slice[4], ord("o"))
+    assert_equal(str_slice[0], Byte(ord("H")))
+    assert_equal(str_slice[1], Byte(ord("e")))
+    assert_equal(str_slice[2], Byte(ord("l")))
+    assert_equal(str_slice[3], Byte(ord("l")))
+    assert_equal(str_slice[4], Byte(ord("o")))
 
     # ----------------------------------
     # Test subslicing
@@ -110,32 +110,32 @@ fn test_string_byte_span() raises:
     # Slice the whole thing
     var sub1 = str_slice[:5]
     assert_equal(len(sub1), 5)
-    assert_equal(sub1[0], ord("H"))
-    assert_equal(sub1[1], ord("e"))
-    assert_equal(sub1[2], ord("l"))
-    assert_equal(sub1[3], ord("l"))
-    assert_equal(sub1[4], ord("o"))
+    assert_equal(sub1[0], Byte(ord("H")))
+    assert_equal(sub1[1], Byte(ord("e")))
+    assert_equal(sub1[2], Byte(ord("l")))
+    assert_equal(sub1[3], Byte(ord("l")))
+    assert_equal(sub1[4], Byte(ord("o")))
 
     # Slice the end
     var sub2 = str_slice[2:5]
     assert_equal(len(sub2), 3)
-    assert_equal(sub2[0], ord("l"))
-    assert_equal(sub2[1], ord("l"))
-    assert_equal(sub2[2], ord("o"))
+    assert_equal(sub2[0], Byte(ord("l")))
+    assert_equal(sub2[1], Byte(ord("l")))
+    assert_equal(sub2[2], Byte(ord("o")))
 
     # Slice the first element
     var sub3 = str_slice[0:1]
     assert_equal(len(sub3), 1)
-    assert_equal(sub3[0], ord("H"))
+    assert_equal(sub3[0], Byte(ord("H")))
 
     #
     # Test mutation through slice
     #
 
-    sub1[0] = ord("J")
+    sub1[0] = Byte(ord("J"))
     assert_equal(string, "Jello")
 
-    sub2[2] = ord("y")
+    sub2[2] = Byte(ord("y"))
     assert_equal(string, "Jelly")
 
     # ----------------------------------
@@ -491,6 +491,25 @@ def test_find_compile_time():
     assert_equal(c13, -1)
     assert_equal(c14, -1)
     assert_equal(c15, -1)
+
+
+def test_find_mstdl_2258():
+    # Bug - when searching for a needle with the following conditions:
+    # - needle length is longer than the SIMD width
+    # - the haystack prefix is larger than UInt16.MAX
+    # - the haystack postfix is at least as long as the SIMD width
+    # then the search would fail due to integer overflow in offset calculation.
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    var needle = "z" * (simd_width + 1)
+    var prefix = "a" * (Int(UInt16.MAX) + 1)
+    var postfix = "a" * simd_width
+    var haystack = prefix + needle + postfix
+
+    var expected_pos = len(prefix)
+    var found = haystack.find(needle)
+    assert_equal(found, expected_pos)
+    assert_true(needle in haystack)
 
 
 def test_is_codepoint_boundary():
@@ -929,10 +948,10 @@ def test_ascii_ljust():
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
 
-def test_center():
-    assert_equal(StringSlice("hello").center(4), "hello")
-    assert_equal(StringSlice("hello").center(8), " hello  ")
-    assert_equal(StringSlice("hello").center(8, "*"), "*hello**")
+def test_ascii_center():
+    assert_equal(StringSlice("hello").ascii_center(4), "hello")
+    assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
+    assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
 
 
 def test_count():
@@ -1034,11 +1053,11 @@ def test_string_slice_from_pointer():
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
-    assert_true("A", d[byte=0])
-    assert_true("B", d[byte=1])
-    assert_true("C", d[byte=2])
-    assert_true("D", d[byte=3])
-    assert_true("D", d[byte= -1])
+    assert_equal("A", d[byte=0])
+    assert_equal("B", d[byte=1])
+    assert_equal("C", d[byte=2])
+    assert_equal("D", d[byte=3])
+    assert_equal("D", d[byte= -1])
 
 
 def test_replace():

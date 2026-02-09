@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -44,39 +44,39 @@ fn dummy() -> None:
 
 
 fn dummy(x0: Int) -> Float32:
-    return x0
+    return Float32(x0)
 
 
 fn dummy(x0: Int, x1: Int) -> Float32:
-    return x0 + x1
+    return Float32(x0 + x1)
 
 
 fn dummy(x0: Int, x1: Int, x2: Int) -> Float32:
-    return x0 + x1 + x2
+    return Float32(x0 + x1 + x2)
 
 
 fn dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
-    return x0 + x1 + x2 + x3
+    return Float32(x0 + x1 + x2 + x3)
 
 
 fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
-    return x0 + x1 + x2 + x3 + x4
+    return Float32(x0 + x1 + x2 + x3 + x4)
 
 
 fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5)
 
 
 fn dummy(
     x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6)
 
 
 fn dummy(
     x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int, x7: Int
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7)
 
 
 fn dummy(
@@ -90,7 +90,7 @@ fn dummy(
     x7: Int,
     x8: Int,
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8)
 
 
 fn dummy(
@@ -105,7 +105,7 @@ fn dummy(
     x8: Int,
     x9: Int,
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9)
 
 
 def test_overloaded():

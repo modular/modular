@@ -16,7 +16,7 @@ The MAX neural network API provides two namespaces:
 - **max.nn.legacy**: Legacy graph-based API (for backward compatibility).
 
 For functional operations like relu, softmax, and more, see the
-:code_link:`max.functional|functional` module.
+:code_link:`/max/api/python/functional|functional` module.
 
 Core API
 ========
@@ -54,4 +54,3 @@ reference:
    norm/index
    rope/index
    legacy/index
-

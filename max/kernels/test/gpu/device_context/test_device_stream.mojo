@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -261,7 +261,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
             input_device,
             low_output_device,
             length,
-            Float32(1.0 + i),
+            Float32(1.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
         )
@@ -272,7 +272,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
             input_device,
             high_output_device,
             length,
-            Float32(2.0 + i),
+            Float32(2.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
         )

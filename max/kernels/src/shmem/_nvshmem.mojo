@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@ from collections.string.string_slice import get_static_string
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
-from sys.ffi import (
+from ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -37,8 +37,7 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
-struct NVSHMEMIVersion:
+struct NVSHMEMIVersion(RegisterPassable):
     var major: c_int
     var minor: c_int
     var patch: c_int
@@ -159,10 +158,10 @@ struct NVSHMEMXInitAttr:
     var args: NVSHMEMXInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXInitAttr]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXInitAttr]())
         self.mpi_comm = mpi_comm
         self.args = NVSHMEMXInitArgs()
 
@@ -173,10 +172,10 @@ struct NVSHMEMXInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "NVSHMEMXInitArgs must be 128 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXInitArgs]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXInitArgs]())
         self.uid_args = NVSHMEMXUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
 
@@ -188,10 +187,10 @@ struct NVSHMEMXUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXUniqueIDArgs]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
         self.id = UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]()
         self.myrank = 0
         self.nranks = 0
@@ -202,10 +201,10 @@ struct NVSHMEMXUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "nvshmemx_uniqueid_t must be 128 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXUniqueID]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueID]())
         self.internal = InlineArray[Byte, 124](fill=0)
 
 
@@ -346,7 +345,7 @@ fn nvshmemx_init_thread(
     var mpi_comm = get_mpi_comm_world()
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
     attr.args.uid_args.myrank = Int32(ctx.id())
-    attr.args.uid_args.nranks = nranks
+    attr.args.uid_args.nranks = c_int(nranks)
 
     var status = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
@@ -365,35 +364,35 @@ fn nvshmemx_hostlib_init_attr(
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        fn (UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
+        fn(UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
 fn nvshmemx_hostlib_finalize():
     _get_nvshmem_function[
         "nvshmemx_hostlib_finalize",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
 fn nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_init",
-        fn (CUmodule) -> c_int,
+        fn(CUmodule) -> c_int,
     ]()(module)
 
 
 fn nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_finalize",
-        fn (CUmodule) -> c_int,
+        fn(CUmodule) -> c_int,
     ]()(module)
 
 
 fn nvshmemx_init_status() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_init_status",
-        fn () -> c_int,
+        fn() -> c_int,
     ]()()
 
 
@@ -404,7 +403,7 @@ fn nvshmem_my_pe() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_my_pe",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -415,7 +414,7 @@ fn nvshmem_n_pes() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_n_pes",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -430,7 +429,7 @@ fn nvshmem_malloc[
 ](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        fn(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
 
@@ -441,7 +440,7 @@ fn nvshmem_calloc[
 ]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
-        fn (
+        fn(
             c_size_t, c_size_t
         ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
@@ -452,7 +451,7 @@ fn nvshmem_free[
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
-        fn (type_of(ptr)) -> NoneType,
+        fn(type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -465,14 +464,14 @@ fn nvshmem_free[
 fn nvshmem_team_my_pe(team: c_int) -> c_int:
     return _get_nvshmem_function[
         "nvshmem_team_my_pe",
-        fn (c_int) -> c_int,
+        fn(c_int) -> c_int,
     ]()(team)
 
 
 fn nvshmemx_team_init() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_team_init",
-        fn () -> c_int,
+        fn() -> c_int,
     ]()()
 
 
@@ -604,7 +603,7 @@ fn nvshmem_put_signal_nbi[
 fn nvshmem_sync_all():
     _get_nvshmem_function[
         "nvshmem_sync_all",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -615,14 +614,14 @@ fn nvshmem_barrier_all():
     else:
         _get_nvshmem_function[
             "nvshmem_barrier_all",
-            fn () -> NoneType,
+            fn() -> NoneType,
         ]()()
 
 
 fn nvshmemx_barrier_all_on_stream(stream: CUstream):
     _get_nvshmem_function[
         "nvshmemx_barrier_all_on_stream",
-        fn (CUstream) -> NoneType,
+        fn(CUstream) -> NoneType,
     ]()(stream)
 
 

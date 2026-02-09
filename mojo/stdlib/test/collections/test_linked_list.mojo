@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,6 +18,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+    check_write_to,
 )
 from testing import (
     assert_equal,
@@ -154,7 +155,7 @@ def test_str():
 
 def test_repr():
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1.__repr__(), "LinkedList(1, 2, 3)")
+    assert_equal(l1.__repr__(), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
 
 
 def test_pop_on_empty_list():
@@ -611,30 +612,31 @@ def test_iter():
 
 def test_repr_wrap():
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(repr(l1), "LinkedList(1, 2, 3)")
+    assert_equal(repr(l1), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
 
 
 def test_write_to():
     """Test Writable trait implementation."""
-    var linked_list = LinkedList[Int](10, 20, 30)
-    var output = String()
-    linked_list.write_to(output)
+    check_write_to(
+        LinkedList[Int](10, 20, 30), expected="[10, 20, 30]", is_repr=False
+    )
+    check_write_to(LinkedList[Int](), expected="[]", is_repr=False)
+    check_write_to(LinkedList[Int](42), expected="[42]", is_repr=False)
 
-    assert_equal(output, "[10, 20, 30]")
 
-    # Test with different types
-    var string_list = LinkedList[String]("hello", "world")
-    var string_output = String()
-    string_list.write_to(string_output)
-
-    assert_equal(string_output, "['hello', 'world']")
-
-    # Test empty list
-    var empty_list = LinkedList[Int]()
-    var empty_output = String()
-    empty_list.write_to(empty_output)
-
-    assert_equal(empty_output, "[]")
+def test_write_repr_to():
+    """Test write_repr_to implementation."""
+    check_write_to(
+        LinkedList[Int](1, 2, 3),
+        expected="LinkedList[Int]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
+    check_write_to(
+        LinkedList[Int](1), expected="LinkedList[Int]([Int(1)])", is_repr=True
+    )
+    check_write_to(
+        LinkedList[Int](), expected="LinkedList[Int]([])", is_repr=True
+    )
 
 
 def main():

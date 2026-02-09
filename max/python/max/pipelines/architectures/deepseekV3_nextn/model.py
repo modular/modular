@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import fields
 
 import numpy as np
 from max.driver import Buffer
@@ -36,7 +36,9 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
+from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -46,7 +48,6 @@ from ..deepseekV3.model import (
     DeepseekV3Model,
     _choose_correct_data_parallel_degree,
 )
-from ..llama3.data_parallel_llama import compute_data_parallel_splits
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
 
@@ -118,6 +119,220 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             cache_dtype=cache_dtype,
         )
 
+    @classmethod
+    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
+        """Calculates the estimated memory consumption of the DeepseekV3 NextN model.
+
+        The NextN model consists of:
+        - embed_tokens: VocabParallelEmbedding (shared in EAGLE/MTP mode)
+        - lm_head: ColumnParallelLinear (shared in EAGLE/MTP mode)
+        - enorm, hnorm, shared_head_norm: RMSNorm layers
+        - eh_proj: Linear layer (hidden_size * 2 -> hidden_size)
+        - decoder_layer: Single DeepseekV3DecoderLayer (MoE layer)
+
+        Args:
+            pipeline_config: The pipeline configuration containing model settings.
+
+        Returns:
+            Estimated weight memory in bytes.
+        """
+        draft_model_config = pipeline_config.draft_model
+        assert draft_model_config is not None, (
+            "draft_model must be set for NextN"
+        )
+        encoding = draft_model_config.quantization_encoding
+        assert encoding is not None
+        dtype_bytes = encoding.dtype.size_in_bytes
+        config = draft_model_config.huggingface_config
+        assert config is not None
+        n_gpus_per_node = len(draft_model_config.device_specs)
+
+        # Check if weights are shared (EAGLE or MTP mode)
+        # In these modes, embed_tokens and lm_head are shared with the target model
+        weights_are_shared = pipeline_config.speculative is not None and (
+            pipeline_config.speculative.is_eagle()
+            or pipeline_config.speculative.is_mtp()
+        )
+
+        total_size = 0
+
+        # 1. Embedding and LM head (only if not shared)
+        # These are always in BF16
+        if not weights_are_shared:
+            embedding_size = (
+                config.vocab_size
+                * config.hidden_size
+                * DType.bfloat16.size_in_bytes
+            )
+            lm_head_size = embedding_size
+            total_size += embedding_size + lm_head_size
+
+        # 2. NextN-specific norms (enorm, hnorm, shared_head_norm) - always BF16
+        norm_size = config.hidden_size * DType.bfloat16.size_in_bytes
+        total_size += 3 * norm_size
+
+        # 3. eh_proj: Linear(hidden_size * 2, hidden_size)
+        eh_proj_size = config.hidden_size * 2 * config.hidden_size * dtype_bytes
+        total_size += eh_proj_size
+
+        # 4. Single decoder layer components
+
+        # 4a. Layer norms (input_layernorm, post_attention_layernorm)
+        total_size += 2 * norm_size
+
+        # 4b. MLA attention weights
+        num_heads = config.num_attention_heads
+        # kv_a_proj: hidden_size -> kv_lora_rank + qk_rope_head_dim
+        kv_a_proj_size = (
+            config.hidden_size
+            * (config.kv_lora_rank + config.qk_rope_head_dim)
+            * dtype_bytes
+        )
+        # kv_a_layernorm: kv_lora_rank
+        kv_a_layernorm_size = config.kv_lora_rank * DType.bfloat16.size_in_bytes
+        # kv_b_proj: kv_lora_rank -> num_heads * (qk_nope_head_dim + v_head_dim)
+        kv_b_proj_size = (
+            config.kv_lora_rank
+            * num_heads
+            * (config.qk_nope_head_dim + config.v_head_dim)
+            * dtype_bytes
+        )
+        # q_proj: hidden_size -> num_heads * (qk_nope_head_dim + qk_rope_head_dim)
+        q_proj_size = (
+            config.hidden_size
+            * num_heads
+            * (config.qk_nope_head_dim + config.qk_rope_head_dim)
+            * dtype_bytes
+        )
+        # o_proj: num_heads * v_head_dim -> hidden_size
+        o_proj_size = (
+            num_heads * config.v_head_dim * config.hidden_size * dtype_bytes
+        )
+
+        attn_size = (
+            kv_a_proj_size
+            + kv_a_layernorm_size
+            + kv_b_proj_size
+            + q_proj_size
+            + o_proj_size
+        )
+        total_size += attn_size
+
+        # 4c. MoE weights (single layer)
+        # Expert FFN: gate_proj, up_proj, down_proj
+        expert_size = (
+            config.moe_intermediate_size * config.hidden_size * 3 * dtype_bytes
+        )
+        routing_experts_size = config.n_routed_experts * expert_size
+        shared_experts_size = config.n_shared_experts * expert_size
+
+        # Router gate weights
+        router_size = config.hidden_size * config.n_routed_experts * dtype_bytes
+        total_size += router_size
+
+        # Handle expert parallelism
+        ep_size = max(pipeline_config.ep_size, 1)
+        if ep_size == 1:
+            total_size += routing_experts_size
+        else:
+            # Routing experts are sharded across nodes
+            n_nodes = ep_size // n_gpus_per_node
+            total_size += routing_experts_size // n_nodes
+
+        # Shared experts are replicated on each device
+        total_size += shared_experts_size * n_gpus_per_node
+
+        logger.info(
+            f"Estimated NextN weights size: {to_human_readable_bytes(total_size)}"
+        )
+
+        return total_size
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Estimates the activation memory required for DeepseekV3 NextN model.
+
+        This accounts for temporary memory buffers used during model execution,
+        such as intermediate activations and working buffers. The NextN model
+        has a single decoder layer, so activation memory is proportionally smaller.
+
+        Args:
+            pipeline_config: Pipeline configuration
+            huggingface_config: HuggingFace model configuration (from draft_model)
+
+        Returns:
+            Estimated activation memory in bytes
+        """
+        draft_model_config = pipeline_config.draft_model
+        assert draft_model_config is not None, (
+            "draft_model must be set for NextN"
+        )
+        encoding = draft_model_config.quantization_encoding
+        assert encoding is not None
+
+        mla_activation_memory: int = 0
+        moe_activation_memory: int = 0
+
+        if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
+            max_kv_length: int = 0
+
+            if pipeline_config.max_batch_total_tokens is None:
+                # If max_batch_total_tokens is not set, we use max_length.
+                max_kv_length = pipeline_config.max_length or 0
+            else:
+                max_kv_length = pipeline_config.max_batch_total_tokens
+
+            # MLA prefill activation for KV up-projection
+            mla_activation_memory += (
+                draft_model_config.data_parallel_degree
+                * 2  # K and V
+                * max_kv_length
+                * huggingface_config.num_attention_heads
+                * huggingface_config.qk_nope_head_dim
+                * draft_model_config.kv_cache.cache_dtype.size_in_bytes
+            )
+
+        # Estimate activation memory during Expert Parallel MoE
+        if pipeline_config.ep_size > 1:
+            n_gpus_per_node = len(draft_model_config.device_specs)
+            max_input_len_per_rank = pipeline_config.max_batch_input_tokens
+
+            # Maximum tokens a rank may receive during all-to-all routing
+            max_recv_tokens_per_rank = (
+                max_input_len_per_rank * huggingface_config.n_routed_experts
+            )
+
+            # Input for grouped_matmul: [max_recv_tokens_per_rank, moe_intermediate_size]
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * huggingface_config.moe_intermediate_size
+                * encoding.dtype.size_in_bytes
+            )
+
+            # Output: [max_recv_tokens_per_rank, hidden_size]
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * huggingface_config.hidden_size
+                * DType.bfloat16.size_in_bytes  # output is always bfloat16
+            )
+
+            # Misc overhead (FP8 scalars, etc.)
+            moe_activation_memory += 256 * 1024 * 1024
+
+            moe_activation_memory *= n_gpus_per_node
+
+        # MLA and MoE execute sequentially, so take the max
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
+
+        if activation_memory != 0:
+            logger.info(
+                f"Estimated NextN activation memory: {to_human_readable_bytes(activation_memory)}"
+            )
+
+        return activation_memory
+
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
     ) -> DeepseekV3NextNConfig:
@@ -142,15 +357,23 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         state_dict[base_key] = state_dict[nextn_key]
 
-        # Call DeepseekV3Model's _create_model_config as a static method
-        # We pass self explicitly, which is valid Python (unbound method call)
+        # Call DeepseekV3Model's _create_model_config to compute
+        # state-dict-dependent fields (ep_config, float8_config, etc.)
         base_config = DeepseekV3Model._create_model_config(self, state_dict)  # type: ignore[arg-type]
 
         # Remove temporary key
         if base_key in state_dict and nextn_key in state_dict:
             del state_dict[base_key]
 
-        return DeepseekV3NextNConfig(**asdict(base_config))
+        # Build NextN config from the base config's fields, avoiding
+        # asdict() which recursively converts nested dataclasses to dicts.
+        model_config = DeepseekV3NextNConfig(
+            **{
+                f.name: getattr(base_config, f.name)
+                for f in fields(base_config)
+            }
+        )
+        return model_config
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
@@ -171,7 +394,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             self._host_input_row_offsets_prealloc.to(self.devices[0])
         )
 
-        # create batch context lengths tensor for each device
         self._batch_context_lengths_prealloc_cpu = [
             Buffer.zeros(shape=[1], dtype=DType.int32)
             for _ in range(len(self.devices))
@@ -191,7 +413,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 key: value.data() for key, value in self.weights.items()
             }
 
-        # Create the model
         config = self._create_model_config(state_dict)
 
         self.ep_comm_initializer: EPCommInitializer | None = None
@@ -206,47 +427,44 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         nn_model = DeepseekV3NextN(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
-        # Create the graph
+        num_devices = len(self.devices)
+
         with Graph(
             "deepseekV3_nextn_graph",
             input_types=nn_model.input_types(self.kv_params),
         ) as graph:
-            (
-                tokens,
-                hidden_states,
-                device_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
+            graph_inputs_iter = iter(graph.inputs)
 
-            variadic_args_iter = iter(variadic_args)
-            # Multi-GPU passes a signal buffer per device: unmarshal these.
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
+            tokens = next(graph_inputs_iter)
+
+            hidden_states = [
+                next(graph_inputs_iter).tensor for _ in range(num_devices)
             ]
 
-            # Unmarshal the KV cache arguments.
+            device_input_row_offsets = next(graph_inputs_iter)
+            host_input_row_offsets = next(graph_inputs_iter)
+            return_n_logits = next(graph_inputs_iter)
+            data_parallel_splits = next(graph_inputs_iter)
+
+            signal_buffers = [
+                next(graph_inputs_iter).buffer for _ in range(num_devices)
+            ]
+
             fetch_types = self.kv_params.get_symbolic_inputs()[0]
-            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
+            len_of_kv_inputs = len(list(fetch_types)) * num_devices
             kv_caches_per_dev = self._unflatten_kv_inputs(
-                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                [next(graph_inputs_iter) for _ in range(len_of_kv_inputs)]
             )
 
-            # Unmarshal batch context lengths (one per device)
             batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
+                next(graph_inputs_iter).tensor for _ in range(num_devices)
             ]
 
-            # all remaining arguments are for EP inputs
-            ep_model_inputs = list(variadic_args_iter)
+            ep_model_inputs = list(graph_inputs_iter)
 
             outputs = nn_model(
                 tokens.tensor,
-                hidden_states.tensor,
+                hidden_states,
                 signal_buffers,
                 kv_caches_per_dev,
                 return_n_logits.tensor,
@@ -264,7 +482,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             f"Building graph took {after_build - before:.6f} seconds. Compiling..."
         )
 
-        # Compile the graph
         before_compile = time.perf_counter()
         model = session.load(graph, weights_registry=nn_model.state_dict())
         after = time.perf_counter()
@@ -285,11 +502,26 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV3NextNInputs)
 
-        # Validate that hidden_states has been set before execution
         if model_inputs.hidden_states is None:
             raise ValueError(
                 "hidden_states must be set before executing DeepSeekV3 NextN model. "
                 "EAGLE pipeline should set this field after calling prepare_initial_token_inputs()."
+            )
+
+        num_devices = len(self.devices)
+
+        hidden_states_list: list[Buffer]
+        if isinstance(model_inputs.hidden_states, list):
+            if len(model_inputs.hidden_states) != num_devices:
+                raise ValueError(
+                    f"hidden_states list length ({len(model_inputs.hidden_states)}) "
+                    f"must match number of devices ({num_devices})"
+                )
+            hidden_states_list = model_inputs.hidden_states
+        else:
+            raise ValueError(
+                "hidden_states must be a list of Buffers (one per device) "
+                "for data parallel execution"
             )
 
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
@@ -301,7 +533,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
-            model_inputs.hidden_states,
+            *hidden_states_list,
             model_inputs.input_row_offsets,
             model_inputs.host_input_row_offsets,
             model_inputs.return_n_logits,
@@ -312,13 +544,18 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             *ep_inputs,
         )
 
-        if len(model_outputs) == 2:
+        num_hidden_state_outputs = len(self.devices)
+        if len(model_outputs) == 1 + num_hidden_state_outputs:
             assert isinstance(model_outputs[0], Buffer)
-            assert isinstance(model_outputs[1], Buffer)
+            output_hidden_states: list[Buffer] = []
+            for i in range(num_hidden_state_outputs):
+                hs = model_outputs[1 + i]
+                assert isinstance(hs, Buffer)
+                output_hidden_states.append(hs)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
-                hidden_states=model_outputs[1],
+                hidden_states=output_hidden_states,
             )
         else:
             assert isinstance(model_outputs[0], Buffer)
@@ -368,7 +605,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                     )
 
         context_batch = flatten2d(replica_batches)
-        # Create tokens
         if len(context_batch) == 0:
             tokens = Buffer(shape=[0], dtype=DType.int64).to(self.devices[0])
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
@@ -378,8 +614,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 np.concatenate([ctx.tokens.active for ctx in context_batch])
             ).to(self.devices[0])
 
-            # Get input_row_offsets: start and end position of each batch in the
-            # combined total_seq_len dimension.
             host_input_row_offsets = Buffer.from_numpy(
                 np.cumsum(
                     [0] + [ctx.tokens.active_length for ctx in context_batch],

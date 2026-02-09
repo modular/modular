@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -36,9 +36,12 @@ from internal_utils._utils import (
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.matmul.gpu.sm100.config import MatmulConfig, BlockScaledMatmulConfig
-from linalg.grouped_matmul_sm100_1d1d import (
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
+    grouped_matmul_1d1d_nvfp4,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from memory import LegacyUnsafePointer
@@ -51,7 +54,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.utils import elementwise_epilogue_type
 
 from utils import Index, IndexList
-from collections import OptionalReg
+from collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -99,7 +102,7 @@ fn _get_run_name[
 
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 @always_inline
@@ -182,12 +185,13 @@ fn bench_grouped_matmul[
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         var num_tokens = num_tokens_by_expert[i]
-        a_scale_offsets_ptr[i] = a_scale_dim0 - Int(
-            a_offsets_host_ptr[i] // SF_MN_GROUP_SIZE
+        a_scale_offsets_ptr[i] = UInt32(
+            a_scale_dim0
+            - Int(a_offsets_host_ptr[i] // UInt32(SF_MN_GROUP_SIZE))
         )
-        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + num_tokens
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(num_tokens)
         a_scale_dim0 += ceildiv(num_tokens, SF_MN_GROUP_SIZE)
-        expert_ids_host_ptr[i] = expert_ids_input[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids_input[i])
 
         @parameter
         if in_type == DType.float8_e4m3fn:
@@ -271,7 +275,6 @@ fn bench_grouped_matmul[
             "Only support nvfp4 scaling kind for float4-e2m1fn",
         ]()
 
-        # Allocate a_scale_offsets on device
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
         ](num_active_experts)
@@ -356,6 +359,22 @@ fn bench_grouped_matmul[
         var a_scales = from_ndbuffer_row_major(a_scales_dev)
         var b_scales = from_ndbuffer_row_major(b_scales_dev)
 
+        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+            num_experts
+        )
+        var expert_scales_dev = NDBuffer[DType.float32, 1](
+            expert_scales_dev_buffer.unsafe_ptr(), num_experts
+        )
+        var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+            num_experts
+        )
+        for i in range(num_experts):
+            expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
+                num_experts
+            )
+        ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
+        var expert_scales = from_ndbuffer_row_major(expert_scales_dev)
+
         @parameter
         @__copy_capture(
             a_dev,
@@ -372,6 +391,7 @@ fn bench_grouped_matmul[
             a_offsets,
             expert_ids,
             a_scale_offsets,
+            expert_scales,
         )
         @always_inline
         fn bench_func_nvfp4(mut bench: Bencher):
@@ -403,7 +423,7 @@ fn bench_grouped_matmul[
                         k_group_size=1,
                         num_accum_pipeline_stages=2,
                     )
-                    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    grouped_matmul_1d1d_nvfp4[
                         transpose_b=transpose_b,
                         config=config,
                     ](
@@ -415,6 +435,7 @@ fn bench_grouped_matmul[
                         expert_ids,
                         a_scales,
                         b_scales,
+                        expert_scales,
                         num_active_experts,
                         ctx,
                     )
@@ -446,6 +467,8 @@ fn bench_grouped_matmul[
         _ = a_scales_dev_buffer^
         _ = b_scales_dev_buffer^
         _ = a_scale_offsets_dev_buffer^
+        _ = expert_scales_dev_buffer^
+        expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
         constrained[
@@ -534,7 +557,7 @@ fn bench_grouped_matmul[
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                         config=config,
-                        elementwise_lambda_fn = OptionalReg[
+                        elementwise_lambda_fn = Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -604,7 +627,7 @@ fn bench_grouped_matmul[
 
                 else:
                     grouped_matmul[
-                        elementwise_lambda_fn = OptionalReg[
+                        elementwise_lambda_fn = Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](

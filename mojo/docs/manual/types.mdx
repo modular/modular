@@ -52,12 +52,12 @@ include both fixed-size and general types:
   such as `Int8`, `Int16`, `UInt32`, and `UInt64`. These fixed-precision integer
   types are aliases to the [`SIMD`](/mojo/std/builtin/simd/SIMD) type.
 
-- Use the general `Int` or `UInt` types when you don’t require a specific bit
+- Use the general `Int` or `UInt` types when you don't require a specific bit
   width.
 
-`Int` represents a signed integer that uses the system’s native word size,
+`Int` represents a signed integer that uses the system's native word size,
 typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs. Similarly, `UInt`
-represents an unsigned integer that uses the system’s default word size.
+represents an unsigned integer that uses the system's default word size.
 
 You may wonder when to use `Int` and when to use the other integer
 types. In general, `Int` is a good safe default when you need an integer type
@@ -118,7 +118,7 @@ positive range.
 
 Mojo provides several floating-point types for representing real numbers at
 different precisions. Since floating-point values use a fixed number of bits,
-some numbers can’t be represented exactly.
+some numbers can't be represented exactly.
 
 The floating-point types `Float64`, `Float32`, and `Float16` follow the
 IEEE 754-2008 standard for representing floating-point values. Each type
@@ -179,7 +179,7 @@ specified tolerance.
 
 In the following table, the **eXmX** format (for example, `Float8_e5m2` and
 `Float8_e4m3fn`) refers to the number of bits allocated to a floating-point
-number’s exponent and mantissa.
+number's exponent and mantissa.
 
 All IEEE 754 floating-point formats use an implied leading 1. That means
 `Float32` is e8m23 but effectively e8m24, `Float16` is e5m10 but effectively

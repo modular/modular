@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ from gpu.primitives.grid_controls import PDLLevel
 from gpu.host.info import H100
 from utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
-from collections import OptionalReg
+from collections import Optional
 
 
 struct MatmulConfig[
@@ -26,7 +26,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of SM90 GPU matmul."""
 
     # Mandatory parameters
@@ -71,8 +71,8 @@ struct MatmulConfig[
         num_k_partitions: UInt = 1,
         partitioned_multicast: Bool = False,
         pdl_level: PDLLevel = PDLLevel.OFF,
-        k_groups: OptionalReg[UInt] = None,
-        consumer_groups: OptionalReg[Int] = None,
+        k_groups: Optional[UInt] = None,
+        consumer_groups: Optional[Int] = None,
         swapAB: Bool = False,
     ):
         """Initialize MatmulConfig by computing optimal values from M, N, K.
@@ -329,8 +329,8 @@ fn build_configs[
     num_k_partitions: UInt = 1,
     partitioned_multicast: Bool = False,
     pdl_level: PDLLevel = PDLLevel.OFF,
-    k_groups: OptionalReg[UInt] = None,
-    consumer_groups: OptionalReg[Int] = None,
+    k_groups: Optional[UInt] = None,
+    consumer_groups: Optional[Int] = None,
     swapAB: Bool = False,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
@@ -564,7 +564,7 @@ fn build_configs_generic[
     //,
     M_start: Int,
     M_end: Int,
-    config_fn: fn (Int) capturing [_] -> MatmulConfig[
+    config_fn: fn(Int) capturing[_] -> MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ],
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,8 +13,10 @@
 """Provides tracing utilities."""
 
 
+from collections.list import List
 from collections.optional import Optional, OptionalReg
-from sys import external_call, stderr
+from ffi import external_call
+from sys import stderr
 from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
@@ -79,7 +81,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 
 @fieldwise_init
-struct TraceCategory(Equatable, Intable, TrivialRegisterType):
+struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
@@ -136,7 +138,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterType):
 # ===-----------------------------------------------------------------------===#
 
 
-struct TraceLevel(Comparable, TrivialRegisterType):
+struct TraceLevel(Comparable, TrivialRegisterPassable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -298,27 +300,34 @@ fn _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn _validate_single_tracing_enabled[level: TraceLevel]() -> Bool:
-    """Validates that at most one tracing system is enabled."""
-    var enabled_count = 0
+fn _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
+    """Returns a list of enabled tracing system names.
+
+    Returns:
+        A list of strings naming the tracing systems that are enabled.
+        Possible values: "AsyncRT", "GPU", "Tracy", "Op Logging".
+    """
+    enabled_systems = List[String]()
 
     # Check AsyncRT profiling
-    if _build_info_asyncrt_max_profiling_level():
-        enabled_count += 1
+    if (asyncrt_level := _build_info_asyncrt_max_profiling_level()) and (
+        asyncrt_level.value() > 0
+    ):
+        enabled_systems.append("AsyncRT")
 
     # Check GPU profiling
     if _gpu_is_enabled():
-        enabled_count += 1
+        enabled_systems.append("GPU")
 
     # Check Tracy profiling
     if _is_tracy_enabled():
-        enabled_count += 1
+        enabled_systems.append("Tracy")
 
     # Check op logging
     if _is_op_logging_enabled[level]():
-        enabled_count += 1
+        enabled_systems.append("Op Logging")
 
-    return enabled_count <= 1
+    return enabled_systems^
 
 
 @always_inline
@@ -434,9 +443,11 @@ struct Trace[
         )
 
         # Validate that only one tracing system is enabled
+        enabled_systems = _get_enabled_tracing_systems[Self.level]()
         debug_assert(
-            _validate_single_tracing_enabled[Self.level](),
-            "only one tracing system should be enabled at a time",
+            len(enabled_systems) <= 1,
+            "only one tracing system should be enabled at a time, got: ",
+            StaticString(", ").join(enabled_systems),
         )
 
         # Always initialize the tracy context to zero: it's set in __enter__.
@@ -738,7 +749,7 @@ struct Trace[
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
     @always_inline
-    fn _get_detail_str[detail_fn: fn () capturing -> String]() -> String:
+    fn _get_detail_str[detail_fn: fn() capturing -> String]() -> String:
         """Return the detail str when tracing is enabled and an empty string otherwise.
         """
 

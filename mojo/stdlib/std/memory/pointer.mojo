@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,8 +19,7 @@ from memory import Pointer
 ```
 """
 
-from format._utils import FormatStruct, Named
-from reflection.type_info import _unqualified_type_name
+from format._utils import FormatStruct, Named, TypeNames
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -32,7 +31,7 @@ struct AddressSpace(
     ImplicitlyCopyable,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Address space of the pointer.
@@ -202,7 +201,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Stringable, TrivialRegisterType, Writable):
+](Stringable, TrivialRegisterPassable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -271,7 +270,7 @@ struct Pointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -298,7 +297,7 @@ struct Pointer[
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         """Enable subscript syntax `ptr[]` to access the element.
 
         Returns:
@@ -361,7 +360,7 @@ struct Pointer[
         """
         FormatStruct(writer, "Pointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 

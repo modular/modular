@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,7 @@ Examples:
 
 ```mojo
 # Create an array of 3 integers
-var arr = InlineArray[Int, 3](1, 2, 3)
+var arr: InlineArray[Int, 3] = [1, 2, 3]
 
 # Access elements
 print(arr[0])  # Prints 1
@@ -40,6 +40,7 @@ from builtin.rebind import downcast
 from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from compile import get_type_name
+import format._utils as fmt
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
 # ===-----------------------------------------------------------------------===#
@@ -55,12 +56,12 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    __comptime_assert (
+    comptime assert (
         size >= 0
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[ElementType: Copyable, size: Int,](
+struct InlineArray[ElementType: Copyable, size: Int](
     Copyable,
     Defaultable,
     DevicePassable,
@@ -85,7 +86,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
 
     ```mojo
     # Create array of 3 integers
-    var arr = InlineArray[Int, 3](1, 2, 3)
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
 
     # Create array filled with value
     var filled = InlineArray[Int, 5](fill=42)
@@ -136,15 +137,6 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             Self.size,
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods
@@ -280,9 +272,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         )
 
     @always_inline
-    fn __init__(
-        out self, var *elems: Self.ElementType, __list_literal__: () = ()
-    ):
+    fn __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
         """Constructs an array from a variadic list of elements.
 
         Args:
@@ -294,7 +284,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
         debug_assert(
@@ -357,7 +347,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
@@ -410,7 +400,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index.
 
         Parameters:
@@ -427,7 +417,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr[0])   # Prints 1 - first element
         print(arr[1])   # Prints 2 - second element
         print(arr[-1])  # Prints 3 - last element
@@ -446,7 +436,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     @always_inline
     fn __getitem__[
         I: Indexer, //, idx: I
-    ](ref self) -> ref [self] Self.ElementType:
+    ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
@@ -462,7 +452,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr[0])   # Prints 1 - first element
         print(arr[-1])  # Prints 3 - last element
         ```
@@ -473,7 +463,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        __comptime_assert (
+        comptime assert (
             -Self.size <= index(idx) < Self.size
         ), "Index must be within bounds."
         comptime normalized_index = normalize_index["InlineArray"](
@@ -495,7 +485,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(len(arr))  # Prints 3
         ```
 
@@ -510,7 +500,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
 
         Parameters:
@@ -527,7 +517,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr.unsafe_get(0))  # Prints 1
         ```
 
@@ -557,7 +547,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     @always_inline
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref [origin, address_space]self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> UnsafePointer[
         Self.ElementType,
         origin,
         address_space=address_space,
@@ -575,7 +565,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr:InlineArray[Int, 3] = [1, 2, 3]
         var ptr = arr.unsafe_ptr()
         print(ptr[0])  # Prints 1
         ```
@@ -618,7 +608,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(3 in arr)  # Prints True - value exists
         print(4 in arr)  # Prints False - value not found
         ```
@@ -641,38 +631,52 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # String representation
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    fn _write_self_to[
+        f: fn(Self.ElementType, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
+
+        var index = 0
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            if index >= Self.size:
+                raise StopIteration()
+            f(self.unsafe_get(index), w)
+            index += 1
+
+        fmt.write_sequence_to[ElementFn=iterate](writer)
+        _ = index
+
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the InlineArray representation to a Writer.
 
         Constraints:
-            ElementType must conform to `Representable`.
+            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
 
-        writer.write("InlineArray[")
-        writer.write(get_type_name[Self.ElementType]())
-        writer.write(", ")
-        writer.write(String(Self.size))
-        writer.write("](")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of this InlineArray to a Writer.
 
-        for i in range(Self.size):
-            ref element = self.unsafe_get(i)
-            ref representable_element = trait_downcast[Representable](element)
-            writer.write(repr(representable_element))
-            if i < Self.size - 1:
-                writer.write(", ")
+        Constraints:
+            ElementType must conform to `Writable`.
 
-        writer.write(")")
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+
+        fmt.FormatStruct(writer, "InlineArray").params(
+            fmt.TypeNames[Self.ElementType](),
+            Self.size,
+        ).fields[FieldsFn=write_fields]()
 
     @always_inline
     fn __str__(self) -> String:
@@ -692,4 +696,6 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Returns:
             A string representation of the array.
         """
-        return self.__str__()
+        output = String()
+        self.write_repr_to(output)
+        return output^

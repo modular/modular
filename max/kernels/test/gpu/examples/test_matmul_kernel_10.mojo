@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from sys import has_amd_gpu_accelerator
 
@@ -50,7 +50,7 @@ comptime BLOCK_DIM = 8
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](NUM_THREADS)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_THREADS))
 )
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
@@ -69,7 +69,7 @@ fn sgemm_warp_tiling_kernel[
     TM: Int,
     TN: Int,
     NUM_THREADS: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -108,14 +108,14 @@ fn sgemm_warp_tiling_kernel[
         a_type,
         1,
         MutAnyOrigin,
-        DimList(Int(BK * BM_padded)),
+        DimList(BK * BM_padded),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
         MutAnyOrigin,
-        DimList(Int(BK * BN)),
+        DimList(BK * BN),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -142,24 +142,24 @@ fn sgemm_warp_tiling_kernel[
         c_type,
         4,
         MutAnyOrigin,
-        DimList(Int(WMITER), Int(WNITER), Int(TM), Int(TN)),
+        DimList(WMITER, WNITER, TM, TN),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, MutAnyOrigin, DimList(Int(WMITER), Int(TM))
+        a_type, 2, MutAnyOrigin, DimList(WMITER, TM)
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, MutAnyOrigin, DimList(Int(WNITER), Int(TN))
+        b_type, 2, MutAnyOrigin, DimList(WNITER, TN)
     ]().stack_allocation()
     reg_n.zero()
 
     # Outer-most loop over block tiles.
     for _ in range(0, K, BK):
-        for offset in range(0, Int(BM - row_stride_a + 1), Int(row_stride_a)):
+        for offset in range(0, BM - row_stride_a + 1, row_stride_a):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
                 aa_ptr
@@ -176,7 +176,7 @@ fn sgemm_warp_tiling_kernel[
                     )
                 ] = tmp[i]
 
-        for offset in range(0, Int(BK - row_stride_b + 1), Int(row_stride_b)):
+        for offset in range(0, BK - row_stride_b + 1, row_stride_b):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
                 bb_ptr
@@ -197,7 +197,7 @@ fn sgemm_warp_tiling_kernel[
             for w_sub_row_idx in range(WMITER):
 
                 @parameter
-                for i in range(0, Int(TM), 4):
+                for i in range(0, TM, 4):
                     var vec = a_sram.load[width=4, alignment=16](
                         (dot_idx * BM_padded)
                         + Int(warp_row) * WM
@@ -211,7 +211,7 @@ fn sgemm_warp_tiling_kernel[
             for w_sub_col_idx in range(WNITER):
 
                 @parameter
-                for i in range(0, Int(TN), 4):
+                for i in range(0, TN, 4):
                     var vec = b_sram.load[width=4, alignment=16](
                         (dot_idx * BN)
                         + Int(warp_col) * WN
@@ -243,8 +243,8 @@ fn sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr + Int(BK)  # move BK columns to right
-        bb_ptr = bb_ptr + Int(BK * N)  # move BK rows down
+        aa_ptr = aa_ptr + BK  # move BK columns to right
+        bb_ptr = bb_ptr + BK * N  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -256,15 +256,13 @@ fn sgemm_warp_tiling_kernel[
             # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
-            var C_interim = cc_ptr + Int(
-                M_offset_subtile * N + N_offset_subtile
-            )
+            var C_interim = cc_ptr + M_offset_subtile * N + N_offset_subtile
 
             @parameter
             for res_idx_m in range(TM):
 
                 @parameter
-                for res_idx_n in range(0, Int(TN), 4):
+                for res_idx_n in range(0, TN, 4):
                     var M_offset_val = thread_row_in_warp * UInt(TM) + UInt(
                         res_idx_m
                     )
@@ -357,51 +355,51 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     comptime K10_TN = 4
     comptime K10_TM = 8
 
-    comptime NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
+    comptime NUM_WARPS = K10_NUM_THREADS // WARP_SIZE
     comptime K10_WMITER = (K10_WM * K10_WN) // (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     )
 
     # Warptile in threadblocktile.
-    __comptime_assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
-    __comptime_assert (K10_BN / K10_WN) * (K10_BM / K10_WM) == NUM_WARPS
+    comptime assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
+    comptime assert (K10_BN // K10_WN) * (K10_BM // K10_WM) == NUM_WARPS
 
     # Threads in the warp sub-tile.
-    __comptime_assert (K10_WM * K10_WN) % (
+    comptime assert (K10_WM * K10_WN) % (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     ) == 0
 
     # Warp sub-tile in warp tile.
-    __comptime_assert (K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)
+    comptime assert (K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)
 
-    __comptime_assert (K10_NUM_THREADS * 4) % K10_BK == 0, (
+    comptime assert (K10_NUM_THREADS * 4) % K10_BK == 0, (
         "NUM_THREADS*4 must be multiple of K9_BK to avoid quantization "
         "issues during GMEM->SMEM tiling (loading only parts of the "
         "final row of Bs during each iteration)"
     )
-    __comptime_assert (K10_NUM_THREADS * 4) % K10_BN == 0, (
+    comptime assert (K10_NUM_THREADS * 4) % K10_BN == 0, (
         "NUM_THREADS*4 must be multiple of K9_BN to avoid quantization "
         "issues during GMEM->SMEM tiling (loading only parts of the "
         "final row of As during each iteration)"
     )
 
-    __comptime_assert (
+    comptime assert (
         K10_BN % (16 * K10_TN) == 0
     ), "BN must be a multiple of 16*TN to avoid quantization effects"
-    __comptime_assert (
+    comptime assert (
         K10_BM % (16 * K10_TM) == 0
     ), "BM must be a multiple of 16*TM to avoid quantization effects"
 
-    __comptime_assert (K10_BM * K10_BK) % (
+    comptime assert (K10_BM * K10_BK) % (
         4 * K10_NUM_THREADS
     ) == 0, "BM*BK must be a multiple of 4*256 to vectorize loads"
-    __comptime_assert (K10_BN * K10_BK) % (
+    comptime assert (K10_BN * K10_BK) % (
         4 * K10_NUM_THREADS
     ) == 0, "BN*BK must be a multiple of 4*256 to vectorize loads"
 
-    __comptime_assert K10_TM % 4 == 0, "TM must be a multiple of 4"
+    comptime assert K10_TM % 4 == 0, "TM must be a multiple of 4"
 
-    __comptime_assert K10_TN % 4 == 0, "TN must be a multiple of 4"
+    comptime assert K10_TN % 4 == 0, "TN must be a multiple of 4"
 
     var a_host = alloc[Float32](M * K)
     var b_host = alloc[Float32](K * N)
@@ -409,10 +407,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i + 1
+        b_host[i] = Float32(i + 1)
 
     for i in range(M * N):
         c_host[i] = 0

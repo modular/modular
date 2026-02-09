@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,7 @@
 
 import time
 
+import hf_repo_lock
 import pytest
 import requests
 from async_asgi_testclient import TestClient
@@ -27,12 +28,41 @@ from max.serve.schemas.openai import CreateChatCompletionResponse
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 
+def assert_metrics(
+    expected_metrics: list[str],
+    absent_metrics: list[str] | None,
+    timeout: float = 10.0,
+    poll_interval: float = 0.5,
+) -> None:
+    """Poll metrics endpoint until expected metrics are present and absent metrics are not."""
+    deadline = time.time() + timeout
+    response = requests.Response()
+    while time.time() < deadline:
+        response = requests.get("http://localhost:8001/metrics", timeout=1)
+        if response.status_code == 200:
+            if all(metric in response.text for metric in expected_metrics):
+                if absent_metrics:
+                    for metric in absent_metrics:
+                        assert metric not in response.text, (
+                            f"Metric {metric} should not be present"
+                        )
+                return
+        time.sleep(poll_interval)
+    raise AssertionError(
+        f"Metrics not found within {timeout}s: "
+        f"{[m for m in expected_metrics if m not in response.text]}"
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
     [
         PipelineConfig(
             model_path=MODEL_NAME,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MODEL_NAME
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
@@ -59,17 +89,12 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 async def test_metrics_e2e_v1(app: FastAPI) -> None:
     # Method 2: Using client tuple (host, port)
     async with TestClient(app, timeout=720.0) as client:
-        # Endpoint exists
-        # use requests since TestClient will return 404 for /metrics endpoint as metrics server is not mounted on FastAPI
-        response = requests.get("http://localhost:8001/metrics", timeout=1)
-        assert response.status_code == 200
-
-        # Wait for the metrics to be available
-        time.sleep(2)
-
-        # There shouldn't be any maxserve_ metrics at this point except for the model load since the server is just started up.
-        assert "maxserve_model_load_time_milliseconds_bucket" in response.text
-        assert "maxserve_request_time_milliseconds_bucket" not in response.text
+        # Wait for the model load metric to be available (metrics propagate async)
+        # There shouldn't be any request metrics yet since the server is just started up.
+        assert_metrics(
+            expected_metrics=["maxserve_model_load_time_milliseconds_bucket"],
+            absent_metrics=["maxserve_request_time_milliseconds_bucket"],
+        )
 
         # Make a few requests
         for _ in range(5):
@@ -83,28 +108,21 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 },
             )
             # This is not a streamed completion - There is no [DONE] at the end.
-            response = CreateChatCompletionResponse.model_validate(
-                raw_response.json()
-            )
+            CreateChatCompletionResponse.model_validate(raw_response.json())
 
-        # Ensure enough time for request to complete
-        time.sleep(2)
-
-        response = requests.get("http://localhost:8001/metrics", timeout=1)
-
-        assert response.status_code == 200
-        assert "maxserve_num_input_tokens_total" in response.text
-        assert (
-            f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0'
-            in response.text
+        # Wait for request metrics to propagate
+        assert_metrics(
+            expected_metrics=[
+                "maxserve_num_input_tokens_total",
+                "maxserve_request_time_milliseconds_bucket",
+                "maxserve_time_to_first_token_milliseconds_bucket",
+                "maxserve_num_output_tokens_total",
+                "maxserve_batch_size",
+                "maxserve_cache_hit_rate",
+                f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
+            ],
+            absent_metrics=None,
         )
-        assert "maxserve_request_time_milliseconds_bucket" in response.text
-        assert (
-            "maxserve_time_to_first_token_milliseconds_bucket" in response.text
-        )
-        assert "maxserve_num_output_tokens_total" in response.text
-        assert "maxserve_batch_size" in response.text
-        assert "maxserve_cache_hit_rate" in response.text
 
 
 @pytest.mark.asyncio
@@ -113,6 +131,9 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         PipelineConfig(
             model_path=MODEL_NAME,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MODEL_NAME
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
@@ -138,15 +159,11 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
 )
 async def test_metrics_e2e_v0(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
-        # Endpoint exists
-        raw_response = requests.get("http://localhost:8001/metrics", timeout=1)
-
-        assert raw_response.status_code == 200
-
-        # Wait for the metrics to be available
-        time.sleep(2)
-
-        assert "maxserve_pipeline_load_total" in raw_response.text
+        # Wait for the pipeline load metric to be available (metrics propagate async)
+        assert_metrics(
+            expected_metrics=["maxserve_pipeline_load_total"],
+            absent_metrics=None,
+        )
 
         # Make a few requests
         for _ in range(5):
@@ -161,30 +178,21 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
             )
 
             # This is not a streamed completion - There is no [DONE] at the end.
-            response = CreateChatCompletionResponse.model_validate(
-                raw_response.json()
-            )
+            CreateChatCompletionResponse.model_validate(raw_response.json())
 
-        # Endpoint exists
-        raw_response = requests.get("http://localhost:8001/metrics", timeout=1)
-
-        # Wait for the metrics to be available
-        time.sleep(2)
-
-        assert raw_response.status_code == 200
-        assert "maxserve_num_input_tokens_total" in raw_response.text
-        assert (
-            f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}}'
-            in raw_response.text
+        # Wait for request metrics to propagate
+        assert_metrics(
+            expected_metrics=[
+                "maxserve_num_input_tokens_total",
+                "maxserve_request_time_milliseconds_bucket",
+                "maxserve_time_to_first_token_milliseconds_bucket",
+                "maxserve_num_output_tokens_total",
+                "maxserve_batch_size",
+                "maxserve_cache_hit_rate",
+                f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
+            ],
+            absent_metrics=None,
         )
-        assert "maxserve_request_time_milliseconds_bucket" in raw_response.text
-        assert (
-            "maxserve_time_to_first_token_milliseconds_bucket"
-            in raw_response.text
-        )
-        assert "maxserve_num_output_tokens_total" in raw_response.text
-        assert "maxserve_batch_size" in raw_response.text
-        assert "maxserve_cache_hit_rate" in raw_response.text
 
 
 @pytest.mark.asyncio
@@ -193,6 +201,9 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     [
         PipelineConfig(
             model_path=MODEL_NAME,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MODEL_NAME
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,

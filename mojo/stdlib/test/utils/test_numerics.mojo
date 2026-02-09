@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -135,14 +135,14 @@ def test_isnan():
 
 
 fn overflow_int[dtype: DType]() -> Bool:
-    __comptime_assert (
+    comptime assert (
         dtype.is_integral()
     ), "comparison only valid on integral types"
     return max_finite[dtype]() + 1 < max_finite[dtype]()
 
 
 fn overflow_fp[dtype: DType]() -> Bool:
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "comparison only valid on floating point types"
     return max_finite[dtype]() + 1 == max_finite[dtype]()
@@ -202,14 +202,14 @@ def test_max_finite():
 
 
 fn underflow_int[dtype: DType]() -> Bool:
-    __comptime_assert (
+    comptime assert (
         dtype.is_integral()
     ), "comparison only valid on integral types"
     return min_finite[dtype]() - 1 > min_finite[dtype]()
 
 
 fn underflow_fp[dtype: DType]() -> Bool:
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "comparison only valid on floating point types"
     return min_finite[dtype]() - 1 == min_finite[dtype]()

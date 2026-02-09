@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import sqrt
 from sys.info import CompilationTarget
 
 from itertools import product
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -34,15 +26,17 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     dtype: DType
-](data: LayoutTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
+](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
     DType.float32
 ]:
-    __comptime_assert data.rank == 1, "data.rank must be 1"
+    comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt((sum_of_squares / data.size()) + eps.cast[DType.float32]())
+    return sqrt(
+        (sum_of_squares / Float32(data.numel())) + eps.cast[DType.float32]()
+    )
 
 
 fn run_rms_norm_cpu[
@@ -51,28 +45,23 @@ fn run_rms_norm_cpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var input_ptr = alloc[Scalar[dtype]](rows * cols)
+    var output_ptr = alloc[Scalar[dtype]](rows * cols)
+    var gamma_ptr = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         input_ptr[i] = Scalar[dtype](i)
 
     for i in range(cols):
-        gamma_ptr[i] = ((i + cols) / cols).cast[dtype]()
+        gamma_ptr[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
     var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[rank]()
-    var input_buf = LayoutTensor[dtype, layout](
-        input_ptr, RuntimeLayout[layout].row_major(shape)
-    )
-    var output_buf = LayoutTensor[dtype, layout](
-        output_ptr, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)](
+    var input_buf = TileTensor(input_ptr, row_major(Coord(shape)))
+    var output_buf = TileTensor(output_ptr, row_major(Coord(shape)))
+    var gamma = TileTensor(
         gamma_ptr,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(param_shape),
+        row_major(Coord(param_shape)),
     )
     var epsilon = Scalar[dtype](0.0001)
     var weight_offset = Scalar[dtype](0.0)
@@ -83,11 +72,7 @@ fn run_rms_norm_cpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = input_buf.runtime_layout(
-            RuntimeTuple[fill_like(input_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = input_buf.layout(Coord(coords))
         return input_buf.ptr.load[width=width](idx)
 
     @always_inline
@@ -96,11 +81,7 @@ fn run_rms_norm_cpu[
     fn identity_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = output_buf.runtime_layout(
-            RuntimeTuple[fill_like(output_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = output_buf.layout(Coord(coords))
         output_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     rms_norm_cpu[input_fn, identity_output_fn, multiply_before_cast=True](
@@ -111,11 +92,9 @@ fn run_rms_norm_cpu[
     )
 
     for r, c in product(range(rows), range(cols)):
-        var vec = LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)](
+        var vec = TileTensor(
             input_ptr + r * cols,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](cols)
-            ),
+            row_major(Idx(cols)),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         var idx = r * cols + c

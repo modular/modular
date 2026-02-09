@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,7 +35,7 @@ struct ConditionalTriviality[
     fn add_event(mut self, event: Int):
         self.events[].append(event)
 
-    fn __init__(out self, ref [Self.O]events: List[Int]):
+    fn __init__(out self, ref[Self.O] events: List[Int]):
         self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 

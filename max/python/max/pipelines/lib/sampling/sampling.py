@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -357,14 +357,12 @@ def rejection_sampler_with_residuals(
     seed: int = 0,
     debug: bool = False,
 ) -> Graph:
-    """
-    Rejection sampler with residual sampling for speculative decoding.
+    """Builds a rejection sampler with residual sampling for speculative decoding.
 
     Computes acceptance ratios for draft tokens, finds first rejection,
-    samples from residual distribution (target - draft), and generates bonus tokens.
-
+    samples from residual distribution (target - draft), and generates bonus
+    tokens.
     """
-
     graph_inputs = [
         # Sampled Draft Tokens
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),

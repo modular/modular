@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -37,9 +37,9 @@ def test_simd_reduction(ctx: DeviceContext):
             # Fill with sensible values, but make sure the addition does not
             # blow up.
             if j == 0:
-                input_host[i + j] = i
+                input_host[i + j] = Scalar[DType.int](i)
             else:
-                input_host[i + j] = j
+                input_host[i + j] = Scalar[DType.int](j)
 
     var input_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
 
@@ -73,7 +73,9 @@ def test_simd_reduction(ctx: DeviceContext):
         simd_sum += i
 
     for i in range(buffer_size // simd_width):
-        assert_equal(output_host[i], i * simd_width + simd_sum)
+        assert_equal(
+            output_host[i], Scalar[DType.int](i * simd_width + simd_sum)
+        )
 
     input_host.free()
     output_host.free()

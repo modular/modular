@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextAndVisionTokenizer,
-    TextTokenizer,
 )
 
-ENABLE_NEW_IMPL = os.environ.get(
-    "MODULAR_MAX_DISABLE_GEMMA3_VISION", "0"
-).lower() not in (
-    "1",
-    "true",
-)
-
-if ENABLE_NEW_IMPL:
-    from .model import Gemma3_MultiModalModel
-else:
-    from . import weight_adapters_legacy as weight_adapters
-    from .model_legacy import Gemma3_MultiModalModelLegacy
-
+from .model import Gemma3_MultiModalModel
+from .model_config import Gemma3ForConditionalGenerationConfig
 
 example_repo_ids = [
     # it = Instruction tuned (recommended).
@@ -52,44 +38,24 @@ example_repo_ids = [
     "google/gemma-3-27b-pt",
 ]
 
-if ENABLE_NEW_IMPL:
-    gemma3_multimodal_arch = SupportedArchitecture(
-        name="Gemma3ForConditionalGeneration_Legacy",
-        example_repo_ids=example_repo_ids,
-        default_encoding=SupportedEncoding.bfloat16,
-        supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-            SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
-        },
-        pipeline_model=Gemma3_MultiModalModel,
-        task=PipelineTask.TEXT_GENERATION,
-        tokenizer=TextAndVisionTokenizer,
-        default_weights_format=WeightsFormat.safetensors,
-        multi_gpu_supported=True,
-        rope_type=RopeType.normal,
-        required_arguments={
-            "enable_prefix_caching": False,
-            "enable_chunked_prefill": False,
-        },
-        context_type=TextAndVisionContext,
-    )
-else:
-    gemma3_multimodal_arch = SupportedArchitecture(
-        name="Gemma3ForConditionalGeneration_Legacy",
-        example_repo_ids=example_repo_ids,
-        default_encoding=SupportedEncoding.bfloat16,
-        supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-            SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
-        },
-        pipeline_model=Gemma3_MultiModalModelLegacy,
-        task=PipelineTask.TEXT_GENERATION,
-        tokenizer=TextTokenizer,
-        default_weights_format=WeightsFormat.safetensors,
-        multi_gpu_supported=True,
-        rope_type=RopeType.normal,
-        weight_adapters={
-            WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-        },
-        context_type=TextContext,
-    )
+gemma3_multimodal_arch = SupportedArchitecture(
+    name="Gemma3ForConditionalGeneration_Legacy",
+    example_repo_ids=example_repo_ids,
+    default_encoding=SupportedEncoding.bfloat16,
+    supported_encodings={
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+    },
+    pipeline_model=Gemma3_MultiModalModel,
+    task=PipelineTask.TEXT_GENERATION,
+    tokenizer=TextAndVisionTokenizer,
+    default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=True,
+    rope_type=RopeType.normal,
+    required_arguments={
+        "enable_prefix_caching": False,
+        "enable_chunked_prefill": False,
+    },
+    context_type=TextAndVisionContext,
+    config=Gemma3ForConditionalGenerationConfig,
+)

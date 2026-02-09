@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,9 @@ from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.toppminp import min_p_sampling, top_p_sampling
 from testing import assert_equal
 
@@ -54,7 +56,7 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
 
 
 fn time_kernel[
-    func: fn () raises capturing -> None
+    func: fn() raises capturing -> None
 ](mut m: Bench, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -70,25 +72,25 @@ fn time_kernel[
 
 
 @parameter
-fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, ...]):
+fn fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
-    var total_elements = buffer.size()
+    var total_elements = buffer.numel()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
         buffer.ptr[i] = random_value.cast[dtype]()
 
 
 @parameter
-fn fill_iota[dtype: DType](mut buf: LayoutTensor[mut=True, dtype, ...]):
-    iota(buf.ptr, buf.size())
+fn fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
+    iota(buf.ptr, buf.numel())
 
 
 fn test_is_sorted_descending[
     dtype: DType
-](mut buf: LayoutTensor[dtype, ...], vocab_size: Int) -> Bool:
-    __comptime_assert buf.rank == 2, "rank must be 2"
-    var batch_size = buf.size() // vocab_size
+](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
+    comptime assert buf.rank == 2, "rank must be 2"
+    var batch_size = buf.numel() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 
     # Initialize all flags to True
@@ -153,8 +155,8 @@ fn print_test_case(test_case: TestCase):
 
 
 fn test_case_sampling[
-    fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, ...]
+    fill_fn: fn[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](test_case: TestCase) raises:
     print_test_case(test_case)
@@ -173,27 +175,21 @@ fn test_case_sampling[
     var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var in_logits = LayoutTensor[dtype, Layout.row_major[rank]()](
+    var in_logits = TileTensor(
         in_logits_ptr,
-        RuntimeLayout[Layout.row_major[rank]()].row_major(
-            IndexList[rank](batch_size, vocab_size)
-        ),
+        row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
     var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
         batch_size * 1
     )
-    var token_ids = LayoutTensor[out_idx_type, Layout.row_major[1]()](
+    var token_ids = TileTensor(
         token_ids_ptr,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](batch_size)
-        ),
+        row_major(Coord(Idx(batch_size), Idx(1))),
     )
     var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
-    var p_thresholds = LayoutTensor[dtype, Layout.row_major[1]()](
+    var p_thresholds = TileTensor(
         p_thresholds_ptr,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](batch_size)
-        ),
+        row_major(Idx(batch_size)),
     )
 
     # Fill tensors
@@ -265,8 +261,8 @@ fn test_case_sampling[
 fn test_toppminp[
     dtype: DType,
     out_idx_type: DType,
-    fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, ...]
+    fill_fn: fn[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
     comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
@@ -289,8 +285,8 @@ fn test_toppminp[
 
 fn test_all_out_idx_types[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, ...]
+    fill_fn: fn[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
     test_toppminp[dtype, DType.int32, fill_fn]()
@@ -299,8 +295,8 @@ fn test_all_out_idx_types[
 
 
 fn test_all_types[
-    fill_fn: fn[dtype: DType] (
-        mut LayoutTensor[mut=True, dtype, ...]
+    fill_fn: fn[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
     print("\n=== Testing Float32 ===")

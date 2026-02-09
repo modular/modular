@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -76,7 +76,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole(TrivialRegisterPassable):
     var _role: Int32
 
     comptime MainLoad = Self(4)
@@ -186,7 +186,7 @@ fn load_AB[
     mma_mbar[stage].wait(phase)
 
     if elect_one_cta:
-        tma_mbar[stage].expect_bytes(expected_bytes)
+        tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
     var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
         a_tma_rows
@@ -210,14 +210,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), UInt(a_gmem_slice_coord)),
+        (iter_idx * UInt(BK), a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+        (iter_idx * UInt(BK), b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -358,7 +358,7 @@ fn store_C[
     comptime remainder_elements = elements_per_row - main_load_elements
 
     # if i do have non-power of 2, then remainder_elements must be divisible by 32 (can extend to support more values later)
-    __comptime_assert (
+    comptime assert (
         remainder_elements % 32 == 0
     ), "remainder_elements must be divisible by 32"
 
@@ -563,13 +563,13 @@ fn store_C[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
+        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, UInt32(max_tmem_cols))
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(max_tmem_cols))
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -711,7 +711,7 @@ fn kernel_6[
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
@@ -727,7 +727,7 @@ fn kernel_6[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // cta_group + cluster_shape[1] - 1
+                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
         compute_barrier[].init()
 
@@ -761,7 +761,7 @@ fn kernel_6[
     var peer_cta_coord = (
         rank_m % UInt(cta_group),
         rank_m // UInt(cta_group),
-        UInt(rank_n),
+        rank_n,
     )  # v,m,n
 
     var a_multicast_mask: UInt16 = 0x0
@@ -769,12 +769,12 @@ fn kernel_6[
 
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
     @parameter
     for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -800,7 +800,7 @@ fn kernel_6[
                     tma_mbar,
                     producer_phase,
                     peer_cta_coord,
-                    (UInt(block_idx.x), UInt(block_idx.y)),
+                    (block_idx.x, block_idx.y),
                     a_multicast_mask,
                     b_multicast_mask,
                     UInt(i),
@@ -832,7 +832,9 @@ fn kernel_6[
 
         # mma arrive multicast will track completion of all mma prior to this barrier.
         if elect_one_sync():
-            mma_arrive_multicast[cta_group](compute_barrier, mma_complete_mask)
+            mma_arrive_multicast[cta_group](
+                compute_barrier, UInt16(mma_complete_mask)
+            )
 
     if WarpRole.is_epilogue():
         compute_barrier[].wait()
@@ -879,7 +881,7 @@ fn blackwell_kernel_6[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -890,13 +892,15 @@ fn blackwell_kernel_6[
     comptime MMA_K = umma_shape[2]
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
+        ) if transpose_b else Index(
+            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -966,7 +970,9 @@ fn blackwell_kernel_6[
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
         block_dim=(32 * 6),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
 
@@ -1094,9 +1100,11 @@ def test_blackwell_kernel_6[
         ctx.synchronize()
         # print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         # Round TFLOPS to two decimal places for cleaner output
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 2)

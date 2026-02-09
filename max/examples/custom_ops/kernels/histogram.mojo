@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn _histogram_gpu(
     # Set the maximum number of threads per block to the block dimension.
     # This is equivalent to the `__launch_bounds__` attribute in CUDA.
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
     fn kernel(
         output: UnsafePointer[Int64, MutAnyOrigin],

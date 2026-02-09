@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import hf_repo_lock
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
@@ -23,13 +24,18 @@ from max.serve.schemas.openai import (
     Model,
 )
 
+SMOLLM_135M_REPO_ID = "HuggingFaceTB/SmolLM-135M"
+
 
 @pytest.mark.asyncio()
 @pytest.mark.parametrize(
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
+            model_path=SMOLLM_135M_REPO_ID,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                SMOLLM_135M_REPO_ID
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
@@ -46,13 +52,13 @@ async def test_serve_models(app: FastAPI) -> None:
         response = ListModelsResponse.model_validate(raw_response.json())
 
         assert len(response.data) == 1
-        assert response.data[0].id == "HuggingFaceTB/SmolLM-135M"
+        assert response.data[0].id == SMOLLM_135M_REPO_ID
 
         raw_response = await client.get("/v1/models/SmolLM-135M")
 
         response2 = Model.model_validate(raw_response.json())
 
-        assert response2.id == "HuggingFaceTB/SmolLM-135M"
+        assert response2.id == SMOLLM_135M_REPO_ID
 
 
 MODEL_ALIAS = "foobar"

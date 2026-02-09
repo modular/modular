@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -517,9 +517,9 @@ struct Observable[
     fn __init__(
         out self,
         *,
-        var copies: Optional[Pointer[Int, Self.CopyOrigin]] = {},
-        var moves: Optional[Pointer[Int, Self.MoveOrigin]] = {},
-        var dels: Optional[Pointer[Int, Self.DelOrigin]] = {},
+        var copies: Optional[Pointer[Int, Self.CopyOrigin]] = None,
+        var moves: Optional[Pointer[Int, Self.MoveOrigin]] = None,
+        var dels: Optional[Pointer[Int, Self.DelOrigin]] = None,
     ):
         """Constructs a new Observable with the given pointers.
 

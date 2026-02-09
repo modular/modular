@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,42 +24,14 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-trait MaybeZeroSized(TrivialRegisterType):
+trait MaybeZeroSized(TrivialRegisterPassable):
     fn value(self) -> S:
         ...
 
 
 @fieldwise_init
-struct ZeroSized(DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable):
-    comptime device_type: AnyType = Self
-
-    fn _to_device_type[
-        origin: MutOrigin
-    ](self, target: UnsafePointer[NoneType, origin]):
-        target.bitcast[Self.device_type]()[] = self
-
-    @staticmethod
-    fn get_type_name() -> String:
-        return "ZeroSized"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
-    @always_inline
-    fn value(self) -> S:
-        return 2
-
-    fn write_to(self, mut writer: Some[Writer]):
-        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
-        writer.write("ZeroSized(")
-        writer.write(self.value())
-        writer.write(")")
-
-
-@fieldwise_init
-struct NotZeroSized(
-    DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable
+struct ZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
 ):
     comptime device_type: AnyType = Self
 
@@ -72,9 +44,31 @@ struct NotZeroSized(
     fn get_type_name() -> String:
         return "ZeroSized"
 
+    @always_inline
+    fn value(self) -> S:
+        return 2
+
+    fn write_to(self, mut writer: Some[Writer]):
+        comptime assert not is_gpu(), "ZeroSized is not supported on GPUs"
+        writer.write("ZeroSized(")
+        writer.write(self.value())
+        writer.write(")")
+
+
+@fieldwise_init
+struct NotZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
+):
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
+        target.bitcast[Self.device_type]()[] = self
+
     @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
+    fn get_type_name() -> String:
+        return "ZeroSized"
 
     var val: S
 
@@ -86,7 +80,7 @@ struct NotZeroSized(
         return self.val
 
     fn write_to(self, mut writer: Some[Writer]):
-        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
+        comptime assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("NotZeroSized(")
         writer.write(self.value())
         writer.write(")")
@@ -192,8 +186,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
+            in0_host[i] = Scalar[T](i)
+            out_host[i] = Scalar[T](length + i)
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
@@ -217,7 +211,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
                 print("at index", i, "the value is", out_host[i])
             assert_equal(
                 out_host[i],
-                i + 4,
+                Scalar[T](i + 4),
                 String(
                     "at index ",
                     i,

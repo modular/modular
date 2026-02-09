@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,13 +26,6 @@ from max.mlir import Context, Location
 # mypy: disable-error-code="overload-cannot-match"
 
 DiagnosticHandler = Callable
-
-class ContextuallyEvaluatedAttrInterface(Protocol):
-    """
-    This interface describes parameter attributes whose evaluation may require
-    additional context. This is in contrast to "simple" parameter attributes
-    that can be simplified context-free at construction time.
-    """
 
 class FnMetadataAttrInterface(Protocol):
     """
@@ -2144,9 +2137,11 @@ class POCAttr(max._core.Attribute):
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
-    member_alias = 1
+    preserved = 1
 
-    alias = 2
+    member_alias = 2
+
+    alias = 3
 
 class TailKind(enum.Enum):
     none = 0

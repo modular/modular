@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -88,13 +88,14 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 64  # N must be a multiple of this
     comptime tile_k = 4  # K must be a multiple of this
 
-    __comptime_assert M % tile_m == 0, "M must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "M must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
     @parameter
     fn calc_row(m0: Int):
         for m in range(tile_m * m0, tile_m * m0 + tile_m):
+            _ = m  # FIXME: param closures not noticing access.
 
             @parameter
             fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
@@ -106,7 +107,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                     fn dot[
                         simd_size: Int
                     ](n: Int) unified {
-                        mut C, mut A_val, read B, mut m, mut x, mut k
+                        mut C, mut A_val, read B, read m, mut x, mut k
                     }:
                         var idx = n + x
                         C.store(
@@ -139,9 +140,9 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 64
     comptime tile_k = 4
 
-    __comptime_assert M % tile_m == 0, "N must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "N must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
     @parameter
     fn calc_row(m_1: Int):
@@ -159,10 +160,10 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
-                            __comptime_assert (
+                            comptime assert (
                                 type_of(dst_view).layout.stride[1] == 1
                             ), "elements of dst should be contiguous"
-                            __comptime_assert (
+                            comptime assert (
                                 type_of(rhs_view).layout.stride[1] == 1
                             ), "elements of rhs should be contiguous"
 
@@ -204,9 +205,9 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 64
     comptime tile_k = 4
 
-    __comptime_assert M % tile_m == 0, "N must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "N must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
     @parameter
     fn calc_row(m_1: Int):
@@ -230,7 +231,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
-                            __comptime_assert (
+                            comptime assert (
                                 type_of(dst_view).layout.stride[1] == 1
                             ), "elements of dst should be contiguous"
 
@@ -263,11 +264,11 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     comptime tile_n = 16
     comptime tile_k = 128
 
-    __comptime_assert M % tile_m == 0, "N must be a multiple of tile_m"
-    __comptime_assert N % tile_n == 0, "N must be a multiple of tile_n"
-    __comptime_assert K % tile_k == 0, "K must be a multiple of tile_k"
+    comptime assert M % tile_m == 0, "N must be a multiple of tile_m"
+    comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
+    comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    __comptime_assert (
+    comptime assert (
         tile_k % vec_size == 0
     ), "tile_k must be a multiple of vec_size"
 
@@ -289,8 +290,8 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                 var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1).transpose()
                 rhs_cache.copy_from(rhs_view)
 
-                for m in range(tile_m):
-                    for n in range(tile_n):
+                for var m in range(tile_m):
+                    for var n in range(tile_n):
                         var sum = SIMD[dtype, vec_size](0)
 
                         fn dot[simd_size: Int](k: Int) unified {mut}:
@@ -314,7 +315,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StaticString
+    func: fn(mut Matrix, Matrix, Matrix) -> None, name: StaticString
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
@@ -339,7 +340,7 @@ fn bench[
 
 @always_inline
 fn test_matrix_equal[
-    func: fn (mut Matrix, Matrix, Matrix) -> None
+    func: fn(mut Matrix, Matrix, Matrix) -> None
 ](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
     """Runs a matmul function on A and B and tests the result for equality with
     C on every element.

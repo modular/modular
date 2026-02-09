@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -59,7 +59,7 @@ def test_closure():
     fn some_closure(x: Some[Intable]) -> Int:
         return x.__int__() * 2
 
-    fn takes_some_closure[func: fn (Some[Intable]) -> Int]() raises:
+    fn takes_some_closure[func: fn(Some[Intable]) -> Int]() raises:
         assert_equal(func(Int(4)), 8)
 
     takes_some_closure[some_closure]()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,29 +29,41 @@ fn generate_alibi_bias[
     q_idx: SIMD[DType.int, width],
     k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
-) -> SIMD[dtype, width]:
+) -> SIMD[dtype, width] where dtype.is_floating_point():
     var scale: SIMD[dtype, width]
 
     @parameter
     if num_heads.is_power_of_two():
-        scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
+        scale = exp2(
+            -((head_idx + 1).cast[dtype]() * 8.0 / Scalar[dtype](num_heads))
+        )
     else:
         comptime floor_power_of_2 = prev_power_of_two(num_heads)
-        if head_idx < floor_power_of_2:
+        if head_idx < Scalar[DType.int](floor_power_of_2):
             scale = exp2(
-                -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
+                -(
+                    (head_idx + 1).cast[dtype]()
+                    * 8.0
+                    / Scalar[dtype](floor_power_of_2)
+                )
             )
         else:
             scale = exp2(
                 -(
-                    ((head_idx - floor_power_of_2) * 2 + 1).cast[dtype]()
+                    (
+                        (head_idx - Scalar[DType.int](floor_power_of_2)) * 2 + 1
+                    ).cast[dtype]()
                     * 8.0
-                    / (floor_power_of_2 * 2)
+                    / Scalar[dtype](floor_power_of_2 * 2)
                 )
             )
     # print(scale)
     var bias = (
-        -(max_prompt_len - 1 - k_idx - iota[DType.int, width]()).cast[dtype]()
+        -(
+            Scalar[DType.int](max_prompt_len - 1)
+            - k_idx
+            - iota[DType.int, width]()
+        ).cast[dtype]()
         * scale
     )
     # print(bias)

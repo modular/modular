@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 """
 
 from collections import InlineArray
-from collections.optional import Optional, OptionalReg
+from collections.optional import Optional
 
 from buffer import NDBuffer
 from gpu import (
@@ -54,7 +54,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 @always_inline
@@ -117,38 +117,42 @@ struct ReduceScatterConfig[
     simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     var stride: Int
-    var largest_part: Int
     var part: Int
-    var rank_start: Int
-    var rank_end: Int
-    var thr_local_start: Int
+    var remainder: Int
 
     @always_inline
     fn __init__(
         out self,
         num_elements: Int,
-        thread_idx: Int,
         threads_per_gpu: Int,
-        my_rank: Int,
     ):
         constrained[Self.ngpus > 1, "ngpus must be greater than 1"]()
         self.stride = threads_per_gpu * Self.simd_width
         # --- Data Partitioning ---
-        # Block cyclic distribution using 128-bit packed vectors.
-        # Divide workload into `ngpus` partitions with last rank handling
-        # remainder. # TODO(KERN-2295): consider perf implications
+        # Data are divided as evenly as possible amongst ngpus.
+        # We consider a simd vector as the basic unit of work.
+        # For ragged cases, lower ranks receive an extra simd vector.
         var num_simd_vectors = num_elements // Self.simd_width
-        var part = (num_simd_vectors // Self.ngpus) * Self.simd_width
-        self.part = part
-        self.rank_start = my_rank * part
-        self.rank_end = (
-            num_elements if my_rank
-            == Self.ngpus - 1 else self.rank_start + part
-        )
-        self.largest_part = part + (num_elements % Self.ngpus)
-        self.thr_local_start = thread_idx * Self.simd_width
+        self.part = num_simd_vectors // Self.ngpus
+        self.remainder = num_simd_vectors % Self.ngpus
+
+    @always_inline
+    fn rank_start(self, rank: Int) -> Int:
+        return (rank * self.part + min(rank, self.remainder)) * Self.simd_width
+
+    @always_inline
+    fn rank_end(self, rank: Int) -> Int:
+        return self.rank_start(rank + 1)
+
+    @always_inline
+    fn rank_part(self, rank: Int) -> Int:
+        return (self.part + Int(rank < self.remainder)) * Self.simd_width
+
+    @always_inline
+    fn thr_local_start(self, thread_idx: UInt) -> Int:
+        return Int(thread_idx) * Self.simd_width
 
 
 @always_inline
@@ -178,8 +182,8 @@ fn _reduce_scatter_impl[
     # - Each thread processes partition elements using 128-bit accesses.
     # - Accumulates in higher precision (float32) for numerical stability.
     for idx in range(
-        config.rank_start + config.thr_local_start,
-        config.rank_end,
+        config.rank_start(my_rank) + config.thr_local_start(global_idx.x),
+        config.rank_end(my_rank),
         config.stride,
     ):
         # float32 accumulator for numerical stability.
@@ -193,13 +197,13 @@ fn _reduce_scatter_impl[
 
         # Apply epilogue and store result.
         output_lambda[width = config.simd_width, alignment = config.alignment](
-            out_buf.get_nd_index(idx - config.rank_start),
+            out_buf.get_nd_index(idx - config.rank_start(my_rank)),
             reduced_result,
         )
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _reducescatter_kernel[
     dtype: DType,
@@ -245,12 +249,10 @@ fn _reducescatter_kernel[
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
-    var global_tid = Int(global_idx.x)
-    # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var threads_per_gpu = Int(grid_dim.x) * BLOCK_SIZE
 
     var reduce_scatter_config = ReduceScatterConfig[dtype, ngpus](
-        num_elements, global_tid, stride, my_rank
+        num_elements, threads_per_gpu
     )
 
     @parameter
@@ -323,6 +325,7 @@ fn _reducescatter_p2p[
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
+    # TODO(KERN-2337): generalize this check, ensure the *last-axis* % simd_width = 0
     if num_elements % simd_width != 0:
         raise Error(
             "non SIMD-width multiple number of elements unsupported by"
@@ -376,7 +379,7 @@ fn reducescatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,

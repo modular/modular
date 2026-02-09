@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -77,7 +77,9 @@ def test_elementwise():
         )
 
         for i2 in range(min(numelems, 64)):
-            assert_equal((out_buffer.unsafe_ptr() + i2).load(), 2 * (i2 + 1))
+            assert_equal(
+                (out_buffer.unsafe_ptr() + i2).load(), Float32(2 * (i2 + 1))
+            )
 
     run_elementwise[16, 1, False, Index(16)]()
     run_elementwise[16, 1, True, Index(16)]()
@@ -98,7 +100,7 @@ def test_elementwise_implicit_runtime():
     var vector = Span[Scalar[DType.int]](vector_stack)
 
     for i in range(len(vector)):
-        vector.unsafe_ptr()[i] = i
+        vector.unsafe_ptr()[i] = Scalar[DType.int](i)
 
     @always_inline
     @__copy_capture(vector)

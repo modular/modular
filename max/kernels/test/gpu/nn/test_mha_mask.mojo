@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,7 +41,9 @@ def test_causal_mask():
     # TODO(KERN-782): should be -inf but softmax saturates with NaNs.
     var mask_val = -10000
     var masked_vec = mask.mask(Index(0, 0, 4, 3), SIMD[type, 4](0, 1, 2, 3))
-    assert_equal(masked_vec, SIMD[type, 4](0, 1, mask_val, mask_val))
+    assert_equal(
+        masked_vec, SIMD[type, 4](0, 1, Int32(mask_val), Int32(mask_val))
+    )
 
     masked_vec = mask.mask(Index(0, 0, 4, 0), SIMD[type, 4](0, 1, 2, 3))
     assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))

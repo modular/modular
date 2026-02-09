@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ from os import abort
 # ===-----------------------------------------------------------------------===#
 
 
-struct __MLIRType[T: __TypeOfAllTypes](TrivialRegisterType):
+struct __MLIRType[T: __TypeOfAllTypes](TrivialRegisterPassable):
     var value: Self.T
     comptime __del__is_trivial = True
     comptime __moveinit__is_trivial = True

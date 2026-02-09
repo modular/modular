@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from sys.ffi import external_call
+from ffi import external_call
 from time.time import _CTimeSpec
 
 from .fstat import stat_result
@@ -78,7 +78,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         self.st_mtimespec = _CTimeSpec()
         self.st_ctimespec = _CTimeSpec()
         self.st_birthtimespec = _CTimeSpec()
-        self.unused = InlineArray[Int64, 3](0, 0, 0)
+        self.unused: InlineArray[Int64, 3] = [0, 0, 0]
 
     fn write_to(self, mut writer: Some[Writer]):
         # fmt: off

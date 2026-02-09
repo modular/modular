@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -164,7 +164,7 @@ def execute_fused_qkv_matmul[
         batch_size
     )
     for i in range(batch_size):
-        cache_lengths_host_ptr[i] = cache_sizes[i]
+        cache_lengths_host_ptr[i] = UInt32(cache_sizes[i])
         if cache_lengths_host_ptr[i] != 0:
             is_context_encoding = False
 
@@ -219,8 +219,8 @@ def execute_fused_qkv_matmul[
             lookup_table_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        max_seq_len,
-        0 if is_context_encoding else max_seq_len,
+        UInt32(max_seq_len),
+        UInt32(0 if is_context_encoding else max_seq_len),
     )
     var kv_collection_host = CollectionType(
         LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
@@ -235,8 +235,8 @@ def execute_fused_qkv_matmul[
             lookup_table_host_ptr,
             cache_len_runtime,
         ),
-        max_seq_len,
-        0 if is_context_encoding else max_seq_len,
+        UInt32(max_seq_len),
+        UInt32(0 if is_context_encoding else max_seq_len),
     )
 
     # Create device tensors for kernel calls

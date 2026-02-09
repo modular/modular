@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
             (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn __getitem__(self, i: Int) raises -> ref [self] Self.ElementType:
+    fn __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
         if i < self.size:
             return self.data[i]
         else:

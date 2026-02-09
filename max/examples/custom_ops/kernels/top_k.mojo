@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,7 +28,7 @@ from utils.numerics import min_or_neg_inf
 
 
 @fieldwise_init
-struct TopKElement[T: DType](Comparable, TrivialRegisterType):
+struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
     """Stores the value with it's index."""
 
     var idx: Int32
@@ -113,8 +113,8 @@ struct TopK:
                     # value from a thread 'offset' positions higher, keeping the
                     # larger value.
                     var shuffled = TopKElement(
-                        warp.shuffle_down(reduced.idx, offset),
-                        warp.shuffle_down(reduced.val, offset),
+                        warp.shuffle_down(reduced.idx, UInt32(offset)),
+                        warp.shuffle_down(reduced.val, UInt32(offset)),
                     )
                     reduced = max(reduced, shuffled)
 

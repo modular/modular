@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,108 +10,157 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""A generalized Mixture of Experts (MoE) module."""
+"""Mixture of Experts with FP8/NVFP4 quantization."""
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    ops,
-)
+from max.graph import DeviceRef, TensorValue, ops
 
-from ..comm.ep.ep_kernels import fused_silu_fp8
-from ..kernels import (
-    grouped_dynamic_scaled_fp8_matmul,
-    moe_create_indices,
-    quantize_dynamic_scaled_float8,
-)
+from ..kernels import moe_create_indices
 from .moe import MoE
+from .quant_strategy import (
+    Fp8Strategy,
+    Nvfp4Scales,
+    Nvfp4Strategy,
+    QuantStrategy,
+    silu_gate,
+)
+
+_T = TypeVar("_T")
 
 
-class MoEFp8(MoE):
-    """Implementation of Mixture of Experts (MoE) with FP8 quantization."""
+class MoEQuantized(MoE):
+    """Mixture of Experts with FP8 or NVFP4 quantization."""
+
+    @property
+    def _fused_shared_expert(self) -> bool:
+        """Whether shared expert is fused into expert list."""
+        return bool(
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.fused_shared_expert
+        )
+
+    def _strategy(self) -> QuantStrategy:
+        """Selects the quantization strategy for this MoE."""
+        assert self.float8_config is not None
+        if self.float8_config.is_nvfp4:
+            return Nvfp4Strategy(self.float8_config, self.dtype)
+        return Fp8Strategy(self.float8_config, self.dtype)
+
+    @property
+    def _token_group_size(self) -> int:
+        """Returns the activation token-group size for quantization."""
+        assert self.float8_config is not None
+        assert self.float8_config.input_scale.block_size is not None
+        return self.float8_config.input_scale.block_size[1]
+
+    def _with_shared_expert(self, values: list[_T], shared: _T) -> list[_T]:
+        """Prepends shared expert value if fused shared expert is enabled."""
+        if self._fused_shared_expert:
+            assert self.has_shared_experts
+            return [shared] + values
+        return values
+
+    def _nvfp4_scales(self) -> Nvfp4Scales:
+        """Collects NVFP4 input and expert scales for matmuls."""
+        gate_up_input = self._collect_input_scale("gate_proj", collect_all=True)
+        down_input = self._collect_input_scale("down_proj")
+
+        # For gate/up projs, current EP communication kernels only support one
+        # global input scale for all experts, hence we use the max input scale
+        # across all experts.
+        gate_up_max_scale = ops.max(gate_up_input, axis=0)
+        gate_up_input = ops.broadcast_to(gate_up_max_scale, gate_up_input.shape)
+        local_gate_up_input = ops.broadcast_to(
+            gate_up_max_scale, down_input.shape
+        )
+
+        return Nvfp4Scales(
+            gate_up_input=gate_up_input,
+            down_input=down_input,
+            gate_up_expert=self._collect_scale_2("gate_proj")
+            * local_gate_up_input,
+            down_expert=self._collect_scale_2("down_proj") * down_input,
+        )
+
+    def _collect_scale_2(self, proj_name: str) -> TensorValue:
+        """Stacks per-expert secondary scales for NVFP4 kernels."""
+        scales = [getattr(e, proj_name).weight_scale_2 for e in self.experts]
+        scales = self._with_shared_expert(
+            scales, getattr(self.shared_experts, proj_name).weight_scale_2
+        )
+        return ops.stack(scales, axis=0)
+
+    def _collect_input_scale(
+        self, proj_name: str, collect_all: bool = False
+    ) -> TensorValue:
+        """Stacks per-expert input scales for NVFP4 kernels."""
+
+        expert_collect = self._all_experts if collect_all else self.experts
+        scales = [getattr(e, proj_name).input_scale for e in expert_collect]
+        scales = self._with_shared_expert(
+            scales, getattr(self.shared_experts, proj_name).input_scale
+        )
+        return ops.stack(scales, axis=0)
 
     @property
     def gate_up_proj_scales(self) -> TensorValue:
+        """Returns stacked gate/up weight scales for grouped matmul."""
         assert self.float8_config is not None
         assert self.float8_config.weight_scale.block_size is not None
-        assert self.float8_config.weight_scale.block_size == (128, 128), (
-            "Only support block_size=[128, 128] for weights."
-        )
-        gate_proj_scales_list = [
-            expert.gate_proj.weight_scale for expert in self.experts
-        ]
-        up_proj_scales_list = [
-            expert.up_proj.weight_scale for expert in self.experts
-        ]
-
-        if (
-            self._ep_batch_manager
-            and self.ep_batch_manager.config.fused_shared_expert
-        ):
-            assert self.has_shared_experts, (
-                "Shared experts must present if fused shared expert is enabled"
+        if not self.float8_config.is_nvfp4:
+            assert self.float8_config.weight_scale.block_size == (128, 128), (
+                "Only support block_size=[128, 128] for weights."
             )
-            gate_proj_scales_list = [
-                self.shared_experts.gate_proj.weight_scale,
-            ] + gate_proj_scales_list
-            up_proj_scales_list = [
-                self.shared_experts.up_proj.weight_scale,
-            ] + up_proj_scales_list
 
-        gate_up_proj_scales_list: list[TensorValue] = []
-        for tensors in zip(
-            gate_proj_scales_list, up_proj_scales_list, strict=True
-        ):
-            gate_up_proj_scales_list.extend(tensors)
+        gate_scales = [e.gate_proj.weight_scale for e in self.experts]
+        up_scales = [e.up_proj.weight_scale for e in self.experts]
+        gate_scales = self._with_shared_expert(
+            gate_scales, self.shared_experts.gate_proj.weight_scale
+        )
+        up_scales = self._with_shared_expert(
+            up_scales, self.shared_experts.up_proj.weight_scale
+        )
 
-        if not self.shard_devices:
-            shard = ops.stack(gate_up_proj_scales_list, axis=0)
-        else:
+        # Interleave gate and up scales: [g0, u0, g1, u1, ...]
+        interleaved = [
+            s for pair in zip(gate_scales, up_scales, strict=True) for s in pair
+        ]
+
+        scale_k_dim = gate_scales[0].shape[-1]
+        if self.shard_devices:
             shard = ops.shard_and_stack(
-                gate_up_proj_scales_list,
-                devices=self.shard_devices,
+                interleaved, devices=self.shard_devices
             )[self.shard_index]
+        else:
+            shard = ops.stack(interleaved, axis=0)
 
-        return shard.reshape(
-            [
-                len(gate_proj_scales_list),
-                -1,
-                self.hidden_dim
-                // self.float8_config.weight_scale.block_size[1],
-            ]
+        return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
+            self.devices[0]
         )
 
     @property
     def down_proj_scales(self) -> TensorValue:
-        down_proj_scales_list = [
-            expert.down_proj.weight_scale for expert in self.experts
-        ]
+        """Returns stacked down-projection weight scales."""
+        scales = [e.down_proj.weight_scale for e in self.experts]
+        scales = self._with_shared_expert(
+            scales, self.shared_experts.down_proj.weight_scale
+        )
 
-        if (
-            self._ep_batch_manager
-            and self.ep_batch_manager.config.fused_shared_expert
-        ):
-            assert self.has_shared_experts, (
-                "Shared experts must present if fused shared expert is enabled"
-            )
-            down_proj_scales_list = [
-                self.shared_experts.down_proj.weight_scale,
-            ] + down_proj_scales_list
-
-        if not self.shard_devices:
-            shard = ops.stack(down_proj_scales_list, axis=0)
-        else:
+        if self.shard_devices:
             devices = [DeviceRef.CPU()] * len(self.shard_devices)
-            shard = ops.shard_and_stack(
-                down_proj_scales_list,
-                devices=devices,
-                axis=-1,
-            )[self.shard_index].to(self.devices[0])
+            return ops.shard_and_stack(scales, devices=devices, axis=-1)[
+                self.shard_index
+            ].to(self.devices[0])
+        return ops.stack(scales, axis=0).to(self.devices[0])
 
-        return shard
+    @property
+    def _is_nvfp4(self) -> bool:
+        """Whether the current float8 config uses NVFP4."""
+        return self.float8_config is not None and self.float8_config.is_nvfp4
 
     def _ep_call(
         self,
@@ -119,162 +168,142 @@ class MoEFp8(MoE):
         router_idx: TensorValue,
         router_weight: TensorValue,
     ) -> TensorValue:
-        assert self.float8_config is not None
-        assert self.float8_config.input_scale.block_size is not None
+        """Executes the expert-parallel quantized MoE path."""
+        strategy = self._strategy()
+        nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
+
         device_id = self.devices[0].id
         expert_inputs = self.ep_batch_manager.ep_dispatch(
-            x, router_idx, device_id
+            x, router_idx, device_id, nvfp4.gate_up_input if nvfp4 else None
         )
 
-        gate_up_projs = grouped_dynamic_scaled_fp8_matmul(
-            expert_inputs[0],
+        gate_up_scales, down_scales = strategy.prepare_weight_scales(
+            self.gate_up_proj_scales, self.down_proj_scales, x.device
+        )
+
+        gate_up = strategy.grouped_matmul(
             self.gate_up_proj,
-            expert_inputs[1],
-            self.gate_up_proj_scales,
-            expert_inputs[2],
-            expert_inputs[3],
-            expert_inputs[4],
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
-            tokens_padded_per_expert=True,  # Each expert's tokens are padded.
-        )
-
-        silu_out_fp8, silu_out_scales = fused_silu_fp8(
-            gate_up_projs,
-            expert_inputs[2],
-            self.float8_config,
-            self.dtype,
-        )
-
-        down_projs = grouped_dynamic_scaled_fp8_matmul(
-            silu_out_fp8,
-            self.down_proj,
-            silu_out_scales,
-            self.down_proj_scales,
-            expert_inputs[2],
-            expert_inputs[3],
-            expert_inputs[4],
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            gate_up_scales,
+            expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
             tokens_padded_per_expert=True,
+            expert_inputs=expert_inputs,
         )
 
-        routed_expert_out = self.ep_batch_manager.ep_combine(
-            down_projs, router_weight, device_id
+        down_in, silu_scales = strategy.fused_silu_quantize(
+            gate_up,
+            input_scales=nvfp4.down_input if nvfp4 else None,
+            expert_inputs=expert_inputs,
         )
 
-        if (
-            self.has_shared_experts
-            and not self.ep_batch_manager.config.fused_shared_expert
-        ):
-            routed_expert_out += self.shared_experts(x)
+        down_inputs = (down_in, silu_scales) + expert_inputs[2:]
+        down = strategy.grouped_matmul(
+            self.down_proj,
+            down_scales,
+            expert_scales=nvfp4.down_expert if nvfp4 else None,
+            tokens_padded_per_expert=True,
+            expert_inputs=down_inputs,
+        )
 
-        return routed_expert_out.cast(x.dtype)
+        out = self.ep_batch_manager.ep_combine(down, router_weight, device_id)
+
+        if self.has_shared_experts and not self._fused_shared_expert:
+            out += self.shared_experts(x)
+
+        return out.cast(x.dtype)
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """
-        Args:
-            x: (seq_len, hidden_dim)
+        """Runs quantized MoE routing and expert computation."""
+        strategy = self._strategy()
+        nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
-        Returns:
-            (seq_len, hidden_dim)
-        """
-        assert self.float8_config is not None
-        assert self.float8_config.input_scale.block_size is not None
-        token_group_size = self.float8_config.input_scale.block_size[1]
         assert not self.apply_router_weight_first, (
-            "apply_router_weight_first must be False for MoE with FP8 quantization"
+            "apply_router_weight_first must be False for quantized MoE"
         )
-        seq_len = x.shape[0]
 
-        # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
         if self._ep_batch_manager:
             return self._ep_call(
                 x, ops.cast(router_idx, DType.int32), router_weight
             )
 
-        router_idx = ops.reshape(
-            router_idx, [-1]
-        )  # (seq_len * n_expert_per_token,)
+        router_idx = ops.reshape(router_idx, [-1])
+        seq_len = x.shape[0]
 
         (
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
+            token_order,
+            expert_start,
+            restore_order,
             expert_ids,
-            expert_usage_stats,
+            usage_stats,
         ) = moe_create_indices(
             ops.cast(router_idx, DType.int32), self.num_experts
         )
 
-        permutated_states = ops.gather(
+        permuted = ops.gather(
             x,
-            ops.cast(
-                token_expert_order // self.num_experts_per_token, DType.int32
-            ),
+            ops.cast(token_order // self.num_experts_per_token, DType.int32),
             axis=0,
         )
 
-        permutated_states_fp8, permutated_states_scales = (
-            quantize_dynamic_scaled_float8(
-                permutated_states,
-                self.float8_config.input_scale,
-                self.float8_config.weight_scale,
-                group_size_or_per_token=token_group_size,
-                out_type=self.dtype,
-                scales_type=self.float8_config.weight_scale.dtype,
-            )
+        permuted_quant, permuted_scales = strategy.quantize(
+            permuted,
+            self._token_group_size,
+            nvfp4.gate_up_input if nvfp4 else None,
         )
 
-        gate_up_projs = grouped_dynamic_scaled_fp8_matmul(
-            permutated_states_fp8,
+        gate_up_scales, down_scales = strategy.prepare_weight_scales(
+            self.gate_up_proj_scales, self.down_proj_scales, permuted.device
+        )
+
+        expert_inputs: tuple[TensorValue, ...] = (
+            permuted_quant,
+            permuted_scales,
+            expert_start,
+            expert_ids,
+            usage_stats.to(DeviceRef.CPU()),
+        )
+
+        if nvfp4:
+            a_scale_offsets = ops.constant(
+                0, dtype=DType.uint32, device=x.device
+            ).broadcast_to([expert_ids.shape[0]])
+            expert_inputs = (
+                *expert_inputs[:3],
+                a_scale_offsets,
+                *expert_inputs[3:],
+            )
+
+        gate_up = strategy.grouped_matmul(
             self.gate_up_proj,
-            permutated_states_scales,
-            self.gate_up_proj_scales,
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            gate_up_scales,
+            expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
+            expert_inputs=expert_inputs,
         )
 
-        gate_up_projs = (
-            ops.silu(gate_up_projs[:, : self.moe_dim])
-            * gate_up_projs[:, self.moe_dim :]
-        )
-        gate_up_projs_fp8, gate_up_projs_scales = (
-            quantize_dynamic_scaled_float8(
-                gate_up_projs,
-                self.float8_config.input_scale,
-                self.float8_config.weight_scale,
-                group_size_or_per_token=token_group_size,
-                out_type=self.dtype,
-                scales_type=self.float8_config.weight_scale.dtype,
-            )
+        gate_up = silu_gate(gate_up, self.moe_dim)
+        gate_up_quant, gate_up_scales = strategy.quantize(
+            gate_up,
+            self._token_group_size,
+            nvfp4.down_input if nvfp4 else None,
         )
 
-        down_projs = grouped_dynamic_scaled_fp8_matmul(
-            gate_up_projs_fp8,
+        down_inputs = (gate_up_quant, gate_up_scales) + expert_inputs[2:]
+
+        down = strategy.grouped_matmul(
             self.down_proj,
-            gate_up_projs_scales,
-            self.down_proj_scales,
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            down_scales,
+            expert_scales=nvfp4.down_expert if nvfp4 else None,
+            expert_inputs=down_inputs,
         )
 
-        down_projs = ops.gather(
-            down_projs, restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, down_projs.shape[-1]])
+        down = ops.gather(down, restore_order, axis=0).reshape(
+            [seq_len, self.num_experts_per_token, down.shape[-1]]
+        )
 
-        # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-        routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down_projs
-        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
+        out = ops.unsqueeze(router_weight, axis=1) @ down
+        out = ops.squeeze(out, axis=1).cast(x.dtype)
 
         if self.has_shared_experts:
-            routed_expert_out += self.shared_experts(x)
+            out += self.shared_experts(x)
 
-        return routed_expert_out
+        return out

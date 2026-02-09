@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn bench_vec_add(
     var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
 
     for i in range(length):
-        in0_host[i] = i
+        in0_host[i] = Float32(i)
         in1_host[i] = 2
 
     var in0_device = context.enqueue_create_buffer[dtype](length)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -124,7 +124,7 @@ from gpu.memory import CacheOperation
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from collections.optional import OptionalReg
+from collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
@@ -143,7 +143,7 @@ from .device_query import get_sm_version, _dispatch_max_num_blocks
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 fn _naive_reduce_kernel[
@@ -336,7 +336,7 @@ fn _allreduce_naive_single[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _allreduce_2stage_kernel[
     dtype: DType,
@@ -390,9 +390,7 @@ fn _allreduce_2stage_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    var rs_config = ReduceScatterConfig[dtype, ngpus](
-        num_elements, global_tid, stride, my_rank
-    )
+    var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
 
     @parameter
     if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
@@ -440,7 +438,7 @@ fn _allreduce_2stage_kernel[
     # Output lambda for reduce-scatter: write to scratch buffer
     var tmp_buff = NDBuffer[dtype, 1, MutAnyOrigin](
         tmp_out,
-        rs_config.largest_part,
+        rs_config.rank_part(my_rank),
     )
 
     @always_inline
@@ -474,30 +472,49 @@ fn _allreduce_2stage_kernel[
     comptime simd_width = rs_config.simd_width
     comptime alignment = rs_config.alignment
 
+    # Ragged handling:
+    # When there are ragged elements (rs_config.remainder > 0), GPU-0 has the
+    # largest partition and GPU-(ngpus - 1) has the smallest partition
+    # (at most 1 SIMD vector smaller). When remainder == 0, all GPUs have
+    # equal partition sizes.
+
+    # Main loop - only process unragged elements (no bounds check)
     for idx in range(
-        rs_config.thr_local_start,
-        rs_config.largest_part,
+        rs_config.thr_local_start(global_tid),
+        rs_config.rank_part(ngpus - 1),
         rs_config.stride,
     ):
 
         @parameter
         for gpu_idx in range(ngpus):
-            var gather_from_rank = (my_rank + gpu_idx) % ngpus
+            var peer_rank = (my_rank + gpu_idx) % ngpus
 
-            # Handle edge cases for non-uniform partitions, where
-            # the final rank may have larger partition size.
-            if (gather_from_rank == (ngpus - 1)) or idx < rs_config.part:
-                var dst_idx = (gather_from_rank * rs_config.part) + idx
-                output_lambda[width=simd_width, alignment=alignment](
-                    result.get_nd_index(dst_idx),
-                    tmps[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[width=simd_width, alignment=alignment](idx),
-                )
+            var dst_idx = rs_config.rank_start(peer_rank) + idx
+            output_lambda[width=simd_width, alignment=alignment](
+                result.get_nd_index(dst_idx),
+                tmps[gpu_idx]
+                .address_space_cast[_target_address_space]()
+                .load[width=simd_width, alignment=alignment](idx),
+            )
+
+    # Ragged tail - max 1 simd vector per gpu, spread work between threads
+    if global_tid < ngpus:
+        var peer_rank = (my_rank + global_tid) % ngpus
+        if peer_rank < rs_config.remainder:
+            var idx = (
+                rs_config.rank_part(0) - simd_width
+            )  # last ragged simd_vector
+            var dst_idx = rs_config.rank_start(peer_rank) + idx
+            output_lambda[width=simd_width, alignment=alignment](
+                result.get_nd_index(dst_idx),
+                tmps[global_tid]
+                .address_space_cast[_target_address_space]()
+                .load[width=simd_width, alignment=alignment](idx),
+            )
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _allreduce_1stage_kernel[
     dtype: DType,
@@ -690,6 +707,9 @@ fn _allreduce_p2p[
             var num_simd_vectors_total = num_elements // simd_width
             var num_tiles_total = ceildiv(num_simd_vectors_total, tile_vectors)
 
+            if num_simd_vectors_total % tile_vectors != 0:
+                raise Error("Quickreduce allreduce requires full tiles")
+
             var grid_size = min(max_num_blocks, num_tiles_total)
 
             comptime kernel = allreduce_2stage_quickreduce[
@@ -749,7 +769,7 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -1070,7 +1090,7 @@ fn allreduce_2stage_quickreduce_tile[
         if thread_idx.x < UInt(ngpus):
             store_release(
                 flag_buf[thread_idx.x] + comm_flags0_offset + my_rank,
-                flag_color,
+                UInt32(flag_color),
             )
         # No additional barrier: the next phase waits on all flags and then
         # synchronizes the block.
@@ -1086,7 +1106,7 @@ fn allreduce_2stage_quickreduce_tile[
             for r in range(ngpus):
                 wait_for_flag(
                     flag_buf[my_rank] + comm_flags0_offset + r,
-                    flag_color,
+                    UInt32(flag_color),
                 )
         barrier()
 
@@ -1124,7 +1144,7 @@ fn allreduce_2stage_quickreduce_tile[
         if thread_idx.x < UInt(ngpus):
             store_release(
                 flag_buf[thread_idx.x] + comm_flags1_offset + my_rank,
-                flag_color,
+                UInt32(flag_color),
             )
         # No additional barrier: thread 0 will wait on all flags below and
         # a barrier after the wait will synchronize the block.
@@ -1135,7 +1155,7 @@ fn allreduce_2stage_quickreduce_tile[
             for r in range(ngpus):
                 wait_for_flag(
                     flag_buf[my_rank] + comm_flags1_offset + r,
-                    flag_color,
+                    UInt32(flag_color),
                 )
         barrier()
 
@@ -1160,7 +1180,7 @@ fn allreduce_2stage_quickreduce_tile[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn allreduce_2stage_quickreduce[
     dtype: DType,
