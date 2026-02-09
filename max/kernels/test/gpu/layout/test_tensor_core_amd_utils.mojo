@@ -135,7 +135,9 @@ fn _arange(tensor: LayoutTensor[mut=True, ...]):
 
             @parameter
             for j in range(tensor.shape[1]()):
-                tensor[i, j] = Scalar[tensor.dtype](Float32(0.1 * i + 0.2 * j))
+                tensor[i, j] = Scalar[tensor.dtype](
+                    Float32(0.1 * Float64(i) + 0.2 * Float64(j))
+                )
     else:
         constrained[False, "Unsupported dtype"]()
 

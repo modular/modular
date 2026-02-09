@@ -480,7 +480,7 @@ fn _allreduce_2stage_kernel[
 
     # Main loop - only process unragged elements (no bounds check)
     for idx in range(
-        rs_config.thr_local_start(global_tid),
+        rs_config.thr_local_start(UInt(global_tid)),
         rs_config.rank_part(ngpus - 1),
         rs_config.stride,
     ):
