@@ -1997,3 +1997,236 @@ class TestRandomUniformOp:
         result_np = np.from_dlpack(result)
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
+
+
+class TestShapeChangeOps:
+    """Tests for shape change operations (squeeze, unsqueeze, reshape variants).
+
+    These test the reshape semantics that SqueezeShapeOp, UnsqueezeShapeOp,
+    AddSingletonDimOp, SplitDimOp, and MergeDimOp implement. Since these ops
+    are emitted by MLIR lowering passes rather than the Python API directly,
+    we test through the Tensor API methods that produce equivalent reshapes.
+    """
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_squeeze_single_dim(self, dtype: DType) -> None:
+        """Test squeeze removes a size-1 dimension."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 1, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=1)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=1)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_squeeze_first_dim(self, dtype: DType) -> None:
+        """Test squeeze on the first dimension."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(1, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=0)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_squeeze_last_dim(self, dtype: DType) -> None:
+        """Test squeeze on the last dimension."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=-1)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=-1)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_unsqueeze_beginning(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension at the beginning."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=0)
+        assert result.shape == (1, 3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_unsqueeze_middle(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension in the middle."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=1)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=1)
+        assert result.shape == (3, 1, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_unsqueeze_end(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension at the end."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=-1)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=-1)
+        assert result.shape == (3, 4, 1)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reshape_split_dim(self, dtype: DType) -> None:
+        """Test reshape that splits a dimension (equivalent to SplitDimOp).
+
+        E.g., [12, 3] -> [3, 4, 3] splits dimension 0 into (3, 4).
+        """
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(36, dtype=np_dtype).reshape(12, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([3, 4, 3])
+
+        result = np.from_dlpack(y)
+        expected = x_np.reshape(3, 4, 3)
+        assert result.shape == (3, 4, 3)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reshape_merge_dims(self, dtype: DType) -> None:
+        """Test reshape that merges adjacent dimensions (equivalent to MergeDimOp).
+
+        E.g., [2, 3, 4] -> [6, 4] merges dimensions 0 and 1.
+        """
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(2, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([6, 4])
+
+        result = np.from_dlpack(y)
+        expected = x_np.reshape(6, 4)
+        assert result.shape == (6, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reshape_add_singleton(self, dtype: DType) -> None:
+        """Test reshape that adds a singleton dimension (equiv to AddSingletonDimOp).
+
+        E.g., [3, 4] -> [3, 1, 4] adds a dimension of size 1.
+        """
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([3, 1, 4])
+
+        result = np.from_dlpack(y)
+        expected = x_np.reshape(3, 1, 4)
+        assert result.shape == (3, 1, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_squeeze_then_unsqueeze_roundtrip(self) -> None:
+        """Test that squeeze then unsqueeze returns to original shape."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 1, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            squeezed = x.squeeze(axis=1)
+            unsqueezed = squeezed.unsqueeze(axis=1)
+
+        result = np.from_dlpack(unsqueezed)
+        assert result.shape == (3, 1, 4)
+        np.testing.assert_array_equal(result, x_np)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_squeeze_integer_types(self, dtype: DType) -> None:
+        """Test squeeze with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(6, dtype=np_dtype).reshape(1, 2, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=0)
+        assert result.shape == (2, 3)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_unsqueeze_integer_types(self, dtype: DType) -> None:
+        """Test unsqueeze with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(6, dtype=np_dtype).reshape(2, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=0)
+        assert result.shape == (1, 2, 3)
+        np.testing.assert_array_equal(result, expected)
