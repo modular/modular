@@ -40,7 +40,10 @@ from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
-from .lib.pipeline_variants.text_generation import TextGenerationPipeline
+from .lib.pipeline_variants.text_generation import (
+    TextGenerationPipeline,
+    TextGenerationPipelineInterface,
+)
 from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
@@ -89,6 +92,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
+    "TextGenerationPipelineInterface",
     "TextTokenizer",
     "download_weight_files",
     "upper_bounded_default",

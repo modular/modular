@@ -36,16 +36,14 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from peft.peft_model import PeftModel
 
 # Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
-from test_common import (
-    test_data,
-    torch_utils,
-)
+from test_common import test_data, torch_utils
 from test_common.torch_utils import MockTextGenerationRequest
 
 
@@ -84,7 +82,7 @@ class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
     pipeline: (
-        pipelines.TextGenerationPipeline[Any] | pipelines.EmbeddingsPipeline
+        TextGenerationPipelineInterface[Any] | pipelines.EmbeddingsPipeline
     )
     tokenizer: PipelineTokenizer[Any, Any, Any]
 
@@ -260,7 +258,7 @@ class InternVLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -365,7 +363,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -464,7 +462,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.6,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -565,7 +563,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.4,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -651,7 +649,7 @@ class PixtralPipelineOracle(PipelineOracle):
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -755,7 +753,8 @@ class GenericOracle(PipelineOracle):
         )
         assert isinstance(
             pipeline,
-            pipelines.TextGenerationPipeline | pipelines.EmbeddingsPipeline,
+            pipelines.TextGenerationPipelineInterface
+            | pipelines.EmbeddingsPipeline,
         )
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 

@@ -27,7 +27,7 @@ import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
-from max.driver import Accelerator, Buffer, load_devices
+from max.driver import Accelerator, Buffer, Device, load_devices
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
@@ -86,11 +86,22 @@ class BatchInfo:
     """Number of steps to do in the pipeline"""
 
 
-class TextGenerationPipeline(
+class TextGenerationPipelineInterface(
     Pipeline[
         TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
     ],
     GenerateMixin[TextGenerationContextType, TextGenerationRequest],
+    Generic[TextGenerationContextType],
+):
+    """Interface for text generation pipelines."""
+
+    # TODO: Get rid of these fields
+    _devices: list[Device]
+    _pipeline_model: PipelineModel[TextGenerationContextType]
+
+
+class TextGenerationPipeline(
+    TextGenerationPipelineInterface[TextGenerationContextType],
     Generic[TextGenerationContextType],
 ):
     """Generalized token generator pipeline."""
