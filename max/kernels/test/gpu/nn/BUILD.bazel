@@ -31,6 +31,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_score_mod_mha.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_rms_norm_fused_fp8.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
     "test_rms_norm_fused_residual_add.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

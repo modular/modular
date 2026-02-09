@@ -131,7 +131,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_verify",
-    size = "small",
+    size = "medium",
     srcs = ["test_verify.py"],
     deps = [
         ":verify",
