@@ -106,9 +106,9 @@ class EncoderAttention(Module[..., Tensor]):
         q = self.q_norm(q)
         k = self.k_norm(k)
 
-        # Qwen3/Llama3 use interleaved RoPE; apply via rope.forward (supports 3D [S, H, D])
-        q = rope(q)
-        k = rope(k)
+        # common_layers RotaryEmbedding.forward expects 4D (B, S, H, D); add batch dim
+        q = F.squeeze(rope(F.unsqueeze(q, 0)), 0)
+        k = F.squeeze(rope(F.unsqueeze(k, 0)), 0)
 
         # GQA: expand K, V if needed
         if self.n_kv_heads != self.n_heads:

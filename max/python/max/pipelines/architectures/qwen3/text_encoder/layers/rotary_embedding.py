@@ -13,19 +13,17 @@
 """The rope embedding used within the model."""
 
 import math
-from collections.abc import Iterable
-from functools import cached_property
 
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.graph import Dim
-from max.nn import Module
 from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
-from max.pipelines.architectures.gpt_oss.layers.rotary_embedding import RotaryEmbedding
+from max.pipelines.architectures.common_layers.rotary_embedding import (
+    RotaryEmbedding,
+)
 from max.tensor import Tensor
 
-__all__ = ["RotaryEmbedding", "Llama3RotaryEmbedding"]
+__all__ = ["Llama3RotaryEmbedding", "RotaryEmbedding"]
 
 
 class Llama3RotaryEmbedding(RotaryEmbedding):

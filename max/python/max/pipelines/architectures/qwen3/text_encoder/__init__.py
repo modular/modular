@@ -14,4 +14,3 @@
 """Qwen3 text encoder for diffusion pipelines."""
 
 from .model import Qwen3TextEncoderModel
-

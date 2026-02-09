@@ -24,8 +24,10 @@ from typing import Any
 from max import functional as F
 from max.driver import Device
 from max.graph.weights import Weights
+from max.pipelines.architectures.llama3.weight_adapters import (
+    LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
+)
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.architectures.llama3.weight_adapters import LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .model_config import Qwen3TextEncoderConfig

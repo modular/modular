@@ -117,7 +117,7 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            device=config.device,
+            device=config.device.to_device(),
             head_dim=config.head_dim,
         )
 
