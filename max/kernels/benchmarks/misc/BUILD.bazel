@@ -1,0 +1,66 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load(
+    "//bazel:api.bzl",
+    "mojo_binary",
+)
+
+package(default_visibility = ["//max:consumers"])
+
+_AMD_GPU_BENCHMARKS = [
+    "bench_pingpong_matmul.mojo",
+]
+
+_SM100_GPU_BENCHMARKS = [
+    "bench_compare_grouped_gemm.mojo",
+    "bench_grouped_block_scaled_gemm.mojo",
+]
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = ["//:amd_gpu"],
+        deps = [
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for src in _AMD_GPU_BENCHMARKS
+]
+
+[
+    build_test(
+        name = src + ".test",
+        tags = ["gpu"],
+        targets = [src.split(".")[0]],
+    )
+    for src in _AMD_GPU_BENCHMARKS
+]
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = ["//:b200_gpu"],
+        deps = [
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for src in _SM100_GPU_BENCHMARKS
+]
+
+[
+    build_test(
+        name = src + ".test",
+        tags = ["gpu"],
+        targets = [src.split(".")[0]],
+    )
+    for src in _SM100_GPU_BENCHMARKS
+]
