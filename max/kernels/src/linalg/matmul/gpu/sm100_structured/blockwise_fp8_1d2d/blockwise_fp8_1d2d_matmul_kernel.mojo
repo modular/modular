@@ -603,7 +603,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                                     UInt(ctx.m()),
                                     n_tile,
                                 ),
-                                k_iter=k_iter,
+                                k_iter=UInt(k_iter),
                                 problem_shape=StaticTuple[Int32, 3](
                                     Int32(0),
                                     Int32(Self.static_N),

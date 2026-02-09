@@ -157,14 +157,14 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     var output_cpu_buf = output_cpu_h
 
     # Strides for row-major layout
-    var x_dim_stride: UInt32 = total_seqlen
+    var x_dim_stride: UInt32 = UInt32(total_seqlen)
     var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = width
+    var weight_dim_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var out_dim_stride: UInt32 = total_seqlen
+    var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
-    var conv_states_batch_stride: UInt32 = dim * state_len
-    var conv_states_dim_stride: UInt32 = state_len
+    var conv_states_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_states_dim_stride: UInt32 = UInt32(state_len)
     var conv_states_width_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
@@ -738,16 +738,16 @@ fn run_varlen_causal_conv1d_update_gpu[
     var output_cpu_buf = output_cpu_h
 
     # Strides for row-major layout
-    var x_batch_stride: UInt32 = dim * seqlen
-    var x_dim_stride: UInt32 = seqlen
+    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var x_dim_stride: UInt32 = UInt32(seqlen)
     var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = width
+    var weight_dim_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var conv_state_batch_stride: UInt32 = dim * state_len
-    var conv_state_dim_stride: UInt32 = state_len
+    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_state_dim_stride: UInt32 = UInt32(state_len)
     var conv_state_seqlen_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = dim * seqlen
-    var out_dim_stride: UInt32 = seqlen
+    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var out_dim_stride: UInt32 = UInt32(seqlen)
     var out_seqlen_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"

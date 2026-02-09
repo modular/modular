@@ -508,7 +508,9 @@ fn rms_norm_fused_residual_gpu[
         attributes=pdl_launch_attributes(),
         shared_mem_bytes=shared_mem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            ctx.default_device_info.shared_memory_per_multiprocessor - 4096
+            UInt32(
+                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
+            )
         ),
     )
 

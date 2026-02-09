@@ -159,14 +159,14 @@ fn run_varlen_causal_conv1d_fwd[
     var output_ref_buf = output_ref_h
 
     # Strides for row-major layout
-    var x_dim_stride: UInt32 = total_seqlen
+    var x_dim_stride: UInt32 = UInt32(total_seqlen)
     var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = width
+    var weight_dim_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var out_dim_stride: UInt32 = total_seqlen
+    var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
-    var conv_states_batch_stride: UInt32 = dim * state_len
-    var conv_states_dim_stride: UInt32 = state_len
+    var conv_states_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_states_dim_stride: UInt32 = UInt32(state_len)
     var conv_states_width_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
@@ -238,13 +238,14 @@ fn run_varlen_causal_conv1d_fwd[
 
                     if input_l >= 0:
                         var x_offset = (
-                            d * x_dim_stride
-                            + (seq_start + input_l) * x_seqlen_stride
+                            UInt32(d) * x_dim_stride
+                            + UInt32((seq_start + input_l)) * x_seqlen_stride
                         )
                         input_val = x_buf.ptr.load(x_offset)
 
                     var weight_offset = (
-                        d * weight_dim_stride + w_idx * weight_width_stride
+                        UInt32(d) * weight_dim_stride
+                        + UInt32(w_idx) * weight_width_stride
                     )
                     var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
@@ -254,7 +255,8 @@ fn run_varlen_causal_conv1d_fwd[
                     out_val = silu_ref[dtype](out_val)
 
                 var out_offset = (
-                    d * out_dim_stride + (seq_start + l) * out_seqlen_stride
+                    UInt32(d) * out_dim_stride
+                    + UInt32((seq_start + l)) * out_seqlen_stride
                 )
                 output_ref_buf.ptr.store(out_offset, out_val)
 
@@ -380,16 +382,16 @@ fn run_varlen_causal_conv1d_update[
     var conv_state_ref_buf = conv_state_ref_h
 
     # Strides for row-major layout
-    var x_batch_stride: UInt32 = dim * seqlen
-    var x_dim_stride: UInt32 = seqlen
+    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var x_dim_stride: UInt32 = UInt32(seqlen)
     var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = width
+    var weight_dim_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var conv_state_batch_stride: UInt32 = dim * state_len
-    var conv_state_dim_stride: UInt32 = state_len
+    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_state_dim_stride: UInt32 = UInt32(state_len)
     var conv_state_seqlen_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = dim * seqlen
-    var out_dim_stride: UInt32 = seqlen
+    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var out_dim_stride: UInt32 = UInt32(seqlen)
     var out_seqlen_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
@@ -467,9 +469,10 @@ fn run_varlen_causal_conv1d_update[
 
                         if state_pos >= 0 and state_pos < state_len:
                             var state_offset = (
-                                state_batch_idx * conv_state_batch_stride
-                                + d * conv_state_dim_stride
-                                + state_pos * conv_state_seqlen_stride
+                                UInt32(state_batch_idx)
+                                * conv_state_batch_stride
+                                + UInt32(d) * conv_state_dim_stride
+                                + UInt32(state_pos) * conv_state_seqlen_stride
                             )
                             input_val = conv_state_ref_buf.ptr.load(
                                 state_offset
@@ -479,14 +482,15 @@ fn run_varlen_causal_conv1d_update[
                         var x_l = rel_pos + l
                         if x_l >= 0 and x_l < seqlen:
                             var x_offset = (
-                                b * x_batch_stride
-                                + d * x_dim_stride
-                                + x_l * x_seqlen_stride
+                                UInt32(b) * x_batch_stride
+                                + UInt32(d) * x_dim_stride
+                                + UInt32(x_l) * x_seqlen_stride
                             )
                             input_val = x_buf.ptr.load(x_offset)
 
                     var weight_offset = (
-                        d * weight_dim_stride + w_idx * weight_width_stride
+                        UInt32(d) * weight_dim_stride
+                        + UInt32(w_idx) * weight_width_stride
                     )
                     var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
@@ -496,9 +500,9 @@ fn run_varlen_causal_conv1d_update[
                     out_val = silu_ref[dtype](out_val)
 
                 var out_offset = (
-                    b * out_batch_stride
-                    + d * out_dim_stride
-                    + l * out_seqlen_stride
+                    UInt32(b) * out_batch_stride
+                    + UInt32(d) * out_dim_stride
+                    + UInt32(l) * out_seqlen_stride
                 )
                 output_ref_buf.ptr.store(out_offset, out_val)
 
@@ -506,7 +510,9 @@ fn run_varlen_causal_conv1d_update[
             # This matches the CPU implementation logic exactly
             for l in range(seqlen):
                 var x_offset = (
-                    b * x_batch_stride + d * x_dim_stride + l * x_seqlen_stride
+                    UInt32(b) * x_batch_stride
+                    + UInt32(d) * x_dim_stride
+                    + UInt32(l) * x_seqlen_stride
                 )
                 var x_val = x_buf.ptr.load(x_offset)
 
@@ -516,9 +522,9 @@ fn run_varlen_causal_conv1d_update[
                 state_pos = (cache_seqlen + l) % state_len
 
                 var state_offset = (
-                    state_batch_idx * conv_state_batch_stride
-                    + d * conv_state_dim_stride
-                    + state_pos * conv_state_seqlen_stride
+                    UInt32(state_batch_idx) * conv_state_batch_stride
+                    + UInt32(d) * conv_state_dim_stride
+                    + UInt32(state_pos) * conv_state_seqlen_stride
                 )
                 conv_state_ref_buf.ptr.store(state_offset, x_val)
 
@@ -612,10 +618,10 @@ fn run_varlen_causal_conv1d_states[
     var states_ref_buf = states_ref_h
 
     # Strides for row-major layout
-    var x_seqlen_stride: UInt32 = dim
+    var x_seqlen_stride: UInt32 = UInt32(dim)
     var x_dim_stride: UInt32 = 1
-    var states_batch_stride: UInt32 = dim * state_len
-    var states_dim_stride: UInt32 = state_len
+    var states_batch_stride: UInt32 = UInt32(dim * state_len)
+    var states_dim_stride: UInt32 = UInt32(state_len)
     var states_seqlen_stride: UInt32 = 1
 
     # Test kernel
@@ -653,11 +659,14 @@ fn run_varlen_causal_conv1d_states[
             var states_seq_idx = state_len - num_elements + i
 
             for d in range(dim):
-                var x_offset = x_seq_idx * x_seqlen_stride + d * x_dim_stride
+                var x_offset = (
+                    UInt32(x_seq_idx) * x_seqlen_stride
+                    + UInt32(d) * x_dim_stride
+                )
                 var states_offset = (
-                    b * states_batch_stride
-                    + d * states_dim_stride
-                    + states_seq_idx * states_seqlen_stride
+                    UInt32(b) * states_batch_stride
+                    + UInt32(d) * states_dim_stride
+                    + UInt32(states_seq_idx) * states_seqlen_stride
                 )
                 var val = x_buf.ptr.load(x_offset)
                 states_ref_buf.ptr.store(states_offset, val)
