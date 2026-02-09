@@ -33,7 +33,7 @@ fn _current_target() -> _TargetType:
 
 
 struct CompilationTarget[value: _TargetType = _current_target()](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     """A struct that provides information about a target architecture.
 
@@ -702,7 +702,7 @@ fn _is_amd_mi355x() -> Bool:
 
 @always_inline("nodebug")
 fn _cdna_version() -> Int:
-    __comptime_assert (
+    comptime assert (
         _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
@@ -997,7 +997,7 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn bit_width_of[
-    type: TrivialRegisterType, target: _TargetType = _current_target()
+    type: TrivialRegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1028,7 +1028,7 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn simd_width_of[
-    type: TrivialRegisterType, target: _TargetType = _current_target()
+    type: TrivialRegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -1099,7 +1099,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         The version triple of macOS.
     """
 
-    __comptime_assert (
+    comptime assert (
         CompilationTarget.is_macos()
     ), "the operating system must be macOS"
 

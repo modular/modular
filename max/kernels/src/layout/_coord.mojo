@@ -27,7 +27,7 @@ from sys.intrinsics import _type_is_eq_parse_time
 
 
 trait CoordLike(
-    Defaultable, ImplicitlyCopyable, Representable, TrivialRegisterType
+    Defaultable, ImplicitlyCopyable, Representable, TrivialRegisterPassable
 ):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
@@ -81,7 +81,7 @@ trait CoordLike(
         ...
 
 
-struct ComptimeInt[val: Int](CoordLike, TrivialRegisterType):
+struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     """Compile-time known index value.
 
     Parameters:
@@ -125,7 +125,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterType):
         return rebind[Coord[*Self.VariadicType]](self)
 
 
-struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterType):
+struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     """Runtime index value with configurable precision.
 
     Parameters:
@@ -375,7 +375,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
                     elt_is_mutable = type_of(storage).elt_is_mutable,
                     origin = type_of(storage).origin,
                     type_of(storage).is_owned,
-                    TrivialRegisterType,
+                    TrivialRegisterPassable,
                     *Self.element_types,
                 ]
             ](storage^)
@@ -482,7 +482,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         Returns:
             The inner product of the two values.
         """
-        __comptime_assert Self.__len__() == Coord[*other_types].__len__(), (
+        comptime assert Self.__len__() == Coord[*other_types].__len__(), (
             "Length of Coord ("
             + String(Self.__len__())
             + ") and Coord[*other_types] ("
@@ -520,7 +520,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """Check if this tuple's elements are equal to the other tuple's elements.
         """
 
-        __comptime_assert Self.__len__() == Coord[*other_types].__len__(), (
+        comptime assert Self.__len__() == Coord[*other_types].__len__(), (
             "Length of Coord ("
             + String(Self.__len__())
             + ") and Coord[*other_types] ("
@@ -624,7 +624,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         # For the test cases in test_mixed_layout (which are all non-nested), this works
         # Deep nesting like Coord(A, Coord(B, Coord(C))) is not yet supported
 
-        __comptime_assert flat_size == Self.__len__(), (
+        comptime assert flat_size == Self.__len__(), (
             "flatten() currently only supports non-nested Coords -"
             " nested tuple flattening not yet implemented"
         )
@@ -1391,8 +1391,8 @@ Example:
 """
 
 
-struct _RegTuple[*element_types: TrivialRegisterType](
-    ImplicitlyCopyable, Sized, TrivialRegisterType
+struct _RegTuple[*element_types: TrivialRegisterPassable](
+    ImplicitlyCopyable, Sized, TrivialRegisterPassable
 ):
     """
     A temporary internal type to represent a Tuple where
@@ -1402,7 +1402,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        Variadic.TypesOfTrait[TrivialRegisterType],
+        Variadic.TypesOfTrait[TrivialRegisterPassable],
         Self.element_types,
         `>`,
     ]
@@ -1431,7 +1431,9 @@ struct _RegTuple[*element_types: TrivialRegisterType](
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, TrivialRegisterType, *Self.element_types],
+        var storage: VariadicPack[
+            _, TrivialRegisterPassable, *Self.element_types
+        ],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -1494,7 +1496,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline("nodebug")
     fn __init__[
-        *elt_types: TrivialRegisterType & Defaultable
+        *elt_types: TrivialRegisterPassable & Defaultable
     ](out self: _RegTuple[*elt_types]):
         """Construct a tuple with default-initialized elements.
 
@@ -1513,8 +1515,12 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn __eq__[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Equatable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Equatable
+        ],
+        other_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Equatable
+        ],
     ](
         self: _RegTuple[*self_elt_types], other: _RegTuple[*other_elt_types]
     ) -> Bool:
@@ -1544,7 +1550,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
         for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[
+            comptime assert _type_is_eq[
                 self_type, other_type
             ](), "Tuple elements must be of the same type to compare."
             if self[i] != rebind[self_type](other[i]):
@@ -1553,8 +1559,12 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn __ne__[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Equatable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Equatable
+        ],
+        other_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Equatable
+        ],
     ](
         self: _RegTuple[*self_elt_types], other: _RegTuple[*other_elt_types]
     ) -> Bool:
@@ -1575,9 +1585,11 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn _compare[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Comparable
+        ],
         other_elt_types: Variadic.TypesOfTrait[
-            TrivialRegisterType & Comparable
+            TrivialRegisterPassable & Comparable
         ],
     ](
         self: _RegTuple[*self_elt_types], other: _RegTuple[*other_elt_types]
@@ -1595,7 +1607,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
         for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[self_type, other_type](), String(
+            comptime assert _type_is_eq[self_type, other_type](), String(
                 "Mismatch between tuple elements at index ",
                 i,
                 " must be of the same type to compare.",
@@ -1615,9 +1627,11 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn __lt__[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Comparable
+        ],
         other_elt_types: Variadic.TypesOfTrait[
-            TrivialRegisterType & Comparable
+            TrivialRegisterPassable & Comparable
         ],
         //,
     ](
@@ -1639,9 +1653,11 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn __le__[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Comparable
+        ],
         other_elt_types: Variadic.TypesOfTrait[
-            TrivialRegisterType & Comparable
+            TrivialRegisterPassable & Comparable
         ],
         //,
     ](
@@ -1663,9 +1679,11 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn __gt__[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Comparable
+        ],
         other_elt_types: Variadic.TypesOfTrait[
-            TrivialRegisterType & Comparable
+            TrivialRegisterPassable & Comparable
         ],
         //,
     ](
@@ -1689,9 +1707,11 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline
     fn __ge__[
-        self_elt_types: Variadic.TypesOfTrait[TrivialRegisterType & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[
+            TrivialRegisterPassable & Comparable
+        ],
         other_elt_types: Variadic.TypesOfTrait[
-            TrivialRegisterType & Comparable
+            TrivialRegisterPassable & Comparable
         ],
         //,
     ](
@@ -1745,7 +1765,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
 
     @always_inline("nodebug")
     fn concat[
-        *other_element_types: TrivialRegisterType
+        *other_element_types: TrivialRegisterPassable
     ](
         self,
         other: _RegTuple[*other_element_types],

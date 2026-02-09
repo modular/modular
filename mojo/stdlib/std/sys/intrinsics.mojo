@@ -257,7 +257,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(TrivialRegisterType):
+struct PrefetchLocality(TrivialRegisterPassable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -287,7 +287,7 @@ struct PrefetchLocality(TrivialRegisterType):
         self.value = Int32(value)
 
 
-struct PrefetchRW(TrivialRegisterType):
+struct PrefetchRW(TrivialRegisterPassable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -321,7 +321,7 @@ struct PrefetchRW(TrivialRegisterType):
 
 
 # LLVM prefetch cache type
-struct PrefetchCache(TrivialRegisterType):
+struct PrefetchCache(TrivialRegisterPassable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -342,7 +342,7 @@ struct PrefetchCache(TrivialRegisterType):
         self.value = Int32(value)
 
 
-struct PrefetchOptions(Defaultable, TrivialRegisterType):
+struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -486,7 +486,7 @@ fn prefetch[
       addr: The data pointer to prefetch.
     """
 
-    __comptime_assert (
+    comptime assert (
         params.rw == PrefetchRW.READ or type_of(addr).mut == True
     ), "prefetch pointer mutability must match the prefetch read-write option"
 
@@ -818,7 +818,7 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
+struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
 
     var _mlir_value: Self._mlir_type
@@ -844,7 +844,7 @@ struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
+fn expect[T: TrivialRegisterPassable, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 
@@ -941,9 +941,7 @@ fn implicitarg_ptr(
     Returns:
         A pointer to LLVM's implicit arguments table.
     """
-    __comptime_assert (
-        is_amd_gpu()
-    ), "This intrinsic is only defined for AMD GPUs"
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     result = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
         type_of(result),
@@ -966,9 +964,7 @@ fn readfirstlane(value: Int32) -> Int32:
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    __comptime_assert (
-        is_amd_gpu()
-    ), "This intrinsic is only defined for AMD GPUs"
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
@@ -984,9 +980,7 @@ fn readfirstlane(value: UnsafePointer) -> type_of(value):
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    __comptime_assert (
-        is_amd_gpu()
-    ), "This intrinsic is only defined for AMD GPUs"
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
@@ -1003,9 +997,7 @@ fn readfirstlane(value: Int) -> type_of(value):
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    __comptime_assert (
-        is_amd_gpu()
-    ), "This intrinsic is only defined for AMD GPUs"
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
@@ -1026,9 +1018,7 @@ fn sendmsg(opcode: Int32, msg: Int32):
         opcode: The operation to perform.
         msg: The message to send.
     """
-    __comptime_assert (
-        is_amd_gpu()
-    ), "This intrinsic is only defined for AMD GPUs"
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
         opcode, msg
     )
@@ -1055,10 +1045,8 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     Returns:
         A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
     """
-    __comptime_assert (
-        is_amd_gpu()
-    ), "This intrinsic is only defined for AMD GPUs"
-    __comptime_assert (
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
+    comptime assert (
         dtype == DType.int32 or dtype == DType.int64
     ), "This intrinsic is only defined for i32 or i64"
     return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

@@ -74,8 +74,8 @@ fn bench_reduce[
     max_num_blocks: Optional[Int],
     ragged: Bool,
 ) raises:
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
@@ -249,15 +249,12 @@ fn bench_reduce[
                 )
             # Run allreduce
             comptime allreduce_kernel = vendor_ccl.allreduce if use_vendor_ccl else allreduce
-            # For multimem, all GPUs share the same multicast buffer (in_bufs[0]).
-            # For non-multimem, each GPU uses its own input buffer (in_bufs[ctx_idx]).
-            var input_idx = 0 if use_multimem else ctx_idx
             allreduce_kernel[
                 ngpus=ngpus,
                 use_multimem=use_multimem,
                 use_quickreduce=use_quickreduce,
             ](
-                in_bufs[input_idx],
+                in_bufs,
                 out_bufs[ctx_idx],
                 rank_sigs,
                 ctx_inner,
@@ -275,10 +272,10 @@ fn bench_reduce[
     b.dump_report()
 
     var max_time = b.info_vec[0].result.mean(unit="ms")
-    var gbps = num_bytes / (max_time * 1000 * 1000)
+    var gbps = Float64(num_bytes) / (max_time * 1000 * 1000)
     # algbw and busbw are explain in the following link:
     # https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md#allreduce
-    var busbw = 2 * gbps * (ngpus - 1) / ngpus
+    var busbw = 2 * gbps * Float64((ngpus - 1)) / Float64(ngpus)
     print(
         "|",
         name,

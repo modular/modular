@@ -223,14 +223,14 @@ def execute_fused_qk_rope_ragged(
     var true_ce_offset = 0
     var mixed_ce_offset = 0
     for i in range(batch_size):
-        true_ce_row_offsets_host_ptr[i] = true_ce_offset
-        mixed_ce_row_offsets_host_ptr[i] = mixed_ce_offset
-        true_ce_cache_lengths_host_ptr[i] = true_ce_cache_lens[i]
-        mixed_ce_cache_lengths_host_ptr[i] = mixed_ce_cache_lens[i]
+        true_ce_row_offsets_host_ptr[i] = UInt32(true_ce_offset)
+        mixed_ce_row_offsets_host_ptr[i] = UInt32(mixed_ce_offset)
+        true_ce_cache_lengths_host_ptr[i] = UInt32(true_ce_cache_lens[i])
+        mixed_ce_cache_lengths_host_ptr[i] = UInt32(mixed_ce_cache_lens[i])
         true_ce_offset += true_ce_prompt_lens[i]
         mixed_ce_offset += mixed_ce_prompt_lens[i]
-    true_ce_row_offsets_host_ptr[batch_size] = true_ce_offset
-    mixed_ce_row_offsets_host_ptr[batch_size] = mixed_ce_offset
+    true_ce_row_offsets_host_ptr[batch_size] = UInt32(true_ce_offset)
+    mixed_ce_row_offsets_host_ptr[batch_size] = UInt32(mixed_ce_offset)
 
     ctx.enqueue_copy(true_ce_row_offsets_device, true_ce_row_offsets_host_ptr)
     ctx.enqueue_copy(mixed_ce_row_offsets_device, mixed_ce_row_offsets_host_ptr)
@@ -313,7 +313,7 @@ def execute_fused_qk_rope_ragged(
                 while randval in paged_lut_set:
                     randval = Int(random_ui64(0, num_paged_blocks - 1))
                 paged_lut_set.add(randval)
-                paged_lut_tensor[bs, block_idx] = randval
+                paged_lut_tensor[bs, block_idx] = UInt32(randval)
 
     # Create layout tensors for GPU operations
     var true_ce_row_offsets_tensor = LayoutTensor[
@@ -378,8 +378,8 @@ def execute_fused_qk_rope_ragged(
         ),
         true_ce_cache_lengths_tensor,
         paged_lut_tensor,
-        true_ce_max_prompt_length,
-        true_ce_max_cache_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_cache_length),
     )
 
     var mixed_ce_k_cache_collection = PagedKVCacheCollection[
@@ -394,8 +394,8 @@ def execute_fused_qk_rope_ragged(
         ),
         mixed_ce_cache_lengths_tensor,
         paged_lut_tensor,
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_cache_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_cache_length),
     )
 
     # "true CE" execution
@@ -408,7 +408,7 @@ def execute_fused_qk_rope_ragged(
         true_ce_k_cache_collection,
         freqs_tensor,
         None,
-        layer_idx,
+        UInt32(layer_idx),
         output=true_ce_output_tensor,
         context=ctx,
     )
@@ -423,7 +423,7 @@ def execute_fused_qk_rope_ragged(
         mixed_ce_k_cache_collection,
         freqs_tensor,
         None,
-        layer_idx,
+        UInt32(layer_idx),
         output=mixed_ce_output_tensor,
         context=ctx,
     )
@@ -514,8 +514,8 @@ def execute_fused_qk_rope_ragged(
             paged_lut_host_tensor.ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
-        true_ce_max_prompt_length,
-        true_ce_max_cache_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_cache_length),
     )
     var true_ce_k_cache = true_ce_k_cache_collection_host.get_key_cache(
         layer_idx
@@ -541,8 +541,8 @@ def execute_fused_qk_rope_ragged(
             paged_lut_host_tensor.ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_cache_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_cache_length),
     )
     var mixed_ce_k_cache = mixed_ce_k_cache_collection_host.get_key_cache(
         layer_idx
@@ -914,8 +914,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         ),
         cache_lengths_tensor,
         paged_lut_tensor,
-        max_prompt_length,
-        max_cache_length,
+        UInt32(max_prompt_length),
+        UInt32(max_cache_length),
     )
 
     var k_cache_collection_64 = PagedKVCacheCollection[
@@ -930,8 +930,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         ),
         cache_lengths_tensor,
         paged_lut_tensor,
-        max_prompt_length,
-        max_cache_length,
+        UInt32(max_prompt_length),
+        UInt32(max_cache_length),
     )
 
     fused_qk_rope_ragged[

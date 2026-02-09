@@ -22,6 +22,7 @@ from sys import (
 )
 from sys.info import has_amd_gpu_accelerator
 
+from layout._tile_tensor import TileTensor
 import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -82,6 +83,25 @@ comptime epilogue_func_type = fn[
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
+fn _row_major_shapes_to_strides[shapes_dim: DimList]() -> DimList:
+    """Compute the strides for a 3D shape. Assuming row-major layout."""
+
+    @parameter
+    if shapes_dim.has_value[2]():
+
+        @parameter
+        if shapes_dim.has_value[1]():
+            return DimList(
+                shapes_dim.get[1]() * shapes_dim.get[2](),
+                shapes_dim.get[2](),
+                1,
+            )
+        else:
+            return DimList(Dim(), shapes_dim.get[2](), 1)
+    else:
+        return DimList(Dim(), Dim(), 1)
+
+
 @always_inline
 @parameter
 fn elementwise_epilogue_fn[
@@ -119,6 +139,16 @@ fn bench_bmm[
     ) if transpose_b else DimList(to_dim[B], to_dim[K], to_dim[N])
     comptime batch_static_c_shape = DimList(to_dim[B], to_dim[M], to_dim[N])
 
+    comptime batch_static_a_strides = _row_major_shapes_to_strides[
+        batch_static_a_shape
+    ]()
+    comptime batch_static_b_strides = _row_major_shapes_to_strides[
+        batch_static_b_shape
+    ]()
+    comptime batch_static_c_strides = _row_major_shapes_to_strides[
+        batch_static_c_shape
+    ]()
+
     comptime static_a_shape = DimList(to_dim[M], to_dim[K])
     comptime static_b_shape = DimList(
         to_dim[N], to_dim[K]
@@ -151,15 +181,15 @@ fn bench_bmm[
     var b_device_buffer = ctx.enqueue_create_buffer[dtype](b_size)
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_a_shape, _](
-        a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape
-    )
-    var b_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_b_shape, _](
-        b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape
-    )
-    var c_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_c_shape, _](
-        c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape
-    )
+    var a_device = NDBuffer[
+        dtype, 3, MutAnyOrigin, batch_static_a_shape, batch_static_a_strides
+    ](a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape)
+    var b_device = NDBuffer[
+        dtype, 3, MutAnyOrigin, batch_static_b_shape, batch_static_b_strides
+    ](b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape)
+    var c_device = NDBuffer[
+        dtype, 3, MutAnyOrigin, batch_static_c_shape, batch_static_c_strides
+    ](c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape)
 
     # Initialize data on the device
     init_vector_launch[dtype](a_device_buffer, a_size, init_type, ctx)
@@ -271,10 +301,18 @@ fn bench_bmm[
                     _batched_matmul_gpu[
                         transpose_b=transpose_b,
                         elementwise_epilogue_fn=epilogue_fn,
-                    ](c_device, a_device, b_device, ctx)
+                    ](
+                        TileTensor(c_device),
+                        TileTensor(a_device),
+                        TileTensor(b_device),
+                        ctx,
+                    )
                 else:
                     _batched_matmul_gpu[transpose_b=transpose_b](
-                        c_device, a_device, b_device, ctx
+                        TileTensor(c_device),
+                        TileTensor(a_device),
+                        TileTensor(b_device),
+                        ctx,
                     )
 
         bench.iter_custom[kernel_launch](ctx)

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_char, external_call
+from ffi import c_char, external_call
 
 from .pwd import Passwd
 
@@ -20,7 +20,7 @@ comptime gid_t = Int32
 comptime char = UnsafePointer[c_char, MutExternalOrigin]
 
 
-struct _C_Passwd(TrivialRegisterType):
+struct _C_Passwd(TrivialRegisterPassable):
     var pw_name: char
     var pw_passwd: char
     var pw_uid: uid_t

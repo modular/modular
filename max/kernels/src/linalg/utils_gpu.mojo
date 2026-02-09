@@ -21,7 +21,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from sys.ffi import external_call
+from ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.primitives.grid_controls import PDLLevel
@@ -102,7 +102,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterType, Writable):
+](Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -334,7 +334,7 @@ fn _shared_memory_usage[
 @fieldwise_init
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.

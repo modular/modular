@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call
+from ffi import external_call
 from gpu.host.device_context import _ConstCharPtr, _checked, _DeviceContextPtr
 
 

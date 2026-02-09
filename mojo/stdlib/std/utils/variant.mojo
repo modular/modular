@@ -315,7 +315,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     @always_inline("nodebug")
     fn _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
-        __comptime_assert idx != Self._sentinel, "not a union element type"
+        comptime assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.bitcast`[
             _type = UnsafePointer[T, origin_of(self)]._mlir_type,

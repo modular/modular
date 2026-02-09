@@ -89,7 +89,10 @@ fn test_simd_f32_to_e2m1_ptx_kernel[
 
         @parameter
         for shift in range(0, bit_width_of[DType.uint32](), FP4_E2M1_WIDTH):
-            var x = (x_casted.to_bits() >> shift) & FP4_E2M1_MASK
+            comptime BitsType = type_of(x_casted.to_bits())
+            var x = (x_casted.to_bits() >> BitsType(shift)) & BitsType(
+                FP4_E2M1_MASK
+            )
             print(E2M1_TO_FLOAT32[Int(x)], end=" ")
         print("")
 

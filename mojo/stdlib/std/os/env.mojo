@@ -19,8 +19,8 @@ from os import setenv
 ```
 """
 
-from sys import CompilationTarget, external_call
-from sys.ffi import c_int
+from ffi import c_int, external_call
+from sys import CompilationTarget
 
 
 fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:

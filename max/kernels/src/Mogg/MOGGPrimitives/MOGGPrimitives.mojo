@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of, align_of
+from ffi import external_call
+from sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -57,7 +58,7 @@ fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
 # just create a C++ function for it. For the time being, this is safe because of
 # the `constrained` and `static_assert` we added to ensure the type has the
 # right byte size.
-struct StateContext(TrivialRegisterType):
+struct StateContext(TrivialRegisterPassable):
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
     This is currently meant as a mojo-side container for GML::StateContext."""
 
@@ -69,7 +70,7 @@ struct StateContext(TrivialRegisterType):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
-        __comptime_assert size_of[StateContext]() == 16, (
+        comptime assert size_of[StateContext]() == 16, (
             "Expecting StateContext to be 16 bytes wide, to match the C++"
             " equivalent"
         )
@@ -175,7 +176,7 @@ fn create_non_tracked_tensor_async[
     buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
@@ -239,7 +240,7 @@ fn create_tensor_async[
 ):
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
@@ -379,7 +380,7 @@ fn unpack_tensor[
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     var shapes = IndexList[buffer_rank]()
@@ -459,13 +460,13 @@ fn mgp_tensor_create[
     @parameter
     if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
-        __comptime_assert buffer_rank == 1
+        comptime assert buffer_rank == 1
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
-        __comptime_assert spec_rank == buffer_rank
+        comptime assert spec_rank == buffer_rank
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
@@ -483,10 +484,10 @@ fn mgp_tensor_extract_tensor_spec[
 ]:
     @parameter
     if tensor_rank == 0:
-        __comptime_assert buffer_rank == 1
+        comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
-        __comptime_assert buffer_rank == tensor_rank
+        comptime assert buffer_rank == tensor_rank
         return rebind[IndexList[tensor_rank]](
             buffer.dynamic_shape.canonicalize()
         )
@@ -837,7 +838,7 @@ fn mgp_tensor_spec_create[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
-    __comptime_assert axis < UInt64(
+    comptime assert axis < UInt64(
         spec_rank
     ), "axis for get_dim must be less than rank of TensorSpec"
     return spec[Int(axis)]
@@ -1080,7 +1081,7 @@ fn reshape_contiguous_buffer[
 fn get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType], target: StaticString
 ]() -> Int:
-    __comptime_assert dtypes.size > 0
+    comptime assert dtypes.size > 0
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 
@@ -1320,7 +1321,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
 
-struct MyIntReg(TrivialRegisterType):
+struct MyIntReg(TrivialRegisterPassable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1333,8 +1334,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
 
-@register_passable
-struct MyIntReg2(ImplicitlyCopyable):
+struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1517,20 +1517,8 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     return
 
 
-@register_internal("mogg.async.pack.borrow")
 @no_inline
-fn mogg_async_pack_borrow(
-    borrower: AnyAsyncValueRefPtr, borrowee: TensorBufferRefPtr
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-    external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
-
-
-@no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     buffer_rank: Int,
     dtype: DType,
     //,
@@ -1564,7 +1552,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     spec_rank: Int,  # unused
     is_tensor: Bool,  # unused
 ](

@@ -78,7 +78,7 @@ struct Bool(
     Intable,
     Representable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """The primitive Bool scalar value used in Mojo."""

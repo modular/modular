@@ -228,6 +228,7 @@ class FusedSamplingProcessor:
         self.step_counter = 0
 
     def __call__(self, inputs: BatchProcessorInputs) -> None:
+        """Processes the batch logits and updates generated tokens and seed."""
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
 
@@ -284,7 +285,8 @@ def _build_token_frequency_csr(
     device: Device,
     include_prompt: bool = False,
 ) -> FrequencyData:
-    """Build a CSR matrix of token frequency in the batch.
+    """Builds a CSR matrix of token frequency in the batch.
+
     The original matrix is (batch_size, vocab_size), where each element is
     the number of times a token appears in the batch.
 

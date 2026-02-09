@@ -41,7 +41,7 @@ def test_external_cubin_vec_add(ctx: DeviceContext):
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):
-            in0_host[i] = i
+            in0_host[i] = Float32(i)
             in1_host[i] = 1
 
     ctx.enqueue_function(
@@ -58,7 +58,7 @@ def test_external_cubin_vec_add(ctx: DeviceContext):
 
     with out.map_to_host() as out_host:
         for i in range(length):
-            assert_equal(out_host[i], i + 1)
+            assert_equal(out_host[i], Float32(i + 1))
 
 
 def main():

@@ -38,7 +38,7 @@ struct Dim(
     Indexer,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A static or dynamic dimension modeled with an optional integer.
@@ -285,7 +285,9 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
+struct DimList(
+    Representable, Sized, Stringable, TrivialRegisterPassable, Writable
+):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -449,7 +451,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             The static dimension value at the specified index.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i].get()
 
     @always_inline("nodebug")
@@ -462,7 +464,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             The dimension at the specified index.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i]
 
     @always_inline("nodebug")
@@ -475,7 +477,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             Whether the specified dimension has a static value.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
 
     @always_inline
@@ -628,7 +630,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             A list of all dynamic dimension values.
         """
-        __comptime_assert length > 0, "length must be positive"
+        comptime assert length > 0, "length must be positive"
 
         return Self(
             VariadicList[Dim](

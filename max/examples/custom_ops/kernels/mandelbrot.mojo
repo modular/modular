@@ -52,12 +52,12 @@ struct Mandelbrot:
             # Calculate the complex C corresponding to that grid location.
             var cx = (
                 min_x.cast[float_dtype]()
-                + (col + iota[float_dtype, width]())
+                + (Float32(col) + iota[float_dtype, width]())
                 * scale_x.cast[float_dtype]()
             )
-            var cy = min_y.cast[float_dtype]() + row * SIMD[float_dtype, width](
-                scale_y.cast[float_dtype]()
-            )
+            var cy = min_y.cast[float_dtype]() + Float32(row) * SIMD[
+                float_dtype, width
+            ](scale_y.cast[float_dtype]())
             var c = ComplexSIMD[float_dtype, width](cx, cy)
             var z = ComplexSIMD[float_dtype, width](0, 0)
 

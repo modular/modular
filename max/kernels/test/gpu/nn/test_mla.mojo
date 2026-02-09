@@ -79,8 +79,8 @@ fn test[
         mask_rank,
     )
 
-    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
-    __comptime_assert (
+    comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    comptime assert (
         against_gpu_naive or mask_rank == 3
     ), "Testing against cpu requires mask of rank 3."
 
@@ -110,17 +110,21 @@ fn test[
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
-                    q_ptr[(i * num_heads + h) * depth + j] = i * depth + j
+                    q_ptr[(i * num_heads + h) * depth + j] = Scalar[qkv_type](
+                        i * depth + j
+                    )
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
-                    k_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+                    k_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
+                        qkv_type
+                    ](i * depth + j)
 
         @parameter
         if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
-                    mask_ptr[i * num_keys + j] = (
+                    mask_ptr[i * num_keys + j] = Scalar[mask_type](
                         (seq_len - i) * num_keys + num_keys - j
                     )
         else:
@@ -128,7 +132,7 @@ fn test[
                 var mask_head_ptr = mask_ptr + h * seq_len * num_keys
                 for i in range(seq_len):
                     for j in range(num_keys):
-                        mask_head_ptr[i * num_keys + j] = (
+                        mask_head_ptr[i * num_keys + j] = Scalar[mask_type](
                             (seq_len - i) * num_keys + num_keys - j
                         )
 
@@ -173,7 +177,7 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        __comptime_assert (
+        comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
@@ -465,10 +469,10 @@ fn test_prefill[
     var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
     var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
     for i in range(batch_size):
-        input_row_offsets[i] = i * seq_len
-        cache_row_offsets[i] = i * num_keys
-    input_row_offsets[batch_size] = batch_size * seq_len
-    cache_row_offsets[batch_size] = batch_size * num_keys
+        input_row_offsets[i] = UInt32(i * seq_len)
+        cache_row_offsets[i] = UInt32(i * num_keys)
+    input_row_offsets[batch_size] = UInt32(batch_size * seq_len)
+    cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
 
     # ragged inputs
     var q = LayoutTensor[qkv_type, Layout.row_major[3]()](
@@ -592,7 +596,7 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank](
+        flare_mla_prefill[rank = q.rank, use_fa4=True](
             output_device,
             q_device,
             k_device,
@@ -620,11 +624,13 @@ fn test_prefill[
         var sectime = nstime / 1000000
 
         var tflops = (
-            2
-            * batch_size
-            * num_heads
-            * ((-seq_len * seq_len + 2 * seq_len * num_keys))
-            * (depth + kv_depth)
+            Float64(
+                2
+                * batch_size
+                * num_heads
+                * ((-seq_len * seq_len + 2 * seq_len * num_keys))
+                * (depth + kv_depth)
+            )
             / sectime
             / 1e9
         )

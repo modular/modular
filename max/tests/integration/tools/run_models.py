@@ -32,12 +32,7 @@ from create_pipelines import (
 from max import driver, pipelines
 from max.interfaces import PipelineTask
 from max.pipelines.lib.hf_utils import HuggingFaceRepo
-from test_common import (
-    evaluate,
-    evaluate_embeddings,
-    torch_utils,
-    vllm_utils,
-)
+from test_common import evaluate, evaluate_embeddings, torch_utils, vllm_utils
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
 
@@ -208,7 +203,7 @@ def run_max_model(
     if task == PipelineTask.TEXT_GENERATION:
         assert isinstance(
             max_pipeline_and_tokenizer.pipeline,
-            pipelines.TextGenerationPipeline,
+            pipelines.TextGenerationPipelineInterface,
         )
         results = evaluate.run_model(
             max_pipeline_and_tokenizer.pipeline,
@@ -318,6 +313,7 @@ def run_vllm_model(
             encoding_name=vllm_pipeline.encoding,
             trust_remote_code=vllm_pipeline.trust_remote_code,
             max_batch_size=max_batch_size,
+            tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
         )
     else:
         raise NotImplementedError(

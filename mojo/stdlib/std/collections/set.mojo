@@ -130,8 +130,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         if len(self) != len(other):
             return False
-        for e in self:
-            if e not in other:
+        # Iterate over dict entries directly to reuse cached hash values,
+        # avoiding redundant hash recomputation for each lookup in `other`.
+        for entry in self._data.items():
+            if not other._data._find_index(entry.hash, entry.key)[0]:
                 return False
         return True
 

@@ -16,8 +16,8 @@ from math import fma
 from memory import alloc
 from os import abort
 from sys import CompilationTarget, simd_width_of
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import _Global, OwnedDLHandle
 
 from algorithm import elementwise, vectorize
 from algorithm.functional import (
@@ -97,7 +97,7 @@ fn _init_dylib() -> OwnedDLHandle:
 fn _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
-    __comptime_assert (
+    comptime assert (
         CompilationTarget.is_macos()
     ), "operating system must be macOS"
     return _ffi_get_dylib_function[
@@ -144,14 +144,14 @@ fn use_apple_accelerate_lib[
 
 
 @fieldwise_init
-struct _CBLASOrder(TrivialRegisterType):
+struct _CBLASOrder(TrivialRegisterPassable):
     var value: Int32
     comptime ROW_MAJOR = _CBLASOrder(101)
     comptime COL_MAJOR = _CBLASOrder(102)
 
 
 @fieldwise_init
-struct _CBLASTranspose(TrivialRegisterType):
+struct _CBLASTranspose(TrivialRegisterPassable):
     var value: Int32
     comptime NO_TRANSPOSE = _CBLASTranspose(111)
     comptime TRANSPOSE = _CBLASTranspose(112)

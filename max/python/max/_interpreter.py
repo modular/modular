@@ -24,10 +24,8 @@ using NumPy or by calling into Mojo kernels.
 
 Example usage:
     from max._interpreter import MOInterpreter
-    from max import driver
 
-    devices = [driver.CPU()]
-    interp = MOInterpreter(devices)
+    interp = MOInterpreter()
     outputs = interp.execute(graph, input_buffers)
 """
 
@@ -36,15 +34,16 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from max import _core, driver
+from max import _core
 from max._core.dialects import builtin, kgen, mo, mosh
+from max.driver import Buffer
 from max.graph import Graph
 
 # Import handlers to register them (side effect import)
 from ._interpreter_ops import lookup_handler
 
 # Type alias for interpreter slots
-InterpreterSlots = dict[Any, driver.Buffer | None]
+InterpreterSlots = dict[Any, Buffer | None]
 
 
 class MOInterpreter:
@@ -53,29 +52,9 @@ class MOInterpreter:
     This interpreter walks through MO graph operations in a valid execution
     order and dispatches each operation to an appropriate handler. The handlers
     execute the operations and produce output buffers.
-
-    Attributes:
-        devices: List of devices available for execution.
-        slots: Maps MLIR value IDs to buffers.
     """
 
-    def __init__(self, devices: list[driver.Device]):
-        """Initialize the interpreter with available devices.
-
-        Args:
-            devices: List of devices for buffer allocation and execution.
-                At least one device is required.
-
-        Raises:
-            ValueError: If no devices are provided.
-        """
-        if not devices:
-            raise ValueError("At least one device is required")
-        self.devices = devices
-
-    def _validate_inputs(
-        self, graph: Graph, inputs: Sequence[driver.Buffer]
-    ) -> None:
+    def _validate_inputs(self, graph: Graph, inputs: Sequence[Buffer]) -> None:
         """Validate input buffers match graph expectations.
 
         Args:
@@ -98,8 +77,8 @@ class MOInterpreter:
     def execute(
         self,
         graph: Graph,
-        inputs: Sequence[driver.Buffer],
-    ) -> Sequence[driver.Buffer | None]:
+        inputs: Sequence[Buffer],
+    ) -> Sequence[Buffer | None]:
         """Execute an MO graph and return output buffers.
 
         Args:
@@ -199,7 +178,7 @@ class MOInterpreter:
         return type(op).__name__ not in skip_names
 
     def _dispatch_op(
-        self, op: _core.Operation, slots: dict[Any, driver.Buffer | None]
+        self, op: _core.Operation, slots: dict[Any, Buffer | None]
     ) -> None:
         """Dispatch a single MO operation to its handler.
 
@@ -218,7 +197,7 @@ class MOInterpreter:
             input_buffers = [
                 slots.get(operand.value) for operand in op.operands
             ]
-            outputs = handler(self.devices, op, input_buffers)
+            outputs = handler(op, input_buffers)
         else:
             raise NotImplementedError(f"No handler for op: {type(op).__name__}")
 

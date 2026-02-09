@@ -27,8 +27,8 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Float32(i)
+        out_host[i] = Float32(length + i)
 
     # Copy to and from device buffers.
     in_dev.enqueue_copy_from(in_host)
@@ -47,7 +47,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
             print("at index", i, "the value is", out_span[i])
         assert_equal(
             out_span[i],
-            i,
+            Float32(i),
             String("at index ", i, " the value is ", out_span[i]),
         )
 
@@ -69,8 +69,8 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Int64(i)
+        out_host[i] = Int64(length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
@@ -97,7 +97,7 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
             print("at index", i, "the value is", out_host[i])
         assert_equal(
             out_host[i],
-            expected,
+            Int64(expected),
             String("at index ", i, " the value is ", out_host[i]),
         )
 
@@ -115,8 +115,8 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Int64(i)
+        out_host[i] = Int64(length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
@@ -157,7 +157,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
             print("at index", i, "the value is", out_host[i])
         assert_equal(
             out_host[i],
-            expected,
+            Int64(expected),
             String("at index ", i, " the value is ", out_host[i]),
         )
 
@@ -173,19 +173,19 @@ fn _run_cpu_ctx_memcpy_async(
     dev_buf.enqueue_fill(13)
 
     for i in range(length):
-        host_buf[i] = 2 * i
+        host_buf[i] = Int64(2 * i)
 
     ctx.enqueue_copy(dev_buf, host_buf)
 
     with dev_buf.map_to_host() as dev_buf:
         for i in range(length):
-            assert_equal(dev_buf[i], 2 * i)
+            assert_equal(dev_buf[i], Int64(2 * i))
 
     host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
 
     for i in range(length):
-        assert_equal(host_buf[i], 2 * i)
+        assert_equal(host_buf[i], Int64(2 * i))
 
 
 def test_copies():

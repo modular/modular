@@ -114,14 +114,19 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
+struct Span[
+    mut: Bool,
+    //,
+    T: Copyable,
+    origin: Origin[mut=mut],
+](
     Boolable,
     Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
     Iterable,
     Sized,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
 ):
     """A non-owning view of contiguous data.
 

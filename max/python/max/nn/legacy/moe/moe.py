@@ -44,6 +44,7 @@ class MoEGate(Module):
         num_experts_per_token: int,
         dtype: DType,
         is_sharding: bool = False,
+        linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
         """
         Args:
@@ -61,7 +62,7 @@ class MoEGate(Module):
         self.dtype = dtype
 
         if not is_sharding:
-            self.gate_score = Linear(
+            self.gate_score = linear_cls(
                 in_dim=hidden_dim,
                 out_dim=num_experts,
                 dtype=dtype,
@@ -165,6 +166,7 @@ class MoE(Module, Shardable):
         num_experts_per_token: int,
         moe_dim: int,
         gate_cls: Callable[..., MoEGate] = MoEGate,
+        mlp_cls: Callable[..., MLP] = MLP,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
         ep_size: int = 1,
@@ -196,6 +198,7 @@ class MoE(Module, Shardable):
         self.num_experts_per_token = num_experts_per_token
         self.moe_dim = moe_dim
         self.gate_cls = gate_cls
+        self.mlp_cls = mlp_cls
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
@@ -215,7 +218,7 @@ class MoE(Module, Shardable):
             assert shared_experts_dim > 0, (
                 "shared_experts_dim must be greater than 0"
             )
-            self.shared_experts = MLP(
+            self.shared_experts = mlp_cls(
                 dtype=dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,
@@ -236,7 +239,7 @@ class MoE(Module, Shardable):
 
     def _init_experts(self) -> None:
         self._all_experts = [
-            MLP(
+            self.mlp_cls(
                 dtype=self.dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,

@@ -19,8 +19,8 @@ from sys import (
     has_nvidia_gpu_accelerator,
     size_of,
 )
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import _Global, OwnedDLHandle, _try_find_dylib
 from sys.param_env import env_get_int
 
 from utils.variant import Variant
@@ -132,7 +132,7 @@ comptime NVTXVersion = 2
 
 
 @fieldwise_init
-struct Color(Intable, TrivialRegisterType):
+struct Color(Intable, TrivialRegisterPassable):
     var _value: Int
 
     comptime FORMAT = 1  # ARGB
@@ -176,7 +176,7 @@ struct Color(Intable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct _C_EventAttributes(TrivialRegisterType):
+struct _C_EventAttributes(TrivialRegisterPassable):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -221,7 +221,7 @@ fn color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-struct EventAttributes(TrivialRegisterType):
+struct EventAttributes(TrivialRegisterPassable):
     var _value: _C_EventAttributes
 
     @always_inline
@@ -253,7 +253,7 @@ struct EventAttributes(TrivialRegisterType):
 
 
 struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     comptime fn_type = Self.type
 
@@ -335,11 +335,11 @@ struct _Mark:
             self._fn = _roctxMarkA.load()
 
     fn __call__(self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]):
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         self._fn[_nvtxMarkEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]):
-        __comptime_assert has_amd_gpu_accelerator()
+        comptime assert has_amd_gpu_accelerator()
         self._fn[_roctxMarkA.fn_type](val)
 
 
@@ -356,11 +356,11 @@ struct _RangeStart:
     fn __call__(
         self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> RangeID:
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangeStartEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID:
-        __comptime_assert has_amd_gpu_accelerator()
+        comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
@@ -391,11 +391,11 @@ struct _RangePush:
     fn __call__(
         self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> Int32:
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangePushEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32:
-        __comptime_assert has_amd_gpu_accelerator()
+        comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
@@ -500,7 +500,7 @@ struct Range:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
+        comptime assert _is_enabled(), "GPU tracing must be enabled"
         self._info = EventAttributes(
             message=message, color=color, category=category
         )
@@ -548,7 +548,7 @@ struct RangeStack:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
+        comptime assert _is_enabled(), "GPU tracing must be enabled"
         self._info = EventAttributes(
             message=message, color=color, category=category
         )

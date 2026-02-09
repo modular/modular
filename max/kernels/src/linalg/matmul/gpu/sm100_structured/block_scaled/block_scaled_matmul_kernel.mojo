@@ -22,9 +22,9 @@ Architecture:
 - Uses Self.InputTilePipeline (BlockScaledTilePipeline) for producer/consumer sync
 - Load warp: with input_pipeline.producer() as stage -> Self.load_input_tiles()
 - MMA warp: with input_pipeline.consumer() as stage -> Self.mma()
-- Epilogue warp: Uses structured building blocks from tile_writer.mojo
+- Epilogue warp: Uses structured building blocks from epilogue_components.mojo
 
-Epilogue Building Blocks (from tile_writer.mojo):
+Epilogue Building Blocks (from epilogue_components.mojo):
 - TmemArrayType / load_fragments() for TMEM load
 - AccumBarrier.arrive() for barrier signaling
 - TMEMToSMemWriter.write_fragments() for SMEM write
@@ -68,8 +68,7 @@ from gpu.primitives.grid_controls import (
 )
 from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout.layout_tensor import LayoutTensorIter
+from layout import Layout
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
@@ -106,6 +105,7 @@ from ..structured_kernels.tile_pipeline import (
     InputConsumerStage,
     BlockScaledTilePayload,
 )
+from ..structured_kernels.tile_types import internal_k_major_128B
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
@@ -335,22 +335,40 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Tile Pipeline Type ==========
     # Manages A, B, SFA, SFB tiles with producer-consumer synchronization
-    # Uses generic TilePipeline with BlockScaledTilePayload for composition
+    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.SmemType.sfa_smem_layout,
-        Self.SmemType.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
+        # SFA tile dimensions
+        Self.SmemType.SFA_DIM0,
+        Self.SmemType.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SmemType.SFB_DIM0,
+        Self.SmemType.SFB_DIM1,
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
         Self.config.k_group_size,
+    ]
+
+    # ========== Internal Swizzled Layouts ==========
+    # These layouts encode the swizzle pattern used by TileTensor storage.
+    # MMA extracts layout from TileTensor type parameters via coord_to_int_tuple.
+    comptime a_internal_layout = internal_k_major_128B[
+        Self.a_type, Self.BM, Self.BK
+    ]
+    comptime b_internal_layout = internal_k_major_128B[
+        Self.b_type, Self.BN, Self.BK
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
@@ -397,7 +415,8 @@ struct BlackwellBlockScaledMatmulKernel[
         num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_layout = Self.SmemType.c_smem_layout,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
@@ -477,24 +496,26 @@ struct BlackwellBlockScaledMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
-                # Get tiles at this pipeline stage using the payload accessor
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
                     )
                 )
 
-                # Peer CTA slice using pointer arithmetic
+                # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.layout,
                 )
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
-                # Load A and B with multicast
+                # Load A and B with multicast - TileTensor directly to TMA
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
                     a_peer_tile,
                     barrier[0],
@@ -509,6 +530,7 @@ struct BlackwellBlockScaledMatmulKernel[
                 )
 
                 # Load SFA and SFB (no multicast, 5D addressing)
+                # TMA 5D now has TileTensor overload - pass tiles directly
                 sfa_tma_op.async_copy_5d[Self.cta_group](
                     sfa_tile,
                     barrier[0],
@@ -576,7 +598,7 @@ struct BlackwellBlockScaledMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
-                # Get tiles at this pipeline stage using the payload accessor
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
@@ -598,6 +620,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
+                # Pass TileTensor directly to MMA - layout encoded in type
                 mma_op.mma(
                     a_tile,
                     b_tile,
@@ -716,13 +739,13 @@ struct BlackwellBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays from SMEM accessors
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var clc_full = smem.clc_mbars_full()
-        var clc_empty = smem.clc_mbars_empty()
-        var clc_throttle = smem.clc_throttle_mbars()
-        var clc_response_arr = smem.clc_response()
-        var tmem_addr_arr = smem.tmem_addr()
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var clc_full = smem.pipelines.clc_full()
+        var clc_empty = smem.pipelines.clc_empty()
+        var clc_throttle = smem.pipelines.clc_throttle()
+        var clc_response_arr = smem.pipelines.clc_response()
+        var tmem_addr_arr = smem.pipelines.tmem_addr()
 
         # Extract pointer for TMEM address storage
         var tmem_addr_storage = tmem_addr_arr.ptr
@@ -772,7 +795,7 @@ struct BlackwellBlockScaledMatmulKernel[
             )
 
             # Initialize TMEM deallocation barrier
-            smem.tmem_dealloc().ptr[].init(
+            smem.pipelines.tmem_dealloc().ptr[].init(
                 Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
@@ -871,13 +894,13 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== MMA WARP =====
         if WarpRole.is_mma():
             with MatmulProfilerType[2](workspace, 0):
-                var tmem = Self.Tmem.allocate(smem.tmem_addr())
+                var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
                         accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                     ),
-                    Self.TmemDealloc(smem.tmem_dealloc()),
+                    Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
 
                 var sfa_tmem = tmem.addr + UInt32(
@@ -923,13 +946,13 @@ struct BlackwellBlockScaledMatmulKernel[
         if WarpRole.is_epilogue():
             Self.MmaEpilogueSync.wait()  # wait for MMA to publish TMEM addr
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
                     accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             with epi_ctx:  # signals TMEM dealloc on exit

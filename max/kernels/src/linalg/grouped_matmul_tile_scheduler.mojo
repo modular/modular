@@ -21,7 +21,7 @@ from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-struct RasterOrder(TrivialRegisterType):
+struct RasterOrder(TrivialRegisterPassable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -37,7 +37,7 @@ struct RasterOrder(TrivialRegisterType):
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -101,7 +101,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, MutAnyOrigin
@@ -132,10 +132,10 @@ struct TileScheduler[
             DType.uint32, Self.offsets_layout, MutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        __comptime_assert Self.cta_group == Self.cluster[0], (
+        comptime assert Self.cta_group == Self.cluster[0], (
             "cta_group must be equal to cluster M size. Got cta_group = "
             + String(Self.cta_group)
             + " and cluster M size = "
@@ -143,7 +143,7 @@ struct TileScheduler[
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
-        __comptime_assert (
+        comptime assert (
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0

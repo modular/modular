@@ -228,7 +228,7 @@ struct SMemTileArray[
     layout: Layout,
     num_tiles: Int,
     alignment: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of tiles in shared memory.
 
     Parameters:
@@ -279,7 +279,7 @@ struct SMemTileArray[
         Args:
             unsafe_ptr: Shared memory pointer.
         """
-        __comptime_assert (
+        comptime assert (
             Self.layout.all_dims_known()
         ), "Layout must be known at compile time."
 
@@ -320,7 +320,7 @@ struct SMemTileArray[
         return Self(ptr)
 
 
-struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):
+struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
     """Shared memory array of fixed size.
 
     Parameters:

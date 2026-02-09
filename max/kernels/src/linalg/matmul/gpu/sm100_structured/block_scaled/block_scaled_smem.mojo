@@ -19,12 +19,7 @@ MXFP8 layout conventions. Also includes all pipeline barriers and TMEM state.
 
 from gpu.memory import AddressSpace
 from layout import Layout
-from layout.tma_async import SharedMemBarrier
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_sf_layout_k_major,
-)
+from layout.tensor_core_async import tile_sf_layout_k_major
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -33,14 +28,11 @@ from linalg.fp4_utils import (
 )
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from ..structured_kernels.pipeline_storage import (
-    InputPipelineStorage,
-    OutputPipelineStorage,
-    ClcPipelineStorage,
-    TmemDeallocStorage,
     BlockScaledTileStorage,
+    SmemPipelineBundle,
+    SmemLayouts,
 )
 from ..structured_kernels.tile_pipeline import BlockScaledTilePayload
-from linalg.structuring import SMemTileArray, SMemArray
 
 
 struct BlockScaledSmem[
@@ -77,21 +69,25 @@ struct BlockScaledSmem[
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
     # ========== Layout Definitions ==========
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
-    ]()
-
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
-    ]()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
+    comptime Layouts = SmemLayouts[
+        Self.a_type,
+        Self.b_type,
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.OutputM,
+        Self.OutputN,
+        Self.config.a_swizzle,
+        Self.config.b_swizzle,
+        Self.transpose_b,
+    ]
+    comptime a_smem_layout = Self.Layouts.a_smem_layout
+    comptime b_smem_layout = Self.Layouts.b_smem_layout
+    comptime c_smem_layout = Self.Layouts.c_smem_layout
 
     # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
     # This determines how many K elements each scaling factor covers
-    comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size
+    comptime SF_K_GROUP_SIZE = sf_k_group_size[Self.config]()
 
     # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
     comptime sfa_smem_layout = tile_sf_layout_k_major[
@@ -106,24 +102,42 @@ struct BlockScaledSmem[
         Self.config.vec_sf_size,
     ]()
 
+    # SF tile dimensions (computed via shared helper functions)
+    comptime SF_BK = sf_bk[Self.config]()
+    comptime SFA_DIM0 = sfa_dim0[Self.config]()
+    comptime SFA_DIM1 = sfa_dim1[Self.config]()
+    comptime SFB_DIM0 = sfb_dim0[Self.config]()
+    comptime SFB_DIM1 = sfb_dim1[Self.config]()
+
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, sfa, sfb
+    # Note: Layouts are still defined above for LayoutTensor boundary conversion
     comptime Tiles = BlockScaledTileStorage[
         Self.a_type,
         Self.b_type,
         Self.c_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
-        Self.c_smem_layout,
-        Self.sfa_smem_layout,
-        Self.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.BM,
+        Self.BK,
+        # B tile dimensions (BN x BK)
+        Self.BN,
+        Self.BK,
+        # C tile dimensions (OutputM x OutputN)
+        Self.OutputM,
+        Self.OutputN,
+        # SFA tile dimensions
+        Self.SFA_DIM0,
+        Self.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SFB_DIM0,
+        Self.SFB_DIM1,
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types for external use
+    # Re-export tile array types
     comptime ATileArray = Self.Tiles.ATileArray
     comptime BTileArray = Self.Tiles.BTileArray
     comptime CTileArray = Self.Tiles.CTileArray
@@ -133,100 +147,58 @@ struct BlockScaledSmem[
     # ========== Tile Storage Field ==========
     var tiles: Self.Tiles
 
-    # ========== Tile Accessors (Delegated) ==========
+    # ========== Tile Accessors (TileTensor - Delegated) ==========
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+        """Get A tile array accessor."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+        """Get B tile array accessor."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor."""
         return self.tiles.c_tiles()
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
+        """Get SFA tile array accessor."""
         return self.tiles.sfa_tiles()
 
     @always_inline
     fn sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
+        """Get SFB tile array accessor."""
         return self.tiles.sfb_tiles()
 
-    # ========== Pipeline Storage (Embedded) ==========
-    comptime InputPipeline = InputPipelineStorage[
+    # ========== Pipeline Storage (Composed Bundle) ==========
+    comptime Pipelines = SmemPipelineBundle[
         Self.num_group_pipeline_stages,
+        Self.num_accum_pipeline_stages,
+        Self.num_clc_pipeline_stages,
         BlockScaledTilePayload[
             Self.a_type,
             Self.b_type,
             Self.sfa_dtype,
             Self.sfb_dtype,
-            Self.a_smem_layout,
-            Self.b_smem_layout,
-            Self.sfa_smem_layout,
-            Self.sfb_smem_layout,
+            # A tile dimensions (BM x BK)
+            Self.BM,
+            Self.BK,
+            # B tile dimensions (BN x BK)
+            Self.BN,
+            Self.BK,
+            # SFA tile dimensions
+            Self.SFA_DIM0,
+            Self.SFA_DIM1,
+            # SFB tile dimensions
+            Self.SFB_DIM0,
+            Self.SFB_DIM1,
             Self.num_pipeline_stages,
         ],
     ]
-    comptime OutputPipeline = OutputPipelineStorage[
-        Self.num_accum_pipeline_stages
-    ]
-    comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
-    comptime TmemDeallocPipeline = TmemDeallocStorage
-
-    # Storage fields - embedded in SMEM
-    var input_pipeline: Self.InputPipeline
-    var output_pipeline: Self.OutputPipeline
-    var clc_pipeline: Self.ClcPipeline
-    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
-
-    # Type aliases for accessor return types
-    comptime InputBarriers = Self.InputPipeline.BarrierArray
-    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
-    comptime ClcBarriers = Self.ClcPipeline.BarrierArray
-    comptime ClcThrottleBarriers = Self.ClcPipeline.ThrottleArray
-    comptime ClcResponse = Self.ClcPipeline.ResponseArray
-    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
-    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
-
-    # ========== Barrier Accessors (Delegated to Pipelines) ==========
-    @always_inline
-    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
-        """Returns input tile pipeline barriers."""
-        return self.input_pipeline.barriers.barriers()
-
-    @always_inline
-    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
-        """Returns accumulator pipeline barriers."""
-        return self.output_pipeline.barriers.barriers()
-
-    @always_inline
-    fn clc_mbars_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.full()
-
-    @always_inline
-    fn clc_mbars_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.empty()
-
-    @always_inline
-    fn clc_throttle_mbars(
-        ref[AddressSpace.SHARED] self,
-    ) -> Self.ClcThrottleBarriers:
-        return self.clc_pipeline.throttle()
-
-    @always_inline
-    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
-        return self.clc_pipeline.response()
-
-    @always_inline
-    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
-        """Returns TMEM deallocation barrier."""
-        return self.tmem_dealloc_pipeline.barrier()
-
-    @always_inline
-    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
-        return self.tmem_dealloc_pipeline.addr()
+    var pipelines: Self.Pipelines
 
     # ========== Size Utilities ==========
     @staticmethod
@@ -259,68 +231,45 @@ struct BlockScaledSmem[
 
 
 # =============================================================================
-# Helper Functions for Scaling Factor SMEM Layout
+# Scaling Factor Dimension Helpers
 # =============================================================================
 
 
 @always_inline
-fn get_sfa_smem_layout[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    sfa_dtype: DType,
-    sfb_dtype: DType,
-    transpose_b: Bool,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
-    ],
-]() -> Layout:
-    """Get the SMEM layout for A scaling factors."""
-    comptime SF_K_GROUP_SIZE = SF_ATOM_K * config.vec_sf_size
-    return tile_sf_layout_k_major[
-        config.block_tile_shape[0],
-        SF_K_GROUP_SIZE * config.num_sf_k_tiles,
-        config.vec_sf_size,
-    ]()
+fn sf_k_group_size[config: BlockScaledMatmulConfig]() -> Int:
+    """Compute SF_K_GROUP_SIZE from config."""
+    return SF_ATOM_K * config.vec_sf_size
 
 
 @always_inline
-fn get_sfb_smem_layout[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    sfa_dtype: DType,
-    sfb_dtype: DType,
-    transpose_b: Bool,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
-    ],
-]() -> Layout:
-    """Get the SMEM layout for B scaling factors."""
-    comptime SF_K_GROUP_SIZE = SF_ATOM_K * config.vec_sf_size
-    return tile_sf_layout_k_major[
-        config.mma_shape[1],
-        SF_K_GROUP_SIZE * config.num_sf_k_tiles,
-        config.vec_sf_size,
-    ]()
-
-
-# =============================================================================
-# TMEM Column Calculations for Scaling Factors
-# =============================================================================
+fn sf_bk[config: BlockScaledMatmulConfig]() -> Int:
+    """Compute SF_BK from config."""
+    return sf_k_group_size[config]() * config.num_sf_k_tiles
 
 
 @always_inline
-fn get_sfa_num_cols[
-    config: BlockScaledMatmulConfig,
-]() -> Int:
-    """Get the number of TMEM columns needed for A scaling factors."""
-    return config.block_tile_shape[0] // 32
+fn sfa_dim0[config: BlockScaledMatmulConfig]() -> Int:
+    """Compute SFA first dimension from config."""
+    return (config.block_tile_shape[0] // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
 
 
 @always_inline
-fn get_sfb_num_cols[
-    config: BlockScaledMatmulConfig,
-]() -> Int:
-    """Get the number of TMEM columns needed for B scaling factors."""
-    return config.mma_shape[1] // 32
+fn sfa_dim1[config: BlockScaledMatmulConfig]() -> Int:
+    """Compute SFA second dimension from config."""
+    return (sf_bk[config]() // (SF_ATOM_K * config.vec_sf_size)) * (
+        SF_ATOM_M[1] * SF_ATOM_K
+    )
+
+
+@always_inline
+fn sfb_dim0[config: BlockScaledMatmulConfig]() -> Int:
+    """Compute SFB first dimension from config."""
+    return (config.mma_shape[1] // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+
+
+@always_inline
+fn sfb_dim1[config: BlockScaledMatmulConfig]() -> Int:
+    """Compute SFB second dimension from config."""
+    return (sf_bk[config]() // (SF_ATOM_K * config.vec_sf_size)) * (
+        SF_ATOM_M[1] * SF_ATOM_K
+    )

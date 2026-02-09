@@ -49,11 +49,11 @@ fn scalb_fn(val: SIMD) -> type_of(val):
 
 
 fn gcd_fn(val: SIMD) -> type_of(val):
-    return gcd(Int(val), Int(val))
+    return type_of(val)(gcd(Int(val), Int(val)))
 
 
 fn lcm_fn(val: SIMD) -> type_of(val):
-    return lcm(Int(val), Int(val))
+    return type_of(val)(lcm(Int(val), Int(val)))
 
 
 fn sqrt_fn(val: SIMD) -> type_of(val):

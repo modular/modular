@@ -63,7 +63,7 @@ fn load_matrix_a[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    __comptime_assert m == 16 and n == 8 and k == 8
+    comptime assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -109,7 +109,7 @@ fn load_matrix_a[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    __comptime_assert m == 16 and n == 8 and k == 8
+    comptime assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -176,7 +176,7 @@ fn load_matrix_a[
             a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
         )
     else:
-        __comptime_assert m == 16 and n == 8 and k == 16
+        comptime assert m == 16 and n == 8 and k == 16
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -234,7 +234,7 @@ fn load_matrix_a_amd[
         The tile dimensions must be m=16, n=16, k=4.
     """
 
-    __comptime_assert m == 16 and n == 16 and k == 4
+    comptime assert m == 16 and n == 16 and k == 4
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
@@ -273,7 +273,7 @@ fn load_matrix_a_amd[
 
     @parameter
     if m == 16 and n == 16 and k == 16 and n_blocks == 1:
-        __comptime_assert m == 16 and n == 16 and k == 16
+        comptime assert m == 16 and n == 16 and k == 16
         var lane = lane_id()
         var thread_x = lane & 15
         var thread_y = lane >> 4
@@ -291,7 +291,7 @@ fn load_matrix_a_amd[
 
         return a
     else:
-        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
+        comptime assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = lane & 3
@@ -363,7 +363,7 @@ fn load_matrix_a_amd[
 
         return a
     else:
-        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
+        comptime assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = lane & 3
@@ -415,7 +415,7 @@ fn load_matrix_b[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    __comptime_assert m == 16 and n == 8 and k == 8
+    comptime assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -458,7 +458,7 @@ fn load_matrix_b[
         The tile dimensions must be m=16, n=8, k=8.
     """
 
-    __comptime_assert m == 16 and n == 8 and k == 8
+    comptime assert m == 16 and n == 8 and k == 8
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
@@ -515,7 +515,7 @@ fn load_matrix_b[
             b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
         )
     else:
-        __comptime_assert m == 16 and n == 8 and k == 16
+        comptime assert m == 16 and n == 8 and k == 16
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -621,7 +621,7 @@ fn load_matrix_b_amd[
 
         return b
     else:
-        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
+        comptime assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = Int(lane & 3)
@@ -698,7 +698,7 @@ fn load_matrix_b_amd[
 
         return b
     else:
-        __comptime_assert m == 4 and n == 4 and k == 4 and n_blocks == 16
+        comptime assert m == 4 and n == 4 and k == 4 and n_blocks == 16
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = Int(lane & 3)

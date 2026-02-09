@@ -228,7 +228,7 @@ fn warpgroup_fence[
         accum: A LayoutTensor with the accum_type and accum_layout.
 
     """
-    __comptime_assert (
+    comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for warpgroup fence"
 
@@ -281,7 +281,7 @@ fn _checked_tile_shape[
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime k_bytes = BK * size_of[dtype]()
-        __comptime_assert (k_bytes % swizzle_mode.bytes()) == 0, (
+        comptime assert (k_bytes % swizzle_mode.bytes()) == 0, (
             "K dim "
             + String(k_bytes)
             + " doesn't match "
@@ -481,12 +481,12 @@ fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     comptime err = "C = " + String(C) + ", mma_m = " + String(
         mma_m
     ) + ", mma_n = " + String(mma_n)
-    __comptime_assert mma_m == 64, err
-    __comptime_assert mma_n % 8 == 0, err
+    comptime assert mma_m == 64, err
+    comptime assert mma_n % 8 == 0, err
     comptime M = C.shape[0].value()
     comptime N = C.shape[1].value()
-    __comptime_assert M % mma_m == 0, err
-    __comptime_assert N % mma_n == 0, err
+    comptime assert M % mma_m == 0, err
+    comptime assert N % mma_n == 0, err
     comptime num_m_mma = M // mma_m
     comptime num_n_mma = N // mma_n
     # idx -> col(i, j)
@@ -650,7 +650,7 @@ fn _wgmma_descriptor[
     addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[dtype]:
     # Conform to canonical layout.
-    __comptime_assert (
+    comptime assert (
         layout.rank() == 2 and layout[0].rank() == 2 and layout[1].rank() == 2
     ), "shared memory tile layout should have structure (rank-2, rank-2)."
 
@@ -661,7 +661,7 @@ fn _wgmma_descriptor[
 
     @parameter
     if is_k_major:
-        __comptime_assert (
+        comptime assert (
             shape00 == 8 and shape11 % 2 == 0
         ), "Tile shape must be ((8, _), (_, multiple of 2)), get " + String(
             layout
@@ -742,7 +742,7 @@ fn _rhs_descriptor[
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
-    __comptime_assert _supported_mma_shape[mma_shape](), (
+    comptime assert _supported_mma_shape[mma_shape](), (
         "WGMMA operation of shape '" + String(mma_shape) + "' is not supported"
     )
     return mma_shape[0] * mma_shape[1] // 128
@@ -812,7 +812,7 @@ struct TensorCoreAsync[
         Note:
             Fails to compile if `mma_shape` is not supported.
         """
-        __comptime_assert _supported_mma_shape[Self.mma_shape](), (
+        comptime assert _supported_mma_shape[Self.mma_shape](), (
             "WGMMA operation of shape '"
             + String(Self.mma_shape)
             + "' is not supported"
@@ -860,9 +860,9 @@ struct TensorCoreAsync[
             c_reg_tile: Output matrix C in register memory.
             wg_idx: Warp group index for multi-warp group scenarios (default: 0).
         """
-        __comptime_assert scale_c == 1 or scale_c == 0
-        __comptime_assert scale_a == 1 or scale_a == -1
-        __comptime_assert scale_b == 1 or scale_b == -1
+        comptime assert scale_c == 1 or scale_c == 0
+        comptime assert scale_a == 1 or scale_a == -1
+        comptime assert scale_b == 1 or scale_b == -1
         comptime a_smem_layout = a_smem_tile.layout
         comptime b_smem_layout = b_smem_tile.layout
 
@@ -901,8 +901,8 @@ struct TensorCoreAsync[
         comptime b_shape00 = b_canonical_layout[0].shape[0].value()
         comptime b_stride01 = b_canonical_layout[0].stride[1].value()
         comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-        __comptime_assert Self.mma_shape[0] % a_shape00 == 0
-        __comptime_assert Self.mma_shape[1] % b_shape00 == 0
+        comptime assert Self.mma_shape[0] % a_shape00 == 0
+        comptime assert Self.mma_shape[1] % b_shape00 == 0
 
         # fmt: off
         # Strides between WGMMA tiles
@@ -1038,7 +1038,7 @@ struct TensorCoreAsync[
         comptime b_stride01 = b_canonical_layout[0].stride[1].value()
         comptime b_stride11 = b_canonical_layout[1].stride[1].value()
         # Strides between WGMMA tiles
-        __comptime_assert Self.mma_shape[1] % b_shape00 == 0, (
+        comptime assert Self.mma_shape[1] % b_shape00 == 0, (
             "b_shape00 = "
             + String(b_shape00)
             + ", mma_shape[1] = "
@@ -1048,7 +1048,7 @@ struct TensorCoreAsync[
         comptime b_n_stride = b_stride01 * (Self.mma_shape[1] // b_shape00) * size_of[Self.b_type]()
         # K dim is stepped by 2 core matrices.
         comptime b_k_stride = b_stride11 * 2 * size_of[Self.b_type]()
-        __comptime_assert b_k_stride > 0
+        comptime assert b_k_stride > 0
 
         comptime num_n_mmas = b_smem_layout[0].size() // Self.mma_shape[1]
         comptime num_k_mmas = b_smem_layout[1].size() // Self.mma_shape[2]
@@ -1057,7 +1057,7 @@ struct TensorCoreAsync[
         comptime b_num_k_mmas_per_tile = b_canonical_K // Self.mma_shape[2] if Self.transpose_b else num_k_mmas
         # fmt: on
 
-        __comptime_assert b_n_stride > 0 or (
+        comptime assert b_n_stride > 0 or (
             b_n_stride == 0 and num_n_mmas == 1
         ), "b_smem_layout = " + String(b_smem_layout)
 
@@ -1066,7 +1066,7 @@ struct TensorCoreAsync[
         comptime c_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // 128
         a_frags = a_frag_tile.vectorize[1, a_frag_size]()
         c_frags = c_reg_tile.vectorize[1, c_frag_size]()
-        __comptime_assert (
+        comptime assert (
             type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas
         ), (
             "C fragments' size: "

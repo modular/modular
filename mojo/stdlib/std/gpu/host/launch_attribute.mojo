@@ -35,7 +35,7 @@ from utils import StaticTuple
 
 
 @fieldwise_init
-struct LaunchAttributeID(Equatable, TrivialRegisterType, Writable):
+struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -203,7 +203,7 @@ struct LaunchAttributeID(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct LaunchAttributeValue(Defaultable, TrivialRegisterType):
+struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
     """Represents a value for a CUDA launch attribute.
 
     This struct emulates a C union to store different types of launch attribute values.
@@ -257,7 +257,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct AccessProperty(Equatable, TrivialRegisterType, Writable):
+struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -327,7 +327,7 @@ struct AccessProperty(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct LaunchAttribute(Defaultable, TrivialRegisterType):
+struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -391,7 +391,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterType):
         return res
 
 
-struct AccessPolicyWindow(Defaultable, TrivialRegisterType, Writable):
+struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and

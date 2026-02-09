@@ -33,13 +33,14 @@ _TESTONLY_DEPS = [
 PINS = {
     "absl-py": "absl-py@2.1.0",
     "accelerate": "accelerate@1.0.1",
+    "aioboto3": "aioboto3@15.5.0",
     "aiofiles": "aiofiles@24.1.0",
     "aiohttp": "aiohttp@3.13.2",
     "anyio": "anyio@4.12.1",
     "apache-tvm-ffi": "apache-tvm-ffi@0.1.3",
     "asgiref": "asgiref@3.8.1",
     "async-asgi-testclient": "async-asgi-testclient@1.4.11",
-    "boto3": "boto3@1.34.128",
+    "boto3": "boto3@1.40.61",
     "click": "click@8.1.7",
     "codeowners": "codeowners@0.8.0",
     "compressed-tensors": "compressed-tensors@0.13.0",
@@ -161,6 +162,8 @@ PINS = {
     "tqdm": "tqdm@4.66.5",
     "transformers": "transformers@4.57.1",
     "triton": "triton@multiple",
+    "types-aioboto3": "types-aioboto3@15.5.0",
+    "types-boto3": "types-boto3@1.42.41",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
     "types-pyyaml": "types-pyyaml@6.0.12.20240917",
     "types-setuptools": "types-setuptools@75.5.0.20241121",
@@ -339,6 +342,46 @@ def targets():
         testonly = "accelerate" in _TESTONLY_DEPS,
     )
 
+    _aioboto3_15_5_0_deps = [
+        ":aiobotocore@2.25.1",
+        ":aiofiles@24.1.0",
+    ]
+
+    native.alias(
+        name = "_wheel_aioboto3@15.5.0",
+        actual = "@pycross_lock_file_wheel_aioboto3_15.5.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "aioboto3@15.5.0",
+        deps = _aioboto3_15_5_0_deps,
+        wheel = ":_wheel_aioboto3@15.5.0",
+        testonly = "aioboto3" in _TESTONLY_DEPS,
+    )
+
+    _aiobotocore_2_25_1_deps = [
+        ":aiohttp@3.13.2",
+        ":aioitertools@0.13.0",
+        ":boto3@1.40.61",
+        ":botocore@1.40.61",
+        ":jmespath@1.0.1",
+        ":multidict@6.0.5",
+        ":python-dateutil@2.9.0.post0",
+        ":wrapt@1.17.3",
+    ]
+
+    native.alias(
+        name = "_wheel_aiobotocore@2.25.1",
+        actual = "@pycross_lock_file_wheel_aiobotocore_2.25.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "aiobotocore@2.25.1",
+        deps = _aiobotocore_2_25_1_deps,
+        wheel = ":_wheel_aiobotocore@2.25.1",
+        testonly = "aiobotocore" in _TESTONLY_DEPS,
+    )
+
     native.alias(
         name = "_wheel_aiofiles@24.1.0",
         actual = "@pycross_lock_file_wheel_aiofiles_24.1.0_py3_none_any//file",
@@ -411,6 +454,17 @@ def targets():
         deps = _aiohttp_3_13_2_deps,
         wheel = ":_wheel_aiohttp@3.13.2",
         testonly = "aiohttp" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_aioitertools@0.13.0",
+        actual = "@pycross_lock_file_wheel_aioitertools_0.13.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "aioitertools@0.13.0",
+        wheel = ":_wheel_aioitertools@0.13.0",
+        testonly = "aioitertools" in _TESTONLY_DEPS,
     )
 
     _aiosignal_1_4_0_deps = [
@@ -1022,40 +1076,56 @@ def targets():
         testonly = "blinker" in _TESTONLY_DEPS,
     )
 
-    _boto3_1_34_128_deps = [
-        ":botocore@1.34.128",
+    _boto3_1_40_61_deps = [
+        ":botocore@1.40.61",
         ":jmespath@1.0.1",
-        ":s3transfer@0.10.1",
+        ":s3transfer@0.14.0",
     ]
 
     native.alias(
-        name = "_wheel_boto3@1.34.128",
-        actual = "@pycross_lock_file_wheel_boto3_1.34.128_py3_none_any//file",
+        name = "_wheel_boto3@1.40.61",
+        actual = "@pycross_lock_file_wheel_boto3_1.40.61_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "boto3@1.34.128",
-        deps = _boto3_1_34_128_deps,
-        wheel = ":_wheel_boto3@1.34.128",
+        name = "boto3@1.40.61",
+        deps = _boto3_1_40_61_deps,
+        wheel = ":_wheel_boto3@1.40.61",
         testonly = "boto3" in _TESTONLY_DEPS,
     )
 
-    _botocore_1_34_128_deps = [
+    _botocore_1_40_61_deps = [
         ":jmespath@1.0.1",
         ":python-dateutil@2.9.0.post0",
         ":urllib3@1.26.19",
     ]
 
     native.alias(
-        name = "_wheel_botocore@1.34.128",
-        actual = "@pycross_lock_file_wheel_botocore_1.34.128_py3_none_any//file",
+        name = "_wheel_botocore@1.40.61",
+        actual = "@pycross_lock_file_wheel_botocore_1.40.61_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "botocore@1.34.128",
-        deps = _botocore_1_34_128_deps,
-        wheel = ":_wheel_botocore@1.34.128",
+        name = "botocore@1.40.61",
+        deps = _botocore_1_40_61_deps,
+        wheel = ":_wheel_botocore@1.40.61",
         testonly = "botocore" in _TESTONLY_DEPS,
+    )
+
+    _botocore_stubs_1_42_41_deps = [
+        ":types-awscrt@0.31.1",
+    ]
+
+    native.alias(
+        name = "_wheel_botocore-stubs@1.42.41",
+        actual = "@pycross_lock_file_wheel_botocore_stubs_1.42.41_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "botocore-stubs@1.42.41",
+        deps = _botocore_stubs_1_42_41_deps,
+        wheel = ":_wheel_botocore-stubs@1.42.41",
+        testonly = "botocore-stubs" in _TESTONLY_DEPS,
     )
 
     _brotli_1_2_0_build_deps = [
@@ -8049,19 +8119,19 @@ def targets():
         testonly = "ruamel-yaml-clib" in _TESTONLY_DEPS,
     )
 
-    _s3transfer_0_10_1_deps = [
-        ":botocore@1.34.128",
+    _s3transfer_0_14_0_deps = [
+        ":botocore@1.40.61",
     ]
 
     native.alias(
-        name = "_wheel_s3transfer@0.10.1",
-        actual = "@pycross_lock_file_wheel_s3transfer_0.10.1_py3_none_any//file",
+        name = "_wheel_s3transfer@0.14.0",
+        actual = "@pycross_lock_file_wheel_s3transfer_0.14.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "s3transfer@0.10.1",
-        deps = _s3transfer_0_10_1_deps,
-        wheel = ":_wheel_s3transfer@0.10.1",
+        name = "s3transfer@0.14.0",
+        deps = _s3transfer_0_14_0_deps,
+        wheel = ":_wheel_s3transfer@0.14.0",
         testonly = "s3transfer" in _TESTONLY_DEPS,
     )
 
@@ -10084,6 +10154,632 @@ def targets():
         testonly = "typer" in _TESTONLY_DEPS,
     )
 
+    _types_aioboto3_15_5_0_deps = [
+        ":botocore-stubs@1.42.41",
+        ":types-aiobotocore-cloudformation@2.25.2",
+        ":types-aiobotocore-dynamodb@2.25.2",
+        ":types-aiobotocore-ec2@2.25.2",
+        ":types-aiobotocore-lambda@2.25.2",
+        ":types-aiobotocore-rds@2.25.2",
+        ":types-aiobotocore-s3@2.25.2",
+        ":types-aiobotocore-sqs@2.25.2",
+        ":types-aiobotocore@3.1.1",
+        ":types-s3transfer@0.16.0",
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aioboto3@15.5.0",
+        actual = "@pycross_lock_file_wheel_types_aioboto3_15.5.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aioboto3@15.5.0",
+        deps = _types_aioboto3_15_5_0_deps,
+        wheel = ":_wheel_types-aioboto3@15.5.0",
+        testonly = "types-aioboto3" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_3_1_1_deps = [
+        ":botocore-stubs@1.42.41",
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore@3.1.1",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_3.1.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore@3.1.1",
+        deps = _types_aiobotocore_3_1_1_deps,
+        wheel = ":_wheel_types-aiobotocore@3.1.1",
+        testonly = "types-aiobotocore" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_cloudformation_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-cloudformation@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_cloudformation_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-cloudformation@2.25.2",
+        deps = _types_aiobotocore_cloudformation_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-cloudformation@2.25.2",
+        testonly = "types-aiobotocore-cloudformation" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_dynamodb_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-dynamodb@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_dynamodb_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-dynamodb@2.25.2",
+        deps = _types_aiobotocore_dynamodb_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-dynamodb@2.25.2",
+        testonly = "types-aiobotocore-dynamodb" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_ec2_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-ec2@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_ec2_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-ec2@2.25.2",
+        deps = _types_aiobotocore_ec2_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-ec2@2.25.2",
+        testonly = "types-aiobotocore-ec2" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_lambda_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-lambda@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_lambda_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-lambda@2.25.2",
+        deps = _types_aiobotocore_lambda_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-lambda@2.25.2",
+        testonly = "types-aiobotocore-lambda" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_rds_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-rds@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_rds_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-rds@2.25.2",
+        deps = _types_aiobotocore_rds_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-rds@2.25.2",
+        testonly = "types-aiobotocore-rds" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_s3_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-s3@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_s3_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-s3@2.25.2",
+        deps = _types_aiobotocore_s3_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-s3@2.25.2",
+        testonly = "types-aiobotocore-s3" in _TESTONLY_DEPS,
+    )
+
+    _types_aiobotocore_sqs_2_25_2_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-aiobotocore-sqs@2.25.2",
+        actual = "@pycross_lock_file_wheel_types_aiobotocore_sqs_2.25.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-aiobotocore-sqs@2.25.2",
+        deps = _types_aiobotocore_sqs_2_25_2_deps,
+        wheel = ":_wheel_types-aiobotocore-sqs@2.25.2",
+        testonly = "types-aiobotocore-sqs" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_types-awscrt@0.31.1",
+        actual = "@pycross_lock_file_wheel_types_awscrt_0.31.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-awscrt@0.31.1",
+        wheel = ":_wheel_types-awscrt@0.31.1",
+        testonly = "types-awscrt" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_1_42_41_deps = [
+        ":botocore-stubs@1.42.41",
+        ":types-boto3-cloudformation@1.42.3",
+        ":types-boto3-dynamodb@1.42.41",
+        ":types-boto3-ec2@1.42.38",
+        ":types-boto3-lambda@1.42.37",
+        ":types-boto3-rds@1.42.28",
+        ":types-boto3-s3@1.42.37",
+        ":types-boto3-sqs@1.42.3",
+        ":types-s3transfer@0.16.0",
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3@1.42.41",
+        actual = "@pycross_lock_file_wheel_types_boto3_1.42.41_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3@1.42.41",
+        deps = _types_boto3_1_42_41_deps,
+        wheel = ":_wheel_types-boto3@1.42.41",
+        testonly = "types-boto3" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_cloudformation_1_42_3_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-cloudformation@1.42.3",
+        actual = "@pycross_lock_file_wheel_types_boto3_cloudformation_1.42.3_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-cloudformation@1.42.3",
+        deps = _types_boto3_cloudformation_1_42_3_deps,
+        wheel = ":_wheel_types-boto3-cloudformation@1.42.3",
+        testonly = "types-boto3-cloudformation" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_dynamodb_1_42_41_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-dynamodb@1.42.41",
+        actual = "@pycross_lock_file_wheel_types_boto3_dynamodb_1.42.41_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-dynamodb@1.42.41",
+        deps = _types_boto3_dynamodb_1_42_41_deps,
+        wheel = ":_wheel_types-boto3-dynamodb@1.42.41",
+        testonly = "types-boto3-dynamodb" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_ec2_1_42_38_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-ec2@1.42.38",
+        actual = "@pycross_lock_file_wheel_types_boto3_ec2_1.42.38_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-ec2@1.42.38",
+        deps = _types_boto3_ec2_1_42_38_deps,
+        wheel = ":_wheel_types-boto3-ec2@1.42.38",
+        testonly = "types-boto3-ec2" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_lambda_1_42_37_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-lambda@1.42.37",
+        actual = "@pycross_lock_file_wheel_types_boto3_lambda_1.42.37_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-lambda@1.42.37",
+        deps = _types_boto3_lambda_1_42_37_deps,
+        wheel = ":_wheel_types-boto3-lambda@1.42.37",
+        testonly = "types-boto3-lambda" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_rds_1_42_28_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-rds@1.42.28",
+        actual = "@pycross_lock_file_wheel_types_boto3_rds_1.42.28_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-rds@1.42.28",
+        deps = _types_boto3_rds_1_42_28_deps,
+        wheel = ":_wheel_types-boto3-rds@1.42.28",
+        testonly = "types-boto3-rds" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_s3_1_42_37_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-s3@1.42.37",
+        actual = "@pycross_lock_file_wheel_types_boto3_s3_1.42.37_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-s3@1.42.37",
+        deps = _types_boto3_s3_1_42_37_deps,
+        wheel = ":_wheel_types-boto3-s3@1.42.37",
+        testonly = "types-boto3-s3" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_sqs_1_42_3_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-sqs@1.42.3",
+        actual = "@pycross_lock_file_wheel_types_boto3_sqs_1.42.3_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-sqs@1.42.3",
+        deps = _types_boto3_sqs_1_42_3_deps,
+        wheel = ":_wheel_types-boto3-sqs@1.42.3",
+        testonly = "types-boto3-sqs" in _TESTONLY_DEPS,
+    )
+
     native.alias(
         name = "_wheel_types-protobuf@5.28.3.20241030",
         actual = "@pycross_lock_file_wheel_types_protobuf_5.28.3.20241030_py3_none_any//file",
@@ -10115,6 +10811,17 @@ def targets():
         name = "types-pyyaml@6.0.12.20240917",
         wheel = ":_wheel_types-pyyaml@6.0.12.20240917",
         testonly = "types-pyyaml" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_types-s3transfer@0.16.0",
+        actual = "@pycross_lock_file_wheel_types_s3transfer_0.16.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-s3transfer@0.16.0",
+        wheel = ":_wheel_types-s3transfer@0.16.0",
+        testonly = "types-s3transfer" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -10785,6 +11492,36 @@ def targets():
         name = "word2number@1.1",
         wheel = ":_wheel_word2number@1.1",
         testonly = "word2number" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_wrapt@1.17.3",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_wrapt_1.17.3_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp310_cp310_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_wrapt_1.17.3_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp311_cp311_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_wrapt_1.17.3_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp312_cp312_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_wrapt_1.17.3_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp313_cp313_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314t_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "wrapt@1.17.3",
+        wheel = ":_wheel_wrapt@1.17.3",
+        testonly = "wrapt" in _TESTONLY_DEPS,
     )
 
     _xgrammar_0_1_29_deps = [
@@ -11497,6 +12234,26 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_aioboto3_15.5.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/e5/3e/e8f5b665bca646d43b916763c901e00a07e40f7746c9128bdc912a089424/aioboto3-15.5.0-py3-none-any.whl",
+        ],
+        sha256 = "cc880c4d6a8481dd7e05da89f41c384dbd841454fc1998ae25ca9c39201437a6",
+        downloaded_file_path = "aioboto3-15.5.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_aiobotocore_2.25.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/95/2a/d275ec4ce5cd0096665043995a7d76f5d0524853c76a3d04656de49f8808/aiobotocore-2.25.1-py3-none-any.whl",
+        ],
+        sha256 = "eb6daebe3cbef5b39a0bb2a97cffbe9c7cb46b2fcc399ad141f369f3c2134b1f",
+        downloaded_file_path = "aiobotocore-2.25.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_aiofiles_24.1.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/a5/45/30bb92d442636f570cb5651bc661f52b610e2eec3f891a5dc3a4c3667db0/aiofiles-24.1.0-py3-none-any.whl",
@@ -11693,6 +12450,16 @@ def repositories():
         ],
         sha256 = "7a653d872afe9f33497215745da7a943d1dc15b728a9c8da1c3ac423af35178e",
         downloaded_file_path = "aiohttp-3.13.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_aioitertools_0.13.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/10/a1/510b0a7fadc6f43a6ce50152e69dbd86415240835868bb0bd9b5b88b1e06/aioitertools-0.13.0-py3-none-any.whl",
+        ],
+        sha256 = "0be0292b856f08dfac90e31f4739432f4cb6d7520ab9eb73e143f4f2fa5259be",
+        downloaded_file_path = "aioitertools-0.13.0-py3-none-any.whl",
     )
 
     maybe(
@@ -12357,22 +13124,32 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_boto3_1.34.128_py3_none_any",
+        name = "pycross_lock_file_wheel_boto3_1.40.61_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/76/41/b0f43407955832f4049b55965db00ecb3d6a92c53c5345c19f80b28dd64d/boto3-1.34.128-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/61/24/3bf865b07d15fea85b63504856e137029b6acbc73762496064219cdb265d/boto3-1.40.61-py3-none-any.whl",
         ],
-        sha256 = "a048ff980a81cd652724a73bc496c519b336fabe19cc8bfc6c53b2ff6eb22c7b",
-        downloaded_file_path = "boto3-1.34.128-py3-none-any.whl",
+        sha256 = "6b9c57b2a922b5d8c17766e29ed792586a818098efe84def27c8f582b33f898c",
+        downloaded_file_path = "boto3-1.40.61-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_botocore_1.34.128_py3_none_any",
+        name = "pycross_lock_file_wheel_botocore_1.40.61_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/ac/fd/41e44f242c711a4db6575c7e708f482c26e87f91a92082842941f2d85583/botocore-1.34.128-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/38/c5/f6ce561004db45f0b847c2cd9b19c67c6bf348a82018a48cb718be6b58b0/botocore-1.40.61-py3-none-any.whl",
         ],
-        sha256 = "db67fda136c372ab3fa432580c819c89ba18d28a6152a4d2a7ea40d44082892e",
-        downloaded_file_path = "botocore-1.34.128-py3-none-any.whl",
+        sha256 = "17ebae412692fd4824f99cde0f08d50126dc97954008e5ba2b522eb049238aa7",
+        downloaded_file_path = "botocore-1.40.61-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_botocore_stubs_1.42.41_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/32/76/cab7af7f16c0b09347f2ebe7ffda7101132f786acb767666dce43055faab/botocore_stubs-1.42.41-py3-none-any.whl",
+        ],
+        sha256 = "9423110fb0e391834bd2ed44ae5f879d8cb370a444703d966d30842ce2bcb5f0",
+        downloaded_file_path = "botocore_stubs-1.42.41-py3-none-any.whl",
     )
 
     maybe(
@@ -23527,12 +24304,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_s3transfer_0.10.1_py3_none_any",
+        name = "pycross_lock_file_wheel_s3transfer_0.14.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/83/37/395cdb6ee92925fa211e55d8f07b9f93cf93f60d7d4ce5e66fd73f1ea986/s3transfer-0.10.1-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/48/f0/ae7ca09223a81a1d890b2557186ea015f6e0502e9b8cb8e1813f1d8cfa4e/s3transfer-0.14.0-py3-none-any.whl",
         ],
-        sha256 = "ceb252b11bcf87080fb7850a224fb6e05c8a776bab8f2b64b7f25b969464839d",
-        downloaded_file_path = "s3transfer-0.10.1-py3-none-any.whl",
+        sha256 = "ea3b790c7077558ed1f02a3072fb3cb992bbbd253392f4b6e9e8976941c7d456",
+        downloaded_file_path = "s3transfer-0.14.0-py3-none-any.whl",
     )
 
     maybe(
@@ -26217,6 +26994,186 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_types_aioboto3_15.5.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/ec/1d/e187fbe9771dffb5f0801e315ac23a6c383c14d1cbb90da6ca3ad1ea9b06/types_aioboto3-15.5.0-py3-none-any.whl",
+        ],
+        sha256 = "8aed7c9b6fe9b59e6ce74f7a6db7b8a9912a34c8f80ed639fac1fa59d6b20aa1",
+        downloaded_file_path = "types_aioboto3-15.5.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_3.1.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/10/58/97c64543dce565272f67b13d55d2a80590e807974cc59620d7563372c194/types_aiobotocore-3.1.1-py3-none-any.whl",
+        ],
+        sha256 = "421577ec8c204dd33275ea14fa1656382fd29723a2cfac1247301b30252c5934",
+        downloaded_file_path = "types_aiobotocore-3.1.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_cloudformation_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/22/81/10667c7f81a9f4c11db49ec58b0a74bb1067fc10c9f332d47932caf1ad42/types_aiobotocore_cloudformation-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "09448b5a6838ae4b399936075f38337b4aee2fcef157de2d43a693537f93296d",
+        downloaded_file_path = "types_aiobotocore_cloudformation-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_dynamodb_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/d1/aa/79e167f85732f0ccbb7343a1e8cbb6bf8e7d3c4bb2aaf9a47cc93d8b1f31/types_aiobotocore_dynamodb-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "680c60867320d7011be351ed724a50b9488bc62d545c9bc009b2f44f7a715f7f",
+        downloaded_file_path = "types_aiobotocore_dynamodb-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_ec2_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/a9/e9/7b67592f8225ded38ec574010ac687744e27b442a5fb975a8751001e8c68/types_aiobotocore_ec2-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "015f48787016e59436b60ad12276e1427c5379192bd638694ab09a572988b025",
+        downloaded_file_path = "types_aiobotocore_ec2-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_lambda_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/e2/20/ca5004841bce0b88e118524da88c0490ad0ef512b544203a6175b85f3f69/types_aiobotocore_lambda-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "fb1f8db45b831680b9ddd6d22c2acb4b6d9f130e5ac1f3657e750ff4a8efbcfb",
+        downloaded_file_path = "types_aiobotocore_lambda-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_rds_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/ec/2b/1b0bcfe8cff58469ac515e7c6c2274f2c76fbd754b9af677a5b3f5eed60d/types_aiobotocore_rds-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "1c0cce31f0f71ee224d3d297873a587b65f6dbacc2529eb7b1c62c519a686436",
+        downloaded_file_path = "types_aiobotocore_rds-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_s3_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/b4/0a/d0d9faefd7caa8536eb97647c38c711e73ab83341a65119d08c2cb20957d/types_aiobotocore_s3-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "151301e84bb2f1cbf30f0d1ef791bb75c141cfbfe47b93fd317b7f1ba3eb35e4",
+        downloaded_file_path = "types_aiobotocore_s3-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_aiobotocore_sqs_2.25.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/b2/06/f8d12215ace746f7e5282f0c5c89d04c1e380176a408aa26f99264d80e55/types_aiobotocore_sqs-2.25.2-py3-none-any.whl",
+        ],
+        sha256 = "04c5f20bc8da8f02d6db20d2369fedf8012596829a61aa40c68ff83d3970bcb3",
+        downloaded_file_path = "types_aiobotocore_sqs-2.25.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_awscrt_0.31.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/5e/fd/ddca80617f230bd833f99b4fb959abebffd8651f520493cae2e96276b1bd/types_awscrt-0.31.1-py3-none-any.whl",
+        ],
+        sha256 = "7e4364ac635f72bd57f52b093883640b1448a6eded0ecbac6e900bf4b1e4777b",
+        downloaded_file_path = "types_awscrt-0.31.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_1.42.41_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/ae/bc/11cf539646b87890545c9bd6400f9fb9ffcf6cacd2147f115aa5ac9c5248/types_boto3-1.42.41-py3-none-any.whl",
+        ],
+        sha256 = "834a80218d3735d30f81b50bcde9da1a1dd9fc053650cd938891e7e189625e3a",
+        downloaded_file_path = "types_boto3-1.42.41-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_cloudformation_1.42.3_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/76/61/f1aeff3d68532fd7f67ffe6053b615a59d24d2a6ecacbadbb31a35295910/types_boto3_cloudformation-1.42.3-py3-none-any.whl",
+        ],
+        sha256 = "8f69c86d08a92f9876c789597d6c1518f33a6f5c63026cc5e30323e05ffda801",
+        downloaded_file_path = "types_boto3_cloudformation-1.42.3-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_dynamodb_1.42.41_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/c7/88/d0558cb353fbe4b15716ae2b94cdc94b0d57a4bb033919c6bcf7c05b49c8/types_boto3_dynamodb-1.42.41-py3-none-any.whl",
+        ],
+        sha256 = "300c8417ece216ac461f30c4e180f0144578d06147c6df02ca17dd3519290095",
+        downloaded_file_path = "types_boto3_dynamodb-1.42.41-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_ec2_1.42.38_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/2d/3b/802913cee3c81498b1dd9cc741f6d9125d7a38e0f6b267f50f1842a9a1fa/types_boto3_ec2-1.42.38-py3-none-any.whl",
+        ],
+        sha256 = "bddb35623c386e3a4746c84a2b275a0fb71cfa040648d0bef5af0d37be5ef0f2",
+        downloaded_file_path = "types_boto3_ec2-1.42.38-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_lambda_1.42.37_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/ea/96/9913cd17bca65091118b5de9342d1ef7e88816aa75c33d6a2a6228cabed1/types_boto3_lambda-1.42.37-py3-none-any.whl",
+        ],
+        sha256 = "8d9c37b2556966018becf4b2990a002720b9cff5a3bcb63a46f16ba267f82155",
+        downloaded_file_path = "types_boto3_lambda-1.42.37-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_rds_1.42.28_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/da/62/f42a88b2b08f27b043cebf22b777ea7a1178f4b5b6b1787bb887d813ea6a/types_boto3_rds-1.42.28-py3-none-any.whl",
+        ],
+        sha256 = "1faa8e709a7536a246dfd96cb741d93ff50ce6a3eb66694bf0a1fca5531f1e0d",
+        downloaded_file_path = "types_boto3_rds-1.42.28-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_s3_1.42.37_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/90/a9/ac43cd08406329e6802ca6b7cf55017ad9a9d0b7463ec2609e96510928f6/types_boto3_s3-1.42.37-py3-none-any.whl",
+        ],
+        sha256 = "6e31e153c9adebd0c8764006928a71891b25b0eebe7d112cb6222652ecccdf52",
+        downloaded_file_path = "types_boto3_s3-1.42.37-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_sqs_1.42.3_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/99/fa/65a1e627791fe5408a1551bacc081b4e49f7fac87053dd1549957b5edd8d/types_boto3_sqs-1.42.3-py3-none-any.whl",
+        ],
+        sha256 = "9290509e99f22464d39cba39feb8034b295ca312a84e43f8c7ad9b511c488e40",
+        downloaded_file_path = "types_boto3_sqs-1.42.3-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_types_protobuf_5.28.3.20241030_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/72/da/c261bb44799d3f4455fc881ca342c14f5b5b23878bef568a1cdcd324e62f/types_protobuf-5.28.3.20241030-py3-none-any.whl",
@@ -26243,6 +27200,16 @@ def repositories():
         ],
         sha256 = "392b267f1c0fe6022952462bf5d6523f31e37f6cea49b14cee7ad634b6301570",
         downloaded_file_path = "types_PyYAML-6.0.12.20240917-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_s3transfer_0.16.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/98/27/e88220fe6274eccd3bdf95d9382918716d312f6f6cef6a46332d1ee2feff/types_s3transfer-0.16.0-py3-none-any.whl",
+        ],
+        sha256 = "1c0cd111ecf6e21437cb410f5cddb631bfb2263b77ad973e79b9c6d0cb24e0ef",
+        downloaded_file_path = "types_s3transfer-0.16.0-py3-none-any.whl",
     )
 
     maybe(
@@ -26893,6 +27860,186 @@ def repositories():
         ],
         sha256 = "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248",
         downloaded_file_path = "wheel-0.45.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp310_cp310_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d1/71/e7e7f5670c1eafd9e990438e69d8fb46fa91a50785332e06b560c869454f/wrapt-1.17.3-cp310-cp310-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "fd341868a4b6714a5962c1af0bd44f7c404ef78720c7de4892901e540417111c",
+        downloaded_file_path = "wrapt-1.17.3-cp310-cp310-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp310_cp310_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/de/17/9f8f86755c191d6779d7ddead1a53c7a8aa18bccb7cea8e7e72dfa6a8a09/wrapt-1.17.3-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        ],
+        sha256 = "f9b2601381be482f70e5d1051a5965c25fb3625455a2bf520b5a077b22afb775",
+        downloaded_file_path = "wrapt-1.17.3-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/f2/15/dd576273491f9f43dd09fce517f6c2ce6eb4fe21681726068db0d0467096/wrapt-1.17.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "343e44b2a8e60e06a7e0d29c1671a0d9951f59174f3709962b5143f60a2a98bd",
+        downloaded_file_path = "wrapt-1.17.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp311_cp311_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/31/25/3e8cc2c46b5329c5957cec959cb76a10718e1a513309c31399a4dad07eb3/wrapt-1.17.3-cp311-cp311-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "0610b46293c59a3adbae3dee552b648b984176f8562ee0dba099a56cfbe4df1f",
+        downloaded_file_path = "wrapt-1.17.3-cp311-cp311-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp311_cp311_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/5d/8f/a32a99fc03e4b37e31b57cb9cefc65050ea08147a8ce12f288616b05ef54/wrapt-1.17.3-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        ],
+        sha256 = "b32888aad8b6e68f83a8fdccbf3165f5469702a7544472bdf41f582970ed3311",
+        downloaded_file_path = "wrapt-1.17.3-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/31/57/4930cb8d9d70d59c27ee1332a318c20291749b4fba31f113c2f8ac49a72e/wrapt-1.17.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "8cccf4f81371f257440c88faed6b74f1053eef90807b77e31ca057b2db74edb1",
+        downloaded_file_path = "wrapt-1.17.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp312_cp312_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/33/df/bdf864b8997aab4febb96a9ae5c124f700a5abd9b5e13d2a3214ec4be705/wrapt-1.17.3-cp312-cp312-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "6b538e31eca1a7ea4605e44f81a48aa24c4632a277431a6ed3f328835901f4fd",
+        downloaded_file_path = "wrapt-1.17.3-cp312-cp312-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp312_cp312_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/9f/81/5d931d78d0eb732b95dc3ddaeeb71c8bb572fb01356e9133916cd729ecdd/wrapt-1.17.3-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        ],
+        sha256 = "042ec3bb8f319c147b1301f2393bc19dba6e176b7da446853406d041c36c7828",
+        downloaded_file_path = "wrapt-1.17.3-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ca/38/2e1785df03b3d72d34fc6252d91d9d12dc27a5c89caef3335a1bbb8908ca/wrapt-1.17.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "3af60380ba0b7b5aeb329bc4e402acd25bd877e98b3727b0135cb5c2efdaefe9",
+        downloaded_file_path = "wrapt-1.17.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp313_cp313_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/45/35/6a08de0f2c96dcdd7fe464d7420ddb9a7655a6561150e5fc4da9356aeaab/wrapt-1.17.3-cp313-cp313-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "16ecf15d6af39246fe33e507105d67e4b81d8f8d2c6598ff7e3ca1b8a37213f7",
+        downloaded_file_path = "wrapt-1.17.3-cp313-cp313-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp313_cp313_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/0c/37/6faf15cfa41bf1f3dba80cd3f5ccc6622dfccb660ab26ed79f0178c7497f/wrapt-1.17.3-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        ],
+        sha256 = "6fd1ad24dc235e4ab88cda009e19bf347aabb975e44fd5c2fb22a3f6e4141277",
+        downloaded_file_path = "wrapt-1.17.3-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/78/f2/efe19ada4a38e4e15b6dff39c3e3f3f73f5decf901f66e6f72fe79623a06/wrapt-1.17.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "0ed61b7c2d49cee3c027372df5809a59d60cf1b6c2f81ee980a091f3afed6a2d",
+        downloaded_file_path = "wrapt-1.17.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/2e/9e/3ad852d77c35aae7ddebdbc3b6d35ec8013af7d7dddad0ad911f3d891dae/wrapt-1.17.3-cp314-cp314-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "5ea5eb3c0c071862997d6f3e02af1d055f381b1d25b286b9d6644b79db77657c",
+        downloaded_file_path = "wrapt-1.17.3-cp314-cp314-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/c3/f7/c983d2762bcce2326c317c26a6a1e7016f7eb039c27cdf5c4e30f4160f31/wrapt-1.17.3-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        ],
+        sha256 = "281262213373b6d5e4bb4353bc36d1ba4084e6d6b5d242863721ef2bf2c2930b",
+        downloaded_file_path = "wrapt-1.17.3-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/e4/0f/f673f75d489c7f22d17fe0193e84b41540d962f75fce579cf6873167c29b/wrapt-1.17.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "dc4a8d2b25efb6681ecacad42fca8859f88092d8732b170de6a5dddd80a1c8fa",
+        downloaded_file_path = "wrapt-1.17.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314t_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d1/86/2fcad95994d9b572db57632acb6f900695a648c3e063f2cd344b3f5c5a37/wrapt-1.17.3-cp314-cp314t-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "5a03a38adec8066d5a37bea22f2ba6bbf39fcdefbe2d91419ab864c3fb515454",
+        downloaded_file_path = "wrapt-1.17.3-cp314-cp314t-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314t_manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/64/0e/f4472f2fdde2d4617975144311f8800ef73677a159be7fe61fa50997d6c0/wrapt-1.17.3-cp314-cp314t-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        ],
+        sha256 = "5d4478d72eb61c36e5b446e375bbc49ed002430d17cdec3cecb36993398e1a9e",
+        downloaded_file_path = "wrapt-1.17.3-cp314-cp314t-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_wrapt_1.17.3_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/cc/01/9b85a99996b0a97c8a17484684f206cbb6ba73c1ce6890ac668bcf3838fb/wrapt-1.17.3-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "223db574bb38637e8230eb14b185565023ab624474df94d2af18f1cdb625216f",
+        downloaded_file_path = "wrapt-1.17.3-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(

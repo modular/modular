@@ -48,7 +48,7 @@ fn fill_random_for_test[
         normalized: If True, normalize each row to sum to 1.0 (probabilities).
                    If False, use raw random values (logits).
     """
-    var shape = coord_to_index_list(buffer.layout.shape)
+    var shape = coord_to_index_list(buffer.layout.shape_coord())
     var batch_size = shape[0]
     var vocab_size = shape[1]
 
@@ -188,7 +188,7 @@ fn test_topk_sampling[
     comptime largest = test_case.largest
     comptime sampling = test_case.sampling
 
-    __comptime_assert sampling, "This test requires sampling=True"
+    comptime assert sampling, "This test requires sampling=True"
 
     # Create layouts for input tensor [batch_size, N].
     var input_shape = IndexList[2](batch_size, N)
@@ -384,8 +384,8 @@ fn extract_topk_from_masked[
         topk_vals_out: Output buffer for top-K values (batch_size, K).
         topk_idxs_out: Output buffer for top-K indices (batch_size, K).
     """
-    var batch_size = masked_logits.layout.shape[0].value()
-    var N = masked_logits.layout.shape[1].value()
+    var batch_size = masked_logits.layout.shape[0]().value()
+    var N = masked_logits.layout.shape[1]().value()
 
     for b in range(batch_size):
         var values = List[Scalar[dtype]]()
@@ -439,7 +439,7 @@ fn test_case_batched[
     comptime block_size = test_case.block_size
 
     # sampling must be False for mask_logits kernel
-    __comptime_assert (
+    comptime assert (
         not sampling
     ), "topk_mask_logits only supports sampling=False"
 
@@ -566,11 +566,11 @@ fn test_case_batched[
                             out_idx_type = DType.int64,
                             largest=largest,
                         ](
-                            in_host_tensor.to_layout_tensor(),
+                            in_host_tensor,
                             K,
                             1,  # rank - 1
-                            topk_vals_cpu_tensor.to_layout_tensor(),
-                            topk_idxs_cpu_tensor.to_layout_tensor(),
+                            topk_vals_cpu_tensor,
+                            topk_idxs_cpu_tensor,
                             1,
                             True,
                         )
@@ -580,11 +580,11 @@ fn test_case_batched[
                 _top_k_cpu[
                     dtype=dtype, out_idx_type = DType.int64, largest=largest
                 ](
-                    in_host_tensor.to_layout_tensor(),
+                    in_host_tensor,
                     K,
                     1,  # rank - 1
-                    topk_vals_cpu_tensor.to_layout_tensor(),
-                    topk_idxs_cpu_tensor.to_layout_tensor(),
+                    topk_vals_cpu_tensor,
+                    topk_idxs_cpu_tensor,
                     1,
                     True,
                 )

@@ -98,7 +98,7 @@ fn amd_scheduling_hints[
     ):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[2]), 0
         )
 
     # Schedule barriers for memory load operations
@@ -106,11 +106,11 @@ fn amd_scheduling_hints[
     for i in range(a_loads_per_thread + b_loads_per_thread):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[0], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[0]), 0
         )
         schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[1], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[1]), 0
         )
 
     # Additional DS_READ scheduling for remaining k_tiles
@@ -122,7 +122,7 @@ fn amd_scheduling_hints[
     ):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[2]), 0
         )
 
 
@@ -140,7 +140,9 @@ fn copy_local_to_dram_32_32_8[
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
+        dst.linear_idx_type
+    ](offset)
     comptime num_stores_per_thread = dst_fragments.layout.size()
 
     comptime M = src.layout.shape[0].value()
@@ -159,7 +161,7 @@ fn copy_local_to_dram_32_32_8[
 
             @parameter
             if dst_fragments.layout.all_dims_known():
-                dst_idx += dst_static_idx
+                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
@@ -185,7 +187,10 @@ fn copy_local_to_dram_32_32_8[
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
-                        Int32(dst_idx + element_offset),
+                        Int32(
+                            dst_idx
+                            + Scalar[dst.linear_idx_type](element_offset)
+                        ),
                         src,
                     )
 

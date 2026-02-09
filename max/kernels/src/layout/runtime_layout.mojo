@@ -47,7 +47,7 @@ struct RuntimeLayout[
     *,
     element_type: DType = DType.int64,
     linear_idx_type: DType = DType.int64,
-](Defaultable, Stringable, TrivialRegisterType, Writable):
+](Defaultable, Stringable, TrivialRegisterPassable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
@@ -100,7 +100,7 @@ struct RuntimeLayout[
             dimensions known.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.layout.all_dims_known()
         ), "Static layout with known dims is required"
 
@@ -409,7 +409,7 @@ fn coalesce[
         A new `RuntimeLayout` with coalesced dimensions.
     """
 
-    __comptime_assert not keep_rank, "Unsupported coalesce mode"
+    comptime assert not keep_rank, "Unsupported coalesce mode"
 
     var res_shape = RuntimeTuple[
         coalesce_layout(l, keep_rank).shape, element_type = layout.element_type

@@ -97,7 +97,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
         for n in range(N):
             assert_almost_equal(
                 data_host[m, n],
-                m * N + n,
+                Float32(m * N + n),
                 atol=1e-3,
                 rtol=1e-4,
             )
@@ -250,7 +250,7 @@ def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
         for n in range(N):
             assert_almost_equal(
                 data_host[m, n],
-                m * N + n,
+                Float32(m * N + n),
                 atol=1e-3,
                 rtol=1e-4,
             )

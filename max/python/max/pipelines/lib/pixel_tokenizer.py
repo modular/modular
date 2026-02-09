@@ -24,9 +24,9 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     PipelineTokenizer,
-    PixelGenerationRequest,
     TokenBuffer,
 )
+from max.interfaces.request import OpenResponsesRequest
 from max.pipelines.core import PixelContext
 from transformers import AutoTokenizer
 
@@ -49,7 +49,7 @@ class PixelGenerationTokenizer(
     PipelineTokenizer[
         PixelContext,
         tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]],
-        PixelGenerationRequest,
+        OpenResponsesRequest,
     ]
 ):
     """Encapsulates creation of PixelContext and specific token encode/decode logic.
@@ -254,22 +254,21 @@ class PixelGenerationTokenizer(
         sigmas: npt.NDArray[np.float32] | None = None,
         **kwargs,
     ) -> tuple[npt.NDArray[np.float32], int]:
-        r"""
-        Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
-        custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
+        r"""Calls the scheduler's set_timesteps and returns timesteps.
+
+        Handles custom timesteps. Any ``**kwargs`` are passed to
+        ``scheduler.set_timesteps``.
 
         Args:
-            scheduler (`Any`):
-                The scheduler to get timesteps from.
-            num_inference_steps (`int`):
-                The number of diffusion steps used when generating samples with a pre-trained model.
-            sigmas (`List[float]`, *optional*):
-                Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
-                `num_inference_steps` must be `None`.
+            scheduler: The scheduler to get timesteps from.
+            num_inference_steps: The number of diffusion steps when generating
+                samples with a pre-trained model.
+            sigmas: Optional custom sigmas to override the timestep spacing
+                strategy. If provided, ``num_inference_steps`` must be None.
+            **kwargs: Passed through to ``scheduler.set_timesteps``.
 
         Returns:
-            `Tuple[npt.NDArray[np.float32], int]`: A tuple where the first element is the timestep schedule from the scheduler and the
-            second element is the number of inference steps.
+            A tuple of (timestep schedule array, number of inference steps).
         """
         if sigmas is not None:
             try:
@@ -337,10 +336,12 @@ class PixelGenerationTokenizer(
 
     @property
     def eos(self) -> int:
+        """Returns the end-of-sequence token ID."""
         return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
         return False
 
     async def encode(
@@ -350,8 +351,7 @@ class PixelGenerationTokenizer(
         *,
         use_secondary: bool = False,
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]]:
-        """Transform the provided prompt into a token array."""
-
+        """Transforms the provided prompt into a token array."""
         delegate = self.delegate_2 if use_secondary else self.delegate
         max_sequence_length = (
             self.secondary_max_length if use_secondary else self.max_length
@@ -393,6 +393,7 @@ class PixelGenerationTokenizer(
         encoded: tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]],
         **kwargs,
     ) -> str:
+        """Decodes token arrays to text (not implemented for this tokenizer)."""
         raise NotImplementedError(
             "Decoding is not implemented for this tokenizer."
         )
@@ -406,26 +407,57 @@ class PixelGenerationTokenizer(
         pixel_data = pixel_data.transpose(0, 2, 3, 1)
         return pixel_data
 
-    async def new_context(
-        self, request: PixelGenerationRequest
-    ) -> PixelContext:
-        """Create a new PixelContext object, leveraging necessary information from PixelGenerationRequest."""
-        if request.guidance_scale < 1.0 or request.true_cfg_scale < 1.0:
+    async def new_context(self, request: OpenResponsesRequest) -> PixelContext:
+        """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
+        # Extract prompt from request.body.input (must be a string)
+        if isinstance(request.body.input, list):
+            raise ValueError(
+                "Pixel generation does not support message list input. "
+                "Please provide a single string prompt via the 'input' field."
+            )
+
+        prompt = request.body.input
+        if not prompt:
+            raise ValueError("Prompt must be a non-empty string.")
+
+        # Extract image provider options (required for pixel generation)
+        if not request.body.provider_options:
+            raise ValueError(
+                "Pixel generation requires 'provider_options' to be set. "
+                "Please provide a ProviderOptions object with ImageProviderOptions."
+            )
+
+        if not request.body.provider_options.image:
+            raise ValueError(
+                "Pixel generation requires 'provider_options.image' to be set. "
+                "Please provide ImageProviderOptions for image generation parameters."
+            )
+
+        image_options = request.body.provider_options.image
+
+        if (
+            image_options.guidance_scale < 1.0
+            or image_options.true_cfg_scale < 1.0
+        ):
             logger.warning(
-                f"Guidance scales < 1.0 detected (guidance_scale={request.guidance_scale}, "
-                f"true_cfg_scale={request.true_cfg_scale}). This is mathematically possible"
+                f"Guidance scales < 1.0 detected (guidance_scale={image_options.guidance_scale}, "
+                f"true_cfg_scale={image_options.true_cfg_scale}). This is mathematically possible"
                 " but may produce lower quality or unexpected results."
             )
 
-        if request.true_cfg_scale > 1.0 and request.negative_prompt is None:
+        if (
+            image_options.true_cfg_scale > 1.0
+            and image_options.negative_prompt is None
+        ):
             logger.warning(
-                f"true_cfg_scale={request.true_cfg_scale} is set, but no negative_prompt "
+                f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
                 "is provided. True classifier-free guidance requires a negative prompt; "
                 "falling back to standard generation."
             )
 
         do_true_cfg = (
-            request.true_cfg_scale > 1.0 and request.negative_prompt is not None
+            image_options.true_cfg_scale > 1.0
+            and image_options.negative_prompt is not None
         )
 
         # 1. Tokenize prompts
@@ -436,10 +468,10 @@ class PixelGenerationTokenizer(
             negative_token_ids,
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
-            request.prompt,
-            request.secondary_prompt,
-            request.negative_prompt,
-            request.secondary_negative_prompt,
+            prompt,
+            image_options.secondary_prompt,
+            image_options.negative_prompt,
+            image_options.secondary_negative_prompt,
             do_true_cfg,
         )
 
@@ -464,10 +496,12 @@ class PixelGenerationTokenizer(
 
         # 3. Resolve image dimensions using cached static values
         height = (
-            request.height or self._default_sample_size * self._vae_scale_factor
+            image_options.height
+            or self._default_sample_size * self._vae_scale_factor
         )
         width = (
-            request.width or self._default_sample_size * self._vae_scale_factor
+            image_options.width
+            or self._default_sample_size * self._vae_scale_factor
         )
 
         latent_height = 2 * (int(height) // (self._vae_scale_factor * 2))
@@ -482,19 +516,20 @@ class PixelGenerationTokenizer(
             self._max_shift,
         )
 
+        num_inference_steps = image_options.steps
         sigmas: npt.NDArray[np.float32] | None = (
             None
             if self._scheduler_use_flow_sigmas
             else np.linspace(
                 1.0,
-                1.0 / request.num_inference_steps,
-                request.num_inference_steps,
+                1.0 / num_inference_steps,
+                num_inference_steps,
                 dtype=np.float32,
             )
         )
         timesteps, num_inference_steps = self._retrieve_timesteps(
             self._scheduler,
-            request.num_inference_steps,
+            num_inference_steps,
             sigmas=sigmas,
             mu=mu,
         )
@@ -508,16 +543,18 @@ class PixelGenerationTokenizer(
         )
 
         latents, latent_image_ids = self._prepare_latents(
-            request.num_images_per_prompt,
+            image_options.num_images,
             self._num_channels_latents,
             latent_height,
             latent_width,
-            request.seed,
+            request.body.seed,
         )
 
         guidance: npt.NDArray[np.float32] | None = None
         if self._use_guidance_embeds:
-            guidance = np.array([request.guidance_scale], dtype=np.float32)
+            guidance = np.array(
+                [image_options.guidance_scale], dtype=np.float32
+            )
 
         # 5. Build the context
         context = PixelContext(
@@ -534,12 +571,12 @@ class PixelGenerationTokenizer(
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
-            guidance_scale=request.guidance_scale,
+            guidance_scale=image_options.guidance_scale,
             guidance=guidance,
-            num_images_per_prompt=request.num_images_per_prompt,
-            true_cfg_scale=request.true_cfg_scale,
+            num_images_per_prompt=image_options.num_images,
+            true_cfg_scale=image_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
-            model_name=request.model_name,
+            model_name=request.body.model,
         )
 
         for validator in self._context_validators:

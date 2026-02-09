@@ -24,6 +24,7 @@ modular_py_library(
     name = "bench_baseline_lib",
     srcs = [
         "bench_allreduce_subgraph.py",
+        "bench_allreduce_subgraph_max.py",
         "bench_blackwell_grouped_gemm.py",
         "bench_blackwell_mla_decode.py",
         "bench_blackwell_prefill.py",

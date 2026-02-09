@@ -12,9 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import (
+    KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVCacheStrategy,
+    MultiKVCacheParams,
+    compute_max_seq_len_fitting_in_cache,
+    compute_num_device_blocks,
+    estimated_memory_size,
 )
 from .input_types import (
     KVCacheInputs,
@@ -30,12 +35,17 @@ __all__ = [
     "KVCacheInputs",
     "KVCacheInputsSequence",
     "KVCacheMetrics",
+    "KVCacheParamInterface",
     "KVCacheParams",
     "KVCacheQuantizationConfig",
     "KVCacheStrategy",
+    "MultiKVCacheParams",
     "NestedIterableDataclass",
     "PagedCacheValues",
     "PagedCacheValues",
     "RaggedKVCacheInputs",
     "build_max_lengths_tensor",
+    "compute_max_seq_len_fitting_in_cache",
+    "compute_num_device_blocks",
+    "estimated_memory_size",
 ]

@@ -29,9 +29,10 @@ from max.interfaces import (
     SamplingParamsInput,
     TextGenerationRequest,
 )
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
-from max.serve.pipelines.llm import TokenGeneratorPipeline
+from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -204,7 +205,9 @@ async def _async_worker(
         else None
     )
     # Create Queues
-    model_worker_interface = ZmqModelWorkerInterface(
+    model_worker_interface = ZmqModelWorkerInterface[
+        TextAndVisionContext | TextContext, TokenGeneratorOutput
+    ](
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(pipeline_config),
     )
@@ -216,14 +219,15 @@ async def _async_worker(
             settings=settings,
             metric_client=metric_client,
             model_worker_interface=model_worker_interface,
-        ) as worker_monitor,
-        TokenGeneratorPipeline(
+        ) as model_worker,
+    ):
+        pipeline = TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
             lora_queue=lora_queue,
-            model_worker_interface=model_worker_interface,
-        ) as pipeline,
-    ):
+            model_worker=model_worker,
+        )
+
         pc.ready.set()
         while True:
             if pc.cancel.is_set():

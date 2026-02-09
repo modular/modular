@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, external_call
+from ffi import c_int, external_call
 from sys.info import CompilationTarget, platform_map
 
 
@@ -59,11 +59,11 @@ fn set_errno(errno: ErrNo):
 
 
 # Alias to shorten the error definitions below
-comptime pm = platform_map
+comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init
-struct ErrNo(Equatable, Stringable, TrivialRegisterType, Writable):
+struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -72,7 +72,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterType, Writable):
     Example:
         ```mojo
         import os
-        from sys.ffi import get_errno, set_errno, ErrNo
+        from ffi import get_errno, set_errno, ErrNo
 
         try:
             _ = os.path.realpath("non-existent-file")

@@ -24,7 +24,7 @@ _IGNORED_TARGETS = {
     "@@//max/kernels/test/gpu/linalg:_test_tma.mojo.test",  # Disabled
     "@@//max/kernels/test/gpu/linalg:test_matmul_selection_heuristic.mojo.test",  # A100 only
     "@@//max/kernels/test/gpu/linalg:test_tma_wgmma_with_multicast.mojo.test",  # Disabled
-    "@@//max/tests/integration/pipelines/python/kv_cache/transfer_engine:test_send_recv_concurrent_gpu",  # Disabled
+    "@@//max/tests/integration/kv_cache/transfer_engine:test_send_recv_concurrent_gpu",  # Disabled
 }
 
 
