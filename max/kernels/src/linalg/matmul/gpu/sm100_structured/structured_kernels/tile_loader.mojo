@@ -52,7 +52,7 @@ struct TileLoaderTMA[
     /,
     *,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """TMA-based tile loader for SM100.
 
     Wraps a TMA descriptor and multicast mask for efficient tile loading.
@@ -182,7 +182,7 @@ struct ScalesTileLoader[
     /,
     *,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """TMA-based scales tile loader for blockwise FP8.
 
     Unlike TileLoaderTMA, this loader:
@@ -257,24 +257,12 @@ struct ScalesTileLoader[
     ):
         """Load a TileTensor scales tile using TMA hardware acceleration.
 
-        This overload accepts TileTensor-based tiles and converts them to
-        LayoutTensor internally for the TMA operation. Zero-cost conversion
-        via pointer reinterpretation.
-
         Args:
             dest: Destination SMEM TileTensor tile.
             barrier: Memory barrier for TMA completion signaling.
             row_coord: Row coordinate (M for A-scales) in global memory.
             k_coord: K dimension coordinate in global memory.
         """
-        # Construct LayoutTensor from TileTensor pointer for TMA API
-        comptime tile_layout = LegacyLayout.row_major(dim0, dim1)
-        var lt_dest = LayoutTensor[
-            Self.dtype,
-            tile_layout,
-            address_space = AddressSpace.SHARED,
-            alignment=alignment,
-        ](dest.ptr)
         self.tma_op[].async_copy[Self.cta_group](
-            lt_dest, barrier, (row_coord, k_coord)
+            dest, barrier, (row_coord, k_coord)
         )

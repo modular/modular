@@ -212,6 +212,54 @@ def _handle_mutable_load(
     return [inputs[0], None]
 
 
+# Transfer operations
+
+
+@register_op_handler(mo.TransferOp)
+def _handle_transfer(
+    op: mo.TransferOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Handle mo.transfer by transferring buffer between devices.
+
+    TransferOp transfers tensor contents between devices (e.g. CPU<->GPU).
+    When source and destination devices match and alwaysElideSameDeviceCopy is
+    True, the result aliases the input. When the flag is False, a copy is made.
+
+    Args:
+        op: The transfer operation.
+        inputs: Input buffers - first is the tensor to transfer, second is the
+            chain (None).
+
+    Returns:
+        List containing the transferred tensor buffer and None for the chain.
+    """
+    assert isinstance(inputs[0], Buffer)
+    input_buffer = inputs[0]
+    target_device = _get_target_device(op)
+
+    if input_buffer.device == target_device:
+        if op.always_elide_same_device_copy:
+            # Alias: return the input buffer directly (no copy).
+            return [input_buffer, None]
+        # Flag is False: copy on the same device via broadcast to same shape.
+        output = Buffer(
+            shape=input_buffer.shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+        ops.mojo_ops.StaticBroadcastTo(
+            output,
+            input_buffer,
+            list(input_buffer.shape),
+            target_device._device_context_ptr(),
+        )
+        return [output, None]
+
+    # Cross-device transfer
+    # TransferOp produces (tensor, chain)
+    return [input_buffer.to(target_device), None]
+
+
 # Shape operations
 
 
@@ -788,6 +836,49 @@ for op_type in ops.REDUCE:
     register_op_handler(op_type)(reduce_handler(op_type))
 
 
+# Softmax operations
+
+
+def softmax_handler(op_type: type) -> OpHandler:
+    op_binding = ops.SOFTMAX[op_type]
+
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
+
+        assert isinstance(inputs[0], Buffer)
+        assert isinstance(inputs[1], Buffer)
+
+        input_buffer = inputs[0]
+        axis_buffer = inputs[1]
+
+        # Extract axis value from the axis tensor (scalar si64)
+        axis = int(axis_buffer.to_numpy().item())
+
+        # Output shape is the same as input (not reduced)
+        output = Buffer(
+            shape=input_buffer.shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        op_binding(
+            output, input_buffer, axis, target_device._device_context_ptr()
+        )
+
+        return [output]
+
+    return handler
+
+
+for op_type in ops.SOFTMAX:
+    register_op_handler(op_type)(softmax_handler(op_type))
+
+
 # Range operations
 
 
@@ -891,6 +982,56 @@ def _handle_random_normal(
         output,
         mean_val,
         variance_val,
+        seed_val,
+        target_device._device_context_ptr(),
+    )
+    return [output]
+
+
+@register_op_handler(mo.RandomUniformOp)
+def _handle_random_uniform(
+    op: mo.RandomUniformOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.random.uniform by dispatching to Mojo random uniform kernel.
+
+    Args:
+        op: The random uniform operation.
+        inputs: Input buffers - shape, lower_bound, upper_bound, seed
+            (all scalar/1D tensors on CPU per MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the random uniform tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # shape
+    assert isinstance(inputs[1], Buffer)  # lower_bound
+    assert isinstance(inputs[2], Buffer)  # upper_bound
+    assert isinstance(inputs[3], Buffer)  # seed
+
+    # Extract output shape from shape tensor (on CPU)
+    output_shape = tuple(inputs[0].to_numpy().tolist())
+
+    # Extract scalar params from CPU buffers
+    lower_val = float(inputs[1].to_numpy().item())
+    upper_val = float(inputs[2].to_numpy().item())
+    seed_val = int(inputs[3].to_numpy().item())
+
+    # Get dtype from MLIR type directly (safe with parametric shapes)
+    result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
+    output_dtype = result_mlir_type.dtype
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=output_shape,
+        dtype=output_dtype,
+        device=target_device,
+    )
+
+    ops.mojo_ops.RandomUniform(
+        output,
+        lower_val,
+        upper_val,
         seed_val,
         target_device._device_context_ptr(),
     )

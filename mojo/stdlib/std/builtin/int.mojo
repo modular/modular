@@ -187,7 +187,7 @@ struct Int(
     Representable,
     Roundable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Truncable,
     Writable,
 ):

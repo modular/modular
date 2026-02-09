@@ -75,7 +75,7 @@ from .request import (
     RequestID,
     RequestType,
 )
-from .scheduler import Scheduler, SchedulerError, SchedulerResult
+from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
@@ -154,7 +154,6 @@ __all__ = [
     "SamplingParamsGenerationConfigDefaults",
     "SamplingParamsInput",
     "Scheduler",
-    "SchedulerError",
     "SchedulerResult",
     "SharedMemoryArray",
     "TextContentPart",
@@ -162,6 +161,7 @@ __all__ = [
     "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
+    "TextGenerationPipelineInterface",
     "TextGenerationRequest",
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",

@@ -269,7 +269,7 @@ fn _has_native_f8_support() -> Bool:
 
 
 @fieldwise_init
-struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterType):
+struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
     """Flags for controlling fast-math optimizations in floating-point operations.
 
     FastMathFlag provides compile-time controls for various floating-point math
@@ -383,7 +383,7 @@ struct SIMD[dtype: DType, size: Int](
     Roundable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Truncable,
     Writable,
 ):
@@ -1926,7 +1926,10 @@ struct SIMD[dtype: DType, size: Int](
     fn __round__(self) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
-        This rounding goes to the nearest integer with ties away from zero.
+        This rounding goes to the nearest integer with ties towards the nearest
+        even value ("banker's rounding"). This is the default rounding mode for
+        binary floating point in the IEEE 754 Standard for Floating Point
+        Arithmetic.
 
         Returns:
             The elementwise rounded value of this SIMD vector.
@@ -1937,7 +1940,10 @@ struct SIMD[dtype: DType, size: Int](
     fn __round__(self, ndigits: Int) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
-        This rounding goes to the nearest integer with ties away from zero.
+        This rounding goes to the nearest integer with ties towards the nearest
+        even value ("banker's rounding"). This is the default rounding mode for
+        binary floating point in the IEEE 754 Standard for Floating Point
+        Arithmetic.
 
         Args:
             ndigits: The number of digits to round to.

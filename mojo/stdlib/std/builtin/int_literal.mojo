@@ -24,7 +24,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Indexer,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Truncable,
 ):
     """This type represents a static integer literal value with

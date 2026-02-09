@@ -57,6 +57,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_tokens: Buffer | None = None,
         merged_draft_offsets: Buffer | None = None,
     ) -> tuple[ModelInputs, int]:
+        """Prepares batch inputs and KV cache for draft or target model."""
         # Claim cache rows
         # Build request_id -> replica_idx mapping from replica_batches
         request_to_replica: dict[RequestID, int] = {}
@@ -126,6 +127,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         num_steps: int,
         model_inputs: ModelInputs,
     ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer]:
+        """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
             self._create_sampling_parameters(batch, self.draft_devices[0])
@@ -217,6 +219,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_offsets: Buffer,
         all_draft_logits: Buffer,
     ) -> tuple[Buffer, Buffer, Buffer]:
+        """Verifies draft tokens against the target model and returns merged outputs."""
         # # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
         with reserve_token_space_for_batch(
             context_batch, num_draft_tokens_generated

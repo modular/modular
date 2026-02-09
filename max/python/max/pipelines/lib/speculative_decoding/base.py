@@ -32,10 +32,8 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
-    Pipeline,
     PipelineTokenizer,
     RequestID,
-    TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
 )
@@ -47,11 +45,9 @@ from transformers import AutoConfig
 
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
-from ..interfaces import GenerateMixin, ModelOutputs, PipelineModel
-from ..sampling import (
-    rejection_sampler_with_residuals,
-    token_sampler,
-)
+from ..interfaces import ModelOutputs, PipelineModel
+from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
+from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -156,8 +152,7 @@ def hidden_states_return_config(
 
 
 class SpeculativeDecodingPipelineBase(
-    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-    GenerateMixin[TextContext, TextGenerationRequest],
+    TextGenerationPipelineInterface[TextContext],
     ABC,
 ):
     """Base class for speculative decoding pipelines with shared logic."""
@@ -449,6 +444,7 @@ class SpeculativeDecodingPipelineBase(
         context: TextContext,
         is_draft: bool = False,
     ) -> int:
+        """Computes the number of steps to run for the given context."""
         max_seq_len = model.calculate_max_seq_len(
             self.pipeline_config, huggingface_config=huggingface_config
         )
@@ -465,6 +461,7 @@ class SpeculativeDecodingPipelineBase(
 
     @property
     def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
         return self._pipeline_config
 
     @property
@@ -475,6 +472,7 @@ class SpeculativeDecodingPipelineBase(
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
+        """Returns the tokenizer for this speculative pipeline."""
         return self._tokenizer
 
     def _create_sampling_parameters(
@@ -530,6 +528,7 @@ class SpeculativeDecodingPipelineBase(
         min_top_p: Buffer,
         seed: Buffer,
     ) -> tuple[Buffer, Buffer, Buffer]:
+        """Samples draft tokens from the draft model logits."""
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
@@ -551,6 +550,7 @@ class SpeculativeDecodingPipelineBase(
     def kv_managers(
         self,
     ) -> list[PagedKVCacheManager]:
+        """Returns the KV cache managers for target and draft models."""
         return [self._target_model.kv_manager, self._draft_model.kv_manager]
 
     @property

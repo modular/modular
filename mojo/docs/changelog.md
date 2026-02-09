@@ -22,11 +22,11 @@ what we publish.
 ### Language enhancements
 
 - `@register_passable("trivial")` is now deprecated,
-   conform to `TrivialRegisterType` trait instead.
+   conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
 
 - `@register_passable` is now deprecated,
-   conform to `RegisterType` trait instead.
+   conform to `RegisterPassable` trait instead.
    The decorator will be removed after next release.
 
 - Mojo now supports more flexible default arguments and parameters, which can
@@ -206,7 +206,7 @@ what we publish.
   `Writable`.
 
 - All traits and structs with `@register_passable("trivial")` decorator are now
-  extending `TrivialRegisterType` trait. The decorator is removed from them.
+  extending `TrivialRegisterPassable` trait. The decorator is removed from them.
 
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.
@@ -218,6 +218,9 @@ what we publish.
 - `Int.__truediv__` now performs truncating integer division, returning `Int`
   instead of the previously deprecated `Float64`. Use explicit `Float64` casts
   for floating-point division.
+
+- Documentation for `SIMD.__round__` now clarifies the pre-existing behavior
+  that ties are rounded to the nearest even, not away from zero.
 
 ### Tooling changes
 

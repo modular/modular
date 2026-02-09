@@ -126,7 +126,7 @@ struct Span[
     ImplicitlyCopyable,
     Iterable,
     Sized,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
 ):
     """A non-owning view of contiguous data.
 

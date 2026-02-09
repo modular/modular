@@ -177,7 +177,7 @@ def _create_requests(
 
 
 def run_model(
-    pipeline: pipelines.TextGenerationPipeline,
+    pipeline: pipelines.TextGenerationPipelineInterface,
     tokenizer: PipelineTokenizer,
     requests: Sequence[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,

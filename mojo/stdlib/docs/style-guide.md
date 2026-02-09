@@ -282,7 +282,7 @@ var copy = MyStruct(original)  # 🟢 Preferred
 Where you intend to make a copy, favor an explicit copy constructor to make your
 intention clear.
 
-Copying types that conform to `RegisterType` like `Int`, `Bool`, `Pointer`,
+Copying types that conform to `RegisterPassable` like `Int`, `Bool`, `Pointer`,
 and `SIMD` is
 safe and inexpensive. However, copying types that dynamically allocate memory
 can be expensive. This includes common types like `List`, `Dict`, `Set`,

@@ -101,7 +101,7 @@ from utils.index import Index
 from kv_cache.types import swizzle_granularity, padded_depth
 
 
-struct MLAPositionSummary(TrivialRegisterType):
+struct MLAPositionSummary(TrivialRegisterPassable):
     var num_keys: UInt32
     var score_row: UInt32
 
@@ -169,7 +169,7 @@ struct MLAPositionSummary(TrivialRegisterType):
 
 
 struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     comptime k_layout = tile_layout_k_major[
         Self.dtype,
@@ -283,7 +283,7 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
 
 
 @fieldwise_init
-struct WarpRole(Equatable, TrivialRegisterType):
+struct WarpRole(Equatable, TrivialRegisterPassable):
     var _role: Int32
     comptime Softmax0 = Self(0)
     comptime Softmax1 = Self(1)
@@ -340,7 +340,7 @@ struct SM100MLA[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     _ndbuffer_mha_operand: Bool,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()

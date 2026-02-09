@@ -37,7 +37,8 @@ from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import LayoutTensor
 from builtin.variadics import Variadic
-from layout._coord import Coord, CoordLike, Idx
+from buffer import Dim, DimList
+from layout._coord import Coord, CoordLike, Idx, RuntimeInt, _DimsToCoordLike
 from layout._layout import Layout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.structuring import SMemTileArray as LTSMemTileArray
@@ -215,6 +216,143 @@ Parameters:
     alignment: Memory alignment (default 128 for shared memory).
 """
 
+from layout._layout import TensorLayout
+from layout import LayoutTensor, UNKNOWN_VALUE
+from layout import Layout as LegacyLayout
+
+
+@parameter
+fn _int_to_dim(value: Int) -> Dim:
+    """Convert IntTuple value to Dim: UNKNOWN_VALUE -> Dim(), else Dim(N)."""
+    if value != UNKNOWN_VALUE:
+        return Dim(value)
+    return Dim()
+
+
+@always_inline
+fn lt_to_tt[
+    dtype: DType,
+    lt_layout: LegacyLayout,
+](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
+    dtype,
+    Layout[
+        _DimsToCoordLike[
+            DType.int64,
+            DimList(
+                _int_to_dim(lt_layout.shape[0].value()),
+                _int_to_dim(lt_layout.shape[1].value()),
+            ),
+        ],
+        _DimsToCoordLike[
+            DType.int64,
+            DimList(
+                _int_to_dim(lt_layout.stride[0].value()),
+                _int_to_dim(lt_layout.stride[1].value()),
+            ),
+        ],
+    ],
+    lt.origin,
+]:
+    """Convert a 2D LayoutTensor to a TileTensor.
+
+    Static dimensions are preserved as ComptimeInt, dynamic dimensions
+    (UNKNOWN_VALUE) become RuntimeInt. Uses _DimsToCoordLike via DimList
+    to avoid the _IntTupleToCoordLike compiler crash.
+    """
+    comptime ShapeTypes = _DimsToCoordLike[
+        DType.int64,
+        DimList(
+            _int_to_dim(lt_layout.shape[0].value()),
+            _int_to_dim(lt_layout.shape[1].value()),
+        ),
+    ]
+    comptime StrideTypes = _DimsToCoordLike[
+        DType.int64,
+        DimList(
+            _int_to_dim(lt_layout.stride[0].value()),
+            _int_to_dim(lt_layout.stride[1].value()),
+        ),
+    ]
+    var shape = Coord[*ShapeTypes]()
+    var stride = Coord[*StrideTypes]()
+
+    @parameter
+    for i in range(2):
+
+        @parameter
+        if not shape.element_types[i].is_static_value:
+            shape[i] = rebind[shape.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+            )
+
+        @parameter
+        if not stride.element_types[i].is_static_value:
+            stride[i] = rebind[stride.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+            )
+
+    comptime ResultLayout = Layout[ShapeTypes, StrideTypes]
+    from memory import UnsafePointer as Ptr
+
+    var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
+    return TileTensor[dtype, ResultLayout, lt.origin](
+        ptr=ptr,
+        layout=ResultLayout(shape, stride),
+    )
+
+
+@always_inline
+fn lt_to_tt_1d[
+    dtype: DType,
+    lt_layout: LegacyLayout,
+](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
+    dtype,
+    Layout[
+        _DimsToCoordLike[
+            DType.int64,
+            DimList(_int_to_dim(lt_layout.shape[0].value())),
+        ],
+        _DimsToCoordLike[
+            DType.int64,
+            DimList(_int_to_dim(lt_layout.stride[0].value())),
+        ],
+    ],
+    lt.origin,
+]:
+    """Convert a 1D LayoutTensor to a TileTensor."""
+    comptime ShapeTypes = _DimsToCoordLike[
+        DType.int64,
+        DimList(_int_to_dim(lt_layout.shape[0].value())),
+    ]
+    comptime StrideTypes = _DimsToCoordLike[
+        DType.int64,
+        DimList(_int_to_dim(lt_layout.stride[0].value())),
+    ]
+    var shape = Coord[*ShapeTypes]()
+    var stride = Coord[*StrideTypes]()
+
+    @parameter
+    if not shape.element_types[0].is_static_value:
+        shape[0] = rebind[shape.element_types[0]](
+            Scalar[DType.int64](lt.runtime_layout.shape.value[0])
+        )
+
+    @parameter
+    if not stride.element_types[0].is_static_value:
+        stride[0] = rebind[stride.element_types[0]](
+            Scalar[DType.int64](lt.runtime_layout.stride.value[0])
+        )
+
+    comptime ResultLayout = Layout[ShapeTypes, StrideTypes]
+    from memory import UnsafePointer as Ptr
+
+    var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
+    return TileTensor[dtype, ResultLayout, lt.origin](
+        ptr=ptr,
+        layout=ResultLayout(shape, stride),
+    )
+
+
 # ============================================================================
 # Compile-time Accessors for SMemTile
 # ============================================================================
@@ -272,7 +410,7 @@ struct SMemTileArrayWithLayout[
     tile_layout: Layout,
     num_tiles: Int,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles with explicit Layout (preserves swizzle info).
 
     Unlike SMemTileArray2D which uses row_major internally, this type preserves
@@ -401,7 +539,7 @@ struct SMemTileArray[
     stride_types: Variadic.TypesOfTrait[CoordLike],
     num_tiles: Int,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles with variadic shape/stride type parameters.
 
     This is the TileTensor equivalent of the LayoutTensor-based SMemTileArray
@@ -608,7 +746,7 @@ struct SMemTileArray2D[
     num_tiles: Int,
     swizzle_bytes: Int = 128,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles in shared memory with swizzled K-major layout.
 
     The tiles use `internal_k_major` layout with configurable swizzle, matching
@@ -780,7 +918,7 @@ struct SMemTileArray2DRowMajor[
     dim1: Int,
     num_tiles: Int,
     alignment: Int = 128,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of TileTensor tiles in shared memory with row_major layout.
 
     Unlike SMemTileArray2D which uses swizzled internal_k_major layout, this
@@ -931,7 +1069,7 @@ struct BlockwiseFP8TilePayload[
     a_scales_dim1: Int,
     # Pipeline stages
     num_pipeline_stages: Int,
-](TilePayload, TrivialRegisterType):
+](TilePayload, TrivialRegisterPassable):
     """TileTensor-based tile payload for blockwise FP8 matmul.
 
     Unlike BlockScaledTilePayload, this only stores A-scales in SMEM.

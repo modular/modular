@@ -65,7 +65,7 @@ struct TileTensor[
     element_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
         ComptimeInt[1]
     ],
-](DevicePassable, ImplicitlyCopyable, TrivialRegisterType, Writable):
+](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     comptime rank = Self.LayoutType.rank
     comptime element_size = Coord[*Self.element_shape_types].static_product
     comptime ElementType = SIMD[Self.dtype, Self.element_size]
@@ -411,6 +411,34 @@ struct TileTensor[
         element_shape_types = Self.element_shape_types,
     ]:
         return _tile(self, coord[*tile_sizes](), coordinates)
+
+    @always_inline("nodebug")
+    fn reshape[
+        new_layout: TensorLayout,
+    ](self, layout_val: new_layout) -> TileTensor[
+        dtype = Self.dtype,
+        LayoutType=new_layout,
+        origin = Self.origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+        element_shape_types = Self.element_shape_types,
+    ]:
+        """Create a view of the tensor with a different layout.
+
+        Returns a new TileTensor sharing the same pointer but with
+        a different layout. This is a zero-cost operation -- only the
+        layout type changes, no data is moved.
+
+        Parameters:
+            new_layout: The target layout type (inferred from layout_val).
+
+        Args:
+            layout_val: The layout instance to use for the new view.
+
+        Returns:
+            A TileTensor with the new layout viewing the same memory.
+        """
+        return {self.ptr, layout_val}
 
     @always_inline("nodebug")
     fn distribute[

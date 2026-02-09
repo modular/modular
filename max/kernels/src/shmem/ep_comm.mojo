@@ -236,7 +236,7 @@ fn get_device_alignment() -> Int:
     return gpu_alignment
 
 
-trait TokenFormat(DevicePassable, TrivialRegisterType):
+trait TokenFormat(DevicePassable, TrivialRegisterPassable):
     comptime hid_dim: Int
     comptime top_k: Int
     comptime alignment: Int
@@ -328,7 +328,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterType):
 
 struct BF16TokenFormat[
     output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int = 0
-](TokenFormat, TrivialRegisterType):
+](TokenFormat, TrivialRegisterPassable):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -429,7 +429,7 @@ struct BlockwiseFP8TokenFormat[
     _hid_dim: Int,
     _top_k: Int,
     _alignment: Int = 0,
-](TokenFormat, TrivialRegisterType):
+](TokenFormat, TrivialRegisterPassable):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -623,7 +623,7 @@ struct NVFP4TokenFormat[
     _hid_dim: Int,
     _top_k: Int,
     _alignment: Int = 0,
-](TokenFormat, TrivialRegisterType):
+](TokenFormat, TrivialRegisterPassable):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
@@ -946,7 +946,9 @@ struct NVFP4TokenFormat[
 # ===-----------------------------------------------------------------------===#
 
 
-struct EPLocalSyncCounters[n_experts: Int](DevicePassable, TrivialRegisterType):
+struct EPLocalSyncCounters[n_experts: Int](
+    DevicePassable, TrivialRegisterPassable
+):
     """Manages atomic counters for EP kernel synchronization within a device.
 
     This struct provides dedicated atomic counter space for each of the four

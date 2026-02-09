@@ -143,8 +143,8 @@ fn tiled_matmul_run[
     ](
         alg,
         c,
-        a,
-        b,
+        a.get_immutable(),
+        b.get_immutable(),
         tile_n_k,
         global_tile_offset,
         global_tile_shape,
@@ -156,7 +156,7 @@ fn tiled_matmul_run[
             b.shape,
             transpose_b,
             b_packed,
-        ].get(b, tile_n_k),
+        ].get(b.get_immutable(), tile_n_k),
         elementwise_epilogue_fn,
     )
     matmul._outer_k_loop()
@@ -165,9 +165,6 @@ fn tiled_matmul_run[
 # Tiled Matmul Implementation.
 @fieldwise_init
 struct TiledMatmul[
-    a_mut: Bool,
-    b_mut: Bool,
-    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
@@ -175,10 +172,10 @@ struct TiledMatmul[
     kernel_id: InnerKernelID,
     a_type: DType,
     a_shape: DimList,
-    a_origin: Origin[mut=a_mut],
+    a_origin: ImmutOrigin,
     b_type: DType,
     b_shape: DimList,
-    b_origin: Origin[mut=b_mut],
+    b_origin: ImmutOrigin,
     c_type: DType,
     c_shape: DimList,
     c_origin: MutOrigin,

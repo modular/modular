@@ -83,21 +83,21 @@ class SamplingConfig(ConfigFileModel):
         sampling_params_defaults: SamplingParamsGenerationConfigDefaults,
         **kwargs,
     ) -> SamplingConfig:
-        """
-        Create a SamplingConfig instance from SamplingParamsGenerationConfigDefaults and additional keyword arguments.
+        """Creates a SamplingConfig from generation config defaults and kwargs.
 
-        This method inspects the provided SamplingParamsGenerationConfigDefaults to determine if penalty-related
-        or min-tokens-related fields are set to non-default values. If so, it enables the corresponding flags
-        ('enable_penalties' and 'enable_min_tokens') in the resulting SamplingConfig unless they are already set
-        in kwargs.
+        Inspects the provided defaults to determine if penalty-related or
+        min-tokens-related fields are set to non-default values; if so,
+        enables the corresponding flags in the result unless already set in
+        kwargs.
 
         Args:
-            sampling_params_defaults (SamplingParamsGenerationConfigDefaults): The generation config defaults
+            sampling_params_defaults: The generation config defaults
                 containing explicit values for sampling parameters.
-            **kwargs: Additional keyword arguments to override or supplement the config.
+            **kwargs: Additional keyword arguments to override or supplement
+                the config.
 
         Returns:
-            SamplingConfig: A new SamplingConfig instance with the appropriate fields set.
+            A new SamplingConfig instance with the appropriate fields set.
         """
         config_kwargs = kwargs.copy()
 

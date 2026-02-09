@@ -520,7 +520,7 @@ fn printf_append_string_n(
 
 
 @fieldwise_init
-struct Header(TrivialRegisterType):
+struct Header(TrivialRegisterPassable):
     var _handle: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -608,7 +608,7 @@ struct Header(TrivialRegisterType):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
-struct header_t(TrivialRegisterType):
+struct header_t(TrivialRegisterPassable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -616,7 +616,7 @@ struct header_t(TrivialRegisterType):
 
 
 @fieldwise_init
-struct Payload(TrivialRegisterType):
+struct Payload(TrivialRegisterPassable):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
@@ -634,7 +634,7 @@ struct payload_t(Copyable):
 
 
 @fieldwise_init
-struct Buffer(TrivialRegisterType):
+struct Buffer(TrivialRegisterPassable):
     var _handle: UnsafePointer[
         buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -725,7 +725,7 @@ struct Buffer(TrivialRegisterType):
 # match of runtime buffer layout but matches its prefix that
 # this code tries to access.
 @fieldwise_init
-struct buffer_t(Copyable, TrivialRegisterType):
+struct buffer_t(Copyable, TrivialRegisterPassable):
     var headers: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -737,7 +737,7 @@ struct buffer_t(Copyable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct ControlOffset(TrivialRegisterType):
+struct ControlOffset(TrivialRegisterPassable):
     var value: UInt32
     comptime ready_flag = Self(0)
     comptime reserved0 = Self(1)
@@ -752,7 +752,7 @@ struct ControlOffset(TrivialRegisterType):
 
 
 @fieldwise_init
-struct ControlWidth(TrivialRegisterType):
+struct ControlWidth(TrivialRegisterPassable):
     var value: UInt32
     comptime ready_flag = Self(1)
     comptime reserved0 = Self(31)
