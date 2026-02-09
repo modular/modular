@@ -103,7 +103,9 @@ struct InterpolationMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-struct Interpolator[mode: InterpolationMode](Defaultable, TrivialRegisterType):
+struct Interpolator[mode: InterpolationMode](
+    Defaultable, TrivialRegisterPassable
+):
     var cubic_coeff: Float32
 
     @always_inline
@@ -235,7 +237,6 @@ fn interpolate_point_1d[
     input: TileTensor[
         mut=True,
         dtype,
-        _,
         InputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,

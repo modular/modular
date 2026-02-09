@@ -60,7 +60,7 @@ comptime is_sm90or100 = is_sm90 or is_sm100
 
 
 struct FlashAttentionAlgorithm(
-    Defaultable, Stringable, TrivialRegisterType, Writable
+    Defaultable, Stringable, TrivialRegisterPassable, Writable
 ):
     var _value: Int32
 
@@ -118,7 +118,7 @@ struct FlashAttentionAlgorithm(
 
 
 @fieldwise_init
-struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
+struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -753,7 +753,7 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
+trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterPassable):
     comptime static_value: Optional[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -763,7 +763,7 @@ trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
 struct StaticInt[value: Int](
-    Defaultable, OptionallyStaticInt, TrivialRegisterType
+    Defaultable, OptionallyStaticInt, TrivialRegisterPassable
 ):
     comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
@@ -780,7 +780,7 @@ struct StaticInt[value: Int](
         return UInt32(Self.value)
 
 
-struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
+struct DynamicInt(OptionallyStaticInt, TrivialRegisterPassable):
     var value: UInt32
     comptime static_value: Optional[Int] = None
 
@@ -802,7 +802,7 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
-trait MHAPartitionScheme(Copyable, TrivialRegisterType):
+trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -818,7 +818,7 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterType):
 
 
 struct NoPartition[dtype: DType](
-    Defaultable, MHAPartitionScheme, TrivialRegisterType
+    Defaultable, MHAPartitionScheme, TrivialRegisterPassable
 ):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
@@ -838,7 +838,9 @@ struct NoPartition[dtype: DType](
         return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
 
 
-struct SplitKPartition[dtype: DType](MHAPartitionScheme, TrivialRegisterType):
+struct SplitKPartition[dtype: DType](
+    MHAPartitionScheme, TrivialRegisterPassable
+):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]

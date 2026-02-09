@@ -272,10 +272,10 @@ fn bench_reduce[
     b.dump_report()
 
     var max_time = b.info_vec[0].result.mean(unit="ms")
-    var gbps = num_bytes / (max_time * 1000 * 1000)
+    var gbps = Float64(num_bytes) / (max_time * 1000 * 1000)
     # algbw and busbw are explain in the following link:
     # https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md#allreduce
-    var busbw = 2 * gbps * (ngpus - 1) / ngpus
+    var busbw = 2 * gbps * Float64((ngpus - 1)) / Float64(ngpus)
     print(
         "|",
         name,

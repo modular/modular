@@ -118,8 +118,7 @@ fn vectorize_distribute_layout[
     return append_layout(materialize[vlayout[0]](), materialize[dlayout]())
 
 
-@register_passable
-struct WaveFrontSummary(Defaultable, ImplicitlyCopyable):
+struct WaveFrontSummary(Defaultable, ImplicitlyCopyable, RegisterPassable):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 

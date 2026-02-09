@@ -52,7 +52,7 @@ struct TileLoaderTMA[
     /,
     *,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """TMA-based tile loader for SM100.
 
     Wraps a TMA descriptor and multicast mask for efficient tile loading.
@@ -150,8 +150,8 @@ struct TileLoaderTMA[
         self,
         dest: TileTensor[
             Self.dtype,
-            MutAnyOrigin,
             LayoutType,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
@@ -182,7 +182,7 @@ struct ScalesTileLoader[
     /,
     *,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """TMA-based scales tile loader for blockwise FP8.
 
     Unlike TileLoaderTMA, this loader:

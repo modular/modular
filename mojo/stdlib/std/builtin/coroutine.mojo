@@ -40,7 +40,7 @@ fn _suspend_async[body: fn(AnyCoroutine) capturing -> None]():
 # ===----------------------------------------------------------------------=== #
 
 
-struct _CoroutineContext(TrivialRegisterType):
+struct _CoroutineContext(TrivialRegisterPassable):
     """The default context for a Coroutine, capturing the resume function
     callback and parent Coroutine. The resume function will typically just
     resume the parent. May be overwritten by other context types with different
@@ -77,8 +77,9 @@ fn _coro_resume_noop_callback(null: AnyCoroutine):
 
 
 @explicit_destroy
-@register_passable
-struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet]:
+struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
+    RegisterPassable
+):
     """Represents a coroutine.
 
     Coroutines can pause execution saving the state of the program (including
@@ -162,8 +163,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet]:
 
 
 @explicit_destroy
-@register_passable
-struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
+struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
     """Represents a coroutine that can raise.
 
     Coroutines can pause execution saving the state of the program (including

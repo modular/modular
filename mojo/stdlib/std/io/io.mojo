@@ -42,7 +42,7 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-struct _fdopen[mode: StaticString = "a"](TrivialRegisterType):
+struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
     var handle: FILE_ptr
 
     fn __init__(out self, stream_id: FileDescriptor):
@@ -127,7 +127,7 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterType):
         var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call["getdelim", Int,](
+        var bytes_read = external_call["getdelim", Int](
             UnsafePointer(to=buffer),
             UnsafePointer(to=n),
             ord(delimiter),

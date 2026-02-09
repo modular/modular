@@ -220,7 +220,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-struct StreamPriorityRange(Stringable, TrivialRegisterType, Writable):
+struct StreamPriorityRange(Stringable, TrivialRegisterPassable, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -259,7 +259,7 @@ struct StreamPriorityRange(Stringable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct _DeviceBufferMode(TrivialRegisterType):
+struct _DeviceBufferMode(TrivialRegisterPassable):
     var _mode: Int
 
     comptime _SYNC = _DeviceBufferMode(0)
@@ -1652,7 +1652,7 @@ struct DeviceStream(ImplicitlyCopyable):
         )
 
 
-struct EventFlags(TrivialRegisterType):
+struct EventFlags(TrivialRegisterPassable):
     """Provides flags for creating events.
 
     These flags can be combined using the bitwise OR operator (`|`, `|=`).
@@ -3250,8 +3250,7 @@ struct DeviceExternalFunction:
         return Int(result)
 
 
-@register_passable
-struct DeviceContext(ImplicitlyCopyable):
+struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 

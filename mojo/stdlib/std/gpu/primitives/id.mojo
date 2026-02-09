@@ -193,7 +193,7 @@ fn sm_id() -> UInt:
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ThreadIdx(Defaultable, TrivialRegisterType):
+struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a thread within a block."""
 
@@ -240,7 +240,7 @@ comptime thread_idx = _ThreadIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockIdx(Defaultable, TrivialRegisterType):
+struct _BlockIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a block within a grid."""
 
@@ -287,7 +287,7 @@ comptime block_idx = _BlockIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockDim(Defaultable, TrivialRegisterType):
+struct _BlockDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     block."""
 
@@ -357,7 +357,7 @@ For example: `block_dim.y`."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GridDim(Defaultable, TrivialRegisterType):
+struct _GridDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     grid."""
 
@@ -428,7 +428,7 @@ dimensions of a grid."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GlobalIdx(Defaultable, TrivialRegisterType):
+struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` global offset of
     the kernel launch."""
 
@@ -461,7 +461,7 @@ values."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ClusterDim(Defaultable, TrivialRegisterType):
+struct _ClusterDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     cluster."""
 
@@ -496,7 +496,7 @@ comptime cluster_dim = _ClusterDim()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ClusterIdx(Defaultable, TrivialRegisterType):
+struct _ClusterIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a cluster within a grid."""
 
@@ -535,7 +535,7 @@ comptime cluster_idx = _ClusterIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ClusterBlockIdx(Defaultable, TrivialRegisterType):
+struct _ClusterBlockIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a threadblock within a cluster."""
 

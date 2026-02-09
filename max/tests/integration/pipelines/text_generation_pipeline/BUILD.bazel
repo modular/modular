@@ -1,0 +1,45 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_overlap_text_generation_pipeline",
+    size = "large",
+    srcs = ["test_overlap_text_generation_pipeline.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_empty_batches",
+    size = "large",
+    srcs = ["test_text_generation_pipeline_empty_batches.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "manual",
+        "no-pydeps",  # TODO: Fix and re-enable
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)

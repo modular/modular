@@ -122,8 +122,7 @@ fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
         return _get_index_type(address_space)
 
 
-@register_passable
-struct IntArray(ImplicitlyCopyable):
+struct IntArray(ImplicitlyCopyable, RegisterPassable):
     """A memory-efficient, register-passable array of integers.
 
     `IntArray` provides a low-level implementation of a dynamically-sized integer array
@@ -270,7 +269,7 @@ that are not known at compile time or have not been specified.
 
 
 struct _IntTupleIter[origin: ImmutOrigin](
-    Iterable, Iterator, TrivialRegisterType
+    Iterable, Iterator, TrivialRegisterPassable
 ):
     """Iterator for traversing elements of an IntTuple."""
 

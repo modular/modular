@@ -74,7 +74,7 @@ struct UnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,  # ⚠️ Defaulted to mutable
     origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],  # ⚠️ Defaulted to AnyOrigin
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     ...
 ```
 

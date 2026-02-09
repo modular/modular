@@ -43,7 +43,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Representable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """This type represents a string literal.

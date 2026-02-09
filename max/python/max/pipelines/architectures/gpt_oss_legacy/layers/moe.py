@@ -104,6 +104,7 @@ class GptOssMoE(MoE, Shardable):
 
         self.config = config
         self._sharding_strategy = None
+        self.tp_size = len(config.devices)
 
         # Initialize parent class
         super().__init__(
@@ -262,6 +263,8 @@ class GptOssMoE(MoE, Shardable):
         down_bias_per_token = ops.gather(
             self.down_proj_bias_stacked, expert_assignments, axis=0
         )
+        if self.tp_size > 1:
+            down_bias_per_token = down_bias_per_token / self.tp_size
         down_output = down_output + down_bias_per_token
 
         # Reshape and apply routing weights
@@ -305,14 +308,21 @@ class GptOssMoE(MoE, Shardable):
                 self.shared_experts.sharding_strategy = strategy
 
             # Set sharding strategy for the combined expert weights
+            # gate_up_proj: [experts, hidden, 2*moe_dim] - split output dim (axis 2)
             self._experts_gate_up_proj_weight.sharding_strategy = (
-                ShardingStrategy.rowwise(strategy.num_devices)
+                ShardingStrategy.axiswise(
+                    axis=2, num_devices=strategy.num_devices
+                )
             )
+            # down_proj: [experts, moe_dim, hidden] - split input dim (axis 1)
             self._experts_down_proj_weight.sharding_strategy = (
                 ShardingStrategy.columnwise(strategy.num_devices)
             )
+            # gate_up_proj_bias: [experts, 2*moe_dim] - split to match output
             self._experts_gate_up_proj_bias.sharding_strategy = (
-                ShardingStrategy.rowwise(strategy.num_devices)
+                ShardingStrategy.axiswise(
+                    axis=1, num_devices=strategy.num_devices
+                )
             )
             self._experts_down_proj_bias.sharding_strategy = (
                 ShardingStrategy.replicate(strategy.num_devices)
@@ -357,24 +367,18 @@ class GptOssMoE(MoE, Shardable):
         for shard_idx, device in enumerate(devices):
             new_config = copy(self.config)
             new_config.devices = [device]
-            new_config.hidden_size = (
-                self.hidden_dim // self._sharding_strategy.num_devices
-            )
+            new_config.hidden_size = self.hidden_dim
             new_config.intermediate_size = (
                 self.moe_dim // self._sharding_strategy.num_devices
             )
-            new_config.num_local_experts = (
-                self.num_experts // self._sharding_strategy.num_devices
-            )
-            new_config.num_experts_per_tok = (
-                self.num_experts_per_token
-                // self._sharding_strategy.num_devices
-            )
+            new_config.num_local_experts = self.num_experts
+            new_config.num_experts_per_tok = self.num_experts_per_token
             new_config.dtype = self.dtype
 
             sharded = GptOssMoE(
                 config=new_config,
             )
+            sharded.tp_size = self._sharding_strategy.num_devices
 
             # Replace the weights with sharded versions.
             sharded.gate.gate_score = gate_score_shards[shard_idx]

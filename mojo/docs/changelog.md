@@ -22,8 +22,33 @@ what we publish.
 ### Language enhancements
 
 - `@register_passable("trivial")` is now deprecated,
-   conform to `TrivialRegisterType` trait instead.
+   conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
+
+- `@register_passable` is now deprecated,
+   conform to `RegisterPassable` trait instead.
+   The decorator will be removed after next release.
+
+- Mojo now supports more flexible default arguments and parameters, which can
+  mismatch on declared type when their types are parametric.  This allows
+  inferring parameters from these when they are used as a default value, for
+  example:
+
+  ```mojo
+    fn take_string_slice[o: ImmOrigin](str: StringSlice[o] = ""): ...
+    fn use_it():
+      take_string_slice() # Ok, defaults to empty string, inferring "o".
+      # Explicit calls also work of course.
+      take_string_slice(StaticString("hello"))
+
+    # Default value is checked for validity at the call site.
+    fn defaultArgumentBadType2[T: AnyType](a: T = 1.0): pass
+    fn callDefaultArgumentBadType2():
+        # Ok!
+        defaultArgumentBadType2[Float64]()
+        # error: value passed to 'a' cannot be converted from 'FloatLiteral[1]' to 'Int'
+        defaultArgumentBadType2[Int]()
+  ```
 
 ### Language changes
 
@@ -181,7 +206,7 @@ what we publish.
   `Writable`.
 
 - All traits and structs with `@register_passable("trivial")` decorator are now
-  extending `TrivialRegisterType` trait. The decorator is removed from them.
+  extending `TrivialRegisterPassable` trait. The decorator is removed from them.
 
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.

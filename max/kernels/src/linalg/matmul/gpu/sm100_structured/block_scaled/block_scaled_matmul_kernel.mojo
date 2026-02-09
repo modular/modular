@@ -22,9 +22,9 @@ Architecture:
 - Uses Self.InputTilePipeline (BlockScaledTilePipeline) for producer/consumer sync
 - Load warp: with input_pipeline.producer() as stage -> Self.load_input_tiles()
 - MMA warp: with input_pipeline.consumer() as stage -> Self.mma()
-- Epilogue warp: Uses structured building blocks from tile_writer.mojo
+- Epilogue warp: Uses structured building blocks from epilogue_components.mojo
 
-Epilogue Building Blocks (from tile_writer.mojo):
+Epilogue Building Blocks (from epilogue_components.mojo):
 - TmemArrayType / load_fragments() for TMEM load
 - AccumBarrier.arrive() for barrier signaling
 - TMEMToSMemWriter.write_fragments() for SMEM write
@@ -739,13 +739,13 @@ struct BlackwellBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays from SMEM accessors
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var clc_full = smem.clc_mbars_full()
-        var clc_empty = smem.clc_mbars_empty()
-        var clc_throttle = smem.clc_throttle_mbars()
-        var clc_response_arr = smem.clc_response()
-        var tmem_addr_arr = smem.tmem_addr()
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var clc_full = smem.pipelines.clc_full()
+        var clc_empty = smem.pipelines.clc_empty()
+        var clc_throttle = smem.pipelines.clc_throttle()
+        var clc_response_arr = smem.pipelines.clc_response()
+        var tmem_addr_arr = smem.pipelines.tmem_addr()
 
         # Extract pointer for TMEM address storage
         var tmem_addr_storage = tmem_addr_arr.ptr
@@ -795,7 +795,7 @@ struct BlackwellBlockScaledMatmulKernel[
             )
 
             # Initialize TMEM deallocation barrier
-            smem.tmem_dealloc().ptr[].init(
+            smem.pipelines.tmem_dealloc().ptr[].init(
                 Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
@@ -894,13 +894,13 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== MMA WARP =====
         if WarpRole.is_mma():
             with MatmulProfilerType[2](workspace, 0):
-                var tmem = Self.Tmem.allocate(smem.tmem_addr())
+                var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
                         accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                     ),
-                    Self.TmemDealloc(smem.tmem_dealloc()),
+                    Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
 
                 var sfa_tmem = tmem.addr + UInt32(
@@ -946,13 +946,13 @@ struct BlackwellBlockScaledMatmulKernel[
         if WarpRole.is_epilogue():
             Self.MmaEpilogueSync.wait()  # wait for MMA to publish TMEM addr
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
                     accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             with epi_ctx:  # signals TMEM dealloc on exit

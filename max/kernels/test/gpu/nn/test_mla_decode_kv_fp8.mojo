@@ -42,7 +42,7 @@ from utils.numerics import get_accum_type
 
 
 @fieldwise_init
-struct MLAMaskType(TrivialRegisterType):
+struct MLAMaskType(TrivialRegisterPassable):
     """Enum-like structure for MLA mask types."""
 
     var value: UInt8

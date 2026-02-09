@@ -185,12 +185,13 @@ fn bench_grouped_matmul[
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         var num_tokens = num_tokens_by_expert[i]
-        a_scale_offsets_ptr[i] = a_scale_dim0 - Int(
-            a_offsets_host_ptr[i] // SF_MN_GROUP_SIZE
+        a_scale_offsets_ptr[i] = UInt32(
+            a_scale_dim0
+            - Int(a_offsets_host_ptr[i] // UInt32(SF_MN_GROUP_SIZE))
         )
-        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + num_tokens
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(num_tokens)
         a_scale_dim0 += ceildiv(num_tokens, SF_MN_GROUP_SIZE)
-        expert_ids_host_ptr[i] = expert_ids_input[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids_input[i])
 
         @parameter
         if in_type == DType.float8_e4m3fn:

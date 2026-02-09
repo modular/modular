@@ -112,7 +112,7 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
 
 
 @fieldwise_init
-struct Result(Equatable, Stringable, TrivialRegisterType, Writable):
+struct Result(Equatable, Stringable, TrivialRegisterPassable, Writable):
     var code: Int32
 
     comptime SUCCESS = Self(0)
@@ -291,7 +291,7 @@ fn _check_error(err: Result) raises:
 
 
 @fieldwise_init
-struct EnableState(Equatable, TrivialRegisterType):
+struct EnableState(Equatable, TrivialRegisterPassable):
     var code: Int32
 
     comptime DISABLED = Self(0)
@@ -311,7 +311,7 @@ struct EnableState(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct ClockType(Equatable, TrivialRegisterType):
+struct ClockType(Equatable, TrivialRegisterPassable):
     var code: Int32
 
     comptime GRAPHICS = Self(0)
@@ -337,7 +337,7 @@ struct ClockType(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct _DeviceImpl(Defaultable, TrivialRegisterType):
+struct _DeviceImpl(Defaultable, TrivialRegisterPassable):
     var handle: OpaquePointer
 
     @always_inline
@@ -583,7 +583,7 @@ struct Device(Writable):
 
 
 @fieldwise_init
-struct _EnableState(TrivialRegisterType):
+struct _EnableState(TrivialRegisterPassable):
     var state: Int32
 
     comptime DISABLED = _EnableState(0)  # Feature disabled

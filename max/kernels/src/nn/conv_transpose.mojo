@@ -226,12 +226,14 @@ fn conv_transpose_shape[
         raise Error("[conv_transpose] requires (input_rank == 4 or 5)")
     if input.rank != kernel.rank:
         raise Error("[conv_transpose] requires (input_rank == kernel_rank)")
-    if strides.dim(0) != input.rank - 2 or dilations.dim(0) != input.rank - 2:
+    if strides.dim(0) != Scalar[strides.linear_idx_type](
+        input.rank - 2
+    ) or dilations.dim(0) != Scalar[dilations.linear_idx_type](input.rank - 2):
         raise Error(
             "[conv_transpose] requires (len(strides) == len(dilations) =="
             " input_rank - 2)"
         )
-    if pads.dim(0) != 2 * (input.rank - 2):
+    if pads.dim(0) != Scalar[pads.linear_idx_type](2 * (input.rank - 2)):
         raise Error(
             "[conv_transpose] requires (len(paddings) == 2 * (input rank - 2))"
         )
@@ -399,22 +401,22 @@ struct ConvTransposedPacked[
 ](ImplicitlyCopyable):
     var output: TileTensor[
         Self.output_type,
-        Self.output_origin,
         Self.OutputLayoutType,
+        Self.output_origin,
         element_shape_types = Self.output_element_shape_types,
         linear_idx_type = Self.output_linear_idx_type,
     ]
     var input: TileTensor[
         Self.input_type,
-        Self.input_origin,
         Self.InputLayoutType,
+        Self.input_origin,
         element_shape_types = Self.input_element_shape_types,
         linear_idx_type = Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
         Self.filter_type,
-        Self.filter_origin,
         Self.FilterLayoutType,
+        Self.filter_origin,
         element_shape_types = Self.filter_element_shape_types,
         linear_idx_type = Self.filter_linear_idx_type,
     ]
@@ -433,8 +435,8 @@ struct ConvTransposedPacked[
         output: TileTensor[
             mut=True,
             Self.output_type,
-            Self.output_origin,
             Self.OutputLayoutType,
+            Self.output_origin,
             element_shape_types = Self.output_element_shape_types,
             linear_idx_type = Self.output_linear_idx_type,
             address_space = AddressSpace.GENERIC,
@@ -442,8 +444,8 @@ struct ConvTransposedPacked[
         ],
         input: TileTensor[
             Self.input_type,
-            Self.input_origin,
             Self.InputLayoutType,
+            Self.input_origin,
             element_shape_types = Self.input_element_shape_types,
             linear_idx_type = Self.input_linear_idx_type,
             address_space = AddressSpace.GENERIC,
@@ -451,8 +453,8 @@ struct ConvTransposedPacked[
         ],
         filter: TileTensor[
             Self.filter_type,
-            Self.filter_origin,
             Self.FilterLayoutType,
+            Self.filter_origin,
             element_shape_types = Self.filter_element_shape_types,
             linear_idx_type = Self.filter_linear_idx_type,
             address_space = AddressSpace.GENERIC,
@@ -1545,7 +1547,7 @@ fn conv_transposed_gpu[
 
         var output_tmp = TileTensor(output_tmp_data, output.layout)
 
-        conv_transposed_cudnn[input_type, filter_type, output_type,](
+        conv_transposed_cudnn[input_type, filter_type, output_type](
             input,
             filter,
             output_tmp,
@@ -1573,7 +1575,7 @@ fn conv_transposed_gpu[
         _ = output_tmp_data^
 
     else:
-        conv_transposed_cudnn[input_type, filter_type, output_type,](
+        conv_transposed_cudnn[input_type, filter_type, output_type](
             input,
             filter,
             output,

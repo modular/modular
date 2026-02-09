@@ -148,7 +148,7 @@ from utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Batch(TrivialRegisterType):
+struct Batch(TrivialRegisterPassable):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -375,7 +375,7 @@ struct Report(Copyable, Defaultable):
 
 
 struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     var num_warmup_iters: Int
     var max_iters: Int

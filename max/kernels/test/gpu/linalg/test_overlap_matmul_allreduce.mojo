@@ -114,7 +114,7 @@ fn overlap_matmul_allreduce_test[
 
         # Initialize A with i and B with 1
         for j in range(mk):
-            A_host_list[i][j] = i
+            A_host_list[i][j] = Scalar[dtype](i)
         for j in range(nk):
             B_host_list[i][j] = 1.0
 
@@ -222,7 +222,7 @@ fn overlap_matmul_allreduce_test[
 
     @parameter
     for i in range(ngpus):
-        expected_sum += i * k.value
+        expected_sum += Scalar[dtype](i * k.value)
         list_of_ctx[i].enqueue_copy(C_reduced_host_list[i], C_reduced_list[i])
 
     @parameter

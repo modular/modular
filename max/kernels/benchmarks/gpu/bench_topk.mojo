@@ -103,11 +103,11 @@ fn bench_topk_batched[
         local_topk_size
     )
 
-    var device_local_topk_vals = TileTensor[dtype, rank](
+    var device_local_topk_vals = TileTensor(
         device_local_topk_vals_buffer.unsafe_ptr(),
         row_major((Idx(batch_size), Idx(num_blocks_per_input * K))),
     )
-    var device_local_topk_idxs = TileTensor[out_idx_type, rank](
+    var device_local_topk_idxs = TileTensor(
         device_local_topk_idxs_buffer.unsafe_ptr(),
         row_major((Idx(batch_size), Idx(num_blocks_per_input * K))),
     )
@@ -119,7 +119,7 @@ fn bench_topk_batched[
     var K_host_ptr = alloc[Int64](batch_size)
     var K_host_buffer = TileTensor(K_host_ptr, row_major(Idx(batch_size)))
     for i in range(batch_size):
-        K_host_ptr[i] = K
+        K_host_ptr[i] = Int64(K)
 
     var max_k = Int(
         reduce_max(Span(ptr=K_host_buffer.ptr, length=K_host_buffer.numel()))
@@ -296,7 +296,7 @@ fn bench_topk_multi_rank[
     var K_host_ptr = alloc[Int64](batch_size)
     var K_host_buffer = TileTensor(K_host_ptr, row_major(Idx(batch_size)))
     for i in range(batch_size):
-        K_host_ptr[i] = K
+        K_host_ptr[i] = Int64(K)
 
     var K_dev_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
     var k = TileTensor(K_dev_buffer, row_major(Idx(batch_size)))

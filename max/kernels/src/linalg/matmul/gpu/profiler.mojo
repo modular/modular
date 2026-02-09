@@ -37,7 +37,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
     max_entries_per_warp: UInt32,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """
     This struct manages the profiling workspace. The workspaces consists of equal sized chunks, the total number of
     which is equal to the total number of active SMs. Each SM chunk consists of sequences of entries, with a maximum

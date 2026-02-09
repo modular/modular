@@ -50,7 +50,7 @@ comptime BLOCK_DIM = 8
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](NUM_THREADS)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_THREADS))
 )
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
@@ -407,10 +407,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i + 1
+        b_host[i] = Float32(i + 1)
 
     for i in range(M * N):
         c_host[i] = 0

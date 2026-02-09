@@ -46,8 +46,7 @@ from ._mpi import (
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
-struct ROCSHEMIVersion:
+struct ROCSHEMIVersion(RegisterPassable):
     var major: c_int
     var minor: c_int
     var patch: c_int

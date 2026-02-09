@@ -102,7 +102,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterType, Writable):
+](Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -334,7 +334,7 @@ fn _shared_memory_usage[
 @fieldwise_init
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.

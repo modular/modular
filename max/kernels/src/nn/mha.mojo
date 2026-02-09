@@ -2075,7 +2075,7 @@ fn mha_single_batch[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32,](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2092,7 +2092,7 @@ fn mha_single_batch[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -2149,7 +2149,7 @@ fn mha_single_batch[
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -2824,7 +2824,7 @@ fn mha_single_batch_pipelined[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32,](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2842,7 +2842,7 @@ fn mha_single_batch_pipelined[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -2905,7 +2905,7 @@ fn mha_single_batch_pipelined[
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, p_frag_simdwidth
             ](),
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -3836,7 +3836,9 @@ fn mha_decoding_single_batch[
             ](
                 output_reg_vecs,
                 p_reg_vecs,
-                warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+                warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](
+                    0, Int(warp_y)
+                ),
                 rowmax,
                 rowsum,
             )
@@ -3862,7 +3864,9 @@ fn mha_decoding_single_batch[
             ](
                 output_reg_vecs,
                 p_reg_vecs,
-                warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+                warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](
+                    0, Int(warp_y)
+                ),
                 rowmax,
                 rowsum,
             )
@@ -4494,7 +4498,7 @@ fn mha_decoding_single_batch_pipelined[
         ](
             output_reg_vecs,
             p_reg_vecs,
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )

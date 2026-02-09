@@ -1,0 +1,23 @@
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "pytest_inputs",
+    testonly = True,
+    srcs = [
+        "mo-model.mlir",
+        "named-inputs.mlir",
+        "no-inputs.mlir",
+        "scalar-input.mlir",
+    ],
+)
+
+filegroup(
+    name = "inputs",
+    testonly = True,
+    srcs = glob(["**/*.mlir"]),
+)

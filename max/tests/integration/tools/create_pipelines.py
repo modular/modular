@@ -1063,6 +1063,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
+    "nvidia/Llama-3.1-8B-Instruct-NVFP4": GenericOracle(
+        model_path="nvidia/Llama-3.1-8B-Instruct-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},

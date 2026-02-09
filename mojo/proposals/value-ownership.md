@@ -226,7 +226,8 @@ Just like normal arguments, we would need a copy to get them as mutable:
 ```
 
 This should be an owned _reference_ and thus lower to LLVM pointers, just like a
-mutable reference does, unless the value is `@register_passable` (see below).
+mutable reference does, unless the value is `@register_passable` (see below,
+now deprecated in favor of RegisterPassable).
 Not doing this would significantly impact our ability to model things like
 `std::atomic` and `SmallVector` whose address is significant.  See the
 “extensions” at the bottom for why this will be efficient for trivial types like
@@ -585,8 +586,7 @@ simple way to handle this is to add a struct decorator that opts the struct into
 being passed by owning copy, equivalent to the Rust Copy convention:
 
 ```mojo
-    @register_passable
-    struct Int:
+    struct Int(RegisterPassable):
         ...
 ```
 

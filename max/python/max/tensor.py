@@ -1270,6 +1270,44 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.max(self, axis=axis)
 
+    def min(self, axis: int | None = -1) -> Tensor:
+        """Computes the minimum values along an axis.
+
+        Returns a tensor containing the minimum values along the specified axis.
+        This is useful for reduction operations and finding the smallest values
+        in data.
+
+        .. code-block:: python
+
+            from max import tensor
+            from max.dtype import DType
+
+            # Create a 2x4 tensor
+            x = tensor.Tensor.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
+            )
+
+            # Find min along last axis (within each row)
+            row_min = x.min(axis=-1)
+            # Result: [0.8, 1.9]
+
+            # Find min along first axis (within each column)
+            col_min = x.min(axis=0)
+            # Result: [1.2, 1.9, 2.1, 0.8]
+
+            # Find min over all elements
+            overall_min = x.min(axis=None)
+            # Result: 0.8 (minimum value across all elements)
+
+        Args:
+            axis: The axis along which to compute the minimum. Defaults to -1
+                (the last axis). If None, computes the minimum across all elements.
+
+        Returns:
+            Tensor: A tensor containing the minimum values along the specified axis.
+        """
+        return F.min(self, axis=axis)
+
     def mean(self, axis: int | None = -1) -> Tensor:
         """Computes the mean values along an axis.
 

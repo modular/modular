@@ -30,7 +30,7 @@ def naive_python_hashing(tokens: np.ndarray, block_size: int) -> list[int]:
     num_hashes = num_elts // block_size
 
     # Initial hash seed value
-    prev_hash = hash("None")
+    prev_hash = 0
 
     results = []
     for i in range(num_hashes):
@@ -50,7 +50,7 @@ def python_tensor_hash(tokens: np.ndarray, block_size: int) -> list[int]:
     num_hashes = num_elts // block_size
 
     # Initial hash seed value
-    prev_hash = hash("None")
+    prev_hash = 0
 
     results = []
     for i in range(num_hashes):

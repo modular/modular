@@ -23,7 +23,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
+struct RasterOrder(
+    Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable
+):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -50,7 +52,7 @@ struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -106,7 +108,7 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct MatmulSchedule(TrivialRegisterType):
+struct MatmulSchedule(TrivialRegisterPassable):
     var _value: Int32
 
     comptime NONE = Self(0)
@@ -135,7 +137,7 @@ struct TileScheduler[
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
