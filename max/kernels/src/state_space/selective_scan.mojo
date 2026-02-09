@@ -1483,48 +1483,56 @@ fn ssd_combined_gpu[
     gamma: LayoutTensor[kernel_dtype, gamma_layout, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
     weight_offset: Scalar[kernel_dtype],
-    # Strides
-    output_b_stride: UInt32,
-    output_d_stride: UInt32,
-    output_t_stride: UInt32,
-    x_b_stride: UInt32,
-    x_d_stride: UInt32,
-    x_chunk_stride: UInt32,
-    x_n_stride: UInt32,
-    out_z_b_stride: UInt32,
-    out_z_d_stride: UInt32,
-    out_z_t_stride: UInt32,
-    residual_b_stride: UInt32,
-    residual_d_stride: UInt32,
-    residual_t_stride: UInt32,
-    u_b_stride: UInt32,
-    u_d_stride: UInt32,
-    u_t_stride: UInt32,
-    delta_b_stride: UInt32,
-    delta_d_stride: UInt32,
-    delta_t_stride: UInt32,
-    A_d_stride: UInt32,
-    A_n_stride: UInt32,
-    B_b_stride: UInt32,
-    B_g_stride: UInt32,
-    B_n_stride: UInt32,
-    B_t_stride: UInt32,
-    C_b_stride: UInt32,
-    C_g_stride: UInt32,
-    C_n_stride: UInt32,
-    C_t_stride: UInt32,
-    D_stride: UInt32,
-    z_b_stride: UInt32,
-    z_d_stride: UInt32,
-    z_t_stride: UInt32,
-    delta_bias_stride: UInt32,
-    gamma_stride: UInt32,
 ):
     """GPU kernel for SSD combined operation.
 
     Combines selective scan with normalization and residual connection.
     Performs: norm(residual + selective_scan(input))
     """
+    # Compute row-major strides from dimensions
+    var n_groups = dim // group_size
+    var n_chunks = ceildiv(seqlen, 2048)
+    # 3D (batch, dim, seqlen) strides
+    var output_b_stride = UInt32(dim * seqlen)
+    var output_d_stride = UInt32(seqlen)
+    var output_t_stride = UInt32(1)
+    var u_b_stride = output_b_stride
+    var u_d_stride = output_d_stride
+    var u_t_stride = output_t_stride
+    var delta_b_stride = output_b_stride
+    var delta_d_stride = output_d_stride
+    var delta_t_stride = output_t_stride
+    var out_z_b_stride = output_b_stride
+    var out_z_d_stride = output_d_stride
+    var out_z_t_stride = output_t_stride
+    var residual_b_stride = output_b_stride
+    var residual_d_stride = output_d_stride
+    var residual_t_stride = output_t_stride
+    var z_b_stride = output_b_stride
+    var z_d_stride = output_d_stride
+    var z_t_stride = output_t_stride
+    # 4D (batch, dim, n_chunks, 2*dstate) strides for x
+    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
+    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
+    var x_chunk_stride = UInt32(2 * DSTATE)
+    var x_n_stride = UInt32(1)
+    # 2D (dim, dstate) strides for A
+    var A_d_stride = UInt32(DSTATE)
+    var A_n_stride = UInt32(1)
+    # 4D (batch, n_groups, dstate, seqlen) strides for B, C
+    var B_b_stride = UInt32(n_groups * DSTATE * seqlen)
+    var B_g_stride = UInt32(DSTATE * seqlen)
+    var B_n_stride = UInt32(seqlen)
+    var B_t_stride = UInt32(1)
+    var C_b_stride = B_b_stride
+    var C_g_stride = B_g_stride
+    var C_n_stride = B_n_stride
+    var C_t_stride = B_t_stride
+    # 1D strides
+    var D_stride = UInt32(1)
+    var delta_bias_stride = UInt32(1)
+    var gamma_stride = UInt32(1)
+
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
     var thread_id_int = Int(thread_id)
     if thread_id_int >= total_batch_dim:
@@ -1900,44 +1908,51 @@ fn ssd_combined_cpu[
     gamma: LayoutTensor[kernel_dtype, gamma_layout, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
     weight_offset: Scalar[kernel_dtype],
-    # Strides
-    output_b_stride: UInt32,
-    output_d_stride: UInt32,
-    output_t_stride: UInt32,
-    x_b_stride: UInt32,
-    x_d_stride: UInt32,
-    x_chunk_stride: UInt32,
-    x_n_stride: UInt32,
-    out_z_b_stride: UInt32,
-    out_z_d_stride: UInt32,
-    out_z_t_stride: UInt32,
-    residual_b_stride: UInt32,
-    residual_d_stride: UInt32,
-    residual_t_stride: UInt32,
-    u_b_stride: UInt32,
-    u_d_stride: UInt32,
-    u_t_stride: UInt32,
-    delta_b_stride: UInt32,
-    delta_d_stride: UInt32,
-    delta_t_stride: UInt32,
-    A_d_stride: UInt32,
-    A_n_stride: UInt32,
-    B_b_stride: UInt32,
-    B_g_stride: UInt32,
-    B_n_stride: UInt32,
-    B_t_stride: UInt32,
-    C_b_stride: UInt32,
-    C_g_stride: UInt32,
-    C_n_stride: UInt32,
-    C_t_stride: UInt32,
-    D_stride: UInt32,
-    z_b_stride: UInt32,
-    z_d_stride: UInt32,
-    z_t_stride: UInt32,
-    delta_bias_stride: UInt32,
-    gamma_stride: UInt32,
 ):
     """CPU kernel for SSD combined operation."""
+    # Compute row-major strides from dimensions
+    var n_groups = dim // group_size
+    var n_chunks = ceildiv(seqlen, 2048)
+    # 3D (batch, dim, seqlen) strides
+    var output_b_stride = UInt32(dim * seqlen)
+    var output_d_stride = UInt32(seqlen)
+    var output_t_stride = UInt32(1)
+    var u_b_stride = output_b_stride
+    var u_d_stride = output_d_stride
+    var u_t_stride = output_t_stride
+    var delta_b_stride = output_b_stride
+    var delta_d_stride = output_d_stride
+    var delta_t_stride = output_t_stride
+    var out_z_b_stride = output_b_stride
+    var out_z_d_stride = output_d_stride
+    var out_z_t_stride = output_t_stride
+    var residual_b_stride = output_b_stride
+    var residual_d_stride = output_d_stride
+    var residual_t_stride = output_t_stride
+    var z_b_stride = output_b_stride
+    var z_d_stride = output_d_stride
+    var z_t_stride = output_t_stride
+    # 4D (batch, dim, n_chunks, 2*dstate) strides for x
+    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
+    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
+    var x_chunk_stride = UInt32(2 * DSTATE)
+    var x_n_stride = UInt32(1)
+    # 2D (dim, dstate) strides for A
+    var A_d_stride = UInt32(DSTATE)
+    var A_n_stride = UInt32(1)
+    # 4D (batch, n_groups, dstate, seqlen) strides for B, C
+    var B_b_stride = UInt32(n_groups * DSTATE * seqlen)
+    var B_g_stride = UInt32(DSTATE * seqlen)
+    var B_n_stride = UInt32(seqlen)
+    var B_t_stride = UInt32(1)
+    var C_b_stride = B_b_stride
+    var C_g_stride = B_g_stride
+    var C_n_stride = B_n_stride
+    var C_t_stride = B_t_stride
+    # 1D strides
+    var D_stride = UInt32(1)
+    var delta_bias_stride = UInt32(1)
+    var gamma_stride = UInt32(1)
 
     @parameter
     fn worker(idx: Int):
@@ -2355,49 +2370,6 @@ fn mamba_split_conv1d_scan_combined_cpu[
         kernel_dtype, output_layout, MutAnyOrigin
     ],  # (batch, seqlen, dim) or (batch, seqlen, out_dim)
     epsilon: Scalar[kernel_dtype],
-    # Strides for zxbcdt (batch, seqlen, channels)
-    zxbcdt_b_stride: UInt32,
-    zxbcdt_s_stride: UInt32,
-    zxbcdt_c_stride: UInt32,
-    # Strides for conv_weight (channels, width)
-    conv_weight_c_stride: UInt32,
-    conv_weight_w_stride: UInt32,
-    # Strides for conv_bias (channels,)
-    conv_bias_stride: UInt32,
-    # Strides for output (batch, seqlen, dim)
-    output_b_stride: UInt32,
-    output_s_stride: UInt32,
-    output_c_stride: UInt32,
-    # Strides for selective scan tensors
-    x_b_stride: UInt32,
-    x_d_stride: UInt32,
-    x_chunk_stride: UInt32,
-    x_n_stride: UInt32,
-    out_z_b_stride: UInt32,
-    out_z_d_stride: UInt32,
-    out_z_t_stride: UInt32,
-    dt_b_stride: UInt32,
-    dt_h_stride: UInt32,
-    dt_s_stride: UInt32,
-    A_stride: UInt32,
-    B_b_stride: UInt32,
-    B_g_stride: UInt32,
-    B_n_stride: UInt32,
-    B_t_stride: UInt32,
-    C_b_stride: UInt32,
-    C_g_stride: UInt32,
-    C_n_stride: UInt32,
-    C_t_stride: UInt32,
-    D_h_stride: UInt32,
-    D_p_stride: UInt32,
-    z_b_stride: UInt32,
-    z_d_stride: UInt32,
-    z_t_stride: UInt32,
-    dt_bias_stride: UInt32,
-    rmsnorm_weight_stride: UInt32,
-    outproj_weight_out_stride: UInt32,
-    outproj_weight_in_stride: UInt32,
-    outproj_bias_stride: UInt32,
 ):
     """CPU kernel for mamba_split_conv1d_scan_combined operation.
 
@@ -2411,6 +2383,61 @@ fn mamba_split_conv1d_scan_combined_cpu[
     - Channels dim to dim + ngroups*dstate - 1: B
     - Channels dim + ngroups*dstate to dim + 2*ngroups*dstate - 1: C
     """
+    # Compute row-major strides from dimensions
+    var n_chunks = ceildiv(seqlen, chunk_size)
+    var zxbcdt_channels = 2 * dim + 2 * ngroups * DSTATE + nheads
+    var out_dim = output.dim(2)
+    # zxbcdt: (batch, seqlen, channels)
+    var zxbcdt_b_stride = UInt32(seqlen * zxbcdt_channels)
+    var zxbcdt_s_stride = UInt32(zxbcdt_channels)
+    var zxbcdt_c_stride = UInt32(1)
+    # conv_weight: (channels, width)
+    var conv_weight_c_stride = UInt32(width)
+    var conv_weight_w_stride = UInt32(1)
+    # conv_bias: (channels,)
+    var conv_bias_stride = UInt32(1)
+    # output: (batch, seqlen, out_dim)
+    var output_b_stride = UInt32(seqlen * out_dim)
+    var output_s_stride = UInt32(out_dim)
+    var output_c_stride = UInt32(1)
+    # x: (batch, dim, n_chunks, 2*dstate)
+    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
+    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
+    var x_chunk_stride = UInt32(2 * DSTATE)
+    var x_n_stride = UInt32(1)
+    # out_z, z: (batch, dim, seqlen)
+    var out_z_b_stride = UInt32(dim * seqlen)
+    var out_z_d_stride = UInt32(seqlen)
+    var out_z_t_stride = UInt32(1)
+    var z_b_stride = out_z_b_stride
+    var z_d_stride = out_z_d_stride
+    var z_t_stride = out_z_t_stride
+    # dt: (batch, nheads, seqlen)
+    var dt_b_stride = UInt32(nheads * seqlen)
+    var dt_h_stride = UInt32(seqlen)
+    var dt_s_stride = UInt32(1)
+    # A: (nheads,)
+    var A_stride = UInt32(1)
+    # B, C: (batch, ngroups, dstate, seqlen)
+    var B_b_stride = UInt32(ngroups * DSTATE * seqlen)
+    var B_g_stride = UInt32(DSTATE * seqlen)
+    var B_n_stride = UInt32(seqlen)
+    var B_t_stride = UInt32(1)
+    var C_b_stride = B_b_stride
+    var C_g_stride = B_g_stride
+    var C_n_stride = B_n_stride
+    var C_t_stride = B_t_stride
+    # D: (nheads, headdim) or (nheads,)
+    var D_h_stride = UInt32(headdim) if D.dim(1) > 0 else UInt32(1)
+    var D_p_stride = UInt32(1)
+    # 1D strides
+    var dt_bias_stride = UInt32(1)
+    var rmsnorm_weight_stride = UInt32(1)
+    # outproj_weight: (out_dim, dim)
+    var outproj_weight_out_stride = UInt32(dim)
+    var outproj_weight_in_stride = UInt32(1)
+    var outproj_bias_stride = UInt32(1)
+
     var width_minus_1 = width - 1
     var group_size = dim // nheads  # Should equal headdim
     var z_start = 0
@@ -2825,47 +2852,63 @@ fn mamba_split_conv1d_scan_combined_gpu[
     outproj_bias: LayoutTensor[kernel_dtype, outproj_bias_layout, MutAnyOrigin],
     output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
-    # Strides (same as CPU version)
-    zxbcdt_b_stride: UInt32,
-    zxbcdt_s_stride: UInt32,
-    zxbcdt_c_stride: UInt32,
-    conv_weight_c_stride: UInt32,
-    conv_weight_w_stride: UInt32,
-    conv_bias_stride: UInt32,
-    output_b_stride: UInt32,
-    output_s_stride: UInt32,
-    output_c_stride: UInt32,
-    x_b_stride: UInt32,
-    x_d_stride: UInt32,
-    x_chunk_stride: UInt32,
-    x_n_stride: UInt32,
-    out_z_b_stride: UInt32,
-    out_z_d_stride: UInt32,
-    out_z_t_stride: UInt32,
-    dt_b_stride: UInt32,
-    dt_h_stride: UInt32,
-    dt_s_stride: UInt32,
-    A_stride: UInt32,
-    B_b_stride: UInt32,
-    B_g_stride: UInt32,
-    B_n_stride: UInt32,
-    B_t_stride: UInt32,
-    C_b_stride: UInt32,
-    C_g_stride: UInt32,
-    C_n_stride: UInt32,
-    C_t_stride: UInt32,
-    D_h_stride: UInt32,
-    D_p_stride: UInt32,
-    z_b_stride: UInt32,
-    z_d_stride: UInt32,
-    z_t_stride: UInt32,
-    dt_bias_stride: UInt32,
-    rmsnorm_weight_stride: UInt32,
-    outproj_weight_out_stride: UInt32,
-    outproj_weight_in_stride: UInt32,
-    outproj_bias_stride: UInt32,
 ):
     """GPU kernel for mamba_split_conv1d_scan_combined operation."""
+    # Compute row-major strides from dimensions
+    var n_chunks = ceildiv(seqlen, chunk_size)
+    var zxbcdt_channels = 2 * dim + 2 * ngroups * DSTATE + nheads
+    var out_dim = output.dim(2)
+    # zxbcdt: (batch, seqlen, channels)
+    var zxbcdt_b_stride = UInt32(seqlen * zxbcdt_channels)
+    var zxbcdt_s_stride = UInt32(zxbcdt_channels)
+    var zxbcdt_c_stride = UInt32(1)
+    # conv_weight: (channels, width)
+    var conv_weight_c_stride = UInt32(width)
+    var conv_weight_w_stride = UInt32(1)
+    # conv_bias: (channels,)
+    var conv_bias_stride = UInt32(1)
+    # output: (batch, seqlen, out_dim)
+    var output_b_stride = UInt32(seqlen * out_dim)
+    var output_s_stride = UInt32(out_dim)
+    var output_c_stride = UInt32(1)
+    # x: (batch, dim, n_chunks, 2*dstate)
+    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
+    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
+    var x_chunk_stride = UInt32(2 * DSTATE)
+    var x_n_stride = UInt32(1)
+    # out_z, z: (batch, dim, seqlen)
+    var out_z_b_stride = UInt32(dim * seqlen)
+    var out_z_d_stride = UInt32(seqlen)
+    var out_z_t_stride = UInt32(1)
+    var z_b_stride = out_z_b_stride
+    var z_d_stride = out_z_d_stride
+    var z_t_stride = out_z_t_stride
+    # dt: (batch, nheads, seqlen)
+    var dt_b_stride = UInt32(nheads * seqlen)
+    var dt_h_stride = UInt32(seqlen)
+    var dt_s_stride = UInt32(1)
+    # A: (nheads,)
+    var A_stride = UInt32(1)
+    # B, C: (batch, ngroups, dstate, seqlen)
+    var B_b_stride = UInt32(ngroups * DSTATE * seqlen)
+    var B_g_stride = UInt32(DSTATE * seqlen)
+    var B_n_stride = UInt32(seqlen)
+    var B_t_stride = UInt32(1)
+    var C_b_stride = B_b_stride
+    var C_g_stride = B_g_stride
+    var C_n_stride = B_n_stride
+    var C_t_stride = B_t_stride
+    # D: (nheads, headdim) or (nheads,)
+    var D_h_stride = UInt32(headdim) if D.dim(1) > 0 else UInt32(1)
+    var D_p_stride = UInt32(1)
+    # 1D strides
+    var dt_bias_stride = UInt32(1)
+    var rmsnorm_weight_stride = UInt32(1)
+    # outproj_weight: (out_dim, dim)
+    var outproj_weight_out_stride = UInt32(dim)
+    var outproj_weight_in_stride = UInt32(1)
+    var outproj_bias_stride = UInt32(1)
+
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
     var thread_id_int = Int(thread_id)
     if thread_id_int >= total_batch_dim:

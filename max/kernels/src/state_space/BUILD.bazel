@@ -13,6 +13,7 @@ mojo_library(
         "//max:compiler_internal",
         "//max:layout",
         "//max:linalg",
+        "//max:nn",
         "//max:register",
         "//max:tensor",
         "@mojo//:std",
