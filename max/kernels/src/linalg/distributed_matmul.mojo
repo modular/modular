@@ -384,6 +384,10 @@ fn matmul_allreduce[
 
     comptime assert partition_dim == 0 or partition_dim == 1
 
+    # return early if the input buffers are empty
+    if a_buffers[0].num_elements() == 0 or b_buffers[0].num_elements() == 0:
+        return
+
     @parameter
     if not num_partitions.dim.is_dynamic() and num_partitions.dim.get() == 1:
         _matmul_allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](

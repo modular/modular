@@ -290,3 +290,11 @@ def main():
                 num_partitions=4,
                 partition_dim=1,
             ](ctx, dynamic(8192), static[8192](), static[2048]())
+
+            # Make sure allreduce does not crash if the inputs are 0 sized
+            overlap_matmul_allreduce_test[
+                dtype=dtype,
+                ngpus=num_gpus,
+                num_partitions=4,
+                partition_dim=1,
+            ](ctx, dynamic(0), static[8192](), static[2048]())
