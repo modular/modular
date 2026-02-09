@@ -42,6 +42,7 @@ from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout, LayoutTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
+from ..structured_kernels.tile_types import lt_to_tt, lt_to_tt_1d
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -252,16 +253,6 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
 
-    # ========== LayoutTensor for TMA Boundary ==========
-    # Only a_scales needs LayoutTensor (async_copy has no TileTensor overload).
-    # A/B tiles use TileTensor directly for TMA multicast_load and MMA.
-    comptime AScalesTileLT = LayoutTensor[
-        Self.a_scales_type,
-        Self.SmemType.a_scales_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-
     # ========== TMA Load Size Constants ==========
     comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
         Self.a_type
@@ -363,21 +354,23 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             Self.a_scales_type, Self.a_scales_layout, Self.a_scales_desc_layout
         ],
         # B-scales from GMEM (not TMA)
-        b_scales: LayoutTensor[
+        b_scales_lt: LayoutTensor[
             Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
         ],
         # Offset tensors for 1D-1D addressing
-        a_offsets: LayoutTensor[
+        a_offsets_lt: LayoutTensor[
             DType.uint32, Self.offsets_layout, MutAnyOrigin
         ],
-        expert_ids: LayoutTensor[
+        expert_ids_lt: LayoutTensor[
             DType.int32, Self.expert_ids_layout, MutAnyOrigin
         ],
-        expert_scales: LayoutTensor[
+        expert_scales_lt: LayoutTensor[
             DType.float32, Self.expert_scales_layout, MutAnyOrigin
         ],
         # C tensor for bounds-checked stores (full tensor layout)
-        c_device: LayoutTensor[Self.c_type, Self.c_device_layout, MutAnyOrigin],
+        c_device_lt: LayoutTensor[
+            Self.c_type, Self.c_device_layout, MutAnyOrigin
+        ],
         # Number of active experts
         num_active_experts: Int,
         # K dimension for iteration
@@ -389,6 +382,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Accumulates in registers with per-K scaling in CUDA cores.
         """
         Self.validate_config()
+
+        # Convert kernel args to TileTensor
+        var b_scales = lt_to_tt(b_scales_lt)
+        var a_offsets = lt_to_tt_1d(a_offsets_lt)
+        var expert_ids = lt_to_tt_1d(expert_ids_lt)
+        var expert_scales = lt_to_tt_1d(expert_scales_lt)
+        var c_device = lt_to_tt(c_device_lt)
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
@@ -478,7 +478,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
         # ===== Work Iterator Setup =====
         var work_iter = Self.WorkIterator(
-            num_active_experts, a_offsets, expert_ids, expert_scales
+            num_active_experts, a_offsets_lt, expert_ids_lt, expert_scales_lt
         )
 
         # ===== TMA LOAD WARP =====
@@ -587,7 +587,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                         Self.b_scales_layout,
                         MutAnyOrigin,
                     ](
-                        b_scales.ptr + expert_b_scale_offset * b_scales_k,
+                        b_scales_lt.ptr + expert_b_scale_offset * b_scales_k,
                     )
 
                     # Convert absolute N to tile index for b_scales lookup
@@ -596,7 +596,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                     for k_iter in range(num_k_iters):
                         with epi_ctx.per_k_stage(input_pipeline) as epi_stage:
                             accum.promote(
-                                b_scales_expert,
+                                lt_to_tt(b_scales_expert),
                                 a_scales_tiles,
                                 epi_stage,
                                 work_tile_coord=(
@@ -624,7 +624,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                         ctx.n(),
                         ctx.m_end,
                         ctx.expert_scale,
-                        c_device,
+                        c_device_lt,
                     )
 
     # ========== Load Input Tiles ==========
@@ -708,9 +708,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                 UInt16((1 << Self.CLUSTER_N) - 1),
             )
 
-            # Load A-scales - convert to LayoutTensor at TMA boundary
+            # Load A-scales via TMA (TileTensor directly)
             a_scales_tma_op.async_copy[Self.cta_group](
-                Self.AScalesTileLT(a_scales_tile.ptr),
+                a_scales_tile,
                 barrier[0],
                 (Int(m_coord), iter_idx),
             )

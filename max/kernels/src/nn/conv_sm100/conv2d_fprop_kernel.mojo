@@ -61,7 +61,9 @@ from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.structuring import SMemTileArray
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    SMemTileArray2DRowMajor,
+)
 
 # Import shared components from matmul structured kernels
 from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
@@ -393,16 +395,14 @@ struct Conv2dFpropKernel[
     ]
 
     # ========== Source C Tile Type (for write_with_residual) ==========
-    # Matches TileWriter.CTileArray but constructed directly to avoid
-    # accessing comptime members through unresolvable generic types.
-    comptime c_smem_layout = Layout.row_major(
-        Self.SmemType.OutputM, Self.SmemType.OutputN
-    )
-    comptime SrcCTileArray = SMemTileArray[
+    # TileTensor-based source C tile array, matches the storage type
+    # in SourceTileStorage (SMemTileArray2DRowMajor).
+    comptime SrcCTileArray = SMemTileArray2DRowMajor[
         Self.out_type,
-        Self.c_smem_layout,
+        Self.SmemType.OutputM,
+        Self.SmemType.OutputN,
         Self.SmemType.num_output_stages,
-        alignment=128,
+        128,
     ]
 
     # ========== Kernel Context ==========
@@ -989,7 +989,8 @@ struct Conv2dFpropKernel[
                                     epi_load_pipeline.consumer_stage()
                                 )
 
-                                # CTileArray view over source C SMEM tiles
+                                # TileTensor view over source C SMEM tiles
+                                # Construct with TileWriter-compatible stage count
                                 var src_tiles = Self.SrcCTileArray(
                                     smem.src_tiles().ptr
                                 )

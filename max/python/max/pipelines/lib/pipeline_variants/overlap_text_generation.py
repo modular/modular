@@ -72,7 +72,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
-    Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
@@ -86,6 +85,7 @@ from max.nn.legacy.kv_cache import KVCacheInputsSequence
 from max.nn.legacy.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
+from .text_generation import TextGenerationPipelineInterface
 from .utils import (
     get_eos_tokens,
     get_weight_paths,
@@ -98,7 +98,6 @@ if TYPE_CHECKING:
 from dataclasses import dataclass
 
 from ..interfaces import PipelineModel
-from ..interfaces.generate import GenerateMixin
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -286,12 +285,11 @@ class ScatterFutureTokenProcessor:
 
 
 class OverlapTextGenerationPipeline(
-    Pipeline[
-        TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
-    ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
+    TextGenerationPipelineInterface[TextGenerationContextType],
     Generic[TextGenerationContextType],
 ):
+    """Overlap text generation pipeline."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,

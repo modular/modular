@@ -43,7 +43,7 @@ from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 
-from linalg.structuring import SMemTileArray, SMemTile
+from linalg.structuring import SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import IndexList
@@ -117,12 +117,8 @@ struct TileWriter[
         Self.c_type, Self.c_layout, Self.c_desc_layout
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
-    # LayoutTensor-based C tile array (used internally)
-    comptime CTileArray = SMemTileArray[
-        Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
-    ]
-    # TileTensor-based C tile array (for TileTensor overloads)
-    comptime CTileArrayTT = SMemTileArray2DRowMajor[
+    # C tile array (output and source tiles)
+    comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type,
         Self.c_smem_dim0,
         Self.c_smem_dim1,
@@ -196,21 +192,19 @@ struct TileWriter[
     @always_inline
     fn write(
         self,
-        c_tiles: Self.CTileArrayTT,
+        c_tiles: Self.CTileArray,
         stage: Self.Stage,
         tile_coord: Tuple[UInt32, UInt32],
         shape: Tuple[UInt32, UInt32],
         elect_one_warp: Bool,
     ):
         """Write accumulated results to global memory (2D coords)."""
-        # Convert TileTensor array to LayoutTensor array via shared pointer
-        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
-        self._copy_to_gmem(c_tiles_lt, stage, tile_coord, shape)
+        self._copy_to_gmem(c_tiles, stage, tile_coord, shape)
 
     @always_inline
     fn write_batched(
         self,
-        c_tiles: Self.CTileArrayTT,
+        c_tiles: Self.CTileArray,
         stage: Self.Stage,
         tile_coord: Tuple[UInt32, UInt32, UInt32],
         shape: Tuple[UInt32, UInt32],
@@ -225,16 +219,14 @@ struct TileWriter[
             shape: (M, N) problem dimensions.
             alpha: Tensor scale factor (scalar).
         """
-        # Convert TileTensor array to LayoutTensor array via shared pointer
-        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
-        self._copy_to_gmem_batched(c_tiles_lt, stage, tile_coord, shape, alpha)
+        self._copy_to_gmem_batched(c_tiles, stage, tile_coord, shape, alpha)
 
     @always_inline
     fn write_splitk[
         reduction_layout: Layout,
     ](
         self,
-        c_tiles: Self.CTileArrayTT,
+        c_tiles: Self.CTileArray,
         stage: Self.Stage,
         scheduler: TileScheduler,
         reduction_tensor: LayoutTensor[
@@ -245,9 +237,6 @@ struct TileWriter[
         elect_one_warp: Bool,
     ):
         """Write with split-K reduction. Only last split writes to GMEM."""
-        # Convert TileTensor array to LayoutTensor array via shared pointer
-        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
-
         var epilogue_thread_idx = thread_idx.x
 
         # Perform reduction and check if this is the last split
@@ -263,14 +252,14 @@ struct TileWriter[
             AccumBarrier[Self.cta_group].arrive(stage.pipeline, stage.index)
             return
 
-        self._copy_to_gmem(c_tiles_lt, stage, (work_info.m, work_info.n), shape)
+        self._copy_to_gmem(c_tiles, stage, (work_info.m, work_info.n), shape)
 
     @always_inline
     fn write_absolute_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         self,
-        c_tiles: Self.CTileArrayTT,
+        c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
         m_abs: UInt32,
         n_abs: UInt32,
@@ -282,10 +271,8 @@ struct TileWriter[
 
         For 1D-1D grouped kernels where M coordinate is absolute.
         """
-        # Convert TileTensor array to LayoutTensor array via shared pointer
-        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
         self._write_absolute_with_bounds_check[c_tensor_layout](
-            c_tiles_lt,
+            c_tiles,
             output_stage,
             m_abs,
             n_abs,
@@ -684,8 +671,20 @@ struct TileWriter[
 
             if tile_needs_bounds_check:
                 # Use element-by-element stores with bounds checking
+                # Convert TileTensor to LayoutTensor SMemTile for bounds-check path
+                from memory import LegacyUnsafePointer
+                from linalg.structuring import SMemTile as LTSMemTile
+
+                comptime SMemPtrType = LegacyUnsafePointer[
+                    Scalar[Self.c_type],
+                    address_space = AddressSpace.SHARED,
+                    origin=MutAnyOrigin,
+                ]
+                var c_smem_lt = LTSMemTile[
+                    Self.c_type, Self.c_smem_layout, alignment=128
+                ](rebind[SMemPtrType](c_smem_tile.ptr.mut_cast[True]()))
                 Self._store_with_bounds_check[c_tensor_layout](
-                    c_smem_tile,
+                    c_smem_lt,
                     c_tensor,
                     m_abs,
                     n_abs + UInt32(loop_stage * Self.stageN),
@@ -855,7 +854,7 @@ struct TileWriter[
     @always_inline
     fn write_with_residual(
         self,
-        out_tiles: Self.CTileArrayTT,
+        out_tiles: Self.CTileArray,
         stage: Self.Stage,
         src_tile: Self.CTileArray,  # Source C from epilogue load SMEM
         src_stage_idx: UInt32,  # Stage index for source C tile
@@ -880,20 +879,16 @@ struct TileWriter[
         Args:
             out_tiles: Output SMEM tile array (for D output).
             stage: OutputStage with pipeline, index, and TMEM handle.
-            src_tile: Source C SMEM tile array (LayoutTensor-based, from
-                epilogue load warp). Constructed from smem.src_tiles().ptr.
+            src_tile: Source C SMEM tile array (TileTensor-based, from
+                epilogue load warp via smem.src_tiles()).
             src_stage_idx: Stage index into src_tile (0 or 1 for double-buffer).
             beta: Residual scale factor.
             tile_coord: (m_tile, n_tile) coordinates.
             shape: (M, N) problem dimensions.
             elect_one_warp: Whether this warp is elected for coordination.
         """
-        # Convert TileTensor output array to LayoutTensor
-        var out_tiles_lt = Self.CTileArray(out_tiles.ptr)
-        # src_tile is already CTileArray (LayoutTensor-based)
-
         self._copy_to_gmem_with_residual(
-            out_tiles_lt,
+            out_tiles,
             stage,
             src_tile,
             src_stage_idx,

@@ -161,6 +161,7 @@ __all__ = [
     "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
+    "TextGenerationPipelineInterface",
     "TextGenerationRequest",
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",
