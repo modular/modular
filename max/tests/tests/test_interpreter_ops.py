@@ -2230,3 +2230,105 @@ class TestShapeChangeOps:
         expected = np.expand_dims(x_np, axis=0)
         assert result.shape == (1, 2, 3)
         np.testing.assert_array_equal(result, expected)
+
+
+class TestSelectOp:
+    """Tests for select (where) op via F.where with interpreter."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_select_basic(self, dtype: DType) -> None:
+        """Test basic select op matches numpy.where."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array(
+            [True, False, True, False, True, False], dtype=np.bool_
+        )
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype=np_dtype)
+        y_np = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_select_2d(self, dtype: DType) -> None:
+        """Test select op with 2D tensors."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array(
+            [[True, False, True], [False, True, False]], dtype=np.bool_
+        )
+        x_np = np.arange(1, 7, dtype=np_dtype).reshape(2, 3)
+        y_np = np.arange(10, 70, 10, dtype=np_dtype).reshape(2, 3)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_select_int(self, dtype: DType) -> None:
+        """Test select op with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+        y_np = np.array([10, 20, 30, 40], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_select_all_true(self) -> None:
+        """Test select with all-true condition returns x."""
+        cond_np = np.ones(4, dtype=np.bool_)
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        y_np = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        np.testing.assert_array_equal(np.from_dlpack(result), x_np)
+
+    def test_select_all_false(self) -> None:
+        """Test select with all-false condition returns y."""
+        cond_np = np.zeros(4, dtype=np.bool_)
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        y_np = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        np.testing.assert_array_equal(np.from_dlpack(result), y_np)

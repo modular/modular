@@ -1187,3 +1187,47 @@ def _handle_random_uniform(
         target_device._device_context_ptr(),
     )
     return [output]
+
+
+# Select operations
+
+
+@register_op_handler(mo.SelectOp)
+def _handle_select(
+    op: mo.SelectOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.select by dispatching to Mojo select kernel.
+
+    Performs element-wise selection: result = cond ? x : y.
+
+    Args:
+        op: The select operation.
+        inputs: Input buffers - cond (bool tensor), x (true values),
+            y (false values).
+
+    Returns:
+        List containing the selected tensor buffer.
+    """
+    assert isinstance(inputs[0], Buffer)  # cond
+    assert isinstance(inputs[1], Buffer)  # x (true values)
+    assert isinstance(inputs[2], Buffer)  # y (false values)
+
+    target_device = _get_target_device(op)
+    _check_buffers_on_device(inputs, target_device)
+
+    # Output dtype matches x/y dtype (not cond dtype which is bool)
+    output = Buffer(
+        shape=inputs[1].shape,
+        dtype=inputs[1].dtype,
+        device=target_device,
+    )
+
+    ops.mojo_ops.Select(
+        output,
+        inputs[0],
+        inputs[1],
+        inputs[2],
+        target_device._device_context_ptr(),
+    )
+
+    return [output]

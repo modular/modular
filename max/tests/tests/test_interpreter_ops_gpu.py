@@ -1754,3 +1754,104 @@ class TestSoftmaxGPU:
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, atol=tol, rtol=tol
         )
+
+
+class TestSelectGPU:
+    """Tests for GPU select (where) operations with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_select_basic_gpu(self, dtype: DType) -> None:
+        """Test basic select op on GPU with float dtypes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        cond_torch = torch.tensor(
+            [True, False, True, False, True, False],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+        y_torch = torch.tensor(
+            [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_select_int_gpu(self, dtype: DType) -> None:
+        """Test select op with integer dtypes on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        cond_torch = torch.tensor(
+            [True, False, True, False],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.tensor([1, 2, 3, 4], dtype=torch_dtype, device="cuda")
+        y_torch = torch.tensor(
+            [10, 20, 30, 40], dtype=torch_dtype, device="cuda"
+        )
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    def test_select_2d_gpu(self) -> None:
+        """Test select with 2D tensors on GPU."""
+        cond_torch = torch.tensor(
+            [[True, False, True], [False, True, False]],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.arange(
+            1, 7, dtype=torch.float32, device="cuda"
+        ).reshape(2, 3)
+        y_torch = torch.arange(
+            10, 70, 10, dtype=torch.float32, device="cuda"
+        ).reshape(2, 3)
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)

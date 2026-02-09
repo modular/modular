@@ -343,6 +343,11 @@ fn PyInit_mojo_ops() -> PythonObject:
             "RandomUniform", docstring="Random uniform distribution"
         )
 
+        # Select operation (ternary: cond ? x : y)
+        b.def_function[select_dispatcher](
+            "Select", docstring="Elementwise select (cond ? x : y)"
+        )
+
         return b.finalize()
     except e:
         abort(String("failed to create interpreter op bindings module: ", e))
@@ -3114,3 +3119,227 @@ fn logsoftmax_dispatcher(
     _softmax_dispatch[is_logsoftmax=True](
         out_buffer, in_buffer, axis, device_context_ptr
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# Select operation (ternary: cond ? x : y)
+# ===----------------------------------------------------------------------=== #
+
+
+fn select_dispatcher(
+    out_buffer: PythonObject,
+    cond_buffer: PythonObject,
+    true_buffer: PythonObject,
+    false_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Select dispatcher with dtype dispatch.
+
+    Performs element-wise: out = cond ? true_val : false_val.
+
+    Args:
+        out_buffer: The output buffer object.
+        cond_buffer: Boolean condition buffer.
+        true_buffer: Values selected where condition is true.
+        false_buffer: Values selected where condition is false.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(true_buffer)
+    var false_dtype = _get_dtype(false_buffer)
+    if dtype != false_dtype:
+        raise Error(
+            "Mismatched input dtypes for select: "
+            + String(dtype)
+            + " and "
+            + String(false_dtype)
+        )
+
+    var cond_dtype = _get_dtype(cond_buffer)
+    if cond_dtype != DType.bool:
+        raise Error("Select condition must be bool, got: " + String(cond_dtype))
+
+    var size = _get_size(out_buffer)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float16:
+        select_elementwise_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.float16](true_buffer),
+            _get_buffer_ptr[DType.float16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        select_elementwise_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.float32](true_buffer),
+            _get_buffer_ptr[DType.float32](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        select_elementwise_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.float64](true_buffer),
+            _get_buffer_ptr[DType.float64](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        select_elementwise_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.bfloat16](true_buffer),
+            _get_buffer_ptr[DType.bfloat16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int8:
+        select_elementwise_op[DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int8](true_buffer),
+            _get_buffer_ptr[DType.int8](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        select_elementwise_op[DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int16](true_buffer),
+            _get_buffer_ptr[DType.int16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        select_elementwise_op[DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int32](true_buffer),
+            _get_buffer_ptr[DType.int32](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        select_elementwise_op[DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int64](true_buffer),
+            _get_buffer_ptr[DType.int64](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint8:
+        select_elementwise_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint8](true_buffer),
+            _get_buffer_ptr[DType.uint8](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        select_elementwise_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint16](true_buffer),
+            _get_buffer_ptr[DType.uint16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        select_elementwise_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint32](true_buffer),
+            _get_buffer_ptr[DType.uint32](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        select_elementwise_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint64](true_buffer),
+            _get_buffer_ptr[DType.uint64](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.bool:
+        select_elementwise_op[DType.bool](
+            _get_buffer_ptr[DType.bool](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.bool](true_buffer),
+            _get_buffer_ptr[DType.bool](false_buffer),
+            size,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for select operation: " + String(dtype))
+
+
+@always_inline
+fn select_elementwise_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    cond_ptr: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    true_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    false_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Select elementwise operation: out = cond ? true_val : false_val.
+
+    Parameters:
+        dtype: The data type of the value arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        cond_ptr: Pointer to the condition buffer data (bool).
+        true_ptr: Pointer to the true-case buffer data.
+        false_ptr: Pointer to the false-case buffer data.
+        size: Number of elements to process.
+        ctx: Device context pointer (null for CPU).
+    """
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, cond_ptr, true_ptr, false_ptr)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+
+        var cond = cond_ptr.load[width=width](i)
+        var tc = true_ptr.load[width=width](i)
+        var fc = false_ptr.load[width=width](i)
+        var res = Select.elementwise[DType.bool, dtype, width](cond, tc, fc)
+        out_ptr.store[width=width](i, res)
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](size))
+    else:
+        # GPU execution
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for select with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
