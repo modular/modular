@@ -450,7 +450,27 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             A string representation of the deque.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes a debug representation of the Deque to a Writer."""
+        writer.write("Deque(")
+        writer.write("[")
+
+        for i in range(len(self)):
+            if i > 0:
+                writer.write(", ")
+
+            offset = self._physical_index(self._head + i)
+            ref element = (self._data + offset)[]
+            ref writable = trait_downcast[Writable](element)
+            writable.write_repr_to(writer)
+
+        writer.write("]")
+        writer.write(")")
 
     # ===-------------------------------------------------------------------===#
     # Methods

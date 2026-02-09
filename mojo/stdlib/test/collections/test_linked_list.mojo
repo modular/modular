@@ -154,7 +154,10 @@ def test_str():
 
 def test_repr():
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1.__repr__(), "LinkedList(1, 2, 3)")
+    assert_equal(
+        l1.__repr__(), 
+        "LinkedList([Int(1), Int(2), Int(3)])"
+        )
 
 
 def test_pop_on_empty_list():
@@ -611,7 +614,10 @@ def test_iter():
 
 def test_repr_wrap():
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(repr(l1), "LinkedList(1, 2, 3)")
+    assert_equal(
+        repr(l1), 
+        "LinkedList([Int(1), Int(2), Int(3)])"
+        )
 
 
 def test_write_to():

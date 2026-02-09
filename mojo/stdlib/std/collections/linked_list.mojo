@@ -776,17 +776,10 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         return writer
 
     fn __repr__(self) -> String:
-        """Convert the list to its string representation.
-
-        Returns:
-            String representation of the list.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
+        """Convert the list to its debug representation."""
         var writer = String()
-        self._write(writer, prefix="LinkedList(", suffix=")")
-        return writer
+        self.write_repr_to(writer)
+        return writer^
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write the list to the given writer.
@@ -834,3 +827,15 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             writer.write(repr(representable_element))
             curr = curr[].next
         writer.write(suffix)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("LinkedList([")
+        var first = True
+        for element in self:
+            if not first:
+                writer.write(", ")
+            first = False
+            trait_downcast[Writable](element).write_repr_to(writer)
+        writer.write("])")
+

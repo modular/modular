@@ -1114,14 +1114,23 @@ def test_deque_iter_bounds():
 fn test_str_and_repr() raises:
     q = Deque(1, 2, 3)
 
+    # str: user-facing
     assert_equal(q.__str__(), "Deque(1, 2, 3)")
-    assert_equal(q.__repr__(), "Deque(1, 2, 3)")
+
+    # repr: debug-facing
+    assert_equal(
+        q.__repr__(),
+        "Deque([Int(1), Int(2), Int(3)])"
+    )
 
     s = Deque[StaticString]("a", "b", "c")
 
     assert_equal(s.__str__(), "Deque('a', 'b', 'c')")
-    assert_equal(s.__repr__(), "Deque('a', 'b', 'c')")
 
+    assert_equal(
+        s.__repr__(),
+        "Deque(['a', 'b', 'c'])"
+    )
 
 def test_deque_literal():
     var q: Deque[Int] = [1, 2, 3]
@@ -1141,7 +1150,7 @@ def test_deque_literal():
 
 def test_repr_wrap():
     var s = Deque[StaticString]("a", "b", "c")
-    assert_equal(repr(s), "Deque('a', 'b', 'c')")
+    assert_equal(repr(s), "Deque(['a', 'b', 'c'])")
 
 
 def test_write_to():
@@ -1166,6 +1175,20 @@ def test_write_to():
 
     assert_equal(empty_output, "Deque()")
 
+fn test_write_repr_to_basic() raises:
+    var q = Deque[Int]()
+    q.append(1)
+    q.append(2)
+
+    # repr() should use write_repr_to, not __str__
+    assert_equal(repr(q), "Deque([Int(1), Int(2)])")
+
+fn test_write_repr_to_nested() raises:
+    var q = Deque[Optional[Int]]()
+    q.append({1})
+    q.append(None)
+
+    assert_equal(repr(q), "Deque([Optional(1), Optional(None)])")
 
 # ===-------------------------------------------------------------------===#
 # main
