@@ -268,7 +268,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     fn _write_self_to[
         write_key: fn(Self.V, mut Some[Writer]),
-        write_value: fn(Int, mut Some[Writer]),
     ](self, mut writer: Some[Writer]):
         fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
 
@@ -282,7 +281,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             ref item = items[index]
             write_key(item._value, w)
             w.write_string(": ")
-            write_value(item._count, w)
+            item._count.write_to(w)
             index += 1
 
         fmt.write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
@@ -300,7 +299,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._write_self_to[
             write_key = fmt.write_to[Self.V],
-            write_value = fmt.write_to[Int],
         ](writer)
 
     @no_inline
@@ -318,7 +316,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         fn write_fields(mut w: Some[Writer]):
             self._write_self_to[
                 write_key = fmt.write_repr_to[Self.V],
-                write_value = fmt.write_repr_to[Int],
             ](w)
 
         fmt.FormatStruct(writer, "Counter").params(

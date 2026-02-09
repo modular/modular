@@ -502,7 +502,7 @@ def test_write_repr_to():
     check_write_to(
         Counter[Int](1, 2, 2, 3, 3, 3),
         expected=(
-            "Counter[Int]({Int(3): Int(3), Int(2): Int(2), Int(1): Int(1)})"
+            "Counter[Int]({Int(3): 3, Int(2): 2, Int(1): 1})"
         ),
         is_repr=True,
     )
