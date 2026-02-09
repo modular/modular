@@ -125,7 +125,7 @@ mojo_copts_toolchain(
         ],
         "//:linux_aarch64": [
             "-target-triple=aarch64-unknown-linux-gnu",
-            "--target-cpu=neoverse-v1",
+            "--target-cpu=neoverse-n1",
         ],
         "@platforms//os:macos": [
             "--target-cpu=apple-m1",
