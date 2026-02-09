@@ -18,9 +18,10 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer, memcpy
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
+from memory import memcpy
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -68,16 +69,19 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         num_heads=num_heads, head_size=head_dim
     )
 
-    # Define layouts
+    # Define layouts for LayoutTensor (used for KV cache)
     comptime kv_block_layout = Layout.row_major(
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
     comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
     comptime lookup_table_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime q_layout = Layout.row_major(
+
+    # Define TileTensor layouts
+    comptime q_tile_layout = row_major[
         batch_size, seq_len, num_heads, head_dim
-    )
-    comptime freqs_layout = Layout.row_major(max_seq_len, head_dim)
+    ]()
+    comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
+    comptime valid_lengths_tile_layout = row_major[batch_size]()
 
     # Create shapes
     var kv_block_shape = IndexList[6](
@@ -88,7 +92,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     var q_shape = IndexList[4](batch_size, seq_len, num_heads, head_dim)
     var freqs_shape = IndexList[2](max_seq_len, head_dim)
 
-    # Create runtime layouts
+    # Create runtime layouts for LayoutTensor
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
         kv_block_shape
     )
@@ -98,10 +102,6 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     var lookup_table_runtime_layout = RuntimeLayout[
         lookup_table_layout
     ].row_major(lookup_table_shape)
-    var q_runtime_layout = RuntimeLayout[q_layout].row_major(q_shape)
-    var freqs_runtime_layout = RuntimeLayout[freqs_layout].row_major(
-        freqs_shape
-    )
 
     # Create device buffers
     var kv_block_device = ctx.enqueue_create_buffer[dtype](
@@ -176,7 +176,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
             max_cache_len_in_batch, Int(start_positions_dyn[i])
         )
 
-    # Create layout tensors for GPU operations
+    # Create layout tensors for KV cache (still uses LayoutTensor)
     var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
         kv_block_device, kv_block_runtime_layout
     )
@@ -192,13 +192,11 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(lookup_table_shape),
     )
-    var q_tensor = LayoutTensor[dtype, q_layout](q_device, q_runtime_layout)
-    var freqs_tensor = LayoutTensor[dtype, freqs_layout](
-        freqs_device, freqs_runtime_layout
-    )
-    var q_out_tensor = LayoutTensor[dtype, q_layout](
-        q_out_device, q_runtime_layout
-    )
+
+    # Create TileTensors for q, freqs, and output
+    var q_tensor = TileTensor(q_device, q_tile_layout)
+    var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
+    var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
@@ -233,14 +231,18 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         for i in range(batch_size):
             valid_lengths_host[i] = UInt32(seq_len)
 
-    var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        valid_lengths_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
+    # Create valid_lengths TileTensor with RuntimeInt layout and MutAnyOrigin
+    var valid_lengths_static = TileTensor(
+        valid_lengths_device, valid_lengths_tile_layout
     )
+    var valid_lengths_tensor = TileTensor[
+        DType.uint32,
+        _,
+        MutAnyOrigin,
+    ](
+        valid_lengths_static.ptr.unsafe_origin_cast[MutAnyOrigin](),
+        valid_lengths_static.layout,
+    ).make_dynamic[DType.int64]()
 
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
         q_proj=q_tensor,
@@ -256,14 +258,13 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
 
     # Compare output and expected query tensors.
     with q_out_device.map_to_host() as q_out_host:
-        var expected_q_out = LayoutTensor[dtype, Layout.row_major[4]()](
-            expected_q_out_buffer.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[4]()].row_major(
-                IndexList[4](batch_size, seq_len, num_heads, head_dim)
-            ),
+        var expected_q_out = TileTensor(
+            expected_q_out_buffer.unsafe_ptr(), q_tile_layout
         )
         assert_almost_equal(
-            q_out_host.unsafe_ptr(), expected_q_out.ptr, expected_q_out.size()
+            q_out_host.unsafe_ptr(),
+            expected_q_out.ptr,
+            q_shape.flattened_length(),
         )
 
     # Compare output and expected key cache buffers.

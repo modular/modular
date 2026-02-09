@@ -19,6 +19,9 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._coord import Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -128,9 +131,9 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     )
 
     # Create query tensor as a view of the query buffer.
-    q = LayoutTensor[
-        dtype, Layout.row_major(batch_size, seq_len, num_heads, head_dim)
-    ](q_buffer.unsafe_ptr())
+    q = TileTensor(
+        q_buffer, row_major[batch_size, seq_len, num_heads, head_dim]()
+    )
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
@@ -138,9 +141,9 @@ def test_fused_qk_rope[dtype: DType]() -> None:
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
         "invalid freqs_cis_table init",
     )
-    freqs_cis_table = LayoutTensor[
-        dtype, Layout.row_major(max_seq_len, head_dim)
-    ](freqs_cis_table_buffer.unsafe_ptr())
+    freqs_cis_table = TileTensor(
+        freqs_cis_table_buffer, row_major[max_seq_len, head_dim]()
+    )
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[dtype]()
@@ -148,9 +151,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
         len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
     )
-    expected_q_out = LayoutTensor[dtype, Layout.row_major(q.layout.shape)](
-        expected_q_out_buffer.unsafe_ptr()
-    )
+    expected_q_out = TileTensor(expected_q_out_buffer, q.layout)
     expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
         len(expected_k_out_buffer) == batch_size * seq_len * dim,
@@ -159,24 +160,15 @@ def test_fused_qk_rope[dtype: DType]() -> None:
 
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
-    q_out = LayoutTensor[dtype, Layout.row_major[4]()](
-        q_out_buffer.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            q.runtime_layout.shape.value.canonicalize()
-        ),
-    )
+    q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[DType.int64]()
 
     # Create valid_lengths buffer - all sequences have full seq_len valid
     var valid_lengths_buffer = List[UInt32](
         length=batch_size, fill=UInt32(seq_len)
     )
-    var valid_lengths = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        valid_lengths_buffer.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size)
-        ),
+    var valid_lengths = TileTensor(
+        valid_lengths_buffer,
+        row_major(Idx(batch_size)),
     )
 
     fused_qk_rope[
@@ -192,7 +184,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     )
 
     # Compare output and expected query tensors.
-    assert_almost_equal(q_out.ptr, expected_q_out.ptr, expected_q_out.size())
+    assert_almost_equal(q_out.ptr, expected_q_out.ptr, expected_q_out.numel())
 
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):

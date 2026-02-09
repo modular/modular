@@ -159,8 +159,8 @@ fn fused_rope_rmsnorm_kernel[
 
                 if head_idx < num_q_heads:
                     rope_q_proj[interleaved=True](
-                        q_rope.to_layout_tensor(),
-                        q_rope_output.to_layout_tensor(),
+                        q_rope,
+                        q_rope_output,
                         Index(global_token_idx, head_idx, head_dim_idx),
                         f_c,
                         rope_dim,

@@ -24,7 +24,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
+from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
@@ -457,14 +457,12 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: LayoutTensor[dtype, ...],
+    q_proj: TileTensor[dtype, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: LayoutTensor[dtype, ...],
+    freqs_cis: TileTensor[dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ],
-    output: LayoutTensor[mut=True, dtype, ...],
+    valid_lengths: TileTensor[DType.uint32, ...],
+    output: TileTensor[mut=True, dtype, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
@@ -495,14 +493,21 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
                     trace_arg(
-                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "q_proj",
+                        coord_to_index_list(q_proj.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "freqs_cis",
+                        coord_to_index_list(freqs_cis.layout.shape_coord()),
                     ),
                     trace_arg(
                         "valid_lengths",
-                        valid_lengths.runtime_layout.shape.value,
+                        coord_to_index_list(valid_lengths.layout.shape_coord()),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -545,14 +550,12 @@ fn generic_fused_qk_rope_bshd_paged[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: LayoutTensor[dtype, ...],
+    q_proj: TileTensor[dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    freqs_cis: LayoutTensor[dtype, ...],
+    freqs_cis: TileTensor[dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ],
-    output: LayoutTensor[mut=True, dtype, ...],
+    valid_lengths: TileTensor[DType.uint32, ...],
+    output: TileTensor[mut=True, dtype, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K with paged KV cache.
@@ -578,14 +581,21 @@ fn generic_fused_qk_rope_bshd_paged[
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
                     trace_arg(
-                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "q_proj",
+                        coord_to_index_list(q_proj.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "freqs_cis",
+                        coord_to_index_list(freqs_cis.layout.shape_coord()),
                     ),
                     trace_arg(
                         "valid_lengths",
-                        valid_lengths.runtime_layout.shape.value,
+                        coord_to_index_list(valid_lengths.layout.shape_coord()),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(kv_collection.kv_params.num_heads),
