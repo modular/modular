@@ -56,7 +56,7 @@ dependencies = [
   "opentelemetry-sdk",
   "packaging",
   "prometheus-client",
-  "protobuf==6.31.1 ", # Must match bazel protobuf version since it doesn't the codegen
+  "protobuf==6.33.5 ", # Must match bazel protobuf version
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
   "py-cpuinfo",
   "pyarrow",
