@@ -239,9 +239,11 @@ class DistributedTransformer(Module):
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
-        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets.to(self.devices[0]), signal_buffers
+        )
 
         kv_cache_arguments = [
             [kv_collection.kv_blocks for kv_collection in kv_collections],
@@ -343,7 +345,9 @@ class DistributedTransformer(Module):
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
+        last_token_distributed = ops.distributed_broadcast(
+            last_token_h, signal_buffers
+        )
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
             self.norm_shards, last_token_distributed
