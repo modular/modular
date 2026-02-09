@@ -572,24 +572,24 @@ def _reshape_common(
     inputs: Sequence[Buffer | None],
     op_name: str,
 ) -> Sequence[Buffer]:
-    """Common implementation for reshape operations."""
-    # Get target device from result type and check CPU-only
+    """Common implementation for reshape operations.
+
+    Uses Buffer.view() to create a reshaped view sharing the underlying
+    memory, supporting both CPU and GPU tensors without data movement.
+    """
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
     _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
 
     shape = result_type.shape
     if not graph.Shape.is_static(shape):
         raise NotImplementedError(f"Dynamic shapes not supported for {op_name}")
     target_shape = graph.Shape(shape).static_dims
 
-    result_np = input_np.reshape(target_shape)
-    return [Buffer.from_numpy(result_np)]
+    return [inputs[0].view(inputs[0].dtype, tuple(target_shape))]
 
 
 @register_op_handler(mo.ReshapeOp)
