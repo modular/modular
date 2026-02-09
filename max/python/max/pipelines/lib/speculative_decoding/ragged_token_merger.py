@@ -18,6 +18,15 @@ from max.nn.legacy.layer import Module
 
 
 def ragged_token_merger(device: DeviceRef) -> Graph:
+    """Builds a graph that merges prompt and draft tokens into a single ragged sequence.
+
+    Args:
+        device: Device for the graph inputs and merge op.
+
+    Returns:
+        A graph that takes prompt tokens, prompt row offsets, and draft tokens and
+        outputs merged tokens and merged row offsets.
+    """
     graph_inputs = [
         TensorType(DType.int64, ["batch_prompt_seq_len"], device=device),
         TensorType(DType.uint32, ["offsets_len"], device=device),

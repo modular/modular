@@ -606,6 +606,18 @@ def parse_float8_config(  # TODO: rename to generic
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
+    """Parses Float8 or Float4 config from HuggingFace config and state dict.
+
+    Args:
+        huggingface_config: HuggingFace model configuration.
+        state_dict: Weight state dict to inspect for scales.
+        dtype: Target dtype (e.g. float8_e4m3fn or packed fp4).
+        state_dict_name_prefix: Optional prefix for state dict keys.
+        ignored_modules_prefix: Prefix of modules to ignore when parsing.
+
+    Returns:
+        Float8Config or Float4 config if supported, otherwise None.
+    """
     # uint8 is packed fp4 (float4_e2m1fnx2) in NVFP4 checkpoints.
     if dtype in _FP4_DTYPES:
         return _parse_float4_config(

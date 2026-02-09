@@ -132,6 +132,15 @@ def update_context_and_prepare_responses(
 
 
 def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
+    """Returns the set of end-of-sequence token IDs from config or fallback.
+
+    Args:
+        hf_config: HuggingFace model configuration.
+        eos_token_id: Default EOS token id when not present in config.
+
+    Returns:
+        Set of EOS token ids to use for generation.
+    """
     # Expand eos tokens if more are provided in pipeline_config
     if "eos_token_id" not in hf_config:
         return set([eos_token_id])
@@ -154,6 +163,14 @@ def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
 
 
 def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
+    """Resolves local paths or downloads weight files for the model config.
+
+    Args:
+        model_config: Model configuration containing weight repo and paths.
+
+    Returns:
+        List of paths to weight files (local or downloaded).
+    """
     weight_repo = model_config.huggingface_weight_repo
     if weight_repo.repo_type == RepoType.online:
         # Download weight files if not existent.

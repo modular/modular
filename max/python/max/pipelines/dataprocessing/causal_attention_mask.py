@@ -21,6 +21,16 @@ def causal_attention_mask(
     original_start_pos: list[int],
     original_seq_len: list[int],
 ) -> npt.NDArray[np.float32]:
+    """Builds a causal attention mask for a batch of variable-length sequences.
+
+    Args:
+        original_start_pos: Per-example start position (context length) in the batch.
+        original_seq_len: Per-example sequence length for this pass.
+
+    Returns:
+        Float32 mask array where visible positions are 0 and masked positions
+        are a large negative value (so that softmax treats them as -inf).
+    """
     # Each example in the batch has a "start position", which is the length
     # of the previously encoded tokens ("context"), and a "sequence length",
     # which is the number of additional tokens to be encoded in this pass.
