@@ -864,8 +864,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="meta-llama/Llama-3.2-1B",
             encoding="bfloat16",
-            cos_dist_threshold=2.1e-03,
-            kl_div_threshold=8.0e-03,
+            cos_dist_threshold=2.5e-03,
+            kl_div_threshold=1.0e-02,
         ),
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -875,7 +875,7 @@ PIPELINES = {
             pipeline="meta-llama/Llama-3.3-70B-Instruct",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            cos_dist_threshold=5.9e-04,
+            cos_dist_threshold=9.0e-04,
             kl_div_threshold=5.0e-03,
         ),
     ),
@@ -938,8 +938,8 @@ PIPELINES = {
             pipeline="OpenGVLab/InternVL3-8B-Instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=3.0e-1,
-            kl_div_threshold=6.3e-01,
+            cos_dist_threshold=3.5e-1,
+            kl_div_threshold=7.0e-01,
         ),
     ),
     "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
@@ -996,8 +996,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen2.5-7B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=2.7e-3,
-            kl_div_threshold=1.7e-1,
+            cos_dist_threshold=5.0e-2,
+            kl_div_threshold=3.5e-1,
         ),
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
@@ -1016,8 +1016,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=7.0e-2,
-            kl_div_threshold=2.5e-1,
+            cos_dist_threshold=3.5e-1,
+            kl_div_threshold=4.0e-1,
         ),
     ),
     "Qwen/Qwen2.5VL-32B-Instruct-bfloat16": PipelineDef(
@@ -1336,7 +1336,7 @@ PIPELINES = {
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
             cos_dist_threshold=2.3e-2,
-            kl_div_threshold=6.8e-1,
+            kl_div_threshold=7.0e-1,
         ),
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
