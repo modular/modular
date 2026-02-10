@@ -86,20 +86,20 @@ def execute_kv_cache_ragged_rope[
             for i in range(batch_size):
                 var curr_seq_length: UInt32
                 if use_random_seq_lengths:
-                    curr_seq_length = random_ui64(1, seq_len).cast[
+                    curr_seq_length = random_ui64(1, UInt64(seq_len)).cast[
                         DType.uint32
                     ]()
                 else:
-                    curr_seq_length = seq_len
+                    curr_seq_length = UInt32(seq_len)
 
                 input_row_offsets_host[i] = curr_seq_length
-                if curr_seq_length > max_prompt_length:
+                if curr_seq_length > UInt32(max_prompt_length):
                     max_prompt_length = Int(curr_seq_length)
 
                 cache_lengths_host[i] = cache_len
                 total_seq_len += curr_seq_length
 
-            max_context_length = max_prompt_length + cache_len
+            max_context_length = UInt32(max_prompt_length) + cache_len
 
             input_row_offsets_host[batch_size] = total_seq_len
 
@@ -128,7 +128,7 @@ def execute_kv_cache_ragged_rope[
         num_blocks,
         2,
         num_layers,
-        Int(max_prompt_length + cache_len),
+        Int(UInt32(max_prompt_length) + cache_len),
         num_kv_heads,
         head_dim,
     )
@@ -145,7 +145,7 @@ def execute_kv_cache_ragged_rope[
     with lookup_table_device.map_to_host() as lookup_table_host:
         var idx = 0
         while idx < batch_size:
-            var randval = Int(random_ui64(0, num_blocks - 1))
+            var randval = Int(random_ui64(0, UInt64(num_blocks - 1)))
             if randval in block_idx_set:
                 continue
 

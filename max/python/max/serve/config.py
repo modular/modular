@@ -34,6 +34,7 @@ class APIType(Enum):
     KSERVE = "kserve"
     OPENAI = "openai"
     SAGEMAKER = "sagemaker"
+    OPENRESPONSES = "responses"
 
 
 class RunnerType(Enum):

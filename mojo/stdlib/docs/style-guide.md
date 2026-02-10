@@ -220,7 +220,7 @@ The following table shows our preferred use of different case styles.
 | `var`                  | `var the_value = 5`          | `snake_case`
 | `module` / `package` | `io.mojo` / `os/__init__.mojo` | `flatcase` / `snake_case`
 | dunder               | `__copyinit__`                 | `flatcase`
-| decorator            | `@register_passable`           | `snake_case`
+| decorator            | `@no_inline`           | `snake_case`
 | **Parameters — type or value**           |  &nbsp;    | &nbsp;
 | `alias` type             | `alias Int8 = Scalar[DType.int8]`                      | `PascalCase`
 | `alias` value global / local scope | `alias CHUNK_SIZE = 32` / `alias chunk_size = 32` | `SCREAMING_SNAKE_CASE` / `snake_case`
@@ -282,7 +282,8 @@ var copy = MyStruct(original)  # 🟢 Preferred
 Where you intend to make a copy, favor an explicit copy constructor to make your
 intention clear.
 
-Copying `@register_passable` types like `Int`, `Bool`, `Pointer`, and `SIMD` is
+Copying types that conform to `RegisterPassable` like `Int`, `Bool`, `Pointer`,
+and `SIMD` is
 safe and inexpensive. However, copying types that dynamically allocate memory
 can be expensive. This includes common types like `List`, `Dict`, `Set`,
 and `String`.

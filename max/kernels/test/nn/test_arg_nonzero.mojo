@@ -25,7 +25,7 @@ def test_where_size():
     print("== test_where_size")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
-    var values_stack = InlineArray[Float32, values_shape.size()](
+    var values_stack = InlineArray[Float32, values_shape.product()](
         uninitialized=True
     )
     var values = TileTensor(values_stack, values_shape)
@@ -50,7 +50,7 @@ def test_where_size_bool():
     print("== test_where_size_bool")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
-    var values_stack = InlineArray[Scalar[DType.bool], values_shape.size()](
+    var values_stack = InlineArray[Scalar[DType.bool], values_shape.product()](
         uninitialized=True
     )
     var values = TileTensor(values_stack, values_shape)
@@ -75,7 +75,7 @@ def test_where():
     print("== test_where")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
-    var values_stack = InlineArray[Float32, values_shape.size()](
+    var values_stack = InlineArray[Float32, values_shape.product()](
         uninitialized=True
     )
     var values = TileTensor(values_stack, values_shape)
@@ -174,7 +174,7 @@ def test_where_bool():
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
     var values_stack = InlineArray[
-        Scalar[DType.bool], Int(values_shape.size())
+        Scalar[DType.bool], Int(values_shape.product())
     ](uninitialized=True)
     var values = TileTensor(values_stack, values_shape)
 

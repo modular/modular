@@ -3,9 +3,9 @@ title: Mojo structs
 sidebar_position: 1
 description: Introduction to Mojo structures (structs).
 ---
-A struct is Mojo’s primary way to define your own type. When you want to model
-both data and behavior—whether that’s a small value type, a numeric
-abstraction, or the foundation of a larger system—you’ll use a struct.
+A struct is Mojo's primary way to define your own type. When you want to model
+both data and behavior—whether that's a small value type, a numeric
+abstraction, or the foundation of a larger system—you'll use a struct.
 
 At a high level, a Mojo struct lets you bundle data together with the
 operations that act on that data. This makes structs a natural way to represent
@@ -32,15 +32,15 @@ define an `Image` that has fields to store information about each image (such
 as its component pixels) and methods that perform actions on it (such as
 rotating the image).
 
-Mojo’s struct format is designed to provide a static, memory-safe data
-structure that’s both powerful and performant. Unlike dynamic objects
+Mojo's struct format is designed to provide a static, memory-safe data
+structure that's both powerful and performant. Unlike dynamic objects
 (such as Python classes) that can be modified freely at runtime,
 structs are defined at compile time, which allows Mojo to generate
 highly optimized code.
 
 You can choose whether a struct method is declared with `def` or `fn`,
 but all struct fields must be declared using `var` and include a type
-annotation. This requirement is part of Mojo’s compile-time guarantees,
+annotation. This requirement is part of Mojo's compile-time guarantees,
 helping ensure both performance and memory safety.
 
 ## Struct definition
@@ -118,7 +118,7 @@ print(mine.first)
 ```
 
 Initializer lists make it easier to construct instances without spelling out
-full type names. Due to Mojo’s type system, those names can grow long and
+full type names. Due to Mojo's type system, those names can grow long and
 complex as generic parameters, constraints, and nested types accumulate.
 Writing them out explicitly can quickly become verbose and hard to read.
 Initializer lists simplify code, improving readability and maintainability.
@@ -179,8 +179,8 @@ my_instance = {0.7, fish="salmon"}
 
 ## Mutating a struct
 
-By default, a struct’s methods receive an immutable `self`,
-so they can’t modify the struct’s fields. For example:
+By default, a struct's methods receive an immutable `self`,
+so they can't modify the struct's fields. For example:
 
 ```
 struct MyStruct:
@@ -289,14 +289,14 @@ caution.
 
 ## Fields
 
-Fields store a struct’s data. When you declare a field, it becomes part of the
-struct’s memory layout. Because the compiler knows every field's type at
+Fields store a struct's data. When you declare a field, it becomes part of the
+struct's memory layout. Because the compiler knows every field's type at
 compile time, it can:
 
-- Calculate the struct’s exact memory footprint
+- Calculate the struct's exact memory footprint
 - Ensure all fields are initialized before use
 - Generate fast, direct access to field data
-- Prevent changes to the struct’s layout at runtime
+- Prevent changes to the struct's layout at runtime
 
 Fields share the lifetime of their struct instance. They are created when the
 struct is created and destroyed when the struct is destroyed. This model avoids
@@ -304,7 +304,7 @@ dangling references and partially constructed objects.
 
 Outside of your struct implementation, you access fields with dot notation
 (`my_struct.field_name`). Within the struct, your methods access fields using
-`self` (`self.field_name`). Mojo knows each field’s location at compile time,
+`self` (`self.field_name`). Mojo knows each field's location at compile time,
 making field access direct and efficient.
 
 ### Field requirements
@@ -318,7 +318,7 @@ struct MyStruct:
 ```
 
 Unlike local variables in functions, this requirement lets Mojo reason about a
-struct’s layout and guarantees that its memory is safe and predictable.
+struct's layout and guarantees that its memory is safe and predictable.
 
 **You must** use unique symbols for fields, methods, or `comptime` members.
 These all exist in the same namespace:
@@ -488,7 +488,7 @@ fields, operator overloading, decorators for metaprogramming, and more, but
 their key differences are as follows:
 
 * Python classes are dynamic: they allow for dynamic dispatch, monkey-patching
-  (or “swizzling”), and dynamically binding instance fields at runtime.
+  (or "swizzling"), and dynamically binding instance fields at runtime.
 
 * Mojo structs are static: they are bound at compile-time (you cannot add
   methods at runtime). Structs allow you to trade flexibility for performance

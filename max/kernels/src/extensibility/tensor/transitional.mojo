@@ -35,6 +35,6 @@ fn managed_tensor_slice_to_ndbuffer[
         # exclusive = spec.exclusive,
     ],
 ):
-    __comptime_assert not tensor.io_spec.input == IO.FusedInput
+    comptime assert not tensor.io_spec.input == IO.FusedInput
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return type_of(result)(ptr, tensor.shape(), tensor._runtime_strides)

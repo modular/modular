@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._coord import Coord, DynamicCoord, Idx
-from layout._layout import Layout
+from layout._layout import Layout, TensorLayout
 from layout._tile_tensor import TileTensor
 from register import register_internal
 
@@ -31,9 +31,11 @@ fn reshape[
     input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, output_rank].element_types,
-    stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     dtype,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, output_rank].element_types,
+        stride_types = DynamicCoord[DType.int64, output_rank].element_types,
+    ],
     input.origin,
     address_space = input.address_space,
 ]:
@@ -64,9 +66,11 @@ fn layout_tensor_reshape[
     input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, output_rank].element_types,
-    stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     dtype,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, output_rank].element_types,
+        stride_types = DynamicCoord[DType.int64, output_rank].element_types,
+    ],
     input.origin,
     address_space = input.address_space,
 ]:
@@ -86,7 +90,7 @@ fn reshape_shape[
     input_buf: TileTensor[input_type, ...],
     target_shape_buf: TileTensor[target_shape_type, ...],
 ) raises -> IndexList[output_rank]:
-    __comptime_assert (
+    comptime assert (
         target_shape_buf.rank == 1
     ), "target_shape_buf must be rank 1"
     if output_rank != Int(target_shape_buf.dim(0)):

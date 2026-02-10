@@ -76,7 +76,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -86,24 +86,24 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    __comptime_assert config.cta_group in (
+    comptime assert config.cta_group in (
         1,
         2,
     ), "Only support cta_group == 1 or 2"
 
-    __comptime_assert (
+    comptime assert (
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
     @parameter
     if config.cta_group == 2:
-        __comptime_assert (
+        comptime assert (
             MMA_M == 256 or MMA_M == 128
         ), "Only support cta_group == 2 with MMA_M == 128 or 256"
-        __comptime_assert (MMA_M != 256) or (
+        comptime assert (MMA_M != 256) or (
             MMA_N % 16 == 0
         ), "MMA_N must be a multiple of 16 when MMA_M is 256"
-        __comptime_assert (
+        comptime assert (
             config.AB_swapped
             or MMA_M != 128
             or register_based_epilogue
@@ -113,7 +113,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             " 128 and MMA_N is not a multiple of 32"
         )
     else:
-        __comptime_assert (
+        comptime assert (
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
@@ -125,7 +125,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     var N_maybe_swapped = b_device.dim[0]()
     comptime K = a_layout.shape[1].value()
 
-    __comptime_assert (
+    comptime assert (
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
@@ -152,7 +152,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    __comptime_assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
+    comptime assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
@@ -379,7 +379,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -389,30 +389,30 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    __comptime_assert config.cta_group in (
+    comptime assert config.cta_group in (
         1,
         2,
     ), "Only support cta_group == 1 or 2"
 
     @parameter
     if config.cta_group == 2:
-        __comptime_assert (
+        comptime assert (
             MMA_M == 256 or MMA_M == 128
         ), "Only support cta_group == 2 with MMA_M == 128 or 256"
-        __comptime_assert (MMA_M != 256) or (
+        comptime assert (MMA_M != 256) or (
             MMA_N % 16 == 0
         ), "MMA_N must be a multiple of 16 when MMA_M is 256"
 
         # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
-        __comptime_assert (
+        comptime assert (
             not config.AB_swapped
         ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
 
     else:
-        __comptime_assert (
+        comptime assert (
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
-        __comptime_assert (
+        comptime assert (
             register_based_epilogue or elementwise_compute_lambda_fn is None
         ), "only register-based epilogue is supported for cta_group == 1"
 
@@ -424,11 +424,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var N_maybe_swapped = b_device.dim[0]()
     comptime K = a_layout.shape[1].value()
 
-    __comptime_assert (
+    comptime assert (
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    __comptime_assert (
+    comptime assert (
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
@@ -613,9 +613,9 @@ fn matmul_sm100_fallback[
     b: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert a_type == b_type and a_type in (
+    comptime assert a_type == b_type and a_type in (
         DType.bfloat16,
         DType.float8_e4m3fn,
     ), "Only support bfloat16 and float8_e4m3fn"

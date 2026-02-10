@@ -138,10 +138,10 @@ fn test[
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     # Initialize matmul inputs
     random(a_host)
@@ -205,7 +205,7 @@ fn test[
 
     var c_dev_ndbuffer = c_dev
 
-    __comptime_assert not (
+    comptime assert not (
         qkv_perm_dim and has_epilogue
     ), "qkv_perm_dim and has_epilogue cannot be True at the same time"
 
@@ -235,7 +235,7 @@ fn test[
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)
-        __comptime_assert N % width == 0, "N must be divisible by width"
+        comptime assert N % width == 0, "N must be divisible by width"
         # The current index is [i, new_j, new_k] in the M x 3 x N row major
         # tensor.
         # The permdim tensor has the shape 3 x M x N, so the index is then
@@ -406,10 +406,10 @@ fn test_negative_lora_id[
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     # Initialize matmul inputs
     random(a_host)

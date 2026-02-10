@@ -25,13 +25,13 @@ fn print_static_shape[x: List[Int]]():
 def main():
     comptime shape_mnk = parse_shape["10x20x30"]()
     print_static_shape[shape_mnk]()
-    __comptime_assert shape_mnk[0] == 10
-    __comptime_assert shape_mnk[1] == 20
-    __comptime_assert shape_mnk[2] == 30
+    comptime assert shape_mnk[0] == 10
+    comptime assert shape_mnk[1] == 20
+    comptime assert shape_mnk[2] == 30
 
     comptime shape = env_get_shape["shape", "1x2x3"]()
     print_static_shape[shape]()
 
-    __comptime_assert shape[0] == 1
-    __comptime_assert shape[1] == 2
-    __comptime_assert shape[2] == 3
+    comptime assert shape[0] == 1
+    comptime assert shape[1] == 2
+    comptime assert shape[2] == 3

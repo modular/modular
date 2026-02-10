@@ -14,6 +14,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
     ],
 )

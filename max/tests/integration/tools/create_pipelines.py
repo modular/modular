@@ -38,6 +38,7 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
@@ -45,13 +46,8 @@ from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
-from test_common import (
-    test_data,
-    torch_utils,
-)
-from test_common.test_data import (
-    MockTextGenerationRequest,
-)
+from test_common import test_data, torch_utils
+from test_common.test_data import MockTextGenerationRequest
 
 
 # This is required since the presence of peft changes
@@ -89,7 +85,7 @@ class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
     pipeline: (
-        pipelines.TextGenerationPipeline[Any] | pipelines.EmbeddingsPipeline
+        TextGenerationPipelineInterface[Any] | pipelines.EmbeddingsPipeline
     )
     tokenizer: PipelineTokenizer[Any, Any, Any]
 
@@ -119,6 +115,7 @@ class VLLMPipeline:
     model_path: str
     trust_remote_code: bool = False
     encoding: str | None = None
+    tensor_parallel_size: int = 1
 
 
 class PipelineOracle(ABC):
@@ -171,11 +168,14 @@ class PipelineOracle(ABC):
                 f"Cannot find `model_path` for {self.__class__.__name__}"
             )
         config = getattr(self, "config_params", {})
+        # Use tensor parallelism across all GPU devices
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=path,
             trust_remote_code=config.get("trust_remote_code", False)
             or getattr(self, "trust_remote_code", False),
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
     @property
@@ -261,7 +261,7 @@ class InternVLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -312,10 +312,12 @@ class InternVLPipelineOracle(PipelineOracle):
     def create_vllm_pipeline(
         self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
     ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=True,
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
 
@@ -364,7 +366,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -463,7 +465,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.6,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -564,7 +566,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.4,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -650,7 +652,7 @@ class PixtralPipelineOracle(PipelineOracle):
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -754,7 +756,8 @@ class GenericOracle(PipelineOracle):
         )
         assert isinstance(
             pipeline,
-            pipelines.TextGenerationPipeline | pipelines.EmbeddingsPipeline,
+            pipelines.TextGenerationPipelineInterface
+            | pipelines.EmbeddingsPipeline,
         )
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -1167,6 +1170,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
+    "nvidia/Llama-3.1-8B-Instruct-NVFP4": GenericOracle(
+        model_path="nvidia/Llama-3.1-8B-Instruct-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},
@@ -1370,6 +1378,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
@@ -1523,6 +1536,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
+        model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
+        config_params={
+            "max_length": 1028,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 1024,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

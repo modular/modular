@@ -29,6 +29,7 @@ from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
 from layout._coord import Coord, _DimsToCoordLike
+from layout._layout import Layout as TileLayout
 from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
@@ -56,7 +57,7 @@ from .io_spec import IO, IOSpec
 @always_inline
 fn _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
-    __comptime_assert (
+    comptime assert (
         a.is_power_of_two() and b.is_power_of_two()
     ), "a and b must be powers of 2"
     return min(a, b)
@@ -660,7 +661,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, Stringable, TrivialRegisterType, Writable):
+](DevicePassable, Stringable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -801,7 +802,7 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.in_lambda
         ), "Direct load on fused tensor is forbidden"
         var offset = _dot_prod(indices, self.strides())
@@ -817,7 +818,7 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.in_lambda
         ), "Direct load on fused tensor is forbidden"
         debug_assert(
@@ -835,7 +836,7 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.out_lambda
         ), "Direct store on fused tensor is forbidden"
         debug_assert(
@@ -855,7 +856,7 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.out_lambda
         ), "Direct store on fused tensor is forbidden"
         var offset = _dot_prod(indices, self.strides())
@@ -1007,11 +1008,11 @@ struct ManagedTensorSlice[
         Returns:
             Data from this tensor slice at dimension `index`.
         """
-        __comptime_assert (
+        comptime assert (
             Self.input == IO.Input or Self.input == IO.Unknown
         ), "loading not supported for output tensors"
 
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
         return simd_load_from_managed_tensor_slice[
             simd_width=width, element_alignment=element_alignment
@@ -1025,7 +1026,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) capturing -> SIMD[Self.dtype, width]:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime in_lambda = Self.static_spec.in_lambda
@@ -1049,10 +1050,10 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) -> SIMD[Self.dtype, width]:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
         comptime in_lambda = Self.static_spec.in_lambda
-        __comptime_assert Bool(in_lambda)
+        comptime assert Bool(in_lambda)
         comptime in_fn = in_lambda.value()
         return in_fn[width, element_alignment](ridx)
 
@@ -1126,7 +1127,7 @@ struct ManagedTensorSlice[
             index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to set data in.
             val: The data to set into this tensor slice.
         """
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         simd_store_into_managed_tensor_slice[
@@ -1146,7 +1147,7 @@ struct ManagedTensorSlice[
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime out_lambda = Self.static_spec.out_lambda
@@ -1178,10 +1179,10 @@ struct ManagedTensorSlice[
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ):
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
         comptime out_lambda = Self.static_spec.out_lambda
-        __comptime_assert Bool(out_lambda)
+        comptime assert Bool(out_lambda)
         comptime out_fn = out_lambda.value()
         out_fn[width, element_alignment](ridx, val)
 
@@ -1195,7 +1196,7 @@ struct ManagedTensorSlice[
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing -> SIMD[Self.dtype, width]:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime out_compute_lambda = Self.static_spec.out_compute_lambda
@@ -1226,10 +1227,10 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             len(new_static_shape) == new_rank
         ), "static shape has incorrect rank"
-        __comptime_assert (
+        comptime assert (
             len(new_static_strides) == new_rank
         ), "static strides has incorrect rank"
         debug_assert(
@@ -1357,12 +1358,16 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: TileTensor[
-            shape_types = _DimsToCoordLike[coord_dtype, Self.static_spec.shape],
-            stride_types = _DimsToCoordLike[
-                coord_dtype, Self.static_spec.strides
-            ],
             dtype = Self.dtype,
             origin=MutExternalOrigin,
+            LayoutType = TileLayout[
+                shape_types = _DimsToCoordLike[
+                    coord_dtype, Self.static_spec.shape
+                ],
+                stride_types = _DimsToCoordLike[
+                    coord_dtype, Self.static_spec.strides
+                ],
+            ],
         ],
     ):
         var shape_tuple = Coord[
@@ -1501,7 +1506,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](Sized, TrivialRegisterType):
+](Sized, TrivialRegisterPassable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
@@ -1553,7 +1558,7 @@ struct VariadicTensors[
         Returns:
             The tensor at the specified index.
         """
-        __comptime_assert index < Self.size
+        comptime assert index < Self.size
         var tensor = self._tensors[index]
         return {tensor._ptr, tensor._spec, tensor._runtime_strides}
 
@@ -1598,6 +1603,7 @@ fn foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
+    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
     ctx: DeviceContextPtr = DeviceContextPtr(),
@@ -1611,6 +1617,7 @@ fn foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
+        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The output tensor slice which receives the return values from `func`.
@@ -1634,7 +1641,7 @@ fn foreach[
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
-        use_blocking_impl=False,
+        use_blocking_impl=use_blocking_impl,
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
@@ -1653,6 +1660,7 @@ fn foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
+    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank],
     ctx: DeviceContextPtr = DeviceContextPtr(),
@@ -1667,6 +1675,7 @@ fn foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
+        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The input tensor slice which the consumed values.
@@ -1688,7 +1697,7 @@ fn foreach[
     algorithm.functional.elementwise[
         out_func_shim,
         simd_width,
-        use_blocking_impl=False,
+        use_blocking_impl=use_blocking_impl,
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
@@ -1703,6 +1712,7 @@ fn foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
+    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
     ctx: DeviceContextPtr = DeviceContextPtr(),
@@ -1716,6 +1726,7 @@ fn foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
+        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The output tensor slice which receives the return values from `func`.
@@ -1736,6 +1747,7 @@ fn foreach[
         target=target,
         simd_width=simd_width,
         _trace_name=_trace_name,
+        use_blocking_impl=use_blocking_impl,
     ](tensor, ctx)
 
 
@@ -1752,12 +1764,13 @@ fn view_copy_impl[
     *,
     target: StaticString,
     _trace_name: StaticString = "mogg.view_copy_impl",
+    use_blocking_impl: Bool = False,
 ](
     z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
     ctx: DeviceContextPtr,
 ) raises:
-    __comptime_assert _compatible_with[
+    comptime assert _compatible_with[
         x._static_shape, z._static_shape
     ](), "static shapes not compatible"
     debug_assert(x.shape() == z.shape(), "runtime shapes not compatible")
@@ -1775,6 +1788,7 @@ fn view_copy_impl[
         func,
         target=target,
         _trace_name=_trace_name,
+        use_blocking_impl=use_blocking_impl,
     ](z, ctx)
 
 

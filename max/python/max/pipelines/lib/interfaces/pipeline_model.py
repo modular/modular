@@ -26,7 +26,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.kv_cache import infer_optimal_batch_size
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
@@ -103,17 +102,21 @@ class ModelOutputs:
     logit_offsets: Buffer | None = None
     """Offsets to access variable length logits for each sequence."""
 
-    hidden_states: Buffer | None = None
-    """Hidden states for a variable number of tokens per sequence."""
+    hidden_states: Buffer | list[Buffer] | None = None
+    """Hidden states for a variable number of tokens per sequence.
+
+    For data parallel models, this can be a list of Buffers where each Buffer
+    contains hidden states for the sequences assigned to that device.
+    """
 
 
 class ModelInputs:
-    """
-    Base class for model inputs.
-    Use this class to encapsulate inputs for your model.
-    You may store any number of dataclass fields
+    """Base class for model inputs.
 
-    The following example demonstrates how to create a custom inputs class for a model:
+    Use this class to encapsulate inputs for your model; you may store any
+    number of dataclass fields.
+
+    The following example demonstrates how to create a custom inputs class:
 
     .. code-block:: python
 
@@ -144,10 +147,15 @@ class ModelInputs:
     lora_ranks: Buffer | None = None
     """Buffer containing the LoRA ranks"""
 
-    hidden_states: Buffer | None = None
-    """Hidden states for a variable number of tokens per sequence."""
+    hidden_states: Buffer | list[Buffer] | None = None
+    """Hidden states for a variable number of tokens per sequence.
+
+    For data parallel models, this can be a list of Buffers where each Buffer
+    contains hidden states for the sequences assigned to that device.
+    """
 
     def update(self, **kwargs) -> None:
+        """Updates attributes from keyword arguments (only existing, non-None)."""
         key: str
         value: Any
         for key, value in kwargs.items():
@@ -226,13 +234,14 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             assert pipeline_config.max_batch_size is not None, (
                 "max_batch_size should have been set during memory estimation"
             )
-            self.kv_manager = self.load_kv_manager(
+            self.kv_managers = self.load_kv_managers(
                 kv_params=self.kv_params,
                 max_batch_size=pipeline_config.max_batch_size,
                 max_seq_len=self.max_seq_len,
                 session=session,
                 available_cache_memory=self.kv_cache_config._available_cache_memory,
             )
+            self.kv_manager = self.kv_managers[0]
 
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
@@ -254,6 +263,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     @property
     def lora_manager(self) -> LoRAManager | None:
+        """Returns the LoRA manager if LoRA is enabled, otherwise None."""
         return self._lora_manager
 
     @cached_property
@@ -294,6 +304,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     @property
     def dtype(self) -> DType:
+        """Returns the model data type (from encoding or pipeline config)."""
         # AudioGeneratorPipeline passes Nones for all args except pipeline config
         return (
             self.encoding.dtype
@@ -306,10 +317,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        """Calculate the optimal max sequence length for the model.
-        Models are expected to implement this method.
+        """Calculates the optimal max sequence length for the model.
 
-        The following example shows how to implement this method for a Mistral model:
+        Models are expected to implement this method. The following example
+        shows how to implement it for a Mistral model:
 
         .. code-block:: python
 
@@ -340,56 +351,8 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
     @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        huggingface_config: AutoConfig,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Returns the estimated optimal batch size to run the model
-        given current memory constraints."""
-        if not issubclass(cls, KVCacheMixin):
-            # we rely on the KVCache setup to know optimal batch size.
-            # If we don't have that, default to BS=1.
-            return 1
-        elif len(devices) == 1 and devices[0].is_host:
-            # batching on CPU is generally not useful, so we hard-code a batch size of 1.
-            return 1
-
-        # TODO we should map HF configs to a unified MAX Config object
-        # this would help avoid these excessive calls to class methods.
-        kv_params = cls.get_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in devices],
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-        n_layers = kv_params.num_layers
-        inferred_batch_size = infer_optimal_batch_size(
-            params=kv_params,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            num_layers=n_layers,
-            available_cache_memory=available_cache_memory,
-            devices=devices,
-        )
-
-        # clamp the floor of the inferred batch size to 1 and the ceiling to 4096
-        inferred_batch_size = max(
-            cls._MIN_DEFAULT_BATCH_SIZE,
-            min(inferred_batch_size, cls._MAX_DEFAULT_BATCH_SIZE),
-        )
-        return inferred_batch_size
-
-    @classmethod
     def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
         """Calculates the estimated memory consumption of our model."""
-
         # TODO move this logic to the PipelineModel instead of PipelineConfig class.
         # Better yet, make this more accurate by loading and measuring memory consumption
         # after we load the model
@@ -410,7 +373,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         Args:
             pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace model configuration
+            huggingface_config: Hugging Face model configuration
 
         Returns:
             Estimated activation memory in bytes
@@ -499,6 +462,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         model_inputs: Sequence[ModelInputs],
         batch_size: int,
     ) -> None:
+        """Captures execution traces for device graph replay when enabled."""
         if not self._device_graph_capture_enabled:
             return
 
@@ -568,17 +532,14 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
-        """Prepares the initial inputs to be passed to `.execute()`.
+        """Prepares the initial inputs to be passed to ``.execute()``.
 
-        The inputs and functionality of this method can vary per model.
-        For example, the model inputs could include:
-        - Encoded tensors
-        - A unique IDs for each tensor if this model uses a KV Cache manager.
-        - kv_cache_inputs: The kv cache inputs required for the model. This
-        should be None if the model does not use KV Cache.
-        This function would batch the encoded tensors, claim a slot in the kv
-        cache if the ID hasn't been seen before, and return the inputs and
-        caches as a list of tensors."""
+        The inputs and functionality can vary per model. For example, model
+        inputs could include encoded tensors, unique IDs per tensor when using
+        a KV cache manager, and ``kv_cache_inputs`` (or None if the model does
+        not use KV cache). This method typically batches encoded tensors,
+        claims a KV cache slot if needed, and returns the inputs and caches.
+        """
         ...
 
     @abstractmethod

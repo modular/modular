@@ -536,7 +536,7 @@ def main():
         # Initialize the input vectors
         for i in range(vector_size):
             lhs_host_buffer[i] = Float32(i)
-            rhs_host_buffer[i] = Float32(i * 0.5)
+            rhs_host_buffer[i] = Float32(Float64(i) * 0.5)
 
         print("LHS buffer: ", lhs_host_buffer)
         print("RHS buffer: ", rhs_host_buffer)

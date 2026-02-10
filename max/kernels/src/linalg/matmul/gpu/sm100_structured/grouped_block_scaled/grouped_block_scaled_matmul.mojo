@@ -56,36 +56,24 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-from .grouped_tile_scheduler import (
-    GroupedTileScheduler,
-)
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
 )
-
-# Grouped kernel and SMEM
+from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..block_scaled.block_scaled_smem import BlockScaledSmem
+from ..block_scaled.block_scaled_matmul import (
+    _reshape_to_3d as working_reshape_to_3d,
+    _convert_input_to_batched_tensor as working_convert_to_batched,
+)
+from .grouped_tile_scheduler import GroupedTileScheduler
 from .grouped_block_scaled_matmul_kernel import (
     GroupedBlockScaledMatmulKernel,
     GroupedTensormapManager,
 )
-from .grouped_block_scaled_smem import (
-    GroupedBlockScaledSmem,
-)
-from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_smem import (
-    BlockScaledSmem,
-)
-
-# Import working kernel's conversion functions for comparison
-from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
-    _reshape_to_3d as working_reshape_to_3d,
-    _convert_input_to_batched_tensor as working_convert_to_batched,
-)
+from .grouped_block_scaled_smem import GroupedBlockScaledSmem
 
 
 # =============================================================================
@@ -228,33 +216,31 @@ fn validate_grouped_gemm_constraints[
     - 16-byte alignment on contiguous dimensions
     """
     # MMA tiler constraints
-    __comptime_assert config.mma_shape[0] in (
+    comptime assert config.mma_shape[0] in (
         128,
         256,
     ), "MMA tiler M must be 128 or 256"
-    __comptime_assert config.mma_shape[1] in (
+    comptime assert config.mma_shape[1] in (
         128,
         256,
     ), "MMA tiler N must be 128 or 256"
 
     # Cluster constraints
-    __comptime_assert (
+    comptime assert (
         config.cluster_shape[0] <= 4
     ), "Cluster M must be <=4 for SF multicast"
-    __comptime_assert (
+    comptime assert (
         config.cluster_shape[1] <= 4
     ), "Cluster N must be <=4 for SF multicast"
-    __comptime_assert (
+    comptime assert (
         config.cluster_shape[0] * config.cluster_shape[1] <= 16
     ), "Total cluster size must be <=16"
 
     # Must be transposed B
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     # SF dtype must match
-    __comptime_assert (
-        sfa_dtype == sfb_dtype
-    ), "sfa_dtype and sfb_dtype must match"
+    comptime assert sfa_dtype == sfb_dtype, "sfa_dtype and sfb_dtype must match"
 
 
 # =============================================================================
@@ -652,9 +638,9 @@ fn grouped_block_scaled_matmul[
         config=config,
         max_groups=max_groups,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
@@ -706,7 +692,7 @@ fn grouped_block_scaled_matmul[
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                b200_smem
+                UInt32(b200_smem)
             ),
         )
     else:
@@ -737,7 +723,7 @@ fn grouped_block_scaled_matmul[
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                b200_smem
+                UInt32(b200_smem)
             ),
         )
 

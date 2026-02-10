@@ -99,8 +99,8 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         ),
         cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
 
     var q_shape = IndexList[3](
@@ -164,8 +164,8 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         ),
         cache_lengths_table.cache_lengths.host_tensor(),
         paged_lut.host_tensor(),
-        max_seq_length_batch,
-        max_full_context_length,
+        UInt32(max_seq_length_batch),
+        UInt32(max_full_context_length),
     )
     var k_cache_host = kv_collection_paged_host.get_key_cache(0)
 

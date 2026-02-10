@@ -58,7 +58,7 @@ fn block_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_fn(lhs, rhs)
@@ -88,7 +88,7 @@ fn block_reduce[
     val: StaticTuple[SIMD[dtype, simd_width], num_reductions],
     init: StaticTuple[Scalar[dtype], num_reductions],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
-    __comptime_assert (
+    comptime assert (
         BLOCK_SIZE % WARP_SIZE == 0
     ), "block size must be a multiple of the warp size"
 
@@ -188,7 +188,7 @@ fn row_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_fn(lhs, rhs)

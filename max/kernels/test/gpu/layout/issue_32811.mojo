@@ -46,8 +46,8 @@ def main():
         var vec_c_dev = ctx.enqueue_create_buffer[DType.float32](16)
 
         for i in range(16):
-            vec_a_ptr[i] = i
-            vec_b_ptr[i] = i
+            vec_a_ptr[i] = Float32(i)
+            vec_b_ptr[i] = Float32(i)
             vec_c_ptr[i] = 0
 
         ctx.enqueue_copy(vec_a_dev, vec_a_ptr)

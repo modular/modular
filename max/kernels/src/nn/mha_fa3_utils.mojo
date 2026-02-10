@@ -72,7 +72,7 @@ from builtin.device_passable import DevicePassable
 from utils import StaticTuple
 
 
-trait OptionalPointer(Copyable, TrivialRegisterType):
+trait OptionalPointer(Copyable, TrivialRegisterPassable):
     comptime dtype: DType
     comptime is_null: Bool
 
@@ -131,7 +131,7 @@ struct Pack[
     KVRowOffsetsType: OptionalPointer,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-](Copyable, DevicePassable, TrivialRegisterType):
+](Copyable, DevicePassable, TrivialRegisterPassable):
     var mask: Self.MaskType
     var score_mod: Self.ScoreModType
     var scheduler: Self.SchedulerType
@@ -180,7 +180,7 @@ struct MHAPosition[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == q_num_heads`.
@@ -461,7 +461,7 @@ fn get_seq_info[
     return scheduler.unsafe_seq_info(tile_summary, state)
 
 
-struct PositionSummary(TrivialRegisterType):
+struct PositionSummary(TrivialRegisterPassable):
     var num_keys: UInt32
     var score_row: UInt32
 
@@ -673,7 +673,7 @@ fn q_smem_shape[
     num_qk_stages: Int = 1,
 ](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
-    __comptime_assert L in (3, 4)
+    comptime assert L in (3, 4)
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
     @parameter
@@ -702,7 +702,7 @@ fn q_gmem_shape[
     decoding: Bool,
 ](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
-    __comptime_assert L in (3, 4)
+    comptime assert L in (3, 4)
 
     @parameter
     if L == 3:  # prefill
@@ -1029,7 +1029,7 @@ fn q_coord[
         head_idx: q_head_idx if prefill, kv_head_idx if decoding.
     """
     comptime rank: Int = res.size
-    __comptime_assert rank in (3, 4)
+    comptime assert rank in (3, 4)
 
     res = {}
 

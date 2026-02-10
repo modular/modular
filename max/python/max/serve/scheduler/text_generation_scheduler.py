@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from max.interfaces import (
@@ -37,6 +38,7 @@ from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
+from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .utils import SchedulerLogger, get_cancelled_reqs
 
@@ -66,10 +68,24 @@ class TokenGenerationScheduler(Scheduler):
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
+        # Parse batch scheduling strategy from environment variable
+        batch_strategy = BatchSchedulingStrategy.PER_REPLICA
+        env_strategy = os.getenv("MAX_SERVE_BATCH_PRIORITY")
+        if env_strategy:
+            try:
+                batch_strategy = BatchSchedulingStrategy(env_strategy.lower())
+            except ValueError:
+                logger.warning(
+                    f"Invalid MAX_SERVE_BATCH_PRIORITY value '{env_strategy}'. "
+                    f"Valid values are: {', '.join([s.value for s in BatchSchedulingStrategy])}. "
+                    f"Using default: {BatchSchedulingStrategy.PER_REPLICA.value}"
+                )
+
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
             kv_cache=kv_cache,
+            batch_scheduling_strategy=batch_strategy,
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
@@ -158,30 +174,8 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        batch_request_ids = [
-            context.request_id for context in inputs.flat_batch
-        ]
-
         # Execute the batch.
-        try:
-            responses = self.pipeline.execute(inputs)
-        except Exception as exc:
-            logger.exception("Exception during pipeline execution")
-
-            # Send error results to ALL requests in the batch
-            self.response_queue.put_nowait(
-                {
-                    req_id: SchedulerResult.from_error(exc)
-                    for req_id in batch_request_ids
-                }
-            )
-
-            # Release all requests from batch constructor
-            for req_id in batch_request_ids:
-                if self.batch_constructor.contains(req_id):
-                    self.batch_constructor.release_request(req_id)
-
-            return len(batch_request_ids)
+        responses = self.pipeline.execute(inputs)
 
         # Filter out all responses for requests that are already released.
         # We can get a response for a request that is already released due to

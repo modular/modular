@@ -170,7 +170,7 @@ fn run_rms_norm_fused_residual_add_gpu[
         )
 
     elementwise[sum_fn, simd_width_of[dtype](), target="cpu"](
-        coord_to_index_list(unfused_intermediate_buf.layout.shape),
+        coord_to_index_list(unfused_intermediate_buf.layout.shape_coord()),
     )
 
     @parameter

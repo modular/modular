@@ -543,7 +543,7 @@ fn test_simd_f32_to_e4m3():
     var f32_simd = SIMD[DType.float32, M](0.0)
 
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     f32_casted_e4m3 = f32_simd.cast[DType.float8_e4m3fn]()
 
@@ -749,7 +749,7 @@ fn test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
     comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     comptime kernel = test_simd_float32[M, DType.float8_e4m3fn]
     ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)

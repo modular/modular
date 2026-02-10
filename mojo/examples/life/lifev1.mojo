@@ -62,10 +62,10 @@ def run_display(
         for row in range(grid.rows):
             for col in range(grid.cols):
                 if grid[row, col]:
-                    x = col * cell_width + border_size
-                    y = row * cell_height + border_size
-                    width = cell_width - border_size
-                    height = cell_height - border_size
+                    x = Float64(col) * cell_width + Float64(border_size)
+                    y = Float64(row) * cell_height + Float64(border_size)
+                    width = cell_width - Float64(border_size)
+                    height = cell_height - Float64(border_size)
                     pygame.draw.rect(
                         window,
                         cell_fill_color,

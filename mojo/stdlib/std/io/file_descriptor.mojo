@@ -31,7 +31,7 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import (
+from ffi import (
     c_ssize_t,
     c_int,
     external_call,
@@ -42,7 +42,7 @@ from sys.ffi import (
 from memory import Span
 
 
-struct FileDescriptor(TrivialRegisterType, Writer):
+struct FileDescriptor(TrivialRegisterPassable, Writer):
     """File descriptor of a file."""
 
     var value: Int
@@ -108,7 +108,7 @@ struct FileDescriptor(TrivialRegisterType, Writer):
             If the operation fails.
         """
 
-        __comptime_assert (
+        comptime assert (
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 

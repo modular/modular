@@ -17,7 +17,7 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from utils import IndexList
 
 
-trait BaseT(TrivialRegisterType):
+trait BaseT(TrivialRegisterPassable):
     fn get_val(self, idx: Int) -> Float32:
         ...
 
@@ -55,7 +55,7 @@ def trait_repro(ctx: DeviceContext):
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
     )
     for i in range(size):
-        host_buf[i] = i
+        host_buf[i] = Float32(i)
 
     var device_buf = ctx.enqueue_create_buffer[DType.float32](size)
     with device_buf.map_to_host() as mapped:

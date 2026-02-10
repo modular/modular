@@ -22,8 +22,33 @@ what we publish.
 ### Language enhancements
 
 - `@register_passable("trivial")` is now deprecated,
-   conform to `TrivialRegisterType` trait instead.
+   conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
+
+- `@register_passable` is now deprecated,
+   conform to `RegisterPassable` trait instead.
+   The decorator will be removed after next release.
+
+- Mojo now supports more flexible default arguments and parameters, which can
+  mismatch on declared type when their types are parametric.  This allows
+  inferring parameters from these when they are used as a default value, for
+  example:
+
+  ```mojo
+    fn take_string_slice[o: ImmOrigin](str: StringSlice[o] = ""): ...
+    fn use_it():
+      take_string_slice() # Ok, defaults to empty string, inferring "o".
+      # Explicit calls also work of course.
+      take_string_slice(StaticString("hello"))
+
+    # Default value is checked for validity at the call site.
+    fn defaultArgumentBadType2[T: AnyType](a: T = 1.0): pass
+    fn callDefaultArgumentBadType2():
+        # Ok!
+        defaultArgumentBadType2[Float64]()
+        # error: value passed to 'a' cannot be converted from 'FloatLiteral[1]' to 'Int'
+        defaultArgumentBadType2[Int]()
+  ```
 
 ### Language changes
 
@@ -85,7 +110,21 @@ what we publish.
   The majority of generic algorithms that take their inputs by reference should
   not be affected.
 
+- Unstable `__comptime_assert` syntax is now finalized as `comptime assert`. A
+  deprecation warning is emitted with a fixit for the old syntax.
+
 ### Library changes
+
+- The `builtin.math` module has been merged into `math`. The traits `Absable`,
+  `DivModable`, `Powable`, `Roundable` and functions `abs()`, `divmod()`,
+  `max()`, `min()`, `pow()`, `round()` are now part of the `math` module and
+  continue to be available in the prelude. Code that explicitly imported from
+  `builtin.math` should update to import from `math` instead.
+
+- The `ffi` module is now a top-level module in the standard library, rather
+  than being nested under `sys`. This improves discoverability of FFI
+  functionality. Update your imports from `from sys.ffi import ...` to
+  `from ffi import ...`.
 
 - The `itertools` module now includes three new iterator combinators:
   - `cycle(iterable)`: Creates an iterator that cycles through elements
@@ -167,15 +206,21 @@ what we publish.
   `Writable`.
 
 - All traits and structs with `@register_passable("trivial")` decorator are now
-  extending `TrivialRegisterType` trait. The decorator is removed from them.
+  extending `TrivialRegisterPassable` trait. The decorator is removed from them.
 
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.
 
-- The `Int.__truediv__` method is temporarily deprecated in favor of explicitly
-  casting the operands to Float64 before dividing. This deprecation is to help
-  prepare to migrate `Int.__truediv__` to return `Int`, which could be a quietly
-  breaking change.
+- Formatting compile-time format strings (`StringLiteral`s) no longer allocates
+  memory! It uses `global_constant` to store what would be heap allocated
+  parsed formatting data.
+
+- `Int.__truediv__` now performs truncating integer division, returning `Int`
+  instead of the previously deprecated `Float64`. Use explicit `Float64` casts
+  for floating-point division.
+
+- Documentation for `SIMD.__round__` now clarifies the pre-existing behavior
+  that ties are rounded to the nearest even, not away from zero.
 
 ### Tooling changes
 

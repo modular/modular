@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from sys.compile import SanitizeAddress, is_compile_time
-from sys import external_call
+from ffi import external_call
 
 
 @always_inline

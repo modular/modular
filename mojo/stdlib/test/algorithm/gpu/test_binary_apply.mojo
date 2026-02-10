@@ -43,7 +43,7 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):
-            in0_host[i] = i
+            in0_host[i] = Float32(i)
             in1_host[i] = 2
 
     @parameter

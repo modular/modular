@@ -49,14 +49,16 @@ fn slice_dim_as_view[
 ](
     tensor: TileTensor[dtype, ...], start: Int, end: Int, step: Int
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
-    stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     dtype,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+        stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+    ],
     tensor.origin,
     address_space = tensor.address_space,
 ]:
-    var new_shape = coord_to_index_list(tensor.layout.shape)
-    var new_stride = coord_to_index_list(tensor.layout.stride)
+    var new_shape = coord_to_index_list(tensor.layout.shape_coord())
+    var new_stride = coord_to_index_list(tensor.layout.stride_coord())
 
     var dim_i = Int(tensor.dim(dim))
     var old_stride = Int(tensor.dynamic_stride(dim))
@@ -83,8 +85,8 @@ fn slice_dim_as_view[
     return {
         new_data,
         Layout(
-            Coord(new_shape),
-            Coord(rebind[type_of(new_shape)](new_stride)),
+            Coord(rebind[IndexList[tensor.rank]](new_shape)),
+            Coord(rebind[IndexList[tensor.rank]](new_stride)),
         ),
     }
 
@@ -106,15 +108,17 @@ fn slice_as_view[
     ends: TileTensor[end_type, ...],
     steps: TileTensor[step_type, ...],
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
-    stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     dtype,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+        stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+    ],
     tensor.origin,
     address_space = tensor.address_space,
 ]:
-    __comptime_assert starts.rank == 1
-    __comptime_assert ends.rank == 1
-    __comptime_assert steps.rank == 1
+    comptime assert starts.rank == 1
+    comptime assert ends.rank == 1
+    comptime assert steps.rank == 1
 
     var new_shape = IndexList[tensor.rank]()
     var new_stride = IndexList[tensor.rank]()
@@ -181,14 +185,14 @@ fn copy_to_slice[
     )
 
     if expected_shape != rebind[IndexList[buffer.rank]](
-        coord_to_index_list(in_slice.layout.shape)
+        coord_to_index_list(in_slice.layout.shape_coord())
     ):
         raise Error(
             "Shape mismatch for mo.mutable.store.slice: expected 'slice'",
             " operand to have shape: ",
             expected_shape,
             " but got: ",
-            coord_to_index_list(in_slice.layout.shape),
+            coord_to_index_list(in_slice.layout.shape_coord()),
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
@@ -207,7 +211,7 @@ fn copy_to_slice[
         )
 
     elementwise[copy, 1, target=target](
-        coord_to_index_list(buffer_slice_view.layout.shape),
+        coord_to_index_list(buffer_slice_view.layout.shape_coord()),
         context,
     )
 
@@ -228,7 +232,7 @@ fn slice_as_copy[
     end: TileTensor[index_type, ...],
     step: TileTensor[index_type, ...],
 ) raises:
-    __comptime_assert output.rank == tensor.rank
+    comptime assert output.rank == tensor.rank
     # Apply slice to the tensor
     var sliced = slice_as_view(tensor, start, end, step)
 
@@ -247,7 +251,7 @@ fn slice_as_copy[
         )
 
     # Invoke copy.
-    elementwise[copy, 1](coord_to_index_list(output.layout.shape))
+    elementwise[copy, 1](coord_to_index_list(output.layout.shape_coord()))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -268,9 +272,9 @@ fn slice_shape[
     stop_buf: TileTensor[stop_type, ...],
     step_buf: TileTensor[step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
-    __comptime_assert start_buf.rank == 1, "start_buf.rank must be 1"
-    __comptime_assert stop_buf.rank == 1, "stop_buf.rank must be 1"
-    __comptime_assert step_buf.rank == 1, "step_buf.rank must be 1"
+    comptime assert start_buf.rank == 1, "start_buf.rank must be 1"
+    comptime assert stop_buf.rank == 1, "stop_buf.rank must be 1"
+    comptime assert step_buf.rank == 1, "step_buf.rank must be 1"
 
     if input_buf.rank != Int(start_buf.dim[0]()):
         raise Error("[slice] start indices size must equal input rank")
@@ -340,7 +344,7 @@ fn sliced_add[
         lora_end_idx: Scalar tensor with end index of LoRA token portion (rows to apply add).
         ctx: Device context for GPU operations.
     """
-    __comptime_assert lora_end_idx.rank == 1
+    comptime assert lora_end_idx.rank == 1
 
     var batch_end_idx = Int(lora_end_idx[0])
 
@@ -352,9 +356,9 @@ fn sliced_add[
         var out_val: SIMD[dtype, width]
         var coords = Coord(idx)
 
-        __comptime_assert a.rank == coords.rank
-        __comptime_assert b.rank == coords.rank
-        __comptime_assert c.rank == coords.rank
+        comptime assert a.rank == coords.rank
+        comptime assert b.rank == coords.rank
+        comptime assert c.rank == coords.rank
 
         if idx[0] >= batch_end_idx:
             out_val = a.load[width](coords)
@@ -372,7 +376,7 @@ fn sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            coord_to_index_list(c.layout.shape),
+            coord_to_index_list(c.layout.shape_coord()),
             ctx.value(),
         )
     else:
@@ -380,5 +384,5 @@ fn sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            coord_to_index_list(c.layout.shape)
+            coord_to_index_list(c.layout.shape_coord())
         )

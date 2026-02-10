@@ -179,7 +179,7 @@ class PipelineConfig(ConfigFileModel):
         default=None,
         description=(
             "Optional custom chat template to override the one shipped with the "
-            "HuggingFace model config. If a path is provided, the file is read "
+            "Hugging Face model config. If a path is provided, the file is read "
             "during config resolution and the content stored as a string. If "
             "None, the model's default chat template is used."
         ),
@@ -336,8 +336,7 @@ class PipelineConfig(ConfigFileModel):
         key_prefix: str = "",
         strip_prefix: bool = False,
     ) -> dict[str, Any]:
-        """
-        Extract kwargs that match a config class's fields.
+        """Extracts kwargs that match a config class's fields.
 
         Args:
             kwargs: Source kwargs dictionary (modified in place)
@@ -420,7 +419,7 @@ class PipelineConfig(ConfigFileModel):
             if filtered_kwargs:
                 self.speculative = SpeculativeConfig(**filtered_kwargs)
                 assert self.draft_model is not None
-                # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
+                # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
                 if self.speculative.is_eagle():
                     if self.draft_model.huggingface_config is None:
                         raise ValueError(
@@ -441,14 +440,13 @@ class PipelineConfig(ConfigFileModel):
                     ]
                     if hf_arch == "LlamaForCausalLM":
                         self.draft_model.huggingface_config.architectures[0] = (
-                            "EagleLlamaForCausalLM"
+                            "LlamaForCausalLMEagle"
                         )
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
     ) -> None:
-        """
-        Process remaining kwargs for other config classes.
+        """Processes remaining kwargs for other config classes.
 
         Args:
             unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
@@ -495,8 +493,7 @@ class PipelineConfig(ConfigFileModel):
         matched_kwargs: dict[str, Any],
         kv_cache_kwargs: dict[str, Any],
     ) -> None:
-        """
-        Create and set a config object with special handling for different config types.
+        """Creates and sets a config object with special handling for config types.
 
         Args:
             config_name: Name of the config attribute (e.g., "model")
@@ -563,6 +560,10 @@ class PipelineConfig(ConfigFileModel):
             return handler(data)
 
         kwargs = data.copy()
+        # Merge config file values before separating pydantic vs unmatched
+        # kwargs, so sub-config fields (e.g. model_path) from the YAML are
+        # visible to _postprocess_configs.
+        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
         unmatched_kwargs: dict[str, Any] = {}
         # Use getattr to safely access model_fields in case it's not yet available
         # during class construction.
@@ -620,6 +621,7 @@ class PipelineConfig(ConfigFileModel):
         return self
 
     def retrieve_chat_template(self) -> str | None:
+        """Returns the chat template string, or None if not set."""
         # Read the file content
         if self.chat_template is None:
             return None
@@ -662,10 +664,9 @@ class PipelineConfig(ConfigFileModel):
             ) from e
 
     def _resolve_chat_template(self) -> None:
-        """
-        Resolve chat_template if it's a Path object by reading the file content.
+        """Resolves chat_template if it is a Path by reading the file content.
 
-        This method handles the case where chat_template is a Path object,
+        Handles the case where chat_template is a Path object,
         validates that the file exists, reads its content, and stores the content
         as a string in the chat_template field.
 
@@ -696,9 +697,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
     def _import_custom_architectures(self) -> None:
-        """
-        Import custom model modules to add them to the registry.
-        """
+        """Imports custom model modules and adds them to the registry."""
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
@@ -731,10 +730,9 @@ class PipelineConfig(ConfigFileModel):
     def _validate_required_arguments_against_architecture(
         self, architecture: SupportedArchitecture
     ) -> None:
-        """
-        Validates and overrides config settings based on required_arguments from SupportedArchitecture.
+        """Validates and overrides config from architecture required_arguments.
 
-        This method checks the required_arguments dictionary from the architecture
+        Checks the required_arguments dictionary from the architecture
         and automatically overrides any config values that don't match, logging warnings
         when changes are made.
 
@@ -777,11 +775,10 @@ class PipelineConfig(ConfigFileModel):
                 continue
 
     def resolve(self) -> None:
-        """
-        Validates and resolves the config.
+        """Validates and resolves the config.
 
-        This method is called after the config is initialized, to ensure that all
-        config fields have been initialized to a valid state.
+        Called after the config is initialized to ensure all config fields
+        are in a valid state.
         """
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
@@ -838,10 +835,6 @@ class PipelineConfig(ConfigFileModel):
                     "It is only supported with the PrefillAndDecode pipeline role. "
                     f"Found {self.pipeline_role}."
                 )
-            if self.model.kv_cache.enable_prefix_caching:
-                raise ValueError(
-                    "Prefix caching is not supported with the Overlap scheduler."
-                )
             if self.sampling.enable_structured_output:
                 raise ValueError(
                     "Structured outputs are not supported with the Overlap scheduler."
@@ -864,9 +857,7 @@ class PipelineConfig(ConfigFileModel):
                 )
 
     def _validate_and_resolve_max_num_steps(self) -> None:
-        """
-        Validate and resolve the max_num_steps field. These are platform-specific.
-        """
+        """Validates and resolves the max_num_steps field (platform-specific)."""
         if self.max_num_steps < 0:
             if self.model.default_device_spec == DeviceSpec.cpu():
                 self.max_num_steps = 1
@@ -874,9 +865,7 @@ class PipelineConfig(ConfigFileModel):
                 self.max_num_steps = 10
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
-        """
-        Validate the pipeline configs when used in speculative decoding mode.
-        """
+        """Validates pipeline config when used in speculative decoding mode."""
         assert self.draft_model is not None
         assert self.speculative is not None
 
@@ -960,9 +949,10 @@ class PipelineConfig(ConfigFileModel):
     def _validate_and_resolve_remaining_pipeline_config(
         self, model_config: MAXModelConfig
     ) -> None:
-        """Update remaining pipeline config fields with appropriate values
-        if not provided. If invalid config is provided, error out with detailed
-        reason."""
+        """Updates remaining pipeline config fields if not provided.
+
+        Errors out with a detailed reason if invalid config is provided.
+        """
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
@@ -1025,7 +1015,7 @@ class PipelineConfig(ConfigFileModel):
 
         # The quantization encoding has been resolved at this point.
         # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
-        model_config.set_default_cache_dtype_if_needed()
+        model_config.set_cache_dtype_given_quantization_encoding()
 
         model_config.validate_and_resolve_rope_type(
             arch_rope_type=arch.rope_type
@@ -1121,12 +1111,11 @@ class PipelineConfig(ConfigFileModel):
         return self.model.graph_quantization_encoding
 
     def log_pipeline_info(self) -> None:
-        """Log comprehensive pipeline and KVCache configuration information.
+        """Logs comprehensive pipeline and KVCache configuration information.
 
         Retrieves all necessary information from self and the PIPELINE_REGISTRY.
         Raises an error if architecture is not found (which should not happen after config resolution).
         """
-
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
@@ -1143,14 +1132,6 @@ class PipelineConfig(ConfigFileModel):
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
         pipeline_class = get_pipeline_for_task(task, self)
 
-        # Only show weights_repo_id when it differs from model_path.
-        weight_repo_id = self.model.huggingface_weight_repo_id
-        weights_repo_str = (
-            f"\n            weights_repo_id        : {weight_repo_id}"
-            if weight_repo_id != self.model.model_path
-            else ""
-        )
-
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs
         )
@@ -1159,95 +1140,65 @@ class PipelineConfig(ConfigFileModel):
         if self.model._applied_dtype_cast_from:
             quantization_encoding_str = f"{quantization_encoding_str} (cast from {self.model._applied_dtype_cast_from})"
 
-        # Helper function to log kvcache config details
-        def _log_kvcache_details(
-            config: KVCacheConfig, indent: str = "    "
-        ) -> None:
-            logger.info(
-                f"{indent}cache_strategy         : {config.cache_strategy}"
-            )
-            logger.info(
-                f"{indent}page_size              : {config.kv_cache_page_size} tokens"
-            )
-            logger.info(
-                f"{indent}prefix_caching         : {config.enable_prefix_caching}"
-            )
-            logger.info(
-                f"{indent}host_swapping          : {config.enable_kvcache_swapping_to_host}"
-            )
-            if config.enable_kvcache_swapping_to_host:
-                logger.info(
-                    f"{indent}host_swap_space        : {config.host_kvcache_swap_space_gb} GB"
-                )
-            logger.info(
-                f"{indent}memory_utilization     : {config.device_memory_utilization:.1%}"
-            )
+        # Build model information entries.
+        model_entries: list[tuple[str, Any]] = [
+            ("architecture", arch.name),
+            ("pipeline_class", pipeline_class.__name__),
+            ("pipeline_model", arch.pipeline_model.__name__),
+            ("tokenizer", arch.tokenizer_cls.__name__),
+            ("devices", devices_str),
+            ("model_path", self.model.model_path),
+        ]
 
-            if config._available_cache_memory is None:
-                raise ValueError(
-                    "KVCache config is not available after config resolution."
-                )
-            logger.info(
-                f"{indent}available_cache_memory : {to_human_readable_bytes(config._available_cache_memory)}"
+        # Only show weights_repo_id when it differs from model_path.
+        weight_repo_id = self.model.huggingface_weight_repo_id
+        if weight_repo_id != self.model.model_path:
+            model_entries.append(("weights_repo_id", weight_repo_id))
+
+        model_entries.extend(
+            [
+                ("huggingface_revision", self.model.huggingface_model_revision),
+                ("quantization_encoding", quantization_encoding_str),
+            ]
+        )
+
+        # Format weight_path depending on the number of paths.
+        weight_paths = self.model.weight_path
+        if len(weight_paths) == 1:
+            model_entries.append(("weight_path", weight_paths[0]))
+        else:
+            display_paths = (
+                weight_paths[:3] + ["..."] + [weight_paths[-1]]
+                if len(weight_paths) > 5
+                else list(weight_paths)
             )
+            formatted = (
+                "[\n"
+                + "\n".join(f"        {p}" for p in display_paths)
+                + "\n    ]"
+            )
+            model_entries.append(("weight_path", formatted))
 
         # Log Pipeline and Model Information
         logger.info("")
         logger.info("Model Information")
         logger.info("=" * 60)
-        logger.info(f"    architecture           : {arch.name}")
-        logger.info(f"    pipeline_class         : {pipeline_class.__name__}")
-        logger.info(
-            f"    pipeline_model         : {arch.pipeline_model.__name__}"
-        )
-        logger.info(
-            f"    tokenizer              : {arch.tokenizer_cls.__name__}"
-        )
-        logger.info(f"    devices                : {devices_str}")
-        logger.info(
-            f"    model_path             : {self.model.model_path}{weights_repo_str}"
-        )
-        logger.info(
-            f"    huggingface_revision   : {self.model.huggingface_model_revision}"
-        )
-        logger.info(f"    quantization_encoding  : {quantization_encoding_str}")
+        for line in _format_config_entries(model_entries):
+            logger.info(line)
 
-        if len(self.model.weight_path) == 1:
-            # Single weight path - format inline
-            logger.info(
-                f"    weight_path            : {self.model.weight_path[0]}"
-            )
-        elif len(self.model.weight_path) > 5:
-            # Many weight paths - replace middle with "..."
-            logger.info("    weight_path            : [")
-            for path in (
-                self.model.weight_path[:3]
-                + ["..."]
-                + [self.model.weight_path[-1]]
-            ):
-                logger.info(f"                              {path}")
-            logger.info("                            ]")
-        else:
-            # Few weight paths - print all of them
-            logger.info("    weight_path            : [")
-            for path in self.model.weight_path:
-                logger.info(f"                              {path}")
-            logger.info("                            ]")
+        pipeline_entries: list[tuple[str, Any]] = [
+            ("max_seq_len", self.max_length),
+            ("max_batch_size", self.max_batch_size),
+            ("chunked_prefill", self.enable_chunked_prefill),
+            ("max_batch_input_tokens", self.max_batch_input_tokens),
+            ("in_flight_batching", self.enable_in_flight_batching),
+        ]
 
         logger.info("")
         logger.info("Pipeline Config")
         logger.info("=" * 60)
-        logger.info(f"    max_seq_len            : {self.max_length}")
-        logger.info(f"    max_batch_size         : {self.max_batch_size}")
-        logger.info(
-            f"    chunked_prefill        : {self.enable_chunked_prefill}"
-        )
-        logger.info(
-            f"    max_batch_input_tokens : {self.max_batch_input_tokens}"
-        )
-        logger.info(
-            f"    in_flight_batching     : {self.enable_in_flight_batching}"
-        )
+        for line in _format_config_entries(pipeline_entries):
+            logger.info(line)
         logger.info("")
 
         # KVCache Configuration Summary
@@ -1256,7 +1207,7 @@ class PipelineConfig(ConfigFileModel):
 
         # Primary model kvcache config
         kv_config = self.model.kv_cache
-        _log_kvcache_details(kv_config)
+        _log_kvcache_entries(kv_config)
 
         # Draft model kvcache config (if using speculative decoding)
         if self.draft_model is not None:
@@ -1265,7 +1216,7 @@ class PipelineConfig(ConfigFileModel):
             logger.info("-" * 40)
             assert self.draft_model is not None
             draft_kv_config = self.draft_model.kv_cache
-            _log_kvcache_details(draft_kv_config)
+            _log_kvcache_entries(draft_kv_config)
 
         logger.info("")
 
@@ -1314,21 +1265,79 @@ class PipelineConfig(ConfigFileModel):
         )
 
         # Log basic configuration
+        config_entries: list[tuple[str, Any]] = [
+            ("model", self.model.model_path),
+            ("architecture", arch.name),
+            ("pipeline", pipeline_class.__name__),
+            ("devices", devices_str),
+            ("max_batch_size", self.max_batch_size),
+            ("max_seq_len", self.max_length),
+            ("cache_memory", memory_str),
+            ("device_graph_capture", self.device_graph_capture),
+        ]
+
         logger.info("")
         logger.info("=" * 60)
         logger.info(
             "Pipeline Configuration (use --pretty-print-config to print full config)"
         )
         logger.info("=" * 60)
-        logger.info(f"    model              : {self.model.model_path}")
-        logger.info(f"    architecture       : {arch.name}")
-        logger.info(f"    pipeline           : {pipeline_class.__name__}")
-        logger.info(f"    devices            : {devices_str}")
-        logger.info(f"    max_batch_size     : {self.max_batch_size}")
-        logger.info(f"    max_seq_len        : {self.max_length}")
-        logger.info(f"    cache_memory       : {memory_str}")
-        logger.info(f"    device_graph_capture : {self.device_graph_capture}")
+        for line in _format_config_entries(config_entries):
+            logger.info(line)
         logger.info("")
+
+
+def _format_config_entries(
+    entries: list[tuple[str, Any]], indent: str = "    "
+) -> list[str]:
+    """Format key-value config entries with aligned colons.
+
+    Args:
+        entries: List of (key, value) tuples to format.
+        indent: Prefix string for each line.
+
+    Returns:
+        A list of formatted strings with keys left-aligned and colons
+        vertically aligned based on the longest key.
+    """
+    max_key_len = max(len(key) for key, _ in entries)
+    return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]
+
+
+def _log_kvcache_entries(config: KVCacheConfig, indent: str = "    ") -> None:
+    """Log KV cache configuration details using aligned formatting.
+
+    Args:
+        config: The KVCacheConfig to log.
+        indent: Prefix string for each line.
+    """
+    entries: list[tuple[str, Any]] = [
+        ("cache_strategy", config.cache_strategy),
+        ("page_size", f"{config.kv_cache_page_size} tokens"),
+        ("prefix_caching", config.enable_prefix_caching),
+        ("host_swapping", config.enable_kvcache_swapping_to_host),
+    ]
+    if config.enable_kvcache_swapping_to_host:
+        entries.append(
+            ("host_swap_space", f"{config.host_kvcache_swap_space_gb} GB")
+        )
+    entries.append(
+        ("memory_utilization", f"{config.device_memory_utilization:.1%}")
+    )
+
+    if config._available_cache_memory is None:
+        raise ValueError(
+            "KVCache config is not available after config resolution."
+        )
+    entries.append(
+        (
+            "available_cache_memory",
+            to_human_readable_bytes(config._available_cache_memory),
+        )
+    )
+
+    for line in _format_config_entries(entries, indent=indent):
+        logger.info(line)
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:
@@ -1481,6 +1490,7 @@ class AudioGenerationConfig(PipelineConfig):
     def from_flags(
         cls, audio_flags: dict[str, str], **config_flags: Any
     ) -> AudioGenerationConfig:
+        """Builds an AudioGenerationConfig from audio CLI flags and config kwargs."""
         audio_decoder = audio_flags.pop("audio_decoder", "")
         if not audio_decoder:
             raise ValueError(

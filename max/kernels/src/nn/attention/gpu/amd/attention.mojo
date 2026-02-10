@@ -147,7 +147,7 @@ fn _mask_apply[
     comptime rowwise_stride = fragment_layout.shape[0].value()
     comptime colwise_stride = fragment_layout.shape[1].value()
     comptime frag_is_row_vector = rowwise_stride == 1
-    __comptime_assert frag_is_row_vector, "fragment layout is not a row vector"
+    comptime assert frag_is_row_vector, "fragment layout is not a row vector"
 
     var lane = lane_id()
 
