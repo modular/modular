@@ -2688,9 +2688,9 @@ fn _unsafe_strlen(
 
 @always_inline
 fn _memchr[
-    dtype: DType, //
+    dtype: DType, //, *Ts: Copyable
 ](
-    source: Span[mut=False, Scalar[dtype], ...], *chars: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], ...], *chars: *Ts
 ) -> source.UnsafePointerType:
     """Finds the first occurrence of any of the given characters in `source`.
 
@@ -2709,22 +2709,14 @@ fn _memchr[
         var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
-            for j in range(len(chars)):
-                if ptr[i] == chars[j]:
+
+            @parameter
+            for j in range(chars.__len__()):
+                var c = rebind[Scalar[dtype]](chars[j])
+                if ptr[i] == c:
                     return ptr + i
         return {}
-    else:
-        return _memchr_impl(source, chars)
 
-
-@always_inline
-fn _memchr_impl[
-    dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], ...],
-    chars: VariadicList[Scalar[dtype]],
-    out output: source.UnsafePointerType,
-):
     var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
@@ -2732,23 +2724,27 @@ fn _memchr_impl[
 
     for i in range(0, vectorized_end, bool_mask_width):
         var block = haystack.load[width=bool_mask_width](i)
-        var bool_mask = block.eq(SIMD[dtype, bool_mask_width](chars[0]))
-        for j in range(1, len(chars)):
-            bool_mask |= block.eq(SIMD[dtype, bool_mask_width](chars[j]))
+        var bool_mask = SIMD[DType.bool, bool_mask_width](fill=False)
+
+        @parameter
+        for j in range(chars.__len__()):
+            var c = rebind[Scalar[dtype]](chars[j])
+            bool_mask |= block.eq(SIMD[dtype, bool_mask_width](c))
         var mask = pack_bits(bool_mask)
         if mask:
-            output = haystack + Int(
+            return haystack + Int(
                 type_of(mask)(i) + count_trailing_zeros(mask)
             )
-            return
 
     for i in range(vectorized_end, length):
-        for j in range(len(chars)):
-            if haystack[i] == chars[j]:
-                output = haystack + i
-                return
 
-    output = {}
+        @parameter
+        for j in range(chars.__len__()):
+            var c = rebind[Scalar[dtype]](chars[j])
+            if haystack[i] == c:
+                return haystack + i
+
+    return {}
 
 
 @always_inline
