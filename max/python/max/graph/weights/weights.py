@@ -167,8 +167,10 @@ class Weights(Protocol):
 
     @property
     def allocated_weights(self) -> dict[str, DLPackArray]:
-        """Get all previously allocated weights. This only includes weights that were explicitly allocated
-            using the :meth:`allocate` method, not all available weights.
+        """Returns all previously allocated weights.
+
+        This only includes weights that were explicitly allocated using
+        :meth:`allocate()`, not all available weights.
 
         Returns:
             A dictionary mapping weight names to their numpy arrays for
@@ -224,7 +226,7 @@ class WeightData(DLPackArray):
     def astype(self, dtype: DType) -> WeightData:
         """Convert the weight data to a different dtype.
 
-        This method performs actual data conversion, unlike :meth:`view` which
+        This method performs actual data conversion, unlike :meth:`view()` which
         reinterprets the underlying bytes. Special handling is provided for
         bfloat16 conversions using PyTorch when available.
 

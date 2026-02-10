@@ -318,10 +318,11 @@ class BufferValue(Value[mo.BufferType]):
 
 
 class TensorValue(Value[mo.TensorType]):
-    """
-    Represents a value semantic tensor within a :obj:`Graph`. It provides
-    various methods and properties to manipulate and query tensor attributes
-    such as :obj:`shape`, data type (:obj:`dtype`), device placement (:obj:`device`), and more.
+    """Represents a value semantic tensor within a :obj:`Graph`.
+
+    It provides various methods and properties to manipulate and query tensor
+    attributes such as :obj:`shape`, data type (:obj:`dtype`), device placement
+    (:obj:`device`), and more.
 
     The following example demonstrates how to create and manipulate tensor values in a graph:
 
@@ -940,6 +941,7 @@ class TensorValue(Value[mo.TensorType]):
     @property
     def T(self) -> TensorValue:
         """Returns the transposed tensor.
+
         :obj:`T` is the shorthand notation for transposing.
         For more information, see :obj:`transpose()`.
 
@@ -977,9 +979,7 @@ class TensorValue(Value[mo.TensorType]):
         return ops.negate(self)
 
     def __round__(self) -> TensorValue:
-        """Rounds to the elementwise nearest integer, with ties going towards
-        the nearest even number.
-        """
+        """Rounds to the elementwise nearest integer, with ties going towards the nearest even number."""
         return ops.round(self)
 
     def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]

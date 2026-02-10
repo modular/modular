@@ -44,6 +44,7 @@ class FilterLayout(enum.Enum):
 
     def to_mlir(self) -> mo.LayoutAttr:
         """Returns an mlir Attribute representing this Layout.
+
         This attribute is used in tensor type metadata for certain ops.
 
         Returns:
@@ -73,6 +74,7 @@ class ConvInputLayout(enum.Enum):
 
     def to_mlir(self) -> builtin.StringAttr:
         """Returns an mlir Attribute representing this Layout.
+
         This attribute is used for certain convolution ops.
 
         Returns:
@@ -105,6 +107,7 @@ class DeviceKind(str, Enum):
 
     @staticmethod
     def from_string(txt: str) -> DeviceKind:
+        """Parses a device kind from its string representation."""
         if txt == str(DeviceKind.CPU):
             return DeviceKind.CPU
         elif txt == str(DeviceKind.GPU):
@@ -193,11 +196,12 @@ class DeviceRef:
 
     @staticmethod
     def from_mlir(attr: m.DeviceRefAttr) -> DeviceRef:
-        """Returns a device from an mlir attribute"""
+        """Returns a device reference from an MLIR attribute."""
         return DeviceRef(device_type=DeviceKind(attr.label), id=attr.id)
 
     @staticmethod
     def from_device(device: Device | DeviceRef) -> DeviceRef:
+        """Converts a ``Device`` or ``DeviceRef`` to a ``DeviceRef``."""
         if isinstance(device, DeviceRef):
             return device
         return DeviceRef(DeviceKind(device.label), device.id)
@@ -269,8 +273,9 @@ class _TensorTypeBase(Type[MlirType]):
 
         Args:
             dtype: The element type of the tensor data.
-            dims: The shape dimensions of the tensor. The number of dims
-                  is the rank of the tensor.
+            shape: The shape dimensions of the tensor. The number of dims
+                is the rank of the tensor.
+            device: The device where the tensor resides.
         """
         self.dtype = dtype
         self.shape = Shape(shape)
@@ -408,7 +413,7 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
         """Constructs a tensor type from an MLIR type.
 
         Args:
-            t: The MLIR Type object to parse into a tensor type.
+            type: The MLIR Type to parse into a tensor type.
 
         Returns:
             The tensor type represented by the MLIR Type value.
@@ -453,7 +458,7 @@ class BufferType(_TensorTypeBase[mo.BufferType]):
         """Constructs a buffer type from an MLIR type.
 
         Args:
-            t: The MLIR Type object to parse into a buffer type.
+            type: The MLIR Type to parse into a buffer type.
 
         Returns:
             The buffer type represented by the MLIR Type value.
@@ -477,9 +482,7 @@ class BufferType(_TensorTypeBase[mo.BufferType]):
 
 
 def _value_to_attribute(param: OpaqueParameter) -> Attribute:
-    """Converts a native Python value to an MLIR attribute to parametrize a
-    kernel or opaque type.
-    """
+    """Converts a native Python value to an MLIR attribute to parametrize a kernel or opaque type."""
     if isinstance(param, bool):
         return builtin.BoolAttr(param)
 
@@ -500,8 +503,7 @@ def _value_to_attribute(param: OpaqueParameter) -> Attribute:
 
 
 def _attribute_to_value(value: Attribute) -> OpaqueParameter:
-    """Converts an MLIR attribute representing a Mojo parameter to the
-    corresponding Python type.
+    """Converts an MLIR attribute representing a Mojo parameter to the corresponding Python type.
 
     This function is the inverse of _value_to_attribute.
     """

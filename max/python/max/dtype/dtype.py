@@ -79,7 +79,6 @@ def _to_numpy(self: DType) -> np.dtype[Any]:
     Raises:
         ValueError: If the dtype is not supported.
     """
-
     if numpy_dtype := _DTYPE_TO_NUMPY.get(self):
         return np.dtype(numpy_dtype)
     raise ValueError(f"unsupported DType to convert to NumPy: {self}")
@@ -97,7 +96,6 @@ def _from_numpy(dtype: np.dtype[Any]) -> DType:
     Raises:
         ValueError: If the input dtype is not supported.
     """
-
     # Handle both np.dtype objects and numpy type objects.
     np_type = dtype.type if isinstance(dtype, np.dtype) else dtype
 

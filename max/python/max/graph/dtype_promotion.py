@@ -77,7 +77,6 @@ def _promote_weak_dtypes(
     Finally, if a mix of weak and strong types are given, place weak types
     on the strong type's device.
     """
-
     x_was_strong = _is_strong_tensor_value_like(x)
     y_was_strong = _is_strong_tensor_value_like(y)
 

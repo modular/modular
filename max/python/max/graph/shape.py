@@ -28,14 +28,17 @@ class Shape(list[Dim]):
 
     @property
     def rank(self):  # noqa: ANN201
+        """Returns the number of dimensions."""
         return len(self)
 
     def to_mlir(self) -> mosh.ShapeAttr:
+        """Converts this shape to an MLIR ``mosh.ShapeAttr``."""
         shape_type = mosh.ShapeType()
         return mosh.ShapeAttr([dim.to_mlir() for dim in self], shape_type)
 
     @classmethod
     def from_mlir(cls, attr: builtin.TypedAttr) -> Shape:
+        """Constructs a shape from an MLIR ``mosh.ShapeAttr``."""
         if not isinstance(attr, mosh.ShapeAttr):
             raise TypeError(
                 f"Shape.from_mlir only supported for mosh.ShapeAttr, got {attr}"
@@ -56,6 +59,7 @@ class Shape(list[Dim]):
     # TypeGuard and TypeIs don't support self/cls narrowing
     @staticmethod
     def is_static(shape: Shape) -> TypeGuard[StaticShape]:
+        """Returns True if every dimension is static and non-negative."""
         return all(isinstance(dim, StaticDim) and dim.dim >= 0 for dim in shape)
 
 

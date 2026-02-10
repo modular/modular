@@ -168,6 +168,7 @@ class SafetensorWeights(Weights):
         return tensor
 
     def data(self) -> WeightData:
+        """Loads and returns the weight data for this tensor."""
         tensor = self._load_tensor()
         return WeightData(
             tensor,
@@ -177,6 +178,7 @@ class SafetensorWeights(Weights):
         )
 
     def exists(self) -> bool:
+        """Returns True if a tensor exists for the current name."""
         return self.name in self._tensors_to_file_idx
 
     def allocate(
@@ -223,12 +225,12 @@ class SafetensorWeights(Weights):
         return weight
 
     def allocate_as_bytes(self, dtype: DType | None = None) -> Weight:
-        """Create a Weight that can be added to the graph. Has a uint8
-        representation, instead of the original data type. Last dimension of
-        the scale gets scaled by number of bytes it takes to represent the
-        original data type. For example, [512, 256] float32 weights become
-        [512, 1024] uint8 weights. Scalar weights will be interpreted as
-        weights with shape [1]."""
+        """Creates a Weight that can be added to the graph with uint8 representation.
+
+        The last dimension is scaled by the number of bytes of the original
+        dtype (e.g. ``[512, 256]`` ``float32`` becomes ``[512, 1024]`` ``uint8``). Scalars
+        are interpreted as shape ``[1]``.
+        """
         tensor = self._load_tensor(dtype)
         if len(tensor.shape) == 0:
             tensor = tensor.view(tensor.dtype, [1])
