@@ -69,7 +69,14 @@ from kv_cache.types import (
 )
 from layout import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import DynamicCoord, RuntimeInt, Idx, coord_to_index_list
+from layout._coord import (
+    DynamicCoord,
+    RuntimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    coord_to_index_list,
+)
 from layout._layout import Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
@@ -354,7 +361,9 @@ fn reduce_shape[
 
 
 @always_inline
-fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
+fn _unsafe_str_to_coord[
+    str_slice: StaticString
+]() -> DynamicCoord[DType.int64, len(str_slice.split("_"))]:
     """
     Convert a string of integers separated by "_" to an IntTuple.
 
@@ -364,8 +373,8 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
     Returns:
         The IntTuple.
     """
-    var int_tuple = IntTuple()
     comptime size = len(str_slice.split("_"))
+    var coord = DynamicCoord[DType.int64, size]()
 
     @parameter
     for i in range(size):
@@ -376,9 +385,9 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
         @parameter
         for pos in range(str_len):
             result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
-        int_tuple.append(result)
+        coord[i] = rebind[coord.element_types[i]](Int64(result))
 
-    return int_tuple^
+    return coord
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -6575,7 +6584,10 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
-    mrope_section: Optional[IntTuple] = None,
+    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
+        CoordLike
+    ],
+    mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6590,15 +6602,16 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         interleaved=interleaved,
         has_position_ids=has_position_ids,
         target=target,
+        mrope_types=mrope_types,
         mrope_section=mrope_section,
     ](
-        q_proj.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
+        q_proj.to_tile_tensor[DType.int64](),
+        input_row_offsets.to_tile_tensor[DType.int64](),
         kv_collection,
-        freqs_cis.to_layout_tensor(),
-        position_ids.to_layout_tensor(),
+        freqs_cis.to_tile_tensor[DType.int64](),
+        position_ids.to_tile_tensor[DType.int64](),
         layer_idx,
-        output.to_layout_tensor(),
+        output.to_tile_tensor[DType.int64](),
         context,
     )
 
@@ -6633,13 +6646,13 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             kv_lookup_table,
             max_lengths,
         )
+        comptime mrope = _unsafe_str_to_coord[mrope_section]()
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved = Self.interleaved,
             has_position_ids=True,
             target=target,
-            mrope_section = Optional[IntTuple](
-                _unsafe_str_to_int_tuple[mrope_section]()
-            ),
+            mrope_types = mrope.element_types,
+            mrope_section=mrope,
         ](
             q_proj,
             input_row_offsets,
@@ -6726,24 +6739,16 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
             kv_lookup_table,
             max_lengths,
         )
-        var valid_lengths_lt = valid_lengths.to_layout_tensor()
         generic_fused_qk_rope_bshd_paged[
             interleaved = Self.interleaved,
             target=target,
         ](
-            q_proj.to_layout_tensor(),
+            q_proj.to_tile_tensor[DType.int64](),
             kv_collection,
-            freqs_cis.to_layout_tensor(),
+            freqs_cis.to_tile_tensor[DType.int64](),
             layer_idx,
-            LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-            ](
-                valid_lengths_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            output.to_layout_tensor(),
+            valid_lengths.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context,
         )
 

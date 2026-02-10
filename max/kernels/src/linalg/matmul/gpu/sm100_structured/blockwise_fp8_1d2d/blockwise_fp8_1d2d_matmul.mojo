@@ -37,31 +37,32 @@ from sys import size_of
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor
-from layout.tma_async import create_tensor_tile, create_tma_tile
+from layout import Layout as LegacyLayout, LayoutTensor
+from layout.tma_async import create_tensor_tile
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.tile_types import GMEMTile, lt_to_tt, lt_to_tt_1d
 from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from .blockwise_fp8_1d2d_matmul_kernel import BlockwiseFP8_1D2DMatmulKernel
 
 
 fn grouped_matmul_1d2d_blockwise_fp8[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
+    a_scales_layout: LegacyLayout,
+    b_scales_layout: LegacyLayout,
+    a_offsets_layout: LegacyLayout,
+    expert_ids_layout: LegacyLayout,
+    expert_scales_layout: LegacyLayout,
     transpose_b: Bool,
     //,
     *,
@@ -129,7 +130,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     # Reshape B from (num_experts, N, K) to (num_experts * N, K)
     var b_2d = LayoutTensor[
         b_type,
-        Layout.row_major(num_experts * N, K),
+        LegacyLayout.row_major(num_experts * N, K),
         b_device.origin,
         address_space = b_device.address_space,
     ](b_device.ptr)
@@ -140,27 +141,10 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     comptime b_scales_k = b_scales_layout.shape[2].value()
     var b_scales_2d = LayoutTensor[
         b_scales_type,
-        Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
+        LegacyLayout.row_major(b_scales_expert * b_scales_n, b_scales_k),
         b_scales.origin,
         address_space = b_scales.address_space,
     ](b_scales.ptr)
-
-    # Create TMA descriptors
-    var a_tma_op = create_tensor_tile[
-        Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
-    ](ctx, a_device)
-
-    var b_tma_op = create_tensor_tile[
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
-        swizzle_mode = config.b_swizzle,
-    ](ctx, b_2d)
-
-    var a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
 
     # Shared memory size calculation
     comptime SmemType = BlockwiseFP8_1D2DSmem[
@@ -176,24 +160,17 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    # Define kernel function
-    comptime kernel = BlockwiseFP8_1D2DMatmulKernel[
+    # Instantiate kernel type (computes TMA layouts from config)
+    comptime BScalesTileType = GMEMTile[b_scales_type, b_scales_2d.layout]
+    comptime CDeviceTileType = GMEMTile[c_type, c_layout]
+    comptime KernelType = BlockwiseFP8_1D2DMatmulKernel[
         a_type,
         b_type,
         c_type,
         a_scales_type,
         b_scales_type,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        a_scales_tma_op.layout,
-        b_scales_2d.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        a_scales_tma_op.desc_layout,
-        a_offsets.layout,
-        expert_ids.layout,
-        expert_scales.layout,
-        c_layout,  # Full C tensor layout for bounds-checked stores
+        BScalesTileType.LayoutType,
+        CDeviceTileType.LayoutType,
         transpose_b,
         config=config,
         static_N=expert_n,
@@ -202,7 +179,33 @@ fn grouped_matmul_1d2d_blockwise_fp8[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-    ].run
+    ]
+    comptime kernel = KernelType.run
+
+    # Create TMA descriptors using kernel's derived legacy layouts
+    var a_tma_op = create_tensor_tile[
+        Index(BM // config.cluster_shape[1], BK),
+        swizzle_mode = config.a_swizzle,
+        __tile_layout = KernelType.ATmaOp.layout,
+        __desc_layout = KernelType.ATmaOp.desc_layout,
+    ](ctx, a_device)
+
+    var b_tma_op = create_tensor_tile[
+        Index(
+            BN // (config.cluster_shape[0] // config.cta_group), BK
+        ) if transpose_b else Index(
+            BK, BN // (config.cluster_shape[0] // config.cta_group)
+        ),
+        swizzle_mode = config.b_swizzle,
+        __tile_layout = KernelType.BTmaOp.layout,
+        __desc_layout = KernelType.BTmaOp.desc_layout,
+    ](ctx, b_2d)
+
+    var a_scales_tma_op = create_tensor_tile[
+        Index(1, BM),
+        __tile_layout = KernelType.AScalesTmaOp.layout,
+        __desc_layout = KernelType.AScalesTmaOp.desc_layout,
+    ](ctx, a_scales)
 
     var grid_dim = (
         B200.sm_count,
@@ -219,11 +222,11 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
-        b_scales_2d,
-        a_offsets,
-        expert_ids,
-        expert_scales,
-        c_device,  # For bounds-checked stores
+        lt_to_tt(b_scales_2d),
+        lt_to_tt_1d(a_offsets),
+        lt_to_tt_1d(expert_ids),
+        lt_to_tt_1d(expert_scales),
+        lt_to_tt(c_device),
         num_active_experts,
         UInt32(K),
         grid_dim=grid_dim,
@@ -237,18 +240,18 @@ fn grouped_matmul_1d2d_blockwise_fp8[
 
 fn grouped_matmul_dynamic_scaled_fp8_1d2d[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
+    a_scales_layout: LegacyLayout,
+    b_scales_layout: LegacyLayout,
+    a_offsets_layout: LegacyLayout,
+    expert_ids_layout: LegacyLayout,
+    expert_scales_layout: LegacyLayout,
     //,
     transpose_b: Bool = True,
 ](

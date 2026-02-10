@@ -1,21 +1,8 @@
 diff --git a/bazel/grpc_build_system.bzl b/bazel/grpc_build_system.bzl
-index 0fc2e1d061..9c1de8dc78 100644
+index a3b8923b6e..552b5b070f 100644
 --- a/bazel/grpc_build_system.bzl
 +++ b/bazel/grpc_build_system.bzl
-@@ -27,7 +27,6 @@
- Contains macros used throughout the repo.
- """
- 
--load("@build_bazel_apple_support//rules:universal_binary.bzl", "universal_binary")
- load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
- load("@build_bazel_rules_apple//apple/testing/default_runner:ios_test_runner.bzl", "ios_test_runner")
- load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
-@@ -190,24 +189,10 @@ def grpc_cc_library(
- 
- def grpc_proto_plugin(name, srcs = [], deps = []):
-     native.cc_binary(
--        name = name + "_native",
-+        name = name,
+@@ -195,16 +195,11 @@ def grpc_proto_plugin(name, srcs = [], deps = []):
          srcs = srcs,
          deps = deps,
      )
@@ -23,28 +10,12 @@ index 0fc2e1d061..9c1de8dc78 100644
 -        name = name + "_universal",
 -        binary = name + "_native",
 -    )
--    native.genrule(
--        name = name,
--        srcs = select({
--            "@platforms//os:macos": [name + "_universal"],
--            "//conditions:default": [name + "_native"],
--        }),
--        outs = [name],
--        cmd = "cp $< $@",
--        executable = True,
--    )
  
- def grpc_internal_proto_library(
-         name,
-diff --git a/tools/buildgen/extract_metadata_from_bazel_xml.py b/tools/buildgen/extract_metadata_from_bazel_xml.py
-index 33587bb1ed..37f3bffb83 100755
---- a/tools/buildgen/extract_metadata_from_bazel_xml.py
-+++ b/tools/buildgen/extract_metadata_from_bazel_xml.py
-@@ -202,7 +202,6 @@ def _extract_rules_from_bazel_xml(xml_tree):
-                 "upb_proto_reflection_library",
-                 "alias",
-                 "bind",
--                "genrule",
-             ]:
-                 if rule_name in result:
-                     raise Exception("Rule %s already present" % rule_name)
+     # In order to avoid warnings from Bazel, names of the rule and its output file must differ.
+     native.genrule(
+         name = name,
+         srcs = select({
+-            "@platforms//os:macos": [name + "_universal"],
+             "//conditions:default": [name + "_native"],
+         }),
+         outs = [name + "_binary"],
