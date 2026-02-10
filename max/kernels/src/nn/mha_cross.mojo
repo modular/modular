@@ -55,8 +55,8 @@ fn _bmm0_bs[
     group: Int,
     mask_functor: mask_t,
 ):
-    comptime assert q_input_row_offsets.rank == 1
-    comptime assert kv_input_row_offsets.rank == 1
+    comptime assert q_input_row_offsets.flat_rank == 1
+    comptime assert kv_input_row_offsets.flat_rank == 1
 
     # total_context_length
     var x = global_idx.x
@@ -159,8 +159,8 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    comptime assert q_input_row_offsets.rank == 1
-    comptime assert kv_input_row_offsets.rank == 1
+    comptime assert q_input_row_offsets.flat_rank == 1
+    comptime assert kv_input_row_offsets.flat_rank == 1
 
     comptime v_type = cache_t.dtype
     comptime kv_num_heads = cache_t.kv_params.num_heads
@@ -339,7 +339,7 @@ fn mha_cross_gpu_naive[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         var p_coord = Coord(coords)
-        comptime assert p_coord.rank == p_buffer.rank
+        comptime assert p_coord.flat_rank == p_buffer.flat_rank
         return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](

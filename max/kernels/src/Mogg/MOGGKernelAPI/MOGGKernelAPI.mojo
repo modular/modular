@@ -5053,8 +5053,6 @@ struct Fold:
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
         var input_tensor = input.to_tile_tensor[DType.int64]()
         var output_tensor = output.to_tile_tensor[DType.int64]()
-        comptime assert input_tensor.rank == 3
-        comptime assert output_tensor.rank == 4
 
         fold[
             stride= (stride_h, stride_w),
@@ -6823,9 +6821,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             ]()
             var start_tensor = start_pos.to_tile_tensor[DType.int64]()
             var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
-            comptime assert row_offsets_tensor.rank == 1
-            comptime assert start_tensor.rank == 1
-            comptime assert freqs_cis_tensor.rank == 2
+            comptime assert row_offsets_tensor.flat_rank == 1
+            comptime assert start_tensor.flat_rank == 1
+            comptime assert freqs_cis_tensor.flat_rank == 2
 
             rope_ragged[
                 interleaved = Self.interleaved,
@@ -9625,9 +9623,6 @@ struct ArgSort[*, ascending: Bool]:
     ) raises:
         var indices_tensor = indices.to_tile_tensor[DType.int64]()
         var input_tensor = input.to_tile_tensor[DType.int64]()
-        comptime assert indices_tensor.rank == 1
-        comptime assert indices.dtype.is_integral()
-        comptime assert input_tensor.rank == 1
 
         @parameter
         if target == "cpu":

@@ -281,7 +281,9 @@ fn pad_shape[
     Returns:
         The output shape.
     """
-    comptime assert paddings_buf.rank == 1, "paddings_buf must be of rank 1"
+    comptime assert (
+        paddings_buf.flat_rank == 1
+    ), "paddings_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.

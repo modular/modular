@@ -230,7 +230,7 @@ fn _top_k_cpu[
     comptime assert (
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
-    comptime assert k.T.rank == 1
+    comptime assert k.T.flat_rank == 1
     var shape = coord_to_index_list(input.layout.shape_coord())
 
     @__copy_capture(shape)
@@ -456,10 +456,10 @@ fn _top_k_sampling[
     comptime assert (
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
-    comptime assert temperature.T.rank == 1
-    comptime assert k.T.rank == 1
-    comptime assert top_p.T.rank == 1
-    comptime assert seed.T.rank == 1
+    comptime assert temperature.T.flat_rank == 1
+    comptime assert k.T.flat_rank == 1
+    comptime assert top_p.T.flat_rank == 1
+    comptime assert seed.T.flat_rank == 1
 
     # Now reshape for sampling
     var orig_in_shape = rebind[IndexList[input.rank]](
