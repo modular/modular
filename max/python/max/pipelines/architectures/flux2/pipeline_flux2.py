@@ -16,7 +16,6 @@ from queue import Queue
 from typing import Any, Literal
 
 import numpy as np
-import PIL.Image
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
@@ -25,6 +24,7 @@ from max.interfaces import TokenBuffer
 from max.pipelines import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.tensor import Tensor
+from PIL import Image
 from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLFlux2Model
@@ -52,7 +52,7 @@ class Flux2ModelInputs(PixelModelInputs):
     guidance_scale: float = 4.0
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
-    input_image: PIL.Image.Image | None = None
+    input_image: Image.Image | None = None
     """Optional input image for image-to-image generation (PIL.Image.Image).
     
     This field is used for Flux2 image-to-image generation where an input image
@@ -103,6 +103,12 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:
         """Convert a PixelContext into Flux2ModelInputs."""
+        if context.input_image is not None and isinstance(
+            context.input_image, np.ndarray
+        ):
+            context.input_image = Image.fromarray(
+                context.input_image.astype(np.uint8)
+            )
         return Flux2ModelInputs.from_context(context)
 
     @staticmethod
@@ -464,7 +470,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def _pil_image_to_tensor(
         self,
-        image: PIL.Image.Image,
+        image: Image.Image,
     ) -> Tensor:
         img_array = (np.array(image, dtype=np.float32) / 127.5) - 1.0
         img_array = np.transpose(img_array, (2, 0, 1))
@@ -583,11 +589,9 @@ class Flux2Pipeline(DiffusionPipeline):
             )[0]
             noise_pred = Tensor.from_dlpack(noise_pred)
 
-            noise_pred = noise_pred[:, :int(latents.shape[1]), :]
+            noise_pred = noise_pred[:, : int(latents.shape[1]), :]
 
-            latents = self._scheduler_step(
-                latents, noise_pred, sigmas, i
-            )
+            latents = self._scheduler_step(latents, noise_pred, sigmas, i)
 
             if callback_queue is not None:
                 callback_queue.put_nowait(

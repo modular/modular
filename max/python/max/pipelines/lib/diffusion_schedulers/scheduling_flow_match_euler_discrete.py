@@ -49,7 +49,14 @@ class FlowMatchEulerDiscreteScheduler:
             order: Order of the scheduler.
             **unused_kwargs: Unused keyword arguments.
         """
-        self.order: int = order
+        self.base_image_seq_len = base_image_seq_len
+        self.max_image_seq_len = max_image_seq_len
+        self.base_shift = base_shift
+        self.max_shift = max_shift
+        self.use_flow_sigmas = use_flow_sigmas
+        self.use_dynamic_shifting = use_dynamic_shifting
+        self.use_empirical_mu = use_empirical_mu
+        self.order = order
 
         self._use_flow_sigmas = use_flow_sigmas
         self._shift_slope = (max_shift - base_shift) / (
@@ -81,7 +88,7 @@ class FlowMatchEulerDiscreteScheduler:
 
         Args:
             image_seq_len: Length of image sequence (H*W after packing).
-            num_steps: Number of inference steps.
+            num_inference_steps: Number of inference steps.
 
         Returns:
             Empirical mu value for scheduler.

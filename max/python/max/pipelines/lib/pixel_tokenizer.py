@@ -56,6 +56,7 @@ class PipelineClassName(str, Enum):
     def from_diffusers_config(
         cls, diffusers_config: dict[str, Any]
     ) -> PipelineClassName:
+        """Resolve a PipelineClassName from a diffusers config dict."""
         raw = diffusers_config.get("_class_name")
         if raw is None:
             raise KeyError(
@@ -251,7 +252,7 @@ class PixelGenerationTokenizer(
 
     def _preprocess_input_image(
         self,
-        image: PIL.Image.Image,
+        image: PIL.Image.Image | npt.NDArray[np.uint8],
         target_height: int | None = None,
         target_width: int | None = None,
     ) -> PIL.Image.Image:
@@ -266,7 +267,7 @@ class PixelGenerationTokenizer(
         for the Max framework's condition-based approach.
 
         Args:
-            image: PIL Image to preprocess.
+            image: PIL Image or numpy array (uint8) to preprocess.
             target_height: Target height for the image. If None, uses image's height.
             target_width: Target width for the image. If None, uses image's width.
 
@@ -561,12 +562,20 @@ class PixelGenerationTokenizer(
             image_options.true_cfg_scale > 1.0
             and image_options.negative_prompt is not None
         )
+        import PIL.Image
 
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
-        images_for_tokenization = None
-        if input_image is not None:
-            images_for_tokenization = [input_image]
+        images_for_tokenization: list[PIL.Image.Image] | None = None
+        if request.input_image is not None:
+            input_img: PIL.Image.Image
+            if isinstance(request.input_image, np.ndarray):
+                input_img = PIL.Image.fromarray(
+                    request.input_image.astype(np.uint8)
+                )
+            else:
+                input_img = request.input_image
+            images_for_tokenization = [input_img]
 
         (
             token_ids,
@@ -610,9 +619,9 @@ class PixelGenerationTokenizer(
 
         # 2. Preprocess input image if provided
         preprocessed_image = None
-        if input_image is not None:
+        if request.input_image is not None:
             preprocessed_image = self._preprocess_input_image(
-                input_image, height, width
+                request.input_image, height, width
             )
             height = preprocessed_image.height
             width = preprocessed_image.width

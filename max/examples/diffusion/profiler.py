@@ -1,9 +1,23 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Callable, Mapping
+from typing import Any
 
 
 @dataclass
@@ -46,7 +60,9 @@ class _Patcher:
 class _TimedFn:
     """Callable wrapper that measures wall-clock time."""
 
-    def __init__(self, fn: Callable[..., Any], on_time: Callable[[float], None]) -> None:
+    def __init__(
+        self, fn: Callable[..., Any], on_time: Callable[[float], None]
+    ) -> None:
         self._fn: Callable[..., Any] = fn
         self._on_time: Callable[[float], None] = on_time
 
@@ -73,7 +89,9 @@ class _TimedCallableProxy:
     ) -> None:
         self._obj: Any = obj
         self._on_time_call: Callable[[float], None] = on_time_call
-        self._timed_methods: Mapping[str, Callable[[float], None]] = timed_methods or {}
+        self._timed_methods: Mapping[str, Callable[[float], None]] = (
+            timed_methods or {}
+        )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         t0: float = perf_counter()
@@ -130,13 +148,22 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         self._pipeline_module_label = f"pipeline/{type(target).__name__}"
 
         self._wrap_if_exists(
-            target, "_prepare_prompt_embeddings", "prompt/prepare_embeddings", self._pipeline_module_label
+            target,
+            "_prepare_prompt_embeddings",
+            "prompt/prepare_embeddings",
+            self._pipeline_module_label,
         )
         self._wrap_if_exists(
-            target, "_decode_latents", "decode/decode_latents", self._pipeline_module_label
+            target,
+            "_decode_latents",
+            "decode/decode_latents",
+            self._pipeline_module_label,
         )
         self._wrap_if_exists(
-            target, "_scheduler_step", "loop/scheduler_step", self._pipeline_module_label
+            target,
+            "_scheduler_step",
+            "loop/scheduler_step",
+            self._pipeline_module_label,
         )
         self._wrap_if_exists(
             target, "_to_numpy", "decode/to_numpy", self._pipeline_module_label
@@ -152,7 +179,9 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
         return self
 
-    def __exit__(self, exc_type: object, exc: BaseException | None, tb: object) -> None:
+    def __exit__(
+        self, exc_type: object, exc: BaseException | None, tb: object
+    ) -> None:
         self._patcher.restore()
         return None
 
@@ -160,14 +189,16 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         """Render a module-level timing table."""
         mul: float = 1000.0 if unit == "ms" else 1.0
         items: list[tuple[str, Stat]] = sorted(
-            self.module_stats.items(), key=lambda kv: kv[1].total_s, reverse=True
+            self.module_stats.items(),
+            key=lambda kv: kv[1].total_s,
+            reverse=True,
         )
         lines: list[str] = [
             f"{'module':<30} {'calls':>7} {'total':>12} {'avg':>12} ({unit})"
         ]
         for name, st in items:
             lines.append(
-                f"{name:<30} {st.calls:>7d} {st.total_s*mul:>12.3f} {st.avg_s*mul:>12.3f}"
+                f"{name:<30} {st.calls:>7d} {st.total_s * mul:>12.3f} {st.avg_s * mul:>12.3f}"
             )
         return "\n".join(lines)
 
@@ -182,7 +213,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         ]
         for name, st in items:
             lines.append(
-                f"{name:<30} {st.calls:>7d} {st.total_s*mul:>12.3f} {st.avg_s*mul:>12.3f}"
+                f"{name:<30} {st.calls:>7d} {st.total_s * mul:>12.3f} {st.avg_s * mul:>12.3f}"
             )
         return "\n".join(lines)
 
@@ -199,7 +230,11 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         for name in candidates:
             if hasattr(obj, name):
                 inner: Any = getattr(obj, name)
-                if inner is not None and hasattr(inner, "execute") and callable(getattr(inner, "execute")):
+                if (
+                    inner is not None
+                    and hasattr(inner, "execute")
+                    and callable(inner.execute)
+                ):
                     return inner
         return None
 
@@ -209,7 +244,9 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
     def _accum_module(self, label: str, dt_s: float) -> None:
         self.module_stats.setdefault(label, Stat()).add(dt_s)
 
-    def _wrap_if_exists(self, obj: Any, method_name: str, label: str, module_label: str) -> None:
+    def _wrap_if_exists(
+        self, obj: Any, method_name: str, label: str, module_label: str
+    ) -> None:
         """Wrap `obj.method_name` and aggregate into method and module buckets."""
         if not hasattr(obj, method_name):
             return
@@ -228,8 +265,8 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                 self._accum(label, dt)
                 self._accum_module(module_label, dt)
 
-        setattr(wrapper, "__is_execute_profiler_wrapper__", True)
-        setattr(wrapper, "__wrapped__", original)
+        wrapper.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
+        wrapper.__wrapped__ = original  # type: ignore[attr-defined]
 
         try:
             self._patcher.patch(obj, method_name, wrapper)
@@ -245,7 +282,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         if not isinstance(comps, dict):
             return
 
-        for name in comps.keys():
+        for name in comps:
             if not hasattr(target, name):
                 continue
             comp: Any = getattr(target, name)
@@ -258,6 +295,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                 def on_time(dt: float) -> None:
                     self._accum(lab, dt)
                     self._accum_module(lab, dt)
+
                 return on_time
 
             timed_methods: dict[str, Callable[[float], None]] = {}
@@ -280,12 +318,12 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
     def _patch_tensor_ops_global(self) -> None:
         """Patch Tensor conversion/movement ops (process-wide while active)."""
         try:
-            from max.tensor import Tensor
+            from max.tensor import Tensor  # type: ignore[import-not-found]
         except Exception:
             return
 
-        if hasattr(Tensor, "from_dlpack") and callable(getattr(Tensor, "from_dlpack")):
-            orig_from: Any = getattr(Tensor, "from_dlpack")
+        if hasattr(Tensor, "from_dlpack") and callable(Tensor.from_dlpack):
+            orig_from: Any = Tensor.from_dlpack
             if not getattr(orig_from, "__is_execute_profiler_wrapper__", False):
 
                 def from_dlpack_wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -297,10 +335,12 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                         self._accum("tensor/from_dlpack", dt)
                         self._accum_module("tensor/ops", dt)
 
-                setattr(from_dlpack_wrapped, "__is_execute_profiler_wrapper__", True)
-                setattr(from_dlpack_wrapped, "__wrapped__", orig_from)
+                from_dlpack_wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
+                from_dlpack_wrapped.__wrapped__ = orig_from  # type: ignore[attr-defined]
                 try:
-                    self._patcher.patch(Tensor, "from_dlpack", from_dlpack_wrapped)
+                    self._patcher.patch(
+                        Tensor, "from_dlpack", from_dlpack_wrapped
+                    )
                 except (AttributeError, TypeError):
                     pass
 
@@ -310,7 +350,9 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                 if getattr(orig_m, "__is_execute_profiler_wrapper__", False):
                     continue
 
-                def _make_wrapped(o: Callable[..., Any], meth_label: str) -> Callable[..., Any]:
+                def _make_wrapped(
+                    o: Callable[..., Any], meth_label: str
+                ) -> Callable[..., Any]:
                     def wrapped(self_: Any, *args: Any, **kwargs: Any) -> Any:
                         t0: float = perf_counter()
                         try:
@@ -320,8 +362,8 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                             self._accum(meth_label, dt)
                             self._accum_module("tensor/ops", dt)
 
-                    setattr(wrapped, "__is_execute_profiler_wrapper__", True)
-                    setattr(wrapped, "__wrapped__", o)
+                    wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
+                    wrapped.__wrapped__ = o  # type: ignore[attr-defined]
                     return wrapped
 
                 wrapped_fn: Callable[..., Any] = _make_wrapped(orig_m, label)
@@ -333,12 +375,12 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
     def _patch_concat_global(self) -> None:
         """Patch max.functional.concat (process-wide while active)."""
         try:
-            from max import functional as F
+            from max import functional as F  # type: ignore[attr-defined]
         except Exception:
             return
 
-        if hasattr(F, "concat") and callable(getattr(F, "concat")):
-            orig_concat: Any = getattr(F, "concat")
+        if hasattr(F, "concat") and callable(F.concat):
+            orig_concat: Any = F.concat
             if getattr(orig_concat, "__is_execute_profiler_wrapper__", False):
                 return
 
@@ -351,8 +393,8 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                     self._accum("func/concat", dt)
                     self._accum_module("func/ops", dt)
 
-            setattr(concat_wrapped, "__is_execute_profiler_wrapper__", True)
-            setattr(concat_wrapped, "__wrapped__", orig_concat)
+            concat_wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
+            concat_wrapped.__wrapped__ = orig_concat  # type: ignore[attr-defined]
             try:
                 self._patcher.patch(F, "concat", concat_wrapped)
             except (AttributeError, TypeError):
