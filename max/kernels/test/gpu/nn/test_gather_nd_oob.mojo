@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._layout import row_major
+from layout._coord import Coord
+from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -42,16 +44,12 @@ def execute_gather_nd_test[
     for i in range(indices_rank):
         indices_size *= indices_shape[i]
 
-    # Create host LayoutTensors
-    comptime data_layout = Layout.row_major[data_rank]()
-    comptime indices_layout = Layout.row_major[indices_rank]()
-    var data_host_tensor = LayoutTensor[data_type, data_layout](
-        data_host_ptr,
-        RuntimeLayout[data_layout].row_major(data_shape),
+    # Create host TileTensors
+    var data_host_tensor = TileTensor(
+        data_host_ptr, row_major(Coord(data_shape))
     )
-    var indices_host_tensor = LayoutTensor[indices_type, indices_layout](
-        indices_host_ptr,
-        RuntimeLayout[indices_layout].row_major(indices_shape),
+    var indices_host_tensor = TileTensor(
+        indices_host_ptr, row_major(Coord(indices_shape))
     )
 
     # Create device buffers and copy data to them
@@ -76,27 +74,19 @@ def execute_gather_nd_test[
         output_size *= output_shape[i]
 
     var actual_output_device = ctx.enqueue_create_buffer[data_type](output_size)
-    comptime actual_output_layout = Layout.row_major[output_rank]()
 
     ctx.enqueue_copy(data_device, data_host_ptr)
     ctx.enqueue_copy(indices_device, indices_host_ptr)
 
-    # Create device LayoutTensors
-    var data_device_tensor = LayoutTensor[data_type, data_layout, MutAnyOrigin](
-        data_device.unsafe_ptr(),
-        RuntimeLayout[data_layout].row_major(data_shape),
+    # Create device TileTensors
+    var data_device_tensor = TileTensor(
+        data_device.unsafe_ptr(), row_major(Coord(data_shape))
     )
-    var indices_device_tensor = LayoutTensor[
-        indices_type, indices_layout, MutAnyOrigin
-    ](
-        indices_device.unsafe_ptr(),
-        RuntimeLayout[indices_layout].row_major(indices_shape),
+    var indices_device_tensor = TileTensor(
+        indices_device.unsafe_ptr(), row_major(Coord(indices_shape))
     )
-    var actual_output_tensor = LayoutTensor[
-        data_type, actual_output_layout, MutAnyOrigin
-    ](
-        actual_output_device.unsafe_ptr(),
-        RuntimeLayout[actual_output_layout].row_major(output_shape),
+    var actual_output_tensor = TileTensor(
+        actual_output_device.unsafe_ptr(), row_major(Coord(output_shape))
     )
 
     # execute the kernel
@@ -120,14 +110,10 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime batch_dims = 0
     comptime data_rank = 2
     comptime data_type = DType.int32
-    comptime data_layout = Layout.row_major[data_rank]()
     var data_shape = IndexList[data_rank](2, 2)
     var data_size = 4
     var data_host_ptr = UnsafePointer[Scalar[data_type]].alloc(data_size)
-    var data_tensor = LayoutTensor[data_type, data_layout](
-        data_host_ptr,
-        RuntimeLayout[data_layout].row_major(data_shape),
-    )
+    var data_tensor = TileTensor(data_host_ptr, row_major(Coord(data_shape)))
 
     data_tensor[0, 0] = 0
     data_tensor[0, 1] = 1
@@ -135,15 +121,13 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     data_tensor[1, 1] = 3
 
     comptime indices_rank = 2
-    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices_shape = IndexList[indices_rank](2, 2)
     var indices_size = 4
     var indices_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
         indices_size
     )
-    var indices_tensor = LayoutTensor[DType.int64, indices_layout](
-        indices_host_ptr,
-        RuntimeLayout[indices_layout].row_major(indices_shape),
+    var indices_tensor = TileTensor(
+        indices_host_ptr, row_major(Coord(indices_shape))
     )
 
     indices_tensor[0, 0] = 0

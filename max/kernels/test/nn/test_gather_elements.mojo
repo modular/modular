@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.gather_scatter import gather_elements
 from testing import assert_equal
 
@@ -21,19 +22,13 @@ def main():
         print("== test_gather_ax1")
 
         var data_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
-        var data = LayoutTensor[DType.float32, Layout.row_major(2, 2)](
-            data_stack
-        )
+        var data = TileTensor(data_stack, row_major[2, 2]())
 
         var indices_stack: InlineArray[Int32, 4] = [Int32(0), 0, 1, 0]
-        var indices = LayoutTensor[DType.int32, Layout.row_major(2, 2)](
-            indices_stack
-        )
+        var indices = TileTensor(indices_stack, row_major[2, 2]())
 
         var output_stack = InlineArray[Float32, 4](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(2, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[2, 2]())
 
         gather_elements(data, indices, 1, output)
 
@@ -60,19 +55,13 @@ def main():
             8,
             9,
         ]
-        var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
-            data_stack
-        )
+        var data = TileTensor(data_stack, row_major[3, 3]())
 
         var indices_stack: InlineArray[Int32, 6] = [Int32(1), 2, 0, 2, 0, 0]
-        var indices = LayoutTensor[DType.int32, Layout.row_major(2, 3)](
-            indices_stack
-        )
+        var indices = TileTensor(indices_stack, row_major[2, 3]())
 
         var output_stack = InlineArray[Float32, 6](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(2, 3)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[2, 3]())
 
         gather_elements(data, indices, 0, output)
 
@@ -101,19 +90,13 @@ def main():
             8,
             9,
         ]
-        var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
-            data_stack
-        )
+        var data = TileTensor(data_stack, row_major[3, 3]())
 
         var indices_stack: InlineArray[Int32, 6] = [Int32(-1), -2, 0, -2, 0, 0]
-        var indices = LayoutTensor[DType.int32, Layout.row_major(2, 3)](
-            indices_stack
-        )
+        var indices = TileTensor(indices_stack, row_major[2, 3]())
 
         var output_stack = InlineArray[Float32, 6](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(2, 3)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[2, 3]())
 
         gather_elements(data, indices, 0, output)
 

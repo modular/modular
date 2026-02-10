@@ -15,7 +15,8 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
 from testing import assert_equal
 
@@ -106,16 +107,14 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements
         var indices_ptr = UnsafePointer[Int64].alloc(2)
         indices_ptr[0] = 0
         indices_ptr[1] = 2
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
@@ -156,13 +155,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
         var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output
         var expected: InlineArray[Float32, 64] = [
@@ -323,16 +320,14 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
         var indices_ptr = UnsafePointer[Int64].alloc(2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
@@ -373,13 +368,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
         var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (add reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -547,16 +540,14 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
         var indices_ptr = UnsafePointer[Int64].alloc(2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
@@ -597,13 +588,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
         var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (max reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -771,16 +760,14 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
         var indices_ptr = UnsafePointer[Int64].alloc(2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
@@ -821,13 +808,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
         var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (min reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -995,16 +980,14 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
         var indices_ptr = UnsafePointer[Int64].alloc(2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
@@ -1045,13 +1028,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
         var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (multiply reduction)
         var expected: InlineArray[Float32, 64] = [
