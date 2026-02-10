@@ -1384,6 +1384,19 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.sum(self, axis=axis)
 
+    def prod(self, axis: int | None = -1) -> Tensor:
+        """Computes the product of values along an axis.
+
+        Args:
+            axis: The axis along which to compute the product. Defaults to -1
+                (the last axis). If None, computes the product across all
+                elements.
+
+        Returns:
+            Tensor: A tensor containing the product along the specified axis.
+        """
+        return F.prod(self, axis=axis)
+
     def clip(
         self,
         *,

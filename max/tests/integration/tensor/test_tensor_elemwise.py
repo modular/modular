@@ -90,6 +90,22 @@ def test_sum() -> None:
     assert abs(values[1] - 15.0) < 1e-5
 
 
+def test_prod() -> None:
+    tensor = Tensor.constant(
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    # Product along last axis (rows)
+    row_prod = tensor.prod(axis=-1)
+    assert row_prod.real
+    assert list(row_prod.shape) == [2, 1]
+    # Values should be [6.0, 120.0]
+    values = list(row_prod._values())
+    assert abs(values[0] - 6.0) < 1e-5
+    assert abs(values[1] - 120.0) < 1e-5
+
+
 def test_clip() -> None:
     x = random.normal([20])
     assert all((x.clip(max=0.0) <= 0.0)._values())

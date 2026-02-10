@@ -28,6 +28,7 @@ REDUCTION = [
     F.argmax,
     F.argmin,
     F.mean,
+    F.prod,
     F.sum,
 ]
 
