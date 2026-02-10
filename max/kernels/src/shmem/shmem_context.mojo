@@ -54,6 +54,7 @@ from ._mpi import (
     MPI_Init,
     get_mpi_comm_world,
 )
+from ._rocshmem import ROCSHMEMUniqueID, rocshmem_create_uniqueid
 from .shmem_api import (
     SHMEM_TEAM_NODE,
     shmem_barrier_all_on_stream,
@@ -66,14 +67,14 @@ from .shmem_api import (
 
 
 fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
-    """Takes a function defining the entirety of the SHMEM program on a single
-    PE (Processing Element).
+    """Takes a function defining a SHMEM program and launches it
+    on one thread for each GPU you have attached.
 
     Parameters:
         func: The function to run once per attached GPU per node.
 
     ```mojo
-    def simple_shift(ctx: SHMEMContext):
+    fn simple_shift(ctx: SHMEMContext) raises:
         var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
@@ -96,22 +97,28 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
     ```
 
     This initializes SHMEM and runs the program in parallel across each attached
-    GPU, taking care of initialization and cleanup logic.
-
-    If running through `mpirun` or similar launchers via multi-node, this also
-    handles that initialization logic.
+    GPU, taking care of initialization and cleanup logic. It will initialize and
+    finalize MPI on the main thread if running on NVIDIA.
 
     Any unhandled exceptions will abort with the device id and error message of
     the exception.
-    ```
     """
-    # Enable running across multiple nodes with `mpirun`
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        _shmem_launch_mpi[func]()
+    elif has_amd_gpu_accelerator():
+        _shmem_launch_tcp[func]()
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
+
+
+fn _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
     var _argv = argv()
     var argc = len(_argv)
     MPI_Init(argc, _argv)
-
-    # Get the amount of devices attached to this node
-    var npes_node = DeviceContext.number_of_devices()
 
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
@@ -131,11 +138,41 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
                 )
             )
 
+    var npes_node = DeviceContext.number_of_devices()
+
     # Same number of tasks as worker threads
     parallelize[shmem_error_wrapper](npes_node, npes_node)
 
     # Cleanup MPI resources
     MPI_Finalize()
+
+
+fn _shmem_launch_tcp[func: fn(ctx: SHMEMContext) raises]() raises:
+    # Create UID in main thread
+    var uid = rocshmem_create_uniqueid()
+
+    # Enable any exceptions inside the closure passed to abort with the original
+    # error and device ID in the message, as `parallelize` can't run on raising
+    # functions.
+    fn shmem_error_wrapper(device_id_node: Int) capturing:
+        try:
+            var ctx = DeviceContext(device_id=device_id_node)
+            with SHMEMContext(ctx, UnsafePointer(to=uid)) as shmem_ctx:
+                func(shmem_ctx)
+        except e:
+            abort(
+                String(
+                    "SHMEM failure on local device id: ",
+                    device_id_node,
+                    ": ",
+                    e,
+                )
+            )
+
+    var npes_node = DeviceContext.number_of_devices()
+
+    # Same number of tasks as worker threads
+    parallelize[shmem_error_wrapper](npes_node, npes_node)
 
 
 struct SHMEMContext(ImplicitlyCopyable):
@@ -164,7 +201,7 @@ struct SHMEMContext(ImplicitlyCopyable):
     fn __init__(out self, team: shmem_team_t = SHMEM_TEAM_NODE) raises:
         """Initializes a device context with SHMEM support.
 
-        This constructor sets up MPI, initializes SHMEM, and creates a device
+        This constructor initializes MPI and SHMEM, and creates a device
         context for the current PE's assigned GPU device.
 
         Warning: if you're not using this as a context manager, you must call
@@ -173,9 +210,6 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        comptime assert (
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
-        ), "SHMEMContext is currently only available on NVIDIA and AMD GPUs"
         shmem_init()
 
         # nvshmem and rocshmem behave differently here, nvshmem requires that
@@ -185,12 +219,8 @@ struct SHMEMContext(ImplicitlyCopyable):
         # call, and each process will launch kernels on the associated pe
         # from MPI, the DeviceContext.id() will always be 0, but it's
         # associated with a different GPU in each process.
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            var mype = shmem_team_my_pe(team)
-            self._ctx = DeviceContext(device_id=Int(mype))
-        else:
-            self._ctx = DeviceContext()
+        var mype = shmem_team_my_pe(team)
+        self._ctx = DeviceContext(device_id=Int(mype))
         # Store main stream to avoid retrieving it in each collective launch.
         self._main_stream = self._ctx.stream()
 
@@ -205,16 +235,9 @@ struct SHMEMContext(ImplicitlyCopyable):
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            self._cooperative = Bool(
-                self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
-            )
-        else:
-            # TODO(MSTDL-1761): add ability to query AMD cooperative launch
-            # capability with: hipLaunchAttributeCooperative and create function
-            # that works across NVIDIA/AMD. For now assume cooperative capability.
-            self._cooperative = True
+        self._cooperative = Bool(
+            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+        )
         self._thread_per_gpu = False
 
     fn __init__(out self, ctx: DeviceContext) raises:
@@ -231,11 +254,6 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        comptime assert has_nvidia_gpu_accelerator(), (
-            "SHMEMContext in gpu-per-thread mode is currently only available on"
-            " NVIDIA GPUs"
-        )
-
         shmem_init_thread(ctx)
         self._ctx = ctx
         # Store main stream to avoid retrieving it in each collective launch.
@@ -252,16 +270,47 @@ struct SHMEMContext(ImplicitlyCopyable):
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            self._cooperative = Bool(
-                self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
-            )
-        else:
-            # TODO(MSTDL-1761): add ability to query AMD cooperative launch
-            # capability with: hipLaunchAttributeCooperative and create function
-            # that works across NVIDIA/AMD. For now assume cooperative capability.
-            self._cooperative = True
+        self._cooperative = Bool(
+            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+        )
+        self._thread_per_gpu = True
+
+    fn __init__(
+        out self,
+        ctx: DeviceContext,
+        uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+        node_id: Int = -1,
+        total_nodes: Int = -1,
+        gpus_per_node: Int = -1,
+    ) raises:
+        """Initializes a device context with SHMEM support, using one thread
+        per GPU and TCP bootstrapping with a unique ID.
+
+        Warning: if you're not using this as a context manager, you must call
+        `SHMEMContext.finalize()` manually.
+
+        Raises:
+            If initialization fails.
+        """
+        shmem_init_thread(ctx, uid, node_id, total_nodes, gpus_per_node)
+        self._ctx = ctx
+        # Store main stream to avoid retrieving it in each collective launch.
+        self._main_stream = self._ctx.stream()
+
+        # Set up priority stream and events to be reused across collective launches
+        var priority = self._ctx.stream_priority_range().greatest
+        self._priority_stream = self._ctx.create_stream(priority=priority)
+        self._begin_event = self._ctx.create_event()
+        self._end_event = self._ctx.create_event()
+
+        # Store attributes to avoid retrieving them in each collective launch.
+        self._multiprocessor_count = self._ctx.get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
+        # TODO(MSTDL-1761): add ability to query AMD cooperative launch
+        # capability with: hipLaunchAttributeCooperative and create function
+        # that works across NVIDIA/AMD. For now assume cooperative capability.
+        self._cooperative = True
         self._thread_per_gpu = True
 
     fn __enter__(var self) -> Self:
@@ -488,6 +537,9 @@ struct SHMEMContext(ImplicitlyCopyable):
             ctx.synchronize()
         ```
         """
+        comptime assert (
+            has_nvidia_gpu_accelerator()
+        ), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
             signature_func,
