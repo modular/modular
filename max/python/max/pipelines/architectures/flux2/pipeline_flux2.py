@@ -20,7 +20,7 @@ from max import functional as F
 from max.driver import Accelerator, CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
@@ -35,6 +35,35 @@ from .model import Flux2TransformerModel
 if TYPE_CHECKING:
     from ..autoencoders.vae import DiagonalGaussianDistribution
 
+
+def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
+    """Compute empirical mu for Flux2 timestep scheduling.
+
+    Taken from:
+    https://github.com/black-forest-labs/flux2/blob/5a5d316b1b42f6b59a8c9194b77c8256be848432/src/flux2/sampling.py#L251
+
+    Args:
+        image_seq_len: Length of image sequence (H*W after packing).
+        num_steps: Number of inference steps.
+
+    Returns:
+        Empirical mu value for scheduler.
+    """
+    a1, b1 = 8.73809524e-05, 1.89833333
+    a2, b2 = 0.00016927, 0.45666666
+
+    if image_seq_len > 4300:
+        mu = a2 * image_seq_len + b2
+        return float(mu)
+
+    m_200 = a2 * image_seq_len + b2
+    m_10 = a1 * image_seq_len + b1
+
+    a = (m_200 - m_10) / 190.0
+    b = m_200 - 200.0 * a
+    mu = a * num_steps + b
+
+    return float(mu)
 
 @dataclass(kw_only=True)
 class Flux2ModelInputs(PixelModelInputs):
@@ -106,6 +135,8 @@ class Flux2Pipeline(DiffusionPipeline):
         )
         self._patchify_models: dict[str, Any] = {}
         self._vae_prep_models: dict[str, Any] = {}
+        self._scheduler_step_model = None
+        self._time_step_models: dict[str, Any] = {}
 
     def _ensure_patchify_model(self, batch_size, channels, height, width, device, dtype):
         """Get or compile a patchify graph for the given shape."""
@@ -171,6 +202,50 @@ class Flux2Pipeline(DiffusionPipeline):
         model = session.load(graph)
         self._vae_prep_models[key] = model
         return model
+
+    def _ensure_all_time_steps_model(
+        self,
+        num_steps: int,
+        device: DeviceRef,
+    ):
+        key = f"{device}"
+        if key in self._time_step_models:
+            return self._time_step_models[key]
+
+        with Graph(
+            "time_step_all",
+            input_types=[TensorType(DType.float32, ["num_sigmas"], device)],
+        ) as graph:
+            sigmas = graph.inputs[0]
+            sigmas_curr = ops.slice_tensor(sigmas, [slice(0, -1)])
+            all_t = ops.cast(sigmas_curr, DType.bfloat16)
+            sigmas_next = ops.slice_tensor(sigmas, [slice(1, None)])
+            dt_f32 = ops.sub(sigmas_next, sigmas_curr)
+            all_dt = ops.cast(dt_f32, DType.bfloat16)
+            graph.output(all_t, all_dt)
+
+        session = InferenceSession([Accelerator()])
+        model = session.load(graph)
+        self._time_step_models[key] = model
+        return model
+
+    def _build_scheduler_step_graph(
+        self,
+        dtype: DType,
+        device: DeviceRef,
+    ) -> None:
+        input_types = [
+            TensorType(dtype, shape=["batch", "seq", "channels"], device=device),
+            TensorType(dtype, shape=["batch", "seq", "channels"], device=device),
+            TensorType(dtype, shape=[1], device=device),
+        ]
+        with Graph("scheduler_step", input_types=input_types) as graph:
+            latents_in, noise_pred_in, dt_in = graph.inputs
+            result = latents_in + dt_in * noise_pred_in
+            graph.output(result)
+
+        session = InferenceSession([Accelerator()])
+        self._scheduler_step_model = session.load(graph)
 
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
@@ -518,23 +593,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return img_tensor
 
-    def _scheduler_step(
-        self,
-        latents: Tensor,
-        noise_pred: Tensor,
-        sigmas: Tensor,
-        step_index: int,
-    ) -> Tensor:
-        """Apply a single Euler update step in sigma space."""
-        latents_dtype = latents.dtype
-        latents = latents.cast(DType.float32)
-        sigma = sigmas[step_index]
-        sigma_next = sigmas[step_index + 1]
-        dt = sigma_next - sigma
-        latents = latents + dt * noise_pred
-        return latents.cast(latents_dtype)
-
-    def execute(  # type: ignore[override]
+    def execute(
         self,
         model_inputs: Flux2ModelInputs,
         callback_queue: Queue[np.ndarray] | None = None,
@@ -570,45 +629,53 @@ class Flux2Pipeline(DiffusionPipeline):
             )
 
         # 2) Prepare latents and conditioning tensors.
-        latents: Tensor = (
-            Tensor.from_dlpack(model_inputs.latents)
-            .to(self.transformer.devices[0])
-            .cast(dtype)
+        latents, latent_image_ids = self._preprocess_latents(
+            model_inputs.latents, model_inputs.latent_image_ids, dtype
         )
-        latents = self._patchify_latents(latents)
-        latents = self._pack_latents(latents)
 
-        latent_image_ids = Tensor.from_dlpack(
-            model_inputs.latent_image_ids.astype(np.int64)
-        ).to(self.transformer.devices[0])
-
+        # 3) Prepare scheduler tensors.
+        device = self.transformer.devices[0]
         guidance = Tensor.full(
             [latents.shape[0]],
             model_inputs.guidance_scale,
-            device=self.transformer.devices[0],
+            device=device,
             dtype=dtype,
         )
 
-        sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(
-            self.transformer.devices[0]
+        image_seq_len = latents.shape[1].dim
+        num_inference_steps = model_inputs.num_inference_steps
+        mu = compute_empirical_mu(image_seq_len, num_inference_steps)
+        base_sigmas = np.append(
+            np.linspace(
+                1.0,
+                1.0 / num_inference_steps,
+                num_inference_steps,
+                dtype=np.float32,
+            ),
+            np.float32(0.0),
+        )
+        sigmas = (
+            Tensor.from_dlpack(np.ascontiguousarray(base_sigmas))
+            .to(device)
         )
 
-        timesteps: np.ndarray = model_inputs.timesteps
-        num_timesteps = timesteps.shape[0]
-        timesteps_np = np.broadcast_to(
-            timesteps[:, None], (num_timesteps, batch_size)
-        )
-        timesteps_batched = (
-            Tensor.from_dlpack(timesteps_np)
-            .to(self.transformer.devices[0])
-            .cast(dtype)
+        if self._scheduler_step_model is None:
+            self._build_scheduler_step_graph(dtype, device)
+
+        _all_time_steps_model = self._ensure_all_time_steps_model(
+            num_steps=num_inference_steps,
+            device=DeviceRef.from_device(device),
         )
 
-        num_noise_tokens = int(latents.shape[1])
+        all_timesteps, all_dts = _all_time_steps_model.execute(sigmas)
+        all_timesteps_tensor = Tensor.from_dlpack(all_timesteps).to(device)
+        all_dts_tensor = Tensor.from_dlpack(all_dts).to(device)
 
-        # 3) Denoising loop.
-        for i in tqdm(range(num_timesteps), desc="Denoising"):
-            timestep = timesteps_batched[i]
+        # 4) Denoising loop.
+        for i in tqdm(range(num_inference_steps), desc="Denoising"):
+            self._current_timestep = i
+            timestep = all_timesteps_tensor[i : i + 1]
+            dt = all_dts_tensor[i : i + 1]
 
             if image_latents is not None:
                 latent_model_input = F.concat([latents, image_latents], axis=1)
@@ -627,10 +694,12 @@ class Flux2Pipeline(DiffusionPipeline):
                 text_ids,
                 guidance,
             )[0]
-            noise_pred = Tensor.from_dlpack(noise_pred)
-            noise_pred = noise_pred[:, :num_noise_tokens, :]
 
-            latents = self._scheduler_step(latents, noise_pred, sigmas, i)
+            latents = self._scheduler_step_model(
+                latents,
+                noise_pred,
+                dt,
+            )[0]
 
             if callback_queue is not None and output_type == "np":
                 decoded = self._decode_latents(
@@ -645,15 +714,19 @@ class Flux2Pipeline(DiffusionPipeline):
                     decoded = np.array(decoded)
                 callback_queue.put_nowait(decoded)
 
+        latents_tensor = Tensor.from_dlpack(latents)
+
         # 4) Decode final outputs per batch element.
+        batch_size = latents_tensor.shape[0].dim
         image_list = []
         for b in range(batch_size):
-            latents_b = latents[b : b + 1]
-            latent_image_ids_b = latent_image_ids[b : b + 1]
-            image_list.append(
-                self._decode_latents(
-                    latents_b, latent_image_ids_b, model_inputs.height, model_inputs.width, output_type=output_type
-                )
+            image_b = self._decode_latents(
+                latents_tensor[b:b+1,:,:],
+                latent_image_ids[b:b+1,:,:],
+                model_inputs.height,
+                model_inputs.width,
+                output_type=output_type,
             )
+            image_list.append(image_b)
 
         return Flux2PipelineOutput(images=image_list)  # type: ignore[arg-type]
