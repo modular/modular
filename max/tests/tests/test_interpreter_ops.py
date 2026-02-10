@@ -1668,6 +1668,82 @@ class TestReduceOps:
         expected = np.mean(x_np, axis=-1, keepdims=True)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
 
+    # --- ReduceMul (prod) tests ---
+
+    @pytest.mark.parametrize(
+        "dtype",
+        FLOAT_DTYPES + [DType.int32, DType.int64],
+    )
+    def test_reduce_mul_last_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        # Use small values to avoid overflow
+        x_np = np.arange(1, 61, dtype=np_dtype).reshape(shape) * 0.1 + 1
+        x_np = x_np.astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=-1)
+
+        expected = np.prod(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_mul_first_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = (rng.standard_normal((3, 4, 5)) * 0.5 + 1).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=0)
+
+        expected = np.prod(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_mul_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = (rng.standard_normal((2, 3, 4)) * 0.5 + 1).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=1)
+
+        expected = np.prod(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_mul_2d(self, dtype: DType) -> None:
+        """Test reduce_mul on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(1, 21, dtype=np_dtype).reshape(shape) * 0.1 + 1
+        x_np = x_np.astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=-1)
+
+        expected = np.prod(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
 
 def _numpy_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
     """Numerically stable softmax reference implementation."""

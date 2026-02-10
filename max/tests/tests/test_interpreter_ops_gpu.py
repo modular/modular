@@ -1094,6 +1094,108 @@ class TestMeanGPU:
         torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
 
 
+class TestReduceMulGPU:
+    """Tests for GPU reduce_mul operations via Tensor.prod with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_mul_last_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on the last axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        # Use values close to 1 to avoid overflow
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda") * 0.3 + 1
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.prod(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_mul_first_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on the first axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda") * 0.3 + 1
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=0)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.prod(x_torch, dim=0, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_mul_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on a middle axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda") * 0.3 + 1
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.prod(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    def test_reduce_mul_2d(self) -> None:
+        """Test reduce_mul on a 2D tensor on GPU."""
+        shape = [4, 6]
+
+        x_torch = (
+            torch.randn(shape, dtype=torch.float32, device="cuda") * 0.3 + 1
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.prod(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+
 class TestUnaryMixedOpsGPU:
     """Tests for GPU unary mixed-dtype ops (cast, is_nan, is_inf)."""
 
