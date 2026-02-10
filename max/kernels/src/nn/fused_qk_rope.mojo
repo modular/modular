@@ -81,11 +81,11 @@ fn rope_q_proj[
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
-    comptime assert q_proj.rank == rank
-    comptime assert output.rank == rank
+    comptime assert q_proj.flat_rank == rank
+    comptime assert output.flat_rank == rank
     var coord = Coord(idx)
-    comptime assert q_proj.rank == coord.rank
-    comptime assert output.rank == coord.rank
+    comptime assert q_proj.flat_rank == coord.flat_rank
+    comptime assert output.flat_rank == coord.flat_rank
 
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
     var pos_re = idx
@@ -96,10 +96,10 @@ fn rope_q_proj[
 
     var coord_re = Coord(pos_re)
     var coord_im = Coord(pos_im)
-    comptime assert q_proj.rank == coord_re.rank
-    comptime assert q_proj.rank == coord_im.rank
-    comptime assert output.rank == coord_re.rank
-    comptime assert output.rank == coord_im.rank
+    comptime assert q_proj.flat_rank == coord_re.flat_rank
+    comptime assert q_proj.flat_rank == coord_im.flat_rank
+    comptime assert output.flat_rank == coord_re.flat_rank
+    comptime assert output.flat_rank == coord_im.flat_rank
 
     var val: SIMD[dtype, width]
 
@@ -201,10 +201,10 @@ fn fused_qk_rope[
         output: Output tensor for Q with RoPE applied, same shape as q_proj.
         context: Optional device context for GPU execution.
     """
-    comptime assert q_proj.rank == 4
-    comptime assert freqs_cis.rank == 2
-    comptime assert output.rank == 4
-    comptime assert valid_lengths.rank == 1
+    comptime assert q_proj.flat_rank == 4
+    comptime assert freqs_cis.flat_rank == 2
+    comptime assert output.flat_rank == 4
+    comptime assert valid_lengths.flat_rank == 1
 
     comptime kv_params = cache_t.kv_params
 
@@ -328,12 +328,12 @@ fn fused_qk_rope_ragged[
     for DeepSeek models where only part of each head undergoes rotary
     transformation.
     """
-    comptime assert q_proj.rank == 3, "q_proj must be rank 3"
-    comptime assert freqs_cis.rank == 2, "freqs_cis must be rank 2"
-    comptime assert output.rank == 3, "output must be rank 3"
+    comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
+    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
+    comptime assert output.flat_rank == 3, "output must be rank 3"
     comptime assert PositionIdsLayoutType.rank == 2
     comptime assert (
-        input_row_offsets.rank == 1
+        input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
     comptime kv_params = cache_t.kv_params
     comptime num_q_heads = Int(q_proj.static_shape[1])
@@ -397,6 +397,8 @@ fn fused_qk_rope_ragged[
 
             var position_ids_idx = post_seq_idx
             if position_ids:
+                comptime PIdTensor = type_of(position_ids.value())
+                comptime assert PIdTensor.flat_rank == 2
 
                 @parameter
                 if mrope_section:

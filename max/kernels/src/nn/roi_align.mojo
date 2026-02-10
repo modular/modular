@@ -145,9 +145,9 @@ fn roi_align_nhwc[
           used to compute the output value of each pooled bin.
     """
     comptime assert (
-        output.rank == 4 and input.rank == 4
+        output.flat_rank == 4 and input.flat_rank == 4
     ), "expect rank 4 tensors for input and output"
-    comptime assert rois.rank == 2, "rois must be of rank 2"
+    comptime assert rois.flat_rank == 2, "rois must be of rank 2"
 
     comptime assert (
         dtype.is_floating_point()

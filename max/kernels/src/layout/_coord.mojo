@@ -21,6 +21,7 @@ from builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
+    _MapVariadicAndIdxToType,
 )
 from buffer.dimlist import Dim, DimList
 from sys.intrinsics import _type_is_eq_parse_time
@@ -258,6 +259,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     comptime all_dims_known = _AllStatic[*Self.element_types]
     comptime static_product = _StaticProduct[*Self.element_types]
     comptime rank = Variadic.size(Self.element_types)
+    comptime flat_rank = Variadic.size(_Flattened[*Self.element_types])
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -619,22 +621,25 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             __get_mvalue_as_litref(flat_tuple)
         )
 
-        # TODO: Implement fully generic flatten for deeply nested Coords
-        # For now, this only works for non-nested or single-level nested tuples
-        # For the test cases in test_mixed_layout (which are all non-nested), this works
-        # Deep nesting like Coord(A, Coord(B, Coord(C))) is not yet supported
-
-        comptime assert flat_size == Self.__len__(), (
-            "flatten() currently only supports non-nested Coords -"
-            " nested tuple flattening not yet implemented"
-        )
-
-        # For non-nested tuples, just copy elements directly
+        # Use _get_flattened to access each element by flat index
         @parameter
         for i in range(flat_size):
-            UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
-                rebind[FlatTypes[i]](self[i])
-            )
+            comptime FlatType = FlatTypes[i]
+
+            @parameter
+            if FlatType.is_static_value:
+                # Compile-time known value
+                UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                    rebind[FlatType](ComptimeInt[FlatType.static_value]())
+                )
+            else:
+                # Runtime value - use _get_flattened to get the value
+                var val = _get_flattened[i](self)
+                UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                    rebind[FlatType](
+                        RuntimeInt[FlatType.DTYPE](Scalar[FlatType.DTYPE](val))
+                    )
+                )
 
         return Coord(flat_tuple)
 
@@ -693,6 +698,38 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         w.write(")")
 
 
+# Helper for flat indexing with nested shape/stride.
+fn _crd2idx_flat[
+    out_type: DType,
+](crd_t: Coord, shape_t: Coord, stride_t: Coord) -> Scalar[out_type]:
+    """Compute index from flat coordinate with nested shape/stride.
+
+    For nested layouts like blocked_product, this computes the linear index
+    by flattening the stride and performing element-wise dot product.
+
+    Parameters:
+        out_type: Output scalar type.
+
+    Args:
+        crd_t: Flat coordinate tuple.
+        shape_t: Nested shape tuple.
+        stride_t: Nested stride tuple.
+
+    Returns:
+        Linear index computed from flat coords and nested shape/stride.
+    """
+    # Flatten the stride and compute dot product with flat coord
+    var flat_stride = stride_t.flatten()
+    var result: Scalar[out_type] = 0
+    comptime flat_len = type_of(crd_t).__len__()
+
+    @parameter
+    for i in range(flat_len):
+        result += Scalar[out_type](crd_t[i].value() * flat_stride[i].value())
+
+    return result
+
+
 # Implementation based off runtime_tuple.mojo's crd2idx.
 fn crd2idx[
     Index: CoordLike,
@@ -716,11 +753,19 @@ fn crd2idx[
         if crd_len > 1:  # tuple tuple tuple
             var crd_t = crd.tuple()
 
+            # Check if crd structure matches shape structure
             @parameter
-            for i in range(shape_len):
-                result += crd2idx[out_type=out_type](
-                    crd_t[i], shape_t[i], stride_t[i]
-                )
+            if crd_len == shape_len:
+                # Hierarchical indexing: crd elements map 1:1 to shape elements
+                @parameter
+                for i in range(shape_len):
+                    result += crd2idx[out_type=out_type](
+                        crd_t[i], shape_t[i], stride_t[i]
+                    )
+            else:
+                # Flat indexing: crd is flat, need to compute with flattened strides
+                # Use _crd2idx_flat which handles flat coords with nested shape/stride
+                return _crd2idx_flat[out_type](crd_t, shape_t, stride_t)
 
             return result
         else:  # "int" tuple tuple
@@ -1842,3 +1887,82 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
                     return True
 
         return False
+
+
+comptime _MultiplyMapper[
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = ComptimeInt[element_types[idx].static_value * Rhs[idx].static_value]
+
+
+comptime _Multiply[
+    Lhs: Variadic.TypesOfTrait[CoordLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+] = _MapVariadicAndIdxToType[
+    To=CoordLike,
+    VariadicType=Lhs,
+    Mapper = _MultiplyMapper[Rhs=Rhs],
+]
+
+
+comptime _MultiplyByScalarMapper[
+    scalar: Int,
+    element_types: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = ComptimeInt[element_types[idx].static_value * scalar]
+
+
+comptime _MultiplyByScalar[
+    Types: Variadic.TypesOfTrait[CoordLike],
+    scalar: Int,
+] = _MapVariadicAndIdxToType[
+    To=CoordLike,
+    VariadicType=Types,
+    Mapper = _MultiplyByScalarMapper[scalar=scalar],
+]
+"""Multiply each element in Types by a scalar value.
+
+Parameters:
+    Types: The variadic types to multiply.
+    scalar: The scalar value to multiply each element by.
+
+Returns:
+    A new variadic of ComptimeInt types with multiplied values.
+"""
+
+
+comptime _DivideMapper[
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = ComptimeInt[element_types[idx].static_value // Rhs[idx].static_value]
+
+
+comptime _Divide[
+    Lhs: Variadic.TypesOfTrait[CoordLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+] = _MapVariadicAndIdxToType[
+    To=CoordLike,
+    VariadicType=Lhs,
+    Mapper = _DivideMapper[Rhs=Rhs],
+]
+
+comptime _CeilDivMapper[
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = ComptimeInt[
+    (element_types[idx].static_value + Rhs[idx].static_value - 1)
+    // Rhs[idx].static_value
+]
+
+
+comptime _CeilDiv[
+    Lhs: Variadic.TypesOfTrait[CoordLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+] = _MapVariadicAndIdxToType[
+    To=CoordLike,
+    VariadicType=Lhs,
+    Mapper = _CeilDivMapper[Rhs=Rhs],
+]

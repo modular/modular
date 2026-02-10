@@ -61,6 +61,7 @@ from os import abort
 from buffer import DimList
 from builtin.range import _StridedRange
 from memory import memcpy
+from sys.compile import is_compile_time
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -501,11 +502,14 @@ struct IntTuple(
         Args:
             value: The integer value to store in the tuple.
         """
-        debug_assert(
-            value >= Self.MinimumValue,
-            "IntTuple value must be >= MinimumValue: ",
-            value,
-        )
+        # Skip validation during compile-time interpretation since the comparison
+        # may involve complex type witness expressions that can't be evaluated.
+        if not is_compile_time():
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
         self._store = IntArray(2)
         self._store[0] = 1
         self._store[1] = value

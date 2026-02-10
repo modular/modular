@@ -60,7 +60,7 @@ fn tile[
     ), "Currently only inputs of up to three dimensions are supported."
 
     comptime assert (
-        repeats.rank == 1 and type_repeats == DType.int64
+        repeats.flat_rank == 1 and type_repeats == DType.int64
     ), "Rank of repeats tensor needs to be one-dimensional and of int64 type."
 
     if input.rank != Int(repeats.dim(0)):
@@ -266,7 +266,7 @@ fn tile_shape[
     Returns:
         The output shape.
     """
-    comptime assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
+    comptime assert repeats_buf.flat_rank == 1, "repeats_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.

@@ -43,7 +43,9 @@ fn arg_nonzero[
         input_buffer: The tensor to count the non-zeros in.
         output_buffer: The indices of all non-zero elements.
     """
-    comptime assert output_buffer.rank == 2, "output_buffer must be of rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output_buffer must be of rank 2"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.numel()

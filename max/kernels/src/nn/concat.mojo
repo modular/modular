@@ -88,7 +88,7 @@ fn memcpy_or_fuse[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](index: IndexList[_rank]):
             var coord = Coord(index)
-            comptime assert coord.rank == input.rank
+            comptime assert coord.flat_rank == input.flat_rank
             var load = input.load[width=simd_width](coord)
 
             # Convert the linearized address back to the n-D indices.
@@ -500,7 +500,7 @@ fn _concat_small[
                 var in_index = out_index
                 in_index[axis] = target_dim
                 var coord = Coord(in_index)
-                comptime assert coord.rank == input.rank
+                comptime assert coord.flat_rank == input.flat_rank
                 var load = input.load[width=simd_width](coord)
 
                 @parameter
@@ -509,7 +509,7 @@ fn _concat_small[
                     func[dtype, rank, simd_width](out_index, load)
                 else:
                     var coord = Coord(out_index)
-                    comptime assert coord.rank == output.rank
+                    comptime assert coord.flat_rank == output.flat_rank
                     output.store[width=simd_width](coord, load)
                 return
             else:
@@ -727,14 +727,14 @@ fn _concat_inner_most_single_dim[
         idx, coord_to_index_list(output.layout.shape_coord())
     )
     var in_coord = Coord(index)
-    comptime assert in_coord.rank == InputLayoutType.rank
+    comptime assert in_coord.flat_rank == inputs.element_type.flat_rank
 
     @parameter
     for i in range(num_inputs):
         var out_index = rebind[IndexList[output.rank]](index.canonicalize())
         out_index[output.rank - 1] = i
         var out_coord = Coord(out_index)
-        comptime assert out_coord.rank == output.rank
+        comptime assert out_coord.flat_rank == output.flat_rank
 
         @parameter
         if epilogue_fn:
@@ -801,7 +801,7 @@ fn _concat_gpu_elementwise[
         var in_index = out_index
         in_index[axis] = out_index[axis]
         var out_coord = Coord(out_index)
-        comptime assert out_coord.rank == output.rank
+        comptime assert out_coord.flat_rank == output.flat_rank
 
         @parameter
         for i in range(num_inputs):
@@ -810,7 +810,7 @@ fn _concat_gpu_elementwise[
 
             if in_index[axis] < input_shape[axis]:
                 var in_coord = Coord(in_index)
-                comptime assert in_coord.rank == input.rank
+                comptime assert in_coord.flat_rank == input.flat_rank
 
                 @parameter
                 if epilogue_fn:

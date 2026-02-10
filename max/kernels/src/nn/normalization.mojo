@@ -832,7 +832,7 @@ fn layer_norm_shape[
     Returns:
         The output shape.
     """
-    comptime assert gamma.rank == 1 and gamma.static_shape[0] == 1
+    comptime assert gamma.flat_rank == 1 and gamma.static_shape[0] == 1
     comptime assert beta.rank == 1 and beta.static_shape[0] == 1
 
     return rebind[IndexList[input.rank]](
@@ -858,7 +858,7 @@ fn _rms_norm_warp_tiling_subkernel[
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime align = align_of[SIMD[dtype, simd_width]]()
 
     # To utilize simd vector load.
@@ -916,7 +916,7 @@ fn rms_norm_gpu_warp_tiling_128[
     num_rows: Int,
     num_cols: Int,
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime half_warp_size = WARP_SIZE // 2
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -977,7 +977,7 @@ fn rms_norm_gpu_warp_tiling[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1030,7 +1030,7 @@ fn _rms_norm_gpu_block_subkernel[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1106,7 +1106,7 @@ fn rms_norm_gpu_block[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     with PDL():
         _rms_norm_gpu_block_subkernel[
@@ -1136,7 +1136,7 @@ fn rms_norm_gpu[
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     if rank == 0:
         return
 
@@ -1308,7 +1308,7 @@ fn rms_norm_cpu[
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     comptime simd_width = simd_width_of[dtype]()
 
@@ -1373,7 +1373,7 @@ fn rms_norm_cpu[
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ):
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
@@ -1451,7 +1451,7 @@ fn _rms_norm_impl[
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     # Note: we only support reduction along the last dimension
     if gamma.layout.shape[0]().value() != shape[rank - 1]:
@@ -1950,7 +1950,7 @@ fn rms_norm[
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     @always_inline
     @parameter
@@ -2201,7 +2201,7 @@ fn rms_norm_fused_fp8[
         static_scale: Static FP8 scale factor (required if use_dynamic_scaling=False).
         scale_output: Buffer to write dynamic scales (required if use_dynamic_scaling=True).
     """
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert in_dtype in (
         DType.float32,
         DType.float16,
@@ -2389,7 +2389,7 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
 
     This kernel always multiplies by gamma before quantizing to FP8.
     """
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2644,7 +2644,7 @@ fn _rms_norm_fused_fp8_kernel_block[
 
     This kernel always multiplies by gamma before quantizing to FP8.
     """
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2749,7 +2749,7 @@ fn rms_norm_shape[
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ) -> IndexList[input.rank]:
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     return rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
@@ -3197,7 +3197,7 @@ fn group_norm_shape[
     num_groups: Int32,
 ) -> IndexList[input.rank]:
     comptime assert beta.rank == 1, "beta must have rank 1"
-    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     return rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())

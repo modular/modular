@@ -46,7 +46,7 @@ fn fill_boxes[
     box_list: VariadicList[BoxCoords[dtype]],
     boxes: TileTensor[mut=True, dtype, ...],
 ):
-    comptime assert boxes.rank == 3
+    comptime assert boxes.flat_rank == 3
     var num_boxes = len(box_list) // batch_size
     for i in range(len(box_list)):
         var coords = linear_offset_to_coords(
@@ -78,7 +78,7 @@ fn fill_scores[
     scores_list: VariadicList[Scalar[dtype]],
     scores: TileTensor[mut=True, dtype, ...],
 ):
-    comptime assert scores.rank == 3
+    comptime assert scores.flat_rank == 3
     var num_boxes = len(scores_list) // batch_size // num_classes
     var shape = IndexList[3](batch_size, num_classes, num_boxes)
     for i in range(len(scores_list)):

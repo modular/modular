@@ -82,14 +82,14 @@ fn moe_create_indices_kernel[
     ],
     topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
 ):
-    comptime assert topk_ids.rank == 1
-    comptime assert expert_ids.rank == 1
-    comptime assert indices_padded.rank == 1
-    comptime assert topk_ids_padded.rank == 1
-    comptime assert expert_start_indices.rank == 1
-    comptime assert token_expert_order.rank == 1
-    comptime assert restore_token_order.rank == 1
-    comptime assert expert_usage_stats.rank == 1
+    comptime assert topk_ids.flat_rank == 1
+    comptime assert expert_ids.flat_rank == 1
+    comptime assert indices_padded.flat_rank == 1
+    comptime assert topk_ids_padded.flat_rank == 1
+    comptime assert expert_start_indices.flat_rank == 1
+    comptime assert token_expert_order.flat_rank == 1
+    comptime assert restore_token_order.flat_rank == 1
+    comptime assert expert_usage_stats.flat_rank == 1
 
     comptime indices_type = DType.uint32
     var num_tokens: Int = Int(topk_ids.layout.shape[0]().value())
@@ -143,8 +143,8 @@ fn moe_create_indices_kernel[
             stage: Current stage size (power of 2), determines sort direction.
             i: Index of the current element.
         """
-        comptime assert input.rank == 1
-        comptime assert indices.rank == 1
+        comptime assert input.flat_rank == 1
+        comptime assert indices.flat_rank == 1
 
         if i >= n:
             return
@@ -306,8 +306,8 @@ fn _count_expert_tokens[
     smem: TileTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
-    comptime assert topk_ids.rank == 2
-    comptime assert smem.rank == 2
+    comptime assert topk_ids.flat_rank == 2
+    comptime assert smem.flat_rank == 2
 
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
@@ -415,9 +415,9 @@ fn _copy_tokens_smem_to_gmem[
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
-    comptime assert smem.rank == 2
-    comptime assert token_expert_order.rank == 1
-    comptime assert restore_token_order.rank == 1
+    comptime assert smem.flat_rank == 2
+    comptime assert token_expert_order.flat_rank == 1
+    comptime assert restore_token_order.flat_rank == 1
 
     var g_offset_copy = g_offset
     comptime width = bg_params.width
@@ -480,9 +480,9 @@ fn _copy_tokens_to_gmem[
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
-    comptime assert topk_ids.rank == 2
-    comptime assert token_expert_order.rank == 1
-    comptime assert restore_token_order.rank == 1
+    comptime assert topk_ids.flat_rank == 2
+    comptime assert token_expert_order.flat_rank == 1
+    comptime assert restore_token_order.flat_rank == 1
 
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
@@ -625,13 +625,13 @@ fn moe_create_indices_bucket_group_kernel[
     in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
     """
 
-    comptime assert token_expert_order.rank == 1
-    comptime assert lock.rank == 1
-    comptime assert expert_start_indices.rank == 1
-    comptime assert restore_token_order.rank == 1
-    comptime assert expert_ids.rank == 1
-    comptime assert expert_usage_stats.rank == 1
-    comptime assert topk_ids.rank == 2
+    comptime assert token_expert_order.flat_rank == 1
+    comptime assert lock.flat_rank == 1
+    comptime assert expert_start_indices.flat_rank == 1
+    comptime assert restore_token_order.flat_rank == 1
+    comptime assert expert_ids.flat_rank == 1
+    comptime assert expert_usage_stats.flat_rank == 1
+    comptime assert topk_ids.flat_rank == 2
 
     comptime assert num_threads in (
         32,
@@ -879,10 +879,10 @@ fn group_limited_router_kernel[
     to the scores during the selection process, but the final weights will not
     include the bias.
     """
-    comptime assert expert_indices.rank == 2
-    comptime assert expert_weights.rank == 2
-    comptime assert expert_scores.rank == 2
-    comptime assert expert_bias.rank == 1
+    comptime assert expert_indices.flat_rank == 2
+    comptime assert expert_weights.flat_rank == 2
+    comptime assert expert_scores.flat_rank == 2
+    comptime assert expert_bias.flat_rank == 1
 
     comptime assert (
         expert_scores.static_shape[1] == n_routed_experts

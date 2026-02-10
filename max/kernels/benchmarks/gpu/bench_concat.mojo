@@ -160,8 +160,8 @@ fn bench_concat[
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
             var in_coord = Coord(coords)
-            comptime assert out_coord.rank == output_host.rank
-            comptime assert in_coord.rank == input.rank
+            comptime assert out_coord.flat_rank == output_host.flat_rank
+            comptime assert in_coord.flat_rank == input.flat_rank
             if output_host.load[width=1](out_coord) != input.load[width=1](
                 in_coord
             ):

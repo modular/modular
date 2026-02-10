@@ -936,6 +936,8 @@ fn _fill_strides[
     """
     comptime assert buf.rank > 0
     comptime assert strides.rank == 1 and strides.static_shape[0] == buf.rank
+    # Provide evidence for flat indexing constraint
+    comptime assert strides.flat_rank == 1
     strides[buf.rank - 1] = 1
 
     @parameter

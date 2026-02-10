@@ -210,7 +210,7 @@ fn _index_tensor_1d[
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert (
-        data.rank >= 2 and indices.rank == 2
+        data.flat_rank >= 2 and indices.flat_rank == 2
     ), "Constraint: data_rank >= 2 and indices_rank == 2"
 
     var last_index_dim = Int(indices.dim(indices.rank - 1))
@@ -292,7 +292,7 @@ fn _index_tensor_impl[
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert (
-        data.rank >= 2 and indices.rank >= 2
+        data.flat_rank >= 2 and indices.flat_rank >= 2
     ), "Constraint: data_rank >= 2 and indices_rank >= 2"
 
     # This is modeled as an elementwise function mapping an index in the
@@ -320,7 +320,7 @@ fn _index_tensor_impl[
         for i in range(indices_last_dim):
             indices_idx[indices.rank - 1] = i
             var coord = Coord(indices_idx)
-            comptime assert coord.rank == indices.rank
+            comptime assert coord.flat_rank == indices.flat_rank
             data_idx[batch_dims + i] = Int(indices.load[width=1](coord))
 
         # fill in the last slices in the input
@@ -331,9 +331,9 @@ fn _index_tensor_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         var data_coord = Coord(data_idx)
-        comptime assert data_coord.rank == data.rank
+        comptime assert data_coord.flat_rank == data.flat_rank
         var out_coord = Coord(output_idx)
-        comptime assert out_coord.rank == output.rank
+        comptime assert out_coord.flat_rank == output.flat_rank
         output.store[width=simd_width](
             out_coord, data.load[width=simd_width](data_coord)
         )
@@ -546,7 +546,7 @@ fn advanced_indexing_getitem[
                 )
 
         var out_coord = Coord(output_index)
-        comptime assert out_coord.rank == out_tensor.rank
+        comptime assert out_coord.flat_rank == out_tensor.flat_rank
         out_tensor.store[width=width](
             out_coord,
             input_tensor_fn[width=width](input_index),
@@ -773,7 +773,7 @@ fn advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
-        comptime assert input_tensor_coord.rank == input_tensor.rank
+        comptime assert input_tensor_coord.flat_rank == input_tensor.flat_rank
         input_tensor.store[width=width](
             input_tensor_coord,
             updates_tensor_fn[width=width](

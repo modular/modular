@@ -32,7 +32,7 @@ fn fold[
     output_size: IndexList[2],
     kernel_size: IndexList[2],
     ctx: DeviceContextPtr,
-) raises where (output.rank == 4 and input.rank == 3):
+) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
     Parameters:
@@ -57,6 +57,8 @@ fn fold[
     comptime assert (
         padding[0] >= 0 and padding[1] >= 0
     ), "Padding must be non-negative"
+    comptime assert output.flat_rank == 4
+    comptime assert input.flat_rank == 3
 
     var N = Int(output.dim(0))
     var C = Int(output.dim(1))

@@ -71,8 +71,8 @@ fn repeat_interleave[
     # comptime assert (is_row_major[input.rank](input.layout)) and (
     #     is_row_major[output.rank](output.layout)
     # )
-    comptime assert input.rank == output.rank
-    comptime assert repeats.rank == 1
+    comptime assert input.flat_rank == output.flat_rank
+    comptime assert repeats.flat_rank == 1
 
     # Compute the shape of the input and result buffers.
     # These are the shapes of the buffers we will be working on.
@@ -144,7 +144,7 @@ fn repeat_interleave_shape[
     axis: Int,
 ) raises -> IndexList[input.rank]:
     comptime assert type_repeats.is_integral()
-    comptime assert repeats.rank == 1
+    comptime assert repeats.flat_rank == 1
 
     var repeats_size = repeats.dim[0]()
     if repeats_size != 1 and repeats_size != Scalar[repeats.linear_idx_type](

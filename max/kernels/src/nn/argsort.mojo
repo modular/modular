@@ -35,7 +35,7 @@ fn _argsort_cpu[
 ](
     indices: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: TileTensor,
-) raises where (input.rank == 1):
+) raises:
     """
     Performs argsort on CPU.
 
@@ -46,6 +46,7 @@ fn _argsort_cpu[
         indices: Output buffer to store sorted indices.
         input: Input buffer to sort.
     """
+    comptime assert input.flat_rank == 1
 
     @parameter
     fn fill_indices_iota[
@@ -103,7 +104,7 @@ fn _argsort_gpu_impl[
     indices: TileTensor[mut=True, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
-) raises where (input.rank == 1 and indices.rank == 1):
+) raises:
     """
     Implements GPU argsort using bitonic sort algorithm.
 
@@ -115,6 +116,8 @@ fn _argsort_gpu_impl[
         input: Input buffer to sort.
         ctx: Device context for GPU execution.
     """
+    comptime assert input.flat_rank == 1
+    comptime assert indices.flat_rank == 1
     # Create a device buffer to store a copy of the input data
     var n = indices.numel()
 
@@ -144,6 +147,8 @@ fn _argsort_gpu_impl[
             step: Current step size in the bitonic sequence.
             stage: Current stage of the bitonic sort.
         """
+        comptime assert input.flat_rank == 1
+        comptime assert indices.flat_rank == 1
         var i = global_idx.x
 
         if i >= UInt(n):
@@ -194,7 +199,7 @@ fn _argsort_gpu[
     indices: TileTensor[mut=True, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
-) raises where (indices.rank == 1 and input.rank == 1):
+) raises:
     """
     Performs argsort on GPU with padding to power-of-two size if needed.
 
@@ -206,6 +211,8 @@ fn _argsort_gpu[
         input: Input buffer to sort.
         ctx: Device context for GPU execution.
     """
+    comptime assert indices.flat_rank == 1
+    comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
     var n = indices.numel()
 
@@ -333,7 +340,7 @@ fn argsort[
     output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
-) raises where (input.rank == 1 and output.rank == 1):
+) raises:
     """
     Performs argsort on input buffer, storing indices in output buffer.
 
@@ -346,6 +353,8 @@ fn argsort[
         input: Buffer containing values to sort.
         ctx: Device context for execution.
     """
+    comptime assert input.flat_rank == 1
+    comptime assert output.flat_rank == 1
     with Trace[TraceLevel.OP, target=target](
         "argsort",
         task_id=get_safe_task_id(ctx),
@@ -364,9 +373,7 @@ fn argsort[
 ](
     output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: TileTensor,
-) raises where (
-    input.rank == 1 and output.rank == 1 and output.dtype.is_integral()
-):
+) raises:
     """
     CPU-only version of argsort.
 
@@ -377,6 +384,9 @@ fn argsort[
         output: Buffer to store sorted indices.
         input: Buffer containing values to sort.
     """
+    comptime assert input.flat_rank == 1
+    comptime assert output.flat_rank == 1
+    comptime assert output.dtype.is_integral()
     with Trace[TraceLevel.OP]("argsort"):
         _validate_argsort(input, output)
         _argsort_cpu[ascending=ascending](output, input)

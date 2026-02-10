@@ -101,9 +101,13 @@ fn _topp_minp_sampling[
         out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
-    comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
-    comptime assert out_token_ids.rank == 2, "Only rank 2 tensors are supported"
-    comptime assert p_thresholds.rank == 1
+    comptime assert (
+        input_logits.flat_rank == 2
+    ), "Only rank 2 tensors are supported"
+    comptime assert (
+        out_token_ids.flat_rank == 2
+    ), "Only rank 2 tensors are supported"
+    comptime assert p_thresholds.flat_rank == 1
     var input_shape = coord_to_index_list(input_logits.layout.shape_coord())
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
@@ -174,12 +178,7 @@ fn _topp_minp_sampling[
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
                     sid = sorted_ids[batch, i]
-
-                    @parameter
-                    if out_token_ids.rank == 1:
-                        out_token_ids[batch] = sid
-                    else:
-                        out_token_ids[batch, 0] = sid
+                    out_token_ids[batch, 0] = sid
                     break
         else:
             # Sample using min-p sampling
@@ -203,12 +202,7 @@ fn _topp_minp_sampling[
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
                     sid = sorted_ids[batch, i]
-
-                    @parameter
-                    if out_token_ids.rank == 1:
-                        out_token_ids[batch] = sid
-                    else:
-                        out_token_ids[batch] = sid
+                    out_token_ids[batch, 0] = sid
                     break
 
     sorted_ids_ptr.free()

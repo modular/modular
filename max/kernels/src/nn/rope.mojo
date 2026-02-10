@@ -87,13 +87,13 @@ fn apply_rope[
     @parameter
     if interleaved:
         var coord = Coord(idx)
-        comptime assert coord.rank == x.rank
+        comptime assert coord.flat_rank == x.flat_rank
         val = x.load[width=width](coord)
     else:
         var re_coord = Coord(pos_re)
-        comptime assert re_coord.rank == x.rank
+        comptime assert re_coord.flat_rank == x.flat_rank
         var im_coord = Coord(pos_im)
-        comptime assert im_coord.rank == x.rank
+        comptime assert im_coord.flat_rank == x.flat_rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2](re_coord).interleave(
                 x.load[width=width_2](im_coord)
@@ -148,10 +148,10 @@ fn rope_ragged[
         ]
     ] = None,
 ) raises where (
-    input_row_offsets.rank == 1
-    and start_pos.rank == 1
-    and position_ids.T.rank == 2
-    and freqs_cis.rank == 2
+    input_row_offsets.flat_rank == 1
+    and start_pos.flat_rank == 1
+    and position_ids.T.flat_rank == 2
+    and freqs_cis.flat_rank == 2
 ):
     @parameter
     for i in range(x.rank):

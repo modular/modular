@@ -50,12 +50,12 @@ fn apply_penalties_to_logits[
     - frequency_data[i, 1] is the frequency of the token in the sequence
     """
 
-    comptime assert frequency_offsets.rank == 1
-    comptime assert compressed_frequency_data.rank == 2
-    comptime assert repetition_penalty.rank == 1
-    comptime assert presence_penalty.rank == 1
-    comptime assert frequency_penalty.rank == 1
-    comptime assert logits.rank == 2
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert repetition_penalty.flat_rank == 1
+    comptime assert presence_penalty.flat_rank == 1
+    comptime assert frequency_penalty.flat_rank == 1
+    comptime assert logits.flat_rank == 2
 
     # all scalars
     comptime assert frequency_offsets.element_size == 1
@@ -132,9 +132,9 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    comptime assert frequency_offsets.rank == 1
-    comptime assert compressed_frequency_data.rank == 2
-    comptime assert new_tokens.rank == 1
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert new_tokens.flat_rank == 1
 
     comptime simd_width = simd_width_of[DType.int32]()
     comptime PADDING_TOKEN = -1
@@ -214,9 +214,9 @@ fn update_frequency_data[
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
     """
-    comptime assert frequency_offsets.rank == 1
-    comptime assert compressed_frequency_data.rank == 2
-    comptime assert new_tokens.rank == 1
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert new_tokens.flat_rank == 1
     comptime assert compressed_frequency_data.element_size == 1
     comptime assert new_tokens.element_size == 1
 

@@ -616,7 +616,7 @@ fn TopKSamplingFromProbKernel[
         rng_seed: Random seed for Random number generator.
         rng_offset: Random offset for Random number generator.
     """
-    comptime assert output.rank == 1
+    comptime assert output.flat_rank == 1
 
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
@@ -912,7 +912,7 @@ fn TopKSoftmaxSampleKernel[
     seed: UnsafePointer[UInt64, MutExternalOrigin],
     d: Int,
 ):
-    comptime assert sampled_indices.rank == 1
+    comptime assert sampled_indices.flat_rank == 1
 
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)

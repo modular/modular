@@ -111,9 +111,9 @@ fn conv_transpose_naive[
         pad_h: Padding in height dimension.
         pad_w: Padding in width dimension.
     """
-    comptime assert output.rank == 5
-    comptime assert input.rank == 5
-    comptime assert filter.rank == 5
+    comptime assert output.flat_rank == 5
+    comptime assert input.flat_rank == 5
+    comptime assert filter.flat_rank == 5
     comptime assert output.element_size == 1
     comptime assert input.element_size == 1
     comptime assert filter.element_size == 1
@@ -217,10 +217,10 @@ fn conv_transpose_shape[
     Returns:
         The output shape.
     """
-    comptime assert strides.rank == 1
-    comptime assert pads.rank == 1
-    comptime assert dilations.rank == 1
-    comptime assert output_pads.rank == 1
+    comptime assert strides.flat_rank == 1
+    comptime assert pads.flat_rank == 1
+    comptime assert dilations.flat_rank == 1
+    comptime assert output_pads.flat_rank == 1
 
     if input.rank != 4 and input.rank != 5:
         raise Error("[conv_transpose] requires (input_rank == 4 or 5)")

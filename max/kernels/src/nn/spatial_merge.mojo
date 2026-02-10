@@ -49,7 +49,7 @@ fn spatial_merge_kernel[
         hidden_size: Hidden dimension size.
         merge_size: Size of spatial merge blocks.
     """
-    comptime assert grid_thw.rank == 2
+    comptime assert grid_thw.flat_rank == 2
 
     # Global patch index.
     var patch_idx = Int(block_idx.x)

@@ -116,9 +116,9 @@ fn slice_as_view[
     tensor.origin,
     address_space = tensor.address_space,
 ]:
-    comptime assert starts.rank == 1
-    comptime assert ends.rank == 1
-    comptime assert steps.rank == 1
+    comptime assert starts.flat_rank == 1
+    comptime assert ends.flat_rank == 1
+    comptime assert steps.flat_rank == 1
 
     var new_shape = IndexList[tensor.rank]()
     var new_stride = IndexList[tensor.rank]()
@@ -232,7 +232,7 @@ fn slice_as_copy[
     end: TileTensor[index_type, ...],
     step: TileTensor[index_type, ...],
 ) raises:
-    comptime assert output.rank == tensor.rank
+    comptime assert output.flat_rank == tensor.flat_rank
     # Apply slice to the tensor
     var sliced = slice_as_view(tensor, start, end, step)
 
@@ -272,9 +272,9 @@ fn slice_shape[
     stop_buf: TileTensor[stop_type, ...],
     step_buf: TileTensor[step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
-    comptime assert start_buf.rank == 1, "start_buf.rank must be 1"
-    comptime assert stop_buf.rank == 1, "stop_buf.rank must be 1"
-    comptime assert step_buf.rank == 1, "step_buf.rank must be 1"
+    comptime assert start_buf.flat_rank == 1, "start_buf.rank must be 1"
+    comptime assert stop_buf.flat_rank == 1, "stop_buf.rank must be 1"
+    comptime assert step_buf.flat_rank == 1, "step_buf.rank must be 1"
 
     if input_buf.rank != Int(start_buf.dim[0]()):
         raise Error("[slice] start indices size must equal input rank")
@@ -344,7 +344,7 @@ fn sliced_add[
         lora_end_idx: Scalar tensor with end index of LoRA token portion (rows to apply add).
         ctx: Device context for GPU operations.
     """
-    comptime assert lora_end_idx.rank == 1
+    comptime assert lora_end_idx.flat_rank == 1
 
     var batch_end_idx = Int(lora_end_idx[0])
 
@@ -356,9 +356,9 @@ fn sliced_add[
         var out_val: SIMD[dtype, width]
         var coords = Coord(idx)
 
-        comptime assert a.rank == coords.rank
-        comptime assert b.rank == coords.rank
-        comptime assert c.rank == coords.rank
+        comptime assert a.flat_rank == coords.flat_rank
+        comptime assert b.flat_rank == coords.flat_rank
+        comptime assert c.flat_rank == coords.flat_rank
 
         if idx[0] >= batch_end_idx:
             out_val = a.load[width](coords)

@@ -313,13 +313,14 @@ fn arange[
     # Use layout info for 2D tensors with simple (non-nested) shapes
     @parameter
     if (
-        tensor.rank != 2
+        tensor.flat_rank != 2
         or tensor.LayoutType._shape_types[0].__len__() != 1
         or tensor.LayoutType._shape_types[1].__len__() != 1
     ):
         _filler_impl[filler, use_runtime_layout](tensor)
     else:
-        comptime assert tensor.rank == 2
+        # Provide evidence that flat_rank == 2 for the constraint system
+        comptime assert tensor.flat_rank == 2
         var rows = Int(tensor.layout.shape[0]().value())
         var cols = Int(tensor.layout.shape[1]().value())
         for m, n in product(range(rows), range(cols)):
