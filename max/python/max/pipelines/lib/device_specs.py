@@ -125,6 +125,20 @@ def device_specs_from_normalized_device_handle(
     return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in requested_gpu_ids]
 
 
+def _coerce_str(value: str) -> list[DeviceSpec]:
+    """Coerce a single string into validated DeviceSpec objects."""
+    normalized = normalize_device_specs_input(value)
+    if normalized == "cpu":
+        return [DeviceSpec.cpu()]
+    if normalized == "gpu":
+        return [DeviceSpec.accelerator(0)]
+    if normalized == "default":
+        return scan_available_devices()
+    if isinstance(normalized, list):
+        return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in normalized]
+    raise ValueError(f"Invalid device specs input: {value}")
+
+
 def coerce_device_specs_input(
     value: Any,
 ) -> list[DeviceSpec]:
@@ -134,16 +148,20 @@ def coerce_device_specs_input(
             return value
         if all(isinstance(part, int) for part in value):
             return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in value]
+        # Handle list of strings from CLI parsers (e.g. cyclopts) which may
+        # produce ['gpu:0,1'], ['0', '1'], ['cpu'], etc.
+        if all(isinstance(part, str) for part in value):
+            # All numeric strings → treat as GPU IDs (e.g. ['0', '1']).
+            try:
+                gpu_ids = [int(part) for part in value]
+                return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in gpu_ids]
+            except ValueError:
+                pass
+            # Single string element → delegate to full string parsing
+            # (handles 'gpu:0,1', 'cpu', 'gpu', 'default', etc.).
+            if len(value) == 1:
+                return _coerce_str(value[0])
         raise ValueError(f"Invalid device specs input: {value!r}")
     if isinstance(value, str):
-        normalized = normalize_device_specs_input(value)
-        if normalized == "cpu":
-            return [DeviceSpec.cpu()]
-        if normalized == "gpu":
-            return [DeviceSpec.accelerator(0)]
-        if normalized == "default":
-            return scan_available_devices()
-        if isinstance(normalized, list):
-            return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in normalized]
-        raise ValueError(f"Invalid device specs input: {value}")
+        return _coerce_str(value)
     raise ValueError(f"Invalid device specs input: {value!r}")
