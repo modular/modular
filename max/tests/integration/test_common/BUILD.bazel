@@ -100,6 +100,7 @@ modular_py_library(
         ":numerics",
         ":test_data",
         requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max/driver",
@@ -207,6 +208,8 @@ modular_py_library(
         ":numerics",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
+        requirement("diffusers"),
+        requirement("numpy"),
         requirement("pillow"),
         requirement("requests"),
         requirement("torch"),

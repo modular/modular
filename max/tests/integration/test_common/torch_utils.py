@@ -299,7 +299,7 @@ def run_image_generation(
 
     results = []
 
-    pipeline.to(device)
+    pipeline.to(device)  # type: ignore[attr-defined]
 
     for mock_request in requests:
         prompt = mock_request.prompt
@@ -321,8 +321,8 @@ def run_image_generation(
 
         # Prepare latents using the same approach as MAX pipeline
         # This ensures deterministic and comparable outputs
-        num_channels_latents = pipeline.transformer.config.in_channels // 4
-        vae_scale_factor = pipeline.vae_scale_factor
+        num_channels_latents = pipeline.transformer.config.in_channels // 4  # type: ignore[attr-defined]
+        vae_scale_factor = pipeline.vae_scale_factor  # type: ignore[attr-defined]
         latent_height = 2 * (height // (vae_scale_factor * 2))
         latent_width = 2 * (width // (vae_scale_factor * 2))
 
@@ -354,7 +354,7 @@ def run_image_generation(
         if mock_request.negative_prompt:
             pipeline_kwargs["negative_prompt"] = mock_request.negative_prompt
 
-        output = pipeline(**pipeline_kwargs)
+        output = pipeline(**pipeline_kwargs)  # type: ignore[operator]
 
         # Convert PIL image to numpy array
         image = output.images[0]
