@@ -32,7 +32,7 @@ import numpy as np
 from max.graph import Dim, TensorValue, ops
 from max.graph.ops.elementwise import silu
 from max.graph.type import TensorType
-from max.nn.conv import causal_conv1d_fn
+from .causal_conv1d import causal_conv1d_fn
 
 
 def selective_scan_fn(

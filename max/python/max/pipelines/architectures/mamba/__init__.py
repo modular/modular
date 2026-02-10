@@ -12,5 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import mamba_arch
+from .ssm import Block, MambaSSM
+from .ssm_state_cache import (
+    SSMStateCacheInputs,
+    SSMStateCacheParams,
+    SSMStateValues,
+)
 
-__all__ = ["mamba_arch"]
+__all__ = [
+    "mamba_arch",
+    "Block",
+    "MambaSSM",
+    "SSMStateCacheInputs",
+    "SSMStateCacheParams",
+    "SSMStateValues",
+]

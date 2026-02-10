@@ -23,11 +23,12 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, Weight, ops
 from max.nn import Layer, Linear, Module
-from max.nn.conv import causal_conv1d_fn, causal_conv1d_update_fn
-from max.nn.mamba.ssm_state_cache import SSMStateValues
 from max.nn.norm import layer_norm_fn
 from max.nn.norm.layer_norm_gated import LayerNorm, RMSNorm
-from max.nn.selective_scan import mamba_inner_fn
+
+from .causal_conv1d import causal_conv1d_fn, causal_conv1d_update_fn
+from .selective_scan import mamba_inner_fn
+from .ssm_state_cache import SSMStateValues
 
 
 class MambaSSM(Module):

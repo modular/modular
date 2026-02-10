@@ -36,7 +36,7 @@ from max.nn import (
     Signals,
     VocabParallelEmbedding,
 )
-from max.nn.mamba import Block, MambaSSM
+from .ssm import Block, MambaSSM
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import MambaConfig

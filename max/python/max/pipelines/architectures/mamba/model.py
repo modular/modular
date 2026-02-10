@@ -28,7 +28,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs
-from max.nn.mamba.ssm_state_cache import SSMStateCacheInputs, SSMStateValues
+from .ssm_state_cache import SSMStateCacheInputs, SSMStateValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -400,7 +400,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             data_parallel_splits = None
 
         # Allocate SSM state cache for Mamba
-        from max.nn.mamba.ssm_state_cache import SSMStateCacheParams
+        from .ssm_state_cache import SSMStateCacheParams
 
         batch_size = len(context_batch)
         ssm_cache_params = SSMStateCacheParams(

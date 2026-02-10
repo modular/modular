@@ -27,8 +27,8 @@ from max.nn import (
     Linear,
     Module,
 )
-from max.nn.mamba import Block, MambaSSM
-from max.nn.mamba.ssm_state_cache import (
+from .ssm import Block, MambaSSM
+from .ssm_state_cache import (
     SSMStateCacheParams,
     SSMStateValues,
 )
