@@ -771,22 +771,20 @@ fn softmax_kernel[
         if sink:
             block_exp_sum += exp(sink_val - row_max)
 
-        # Step 3: Normalize output
+        # Step 3: Normalize output (and apply log for logsoftmax)
         var block_exp_sum_recip = 1 / exp_sum_buf[0]
         for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
             row_coords[axis] = Int(row_offset)
-            output.store(
-                row_coords,
+            var normalized = (
                 output.load[width=1](row_coords)
-                * block_exp_sum_recip.cast[dtype](),
+                * block_exp_sum_recip.cast[dtype]()
             )
 
-        @parameter
-        if logsoftmax:
-            comptime assert (
-                dtype.is_floating_point()
-            ), "dtype must be floating point"
-            output.store(row_coords, log(output.load[width=1](row_coords)))
+            @parameter
+            if logsoftmax:
+                normalized = log(normalized)
+
+            output.store(row_coords, normalized)
 
 
 fn _softmax_gpu[

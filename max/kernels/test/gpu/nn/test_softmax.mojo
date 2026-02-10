@@ -310,11 +310,116 @@ fn test_gpu_online_softmax[
     _ = out_device_ptr
 
 
+fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
+    print("== test_gpu_logsoftmax")
+
+    comptime type = DType.float32
+    comptime rank = 3
+
+    @parameter
+    fn _test_shape(shape: IndexList[rank]) raises:
+        var in_host_ptr = UnsafePointer[Scalar[type]].alloc(
+            shape.flattened_length()
+        )
+        var in_device_ptr = ctx.enqueue_create_buffer[type](
+            shape.flattened_length()
+        )
+        comptime layout_dyn = Layout.row_major[rank]()
+        var in_host = LayoutTensor[type, layout_dyn](
+            in_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
+        )
+        var in_device = LayoutTensor[type, layout_dyn](
+            in_device_ptr.unsafe_ptr(),
+            RuntimeLayout[layout_dyn].row_major(shape),
+        )
+        var out_host_ptr = UnsafePointer[Scalar[type]].alloc(
+            shape.flattened_length()
+        )
+        var out_ref_ptr = UnsafePointer[Scalar[type]].alloc(
+            shape.flattened_length()
+        )
+        var out_device_ptr = ctx.enqueue_create_buffer[type](
+            shape.flattened_length()
+        )
+        var out_ref = LayoutTensor[type, layout_dyn](
+            out_ref_ptr, RuntimeLayout[layout_dyn].row_major(shape)
+        )
+        var out_device = LayoutTensor[type, layout_dyn](
+            out_device_ptr.unsafe_ptr(),
+            RuntimeLayout[layout_dyn].row_major(shape),
+        )
+        rand[type](in_host_ptr, shape.flattened_length())
+        ctx.enqueue_copy(in_device_ptr, in_host_ptr)
+
+        @parameter
+        @__copy_capture(in_device)
+        fn input_fn_device[
+            _simd_width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+            return in_device.load[width=_simd_width](
+                rebind[IndexList[rank]](coords)
+            )
+
+        @parameter
+        @__copy_capture(in_host)
+        fn input_fn_host[
+            _simd_width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+            return in_host.load[width=_simd_width](
+                rebind[IndexList[rank]](coords)
+            )
+
+        _softmax_gpu[type, 1, rank, input_fn_device, logsoftmax=True](
+            shape, out_device, rank - 1, ctx
+        )
+
+        _softmax_cpu[
+            type,
+            1,
+            rank,
+            origin_of()._mlir_origin,
+            input_fn_host,
+            logsoftmax=True,
+        ](shape, out_ref, rank - 1)
+
+        ctx.synchronize()
+        ctx.enqueue_copy(out_host_ptr, out_device_ptr)
+
+        for i in range(shape.flattened_length()):
+            var expected = out_ref_ptr[i]
+            var got = out_host_ptr[i]
+            if not isclose(expected, got, atol=1e-4, rtol=1e-5):
+                print(
+                    "ERROR. Mismatch at flattened idx:",
+                    i,
+                    "expected:",
+                    expected,
+                    "got:",
+                    got,
+                )
+                assert_true(False)
+
+        in_host_ptr.free()
+        out_host_ptr.free()
+        out_ref_ptr.free()
+
+        _ = in_device
+        _ = in_host
+        _ = in_device_ptr
+        _ = out_device_ptr
+
+    # Test multi-thread row processing (row_size=515 > BLOCK_SIZE=128)
+    _test_shape(IndexList[rank](3, 5, 515))
+    # Test single-thread row processing (row_size=4 < BLOCK_SIZE=128)
+    _test_shape(IndexList[rank](1, 1, 4))
+
+
 def main():
     with DeviceContext() as ctx:
         test_gpu_softmax(ctx)
         test_gpu_softmax_half[DType.bfloat16](ctx)
         test_gpu_softmax_half[DType.float16](ctx)
+        test_gpu_logsoftmax(ctx)
         # Test general online-softmax, communicating data via shared memory.
 
         test_gpu_online_softmax[32, 32, False](ctx)
