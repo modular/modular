@@ -555,11 +555,14 @@ def _parse_modelopt_float4_config(
 
     bias_dtype = _bias_dtype(state_dict)
 
+    # All layers use float4 in modelopt NVFP4 checkpoints.
+    all_layers = set(range(huggingface_config.num_hidden_layers))
+
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_in_float8=all_layers,
+        attn_qkv_in_float8=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         quant_method=quant_method,

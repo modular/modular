@@ -858,6 +858,20 @@ PIPELINES = {
             kl_div_threshold=2.0e-01,
         ),
     ),
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only", "no-h100", "2xb200"],
+        run=_make_pipeline_runner(
+            pipeline="nvidia/Llama-3.1-405B-Instruct-NVFP4",
+            encoding="float4_e2m1fnx2",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_405B_nvfp4/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json.tar.gz",
+                json_file="/tmp/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json",
+            ),
+            cos_dist_threshold=3.4e-04,
+            kl_div_threshold=8.3e-02,
+        ),
+    ),
     "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
