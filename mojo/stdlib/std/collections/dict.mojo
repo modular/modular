@@ -41,6 +41,7 @@ from builtin.constrained import _constrained_conforms_to
 from compile import get_type_name
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
+import format._utils as fmt
 
 from memory import bitcast, memcpy
 
@@ -940,12 +941,10 @@ struct Dict[
 
     @no_inline
     fn __repr__(self) -> String:
-        """Returns a string representation of a `Dict`.
-
-        Returns:
-            A string representation of the Dict.
-        """
-        return self.__str__()
+        """Returns a repr string representation of a Dict."""
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
     fn __str__(self) -> String:
@@ -1007,6 +1006,29 @@ struct Dict[
                 writer.write(", ")
             i += 1
         writer.write("}")
+
+       
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of this Dict to a Writer.
+
+        Uses repr formatting for both keys and values.
+        """
+
+        writer.write("{")
+
+        var i = 0
+        for entry in self.items():
+            fmt.write_repr_to[Self.K](entry.key, writer)
+            writer.write(": ")
+            fmt.write_repr_to[Self.V](entry.value, writer)
+
+            if i < len(self) - 1:
+                writer.write(", ")
+            i += 1
+
+        writer.write("}")
+
 
     # ===-------------------------------------------------------------------===#
     # Methods
