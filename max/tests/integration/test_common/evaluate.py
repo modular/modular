@@ -191,6 +191,11 @@ class StoreLogits:
     def __call__(self, inputs: ProcessorInputs) -> None:
         logits = inputs.logits
         context = inputs.context
+        # Don't do anything if the context is already finished.
+        # This code path is possible due to overlap scheduling possibly executing
+        # one more forward pass than needed.
+        if context.is_done:
+            return
         next_token_logits = logits[-1, :].to_numpy().copy()
         next_token = next_token_logits.argmax(axis=-1)
 
@@ -245,6 +250,11 @@ class ReplaceLogitsWithReference:
     def __call__(self, inputs: ProcessorInputs) -> None:
         logits = inputs.logits
         context = inputs.context
+        # Don't do anything if the context is already finished.
+        # This code path is possible due to overlap scheduling possibly executing
+        # one more forward pass than needed.
+        if context.is_done:
+            return
         # Assign the argmax of the reference to the logits.
         reference = self.reference_by_id[context.request_id]
         step = self.step_by_id[context.request_id]
