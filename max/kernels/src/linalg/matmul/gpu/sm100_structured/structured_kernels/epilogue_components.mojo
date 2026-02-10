@@ -1029,16 +1029,16 @@ struct EpilogueApplier[
 
             # Load C from swizzled SMEM at matching fragment coordinates
             var c0 = src_ptr.load(
-                Int(swizzle(top_row * c_smem_stride + top_col))
+                Int(swizzle(top_row * UInt32(c_smem_stride) + top_col))
             ).cast[epilogue_dtype]()
             var c1 = src_ptr.load(
-                Int(swizzle(top_row * c_smem_stride + top_col + 1))
+                Int(swizzle(top_row * UInt32(c_smem_stride) + top_col + 1))
             ).cast[epilogue_dtype]()
             var c2 = src_ptr.load(
-                Int(swizzle(bot_row * c_smem_stride + bot_col))
+                Int(swizzle(bot_row * UInt32(c_smem_stride) + bot_col))
             ).cast[epilogue_dtype]()
             var c3 = src_ptr.load(
-                Int(swizzle(bot_row * c_smem_stride + bot_col + 1))
+                Int(swizzle(bot_row * UInt32(c_smem_stride) + bot_col + 1))
             ).cast[epilogue_dtype]()
 
             # FMA: frag += beta * C

@@ -92,7 +92,7 @@ fn _mojo_block_hasher[
         var hash_ptr_ints = hash_ptr_base + block_idx * block_size
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
         var token_hash = hash(hash_ptr_bytes, num_bytes)
-        var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
+        var pair_to_hash = SIMD[DType.uint64, 2](UInt64(prev_hash), token_hash)
         var curr_hash = hash(pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.

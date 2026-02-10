@@ -112,6 +112,9 @@ def head_aware_col_sharding_strategy(
     where the number of heads is not evenly divisible by the number of devices.
     It splits columns according to how heads are distributed across devices.
 
+    Supports packed weights (e.g. NVFP4 float4-e2m1fnx2) where the stored
+    columns are in_dim // 2; in that case column indices are halved.
+
     Args:
         weight: The :obj:`Weight` to shard.
         i: The index of the current device.
@@ -125,9 +128,17 @@ def head_aware_col_sharding_strategy(
     # Compute the head range for this device
     head_start, head_end = _compute_shard_range(num_heads, i, num_devices)
 
-    # Convert head indices to column indices
+    # Convert head indices to logical column indices
     col_start = head_start * head_dim
     col_end = head_end * head_dim
+
+    # If the weight is packed (e.g. NVFP4: 2 fp4 values per uint8), it has
+    # in_dim/2 columns; use packed column indices so the slice stays in bounds.
+    logical_in_dim = num_heads * head_dim
+    actual_cols = int(weight.shape[1])
+    if actual_cols * 2 == logical_in_dim:
+        col_start = col_start // 2
+        col_end = col_end // 2
 
     return weight[:, col_start:col_end]
 

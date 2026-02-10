@@ -32,11 +32,11 @@ fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)
     for i in range(0, aligned_size, width):
-        var v = buffer.load[dtype, width](i)
-        buffer.store[dtype, width](0, 2 * v, scalar_offset=i)
+        var v = buffer.load[dtype, width](Int32(i))
+        buffer.store[dtype, width](0, 2 * v, scalar_offset=Int32(i))
     for i in range(aligned_size, size):
-        var v = buffer.load[dtype, 1](0, scalar_offset=i)
-        buffer.store[dtype, 1](i, 2 * v)
+        var v = buffer.load[dtype, 1](0, scalar_offset=Int32(i))
+        buffer.store[dtype, 1](Int32(i), 2 * v)
 
 
 fn kernel_lds[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
@@ -51,9 +51,9 @@ fn kernel_lds[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
     barrier()
 
     for i in range(0, aligned_size, width):
-        buffer.load_to_lds[width=width](i, a_shared + i)
+        buffer.load_to_lds[width=width](Int32(i), a_shared + i)
     for i in range(aligned_size, size):
-        buffer.load_to_lds[width=1](i, a_shared + i)
+        buffer.load_to_lds[width=1](Int32(i), a_shared + i)
     barrier()
 
     for i in range(size):
@@ -190,7 +190,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
-        a_host_buf[i] = i + 1
+        a_host_buf[i] = Scalar[dtype](i + 1)
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
@@ -202,9 +202,9 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
 
     ctx.synchronize()
     for i in range(size_clip):
-        assert_equal(a_host_buf[i], 2 * (i + 1))
+        assert_equal(a_host_buf[i], Scalar[dtype](2 * (i + 1)))
     for i in range(size_clip, size):
-        assert_equal(a_host_buf[i], i + 1)
+        assert_equal(a_host_buf[i], Scalar[dtype](i + 1))
 
     a_host_buf.free()
 
@@ -214,7 +214,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
-        a_host_buf[i] = i + 1
+        a_host_buf[i] = Scalar[dtype](i + 1)
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
@@ -226,7 +226,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
 
     ctx.synchronize()
     for i in range(size_clip):
-        assert_equal(a_host_buf[i], 2 * (i + 1))
+        assert_equal(a_host_buf[i], Scalar[dtype](2 * (i + 1)))
     for i in range(size_clip, size):
         assert_equal(a_host_buf[i], 0)
 

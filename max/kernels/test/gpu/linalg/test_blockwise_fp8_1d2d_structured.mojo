@@ -175,10 +175,10 @@ def test_blockwise_fp8_1d2d_structured[
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids_list[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids_list[i])
 
     # Expert scales: use non-trivial values to verify scaling works
     for i in range(num_experts):

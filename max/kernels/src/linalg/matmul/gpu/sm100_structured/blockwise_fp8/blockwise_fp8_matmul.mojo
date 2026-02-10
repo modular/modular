@@ -23,8 +23,10 @@ from sys import env_get_bool, size_of
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
-from layout import Layout, LayoutTensor
-from layout.tma_async import create_tensor_tile, create_tma_tile
+from layout import Layout as LegacyLayout, LayoutTensor
+from layout.tma_async import create_tensor_tile
+
+from ..structured_kernels.tile_types import GMEMTile, lt_to_tt
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -46,14 +48,14 @@ from ...sm100.warp_specialized_blockwise_fp8 import (
 
 fn blockwise_fp8_matmul[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
+    a_scales_layout: LegacyLayout,
+    b_scales_layout: LegacyLayout,
     a_scales_type: DType,
     b_scales_type: DType,
     *,
@@ -202,34 +204,6 @@ fn blockwise_fp8_matmul[
     var N = c.dim(1)
     var K = a.dim(1)
 
-    # Create TMA descriptors
-    a_tma_op = create_tensor_tile[
-        Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
-    ](ctx, a)
-
-    b_tma_op = create_tensor_tile[
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
-        swizzle_mode = config.b_swizzle,
-    ](ctx, b)
-
-    a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
-
-    # C tile shape depends on MMA shape
-    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
-
-    var c_tma_op = create_tensor_tile[
-        c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
-    ](ctx, c)
-
     # Compute SMEM size - use corrected_config which accounts for a_scales
     comptime SmemType = BlockwiseFP8Smem[
         a_type,
@@ -251,21 +225,14 @@ fn blockwise_fp8_matmul[
     )
 
     # Instantiate kernel type - use corrected_config which has proper num_pipeline_stages
+    comptime BScalesTileType = GMEMTile[b_scales_type, b_scales_layout]
     comptime Kernel = BlackwellBlockwiseFP8MatmulKernel[
         a_type,
         b_type,
         c_type,
         a_scales_type,
         b_scales_type,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_scales_tma_op.layout,
-        b_scales_layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
-        a_scales_tma_op.desc_layout,
+        BScalesTileType.LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
         cluster_shape = StaticTuple[Int32, 3](
@@ -274,6 +241,43 @@ fn blockwise_fp8_matmul[
             Int32(corrected_config.cluster_shape[2]),
         ),
     ]
+
+    # Create TMA descriptors using kernel's derived legacy layouts
+    a_tma_op = create_tensor_tile[
+        Index(BM // config.cluster_shape[1], BK),
+        swizzle_mode = config.a_swizzle,
+        __tile_layout = Kernel.ATmaOp.layout,
+        __desc_layout = Kernel.ATmaOp.desc_layout,
+    ](ctx, a)
+
+    b_tma_op = create_tensor_tile[
+        Index(
+            BN // (config.cluster_shape[0] // config.cta_group), BK
+        ) if transpose_b else Index(
+            BK, BN // (config.cluster_shape[0] // config.cta_group)
+        ),
+        swizzle_mode = config.b_swizzle,
+        __tile_layout = Kernel.BTmaOp.layout,
+        __desc_layout = Kernel.BTmaOp.desc_layout,
+    ](ctx, b)
+
+    a_scales_tma_op = create_tensor_tile[
+        Index(1, BM),
+        __tile_layout = Kernel.AScalesTmaOp.layout,
+        __desc_layout = Kernel.AScalesTmaOp.desc_layout,
+    ](ctx, a_scales)
+
+    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
+    comptime c_tma_tile_shape = config.output_tile_shape if (
+        MMA_M == 256 or config.cta_group == 1
+    ) else c_tma_tile_shape_mma128
+
+    var c_tma_op = create_tensor_tile[
+        c_tma_tile_shape,
+        swizzle_mode = config.c_swizzle,
+        __tile_layout = Kernel.CTmaOp.layout,
+        __desc_layout = Kernel.CTmaOp.desc_layout,
+    ](ctx, c)
 
     var grid_dim = (
         align_up(ceildiv(M, BM), config.cluster_shape[0]),
@@ -296,7 +300,7 @@ fn blockwise_fp8_matmul[
         a_scales_tma_op,
         cluster_dim,
         UInt(ceildiv(K, BK)),
-        b_scales,
+        lt_to_tt(b_scales),
         problem_shape,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps

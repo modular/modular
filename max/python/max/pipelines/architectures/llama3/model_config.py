@@ -430,6 +430,17 @@ class Llama3Config(ArchConfigWithKVCache):
         self.rms_norm_eps = rms_norm_eps
         self.tie_word_embeddings = tie_word_embeddings
         self.float8_config = float8_config
+        # Disable matmul_allreduce when using float8/FP4; the fused kernel
+        # requires a_type == b_type but we have bfloat16 activations and
+        # uint8/float8 weights.
+        if (
+            float8_config is not None
+            and float8_config.is_nvfp4
+            and self.dist_gemm_config is not None
+        ):
+            self.dist_gemm_config = DistributedGemmConfig(
+                enable_matmul_allreduce=False
+            )
         self.stacked_mlp = (
             "layers.0.mlp.gate_up_proj.weight" in normalized_state_dict
         )

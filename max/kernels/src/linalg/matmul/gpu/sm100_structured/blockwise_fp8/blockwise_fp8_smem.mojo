@@ -91,7 +91,7 @@ struct BlockwiseFP8Smem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, a_scales
-    # Note: Layouts are still defined above for LayoutTensor boundary conversion
+    # Layouts are used by tile storage types for allocation and sizing
     comptime Tiles = BlockwiseFP8TileStorage[
         Self.a_type,
         Self.b_type,
