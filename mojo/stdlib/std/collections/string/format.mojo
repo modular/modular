@@ -72,7 +72,7 @@ methods.
 
 from std.builtin.globals import global_constant
 from std.builtin.variadics import Variadic
-from std.collections.string.string_slice import _memchr2, get_static_string
+from std.collections.string.string_slice import _memchr, get_static_string
 from std.compile import get_type_name
 from std.memory import Span
 from std.utils import Variant
@@ -89,7 +89,7 @@ fn _find_next_brace(
 ) -> Int:
     """Finds the index of the next `{` or `}` character.
 
-    Delegates to `_memchr2` (which uses SIMD internally) to search for both
+    Delegates to `_memchr` (which uses SIMD internally) to search for both
     brace characters simultaneously in a single pass.
 
     Args:
@@ -101,10 +101,10 @@ fn _find_next_brace(
         The index of the next brace character, or -1 if not found.
     """
     var remaining = Span[Byte](ptr=ptr + start, length=length - start)
-    var result = _memchr2(remaining, UInt8(ord("{")), UInt8(ord("}")))
+    var result = _memchr(remaining, UInt8(ord("{")), UInt8(ord("}")))
     if not result:
         return -1
-    return Int(result) - Int(ptr)
+    return Int(result.value()) - Int(ptr)
 
 
 # ===-----------------------------------------------------------------------===#
