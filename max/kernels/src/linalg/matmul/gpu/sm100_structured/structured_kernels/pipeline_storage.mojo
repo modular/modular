@@ -94,7 +94,7 @@ struct MyKernelSmem[config: MyConfig]:
         return self.tiles.a_tiles()  # Returns TileTensor
 
     fn c_tiles(ref[SHARED] self) -> Self.OutputTiles.CTileArray:
-        return self.output_tiles.c_tiles()  # Returns LayoutTensor
+        return self.output_tiles.c_tiles()
 ```
 
 Extensibility
@@ -229,9 +229,8 @@ struct BlockScaledTileStorage[
 
     Single source of truth for block-scaled tile arrays and storage.
 
-    All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
-    .reshape[] and .tile[] methods.
+    All tiles use TileTensor natively. A LayoutTensor accessor (`c_tiles_lt`)
+    is kept for SMemEpilogueWriter compatibility.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
 
@@ -269,7 +268,7 @@ struct BlockScaledTileStorage[
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor-based accessor (kept for backward compatibility)
+    # LayoutTensor accessor (for SMemEpilogueWriter compatibility)
     comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
@@ -308,21 +307,14 @@ struct BlockScaledTileStorage[
         return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
-        """Get C tile array accessor (LayoutTensor-based for backward compat).
-
-        Returns LayoutTensor view for compatibility with tile_writer.mojo
-        which uses .reshape[] and .tile[] methods.
-        """
-        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor."""
+        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        """Get C tile array accessor (TileTensor-based).
-
-        Returns native TileTensor for future TileTensor-native code paths.
-        """
-        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
+    fn c_tiles_lt(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
+        """Get C tile array as LayoutTensor (for SMemEpilogueWriter)."""
+        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
@@ -361,9 +353,8 @@ struct BlockwiseFP8TileStorage[
     Single source of truth for blockwise FP8 tile arrays and storage.
     B-scales are read directly from global memory during epilogue.
 
-    All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
-    .reshape[] and .tile[] methods.
+    All tiles use TileTensor natively. A LayoutTensor accessor (`c_tiles_lt`)
+    is kept for SMemEpilogueWriter compatibility.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
 
@@ -398,7 +389,7 @@ struct BlockwiseFP8TileStorage[
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor-based accessor (kept for backward compatibility)
+    # LayoutTensor accessor (for SMemEpilogueWriter compatibility)
     comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
@@ -428,21 +419,14 @@ struct BlockwiseFP8TileStorage[
         return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
-        """Get C tile array accessor (LayoutTensor-based for backward compat).
-
-        Returns LayoutTensor view for compatibility with tile_writer.mojo
-        which uses .reshape[] and .tile[] methods.
-        """
-        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor."""
+        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        """Get C tile array accessor (TileTensor-based).
-
-        Returns native TileTensor for future TileTensor-native code paths.
-        """
-        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
+    fn c_tiles_lt(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
+        """Get C tile array as LayoutTensor (for SMemEpilogueWriter)."""
+        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
@@ -461,9 +445,8 @@ struct OutputTileStorage[
     Single source of truth for output tile array and storage.
     Separate from input tiles since output has different stage count.
 
-    All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
-    .reshape[] and .tile[] methods.
+    All tiles use TileTensor natively. A LayoutTensor accessor (`c_tiles_lt`)
+    is kept for SMemEpilogueWriter compatibility.
 
     Parameters:
         c_type: Data type for C matrix tiles.
@@ -479,7 +462,7 @@ struct OutputTileStorage[
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor-based accessor (kept for backward compatibility)
+    # LayoutTensor accessor (for SMemEpilogueWriter compatibility)
     comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
@@ -487,21 +470,14 @@ struct OutputTileStorage[
     var c_tiles_storage: Self.CTileArray.Storage
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
-        """Get C tile array accessor (LayoutTensor-based for backward compat).
-
-        Returns LayoutTensor view for compatibility with tile_writer.mojo
-        which uses .reshape[] and .tile[] methods.
-        """
-        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor."""
+        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        """Get C tile array accessor (TileTensor-based).
-
-        Returns native TileTensor for future TileTensor-native code paths.
-        """
-        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
+    fn c_tiles_lt(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
+        """Get C tile array as LayoutTensor (for SMemEpilogueWriter)."""
+        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
 
 
 # =============================================================================
@@ -735,7 +711,7 @@ struct SourceTileStorage[
     # Source tile layout (row_major for TMA compatibility, matches output)
     comptime src_tile_layout = Layout.row_major(Self.src_dim0, Self.src_dim1)
 
-    # TileTensor-based for source storage
+    # TileTensor-based for source storage and access
     comptime SrcTileArray = SMemTileArray2DRowMajor[
         Self.src_type,
         Self.src_dim0,
@@ -743,30 +719,12 @@ struct SourceTileStorage[
         Self.num_epi_load_stages,
         128,
     ]
-    # LayoutTensor-based accessor (for compatibility with tile_writer)
-    comptime SrcTileArrayLT = LTSMemTileArray[
-        Self.src_type,
-        Self.src_tile_layout,
-        Self.num_epi_load_stages,
-        alignment=128,
-    ]
 
     var src_tiles_storage: Self.SrcTileArray.Storage
 
     @always_inline
-    fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArrayLT:
-        """Get source tile array accessor (LayoutTensor-based).
-
-        Returns LayoutTensor view for compatibility with tile_writer.mojo.
-        """
-        return Self.SrcTileArrayLT(self.src_tiles_storage.unsafe_ptr())
-
-    @always_inline
-    fn src_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
-        """Get source tile array accessor (TileTensor-based).
-
-        Returns native TileTensor for future TileTensor-native code paths.
-        """
+    fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
+        """Get source tile array accessor (TileTensor-based)."""
         return Self.SrcTileArray(self.src_tiles_storage.unsafe_ptr())
 
 

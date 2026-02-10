@@ -32,10 +32,8 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
-    Pipeline,
     PipelineTokenizer,
     RequestID,
-    TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
 )
@@ -47,11 +45,9 @@ from transformers import AutoConfig
 
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
-from ..interfaces import GenerateMixin, ModelOutputs, PipelineModel
-from ..sampling import (
-    rejection_sampler_with_residuals,
-    token_sampler,
-)
+from ..interfaces import ModelOutputs, PipelineModel
+from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
+from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -156,8 +152,7 @@ def hidden_states_return_config(
 
 
 class SpeculativeDecodingPipelineBase(
-    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-    GenerateMixin[TextContext, TextGenerationRequest],
+    TextGenerationPipelineInterface[TextContext],
     ABC,
 ):
     """Base class for speculative decoding pipelines with shared logic."""

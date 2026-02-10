@@ -59,6 +59,7 @@ from gpu.primitives.grid_controls import (
 from gpu.sync import syncwarp
 from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor, RuntimeLayout
+from ..structured_kernels.tile_types import lt_to_tt
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
@@ -218,10 +219,10 @@ struct B200MatmulSmem[
     ]
 
     # Re-export tile array types for external use
-    # Re-export tile array types (all TileTensor-based now)
+    # Re-export tile array types
     comptime ATileArray = Self.InputTiles.ATileArray
     comptime BTileArray = Self.InputTiles.BTileArray
-    comptime CTileArray = Self.OutputTiles.CTileArray  # TileTensor-based
+    comptime CTileArray = Self.OutputTiles.CTileArray
 
     # ========== Tile Storage Fields ==========
     var input_tiles: Self.InputTiles
@@ -238,7 +239,7 @@ struct B200MatmulSmem[
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        return self.output_tiles.c_tiles_tt()
+        return self.output_tiles.c_tiles()
 
     # ========== Pipeline Storage (Composed Bundle) ==========
     comptime Pipelines = SmemPipelineBundle[
@@ -457,21 +458,6 @@ struct BlackwellMatmulSM100Kernel[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
         Self.config.k_group_size,
-    ]
-
-    # ========== LayoutTensor Types for Boundary Conversion ==========
-    # Used for TMA/MMA ops - 128B alignment required for shared memory
-    comptime ATileLT = LayoutTensor[
-        Self.a_type,
-        Self.SmemType.a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime BTileLT = LayoutTensor[
-        Self.b_type,
-        Self.SmemType.b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
     ]
 
     # ========== Tile Loader Types ==========
@@ -1055,7 +1041,7 @@ struct BlackwellMatmulSM100Kernel[
         a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
         c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
-        reduction_tensor: LayoutTensor[
+        reduction_tensor_lt: LayoutTensor[
             Self.config.accum_type, reduction_layout, MutAnyOrigin
         ],
         lock_ptr: UnsafePointer[UInt8],
@@ -1072,13 +1058,16 @@ struct BlackwellMatmulSM100Kernel[
             a_tma_op: TMA descriptor for matrix A.
             b_tma_op: TMA descriptor for matrix B.
             c_tma_op: TMA descriptor for matrix C.
-            reduction_tensor: Workspace for partial results from each split.
+            reduction_tensor_lt: Workspace for partial results from each split.
             lock_ptr: Synchronization locks for reduction coordination.
             cluster_dim: Cluster dimensions.
             mnk: Problem dimensions (M, N, K).
             workspace: Workspace buffer for profiling/scheduling.
         """
         Self.validate_constraints()
+
+        # Convert kernel arg to TileTensor
+        var reduction_tensor = lt_to_tt(reduction_tensor_lt)
 
         # Access shared memory via bitcast
         ref smem = external_memory[
@@ -1270,7 +1259,7 @@ struct BlackwellMatmulSM100Kernel[
                                     smem.c_tiles(),
                                     output_stage,
                                     scheduler,
-                                    reduction_tensor,
+                                    reduction_tensor_lt,
                                     current,
                                     (mnk[0], mnk[1]),
                                     ctx.elect_one_warp,
@@ -1377,7 +1366,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     fn run(
         a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
+        c_lt: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
         num_iters: UInt,
     ):
         """Run the fallback matmul kernel.
@@ -1385,10 +1374,15 @@ struct BlackwellMatmulSM100FallbackKernel[
         Args:
             a_tma_op: TMA descriptor for matrix A.
             b_tma_op: TMA descriptor for matrix B.
-            c: Output tensor C (LayoutTensor, not TMA).
+            c_lt: Output tensor C (LayoutTensor, not TMA).
             num_iters: Number of K-dimension iterations.
         """
         Self.validate_constraints()
+
+        # Convert kernel arg to TileTensor
+        var c_tt = lt_to_tt(c_lt)
+        # Reconstruct LayoutTensor for internal operations (uses LT-specific APIs)
+        var c = c_lt
 
         # Setup shared memory for A and B tiles
         var a_smem = rebind[SMemPtr[Scalar[Self.a_type]]](

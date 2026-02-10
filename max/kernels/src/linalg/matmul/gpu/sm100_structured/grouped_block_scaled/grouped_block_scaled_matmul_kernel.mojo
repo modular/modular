@@ -45,6 +45,7 @@ from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
 from gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from sys import inlined_assembly
 from layout import Layout, LayoutTensor
+from ..structured_kernels.tile_types import lt_to_tt
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -952,23 +953,23 @@ struct GroupedBlockScaledMatmulKernel[
         device_tma_sfb: Self.TMATensorTileArraySFB,
         device_tma_c: Self.TMATensorTileArrayC,
         # Per-group pointer arrays (uint64 addresses)
-        group_a_ptrs: LayoutTensor[
+        group_a_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_b_ptrs: LayoutTensor[
+        group_b_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_c_ptrs: LayoutTensor[
+        group_c_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_sfa_ptrs: LayoutTensor[
+        group_sfa_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_sfb_ptrs: LayoutTensor[
+        group_sfb_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
-        problem_sizes: LayoutTensor[
+        problem_sizes_lt: LayoutTensor[
             DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
         ],
         # Number of active groups
@@ -980,6 +981,22 @@ struct GroupedBlockScaledMatmulKernel[
         tensormap updates at group boundaries.
         """
         Self.validate_config()
+
+        # Convert kernel args to TileTensor (available for future internal use)
+        var group_a_ptrs_tt = lt_to_tt(group_a_ptrs_lt)
+        var group_b_ptrs_tt = lt_to_tt(group_b_ptrs_lt)
+        var group_c_ptrs_tt = lt_to_tt(group_c_ptrs_lt)
+        var group_sfa_ptrs_tt = lt_to_tt(group_sfa_ptrs_lt)
+        var group_sfb_ptrs_tt = lt_to_tt(group_sfb_ptrs_lt)
+        var problem_sizes_tt = lt_to_tt(problem_sizes_lt)
+
+        # Use original LayoutTensors for internal methods
+        var group_a_ptrs = group_a_ptrs_lt
+        var group_b_ptrs = group_b_ptrs_lt
+        var group_c_ptrs = group_c_ptrs_lt
+        var group_sfa_ptrs = group_sfa_ptrs_lt
+        var group_sfb_ptrs = group_sfb_ptrs_lt
+        var problem_sizes = problem_sizes_lt
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
@@ -1496,23 +1513,23 @@ struct GroupedBlockScaledMatmulKernel[
         device_tma_sfb: Self.TMATensorTileArraySFB,
         device_tma_c: Self.TMATensorTileArrayC,
         # Per-group pointer arrays (uint64 addresses)
-        group_a_ptrs: LayoutTensor[
+        group_a_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_b_ptrs: LayoutTensor[
+        group_b_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_c_ptrs: LayoutTensor[
+        group_c_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_sfa_ptrs: LayoutTensor[
+        group_sfa_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
-        group_sfb_ptrs: LayoutTensor[
+        group_sfb_ptrs_lt: LayoutTensor[
             DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
         ],
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
-        problem_sizes: LayoutTensor[
+        problem_sizes_lt: LayoutTensor[
             DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
         ],
         # Number of active groups
@@ -1531,6 +1548,22 @@ struct GroupedBlockScaledMatmulKernel[
         - Epilogue warps: Stores results with tensormap updates
         """
         Self.validate_config()
+
+        # Convert kernel args to TileTensor
+        var group_a_ptrs_tt = lt_to_tt(group_a_ptrs_lt)
+        var group_b_ptrs_tt = lt_to_tt(group_b_ptrs_lt)
+        var group_c_ptrs_tt = lt_to_tt(group_c_ptrs_lt)
+        var group_sfa_ptrs_tt = lt_to_tt(group_sfa_ptrs_lt)
+        var group_sfb_ptrs_tt = lt_to_tt(group_sfb_ptrs_lt)
+        var problem_sizes_tt = lt_to_tt(problem_sizes_lt)
+
+        # Use original LayoutTensors for internal methods
+        var group_a_ptrs = group_a_ptrs_lt
+        var group_b_ptrs = group_b_ptrs_lt
+        var group_c_ptrs = group_c_ptrs_lt
+        var group_sfa_ptrs = group_sfa_ptrs_lt
+        var group_sfb_ptrs = group_sfb_ptrs_lt
+        var problem_sizes = problem_sizes_lt
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
