@@ -1539,6 +1539,22 @@ fn maximum(x: StaticTuple[Float32, 4], init: Float32) -> Float32:
 
 
 @always_inline
+fn maximum(x: StaticTuple[Float32, 8]) -> Float32:
+    var a = max_ftz(x[0], x[1], x[2])
+    var b = max_ftz(x[3], x[4], x[5])
+    var c = max_ftz(x[6], x[7])
+    return max_ftz(a, b, c)
+
+
+@always_inline
+fn maximum(x: StaticTuple[Float32, 8], init: Float32) -> Float32:
+    var a = max_ftz(init, x[0], x[1])
+    var b = max_ftz(x[2], x[3], x[4])
+    var c = max_ftz(x[5], x[6], x[7])
+    return max_ftz(a, b, c)
+
+
+@always_inline
 fn sum[
     dtype: DType, BN: Int, //, *, width: Int = 8
 ](x: LocalTensor[dtype, Layout.row_major(BN)]) -> SIMD[dtype, 2]:
@@ -3784,11 +3800,13 @@ struct SM100MHA2Q[
             Self.accum_type, Layout.row_major(Self.config.BN)
         ].stack_allocation()
 
+        comptime max_unroll = 8
+
         @parameter
         @always_inline
         fn load_mask_max_impl[
             *, mask_strategy: MaskStrategy
-        ](kv_row: UInt32) -> StaticTuple[Float32, 4]:
+        ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
             @parameter
             if EnableForcedOrdering:
                 order_s_wait[].wait(order_phase)
@@ -3807,7 +3825,7 @@ struct SM100MHA2Q[
                 s_tmem + UInt32(first_cols)
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum(s0)
+            vrow_max = maximum[width=max_unroll](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
             # i = 0
@@ -3991,9 +4009,13 @@ struct SM100MHA2Q[
 
             var acc: f32x2 = exp2(score_to_logit(rebind[f32x2](vs[0])))
             vs[0] = rebind[vs.element_type](acc)
-            vsi = exp2_emulation(score_to_logit(rebind[f32x2](vs[1])))
+            vsi = exp2(score_to_logit(rebind[f32x2](vs[1])))
             vs[1] = rebind[vs.element_type](vsi)
-            acc = add_ftz(acc, vsi)
+            comptime early_add: Bool = False
+
+            @parameter
+            if early_add:
+                acc = add_ftz(acc, vsi)
             comptime exp2_emulation_freq = 4
 
             @parameter
@@ -4006,24 +4028,30 @@ struct SM100MHA2Q[
             for i in range(2, 8):
 
                 @parameter
-                if i % exp2_emulation_freq == 0:
-                    vsi = exp2_emulation(rebind[f32x2](vs[i]))
-                else:
+                if early_add or i % exp2_emulation_freq != 0:
                     vsi = exp2(rebind[f32x2](vs[i]))
+                else:
+                    vsi = exp2_emulation(rebind[f32x2](vs[i]))
                 vs[i] = rebind[vs.element_type](vsi)
-                acc = add_ftz(acc, vsi)
+
+                @parameter
+                if early_add:
+                    acc = add_ftz(acc, vsi)
 
             @parameter
             for i in range(8, batch_size // 2):
                 diff = score_to_logit(rebind[f32x2](vs[i]))
 
                 @parameter
-                if i % exp2_emulation_freq == 0:
-                    vsi = exp2_emulation(diff)
-                else:
+                if early_add or i % exp2_emulation_freq != 0:
                     vsi = exp2(diff)
+                else:
+                    vsi = exp2_emulation(diff)
                 vs[i] = rebind[vs.element_type](vsi)
-                acc = add_ftz(acc, vsi)
+
+                @parameter
+                if early_add:
+                    acc = add_ftz(acc, vsi)
 
             # at this point, we need 32 fewer fp32 registers but 16 more u32
             @parameter
@@ -4116,20 +4144,34 @@ struct SM100MHA2Q[
                 order_phase ^= 1
             pipeline_c.acquire()
             # now we can sum the remaining elements of `acc`
-            var acc0: f32x2 = rebind[f32x2](vs[batch_size // 2])
-            var acc1: f32x2 = rebind[f32x2](vs[batch_size // 2 + 1])
-            var acc2: f32x2 = add_ftz(
-                rebind[f32x2](vs[batch_size // 2 + 2]),
-                rebind[f32x2](vs[batch_size // 2 + 3]),
-            )
+            comptime add_offset = batch_size // 2 if early_add else 0
+            var acc0: f32x2
+            var acc1: f32x2
+            var acc2: f32x2
+            var acc3: f32x2
 
             @parameter
-            for i in range(batch_size // 2 + 4, vs_len, 4):
-                acc = add_ftz(acc, rebind[f32x2](vs[i]))
-                acc0 = add_ftz(acc0, rebind[f32x2](vs[i + 1]))
-                acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 2]))
-                acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 3]))
-            return add_ftz(add_ftz(acc, acc0), add_ftz(acc1, acc2))
+            if early_add:
+                acc0 = acc
+                acc1 = rebind[f32x2](vs[batch_size // 2])
+                acc2 = rebind[f32x2](vs[batch_size // 2 + 1])
+                acc3 = add_ftz(
+                    rebind[f32x2](vs[batch_size // 2 + 2]),
+                    rebind[f32x2](vs[batch_size // 2 + 3]),
+                )
+            else:
+                acc0 = acc
+                acc1 = rebind[f32x2](vs[1])
+                acc2 = rebind[f32x2](vs[2])
+                acc3 = rebind[f32x2](vs[3])
+
+            @parameter
+            for i in range(add_offset + 4, vs_len, 4):
+                acc0 = add_ftz(acc0, rebind[f32x2](vs[i]))
+                acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 1]))
+                acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 2]))
+                acc3 = add_ftz(acc3, rebind[f32x2](vs[i + 3]))
+            return add_ftz(add_ftz(acc0, acc1), add_ftz(acc2, acc3))
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
