@@ -73,7 +73,7 @@ modular_py_binary(
     imports = ["."],
     deps = [
         "//max/tests/integration/test_common:distance_metrics",
-        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:model_output",
         "//max/tests/integration/test_common:numpy_encoder",
         "//max/tests/integration/test_common:verify_utils",
         requirement("click"),
