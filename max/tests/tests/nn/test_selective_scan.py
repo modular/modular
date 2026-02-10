@@ -26,8 +26,8 @@ from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.conv import causal_conv1d_fn
-from max.nn.selective_scan import (
+from max.pipelines.architectures.mamba.causal_conv1d import causal_conv1d_fn
+from max.pipelines.architectures.mamba.selective_scan import (
     mamba_inner_fn,
     mamba_inner_fn_simplified,
     mamba_inner_ref,
@@ -37,9 +37,9 @@ from max.nn.selective_scan import (
 
 
 def _get_mamba_kernel_api_path() -> Path | None:
-    """Get path to MambaKernelAPI.mojopkg for custom extensions.
+    """Get path to state_space.mojopkg for custom extensions.
 
-    Looks for MambaKernelAPI.mojopkg in MODULAR_MOJO_MAX_IMPORT_PATH
+    Looks for state_space.mojopkg in MODULAR_MOJO_MAX_IMPORT_PATH
     environment variable set by Bazel when mojo_deps are specified.
     """
     import_path_env = os.environ.get("MODULAR_MOJO_MAX_IMPORT_PATH", "")
@@ -62,14 +62,14 @@ def _get_mamba_kernel_api_path() -> Path | None:
 
         # If it's already a .mojopkg file
         if entry_path.suffix == ".mojopkg":
-            if "MambaKernelAPI" in entry_path.name:
+            if "state_space" in entry_path.name:
                 return entry_path.resolve()
             continue
 
-        # If it's a directory, search for MambaKernelAPI.mojopkg
+        # If it's a directory, search for state_space.mojopkg
         if entry_path.is_dir():
             for mojopkg in entry_path.rglob("*.mojopkg"):
-                if "MambaKernelAPI" in mojopkg.name:
+                if "state_space" in mojopkg.name:
                     return mojopkg.resolve()
 
     return None
@@ -97,7 +97,7 @@ def device() -> DeviceRef:
 
 @pytest.fixture
 def mamba_kernel_path() -> list[Path]:
-    """Get path to MambaKernelAPI for custom extensions."""
+    """Get path to state_space kernels for custom extensions."""
     path = _get_mamba_kernel_api_path()
     return [path] if path else []
 

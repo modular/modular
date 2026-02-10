@@ -7,10 +7,9 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-# MambaKernelAPI contains selective_scan kernels that need to be available for tests
-# MambaKernelAPI is separate from MOGGKernelAPI to avoid conflicts with default kernels
+# state_space contains selective_scan kernels that need to be available for tests
 MAMBA_MOJOPKGS = [
-    "//max/kernels/src/Mogg/MambaKernelAPI:MambaKernelAPI",
+    "//max/kernels/src/state_space:state_space",
 ]
 
 modular_py_test(

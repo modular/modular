@@ -67,9 +67,8 @@ def _get_kernel_library_paths() -> list[Path]:
     This is required for Mamba models because they use custom kernels
     (causal_conv1d, selective_scan_fwd) that must be explicitly loaded.
 
-    The function looks for MambaKernelAPI which contains only the mamba-specific
-    kernels. This avoids conflicts with default kernels like rms_norm that are
-    already registered by the runtime.
+    The function looks for the state_space package which contains the
+    mamba-specific kernels.
 
     Returns:
         A list of Path objects pointing to ``.mojopkg`` kernel libraries.
@@ -102,38 +101,31 @@ def _get_kernel_library_paths() -> list[Path]:
         if not entry_path.exists():
             continue
 
-        # If it's already a .mojopkg file, check if it's MambaKernelAPI
+        # If it's already a .mojopkg file, check if it's state_space
         if entry_path.suffix == ".mojopkg":
-            if "MambaKernelAPI" in entry_path.name:
+            if "state_space" in entry_path.name:
                 resolved_path = entry_path.resolve()
                 logger.info(f"Loading kernel library: {resolved_path}")
                 paths.append(resolved_path)
             continue
 
-        # If it's a directory, search recursively for MambaKernelAPI.mojopkg files
+        # If it's a directory, search recursively for state_space.mojopkg files
         if entry_path.is_dir():
-            # Search recursively for MambaKernelAPI.mojopkg files
-            found = False
             for mojopkg in entry_path.rglob("*.mojopkg"):
-                if "MambaKernelAPI" in mojopkg.name and (
+                if "state_space" in mojopkg.name and (
                     mojopkg.is_file() or mojopkg.is_symlink()
                 ):
                     resolved_path = mojopkg.resolve()
                     logger.info(f"Loading kernel library: {resolved_path}")
                     paths.append(resolved_path)
-                    found = True
-                    # Continue searching in case there are multiple (shouldn't happen, but be safe)
-
-            if not found:
-                pass
 
     if not paths:
         logger.warning(
-            f"No MambaKernelAPI.mojopkg found in MODULAR_MOJO_MAX_IMPORT_PATH: {import_path_env}"
+            f"No state_space.mojopkg found in MODULAR_MOJO_MAX_IMPORT_PATH: {import_path_env}"
         )
     else:
         logger.info(
-            f"Found {len(paths)} MambaKernelAPI.mojopkg file(s): {[str(p) for p in paths]}"
+            f"Found {len(paths)} state_space.mojopkg file(s): {[str(p) for p in paths]}"
         )
     return paths
 

@@ -12,10 +12,10 @@ package(default_visibility = [
     "//open-source/max/max/tests:__subpackages__",
 ])
 
-# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in a separate
-# package to avoid conflicts with default kernels.
+# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in the
+# state_space package.
 MAMBA_MOJOPKGS = [
-    "//max/kernels/src/Mogg/MambaKernelAPI:MambaKernelAPI",
+    "//max/kernels/src/state_space:state_space",
 ]
 
 modular_py_test(

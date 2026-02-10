@@ -3,10 +3,10 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement"
 
 package(default_visibility = ["//max:consumers"])
 
-# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in a separate
-# package to avoid conflicts with default kernels.
+# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in the
+# state_space package.
 MAMBA_MOJOPKGS = [
-    "//max/kernels/src/Mogg/MambaKernelAPI:MambaKernelAPI",
+    "//max/kernels/src/state_space:state_space",
 ]
 
 modular_py_library(
