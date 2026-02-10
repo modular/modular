@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -33,9 +33,15 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.parallel import ParallelArrayOps
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -194,7 +200,7 @@ class Qwen2_5VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
-        return Qwen2_5VLConfig.get_kv_params(
+        return Qwen2_5VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -265,15 +271,15 @@ class Qwen2_5VLModel(
                 )
 
         # Generate Qwen2.5VL config from HuggingFace config
-        qwen2_5vl_config = Qwen2_5VLConfig.generate(
+        qwen2_5vl_config = Qwen2_5VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+        )
+        qwen2_5vl_config.finalize(
+            huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             llm_state_dict=llm_state_dict,
             vision_state_dict=vision_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         self.model_config = qwen2_5vl_config

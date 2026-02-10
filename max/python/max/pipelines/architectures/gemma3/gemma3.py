@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,12 +20,14 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
-from max.nn import MLP, ColumnParallelLinear, LayerList, Module, ReturnLogits
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.rotary_embedding import (
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
+from max.nn.legacy.transformer import ReturnLogits
 
 from .layers.attention import Gemma3Attention
 from .layers.rms_norm import Gemma3RMSNorm

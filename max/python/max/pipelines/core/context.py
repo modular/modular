@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,6 +29,7 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationContext,
     RequestID,
     SamplingParams,
     TextGenerationContext,
@@ -36,8 +37,11 @@ from max.interfaces import (
     TokenBuffer,
     VLMTextGenerationContext,
 )
+from max.interfaces.generation import GenerationOutput
+from max.interfaces.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
+FUTURE_TOKEN = -999
 
 
 @dataclass(kw_only=True)
@@ -93,7 +97,6 @@ class TextContext:
 
         This method is called each time the model is deserialized from msgspec.
         """
-
         if self.min_tokens + self.tokens.prompt_length > self.max_length:
             raise ValueError(
                 f"min_tokens ({self.min_tokens}) + prompt_len ({self.tokens.prompt_length}) must be less than or equal to max_length ({self.max_length})"
@@ -114,6 +117,7 @@ class TextContext:
 
     @property
     def is_done(self) -> bool:
+        """Whether text generation has finished."""
         return self.status.is_done
 
     @property
@@ -122,21 +126,22 @@ class TextContext:
         return self.sampling_params.min_new_tokens
 
     def apply_processing_offset(self, offset: int) -> None:
+        """Applies a processing offset to the token buffer."""
         self.tokens.apply_processing_offset(offset)
 
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
-        """Returns a set of indices for the tokens in the output that should be masked.
+        """Returns per-step masks for logits that should be masked (e.g. EOS during ``min_tokens``).
 
-        This is primarily used for the min_tokens setting, where we mask
-        `eos` tokens in the logits to avoid generating them before we reach
-        min_tokens.
+        This is primarily used for the ``min_tokens`` setting, where we mask
+        EOS tokens in the logits to avoid generating them before we reach
+        ``min_tokens``.
 
         Returns:
-            A set of indices for the tokens in the output that should be masked.
+            A list of arrays, one per step; each array has shape ``(N, 2)`` with
+            (batch index, token ID) pairs for logits to mask.
         """
-
         ret_list: list[npt.NDArray[np.int32]] = []
         start_range = self.tokens.prompt_length
         end_range = self.tokens.prompt_length + self.min_tokens
@@ -158,10 +163,12 @@ class TextContext:
         return ret_list
 
     def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+        """Sets the grammar matcher for constrained decoding."""
         self._matcher = matcher
 
     @property
     def matcher(self) -> llguidance.LLMatcher | None:
+        """The optional grammar matcher for constrained decoding."""
         return self._matcher
 
     def to_generation_output(self) -> TextGenerationOutput:
@@ -174,7 +181,6 @@ class TextContext:
             TextGenerationOutput: The completion tokens and their associated
             log probabilities, if available.
         """
-
         # Return early, if we have no outstanding generated tokens
         if not self.tokens.has_outstanding_generated_tokens:
             return TextGenerationOutput(
@@ -184,12 +190,24 @@ class TextContext:
                 final_status=self.status,
             )
 
-        # Retrieve Log Probabilities
-        log_probabilities: list[LogProbabilities] | None = None
         element_ids = range(
             self.tokens._completion_range.start,
             self.tokens._completion_range.end,
         )
+        # Consume Generated Tokens
+        if len(element_ids) > 0:
+            generated_tokens = [
+                int(x) for x in self.tokens.consume_recently_generated_tokens()
+            ]
+            if FUTURE_TOKEN in generated_tokens:
+                raise ValueError(
+                    "Attempted to create generation output while future token is not yet realized."
+                )
+        else:
+            generated_tokens = []
+
+        # Retrieve Log Probabilities
+        log_probabilities: list[LogProbabilities] | None = None
         for token_idx in element_ids:
             if token_idx in self._log_probabilities_data:
                 if log_probabilities is None:
@@ -199,14 +217,6 @@ class TextContext:
                     self._log_probabilities_data.pop(token_idx)
                 )
 
-        # Consume Generated Tokens
-        if len(element_ids) > 0:
-            generated_tokens: list[int] = [
-                int(x) for x in self.tokens.consume_recently_generated_tokens()
-            ]
-        else:
-            generated_ids: list[int] = []
-
         return TextGenerationOutput(
             request_id=self.request_id,
             tokens=generated_tokens,
@@ -215,8 +225,7 @@ class TextContext:
         )
 
     def _is_eos(self, new_token: int) -> bool:
-        """
-        Checks for end-of-sequence conditions.
+        """Checks for end-of-sequence conditions.
 
         This function performs two checks:
         1. Whether the newly generated token is in the set of `eos_token_ids`.
@@ -246,7 +255,6 @@ class TextContext:
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-
         # Update the token buffer
         if self.tokens.actively_chunked:
             self.tokens.advance_chunk()
@@ -257,6 +265,9 @@ class TextContext:
             self._log_probabilities_data[self.tokens.current_position] = (
                 log_probabilities
             )
+
+        if self.tokens.all[-1] == FUTURE_TOKEN:
+            raise ValueError("Cannot append a token after a future token.")
 
         self.tokens.advance_with_token(new_token)
 
@@ -271,9 +282,52 @@ class TextContext:
 
         self._is_initial_prompt = False
 
+    def update_with_future_token(self) -> None:
+        """Append a placeholder future token to the generated tokens.
+
+        This is primarily used for overlap scheduling.
+        """
+        if self.matcher:
+            raise ValueError(
+                "Cannot use future tokens when a matcher is present."
+            )
+
+        if self.tokens.all[-1] == FUTURE_TOKEN:
+            raise ValueError("Cannot have multiple future tokens.")
+
+        self.update(new_token=FUTURE_TOKEN)
+
+    def realize_future_token(
+        self, new_token: int, log_probabilities: LogProbabilities | None = None
+    ) -> None:
+        """Overwrite the placeholder future token with the actual token.
+
+        This is primarily used for overlap scheduling.
+        """
+        if self.tokens.generated_length == 0:
+            raise ValueError(
+                "Cannot realize a future token when there are no generated tokens."
+            )
+
+        if self.tokens.all[-1] != FUTURE_TOKEN:
+            raise ValueError(
+                "Attempted to realize a non-future token. Found token: ",
+                self.tokens.all[-1],
+            )
+
+        # Overwrite the log probabilities data
+        if log_probabilities:
+            self._log_probabilities_data[self.tokens.current_position - 1] = (
+                log_probabilities
+            )
+
+        self.tokens.overwrite_last_token(new_token)
+
+        if self._is_eos(new_token):
+            self.status = GenerationStatus.END_OF_SEQUENCE
+
     def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
-
         # Update the token buffer
         if self.tokens.actively_chunked:
             self.tokens.advance_chunk()
@@ -303,8 +357,10 @@ class TextContext:
         self,
         max_seq_len: int,
     ) -> int:
-        """Compute the max number of steps we can execute for a given context
-        without exceeding the max_seq_len."""
+        """Computes the maximum number of steps without exceeding ``max_seq_len``.
+
+        Takes the current context length into account.
+        """
         return max_seq_len - (len(self.tokens) - self.tokens.active_length)
 
     @property
@@ -438,6 +494,7 @@ class TextAndVisionContext(TextContext):
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
+        """Updates the context with a new token and validates vision state."""
         super().update(new_token=new_token, log_probabilities=log_probabilities)
         self._validate_state()
 
@@ -507,20 +564,23 @@ class TTSContext(TextContext):
 
     @property
     def is_done(self) -> bool:
+        """Whether audio generation has finished."""
         return self.audio_generation_status.is_done
 
     @property
     def speech_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """The slice of generated speech tokens valid so far."""
         return self._speech_tokens[: self._speech_token_end_idx]
 
     @property
     def block_counter(self) -> int:
+        """The number of speech token blocks generated."""
         return self._block_counter
 
     def update_speech_tokens(
         self, new_tokens: npt.NDArray[np.integer[Any]]
     ) -> None:
-        """Updates the next_tokens"""
+        """Updates the buffer with new speech tokens."""
         self._upsize_speech_tokens(len(new_tokens))
         self._speech_tokens[
             self._speech_token_end_idx : self._speech_token_end_idx
@@ -569,6 +629,119 @@ class TTSContext(TextContext):
         return chunk, buffer or 0
 
 
+@dataclass(kw_only=True)
+class PixelContext:
+    """A model-ready context for image/video generation requests.
+
+    Per the design doc, this class contains only numeric data that the model
+    will execute against. User-facing strings (prompt, negative_prompt) are
+    consumed during tokenization and do not appear here.
+
+    All preprocessing is performed by PixelGenerationTokenizer.new_context():
+    - Prompt tokenization -> tokens field
+    - Negative prompt tokenization -> negative_tokens field
+    - Timestep schedule computation -> timesteps field
+    - Initial noise generation -> latents field
+
+    Configuration:
+        tokens: Tokenized prompt IDs (TokenBuffer).
+        request_id: A unique identifier for this generation request.
+        negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
+        timesteps: Precomputed timestep schedule for denoising.
+        latents: Precomputed initial noise (latents).
+        height: Height of the generated image/video in pixels.
+        width: Width of the generated image/video in pixels.
+        num_inference_steps: Number of denoising steps.
+        guidance_scale: Guidance scale for classifier-free guidance.
+        num_images_per_prompt: Number of images/videos to generate per prompt.
+        model_name: Name of the model being used.
+    """
+
+    # Tokenized prompts
+    tokens: TokenBuffer
+    """Primary encoder tokens."""
+
+    # Request identification
+    request_id: RequestID = field(default_factory=RequestID)
+
+    model_name: str = field(default="")
+
+    mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for text encoder's attention."""
+
+    tokens_2: TokenBuffer | None = field(default=None)
+    """Secondary encoder tokens. None for single-encoder models."""
+
+    negative_tokens: TokenBuffer | None = field(default=None)
+    """Negative tokens for primary encoder."""
+
+    negative_tokens_2: TokenBuffer | None = field(default=None)
+    """Negative tokens for secondary encoder. None for single-encoder models."""
+
+    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
+    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
+
+    # Precomputed tensors
+    timesteps: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed timesteps schedule for denoising."""
+
+    sigmas: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed sigmas schedule for denoising."""
+
+    latents: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed initial noise (latents) for generation."""
+
+    latent_image_ids: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed latent image IDs for generation."""
+
+    height: int = field(default=1024)
+    width: int = field(default=1024)
+    num_inference_steps: int = field(default=50)
+    guidance_scale: float = field(default=3.5)
+    guidance: npt.NDArray[np.float32] | None = None
+    true_cfg_scale: float = field(default=1.0)
+    num_warmup_steps: int = field(default=0)
+    num_images_per_prompt: int = field(default=1)
+
+    status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self.status.is_done
+
+    def compute_num_available_steps(self, max_seq_len: int) -> int:
+        """Compute number of available steps for scheduler compatibility.
+
+        For image and video generation, this returns the number of inference steps.
+        """
+        return self.num_inference_steps
+
+    def reset(self) -> None:
+        """Resets the context's state."""
+        self.status = GenerationStatus.ACTIVE
+
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        self.latents = latents
+
+    def to_generation_output(self) -> GenerationOutput:
+        """Convert this context to a GenerationOutput object."""
+        return GenerationOutput(
+            request_id=self.request_id,
+            final_status=self.status,
+            output=[OutputImageContent.from_numpy(self.latents, format="png")],
+        )
+
+
 if TYPE_CHECKING:
     # Verify that concrete classes implement their respective protocols
     def _verify_text_context_protocol() -> TextGenerationContext:
@@ -589,19 +762,27 @@ if TYPE_CHECKING:
             images=[],
         )
 
+    def _verify_pixel_context_protocol() -> PixelGenerationContext:
+        return PixelContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+        )
+
 
 @contextmanager
 def reserve_token_space_for_batch(
     batch: list[TextContext],
     num_tokens: int,
 ) -> Iterator[None]:
-    """
-    Temporarily reserves token space for each context in a batch by incrementing
-    the `_active_idx` and `_end_idx` attributes by `num_tokens` for the duration
-    of the context. These indices are restored to their original values upon exit.
+    """Reserves token space for each context in a batch for the duration of the context.
+
+    Increments each context's token buffer processing range end and current length
+    by ``num_tokens``; restores them on exit.
+
     Args:
         batch: List of TextContext objects to reserve space for.
         num_tokens: Number of tokens to reserve for each context.
+
     Yields:
         None
     """

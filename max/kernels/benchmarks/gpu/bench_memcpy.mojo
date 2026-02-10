@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -223,7 +223,7 @@ fn bench_p2p(
     fn verify_chunk(start: Int, end: Int):
         for i in range(start, end):
             try:
-                assert_almost_equal(host_ptr[i], i)
+                assert_almost_equal(host_ptr[i], Float32(i))
             except e:
                 print("Verification failed at index", i)
                 print("Expected:", i, "Got:", host_ptr[i])

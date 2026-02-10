@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import align_up
+from math import align_up, ceildiv
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 
 from benchmark import (
@@ -87,8 +87,8 @@ fn bench_broadcast[
     root: Int,
     max_num_blocks: Optional[Int],
 ) raises:
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
@@ -108,7 +108,10 @@ fn bench_broadcast[
     # Create output device buffers for all GPUs
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
 
-    # Create signal buffers for synchronization
+    # Create signal buffers for synchronization AND payload space
+    # Two-stage broadcast needs payload space for each GPU's chunk
+    var chunk_bytes = ceildiv(num_bytes, ngpus)
+    var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         fill={}
@@ -134,10 +137,10 @@ fn bench_broadcast[
                 out_multicast_buf.unicast_buffer_for(list_of_ctx[gpu_idx])
             )
 
-            # Create and initialize signal buffers
+            # Create and initialize signal buffers (with payload space for 2-stage)
             signal_buffers.append(
                 list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                    size_of[Signal]()
+                    signal_buf_size
                 )
             )
             list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
@@ -155,10 +158,10 @@ fn bench_broadcast[
                 list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
             )
 
-            # Create and initialize signal buffers
+            # Create and initialize signal buffers (with payload space for 2-stage)
             signal_buffers.append(
                 list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                    size_of[Signal]()
+                    signal_buf_size
                 )
             )
             list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
@@ -255,7 +258,7 @@ fn bench_broadcast[
     b.dump_report()
 
     var max_time = b.info_vec[0].result.mean(unit="ms")
-    var gbps = num_bytes / (max_time * 1000 * 1000)
+    var gbps = Float64(num_bytes) / (max_time * 1000 * 1000)
     # For broadcast, busbw = algbw (factor of 1).
     # All data must leave the root, which is the bottleneck.
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
@@ -274,11 +277,13 @@ fn bench_broadcast[
         "GB/s |",
     )
 
-    # Zero output buffers and run one more broadcast for verification.
+    # Zero output and signal buffers, then run one more broadcast for verification.
     # This ensures we're verifying fresh results, not stale data from
     # a previous iteration that might mask a broken kernel.
+    # Signal buffers must also be zeroed since 2-stage uses the payload as scratch.
     @parameter
     for i in range(ngpus):
+        list_of_ctx[i].enqueue_memset(signal_buffers[i], 0)
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
         list_of_ctx[i].synchronize()
 

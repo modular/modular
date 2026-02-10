@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -180,7 +180,7 @@ fn multicast_tma_wgmma_kernel[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     mbar[0],
-                    (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
+                    (Int(i) * BK, Int(block_idx.y) * BM),
                 )
 
             @parameter
@@ -231,11 +231,11 @@ fn multicast_tma_wgmma_kernel[
                     b_smem_tile,
                     mbar[0],
                     (
-                        UInt(i) * UInt(BK),
-                        block_idx.x * UInt(BN),
+                        Int(i) * BK,
+                        Int(block_idx.x) * BN,
                     ) if transpose_b else (
-                        block_idx.x * UInt(BN),
-                        UInt(i) * UInt(BK),
+                        Int(block_idx.x) * BN,
+                        Int(i) * BK,
                     ),
                 )
 
@@ -300,18 +300,18 @@ def test_multicast_tma_wgmma[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    __comptime_assert (
+    comptime assert (
         transpose_b
     ), "multicasting is only supported for K-Major transposed B"
 
-    __comptime_assert (
+    comptime assert (
         not partitioned_multicast
         or a_swizzle.bytes() // size_of[a_type]() == BK
     ), (
         "Currently partitioned multi-casting is only supported when BK =="
         " (a_swizzle.bytes // size_of[a_type]"
     )
-    __comptime_assert (
+    comptime assert (
         not partitioned_multicast
         or b_swizzle.bytes() // size_of[b_type]() == BK
     ), (

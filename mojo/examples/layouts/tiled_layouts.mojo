@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn use_blocked_product():
     var tile = Layout.col_major(3, 2)
     # Define a 2x5 tiler
     var tiler = Layout.col_major(2, 5)
-    var blocked = blocked_product(tile, tiler)
+    var blocked = blocked_product(tile.copy(), tiler.copy())
 
     print("Tile:")
     print_layout(tile)

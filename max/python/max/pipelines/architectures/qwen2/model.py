@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ from __future__ import annotations
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 

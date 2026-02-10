@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -83,7 +83,7 @@ fn env_get_bool[name: StaticString]() -> Bool:
     """
     comptime val = env_get_string[name]().lower()
 
-    __comptime_assert _is_bool_like[val](), String(
+    comptime assert _is_bool_like[val](), String(
         "the boolean environment value of `",
         name,
         "` with value `",

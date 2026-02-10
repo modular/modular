@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,9 +16,15 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from builtin.constrained import _constrained_conforms_to
+from format._utils import (
+    write_sequence_to,
+    TypeNames,
+    FormatStruct,
+    constrained_conforms_to_writable,
+)
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import Variadic
+from reflection.type_info import _unqualified_type_name
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -28,7 +34,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
+struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
@@ -177,7 +183,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] Self.element_types[idx]:
+    fn __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -276,7 +282,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[
+            comptime assert _type_is_eq[
                 self_type, other_type
             ](), "Tuple elements must be of the same type to compare."
             if self[i] != rebind[self_type](other[i]):
@@ -303,6 +309,72 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
 
         return not self == other
 
+    @no_inline
+    fn _write_tuple_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+        """Write this tuple's elements to a writer.
+
+        Parameters:
+            is_repr: Whether to use repr formatting for elements.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        constrained_conforms_to_writable[*Self.element_types, Parent=Self]()
+
+        @parameter
+        fn elements[i: Int](mut writer: Some[Writer]):
+            @parameter
+            if is_repr:
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
+            else:
+                trait_downcast[Writable](self[i]).write_to(writer)
+
+        write_sequence_to[
+            size = Self.__len__(),
+            ElementFn=elements,
+        ](writer, open="", close="")
+
+        @parameter
+        if Self.__len__() == 1:
+            writer.write_string(",")
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this tuple's text representation to a writer.
+
+        Elements are formatted using their `write_to()` representation.
+        Single-element tuples include a trailing comma: `(1,)`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string("(")
+        self._write_tuple_to[is_repr=False](writer)
+        writer.write_string(")")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this tuple's debug representation to a writer.
+
+        Outputs the type name and parameters followed by elements formatted
+        using their `write_repr_to()` representation. For example,
+        `Tuple[Int, String](Int(0), 'hello')`.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            self._write_tuple_to[is_repr=True](w)
+
+        FormatStruct(writer, "Tuple").params(
+            TypeNames[*Self.element_types]()
+        ).fields[
+            FieldsFn=fields,
+        ]()
+
     @always_inline
     fn _compare[
         self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
@@ -321,7 +393,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[self_type, other_type](), String(
+            comptime assert _type_is_eq[self_type, other_type](), String(
                 "Mismatch between tuple elements at index ",
                 i,
                 " must be of the same type to compare.",

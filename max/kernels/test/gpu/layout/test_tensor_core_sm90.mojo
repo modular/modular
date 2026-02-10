@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ fn arange(tensor: LayoutTensor[mut=True, ...]):
 
         @parameter
         for j in range(tensor.shape[1]()):
-            tensor[i, j] = i + j
+            tensor[i, j] = Scalar[tensor.dtype](i + j)
 
 
 fn load_and_mma_16x8x32[
@@ -40,7 +40,7 @@ fn load_and_mma_16x8x32[
     mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
     mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         in_type == DType.float8_e4m3fn or in_type == DType.float8_e5m2
     ), "This kernel only supports E4M3 and E5M2 combinations"
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,6 +13,7 @@
 
 from collections import Deque
 
+from test_utils import check_write_to
 from testing import assert_equal, assert_false, assert_raises, assert_true
 from testing import TestSuite
 
@@ -1097,7 +1098,7 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()
@@ -1114,13 +1115,16 @@ def test_deque_iter_bounds():
 fn test_str_and_repr() raises:
     q = Deque(1, 2, 3)
 
-    assert_equal(q.__str__(), "Deque(1, 2, 3)")
-    assert_equal(q.__repr__(), "Deque(1, 2, 3)")
+    assert_equal(q.__str__(), "[1, 2, 3]")
+    assert_equal(q.__repr__(), "Deque[Int]([Int(1), Int(2), Int(3)])")
 
-    s = Deque[StaticString]("a", "b", "c")
+    s = Deque[String]("a", "b", "c")
 
-    assert_equal(s.__str__(), "Deque('a', 'b', 'c')")
-    assert_equal(s.__repr__(), "Deque('a', 'b', 'c')")
+    assert_equal(s.__str__(), "[a, b, c]")
+    assert_equal(
+        s.__repr__(),
+        "Deque[String](['a', 'b', 'c'])",
+    )
 
 
 def test_deque_literal():
@@ -1140,31 +1144,34 @@ def test_deque_literal():
 
 
 def test_repr_wrap():
-    var s = Deque[StaticString]("a", "b", "c")
-    assert_equal(repr(s), "Deque('a', 'b', 'c')")
+    var s = Deque[String]("a", "b", "c")
+    assert_equal(
+        repr(s),
+        "Deque[String](['a', 'b', 'c'])",
+    )
 
 
 def test_write_to():
     """Test Writable trait implementation."""
-    var deque = Deque[Int](10, 20, 30)
-    var output = String()
-    deque.write_to(output)
+    check_write_to(
+        Deque[Int](10, 20, 30), expected="[10, 20, 30]", is_repr=False
+    )
+    check_write_to(
+        Deque[String]("a", "b", "c"), expected="[a, b, c]", is_repr=False
+    )
+    check_write_to(Deque[Int](), expected="[]", is_repr=False)
+    check_write_to(Deque[Int](42), expected="[42]", is_repr=False)
 
-    assert_equal(output, "Deque(10, 20, 30)")
 
-    # Test with different types
-    var string_deque = Deque[String]("hello", "world")
-    var string_output = String()
-    string_deque.write_to(string_output)
-
-    assert_equal(string_output, "Deque('hello', 'world')")
-
-    # Test empty deque
-    var empty_deque = Deque[Int]()
-    var empty_output = String()
-    empty_deque.write_to(empty_output)
-
-    assert_equal(empty_output, "Deque()")
+def test_write_repr_to():
+    """Test write_repr_to implementation."""
+    check_write_to(
+        Deque[Int](1, 2, 3),
+        expected="Deque[Int]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
+    check_write_to(Deque[Int](1), expected="Deque[Int]([Int(1)])", is_repr=True)
+    check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
 
 
 # ===-------------------------------------------------------------------===#

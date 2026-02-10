@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,10 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from max.serve.kvcache_agent import DispatcherClientV2, DispatcherServerV2
-from max.serve.queue.zmq_queue import ClientIdentity, generate_zmq_ipc_path
+from max.serve.worker_interface.zmq_queue import (
+    ClientIdentity,
+    generate_zmq_ipc_path,
+)
 
 T = TypeVar("T")
 

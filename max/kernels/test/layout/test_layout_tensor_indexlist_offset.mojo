@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,7 +39,7 @@ fn test_ptr_at_offset_static_2d() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -62,7 +62,7 @@ fn test_ptr_at_offset_static_3d() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -81,7 +81,7 @@ fn test_ptr_at_offset_static_4d() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -100,7 +100,7 @@ fn test_ptr_at_offset_col_major() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -130,7 +130,7 @@ fn test_ptr_at_offset_with_unknown_stride() raises:
     comptime total_elems = 4 * d1 * d2  # 4 * 8 * 16 = 512
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create tensor with runtime stride[0] = 128
     var runtime_stride_0 = d1 * d2  # = 128
@@ -146,7 +146,7 @@ fn test_ptr_at_offset_with_unknown_stride() raises:
     # stride[0]=128 from runtime, stride[1]=16 and stride[2]=1 from compile-time
     var ptr = tensor.ptr_at_offset(Index(2, 3, 5))
     var expected_offset = 2 * runtime_stride_0 + 3 * d2 + 5  # = 309
-    assert_equal(ptr[], expected_offset)
+    assert_equal(ptr[], Int32(expected_offset))
 
 
 fn test_ptr_at_offset_view_tensor() raises:
@@ -163,7 +163,7 @@ fn test_ptr_at_offset_view_tensor() raises:
     comptime total_elems = 24
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create view with runtime stride[0] = 8 (different from shape[1] = 4)
     var runtime_stride_0 = 8
@@ -180,7 +180,7 @@ fn test_ptr_at_offset_view_tensor() raises:
     # we'd read from offset 6 instead of 10
     var ptr = child.ptr_at_offset(Index(1, 2))
     var expected_offset = 1 * runtime_stride_0 + 2  # = 10
-    assert_equal(ptr[], expected_offset)
+    assert_equal(ptr[], Int32(expected_offset))
 
 
 def main():

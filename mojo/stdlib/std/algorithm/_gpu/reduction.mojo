@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,9 +45,9 @@ from sys.info import simd_width_of
 @always_inline
 fn block_reduce[
     BLOCK_SIZE: Int,
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     simd_width: Int,
 ](val: SIMD[dtype, simd_width], init: Scalar[dtype]) -> Scalar[dtype]:
@@ -58,7 +58,7 @@ fn block_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_fn(lhs, rhs)
@@ -79,16 +79,16 @@ fn block_reduce[
 fn block_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
-    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int] (
+    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     simd_width: Int,
 ](
     val: StaticTuple[SIMD[dtype, simd_width], num_reductions],
     init: StaticTuple[Scalar[dtype], num_reductions],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
-    __comptime_assert (
+    comptime assert (
         BLOCK_SIZE % WARP_SIZE == 0
     ), "block size must be a multiple of the warp size"
 
@@ -165,12 +165,12 @@ fn block_reduce[
 @always_inline
 fn row_reduce[
     BLOCK_SIZE: Int,
-    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    reduce_fn: fn[dtype: DType, width: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -188,7 +188,7 @@ fn row_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_fn(lhs, rhs)
@@ -211,12 +211,12 @@ fn row_reduce[
 fn row_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
-    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -241,9 +241,7 @@ fn row_reduce[
 
     var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row = UInt(
-            (tid + UInt(offset_in_row)) * UInt(simd_width)
-        )
+        var idx_in_padded_row = (tid + UInt(offset_in_row)) * UInt(simd_width)
 
         if idx_in_padded_row >= UInt(rounded_row_size):
             break
@@ -278,22 +276,22 @@ fn row_reduce[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn reduce_kernel[
     rank: Int,
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
@@ -343,22 +341,22 @@ fn reduce_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn small_reduce_kernel[
     rank: Int,
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
@@ -451,22 +449,22 @@ fn small_reduce_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn saturated_reduce_kernel[
     rank: Int,
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
@@ -536,15 +534,15 @@ fn saturated_reduce_kernel[
 
 fn reduce_launch[
     num_reductions: Int,
-    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     rank: Int,
     dtype: DType,
 ](

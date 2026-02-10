@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -62,8 +62,29 @@ def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
 
 def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """
-    Reduces a symbolic tensor using a min operation.
+    """Reduces a symbolic tensor using a min operation.
+
+    Computes the minimum value along a specified axis. This operation is useful
+    for finding the smallest values in data, implementing certain loss functions,
+    or analyzing numerical ranges in tensors.
+
+    .. code-block:: python
+
+        import max.functional as F
+        from max.tensor import Tensor
+
+        # Create a 2x4 matrix
+        x = Tensor.constant([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])
+
+        # Find minimum along last axis (within each row)
+        row_min = F.min(x, axis=-1)
+        print(f"Min per row: {row_min}")
+        # Output: Min per row: [[0.8], [1.9]]
+
+        # Find minimum along first axis (within each column)
+        col_min = F.min(x, axis=0)
+        print(f"Min per column: {col_min}")
+        # Output: Min per column: [[1.2, 1.9, 2.1, 0.8]]
 
     Args:
         x: The input tensor for the operation.

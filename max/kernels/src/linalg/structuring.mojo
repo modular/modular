@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from sys import align_of, simd_width_of, size_of
 
 from gpu.intrinsics import AMDBufferResource
@@ -70,7 +70,7 @@ struct ScatterGatherAmd[
             mut=True, address_space = AddressSpace.LOCAL, ...
         ],
         src_gmem_tile: LayoutTensor,
-        offset: OptionalReg[UInt] = None,
+        offset: Optional[UInt] = None,
     ):
         """Copy DRAM to registers.
 
@@ -155,7 +155,7 @@ struct IteratorScatterGatherAmd[
 
 # Shared Memory and Register tiles type declarations, shared by TileOps and Tile Buffer objects
 
-comptime SMemTileType[
+comptime SMemTile[
     _dtype: DType,
     layout: Layout,
     /,
@@ -178,7 +178,7 @@ comptime SMemTileType[
 ]
 """Type alias for shared memory tile tensors."""
 
-comptime RegTileType[
+comptime RegTile[
     _dtype: DType,
     layout: Layout,
     /,
@@ -206,7 +206,7 @@ comptime SMemBarrier = UnsafePointer[
 ]
 """Type alias for shared memory barrier pointer."""
 
-comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
+comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArray[
     SharedMemBarrier, num_pipeline_stages
 ]
 """Type alias for shared memory pipeline barrier array."""
@@ -223,13 +223,12 @@ comptime SMemTileIter[
 ]
 
 
-@register_passable("trivial")
-struct SMemTileArrayType[
+struct SMemTileArray[
     dtype: DType,
     layout: Layout,
     num_tiles: Int,
     alignment: Int,
-]:
+](TrivialRegisterPassable):
     """Array of tiles in shared memory.
 
     Parameters:
@@ -239,7 +238,7 @@ struct SMemTileArrayType[
         alignment: Memory alignment.
     """
 
-    comptime Tile = SMemTileType[
+    comptime Tile = SMemTile[
         Self.dtype,
         Self.layout,
         alignment = Self.alignment,
@@ -249,19 +248,19 @@ struct SMemTileArrayType[
 
     comptime storage_size = Self.num_elements * size_of[Self.dtype]()
 
-    comptime StorageType = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
 
     fn __init__(
-        ref [AddressSpace.SHARED]storage: Self.StorageType,
+        ref[AddressSpace.SHARED] storage: Self.Storage,
     ) -> Self:
-        """Initialize with StorageType.
+        """Initialize with Storage.
 
         Args:
-            storage: StorageType.
+            storage: Storage.
         """
         return Self(storage.unsafe_ptr())
 
@@ -280,7 +279,7 @@ struct SMemTileArrayType[
         Args:
             unsafe_ptr: Shared memory pointer.
         """
-        __comptime_assert (
+        comptime assert (
             Self.layout.all_dims_known()
         ), "Layout must be known at compile time."
 
@@ -303,11 +302,11 @@ struct SMemTileArrayType[
     ](
         self,
         start: Int,
-        out result: SMemTileArrayType[
+        out result: SMemTileArray[
             Self.dtype, Self.layout, length, Self.alignment
         ],
     ):
-        return type_of(result)(self.ptr + eval[Self.layout.size()] * Int(start))
+        return type_of(result)(self.ptr + eval[Self.layout.size()] * start)
 
     @always_inline
     @staticmethod
@@ -321,8 +320,7 @@ struct SMemTileArrayType[
         return Self(ptr)
 
 
-@register_passable("trivial")
-struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
+struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
     """Shared memory array of fixed size.
 
     Parameters:
@@ -334,7 +332,7 @@ struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
         Self.type, address_space = AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
-    comptime StorageType = InlineArray[Self.type, Self.size]
+    comptime Storage = InlineArray[Self.type, Self.size]
 
     var ptr: Self.ptr_type
 
@@ -350,8 +348,8 @@ struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
         """
         self.ptr = unsafe_ptr
 
-    fn __init__(ref [AddressSpace.SHARED]storage: Self.StorageType) -> Self:
-        """Initialize from StorageType."""
+    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
+        """Initialize from Storage."""
         return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 
     @always_inline
@@ -391,7 +389,7 @@ struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
-comptime SMemPtr[type: __TypeOfAllTypes] = UnsafePointer[
+comptime SMemPtr[type: AnyType] = UnsafePointer[
     type, address_space = AddressSpace.SHARED
 ]
 
@@ -423,17 +421,15 @@ struct NVIDIASharedMemoryBasePtr[
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
-    comptime Tile[dtype: DType, layout: Layout] = SMemTileType[
+    comptime Tile[dtype: DType, layout: Layout] = SMemTile[
         dtype, layout, alignment = Self.SMBP.alignment
     ]
 
     comptime TileArray[
         dtype: DType, layout: Layout, num_tiles: Int
-    ] = SMemTileArrayType[dtype, layout, num_tiles, Self.SMBP.alignment]
+    ] = SMemTileArray[dtype, layout, num_tiles, Self.SMBP.alignment]
 
-    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArrayType[
-        type, size
-    ]
+    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
 
     var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
     var offset: Int

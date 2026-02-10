@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 from collections import OptionalReg
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -191,7 +190,7 @@ fn test_warp_specialize_gemm_with_multicasting[
 
     ctx.synchronize()
 
-    __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )

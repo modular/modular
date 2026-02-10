@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,7 +20,7 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from sys.ffi import _Global, c_int
+from ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
@@ -228,7 +228,7 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
 # Builders
 # ===-----------------------------------------------------------------------===#
 
-comptime PyFunctionRaising = fn (
+comptime PyFunctionRaising = fn(
     mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings.
@@ -238,7 +238,7 @@ positional arguments. These functions always return a Python object (could be a
 `None` object).
 """
 
-comptime PyFunctionWithKeywordsRaising = fn (
+comptime PyFunctionWithKeywordsRaising = fn(
     mut PythonObject, mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings with keyword arguments.
@@ -327,7 +327,7 @@ struct PythonModuleBuilder:
 
     fn add_type[
         T: Representable
-    ](mut self, type_name: StaticString) -> ref [
+    ](mut self, type_name: StaticString) -> ref[
         self.type_builders
     ] PythonTypeBuilder:
         """Add a type to the module and return a builder for it.
@@ -612,8 +612,8 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
-            self.basicsize,
+            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
+            c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
@@ -654,7 +654,7 @@ struct PythonTypeBuilder(Copyable):
 
     fn def_init_defaultable[
         T: Defaultable & Movable,
-    ](mut self) raises -> ref [self] Self:
+    ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.
 
@@ -684,8 +684,8 @@ struct PythonTypeBuilder(Copyable):
     fn def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
-        init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
-    ](mut self) raises -> ref [self] Self:
+        init_func: fn(out T, args: PythonObject, kwargs: PythonObject),
+    ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type.
 
         Parameters:
@@ -701,7 +701,7 @@ struct PythonTypeBuilder(Copyable):
 
         @always_inline
         fn raising_wrapper[
-            init_func: fn (out t: T, args: PythonObject, kwargs: PythonObject)
+            init_func: fn(out t: T, args: PythonObject, kwargs: PythonObject)
         ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
             t = init_func(args, kwargs)
 
@@ -710,8 +710,8 @@ struct PythonTypeBuilder(Copyable):
     fn def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
-        init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
-    ](mut self) raises -> ref [self] Self:
+        init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
+    ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type.
 
         Parameters:
@@ -736,7 +736,7 @@ struct PythonTypeBuilder(Copyable):
         method: PyCFunction,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyObjectPtr signature for the
         type.
 
@@ -767,7 +767,7 @@ struct PythonTypeBuilder(Copyable):
         method: PyCFunctionWithKeywords,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyCFunctionWithKeywords signature for the
         type.
 
@@ -798,7 +798,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyFunctionRaising signature.
 
         Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
@@ -827,7 +827,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyFunctionWithKeywordsRaising signature.
 
         Accepts methods with signature:
@@ -858,7 +858,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = "",
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         return self.def_py_c_method[static_method](
             _py_c_function_wrapper[method], method_name, docstring
         )
@@ -871,7 +871,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = "",
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method that receives self as PythonObject.
 
         Use this when you need generic Python object access. For direct access to the wrapped
@@ -910,7 +910,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a static method (no self parameter).
 
         Accepts functions with PythonObject arguments (up to 6), can optionally
@@ -979,7 +979,7 @@ fn _py_new_function_wrapper[
 
 fn _py_init_function_wrapper[
     T: Movable & ImplicitlyDestructible,
-    init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+    init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
 ](
     py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> c_int:
@@ -1188,22 +1188,24 @@ fn check_arguments_arity(
             var missing_arg_count = arity - arg_count
 
             raise Error(
-                String.format(
-                    "TypeError: {}() missing {} required positional {}",
-                    func_name,
-                    missing_arg_count,
-                    _pluralize(missing_arg_count, "argument", "arguments"),
-                )
+                "TypeError: ",
+                func_name,
+                "() missing ",
+                missing_arg_count,
+                " required positional ",
+                _pluralize(missing_arg_count, "argument", "arguments"),
             )
         else:
             raise Error(
-                String.format(
-                    "TypeError: {}() takes {} positional {} but {} were given",
-                    func_name,
-                    arity,
-                    _pluralize(arity, "argument", "arguments"),
-                    arg_count,
-                )
+                "TypeError: ",
+                func_name,
+                "() takes ",
+                arity,
+                " positional ",
+                _pluralize(arity, "argument", "arguments"),
+                " but ",
+                arg_count,
+                " were given",
             )
 
 
@@ -1241,18 +1243,17 @@ fn _try_convert_arg[
         result = T(py=py_args[argidx])
     except convert_err:
         raise Error(
-            String.format(
-                (
-                    "TypeError: {}() expected argument at position {} to be"
-                    " instance of (or convertible to) Mojo '{}'; got '{}'."
-                    " (Note: attempted conversion failed due to: {})"
-                ),
-                func_name,
-                argidx,
-                get_type_name[T](),
-                _get_type_name(py_args[argidx]),
-                convert_err,
-            )
+            "TypeError: ",
+            func_name,
+            "() expected argument at position ",
+            argidx,
+            " to be instance of (or convertible to) Mojo '",
+            get_type_name[T](),
+            "'; got '",
+            _get_type_name(py_args[argidx]),
+            "'. (Note: attempted conversion failed due to: ",
+            convert_err,
+            ")",
         )
 
 

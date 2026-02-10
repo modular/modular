@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,13 +13,14 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel
+from .model_config import Qwen2_5VLConfig
 from .tokenizer import Qwen2_5VLTokenizer
 from .weight_adapters import convert_qwen2_5vl_model_state_dict
 
@@ -67,7 +68,7 @@ def validate_qwen2_5vl_required_args(
 
 
 qwen2_5_vl_arch = SupportedArchitecture(
-    name="Qwen2_5_VLForConditionalGeneration",
+    name="Qwen2_5_VLForConditionalGeneration_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen2.5-VL-3B-Instruct",
@@ -93,4 +94,5 @@ qwen2_5_vl_arch = SupportedArchitecture(
     context_validators=[
         validate_qwen2_5vl_required_args,
     ],
+    config=Qwen2_5VLConfig,
 )

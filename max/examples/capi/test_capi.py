@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,10 +25,11 @@ def build_graph() -> None:
     # Build the graph for the accelerator
     device = Accelerator()
 
-    # Input tensors are expected on the accelerator
+    # Input tensors are expected on the accelerator. `vector_width` is a
+    # symbolic dimension allowing for dynamic shapes on the vector inputs.
     input_type = TensorType(
         dtype=DType.float32,
-        shape=(8,),
+        shape=("vector_width",),
         device=DeviceRef.from_device(device),
     )
 

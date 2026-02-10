@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv
 from sys import simd_width_of, size_of
 
@@ -32,9 +31,10 @@ from std.bit import log2_floor
 from utils.index import IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from collections import OptionalReg
 from ....structuring import (
-    SMemTileType,
-    RegTileType,
+    SMemTile,
+    RegTile,
 )
 from .tile_writer import (
     TileWriterTMA,
@@ -47,7 +47,6 @@ from .tile_writer import (
 import itertools
 
 
-@register_passable("trivial")
 struct MatmulTileWriter[
     dtype: DType,
     layout: Layout,
@@ -67,12 +66,12 @@ struct MatmulTileWriter[
     wgmma_shape: IndexList[3],
     num_consumer: Int = 1,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     swapAB: Bool = False,
-]:
+](TrivialRegisterPassable):
     comptime N = Self.layout.shape[1].value()
     comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
         1
@@ -97,15 +96,13 @@ struct MatmulTileWriter[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
-    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], mut SIMD[dtype, width]
     ) capturing -> None
 
     # Instance fields
     var tensor: Self.CTensorType
-    var smem_tile: SMemTileType[
-        Self.dtype, Self.smem_tile_layout, alignment=128
-    ]
+    var smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
     var local_warp_group_idx: UInt
     var local_thread_idx: UInt
@@ -116,9 +113,7 @@ struct MatmulTileWriter[
     fn __init__(
         out self,
         tensor: Self.CTensorType,
-        smem_tile: SMemTileType[
-            Self.dtype, Self.smem_tile_layout, alignment=128
-        ],
+        smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128],
         warp_group_thread_idx: UInt,
         local_warp_group_idx: UInt,
         local_thread_idx: UInt,
@@ -207,7 +202,7 @@ struct MatmulTileWriter[
         reg_tile_layout: Layout,
         //,
         check_runtime_bounds: Bool = False,
-    ](self, reg_tile: RegTileType[accum_type, reg_tile_layout]):
+    ](self, reg_tile: RegTile[accum_type, reg_tile_layout]):
         """Write from registers to global memory."""
 
         comptime out_tile_size_m = Self.BM if not Self.swapAB else Self.BN
@@ -286,7 +281,7 @@ struct MatmulTileWriter[
     ](
         self,
         tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
-        reg_tile: RegTileType[accum_type, reg_tile_layout],
+        reg_tile: RegTile[accum_type, reg_tile_layout],
         output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_origin: Self.CTensorType.CornerCoordsType,
     ):
@@ -354,7 +349,7 @@ struct MatmulTileWriter[
             ):
                 fragment_writer.write_tile(reg_tile, (UInt(0), UInt(tma_chunk)))
 
-            named_barrier[Self.num_consumer_threads](10)
+            named_barrier[Int32(Self.num_consumer_threads)](10)
 
             # swapAB: swap tile shape and position
             comptime tile_rows = Self.WG_BM if Self.swapAB else Self.BM
@@ -394,7 +389,7 @@ struct MatmulTileWriter[
                     val = compute_fn[alignment=alignment](index, val)
 
                 apply_epilogue[_compute]()
-                named_barrier[Self.num_consumer_threads](10)
+                named_barrier[Int32(Self.num_consumer_threads)](10)
 
             @parameter
             if Self.elementwise_lambda_fn:
@@ -419,7 +414,7 @@ struct MatmulTileWriter[
                         var smem_offset = self.smem_tile.ptr + (
                             Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
                         )
-                        var tma_tile = SMemTileType[
+                        var tma_tile = SMemTile[
                             Self.dtype, tma_layout, alignment=128
                         ](smem_offset)
 
@@ -451,7 +446,7 @@ struct MatmulTileWriter[
                         self.smem_tile, (UInt(0), UInt(0))
                     )
 
-            named_barrier[Self.num_consumer_threads](10)
+            named_barrier[Int32(Self.num_consumer_threads)](10)
 
     @always_inline
     fn write_tile[
@@ -463,7 +458,7 @@ struct MatmulTileWriter[
     ](
         self,
         tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
-        reg_tile: RegTileType[accum_type, reg_tile_layout],
+        reg_tile: RegTile[accum_type, reg_tile_layout],
     ):
         """Write output from registers to global memory.
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -66,7 +66,7 @@ def main():
         # Initialize the input vectors
         for i in range(vector_size):
             lhs_host_buffer[i] = Float32(i)
-            rhs_host_buffer[i] = Float32(i * 0.5)
+            rhs_host_buffer[i] = Float32(Float64(i) * 0.5)
 
         print("LHS buffer: ", lhs_host_buffer)
         print("RHS buffer: ", rhs_host_buffer)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,11 +19,11 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.float8_config import Float8Config
-from max.nn.kernels import flash_attention_ragged_gpu
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.float8_config import Float8Config
+from max.nn.legacy.kernels import flash_attention_ragged_gpu
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.internvl.layers.attention import (
     compute_heads_per_device,
 )

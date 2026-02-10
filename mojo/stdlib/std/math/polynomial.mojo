@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -83,7 +83,7 @@ fn _horner_evaluate[
         The polynomial specified by the coefficients evaluated at value x.
     """
     comptime num_coefficients = len(coefficients)
-    __comptime_assert num_coefficients > 0, (
+    comptime assert num_coefficients > 0, (
         "the number of coefficients for the polynomial evaluation should be"
         " a positive number"
     )

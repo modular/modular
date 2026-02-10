@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,8 +13,8 @@
 from dataclasses import dataclass
 
 from max.graph import TensorType, TensorValue, TensorValueLike, ops
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Layer, Module
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Layer, Module
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,12 +13,11 @@
 
 
 from math import iota
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import random_float64
-
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
 
 from utils import IndexList
@@ -31,9 +30,9 @@ fn top_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    top_ps: LayoutTensor[dtype, ...],
-    input_logits: LayoutTensor[mut=True, dtype, ...],
-    out_token_ids: LayoutTensor[mut=True, out_idx_type, ...],
+    top_ps: TileTensor[dtype, ...],
+    input_logits: TileTensor[mut=True, dtype, ...],
+    out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
 ) raises:
     """
@@ -42,9 +41,7 @@ fn top_p_sampling[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    __comptime_assert (
-        input_logits.rank == 2
-    ), "Only rank 2 tensors are supported"
+    comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
     _topp_minp_sampling[is_top_p=True, _test_sort=_test_sort](
         top_ps, input_logits, out_token_ids, temperature
     )
@@ -57,9 +54,9 @@ fn min_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    min_ps: LayoutTensor[dtype, ...],
-    input_logits: LayoutTensor[mut=True, dtype, ...],
-    out_token_ids: LayoutTensor[mut=True, out_idx_type, ...],
+    min_ps: TileTensor[dtype, ...],
+    input_logits: TileTensor[mut=True, dtype, ...],
+    out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
 ) raises:
     """
@@ -76,21 +73,13 @@ fn min_p_sampling[
 fn _topp_minp_sampling[
     dtype: DType,
     out_idx_type: DType,
-    out_token_layout: Layout,
-    out_token_element_layout: Layout,
     //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
-    p_thresholds: LayoutTensor[dtype, ...],
-    input_logits: LayoutTensor[mut=True, dtype, ...],
-    out_token_ids: LayoutTensor[
-        mut=True,
-        out_idx_type,
-        out_token_layout,
-        element_layout=out_token_element_layout,
-        ...,
-    ],
+    p_thresholds: TileTensor[dtype, ...],
+    input_logits: TileTensor[mut=True, dtype, ...],
+    out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
 ) raises:
     """
@@ -102,8 +91,6 @@ fn _topp_minp_sampling[
     Parameters:
         dtype: DType - The data type of the input logits, p_thresholds, and temperature.
         out_idx_type: DType - The data type for output token indices.
-        out_token_layout: Layout - the layout of the out token ids.
-        out_token_element_layout: Layout - the element layout of the out token ids.
         is_top_p: Bool - Whether to use Top-P (True) or Min-P (False) sampling.
         _test_sort: Bool - For internal testing purposes to check if the
             sorted probs are in descending order. If true, copies the sorted
@@ -114,38 +101,27 @@ fn _topp_minp_sampling[
         out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
-    __comptime_assert (
-        input_logits.rank == 2
-    ), "Only rank 2 tensors are supported"
-    var input_shape = input_logits.runtime_layout.shape.value
+    comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
+    comptime assert out_token_ids.rank == 2, "Only rank 2 tensors are supported"
+    comptime assert p_thresholds.rank == 1
+    var input_shape = coord_to_index_list(input_logits.layout.shape_coord())
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    var sorted_probs_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
-    var sorted_probs = LayoutTensor[
-        dtype, Layout.row_major[2](), element_layout=out_token_element_layout
-    ](
+    var sorted_probs_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var sorted_probs = TileTensor(
         sorted_probs_ptr,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            IndexList[2](batch_size, vocab_size)
-        ),
+        row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
 
-    var sorted_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
-        batch_size * vocab_size
-    )
-    var sorted_ids = LayoutTensor[
-        out_idx_type,
-        Layout.row_major[2](),
-        element_layout=out_token_element_layout,
-    ](
+    var sorted_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * vocab_size)
+    var sorted_ids = TileTensor(
         sorted_ids_ptr,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            IndexList[2](batch_size, vocab_size)
-        ),
+        row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
+
+    comptime assert sorted_probs.element_size == out_token_ids.element_size
+    comptime assert out_token_ids.element_size == 1
 
     # Initialize sorted_ids with iota values
     for batch_id in range(batch_size):
@@ -162,9 +138,7 @@ fn _topp_minp_sampling[
     fn apply_temperature[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        var i = input_logits.runtime_layout(
-            RuntimeTuple[Layout.row_major[input_logits.rank]().shape](coords)
-        )
+        var i = input_logits.layout(Coord(coords))
         var val = input_logits.ptr.load[width=_simd_width](i)
         return val / temperature
 
@@ -172,11 +146,11 @@ fn _topp_minp_sampling[
 
     @parameter
     for i in range(input_logits.rank):
-        shape[i] = input_logits.runtime_layout.shape.value[i]
+        shape[i] = input_logits.layout.shape[i]().value()
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        sorted_probs,
+        sorted_probs.to_layout_tensor(),
         axis=input_logits.rank - 1,
     )
 
@@ -190,32 +164,32 @@ fn _topp_minp_sampling[
 
     # Process each batch
     for batch in range(batch_size):
-        var p_threshold = p_thresholds[batch][0]
+        var p_threshold = p_thresholds[batch]
 
         @parameter
         if is_top_p:
             # Sample using top-p (nucleus) sampling
             var r = p_threshold * random_float64().cast[dtype]()
             for i in range(vocab_size):
-                r -= sorted_probs[batch, i][0]
+                r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
                     sid = sorted_ids[batch, i]
 
                     @parameter
-                    if out_token_layout.rank() == 1:
+                    if out_token_ids.rank == 1:
                         out_token_ids[batch] = sid
                     else:
-                        out_token_ids[batch] = sid
+                        out_token_ids[batch, 0] = sid
                     break
         else:
             # Sample using min-p sampling
             # Step 1: Filter out tokens with probabilities less than min-p threshold
-            var sum_filtered_probs = SIMD[
-                dtype, out_token_element_layout.size()
-            ](0.0)
+            var sum_filtered_probs = SIMD[dtype, out_token_ids.element_size](
+                0.0
+            )
             var num_filtered_tokens = 0
             for i in range(vocab_size):
-                if sorted_probs[batch, i][0] >= p_threshold:
+                if sorted_probs[batch, i][0] >= p_threshold[0]:
                     sum_filtered_probs += sorted_probs[batch, i]
                     num_filtered_tokens += 1
                 else:
@@ -226,15 +200,15 @@ fn _topp_minp_sampling[
 
             # Step 3: Select token based on normalized probabilities
             for i in range(num_filtered_tokens):
-                r -= sorted_probs[batch, i][0]
+                r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
                     sid = sorted_ids[batch, i]
 
                     @parameter
-                    if out_token_layout.rank() == 1:
+                    if out_token_ids.rank == 1:
                         out_token_ids[batch] = sid
                     else:
-                        out_token_ids[batch, 0] = sid
+                        out_token_ids[batch] = sid
                     break
 
     sorted_ids_ptr.free()
@@ -245,14 +219,14 @@ fn _topp_minp_sampling[
 fn sort_buf_descending[
     dtype: DType, out_idx_type: DType
 ](
-    mut buf_keys: LayoutTensor[mut=True, dtype, ...],
-    mut buf_ids: LayoutTensor[mut=True, out_idx_type, ...],
+    mut buf_keys: TileTensor[mut=True, dtype, ...],
+    mut buf_ids: TileTensor[mut=True, out_idx_type, ...],
     vocab_size: Int,
 ):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    __comptime_assert buf_keys.rank == 2, "rank must be 2"
-    var batch_size = buf_keys.size() // vocab_size
+    comptime assert buf_keys.rank == 2, "rank must be 2"
+    var batch_size = buf_keys.numel() // vocab_size
 
     for batch_id in range(batch_size):
         var start = batch_id * vocab_size
@@ -264,8 +238,8 @@ fn merge_sort_recursive[
     dtype: DType,
     out_idx_type: DType,
 ](
-    mut buf_keys: LayoutTensor[mut=True, dtype, ...],
-    mut buf_ids: LayoutTensor[mut=True, out_idx_type, ...],
+    mut buf_keys: TileTensor[mut=True, dtype, ...],
+    mut buf_ids: TileTensor[mut=True, out_idx_type, ...],
     start: Int,
     end: Int,
 ):
@@ -281,8 +255,8 @@ fn merge_sort_recursive[
 fn merge[
     dtype: DType, out_idx_type: DType
 ](
-    mut buf_keys: LayoutTensor[mut=True, dtype, ...],
-    mut buf_ids: LayoutTensor[mut=True, out_idx_type, ...],
+    mut buf_keys: TileTensor[mut=True, dtype, ...],
+    mut buf_ids: TileTensor[mut=True, out_idx_type, ...],
     start: Int,
     mid: Int,
     end: Int,
@@ -292,10 +266,10 @@ fn merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_keys_ptr = UnsafePointer[Scalar[dtype]].alloc(left_size)
-    var right_keys_ptr = UnsafePointer[Scalar[dtype]].alloc(right_size)
-    var left_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(left_size)
-    var right_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(right_size)
+    var left_keys_ptr = alloc[Scalar[dtype]](left_size)
+    var right_keys_ptr = alloc[Scalar[dtype]](right_size)
+    var left_ids_ptr = alloc[Scalar[out_idx_type]](left_size)
+    var right_ids_ptr = alloc[Scalar[out_idx_type]](right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):

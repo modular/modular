@@ -14,17 +14,16 @@ _CPU_TESTS = [
     "test_memset.mojo",
 ]
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 _EXTRA_CONSTRAINTS = {
     "test_hip.mojo": ["//:amd_gpu"],
     "test_cuda.mojo": ["//:nvidia_gpu"],
-    "test_copies.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2562
-    "test_smoke.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2554
+    "test_copies.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
+    "test_smoke.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
 }
 
 [

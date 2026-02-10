@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,8 +19,8 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
-from max.nn.attention.multihead_attention import MultiheadAttention
-from max.nn.linear import Linear
+from max.nn.legacy.attention.multihead_attention import MultiheadAttention
+from max.nn.legacy.linear import Linear
 
 
 class Idefics3VisionAttention(MultiheadAttention):

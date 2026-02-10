@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -105,14 +105,14 @@ fn check_ldmatrix_fp8[
 
         @parameter
         for k in range(K):
-            a_host[m * K + k] = m + k
+            a_host[m * K + k] = Scalar[input_type](m + k)
 
     @parameter
     for k in range(K):
 
         @parameter
         for n in range(N):
-            b_host[n * K + k] = k + n
+            b_host[n * K + k] = Scalar[input_type](k + n)
 
     for i in range(M * N):
         c_host[i] = 0

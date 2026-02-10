@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,11 +45,11 @@ fn test_tma_3d_load_kernel[
     dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
 ):
-    __comptime_assert (
+    comptime assert (
         cta_tile_layout.size() == smem_layout.size()
     ), "CTA Tile and SMEM tile should be the same size"
 
-    __comptime_assert (
+    comptime assert (
         cta_tile_layout == smem_layout
     ), "for these test cases cta and smem should have the same size"
 
@@ -60,7 +60,7 @@ fn test_tma_3d_load_kernel[
     comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
     comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
-    __comptime_assert (
+    comptime assert (
         dst_dim1 == cta_tile_dim2
     ), "dst and cta should have the same last dimension for these test cases"
 
@@ -83,14 +83,14 @@ fn test_tma_3d_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy_3d(
             smem_tile,
             mbar[0],
             (
-                UInt(block_idx.x * UInt(cta_tile_dim2)),
-                UInt(block_idx.y * UInt(cta_tile_dim1)),
-                UInt(block_idx.z * UInt(cta_tile_dim0)),
+                Int(block_idx.x) * cta_tile_dim2,
+                Int(block_idx.y) * cta_tile_dim1,
+                Int(block_idx.z) * cta_tile_dim0,
             ),
         )
     # Ensure all threads sees initialized mbarrier
@@ -148,9 +148,9 @@ def test_tma_3d_load_row_major[
 
     ctx.synchronize()
 
-    print("src layout:", src_layout)
-    print("cta tile layout:", cta_tile_layout)
-    print("desc layout:", type_of(tma_tensor).desc_layout)
+    print("src layout:", materialize[src_layout]())
+    print("cta tile layout:", materialize[cta_tile_layout]())
+    print("desc layout:", materialize[type_of(tma_tensor).desc_layout]())
 
     comptime kernel = test_tma_3d_load_kernel[
         type_of(tma_tensor).dtype,

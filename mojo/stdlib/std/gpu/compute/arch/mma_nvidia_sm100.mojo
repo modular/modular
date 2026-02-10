@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,8 +29,7 @@ from hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct UMMAKind(Hashable, Stringable, Writable):
+struct UMMAKind(Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -125,18 +124,6 @@ struct UMMAKind(Hashable, Stringable, Writable):
         else:
             writer.write("kind::unknown")
 
-    @always_inline
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying UMMAKind value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self._value)
-
 
 @always_inline
 fn _constrained_mma_m[
@@ -156,7 +143,7 @@ fn _constrained_mma_m[
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    __comptime_assert mma_m in mma_m_valid, String(
+    comptime assert mma_m in mma_m_valid, String(
         "Invalid MMA M: ",
         mma_m,
         " , MMA M has to be ",
@@ -191,7 +178,7 @@ fn _constrained_mma_n[
     comptime lower_bound = mma_n_range[0]
     comptime upper_bound = mma_n_range[1]
 
-    __comptime_assert (
+    comptime assert (
         mma_n >= lower_bound
         and mma_n <= upper_bound
         and mma_n % multiple_of == 0
@@ -539,10 +526,9 @@ fn _get_mxf8f6f4_mma_shape[
             return IndexList[3, element_type = DType.uint32](0, 0, 0)
 
 
-@register_passable("trivial")
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
-]:
+](TrivialRegisterPassable):
     """Descriptor for UMMA instructions.
 
     This struct represents a descriptor that encodes information about UMMA instructions.
@@ -614,7 +600,7 @@ struct UMMAInsDescriptor[
             Updated descriptor value with inserted bits.
         """
 
-        return desc | (val << start_bit)
+        return desc | (val << UInt32(start_bit))
 
     @staticmethod
     fn _create_tf32_desc[
@@ -633,7 +619,7 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        __comptime_assert (
+        comptime assert (
             d_type == DType.float32
             and a_type == DType.float32
             and b_type == DType.float32
@@ -672,11 +658,11 @@ struct UMMAInsDescriptor[
         comptime available_d_types = (DType.float32, DType.float16)
         comptime available_operand_types = (DType.bfloat16, DType.float16)
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -687,13 +673,13 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, 1 if d_type == DType.float32 else 0
+            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
         )
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, 1 if a_type == DType.bfloat16 else 0
+            d_type_bit, UInt32(1) if a_type == DType.bfloat16 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, 1 if b_type == DType.bfloat16 else 0
+            a_type_bit, UInt32(1) if b_type == DType.bfloat16 else UInt32(0)
         )
 
         return desc
@@ -721,11 +707,11 @@ struct UMMAInsDescriptor[
             DType.float8_e5m2,
         )
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -734,14 +720,14 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, 1 if d_type == DType.float32 else 0
+            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
         )
 
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, 1 if a_type == DType.float8_e5m2 else 0
+            d_type_bit, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
+            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
         )
 
         return desc
@@ -793,11 +779,11 @@ struct UMMAInsDescriptor[
         ]()
 
         comptime a_type_bit = Self._insert_bit[7](
-            0x0, 1 if a_type == DType.float8_e5m2 else 0
+            0x0, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
         )
 
         comptime b_type_bit = Self._insert_bit[10](
-            a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
+            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
         )
 
         comptime desc = Self._insert_bit[23](b_type_bit, 1)
@@ -857,7 +843,8 @@ struct UMMAInsDescriptor[
         comptime b_type_bit = Self._insert_bit[10](a_type_bit, 1)
 
         comptime desc = Self._insert_bit[23](
-            b_type_bit, 0 if scale_type == DType.float8_e4m3fn else 1
+            b_type_bit,
+            UInt32(0) if scale_type == DType.float8_e4m3fn else UInt32(1),
         )
 
         return desc
@@ -889,14 +876,16 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        comptime desc = Self._insert_bit[24](M_bit, output_shape[0] >> 4)
+        comptime M_bit = Self._insert_bit[17](0x0, UInt32(output_shape[1] >> 3))
+        comptime desc = Self._insert_bit[24](
+            M_bit, UInt32(output_shape[0] >> 4)
+        )
 
         comptime transpose_a_bit = Self._insert_bit[15](
-            0x0, 1 if transpose_a else 0
+            0x0, UInt32(1) if transpose_a else UInt32(0)
         )
         comptime transpose_bit = Self._insert_bit[16](
-            transpose_a_bit, 0 if transpose_b else 1
+            transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
         @parameter
@@ -955,14 +944,16 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        comptime desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
+        comptime M_bit = Self._insert_bit[17](0x0, UInt32(output_shape[1] >> 3))
+        comptime desc = Self._insert_bit[27](
+            M_bit, UInt32(output_shape[0] >> 7)
+        )
 
         comptime transpose_a_bit = Self._insert_bit[15](
-            0x0, 1 if transpose_a else 0
+            0x0, UInt32(1) if transpose_a else UInt32(0)
         )
         comptime transpose_bit = Self._insert_bit[16](
-            transpose_a_bit, 0 if transpose_b else 1
+            transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
         @parameter
@@ -1018,8 +1009,7 @@ struct UMMAInsDescriptor[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct MMASmemDescriptor(MMAOperandDescriptor):
+struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1079,7 +1069,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             Updated descriptor value with inserted bits.
         """
-        return Self(self.desc | (val << start_bit))
+        return Self(self.desc | (val << UInt64(start_bit)))
 
     @staticmethod
     @always_inline
@@ -1123,7 +1113,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt64((base_ptr >> 4) & Self.mask_14_bits)
+        var start_address = UInt64((base_ptr >> 4) & UInt32(Self.mask_14_bits))
 
         # Ignore 4 LSB.
         var sbo = UInt64((stride_byte_offset >> 4) & Self.mask_14_bits)
@@ -1168,11 +1158,10 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             New descriptor with updated base address.
         """
-        return Self(self.desc + ((offset >> 4) & Self.mask_14_bits))
+        return Self(self.desc + UInt64((offset >> 4) & Self.mask_14_bits))
 
 
-@register_passable("trivial")
-struct MMASmemDescriptorPair(ImplicitlyCopyable):
+struct MMASmemDescriptorPair(TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1239,9 +1228,9 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
 
         @parameter
         if start_bit < 32:
-            return Self(self.hi, self.lo | (val << start_bit))
+            return Self(self.hi, self.lo | (val << UInt32(start_bit)))
         else:
-            return Self(self.hi | (val << (start_bit - 32)), self.lo)
+            return Self(self.hi | (val << UInt32(start_bit - 32)), self.lo)
 
     @staticmethod
     @always_inline
@@ -1285,11 +1274,11 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt32(base_ptr >> 4) & Self.mask_14_bits
+        var start_address = (base_ptr >> 4) & Self.mask_14_bits
 
         # Ignore 4 LSB.
-        var sbo = UInt32((stride_byte_offset >> 4) & Self.mask_14_bits)
-        var lbo = UInt32((leading_byte_offset >> 4) & Self.mask_14_bits)
+        var sbo: UInt32 = UInt32(stride_byte_offset >> 4) & Self.mask_14_bits
+        var lbo: UInt32 = UInt32(leading_byte_offset >> 4) & Self.mask_14_bits
 
         # Start from LSB. Mask out higher bits to avoid overwriting.
         var desc = Self(0, 0)
@@ -1365,11 +1354,11 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
@@ -1554,7 +1543,7 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
@@ -1641,7 +1630,7 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
@@ -1729,11 +1718,11 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
@@ -1812,12 +1801,12 @@ fn mma_arrive[
         mbar_ptr: Pointer to the mbar.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1845,12 +1834,12 @@ fn mma_arrive_multicast[
         cta_mask: Mask of ctas to signal.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

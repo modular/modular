@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,7 +47,7 @@ from .warp import broadcast
 #       enforce this at the type system level.
 # https://github.com/modular/modular/issues/1278
 fn _verify_xyz[dim: StaticString]():
-    __comptime_assert (
+    comptime assert (
         dim == "x" or dim == "y" or dim == "z"
     ), "the dimension must be x, y, or z"
 
@@ -82,7 +82,7 @@ fn lane_id() -> UInt:
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
-    __comptime_assert is_gpu(), "This function only applies to GPUs."
+    comptime assert is_gpu(), "This function only applies to GPUs."
 
     @parameter
     if is_nvidia_gpu():
@@ -193,8 +193,7 @@ fn sm_id() -> UInt:
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _ThreadIdx(Defaultable):
+struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a thread within a block."""
 
@@ -241,8 +240,7 @@ comptime thread_idx = _ThreadIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _BlockIdx(Defaultable):
+struct _BlockIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a block within a grid."""
 
@@ -289,8 +287,7 @@ comptime block_idx = _BlockIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _BlockDim(Defaultable):
+struct _BlockDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     block."""
 
@@ -337,7 +334,7 @@ struct _BlockDim(Defaultable):
                 elif dim == "y":
                     return 7
                 else:
-                    __comptime_assert dim == "z"
+                    comptime assert dim == "z"
                     return 8
 
             return _get_gcn_idx[_get_offset(), DType.uint16]()
@@ -360,8 +357,7 @@ For example: `block_dim.y`."""
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _GridDim(Defaultable):
+struct _GridDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     grid."""
 
@@ -398,7 +394,7 @@ struct _GridDim(Defaultable):
                 elif dim == "y":
                     return 1
                 else:
-                    __comptime_assert dim == "z"
+                    comptime assert dim == "z"
                     return 2
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
@@ -432,8 +428,7 @@ dimensions of a grid."""
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _GlobalIdx(Defaultable):
+struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` global offset of
     the kernel launch."""
 
@@ -466,8 +461,7 @@ values."""
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _ClusterDim(Defaultable):
+struct _ClusterDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     cluster."""
 
@@ -482,7 +476,7 @@ struct _ClusterDim(Defaultable):
         Returns:
             The `x`, `y`, or `z` dimension of the cluster.
         """
-        __comptime_assert (
+        comptime assert (
             _is_sm_9x_or_newer()
         ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
@@ -502,8 +496,7 @@ comptime cluster_dim = _ClusterDim()
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _ClusterIdx(Defaultable):
+struct _ClusterIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a cluster within a grid."""
 
@@ -523,7 +516,7 @@ struct _ClusterIdx(Defaultable):
         Returns:
             The `x`, `y`, or `z` coordinates of a cluster within a grid.
         """
-        __comptime_assert (
+        comptime assert (
             _is_sm_9x_or_newer()
         ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
@@ -542,8 +535,7 @@ comptime cluster_idx = _ClusterIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _ClusterBlockIdx(Defaultable):
+struct _ClusterBlockIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a threadblock within a cluster."""
 
@@ -563,7 +555,7 @@ struct _ClusterBlockIdx(Defaultable):
         Returns:
             The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
         """
-        __comptime_assert (
+        comptime assert (
             _is_sm_9x_or_newer()
         ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()

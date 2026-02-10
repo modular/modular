@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,9 +22,10 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import MPNetPipelineModel
+from .model_config import MPNetConfig
 
 mpnet_arch = SupportedArchitecture(
-    name="MPNetForMaskedLM",
+    name="MPNetForMaskedLM_Legacy",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-mpnet-base-v2",
@@ -42,4 +43,5 @@ mpnet_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     required_arguments={"enable_prefix_caching": False},
+    config=MPNetConfig,
 )

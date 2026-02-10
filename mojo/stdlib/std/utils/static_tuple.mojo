@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,14 +35,13 @@ fn _static_tuple_construction_checks[size: Int]():
     Parameters:
       size: The number of elements.
     """
-    __comptime_assert (
+    comptime assert (
         size >= 0
     ), "number of elements in `StaticTuple` must be >= 0"
 
 
-@register_passable("trivial")
-struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
-    Defaultable, DevicePassable, ImplicitlyCopyable, Sized
+struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
+    Defaultable, DevicePassable, Sized, TrivialRegisterPassable
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
 
@@ -77,15 +76,6 @@ struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
             Self.size,
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Get the human-readable device type name for this `StaticTuple`.
-
-        Returns:
-            A string representation of the device type (same as type name for StaticTuple).
-        """
-        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):
@@ -171,7 +161,7 @@ struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
         Returns:
             The value at the specified position.
         """
-        __comptime_assert index < Self.size
+        comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
             index = index._mlir_value,
@@ -218,12 +208,12 @@ struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
         Args:
             val: The value to store.
         """
-        __comptime_assert idx < Self.size
+        comptime assert idx < Self.size
 
         self._unsafe_ref(idx) = val
 
     @always_inline("nodebug")
-    fn _unsafe_ref(ref self, idx: Int) -> ref [self] Self.element_type:
+    fn _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
@@ -242,7 +232,7 @@ struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
         Returns:
             A new tuple with the specified element value replaced.
         """
-        __comptime_assert idx < Self.size
+        comptime assert idx < Self.size
 
         var array = __mlir_op.`pop.array.replace`[
             _type = __mlir_type[

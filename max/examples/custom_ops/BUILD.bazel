@@ -40,8 +40,22 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
+    name = "eager_vector_addition",
+    srcs = ["eager_vector_addition.py"],
+    extra_deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+custom_op_example_py_binary(
     name = "top_k",
     srcs = ["top_k.py"],
+    # TODO: enable when test won't generate external memory on Apple GPU
+    # KERN-2360
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 custom_op_example_py_binary(
@@ -56,12 +70,6 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
-    name = "causal_conv1d",
-    srcs = ["causal_conv1d.py"],
-    tags = ["manual"],  # TODO: Fix this flaky test
-)
-
-custom_op_example_py_binary(
     name = "matrix_multiplication",
     srcs = ["matrix_multiplication.py"],
     tags = ["manual"],  # TODO: Disabled in CI - fix vectorization issue
@@ -70,6 +78,12 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "histogram",
     srcs = ["histogram.py"],
+    # TODO: enable when atomics support is added to Apple GPU
+    # MOCO-2423
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 mojo_binary(

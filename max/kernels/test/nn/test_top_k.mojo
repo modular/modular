@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,22 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import iota
 from random import rand, seed
 
-from layout import (
-    UNKNOWN_VALUE,
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout._layout import Layout, row_major
+from layout._tile_tensor import TileTensor
+
 from nn.topk import _top_k_cpu, _top_k_sampling
 
 from utils.index import IndexList, product
@@ -42,36 +34,51 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
         )
         self.shape = shape
 
-    fn to_layout_tensor(
+    fn to_tile_tensor(
         ref self,
-    ) -> LayoutTensor[
-        Self.dtype, Layout.row_major[Self.rank](), origin_of(self.storage)
+    ) -> TileTensor[
+        Self.dtype,
+        Layout[
+            shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
+            stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
+        ],
+        origin_of(self.storage),
     ]:
-        return {
-            Span[Scalar[Self.dtype]](self.storage),
-            RuntimeLayout[Layout.row_major[Self.rank]()].row_major(self.shape),
-        }
+        return rebind[
+            TileTensor[
+                Self.dtype,
+                Layout[
+                    shape_types = DynamicCoord[
+                        DType.int64, Self.rank
+                    ].element_types,
+                    stride_types = DynamicCoord[
+                        DType.int64, Self.rank
+                    ].element_types,
+                ],
+                origin_of(self.storage),
+            ]
+        ](
+            TileTensor(
+                Span[Scalar[Self.dtype]](self.storage),
+                row_major(Coord(self.shape)),
+            ).make_dynamic[DType.int64]()
+        )
 
 
 fn test_case_sampling[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    fill_fn: fn[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
 ](
     K: Int,
     axis: Int,
     input_shape: IndexList[rank],
     temperature: Scalar[dtype] = 1,
 ) raises:
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(product(input_shape))
-    )
-    comptime layout = Layout.row_major[rank]()
-    var input = LayoutTensor[dtype, layout](
-        input_ptr, RuntimeLayout[layout].row_major(input_shape)
-    )
+    var input_ptr = alloc[Scalar[dtype]](product(input_shape))
+    var input = TileTensor(input_ptr, row_major(Coord(input_shape)))
 
     var output_shape: IndexList[rank]
     var output_idxs_shape: IndexList[rank]
@@ -87,17 +94,11 @@ fn test_case_sampling[
         output_shape = IndexList[rank](input_shape[0], input_shape[1], K)
         output_idxs_shape = IndexList[rank](input_shape[0], input_shape[1], 1)
 
-    var output_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(product(output_shape))
-    )
-    var output_idxs_ptr = UnsafePointer[Int64].alloc(
-        Int(product(output_idxs_shape))
-    )
-    var out_vals = LayoutTensor[dtype, layout](
-        output_vals_ptr, RuntimeLayout[layout].row_major(output_shape)
-    )
-    var out_idxs = LayoutTensor[DType.int64, layout](
-        output_idxs_ptr, RuntimeLayout[layout].row_major(output_idxs_shape)
+    var output_vals_ptr = alloc[Scalar[dtype]](product(output_shape))
+    var output_idxs_ptr = alloc[Int64](product(output_idxs_shape))
+    var out_vals = TileTensor(output_vals_ptr, row_major(Coord(output_shape)))
+    var out_idxs = TileTensor(
+        output_idxs_ptr, row_major(Coord(output_idxs_shape))
     )
 
     fill_fn[rank, dtype](input)
@@ -111,26 +112,23 @@ fn test_case_sampling[
         batch_size = input_shape[0]
     else:
         batch_size = input_shape[0] * input_shape[1]
-    var temperature_ptr = UnsafePointer[Float32].alloc(batch_size)
+    var temperature_ptr = alloc[Float32](batch_size)
     for i in range(batch_size):
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var temperature_buf = OptionalReg(
-        LayoutTensor[DType.float32, layout_1d, MutAnyOrigin](
-            temperature_ptr,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-        )
+    var temperature_buf = Optional(
+        TileTensor(temperature_ptr, row_major(Idx(Int64(batch_size))))
+        .as_any_origin()
+        .as_immut()
     )
 
-    var seed_ptr = UnsafePointer[UInt64].alloc(batch_size)
+    var seed_ptr = alloc[UInt64](batch_size)
     for i in range(batch_size):
         seed_ptr[i] = 12
-    var seed_buf = OptionalReg(
-        LayoutTensor[DType.uint64, layout_1d, MutAnyOrigin](
-            seed_ptr,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-        )
+    var seed_buf = Optional(
+        TileTensor(seed_ptr, row_major(Idx(Int64(batch_size))))
+        .as_any_origin()
+        .as_immut()
     )
 
     _top_k_sampling(
@@ -146,7 +144,7 @@ fn test_case_sampling[
     var _xx_no_lifetimes = out_vals
     var _x_no_lifetimes = out_idxs
 
-    for i in range(out_idxs.size()):
+    for i in range(out_idxs.numel()):
         print(out_idxs.ptr[i], end="")
         print(",", end="")
     print("")
@@ -161,9 +159,9 @@ fn test_case_sampling[
 fn test_case[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    fill_fn: fn[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
     var input = TestTensor[rank, dtype](input_shape)
@@ -173,15 +171,15 @@ fn test_case[
     var out_vals = TestTensor[rank, dtype](output_shape)
     var out_idxs = TestTensor[rank, DType.int64](output_shape)
 
-    var input_buf = input.to_layout_tensor()
+    var input_buf = input.to_tile_tensor()
     fill_fn[rank, dtype](input_buf)
 
     _top_k_cpu[largest=largest](
-        input.to_layout_tensor(),
+        input.to_tile_tensor(),
         K,
         axis,
-        out_vals.to_layout_tensor(),
-        out_idxs.to_layout_tensor(),
+        out_vals.to_tile_tensor(),
+        out_idxs.to_tile_tensor(),
         1,  # force multithreading for small test cases,
         sorted,
     )
@@ -204,19 +202,19 @@ def main():
     @parameter
     fn fill_iota[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, ...]):
+    ](buf: TileTensor[mut=True, dtype, ...]):
         iota(
             buf.ptr,
-            buf.runtime_layout.shape.value.canonicalize().flattened_length(),
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     @parameter
     fn fill_rand[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, ...]):
+    ](buf: TileTensor[mut=True, dtype, ...]):
         rand(
             buf.ptr,
-            buf.runtime_layout.shape.value.canonicalize().flattened_length(),
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     fn test_1d_sorted():
@@ -286,7 +284,7 @@ def main():
     @parameter
     fn fill_identical[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, ...]):
+    ](buf: TileTensor[mut=True, dtype, ...]):
         _ = buf.fill(1)
 
     fn test_identical():
@@ -319,23 +317,15 @@ def main():
     @parameter
     fn fill_custom[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, ...]):
-        var flat_buf = LayoutTensor[
-            dtype,
-            Layout.row_major(UNKNOWN_VALUE),
-            address_space = buf.address_space,
-        ](
+    ](buf: TileTensor[mut=True, dtype, ...]):
+        var flat_buf = TileTensor(
             buf.ptr,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](buf.size())
-            ),
+            row_major(Idx(buf.numel())),
         )
 
-        for i in range(flat_buf.size()):
-            var idx = flat_buf.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
-            )
-            flat_buf.ptr[idx] = flat_buf.size() - i - 1
+        for i in range(flat_buf.numel()):
+            var idx = flat_buf.layout(Coord(Idx(i)))
+            flat_buf.ptr[idx] = Scalar[dtype](flat_buf.numel() - i - 1)
         flat_buf[0] = -1
 
     fn test_5d():
@@ -390,9 +380,9 @@ def main():
     test_3d_sorted_sampling()
 
     @parameter
-    fn ones[rank: Int, dtype: DType](buf: LayoutTensor[mut=True, dtype, ...]):
+    fn ones[rank: Int, dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
         for i in range(
-            buf.runtime_layout.shape.value.canonicalize().flattened_length()
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length()
         ):
             buf.ptr[i] = 1
 

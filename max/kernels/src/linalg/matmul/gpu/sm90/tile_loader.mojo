@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,16 +31,20 @@ from gpu.memory import (
     AddressSpace,
     async_copy,
 )
-from ....structuring import SharedMemBarrier, SMemBarrier, SMemTileType
+from ....structuring import SharedMemBarrier, SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
 from gpu import thread_idx
+from gpu.globals import WARPGROUP_SIZE
+from gpu.sync import async_copy_arrive
+from ..sm100_structured.structured_kernels.pipeline import (
+    ProducerConsumerPipeline,
+)
 from sys import simd_width_of
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-@register_passable("trivial")
-trait TileLoader:
+trait TileLoader(TrivialRegisterPassable):
     """Base trait for tile loading mechanisms in matrix multiplication.
 
     This trait defines the interface for loading tiles from global memory
@@ -52,7 +56,7 @@ trait TileLoader:
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
+        dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -66,7 +70,106 @@ trait TileLoader:
         ...
 
 
-@register_passable("trivial")
+trait BarrierHandler(TrivialRegisterPassable):
+    """Handles barrier lifecycle for different transfer mechanisms.
+
+    Separates barrier management from tile loading:
+    - prepare_stage: Called once before loading tiles for a stage.
+    - complete_stage: Called once after all tiles for a stage are loaded.
+
+    TMA: prepare sets expected bytes, complete is noop (hardware signals).
+    cp.async: prepare is noop, complete commits copies and signals arrival.
+    """
+
+    @always_inline
+    fn prepare_stage(self, mem_barrier: SMemBarrier):
+        """Prepare barrier for incoming transfers.
+
+        For TMA: sets expected transaction bytes.
+        For cp.async: noop.
+
+        Args:
+            mem_barrier: The stage's memory barrier.
+        """
+        ...
+
+    @always_inline
+    fn complete_stage(self, mem_barrier: SMemBarrier):
+        """Signal that all transfers for this stage are done.
+
+        For TMA: noop (hardware auto-signals).
+        For cp.async: commits pending copies and signals thread arrival.
+
+        Args:
+            mem_barrier: The stage's memory barrier.
+        """
+        ...
+
+
+struct TMABarrierHandler[expected_bytes: Int](BarrierHandler):
+    """TMA barrier handler: sets expected bytes on prepare, noop on complete.
+
+    Initializes the pipeline on construction (phase=0, barrier counts).
+
+    Parameters:
+        expected_bytes: Total bytes expected per stage across all loaders.
+    """
+
+    fn __init__[
+        num_stages: Int
+    ](
+        out self,
+        mut pipeline: ProducerConsumerPipeline[num_stages],
+        num_consumers: Int,
+        cluster_size: Int,
+    ):
+        pipeline._producer_phase = 0
+        if thread_idx.x == 0:
+            pipeline.init_mbars(
+                producer_arrive_count=1,
+                consumer_arrive_count=Int32(num_consumers * cluster_size),
+            )
+
+    @always_inline
+    fn prepare_stage(self, mem_barrier: SMemBarrier):
+        mem_barrier[].expect_bytes(Int32(Self.expected_bytes))
+
+    @always_inline
+    fn complete_stage(self, mem_barrier: SMemBarrier):
+        pass
+
+
+struct CPAsyncBarrierHandler(BarrierHandler):
+    """The cp.async barrier handler: noop on prepare, arrives on complete.
+
+    Initializes the pipeline on construction (phase=0, barrier counts).
+    """
+
+    fn __init__[
+        num_stages: Int
+    ](
+        out self,
+        mut pipeline: ProducerConsumerPipeline[num_stages],
+        num_consumers: Int,
+        cluster_size: Int,
+    ):
+        pipeline._producer_phase = 0
+        if thread_idx.x == 0:
+            pipeline.init_mbars(
+                producer_arrive_count=Int32(WARPGROUP_SIZE),
+                consumer_arrive_count=Int32(num_consumers * cluster_size),
+            )
+
+    @always_inline
+    fn prepare_stage(self, mem_barrier: SMemBarrier):
+        pass
+
+    @always_inline
+    fn complete_stage(self, mem_barrier: SMemBarrier):
+        async_copy_arrive(mem_barrier)
+        _ = mem_barrier[].arrive()
+
+
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
@@ -125,7 +228,7 @@ struct TileLoaderTMA[
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
+        dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         _coords: Tuple[UInt, UInt],
     ):
@@ -183,11 +286,10 @@ struct TileLoaderTMA[
             self.tma_op[].async_copy(
                 dst,
                 mem_barrier[],
-                coords,
+                (Int(coords[0]), Int(coords[1])),
             )
 
 
-@register_passable("trivial")
 struct TileLoaderCPAsync[
     dtype: DType,
     src_layout: Layout,
@@ -237,7 +339,7 @@ struct TileLoaderCPAsync[
 
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
+        dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -347,7 +449,9 @@ fn async_copy_with_bound_check[
     # Source matrix bounds for boundary checking
     comptime src_stride0 = src.layout.stride[0].value()
     var src_bound0 = Int32(src.runtime_layout.shape.value[0])
-    var src_bound1 = Int32(src.runtime_layout.shape.value[1]) * dst.element_size
+    var src_bound1 = Int32(src.runtime_layout.shape.value[1]) * Int32(
+        dst.element_size
+    )
 
     # Calculate base coordinates for this thread's destination fragment
     var dst_frag_offset = dst_frag.distance(dst.ptr)
@@ -359,8 +463,8 @@ fn async_copy_with_bound_check[
     # Create swizzle pattern to avoid shared memory bank conflicts
     comptime swizzle = make_swizzle[
         8,
-        Int(swizzle_bytes // size_of[dst.dtype]()),
-        Int(simd_width_of[dst.dtype]()),
+        swizzle_bytes // size_of[dst.dtype](),
+        simd_width_of[dst.dtype](),
     ]()
 
     comptime num_vecs = dst_frag.layout.size()
@@ -373,7 +477,8 @@ fn async_copy_with_bound_check[
         comptime dst_idx_base = dst_idx % swizzle.size()
         comptime dst_idx_diff = dst_idx - dst_idx_base
         var dst_swizzled_idx = Int32(
-            swizzle(dst_frag_offset + dst_idx_base) + dst_idx_diff
+            swizzle(dst_frag_offset + Scalar[dst.linear_idx_type](dst_idx_base))
+            + Scalar[dst.linear_idx_type](dst_idx_diff)
         )
         var dst_ptr = dst.ptr + Int(dst_swizzled_idx)
 
@@ -381,8 +486,8 @@ fn async_copy_with_bound_check[
         # TODO: we should be able to use idx2crd for this.
         comptime dst_shifted_coord0 = dst_idx // dst_stride0
         comptime dst_shifted_coord1 = dst_idx % dst_stride0
-        var dst_coord0 = dst_shifted_coord0 + dst_frag_base_coord0
-        var dst_coord1 = dst_shifted_coord1 + dst_frag_base_coord1
+        var dst_coord0 = Int32(dst_shifted_coord0) + dst_frag_base_coord0
+        var dst_coord1 = Int32(dst_shifted_coord1) + dst_frag_base_coord1
 
         comptime size_bytes = dst.element_size * size_of[dst.dtype]()
 
@@ -390,7 +495,7 @@ fn async_copy_with_bound_check[
         var src_ptr = (
             src.ptr.address_space_cast[AddressSpace.GLOBAL]()
             + dst_coord1
-            + dst_coord0 * src_stride0
+            + dst_coord0 * Int32(src_stride0)
         )
 
         # Perform boundary check and issue appropriate async copy
@@ -400,7 +505,7 @@ fn async_copy_with_bound_check[
                 size_bytes,
                 bypass_L1_16B=False,
                 fill = Scalar[dst.dtype](0),
-            ](src_ptr, dst_ptr, src_size=size_bytes)
+            ](src_ptr, dst_ptr, src_size=Int32(size_bytes))
         else:
             # Out-of-bounds: zero-fill
             async_copy[

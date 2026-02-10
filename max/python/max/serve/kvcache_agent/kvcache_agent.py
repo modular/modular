@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,7 +30,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
     KVCacheAgentServiceServicer,
     add_KVCacheAgentServiceServicer_to_server,
 )
-from max.serve.queue.zmq_queue import ZmqPullSocket
+from max.serve.worker_interface.zmq_queue import ZmqPullSocket
 
 logger = logging.getLogger("max.serve")
 

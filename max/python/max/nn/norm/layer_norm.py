@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,158 +11,108 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Layer Normalization layer."""
+"""Layer normalization."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Any
-
-import numpy as np
-import numpy.typing as npt
+from max import functional as F
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.tensor import Tensor
 
-from ..layer import Module, Shardable
+from ..module import Module
 
 
-class LayerNorm(Module, Shardable):
-    """Layer normalization block."""
+def layer_norm(
+    x: Tensor,
+    gamma: Tensor,
+    beta: Tensor,
+    eps: float,
+    keep_dtype: bool,
+) -> Tensor:
+    """Applies Layer Normalization to an input tensor.
+
+    Args:
+        x: Input tensor to normalize.
+        gamma: Scale tensor for elementwise affine transform.
+        beta: Bias tensor for elementwise affine transform.
+        eps: Numerical stability constant.
+        keep_dtype: Whether to preserve input dtype in computation.
+
+    Returns:
+        A layer-normalized tensor with the same shape and type as `x`.
+    """
+    if keep_dtype:
+        return F.layer_norm(x, gamma=gamma, beta=beta, epsilon=eps)
+    output = F.layer_norm(
+        F.cast(x, DType.float32),
+        gamma=F.cast(gamma, DType.float32),
+        beta=F.cast(beta, DType.float32),
+        epsilon=eps,
+    )
+    return F.cast(output, x.dtype)
+
+
+class LayerNorm(Module[[Tensor], Tensor]):
+    """Layer normalization over the last dimension."""
+
+    weight: Tensor | None
+    bias: Tensor | None
 
     def __init__(
         self,
-        dims: int,
-        devices: Sequence[DeviceRef],
-        dtype: DType,
+        dim: int,
         eps: float = 1e-5,
+        *,
+        keep_dtype: bool = True,
+        elementwise_affine: bool = True,
         use_bias: bool = True,
     ) -> None:
+        """Initialize LayerNorm.
+
+        Args:
+            dim: Size of the last dimension to normalize.
+            eps: Numerical stability constant.
+            keep_dtype: Whether to preserve input dtype in computation.
+            elementwise_affine: Whether to apply learned scale.
+            use_bias: Whether to apply a bias. It's only effective if elementwise_affine is True.
+        """
         super().__init__()
-        self.devices = devices
-        self.weight = Weight("weight", dtype, (dims,), device=self.devices[0])
-        self.bias = (
-            Weight("bias", dtype, (dims,), device=self.devices[0])
-            if use_bias
-            else None
-        )
+        self.dim = dim
         self.eps = eps
-        self.dim = dims
-        self.dtype = dtype
-        self._sharding_strategy: ShardingStrategy | None = None
-
-    def __call__(self, input: TensorValue):
-        # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
-        bias = (
-            ops.cast(self.bias, DType.float32)
-            if self.bias
-            # If bias wasn't passed then use bias-less layer norm (beta = 0).
-            else ops.broadcast_to(
-                ops.constant(0.0, DType.float32, self.weight.device),
-                shape=(input.shape[-1],),
-            )
-        )
-        return ops.layer_norm(
-            input.cast(DType.float32),
-            gamma=ops.cast(self.weight, DType.float32),
-            beta=bias,
-            epsilon=self.eps,
-        ).cast(input.dtype)
-
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        """Get the LayerNorm sharding strategy."""
-        return self._sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the LayerNorm layer.
-
-        Args:
-            strategy: The sharding strategy to apply.
-        """
-        # LayerNorm currently only supports replicate strategy
-        if not strategy.is_replicate:
-            raise ValueError("LayerNorm only supports replicate strategy")
-
-        self._sharding_strategy = strategy
-        self.weight.sharding_strategy = strategy
-        if self.bias is not None:
-            self.bias.sharding_strategy = strategy
-
-    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[LayerNorm]:
-        """Creates sharded views of this LayerNorm across multiple devices.
-
-        Args:
-            devices: Iterable of devices to place the shards on.
-
-        Returns:
-            List of sharded LayerNorm instances, one for each device.
-        """
-        if self.sharding_strategy is None:
-            raise ValueError("Sharding strategy is not set")
-
-        # Get sharded weights
-        weight_shards = list(self.weight.shard(devices))
-        if self.bias is not None:
-            bias_shards: list[Weight | None] = list(self.bias.shard(devices))
+        self.keep_dtype = keep_dtype
+        self.elementwise_affine = elementwise_affine
+        self.use_bias = use_bias
+        if elementwise_affine:
+            self.weight = Tensor.ones([dim])
+            self.bias = Tensor.zeros([dim]) if use_bias else None
         else:
-            # Build a list of Nones matching number of devices
-            bias_shards = [None for _ in range(len(weight_shards))]
+            self.weight = None
+            self.bias = None
 
-        shards: list[LayerNorm] = []
-        for weight_shard, bias_shard, device in zip(
-            weight_shards, bias_shards, devices, strict=True
-        ):
-            # Create new LayerNorm instance with the same configuration
-            sharded = LayerNorm(
-                dims=self.dim,
-                devices=[device],
-                dtype=self.dtype,
-                eps=self.eps,
-                use_bias=self.bias is not None,
+    def __rich_repr__(self):
+        """Repr matching the Linear constructor."""
+        yield "dim", self.dim
+        yield "eps", self.eps, 1e-5
+
+    def _affine_params(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        if self.weight is None:
+            gamma = F.broadcast_to(
+                F.constant(1.0, dtype=x.dtype, device=x.device),
+                shape=(x.shape[-1],),
             )
+        else:
+            gamma = self.weight
 
-            # Assign the sharded parameters
-            sharded.weight = weight_shard
-            sharded.bias = bias_shard
+        if self.bias is None:
+            beta = F.broadcast_to(
+                F.constant(0.0, dtype=x.dtype, device=x.device),
+                shape=(x.shape[-1],),
+            )
+        else:
+            beta = self.bias
 
-            shards.append(sharded)
+        return gamma, beta
 
-        return shards
-
-
-class ConstantLayerNorm(Module):
-    """Layer normalization block with constant gamma and beta values."""
-
-    gamma: npt.NDArray[np.floating[Any]]
-    beta: npt.NDArray[np.floating[Any]]
-    eps: float = 1e-5
-    device: DeviceRef
-    dtype: DType
-
-    def __init__(
-        self,
-        dims: int | tuple[int, ...],
-        device: DeviceRef,
-        dtype: DType,
-        eps: float = 1e-5,
-    ) -> None:
-        super().__init__()
-        self.gamma = np.ones(dims, dtype=dtype.to_numpy())
-        self.beta = np.zeros(dims, dtype=dtype.to_numpy())
-        self.eps = eps
-        self.device = device
-        self.dtype = dtype
-
-    def __call__(self, input: TensorValue) -> TensorValue:
-        gamma = ops.constant(self.gamma, self.dtype, self.device)
-        beta = ops.constant(self.beta, self.dtype, self.device)
-        return ops.cast(
-            ops.layer_norm(
-                ops.cast(input, DType.float32),
-                gamma=gamma,
-                beta=beta,
-                epsilon=self.eps,
-            ),
-            input.dtype,
-        )
+    def forward(self, x: Tensor) -> Tensor:
+        gamma, beta = self._affine_params(x)
+        return layer_norm(x, gamma, beta, self.eps, self.keep_dtype)

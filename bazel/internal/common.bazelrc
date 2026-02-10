@@ -129,17 +129,8 @@ build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TEL
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
 run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
-# Emit Mojo is enabled by default for build, run, and test.
-build --//:emit_mojo=true
-test --test_env=EMIT_MOJO=1
-run --run_env=EMIT_MOJO=1
-
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
-
-build --action_env=MODULAR_DISABLE_AFFINITY=1
-build --host_action_env=MODULAR_DISABLE_AFFINITY=1
-build --test_env=MODULAR_DISABLE_AFFINITY=1
 
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
@@ -154,6 +145,9 @@ common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
+build --modify_execution_info=CcLtoBackendCompile=+supports-path-mapping
+# TODO: This isn't supported by bazel yet
+# build --modify_execution_info=CppLTOIndexing=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
 build --modify_execution_info=CppModuleMap=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping

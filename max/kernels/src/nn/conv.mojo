@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg, Dict
+from collections import Optional, Dict
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -21,7 +21,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from os import abort
-from sys.ffi import _get_global_or_null, external_call
+from ffi import _get_global_or_null, external_call
 from sys.info import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
@@ -78,8 +78,12 @@ from linalg.utils import partition_work
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
+from sys import has_nvidia_gpu_accelerator
+from sys.info import _accelerator_arch
+from gpu.host.info import B200
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
+
 
 from .conv_utils import (
     ConvInfoStatic,
@@ -310,7 +314,7 @@ fn _reduce_output[
     dtype: DType,
     //,
     simd_size: Int,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     scratch: UnsafePointer[Scalar[dtype]],
     output: UnsafePointer[Scalar[dtype]],
@@ -380,7 +384,7 @@ struct ConvDirectNHWC[
     output_type: DType,
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[conv_attr_rank],
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](ImplicitlyCopyable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
@@ -432,7 +436,7 @@ struct ConvDirectNHWC[
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
     ) raises:
-        __comptime_assert Self.conv_attr_rank == Self.input_layout.rank() - 2
+        comptime assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime simd_size = simd_width_of[Self.output_type]()
         # TODO: extend to 1d/3d.
         comptime WO = Int(
@@ -458,7 +462,7 @@ struct ConvDirectNHWC[
 
         @parameter
         if Self.conv_attr.num_groups != UNKNOWN_VALUE:
-            __comptime_assert (
+            comptime assert (
                 Self.filter_packed or Self.conv_attr.num_groups == 1
             ), (
                 "if number of conv groups is statically known, conv filter"
@@ -761,7 +765,7 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         output_flat_coord: Int,
     ):
-        __comptime_assert not has_residual or (
+        comptime assert not has_residual or (
             has_residual and micro_kernel_width == 1
         ), "Use Height x 1 kernel for residual in F."
 
@@ -778,7 +782,7 @@ struct ConvDirectNHWC[
 
         @parameter
         for i in range(micro_kernel_height):
-            input_base_offsets[i] = (
+            input_base_offsets[i] = Int32(
                 self.conv_shape.output_flat_coord_to_input_offset(
                     n, output_flat_coord + i
                 )
@@ -1266,14 +1270,14 @@ struct ConvDirectNHWC[
         # [right_pad_impact_start, WO)
         var left_pad_impact_end = ceildiv(
             self.conv_shape.pad_w[0],
-            self.conv_shape.stride[Self.input_layout.rank() - 3],
+            self.conv_shape.stride[comptime (Self.input_layout.rank() - 3)],
         )
         var right_pad_impact_start = (
             self.conv_shape.w()
             + self.conv_shape.pad_w[0]
             - self.conv_shape.s()
-            * self.conv_shape.dilation[Self.input_layout.rank() - 3]
-        ) // self.conv_shape.stride[Self.input_layout.rank() - 3] + 1
+            * self.conv_shape.dilation[comptime (Self.input_layout.rank() - 3)]
+        ) // self.conv_shape.stride[comptime (Self.input_layout.rank() - 3)] + 1
 
         @parameter
         if Self.input_layout.rank() == 3:
@@ -1586,7 +1590,7 @@ struct ConvDirectNHWC[
     fn _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
-        __comptime_assert Self.conv_attr_rank == Self.input_layout.rank() - 2
+        comptime assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime WO = Int(Self.output_layout.shape[2])  # NHWC
         comptime F = Int(Self.output_layout.shape[3])  # NHWC
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -2045,7 +2049,7 @@ fn accumulate_wo_tile_1d[
         # Skip this point's neighbor if it's in padding.
         @parameter
         if effected_by_padding:
-            __comptime_assert (
+            comptime assert (
                 micro_kernel_height == 1
             ), "The tile must only have 1 point when effected bypadding."
             var w_nbr = w + s * dilation
@@ -2074,7 +2078,7 @@ fn conv1d_update_wo_tile[
     output_dt: DType,
     input_dt: DType,
     filter_dt: DType,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[Scalar[output_dt]],
     input: UnsafePointer[Scalar[input_dt]],
@@ -2243,7 +2247,7 @@ fn conv2d_update_wo_tile[
     output_dt: DType,
     input_dt: DType,
     filter_dt: DType,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[Scalar[output_dt]],
     input: UnsafePointer[Scalar[input_dt]],
@@ -2425,7 +2429,7 @@ fn conv3d_update_wo_tile[
     output_dt: DType,
     input_dt: DType,
     filter_dt: DType,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[Scalar[output_dt]],
     input: UnsafePointer[Scalar[input_dt]],
@@ -2740,7 +2744,7 @@ fn pack_filter(
     """This packs the filter form RSCF to FRSCf.
     Use the default micro kernel size for dynamic shapes."""
 
-    __comptime_assert (
+    comptime assert (
         filter.dtype == packed_filter.dtype
     ), "Type mismatch between the filter and the packed filter."
 
@@ -2789,11 +2793,11 @@ fn pack_filter[
     """
 
     # The micro kernel should be multiple of simd_size in F dimension.
-    __comptime_assert micro_kernel_f_size % simd_size == 0
+    comptime assert micro_kernel_f_size % simd_size == 0
 
     # The input simd size should not exceed filter type's simd size.
     # E.x. we can pack int8 filter based on int32 simd size.
-    __comptime_assert simd_size <= simd_width_of[filter.dtype]()
+    comptime assert simd_size <= simd_width_of[filter.dtype]()
 
     # Product of filter dims upto (rank - 1).
     var outer_dims_prod = 1
@@ -2929,9 +2933,9 @@ fn conv_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert strides_buf.rank == 1
-    __comptime_assert dilations_buf.rank == 1
-    __comptime_assert paddings_buf.rank == 1
+    comptime assert strides_buf.rank == 1
+    comptime assert dilations_buf.rank == 1
+    comptime assert paddings_buf.rank == 1
 
     if input_buf.rank < 3:
         raise Error("[convolution] requires (input_rank >= 3)")
@@ -3018,11 +3022,11 @@ fn conv_nhwc_direct[
     pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
-    __comptime_assert conv_info_rank == input_layout.rank() - 2
-    __comptime_assert (
+    comptime assert conv_info_rank == input_layout.rank() - 2
+    comptime assert (
         input_type == filter_type and input_type == output_type
     ), "conv input/output/filter types must be the same."
-    __comptime_assert (filter_packed and filter.rank == input.rank + 1) or (
+    comptime assert (filter_packed and filter.rank == input.rank + 1) or (
         not filter_packed and filter.rank == input.rank
     ), "Filter and input ranks mismatch."
 
@@ -3090,7 +3094,7 @@ fn conv_nhwc_direct[
             output_type,
             filter_packed,
             conv_info_static,
-            OptionalReg[elementwise_epilogue_type](
+            Optional[elementwise_epilogue_type](
                 elementwise_epilogue
             ) if lambdas_have_fusion else None,
         ].run(
@@ -3114,7 +3118,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     filter_type: DType,
     output_type: DType,
     block_size: Int,
-    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type],
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
     filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
@@ -3189,8 +3193,7 @@ fn check_cudnn_error(stat: cudnnStatus_t):
         print(stat)
 
 
-@register_passable
-struct CuDNNConvMeta(ImplicitlyCopyable):
+struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
@@ -3322,10 +3325,10 @@ fn _conv_cudnn[
             ptr_meta[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
             get_cudnn_dtype[input_type](),
-            input.dim[0](),
-            input.dim[3](),
-            input.dim[1](),
-            input.dim[2](),
+            Int16(input.dim[0]()),
+            Int16(input.dim[3]()),
+            Int16(input.dim[1]()),
+            Int16(input.dim[2]()),
         )
     )
 
@@ -3334,22 +3337,22 @@ fn _conv_cudnn[
             ptr_meta[].ptr_filter_desc,
             get_cudnn_dtype[filter_type](),
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-            filter.dim[0](),
-            filter.dim[1](),
-            filter.dim[2](),
-            filter.dim[3](),
+            Int16(filter.dim[0]()),
+            Int16(filter.dim[1]()),
+            Int16(filter.dim[2]()),
+            Int16(filter.dim[3]()),
         )
     )
 
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
             ptr_meta[].ptr_conv_desc,
-            padding[0],
-            padding[1],
-            stride[0],
-            stride[1],
-            dilation[0],
-            dilation[1],
+            Int16(padding[0]),
+            Int16(padding[1]),
+            Int16(stride[0]),
+            Int16(stride[1]),
+            Int16(dilation[0]),
+            Int16(dilation[1]),
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
             # cuDNN 8+ requires float32 accumulation when the I/O tensors are
             # bfloat16.
@@ -3360,7 +3363,9 @@ fn _conv_cudnn[
     )
 
     check_cudnn_error(
-        cudnnSetConvolutionGroupCount(ptr_meta[].ptr_conv_desc, num_groups)
+        cudnnSetConvolutionGroupCount(
+            ptr_meta[].ptr_conv_desc, Int16(num_groups)
+        )
     )
 
     check_cudnn_error(
@@ -3368,10 +3373,10 @@ fn _conv_cudnn[
             ptr_meta[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
             get_cudnn_dtype[output_type](),
-            output.dim[0](),
-            output.dim[3](),
-            output.dim[1](),
-            output.dim[2](),
+            Int16(output.dim[0]()),
+            Int16(output.dim[3]()),
+            Int16(output.dim[1]()),
+            Int16(output.dim[2]()),
         )
     )
 
@@ -3454,7 +3459,7 @@ fn conv_gpu[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
@@ -3466,7 +3471,7 @@ fn conv_gpu[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert conv_rank == input.rank - 2
+    comptime assert conv_rank == input.rank - 2
 
     var has_asymmetric_padding = False
     var pad_before = IndexList[conv_rank](0)
@@ -3492,9 +3497,11 @@ fn conv_gpu[
 
         @parameter
         for i in range(conv_rank):
+            comptime SIMDInt = Scalar[DType.int]
+
             var axis = i + 1  # skip batch axis
-            paddings_tensor[2 * axis] = padding[2 * i]  # before
-            paddings_tensor[2 * axis + 1] = padding[2 * i + 1]  # after
+            paddings_tensor[2 * axis] = SIMDInt(padding[2 * i])  # before
+            paddings_tensor[2 * axis + 1] = SIMDInt(padding[2 * i + 1])  # after
 
         var input_shape = rebind[IndexList[full_rank]](
             input.runtime_layout.shape.value.canonicalize()
@@ -3509,7 +3516,7 @@ fn conv_gpu[
                 var spatial_idx = axis - 1
                 before = padding[2 * spatial_idx]
                 after = padding[2 * spatial_idx + 1]
-            padded_shape[axis] = Int(input_shape[axis]) + before + after
+            padded_shape[axis] = input_shape[axis] + before + after
 
         var padded_elements = padded_shape.flattened_length()
         var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
@@ -3595,7 +3602,49 @@ fn conv_gpu[
 
     @parameter
     if input.rank == 4:
+        # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
+        comptime _is_sm100 = ctx.default_device_info == B200
+        comptime _is_supported_dtype = input_type == DType.bfloat16
 
+        @parameter
+        if _is_sm100 and _is_supported_dtype and not maybe_epilogue_func:
+            from nn.conv_sm100.dispatch import (
+                dispatch_sm100_conv2d,
+            )
+
+            # SM100 dispatch: stride=1, dilation=1, groups=1,
+            # and channels aligned to 64 (TMA tile K alignment)
+            var s = rebind[IndexList[2]](stride)
+            var d = rebind[IndexList[2]](dilation)
+            var in_c = input.dim[input.rank - 1]()
+            var out_c = output.dim[output.rank - 1]()
+            if (
+                s[0] == 1
+                and s[1] == 1
+                and d[0] == 1
+                and d[1] == 1
+                and num_groups == 1
+                and in_c % 64 == 0
+                and out_c % 128 == 0
+            ):
+                dispatch_sm100_conv2d[
+                    input_layout,
+                    filter_layout,
+                    output_layout,
+                    input_type,
+                    filter_type,
+                    output_type,
+                    filter_is_fcrs,
+                ](
+                    input,
+                    filter,
+                    output,
+                    rebind[IndexList[2]](symmetric_padding),
+                    ctx,
+                )
+                return
+
+        # Fallback paths for non-SM100, unsupported dtypes, or constraints
         @parameter
         if filter_is_fcrs:
 
@@ -3609,7 +3658,7 @@ fn conv_gpu[
                 var output_tmp = output
                 output_tmp.ptr = output_tmp_data.unsafe_ptr()
 
-                conv_cudnn[input_type, filter_type, output_type,](
+                conv_cudnn[input_type, filter_type, output_type](
                     LayoutTensor[
                         input_type, Layout.row_major[4](), MutAnyOrigin
                     ](
@@ -3660,7 +3709,7 @@ fn conv_gpu[
                 _ = output_tmp_data^
 
             else:
-                conv_cudnn[input_type, filter_type, output_type,](
+                conv_cudnn[input_type, filter_type, output_type](
                     LayoutTensor[
                         input_type, Layout.row_major[4](), MutAnyOrigin
                     ](
@@ -3731,7 +3780,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     filter_type: DType,
     output_type: DType,
     block_size: Int,
-    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type],
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
     filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],

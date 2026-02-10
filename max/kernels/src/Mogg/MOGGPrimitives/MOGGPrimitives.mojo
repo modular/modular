@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of, align_of
+from ffi import external_call
+from sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -21,6 +22,9 @@ from collections import InlineArray
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from memory import memcpy
 
 from nn.concat import concat
@@ -54,8 +58,7 @@ fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
 # just create a C++ function for it. For the time being, this is safe because of
 # the `constrained` and `static_assert` we added to ensure the type has the
 # right byte size.
-@register_passable("trivial")
-struct StateContext:
+struct StateContext(TrivialRegisterPassable):
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
     This is currently meant as a mojo-side container for GML::StateContext."""
 
@@ -67,7 +70,7 @@ struct StateContext:
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
-        __comptime_assert size_of[StateContext]() == 16, (
+        comptime assert size_of[StateContext]() == 16, (
             "Expecting StateContext to be 16 bytes wide, to match the C++"
             " equivalent"
         )
@@ -84,10 +87,7 @@ struct StateContext:
 fn pack_string_res(
     str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
 ) raises -> String:
-    var span = Span[Byte, ImmutAnyOrigin](
-        ptr=UnsafePointer[Byte, origin=ImmutAnyOrigin](str_ptr),
-        length=Int(str_len),
-    )
+    var span = Span(ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
     return String(StringSlice(from_utf8=span))
 
@@ -176,7 +176,7 @@ fn create_non_tracked_tensor_async[
     buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
@@ -240,7 +240,7 @@ fn create_tensor_async[
 ):
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
@@ -268,8 +268,8 @@ fn create_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn (UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn (
+    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: fn(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -301,8 +301,8 @@ fn create_python_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn (UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn (
+    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: fn(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -380,7 +380,7 @@ fn unpack_tensor[
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     var shapes = IndexList[buffer_rank]()
@@ -415,7 +415,7 @@ fn unpack_tensor_spec[
 
     @parameter
     for i in range(spec_rank):
-        shape[i] = Int(storage[i])
+        shape[i] = storage[i]
 
     return shape
 
@@ -460,13 +460,13 @@ fn mgp_tensor_create[
     @parameter
     if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
-        __comptime_assert buffer_rank == 1
+        comptime assert buffer_rank == 1
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
-        __comptime_assert spec_rank == buffer_rank
+        comptime assert spec_rank == buffer_rank
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
@@ -484,10 +484,10 @@ fn mgp_tensor_extract_tensor_spec[
 ]:
     @parameter
     if tensor_rank == 0:
-        __comptime_assert buffer_rank == 1
+        comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
-        __comptime_assert buffer_rank == tensor_rank
+        comptime assert buffer_rank == tensor_rank
         return rebind[IndexList[tensor_rank]](
             buffer.dynamic_shape.canonicalize()
         )
@@ -555,7 +555,7 @@ fn mgp_buffer_constant_external(
         )
 
     var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
-    if (Int(weight_ptr) % align) != 0:
+    if (UInt64(Int(weight_ptr)) % align) != 0:
         raise Error(
             "invalid alignment for address ",
             weight_ptr,
@@ -573,7 +573,7 @@ fn fill_buffer[
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
-        ptr.store(offset, val)
+        ptr.store(offset, Scalar[dtype](val))
         offset += 1
 
 
@@ -592,7 +592,7 @@ fn mgp_buffer_set_with_index[
         "buffer size not divisible by number of index args",
     )
 
-    var elSize = bufSize / numArgs
+    var elSize = bufSize // numArgs
     if elSize == 4:
         fill_buffer[DType.int32](buffer, vals)
     elif elSize == 8:
@@ -648,22 +648,25 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var output_lt = LayoutTensor[DType.int8, layout_1d](
+    var output_lt = TileTensor(
         output.data,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
+        row_major(Coord(Idx(len(output)))),
     )
-    var input_tensors = StaticTuple[
-        LayoutTensor[DType.int8, layout_1d, MutAnyOrigin],
-        inputs.size,
-    ]()
-    for i in range(len(inputs)):
-        input_tensors[i] = input_tensors.element_type(
-            inputs[i].data,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](len(inputs[i]))),
+    var input_tensors = StaticTuple[_, inputs.size](
+        TileTensor(inputs[0])
+        .make_dynamic[DType.int64]()
+        .as_any_origin()
+        .as_immut()
+    )
+    for i in range(1, len(inputs)):
+        input_tensors[i] = (
+            TileTensor(inputs[i])
+            .make_dynamic[DType.int64]()
+            .as_any_origin()
+            .as_immut()
         )
     if len(output) < 4096:
-        concat[inputs_layout=layout_1d, DType.int8, True, bDevice, None](
+        concat[DType.int8, True, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
     else:
@@ -835,8 +838,8 @@ fn mgp_tensor_spec_create[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
-    __comptime_assert (
-        axis < spec_rank
+    comptime assert axis < UInt64(
+        spec_rank
     ), "axis for get_dim must be less than rank of TensorSpec"
     return spec[Int(axis)]
 
@@ -1039,20 +1042,6 @@ fn ManagedTensorSliceDef[
     return ty
 
 
-@register_internal("list_of_tensor")
-fn ListOfTensorDef[
-    dtype: DType,
-    rank: Int,
-](
-    ty: List[
-        InputTensor[
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-        ]
-    ]
-) -> type_of(ty):
-    return ty.copy()
-
-
 # ===-----------------------------------------------------------------------===#
 # Hooks to help build static shapes.
 # ===-----------------------------------------------------------------------===#
@@ -1092,7 +1081,7 @@ fn reshape_contiguous_buffer[
 fn get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType], target: StaticString
 ]() -> Int:
-    __comptime_assert dtypes.size > 0
+    comptime assert dtypes.size > 0
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 
@@ -1332,8 +1321,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
 
-@register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable):
+struct MyIntReg(TrivialRegisterPassable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1346,8 +1334,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
 
-@register_passable
-struct MyIntReg2(ImplicitlyCopyable):
+struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1530,20 +1517,8 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     return
 
 
-@register_internal("mogg.async.pack.borrow")
 @no_inline
-fn mogg_async_pack_borrow(
-    borrower: AnyAsyncValueRefPtr, borrowee: TensorBufferRefPtr
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-    external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
-
-
-@no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     buffer_rank: Int,
     dtype: DType,
     //,
@@ -1577,7 +1552,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     spec_rank: Int,  # unused
     is_tensor: Bool,  # unused
 ](

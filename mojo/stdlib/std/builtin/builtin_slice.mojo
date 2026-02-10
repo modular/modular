@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -67,6 +67,7 @@ struct Slice(
         start: Optional[Int],
         end: Optional[Int],
         step: Optional[Int],
+        __slice_literal__: () = (),
     ):
         """Construct slice given the start, end and step values.
 
@@ -74,6 +75,7 @@ struct Slice(
             start: The start value.
             end: The end value.
             step: The step value.
+            __slice_literal__: Enables slice literal syntax.
         """
         self.start = start
         self.end = end
@@ -222,7 +224,11 @@ struct StridedSlice(ImplicitlyCopyable):
         self._inner = other
 
     fn __init__(
-        out self, start: Optional[Int], end: Optional[Int], stride: Int
+        out self,
+        start: Optional[Int],
+        end: Optional[Int],
+        stride: Int,
+        __slice_literal__: () = (),
     ):
         """Construct slice given start, end, and stride values.
 
@@ -230,6 +236,7 @@ struct StridedSlice(ImplicitlyCopyable):
             start: The start value.
             end: The end value.
             stride: The step value.
+            __slice_literal__: Enables slice literal syntax.
         """
 
         self._inner = Slice(start, end, stride)
@@ -261,7 +268,11 @@ struct ContiguousSlice(ImplicitlyCopyable):
 
     @always_inline
     fn __init__(
-        out self, start: Optional[Int], end: Optional[Int], stride: NoneType
+        out self,
+        start: Optional[Int],
+        end: Optional[Int],
+        stride: NoneType,
+        __slice_literal__: () = (),
     ):
         """Construct slice given the start and end values.
 
@@ -269,6 +280,7 @@ struct ContiguousSlice(ImplicitlyCopyable):
             start: The start value.
             end: The end value.
             stride: Always none. Disambiguates from slices with a stride.
+            __slice_literal__: Enables slice literal syntax.
         """
         self.start = start
         self.end = end

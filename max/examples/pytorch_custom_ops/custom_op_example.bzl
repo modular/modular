@@ -18,18 +18,17 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "@mojo//:std",
+            "//max:MOGGKernelAPI",
             "//max:tensor",
-        ] + select({
-            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-            "//conditions:default": [],
-        }),
+            "@mojo//:std",
+        ],
         visibility = ["//visibility:private"],
         testonly = True,
         **kwargs
     )
 
     # Run each example as a simple non-zero-exit-code test.
+    # The test inherits target_compatible_with from the binary dependency.
     if create_test:
         modular_run_binary_test(
             name = name + ".example-test",

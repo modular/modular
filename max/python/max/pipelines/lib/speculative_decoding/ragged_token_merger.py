@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max import nn
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import merge_ragged_tensors
+from max.nn.legacy.kernels import merge_ragged_tensors
+from max.nn.legacy.layer import Module
 
 
 def ragged_token_merger(device: DeviceRef) -> Graph:
+    """Builds a graph that merges prompt and draft tokens into a single ragged sequence.
+
+    Args:
+        device: Device for the graph inputs and merge op.
+
+    Returns:
+        A graph that takes prompt tokens, prompt row offsets, and draft tokens and
+        outputs merged tokens and merged row offsets.
+    """
     graph_inputs = [
         TensorType(DType.int64, ["batch_prompt_seq_len"], device=device),
         TensorType(DType.uint32, ["offsets_len"], device=device),
@@ -37,7 +46,7 @@ def ragged_token_merger(device: DeviceRef) -> Graph:
         return graph
 
 
-class RaggedTokenMerger(nn.Module):
+class RaggedTokenMerger(Module):
     def __init__(self, device: DeviceRef) -> None:
         self.device = device
 
@@ -47,6 +56,7 @@ class RaggedTokenMerger(nn.Module):
         prompt_offsets: TensorValue,
         draft_tokens: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Merges prompt and draft tokens into a single ragged token sequence."""
         num_steps = ops.cast(
             ops.shape_to_tensor([draft_tokens.shape[1]]).reshape(()),
             DType.uint32,

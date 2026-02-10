@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
 from sys import size_of
 from itertools import product
 from buffer import NDBuffer
@@ -21,7 +22,6 @@ from testing import assert_true
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
 from comm.sync import can_enable_p2p
-from internal_utils import human_readable_size
 
 
 @always_inline
@@ -33,16 +33,25 @@ fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     rank to verify the correct source GPU was used.
     """
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](Scalar[dtype](root + 1) + Scalar[dtype](j % 251))
+    return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
 
 
 # Shared test configurations - kept small to avoid CI timeouts on MI355
 comptime test_lengths = (
     0,  # No elements
+    1,  # Single element
+    2,  # Smaller than typical simd_width (e.g., float32 simd_width=4 or 8)
+    5,  # simd_width + 1 for float32 (simd_width=4)
+    7,  # Not a multiple of simd_width
+    9,  # simd_width + 1 for bfloat16 (simd_width=8)
+    100,  # Not a multiple of typical simd_width
+    1023,  # Not a multiple of simd_width
     8 * 1024,  # Small latency bound
+    8 * 1024 + 3,  # Not a multiple of simd_width
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
     16 * 1024 * 1024,  # Bandwidth bound
+    16 * 1024 * 1024 + 3,  # Large non-aligned: tests 2-stage tail handling
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
@@ -64,8 +73,8 @@ fn _get_test_str[
         root,
         "-inplace-",
         in_place,
-        "-",
-        human_readable_size(size_of[dtype]() * length),
+        "-nelems-",
+        length,
     )
 
 
@@ -119,10 +128,15 @@ fn broadcast_test[
             out_ptr.unsafe_ptr(), DimList(length)
         )
 
+    # Signal buffers need payload space for 2-stage broadcast
+    var num_bytes = length * size_of[dtype]()
+    var chunk_bytes = ceildiv(num_bytes, ngpus)
+    var signal_buf_size = size_of[Signal]() + chunk_bytes
+
     for i in range(ngpus):
-        # Create and initialize signal buffers
+        # Create and initialize signal buffers (with payload space for 2-stage)
         signal_buffers.append(
-            list_of_ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
         )
         list_of_ctxs[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()

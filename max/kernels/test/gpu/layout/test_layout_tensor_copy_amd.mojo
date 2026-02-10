@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -68,7 +68,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
 
     @parameter
     for i in range(BN // BK):
-        var smem_tile = smem_iter.next_unsafe(i)[]
+        var smem_tile = smem_iter.next_unsafe(smem_iter.linear_uint_type(i))[]
         copy_dram_to_sram[thread_layout=thread_layout](
             smem_tile.vectorize[1, 4](),
             q_gmem_iter,
@@ -96,7 +96,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
-        input_tensor.layout.size()
+        comptime (input_tensor.layout.size())
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     comptime kernel = copy_dram_to_sram_buffer_load_kernel[
@@ -106,7 +106,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
         device_tensor,
         3,
         grid_dim=1,
-        block_dim=(thread_layout.size()),
+        block_dim=(comptime (thread_layout.size())),
     )
     ctx.synchronize()
     _ = device_tensor^
@@ -192,7 +192,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
-        input_tensor.layout.size()
+        comptime (input_tensor.layout.size())
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     comptime kernel = copy_dram_to_local_buffer_load_kernel[
@@ -202,7 +202,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
         device_tensor,
         3,
         grid_dim=1,
-        block_dim=(thread_layout.size()),
+        block_dim=(comptime (thread_layout.size())),
     )
     ctx.synchronize()
     _ = device_tensor^

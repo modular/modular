@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 
 # TODO(bduke): Replace with actual Llama4 model once implemented.
@@ -27,9 +27,10 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import Llama4Model
+from .model_config import Llama4Config
 
 llama4_arch = SupportedArchitecture(
-    name="Llama4ForConditionalGeneration",
+    name="Llama4ForConditionalGeneration_Legacy",
     example_repo_ids=[
         "meta-llama/Llama-4-Scout-17B-16E-Instruct",
         "meta-llama/Llama-4-Scout-17B-16E",
@@ -51,4 +52,5 @@ llama4_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Llama4Config,
 )

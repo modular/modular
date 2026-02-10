@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,7 +28,7 @@ def test_elementwise_1d():
     var vector = Span(ptr=ptr, length=num_elements)
 
     for i in range(len(vector)):
-        vector[i] = i
+        vector[i] = Float32(i)
 
     @always_inline
     @__copy_capture(vector)

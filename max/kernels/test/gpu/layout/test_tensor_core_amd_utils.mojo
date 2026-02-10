@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -135,7 +135,9 @@ fn _arange(tensor: LayoutTensor[mut=True, ...]):
 
             @parameter
             for j in range(tensor.shape[1]()):
-                tensor[i, j] = Scalar[tensor.dtype](Float32(0.1 * i + 0.2 * j))
+                tensor[i, j] = Scalar[tensor.dtype](
+                    Float32(0.1 * Float64(i) + 0.2 * Float64(j))
+                )
     else:
         constrained[False, "Unsupported dtype"]()
 

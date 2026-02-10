@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,8 +17,10 @@ from sys.info import simd_width_of
 
 import algorithm.reduction
 from algorithm import vectorize
-from builtin.math import max as b_max
+from math.math import max as b_max
 from layout import LayoutTensor, UNKNOWN_VALUE
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 
 from utils.index import IndexList
 
@@ -47,22 +49,22 @@ fn outer_product_acc(
         `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
     """
 
-    __comptime_assert (
+    comptime assert (
         res.layout.known_shape()
         and lhs.layout.known_shape()
         and rhs.layout.known_shape()
     ), "outer_product_acc expects inputs with statically known shapes"
-    __comptime_assert res.rank == 2, "Only rank 2 res is allowed."
-    __comptime_assert lhs.rank == 1, "Only rank 1 lhs is allowed."
-    __comptime_assert rhs.rank == 1, "Only rank 1 rhs is allowed."
+    comptime assert res.rank == 2, "Only rank 2 res is allowed."
+    comptime assert lhs.rank == 1, "Only rank 1 lhs is allowed."
+    comptime assert rhs.rank == 1, "Only rank 1 rhs is allowed."
 
     comptime dtype = res.dtype
 
     comptime M = res.shape[0]()
     comptime N = res.shape[1]()
 
-    __comptime_assert lhs.shape[0]() == M, "lhs shape mismatch"
-    __comptime_assert rhs.shape[0]() == N, "rhs shape mismatch"
+    comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
+    comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
 
     @parameter
     for i in range(M):
@@ -77,15 +79,15 @@ fn outer_product_acc(
 @always_inline
 fn _reduce[
     axis: Int,
-    init_func: fn[dtype: DType, width: Int] () -> SIMD[dtype, width],
-    func: fn[dtype: DType, width: Int] (
+    init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
-    __comptime_assert (
+    comptime assert (
         inp.layout.known_shape() and outp.layout.known_shape()
     ), "_reduce expects inputs with statically know shapes"
-    __comptime_assert (
+    comptime assert (
         inp.rank - 1 == outp.rank
     ), "_reduce expects output of rank = inp.rank - 1"
 
@@ -94,8 +96,8 @@ fn _reduce[
 
         @parameter
         if dim != axis:
-            __comptime_assert dim != UNKNOWN_VALUE
-            __comptime_assert (
+            comptime assert dim != UNKNOWN_VALUE
+            comptime assert (
                 inp.shape[dim]() == outp.shape[dim]()
             ), "_reduce expects none reduction dims to be the same"
 
@@ -104,14 +106,14 @@ fn _reduce[
 
         @parameter
         if dim != axis:
-            __comptime_assert dim != UNKNOWN_VALUE
-            __comptime_assert (dim - 1) != UNKNOWN_VALUE
-            __comptime_assert (
+            comptime assert dim != UNKNOWN_VALUE
+            comptime assert (dim - 1) != UNKNOWN_VALUE
+            comptime assert (
                 inp.shape[dim]() == outp.shape[dim - 1]()
             ), "_reduce expects none reduction dims to be the same"
 
     # TODO(KERN-777): We need to relax this constraine.
-    __comptime_assert inp.rank == 2, "Only rank-2 _reduce is supported"
+    comptime assert inp.rank == 2, "Only rank-2 _reduce is supported"
 
     @parameter
     if inp.rank == 2 and axis == 1:
@@ -171,7 +173,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     from layout import LayoutTensor, Layout
     from layout.math import sum
 
-    data = InlineArray[Int32, 6](0, 1, 2, 3, 4, 5)
+    data: InlineArray[Int32, 6] = [0, 1, 2, 3, 4, 5]
     tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
     print(tensor)
     print("-----")
@@ -307,7 +309,7 @@ fn max[
         Input tensors must have statically known shapes and matching layouts.
     """
 
-    __comptime_assert (
+    comptime assert (
         x.layout.all_dims_known()
     ), "max expects tensor of statically know shape"
     var res_tensor = type_of(x).stack_allocation()
@@ -372,7 +374,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     Raises:
         May raise on GPU targets when a device error occurs.
     """
-    __comptime_assert src.rank == 1, "src must be of rank 1"
+    comptime assert src.rank == 1, "src must be of rank 1"
 
     debug_assert(src.size() != 0, "input must not be empty")
 
@@ -419,6 +421,8 @@ fn mean[
         ),
     )
 
+    comptime src_dtype = src.dtype
+
     @parameter
     if dst.dtype.is_integral():
 
@@ -430,12 +434,12 @@ fn mean[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
             var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
-            var to_store = elem // n
+            var to_store = elem // SIMD[src_dtype, simd_width](n)
             dst_1d.ptr.store(idx_1d, to_store)
 
         vectorize[simd_width](dst_1d.size(), normalize_integral)
     else:
-        var n_recip = Scalar[dst.dtype](1) / n
+        var n_recip = Scalar[dst.dtype](1) / Scalar[src.dtype](n)
 
         @always_inline
         fn normalize_floating[
@@ -482,3 +486,61 @@ fn variance(
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
+
+
+fn variance(
+    src: TileTensor[...], correction: Int = 1
+) raises -> Scalar[src.dtype]:
+    """Computes the variance value of the elements in a buffer.
+
+    ```
+    variance(x) = sum((x - E(x))^2) / (size - correction)
+    ```
+
+    Args:
+        src: The buffer.
+        correction: Normalize variance by size - correction (Default=1).
+
+    Returns:
+        The variance value of the elements in a buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.layout(Idx(idx))
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.variance[src.dtype, input_fn_1d](src.numel(), correction)
+
+
+fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
+    """Computes the mean value of the elements in a buffer.
+
+    Args:
+        src: The buffer of elements for which the mean is computed.
+
+    Returns:
+        The mean value of the elements in the given buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
+    """
+    comptime assert src.rank == 1, "src must be of rank 1"
+
+    debug_assert(src.numel() != 0, "input must not be empty")
+
+    @parameter
+    @always_inline
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.layout(Idx(idx))
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.mean[src.dtype, input_fn_1d](src.numel())

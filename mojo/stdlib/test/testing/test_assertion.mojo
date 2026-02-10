@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,6 +20,7 @@ from testing import (
     assert_not_equal,
     assert_raises,
     assert_true,
+    TestSuite,
 )
 
 from utils.numerics import inf, nan
@@ -255,15 +256,44 @@ def test_assert_equal_stringslice():
         assert_equal(l2, l3)
 
 
+@fieldwise_init
+struct SomeWritable(Equatable, Writable):
+    var value: Int
+
+
+def test_assert_equal_with_writable():
+    assert_equal(SomeWritable(1), SomeWritable(1))
+    with assert_raises():
+        assert_equal(SomeWritable(1), SomeWritable(2))
+
+
+def test_assert_not_equal_with_writable():
+    assert_not_equal(SomeWritable(1), SomeWritable(2))
+    with assert_raises():
+        assert_not_equal(SomeWritable(1), SomeWritable(1))
+
+
+def test_assert_equal_with_unicode():
+    # Verify assert_equal works correctly with multi-byte Unicode codepoints.
+
+    # Emoji (4 bytes each in UTF-8)
+    assert_equal("Hello 🌍", "Hello 🌍")
+    with assert_raises():
+        assert_equal("Hello 🌍", "Hello 🌎")
+
+    # Chinese characters (3 bytes each in UTF-8)
+    assert_equal("你好世界", "你好世界")
+    with assert_raises():
+        assert_equal("你好世界", "你好地球")
+
+    # Different length Unicode strings
+    with assert_raises():
+        assert_equal("🎉🎊", "🎉🎊🎁")
+
+    # Mixed ASCII and Unicode
+    with assert_raises():
+        assert_equal("abc中文def", "abc英文def")
+
+
 def main():
-    test_assert_equal_is_generic()
-    test_assert_not_equal_is_generic()
-    test_assert_equal_with_simd()
-    test_assert_equal_with_list()
-    test_assert_not_equal_with_list()
-    test_assert_messages()
-    test_assert_almost_equal()
-    test_assert_is()
-    test_assert_is_not()
-    test_assert_custom_location()
-    test_assert_equal_stringslice()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -27,7 +27,7 @@ When you modify a .cpp file in the _core/src directory, you can run
     full_name = "max._core",
     header = """
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -49,6 +49,60 @@ When you modify a .cpp file in the _core/src directory, you can run
         "//max/python/max/_mlir",
         "//max/python/max/mlir",
         requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "interpreter",
+    srcs = [
+        "_interpreter.py",
+    ],
+    # _interpreter_ops is optional - Mojo kernels may not be available
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    deps = [
+        ":_core",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_library(
+    name = "_mlir_context",
+    srcs = ["_mlir_context.py"],
+    deps = [
+        "//max/python/max/mlir",
+    ],
+)
+
+modular_py_library(
+    name = "tensor",
+    srcs = [
+        "_passes.py",
+        "_realization_context.py",
+        "_support.py",
+        "_tensor_repr.py",
+        "functional.py",
+        "random.py",
+        "tensor.py",
+    ],
+    # engine is used via engine.api.InferenceSession in _realization_context.py
+    # interpreter is used via lazy import in _realization_context.py
+    ignore_extra_deps = [
+        "//max/python/max/engine",
+        ":interpreter",
+    ],
+    deps = [
+        ":_core",
+        ":_mlir_context",
+        ":interpreter",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("rich"),
         requirement("typing-extensions"),
     ],
 )
@@ -59,6 +113,7 @@ modular_py_library(
     tags = ["no-pydeps"],  # All deps are unused
     deps = [
         ":_core",
+        ":tensor",
         "//max/python/max/_core_mojo",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -68,7 +123,6 @@ modular_py_library(
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",

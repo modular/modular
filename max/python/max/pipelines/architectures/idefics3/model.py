@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -32,8 +32,12 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -262,7 +266,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Idefics3."""
-        return Idefics3Config.get_kv_params(
+        return Idefics3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -302,14 +306,10 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Generate Idefics3 config from HuggingFace config
-        idefics3_config = Idefics3Config.generate(
-            pipeline_config=self.pipeline_config,
+        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
-            dtype=self.dtype,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
 
@@ -384,15 +384,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             return graph, vision_model.state_dict()
 
-    def _language_graph_input_types(self) -> Sequence[TensorType]:
+    def _language_graph_input_types(self) -> Sequence[TensorType | BufferType]:
         # Generate DeviceRef.
         device_ref = DeviceRef.from_device(self.devices[0])
 
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -417,29 +415,24 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             DType.int32, shape=["total_image_tokens"], device=device_ref
         )
 
-        # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
             image_embeddings_type,
             image_token_indices_type,
-            *flattened_kv_types,
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = Idefics3Config.get_kv_params(
+        kv_params = Idefics3Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_params.get_symbolic_inputs()[0]

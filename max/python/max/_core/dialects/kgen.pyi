@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,13 +26,6 @@ from max.mlir import Context, Location
 # mypy: disable-error-code="overload-cannot-match"
 
 DiagnosticHandler = Callable
-
-class ContextuallyEvaluatedAttrInterface(Protocol):
-    """
-    This interface describes parameter attributes whose evaluation may require
-    additional context. This is in contrast to "simple" parameter attributes
-    that can be simplified context-free at construction time.
-    """
 
 class FnMetadataAttrInterface(Protocol):
     """
@@ -78,7 +71,7 @@ class GeneratorMetadataAttrInterface(Protocol):
         arg2: DiagnosticHandler,
         /,
     ) -> GeneratorMetadataAttrInterface: ...
-    def prepend_pos_params_from_ops(
+    def prepend_contextual_params_from_ops(
         self,
         arg0: Sequence[ParamDeclAttr],
         arg1: Sequence[max._core.Operation],
@@ -1188,13 +1181,20 @@ class StructExtractAttr(max._core.Attribute):
     def __init__(
         self,
         struct_value: max._core.dialects.builtin.TypedAttr,
-        field_no: int,
+        field_no: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.Type,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        struct_value: max._core.dialects.builtin.TypedAttr,
+        field_no: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.Type,
     ) -> None: ...
     @property
     def struct_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def field_no(self) -> int: ...
+    def field_no(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
 
@@ -1248,6 +1248,67 @@ class StructFieldNamesAttr(max._core.Attribute):
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> VariadicType: ...
+
+class StructFieldOffsetByIndexAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_offset_by_index` attribute returns the byte offset
+    of a field in a struct type given the field index. Produces a compile error
+    if the field index is out of bounds.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_index<#MyStruct, 0 : index, #target> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_index: max._core.dialects.builtin.TypedAttr,
+        target: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_index(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class StructFieldOffsetByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_offset_by_name` attribute returns the byte offset
+    of a field in a struct type given the field name. Produces a compile error
+    if the field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_name<#MyStruct, "x", #target> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        target: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructFieldTypeByNameAttr(max._core.Attribute):
     """
@@ -2076,9 +2137,11 @@ class POCAttr(max._core.Attribute):
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
-    member_alias = 1
+    preserved = 1
 
-    alias = 2
+    member_alias = 2
+
+    alias = 3
 
 class TailKind(enum.Enum):
     none = 0
@@ -2428,6 +2491,12 @@ class ConformanceOp(max._core.Operation):
     - The `immediateParents` parameter contains the conformance tables that this
       conformance table directly inherits from. It only includes the first level
       of parents, not any further ancestors.
+    - The `constraint` parameter specifies the condition under which this
+      conformance applies. This is used for conditional trait conformance,
+      where a struct only conforms to a trait when certain conditions are met.
+      Unconditional conformances use a trivially true constraint (proposition =
+      constant 1) and are not printed with a `where` clause. Note: the builder
+      canonicalizes null constraints to the trivially true constraint.
 
     Logically, a ConformanceOp represents a witness table whose contents is a
     concatenation of each parent ConformanceOp's conformance table followed by
@@ -2446,8 +2515,30 @@ class ConformanceOp(max._core.Operation):
       ...
     }
     ```
+
+    Example with conditional conformance:
+
+    ```mlir
+    kgen.struct.generator @List<T: type> = ... {
+      kgen.conformance @Copyable where #kgen.constraint<conforms_to(T, Copyable), loc> {
+        ...
+      }
+      ...
+    }
+    ```
     """
 
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        sym_name: max._core.dialects.builtin.StringAttr,
+        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
+        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
+        constraint: ConstraintAttr,
+    ) -> None: ...
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -2476,6 +2567,10 @@ class ConformanceOp(max._core.Operation):
     def immediate_parents(
         self, arg: max._core.dialects.m.SymbolRefArrayAttr, /
     ) -> None: ...
+    @property
+    def constraint(self) -> ConstraintAttr: ...
+    @constraint.setter
+    def constraint(self, arg: ConstraintAttr, /) -> None: ...
 
 class CostOfOp(max._core.Operation):
     """
@@ -3751,6 +3846,12 @@ class StructExtractOp(max._core.Operation):
     // Extract the !pop.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
+
+    // Extract an element at a parametric index.
+    kgen.generator @example<I: index>(%struct: !kgen.struct<(i32, f32)>) {
+      %0 = kgen.struct.extract %struct[I] : !kgen.struct<(i32, f32)>
+      kgen.return
+    }
     ```
     """
 
@@ -3761,7 +3862,7 @@ class StructExtractOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         container: max._core.Value[StructType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3769,14 +3870,22 @@ class StructExtractOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         container: max._core.Value[StructType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        container: max._core.Value,
+        index: int,
     ) -> None: ...
     @property
     def container(self) -> max._core.Value[StructType]: ...
     @property
-    def index(self) -> int: ...
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
     @index.setter
-    def index(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
 class StructGepOp(max._core.Operation):
     """
@@ -3926,6 +4035,31 @@ class StructInstanceOp(max._core.Operation):
     def meta_type(
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
+
+class StructLoadIndirectOp(max._core.Operation):
+    """
+    The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
+    values and loads each one into a struct without the pointer type.  This
+    requires elements with trivially loadable types supported by pop.load.
+    """
+
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: StructType,
+        struct_value: max._core.Value[StructType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        struct_value: max._core.Value[StructType],
+    ) -> None: ...
+    @property
+    def struct_value(self) -> max._core.Value[StructType]: ...
 
 class StructReplaceOp(max._core.Operation):
     """
@@ -4564,6 +4698,10 @@ class StructType(max._core.Type):
     strips away all information except for those necessary for understanding the
     memory layout of the data it describes.
 
+    The element types are stored as a `TypedAttr` which can be either:
+    - A concrete `VariadicAttr` with resolved types
+    - A parametric expression (e.g., a variadic parameter reference) before elaboration
+
     Example:
 
     ```mlir
@@ -4585,26 +4723,35 @@ class StructType(max._core.Type):
 
     // A struct with parameterized element types.
     !kgen.struct<(type, array<size, scalar<dtype>>)>
+
+    // A struct parameterized on a variadic sequence of element types.
+    kgen.generator @example<Ts: variadic<!kgen.type>>(
+      %0: !kgen.struct<(Ts)>,
+    ) { kgen.return }
     ```
     """
 
     @overload
-    def __init__(self, types: Sequence[max._core.Type]) -> None: ...
-    @overload
-    def __init__(self, types: Sequence[max._core.Type]) -> None: ...
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool = False,
+    ) -> None: ...
     @overload
     def __init__(
-        self, types: Sequence[max._core.Type], is_memory_only: bool
+        self, types: Sequence[max._core.Type], is_memory_only: bool = False
     ) -> None: ...
     @overload
     def __init__(
         self,
-        element_types: Sequence[max._core.Type],
-        is_memory_only: bool,
-        min_alignment: max._core.dialects.builtin.TypedAttr,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool = False,
+        min_alignment: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
-    def element_types(self) -> Sequence[max._core.Type]: ...
+    def element_types_variadic(
+        self,
+    ) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def is_memory_only(self) -> bool: ...
     @property

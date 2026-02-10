@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,20 +14,15 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import (
-    Embedding,
-    Layer,
-    LayerList,
-    Linear,
-    Module,
-    ReturnLogits,
-    TransformerBlock,
-)
-from max.nn.kv_cache import (
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.layer import Layer, LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import ReturnLogits, TransformerBlock
 
 
 class Transformer(Module):

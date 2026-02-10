@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.comm import Allreduce
-from max.nn.moe import MoE, MoEGate
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.moe import MoE, MoEGate
 
 
 class Llama4MoEGate(MoEGate):

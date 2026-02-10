@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 
@@ -60,7 +60,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
-    __comptime_assert transpose_b, "transpose_b must be true"
+    comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value
@@ -254,24 +254,19 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](c, a, b, a_scales, b_scales, ctx)
 
     ctx.synchronize()
 
+    var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
+
     batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
-    ](
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
-        a_scales_device_nd,
-        b_scales_device_nd,
-        ctx,
-    )
+    ](c_ref, a, b, a_scales, b_scales, ctx)
 
     ctx.synchronize()
 

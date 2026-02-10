@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -63,9 +63,9 @@ fn test_conv3d_gpu[
     comptime output_layout = Layout.row_major(N, D_out, H_out, W_out, F)
 
     # calculate flattened sizes, gotta know how much memory we need
-    var input_size = input_layout.size()
-    var filter_size = filter_layout.size()
-    var output_size = output_layout.size()
+    var input_size = comptime (input_layout.size())
+    var filter_size = comptime (filter_layout.size())
+    var output_size = comptime (output_layout.size())
 
     # allocate host memory and initialize with random data
     var input_host = UnsafePointer[Scalar[dtype]].alloc(input_size)

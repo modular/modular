@@ -1,5 +1,5 @@
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -64,6 +64,9 @@ jobs:
               --remote_upload_local_results=false
             )
           fi
+
+          # Print CPU info for debugging purposes
+          lscpu || true
 
           # NOTE: Skip the buildbuddy sidecar on linux where the machine is too small.
           # TODO: Remove this once upstream has fixed the issue.

@@ -206,8 +206,7 @@ struct WrapperWithValue[T: AnyType, //, value: T]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SimpleParam:
+struct SimpleParam(TrivialRegisterPassable):
     var b: Bool
 
 
@@ -278,7 +277,7 @@ struct IndexParam[value: Scalar[DType.int]]:
     pass
 
 
-def test_get_type_name_uindex_index_simd_value():
+def test_get_type_name_uint_int_simd_value():
     """Test that DType.uint and DType.int SIMD values are printed correctly."""
 
     # Test unsigned uindex value - should print as large positive number
@@ -289,13 +288,13 @@ def test_get_type_name_uindex_index_simd_value():
             name,
             (
                 "test_type_info.UIndexParam[18446744073709551615 :"
-                " SIMD[DType.uindex, 1]]"
+                " SIMD[DType.uint, 1]]"
             ),
         )
     else:
         assert_equal(
             name,
-            "test_type_info.UIndexParam[4294967295 : SIMD[DType.uindex, 1]]",
+            "test_type_info.UIndexParam[4294967295 : SIMD[DType.uint, 1]]",
         )
 
     # Test signed index value for comparison - should print as -1
@@ -303,7 +302,7 @@ def test_get_type_name_uindex_index_simd_value():
     name = get_type_name[IndexParam[neg_one]]()
     assert_equal(
         name,
-        "test_type_info.IndexParam[-1 : SIMD[DType.index, 1]]",
+        "test_type_info.IndexParam[-1 : SIMD[DType.int, 1]]",
     )
 
 

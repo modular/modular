@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,21 +14,14 @@
 from os import abort
 
 
-@register_passable("trivial")
-struct Property:
+struct Property(Equatable, TrivialRegisterPassable):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
     comptime PATCH_LEVEL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:
@@ -44,8 +37,7 @@ struct Property:
         return Int(self._value)
 
 
-@register_passable("trivial")
-struct DataType:
+struct DataType(Equatable, TrivialRegisterPassable):
     var _value: Int32
     comptime R_16F = Self(2)
     comptime C_16F = Self(6)
@@ -84,13 +76,7 @@ struct DataType:
     comptime R_4F_E2M1 = Self(33)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:

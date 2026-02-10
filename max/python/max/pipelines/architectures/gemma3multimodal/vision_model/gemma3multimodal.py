@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,19 +26,15 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    LayerNorm,
-    Module,
-    ReturnLogits,
-)
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.rotary_embedding import (
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,8 +24,12 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -41,11 +45,11 @@ from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
 from max.support.algorithm import flatten2d
 from transformers import AutoConfig
 
-from .data_parallel_llama import compute_data_parallel_splits
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
@@ -164,9 +168,12 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
         self.logprobs_model = self.load_logprobs_model(session)
+        self._execution_input_buffers: dict[
+            tuple[int, int], tuple[Buffer, Buffer, Buffer, Buffer]
+        ] = {}
 
     # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
-    # called from PipelineModel's infer_optimal_batch_size method.
+    # called from PipelineModel's __init__ method.
     @classmethod
     def get_kv_params(
         cls,
@@ -176,7 +183,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return Llama3Config.get_kv_params(
+        return Llama3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -184,13 +191,65 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             cache_dtype,
         )
 
+    def _execution_trace_inputs(
+        self, model_inputs: ModelInputs
+    ) -> Sequence[Buffer]:
+        assert isinstance(model_inputs, Llama3Inputs)
+        inputs: list[Buffer] = [
+            model_inputs.tokens,
+            model_inputs.input_row_offsets,
+            model_inputs.return_n_logits,
+        ]
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        if self.pipeline_config.model.data_parallel_degree > 1:
+            data_parallel_splits = model_inputs.data_parallel_splits
+            if data_parallel_splits is None:
+                raise RuntimeError(
+                    "Missing data_parallel_splits for execution trace."
+                )
+            if not isinstance(data_parallel_splits, Buffer):
+                splits_array = np.concatenate(
+                    [np.array(s, dtype=np.int64) for s in data_parallel_splits]
+                )
+                data_parallel_splits = Buffer.from_numpy(splits_array)
+            inputs.append(data_parallel_splits)
+            inputs.extend(list(curr_kv_cache_inputs))
+            return inputs
+        if self._lora_manager:
+            assert model_inputs.lora_ids is not None
+            assert model_inputs.lora_ranks is not None
+            assert model_inputs.lora_grouped_offsets is not None
+            assert model_inputs.num_active_loras is not None
+            assert model_inputs.lora_end_idx is not None
+            assert model_inputs.batch_seq_len is not None
+            assert model_inputs.lora_ids_kv is not None
+            assert model_inputs.lora_grouped_offsets_kv is not None
+            inputs.extend(
+                [
+                    model_inputs.lora_ids,
+                    model_inputs.lora_ranks,
+                    model_inputs.lora_grouped_offsets,
+                    model_inputs.num_active_loras,
+                    model_inputs.lora_end_idx,
+                    model_inputs.batch_seq_len,
+                    model_inputs.lora_ids_kv,
+                    model_inputs.lora_grouped_offsets_kv,
+                ]
+            )
+            inputs.extend(model_inputs.signal_buffers)
+            inputs.extend(list(curr_kv_cache_inputs))
+            return inputs
+        inputs.extend(model_inputs.signal_buffers)
+        inputs.extend(list(curr_kv_cache_inputs))
+        return inputs
+
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         assert isinstance(model_inputs, Llama3Inputs)
 
         if self.pipeline_config.model.data_parallel_degree > 1:
             assert model_inputs.data_parallel_splits is not None
-            # Convert data_parallel_splits to Tensor if needed
+            # Convert data_parallel_splits to Buffer if needed
             if isinstance(model_inputs.data_parallel_splits, Buffer):
                 splits_tensor = model_inputs.data_parallel_splits
             else:
@@ -201,6 +260,10 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                         for s in model_inputs.data_parallel_splits
                     ]
                 )
+                splits_tensor = Buffer.from_numpy(splits_array).to(
+                    self.devices[0]
+                )
+
                 splits_tensor = Buffer.from_numpy(splits_array).to(
                     self.devices[0]
                 )
@@ -293,22 +356,54 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         context_batch = flatten2d(replica_batches)
 
-        # Allocate the model inputs on pinned memory for faster h2d
-        # transfer speeds. If model is on host, then fall back to normal
-        # pageable memory. We initialize these empty max tensors by exporting
-        # to numpy over dlpack and using numpy methods.
+        # Build the model inputs on host memory and copy to device.
         device0 = self.devices[0]
         pinned = not device0.is_host
 
+        batch_size = len(context_batch)
+        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
+        buffer_key = (batch_size, total_seq_len)
+        buffers = self._execution_input_buffers.get(buffer_key)
+        if buffers is None:
+            host_tokens = Buffer(
+                shape=(total_seq_len,),
+                dtype=DType.int64,
+                device=device0,
+                pinned=pinned,
+            )
+
+            if pinned:
+                host_tokens.disable_auto_sync()
+
+            host_row_offsets = Buffer(
+                shape=(batch_size + 1,),
+                dtype=DType.uint32,
+                device=device0,
+                pinned=pinned,
+            )
+
+            if pinned:
+                host_row_offsets.disable_auto_sync()
+
+            device_tokens = host_tokens.to(device0)
+            device_row_offsets = host_row_offsets.to(device0)
+            buffers = (
+                host_tokens,
+                host_row_offsets,
+                device_tokens,
+                device_row_offsets,
+            )
+            self._execution_input_buffers[buffer_key] = buffers
+        (
+            host_tokens,
+            host_row_offsets,
+            device_tokens,
+            device_row_offsets,
+        ) = buffers
+
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
-        input_row_offsets = Buffer(
-            shape=(len(context_batch) + 1,),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-        input_row_offsets_np = input_row_offsets.to_numpy()
+        input_row_offsets_np = host_row_offsets.to_numpy()
         np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
             dtype=np.uint32,
@@ -322,16 +417,14 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
-        tokens = Buffer(
-            shape=(num_tokens,),
-            dtype=DType.int64,
-            device=device0,
-            pinned=pinned,
-        )
-        np.concatenate(
-            [ctx.tokens.active for ctx in context_batch], out=tokens.to_numpy()
-        )
+        tokens_np = host_tokens.to_numpy()
+        if context_batch:
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=tokens_np,
+            )
+        device_tokens.inplace_copy_from(host_tokens)
+        device_row_offsets.inplace_copy_from(host_row_offsets)
 
         # Constructs splits for the data parallel execution.
         if dp > 1:
@@ -342,8 +435,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             data_parallel_splits = None
 
         inputs = Llama3Inputs(
-            tokens=tokens.to(device0),
-            input_row_offsets=input_row_offsets.to(device0),
+            tokens=device_tokens,
+            input_row_offsets=device_row_offsets,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits_tensor,
@@ -444,12 +537,12 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = Llama3Config.get_kv_params(
+        kv_params = Llama3Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = kv_params.get_symbolic_inputs()[0]
@@ -492,16 +585,12 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Llama3Config.initialize(self.pipeline_config)
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
@@ -634,7 +723,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
-        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
 
@@ -644,6 +732,24 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         sampled_tokens = next_tokens.to_numpy()
         tokens = llama3_inputs.tokens.to_numpy()
         input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
+
+        # Determine if we have full logits for all tokens or only last-token logits.
+        # Full logits are only available when return_logits is ALL or VARIABLE.
+        has_full_logits = self.return_logits in (
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        )
+
+        # If echo is requested but we don't have full logits, raise an error.
+        if any(batch_echo) and not has_full_logits:
+            raise ValueError(
+                "Log probabilities with echo=true requires enable_echo=true "
+                "in the pipeline configuration to return logits for all tokens."
+            )
+
+        # Pass logits=None when we only have last-token logits.
+        # compute_log_probabilities_ragged will use next_token_logits instead.
+        logits = model_outputs.logits if has_full_logits else None
 
         return compute_log_probabilities_ragged(
             self.logprobs_device,

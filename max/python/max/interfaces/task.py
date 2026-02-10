@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ Pipeline Tasks Module.
 This module defines the set of supported pipeline tasks for the MAX API, encapsulated
 in the `PipelineTask` enumeration. Pipeline tasks represent the high-level operations
 that can be performed by a pipeline, such as text generation, embeddings generation,
-audio generation, and speech token generation.
+audio generation, speech token generation, and pixel generation.
 
 Each task type is associated with a specific input/output contract and is used to
 route requests to the appropriate pipeline implementation. The `PipelineTask` enum
@@ -34,6 +34,7 @@ Available tasks:
     - EMBEDDINGS_GENERATION: Generate vector embeddings for input data.
     - AUDIO_GENERATION: Generate audio outputs from input data.
     - SPEECH_TOKEN_GENERATION: Generate speech tokens for speech-related tasks.
+    - PIXEL_GENERATION: Generate/Edit images/videos from input data.
 
 See the `PipelineTask` enum for further details on each task type.
 """
@@ -58,6 +59,8 @@ class PipelineTask(str, Enum):
     """Task for generating audio."""
     SPEECH_TOKEN_GENERATION = "speech_token_generation"
     """Task for generating speech tokens."""
+    PIXEL_GENERATION = "pixel_generation"
+    """Task for generating pixels."""
 
     @property
     def output_type(
@@ -69,6 +72,7 @@ class PipelineTask(str, Enum):
         Returns:
             type: The output type for the pipeline task.
         """
+        from .generation import GenerationOutput
         from .pipeline_variants import (
             AudioGenerationOutput,
             EmbeddingsGenerationOutput,
@@ -85,6 +89,8 @@ class PipelineTask(str, Enum):
             return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
             return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
+        elif self == PipelineTask.PIXEL_GENERATION:
+            return dict[RequestID, SchedulerResult[GenerationOutput]]
         else:
             raise ValueError(
                 f"PipelineTask ({self}) does not have an output_type defined."

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -373,7 +373,7 @@ class TotalContextTokenBudget(TokenBudget):
     step, this budget has an effective cost derived from
     :attr:`len(TextGenerationContext.tokens)` and the planned number of
     generation steps. It is intended for enforcing limits such as
-    ``max_batch_context_length`` that bound the total number of tokens resident
+    ``max_batch_total_tokens`` that bound the total number of tokens resident
     in a batch across multiple steps.
     """
 

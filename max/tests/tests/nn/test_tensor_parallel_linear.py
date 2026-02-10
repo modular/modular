@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,8 +19,8 @@ from typing import Any, cast
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, Type, Weight
-from max.nn import Signals
-from max.nn.linear import ColumnParallelLinear
+from max.nn.legacy import Signals
+from max.nn.legacy.linear import ColumnParallelLinear
 
 
 def test_column_parallel_linear_empty_devices() -> None:

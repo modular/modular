@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,7 +60,7 @@ def test_external_shared_mem(ctx: DeviceContext):
     ctx.enqueue_copy(res_host_ptr, res_device)
 
     for i in range(16):
-        assert_equal(res_host_ptr[i], 2 * i)
+        assert_equal(res_host_ptr[i], Float32(2 * i))
 
     _ = res_device
     res_host_ptr.free()

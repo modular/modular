@@ -10,13 +10,11 @@ package(default_visibility = [
 modular_py_test(
     name = "kv_cache",
     srcs = glob(["*.py"]),
-    mojo_deps = select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
+    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
     ],
 )

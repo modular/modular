@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -36,6 +35,7 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
+from collections import OptionalReg
 
 comptime logger = Logger()
 
@@ -107,8 +107,8 @@ fn warp_specialize_gemm_with_multicasting[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
@@ -127,7 +127,7 @@ fn warp_specialize_gemm_with_multicasting[
     @parameter
     if splits > 0:
         # TODO: Remove if unnecessary otherwise add support
-        __comptime_assert (
+        comptime assert (
             swapAB == False
         ), "swapAB is not supported for split-k kernel"
         # Dispatch to split-k kernel
@@ -179,8 +179,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
@@ -199,16 +199,16 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime N_static = c_shape.get[1]()
     comptime K_static = a_shape.get[1]()
 
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
     ), "swapAB does not support persistent kernels yet"
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         hilbert_swizzle == False
     ), "swapAB does not support hilbert swizzle yet"
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         use_tma_store == False
     ), "swapAB does not support TMA store yet"
-    __comptime_assert (
+    comptime assert (
         transpose_b == True
     ), "H100 matmul only supports transposed B"
 
@@ -292,9 +292,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     )
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -332,7 +332,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        min(log2_floor(c_smem_tile[1] // 8), 3)
+        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     var c_tma_op = create_tma_tile_template[
@@ -388,7 +388,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         config.mma_shape,
         cluster_shape,
         Int(config.num_pipeline_stages),
-        Int(num_threads),
+        num_threads,
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -489,7 +489,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        smem_size
+                        UInt32(smem_size)
                     ),
                     attributes=pdl_launch_attributes(config.pdl_level()),
                 )
@@ -517,7 +517,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        smem_size
+                        UInt32(smem_size)
                     ),
                     attributes=pdl_launch_attributes(config.pdl_level()),
                 )
@@ -559,7 +559,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        smem_size
+                        UInt32(smem_size)
                     ),
                     attributes=pdl_launch_attributes(config.pdl_level()),
                 )
@@ -567,7 +567,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
     else:
         # TODO add support for swapAB
-        __comptime_assert (
+        comptime assert (
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
@@ -584,7 +584,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_size
+                UInt32(smem_size)
             ),
             attributes=pdl_launch_attributes(config.pdl_level()),
         )
@@ -599,18 +599,16 @@ fn _get_c_smem_layout[
     k_group_size: Int,
     swapAB: Bool = False,
 ]() -> Layout:
-    comptime BM = Int(block_tile_shape[0])
-    comptime BN = Int(block_tile_shape[1])
-    comptime BK = Int(block_tile_shape[2])
+    comptime BM: Int = block_tile_shape[0]
+    comptime BN: Int = block_tile_shape[1]
+    comptime BK: Int = block_tile_shape[2]
 
     comptime WG_BM = BM
     comptime MAX_WG_BN = 128  # a cap on the shared memory size
 
-    comptime available_smem_size = Int(
-        H100.shared_memory_per_multiprocessor - 1024
-    )
+    comptime available_smem_size: Int = H100.shared_memory_per_multiprocessor - 1024
 
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         a_type == b_type == c_type == DType.bfloat16
     ), "swapAB is only supported for bfloat16 dtypes"
 
@@ -620,11 +618,9 @@ fn _get_c_smem_layout[
         BM * BK * size_of[a_type]() + BN * BK * size_of[b_type]()
     )
 
-    comptime pipeline_smem_size = Int(total_smem_tile_size + barrier_size)
+    comptime pipeline_smem_size = total_smem_tile_size + barrier_size
 
-    comptime available_c_smem_size = Int(
-        available_smem_size - pipeline_smem_size
-    )
+    comptime available_c_smem_size = available_smem_size - pipeline_smem_size
 
     # In the normal case Shared Memory M will be the same as BM which can be either 64 or 128
     # This value is derived from the MMA_M shape which is fixed to 64. Similary BN is the same as
@@ -687,8 +683,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     splits: Int,
     raster_order: RasterOrder,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
 ](
@@ -710,23 +706,21 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime BK = config.block_tile_shape[2]
     comptime k_group_size = config.k_group_size
 
-    __comptime_assert (
-        k_group_size == 1
-    ), "Only support k_group_size == 1 for now"
+    comptime assert k_group_size == 1, "Only support k_group_size == 1 for now"
 
-    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
-    __comptime_assert (
+    comptime assert (
         a_type != DType.float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    __comptime_assert (
+    comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
     ), "Either the epilogue lambda or the compute lambda can be used"
 
-    __comptime_assert BM > 64 or (
+    comptime assert BM > 64 or (
         BM == 64 and config.num_consumer == 1
     ), "Only support 1 consumer for BM=64"
 
@@ -736,9 +730,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     logger.info("mma_shape:", config.mma_shape)
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -761,7 +755,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        min(log2_floor(c_smem_tile[1] // 8), 3)
+        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tensor_tile[
@@ -786,7 +780,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime scheduler = SplitKTileScheduler[
         Index(N, K),
         config.block_tile_shape,
-        splits,
+        UInt32(splits),
         UInt32(config.num_consumer),
         UInt32(config.num_pipeline_stages),
         Index(config.cluster_shape[1], config.cluster_shape[0]),
@@ -890,7 +884,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
         attributes=pdl_launch_attributes(config.pdl_level()),
     )
 

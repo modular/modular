@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -126,8 +126,12 @@ def test_char_is_lower():
     assert_true(Codepoint.ord("y").is_ascii_lower())
     assert_true(Codepoint.ord("z").is_ascii_lower())
 
-    assert_false(Codepoint.from_u32(ord("a") - 1).value().is_ascii_lower())
-    assert_false(Codepoint.from_u32(ord("z") + 1).value().is_ascii_lower())
+    assert_false(
+        Codepoint.from_u32(UInt32(ord("a") - 1)).value().is_ascii_lower()
+    )
+    assert_false(
+        Codepoint.from_u32(UInt32(ord("z") + 1)).value().is_ascii_lower()
+    )
 
     assert_false(Codepoint.ord("!").is_ascii_lower())
     assert_false(Codepoint.ord("0").is_ascii_lower())
@@ -139,8 +143,12 @@ def test_char_is_upper():
     assert_true(Codepoint.ord("Y").is_ascii_upper())
     assert_true(Codepoint.ord("Z").is_ascii_upper())
 
-    assert_false(Codepoint.from_u32(ord("A") - 1).value().is_ascii_upper())
-    assert_false(Codepoint.from_u32(ord("Z") + 1).value().is_ascii_upper())
+    assert_false(
+        Codepoint.from_u32(UInt32(ord("A") - 1)).value().is_ascii_upper()
+    )
+    assert_false(
+        Codepoint.from_u32(UInt32(ord("Z") + 1)).value().is_ascii_upper()
+    )
 
     assert_false(Codepoint.ord("!").is_ascii_upper())
     assert_false(Codepoint.ord("0").is_ascii_upper())
@@ -254,14 +262,14 @@ fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
 def test_char_utf8_encoding():
     for elements in materialize[SIGNIFICANT_CODEPOINTS]():
         (var codepoint), (ref expected_utf8) = elements
-        assert_utf8_bytes(codepoint, expected_utf8.copy())
+        assert_utf8_bytes(UInt32(codepoint), expected_utf8.copy())
 
 
 def test_char_utf8_byte_length():
     for elements in materialize[SIGNIFICANT_CODEPOINTS]():
         (var codepoint), (ref expected_utf8) = elements
         var computed_len = (
-            Codepoint.from_u32(codepoint).value().utf8_byte_length()
+            Codepoint.from_u32(UInt32(codepoint)).value().utf8_byte_length()
         )
 
         assert_equal(computed_len, len(expected_utf8))

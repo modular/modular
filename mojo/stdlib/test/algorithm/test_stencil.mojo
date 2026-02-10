@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,11 +18,11 @@ from testing import TestSuite
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-comptime _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> Tuple[
+comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
 ]
-comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
+comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 
@@ -195,18 +195,18 @@ def test_stencil_avg_pool_padded():
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
     var input_stack = InlineArray[
-        Scalar[dtype], Int(input_shape_dims.flattened_length())
+        Scalar[dtype], input_shape_dims.flattened_length()
     ](uninitialized=True)
     var input = Span[Scalar[dtype]](input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = InlineArray[
-        Scalar[dtype], Int(output_shape_dims.flattened_length())
+        Scalar[dtype], output_shape_dims.flattened_length()
     ](uninitialized=True)
     var output = Span[Scalar[dtype]](output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
 
-    fill_span(input, Int(input_shape_dims.flattened_length()))
-    for i in range(Int(output_shape_dims.flattened_length())):
+    fill_span(input, input_shape_dims.flattened_length())
+    for i in range(output_shape_dims.flattened_length()):
         output.unsafe_ptr()[i] = 0
 
     @parameter

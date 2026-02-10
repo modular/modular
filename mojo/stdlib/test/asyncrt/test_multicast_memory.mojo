@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,7 @@ fn _test_multicast_memory(contexts: List[DeviceContext]) raises:
         var dev_buf = multicast_buf.unicast_buffer_for(context)
         with dev_buf.map_to_host() as host_buf:
             for i in range(len(host_buf)):
-                host_buf[i] = i * 2
+                host_buf[i] = Int32(i * 2)
 
     print(multicast_buf.unicast_buffer_for(contexts[0]))
 

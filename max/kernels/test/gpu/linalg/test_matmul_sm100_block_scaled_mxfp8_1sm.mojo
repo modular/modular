@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
@@ -198,15 +198,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(n.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -367,7 +367,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -545,4 +545,43 @@ def main():
                     dynamic(1),
                     static[576](),
                     static[7168](),
+                )
+
+                # swapAB tests
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                ](
+                    ctx,
+                    dynamic(16),
+                    static[1024](),
+                    static[1024 + 16](),
+                )
+
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                ](
+                    ctx,
+                    dynamic(100),
+                    static[2560](),
+                    static[8192](),
                 )

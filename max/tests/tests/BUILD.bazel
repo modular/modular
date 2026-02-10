@@ -9,7 +9,15 @@ package(default_visibility = [
 
 modular_py_test(
     name = "max_tests",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "test_flashinfer_cubin.py",
+            "test_interpreter.py",
+            "test_interpreter_ops.py",
+            "test_interpreter_ops_gpu.py",
+        ],
+    ),
     args = [
         "-n",
         "auto",
@@ -24,13 +32,78 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("pytest-xdist"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_flashinfer_cubin",
+    srcs = ["test_flashinfer_cubin.py"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        requirement("flashinfer-cubin"),
+    ],
+)
+
+modular_py_test(
+    name = "test_interpreter",
+    srcs = ["test_interpreter.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:interpreter",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_interpreter_ops",
+    timeout = "long",
+    srcs = ["test_interpreter_ops.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_interpreter_ops_gpu",
+    timeout = "long",
+    srcs = ["test_interpreter_ops_gpu.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:interpreter",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        requirement("torch"),
     ],
 )

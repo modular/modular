@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import lane_id, thread_idx, block_idx
@@ -29,7 +26,6 @@ from memory import stack_allocation
 
 from utils import IndexList
 from utils.numerics import get_accum_type
-from collections import OptionalReg
 from layout.swizzle import Swizzle
 from gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
 from itertools import product
@@ -102,7 +98,9 @@ fn copy_local_to_dram2[
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
+        dst.linear_idx_type
+    ](offset)
 
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
@@ -120,7 +118,7 @@ fn copy_local_to_dram2[
 
             @parameter
             if dst_fragments.layout.all_dims_known():
-                dst_idx += dst_static_idx
+                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
@@ -146,7 +144,10 @@ fn copy_local_to_dram2[
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
-                        Int32(dst_idx + element_offset),
+                        Int32(
+                            dst_idx
+                            + Scalar[dst.linear_idx_type](element_offset)
+                        ),
                         src,
                     )
 
@@ -164,14 +165,20 @@ struct SharedMemoryManager[
     token_gen: Bool,
 ]:
     var p_smem: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutExternalOrigin,
+        address_space = AddressSpace.SHARED,
     ]
     # p_smem is used for p
     var k_smem: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutExternalOrigin,
+        address_space = AddressSpace.SHARED,
     ]
     var v_smem: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutExternalOrigin,
+        address_space = AddressSpace.SHARED,
     ]
     # k_v_smem is used for k, v, and scratch
     comptime alignment = align_of[
@@ -222,6 +229,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.k_smem.bitcast[Scalar[_dtype]]()
@@ -233,6 +241,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.v_smem.bitcast[Scalar[_dtype]]()
@@ -244,6 +253,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.p_smem.bitcast[Scalar[_dtype]]()
@@ -255,6 +265,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.k_smem.bitcast[Scalar[_dtype]]() if Self.token_gen else {}
@@ -350,7 +361,7 @@ struct GlobalMemoryManager[
         qtype: DType,
     ](
         self,
-        ptr: UnsafePointer[Scalar[qtype]],
+        ptr: UnsafePointer[Scalar[qtype], MutAnyOrigin],
         out result: LayoutTensor[
             qtype,
             Self.q_gmem_layout,
@@ -367,7 +378,7 @@ struct GlobalMemoryManager[
         out_type: DType,
     ](
         self,
-        ptr: UnsafePointer[Scalar[out_type]],
+        ptr: UnsafePointer[Scalar[out_type], MutAnyOrigin],
         out result: LayoutTensor[
             out_type,
             Self.output_gmem_layout,
@@ -385,12 +396,12 @@ struct GlobalMemoryManager[
         //,
     ](
         self,
-        ptr: UnsafePointer[Scalar[kvtype], ...],
+        ptr: UnsafePointer[Scalar[kvtype], MutAnyOrigin],
         kv_tile_num_rows: UInt32,
         out result: LayoutTensor[
             kvtype,
             Self.kv_gmem_layout,
-            ptr.origin,
+            MutAnyOrigin,
             masked=True,
             address_space = ptr.address_space,
         ],
@@ -420,13 +431,13 @@ fn _load_tr16_b64_row(
     # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
     # Then they are exchanged such that at the end of this operation you get a
     # SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
-    __comptime_assert size_of[tile.dtype]() == 2, String(
+    comptime assert size_of[tile.dtype]() == 2, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert tile.shape[0]() == 4, String(
+    comptime assert tile.shape[0]() == 4, String(
         "Expected tile.shape[0]() to be 4, but got ", tile.shape[0]()
     )
-    __comptime_assert tile.shape[1]() == 16, String(
+    comptime assert tile.shape[1]() == 16, String(
         "Expected tile.shape[1]() to be 16, but got ", tile.shape[1]()
     )
 
@@ -469,20 +480,16 @@ fn _load_tr16_b64_warp[
     comptime row_layout = Layout.row_major(2, 2) if mma_shape[
         0
     ] == 32 else Layout.row_major(4, 1)
-    __comptime_assert tile.dtype == DType.bfloat16, String(
+    comptime assert tile.dtype == DType.bfloat16, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert (
-        tile.shape[0]() == row_layout.shape[0].value() * 4
-    ), String(
+    comptime assert tile.shape[0]() == row_layout.shape[0].value() * 4, String(
         "Expected tile.shape[0]() to be ",
         row_layout.shape[0].value() * 4,
         ", but got ",
         tile.shape[0](),
     )
-    __comptime_assert (
-        tile.shape[1]() == row_layout.shape[1].value() * 16
-    ), String(
+    comptime assert tile.shape[1]() == row_layout.shape[1].value() * 16, String(
         "Expected tile.shape[1]() to be ",
         row_layout.shape[1].value() * 16,
         ", but got ",
@@ -490,7 +497,7 @@ fn _load_tr16_b64_warp[
     )
 
     var coords = idx2crd[row_layout](Int(lane_id() // 16))
-    var shared_b_tile = tile.tile[4, 16](Int(coords[0]), Int(coords[1]))
+    var shared_b_tile = tile.tile[4, 16](coords[0], coords[1])
     return _load_tr16_b64_row(shared_b_tile)
 
 
@@ -519,7 +526,7 @@ fn load_b_tr[
         SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
     """
     # only support double-rate mfma shapes for now
-    __comptime_assert mma_shape in (
+    comptime assert mma_shape in (
         IndexList[3](32, 32, 16),
         IndexList[3](16, 16, 32),
     ), String(
@@ -531,16 +538,16 @@ fn load_b_tr[
         mma_shape[2],
         ". Supported shapes: 32x32x16, 16x16x32",
     )
-    __comptime_assert tile.dtype == DType.bfloat16, String(
+    comptime assert tile.dtype == DType.bfloat16, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert tile.shape[0]() == mma_shape[2], String(
+    comptime assert tile.shape[0]() == mma_shape[2], String(
         "Expected tile.shape[0]() to be mma_shape[2]=",
         mma_shape[2],
         ", but got ",
         tile.shape[0](),
     )
-    __comptime_assert tile.shape[1]() == mma_shape[1], String(
+    comptime assert tile.shape[1]() == mma_shape[1], String(
         "Expected tile.shape[1]() to be mma_shape[1]=",
         mma_shape[1],
         ", but got ",
@@ -566,7 +573,7 @@ fn load_b_tr[
 
 @always_inline
 fn copy_dram_to_sram_lds[
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor, lds_base_ptr: UInt32 = 0):
     comptime thread_layout = Layout.row_major(16, 4)
     var worker_idx = lane_id()
@@ -598,8 +605,8 @@ fn copy_dram_to_sram_lds[
         )
         comptime dst_layout = dst_partitions.layout
         # dst need to be contiguous
-        __comptime_assert dst_layout.stride[1].value() == 1, String(dst_layout)
-        __comptime_assert dst_layout.stride[0].value() == 32, String(dst_layout)
+        comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
+        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
         var worker_idx_with_offset = worker_idx + UInt(m_sub_tile * WARP_SIZE)
         var src_dist = src_partitions.vectorize[
             1, simd_width_of[src.dtype]()
@@ -621,7 +628,9 @@ fn copy_dram_to_sram_lds[
         # )
 
         var desc_ptr_ = UnsafePointer[
-            Scalar[DType.bfloat16], address_space = AddressSpace.BUFFER_RESOURCE
+            Scalar[DType.bfloat16],
+            MutAnyOrigin,
+            address_space = AddressSpace.BUFFER_RESOURCE,
         ]()
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
@@ -629,6 +638,7 @@ fn copy_dram_to_sram_lds[
         ptr_to_ptr[0] = ptr_to_simd.bitcast[
             UnsafePointer[
                 Scalar[DType.bfloat16],
+                MutAnyOrigin,
                 address_space = AddressSpace.BUFFER_RESOURCE,
             ]
         ]()[0]
@@ -653,23 +663,25 @@ fn copy_dram_to_sram_lds[
         ](
             desc_ptr_llvm,
             shared_ptr3,
-            to_i32(num_bytes_per_lane),
-            to_i32(vector_offset_bytes),
-            to_i32(scalar_offset_bytes),
+            to_i32(Int32(num_bytes_per_lane)),
+            to_i32(Int32(vector_offset_bytes)),
+            to_i32(Int32(scalar_offset_bytes)),
             to_i32(0),
             to_i32(aux),
         )
-        comptime num_bytes_per_warp = thread_layout.size() * num_bytes_per_lane
+        comptime num_bytes_per_warp = UInt32(
+            thread_layout.size() * num_bytes_per_lane
+        )
         lds_ptr += num_bytes_per_warp
 
 
 @always_inline
 fn load_b_[
-    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle], k_tile_idx: Int
+    mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
-    __comptime_assert src.shape[0]() == MMA_M
+    comptime assert src.shape[0]() == MMA_M
     comptime simd_width = simd_width_of[src.dtype]()
     var tile = src.tile[MMA_M, MMA_K](0, k_tile_idx)
     comptime thread_layout = Layout.col_major(32, 2) if mma_shape[
@@ -682,7 +694,9 @@ fn load_b_[
 
     @parameter
     if swizzle:
-        offset = swizzle.value()(offset // simd_width) * simd_width
+        offset = swizzle.value()(
+            offset // Scalar[src.linear_idx_type](simd_width)
+        ) * Scalar[src.linear_idx_type](simd_width)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
@@ -706,7 +720,7 @@ fn load_b_[
 
 @always_inline
 fn load_b[
-    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle]
+    mma_shape: IndexList[3], swizzle: Optional[Swizzle]
 ](
     src: LayoutTensor,
     out res: LayoutTensor[

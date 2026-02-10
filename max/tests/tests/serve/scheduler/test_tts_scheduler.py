@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,6 @@ from __future__ import annotations
 import queue
 from collections.abc import Generator
 from dataclasses import dataclass
-from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -35,7 +34,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.core import TTSContext
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -71,7 +70,7 @@ def create_text_context(
     )
 
 
-def create_paged_manager(
+def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
     max_seq_len: int,
@@ -107,7 +106,7 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks
+    assert kv_manager.get_num_pages(replica_idx=0) == num_blocks
     return kv_manager
 
 
@@ -129,7 +128,7 @@ def create_paged_scheduler(
     max_kv_slots = max_batch_size
     if max_queue_size_tg is not None:
         max_kv_slots = max(max_kv_slots, max_queue_size_tg)
-    paged_manager = create_paged_manager(
+    kv_cache = create_kv_cache(
         num_blocks=num_blocks,
         max_batch_size=max_kv_slots,
         max_seq_len=max_seq_len,
@@ -150,7 +149,7 @@ def create_paged_scheduler(
         enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
     token_pipeline = FakeAudioGeneratorPipeline(
-        paged_manager,
+        kv_cache,
         max_num_steps=max_forward_steps_tg,
         max_seq_len=max_seq_len,
     )
@@ -167,7 +166,7 @@ def create_paged_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
     )
 
     return scheduler, request_queue
@@ -176,11 +175,11 @@ def create_paged_scheduler(
 class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
     def __init__(
         self,
-        paged_manager: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
         max_num_steps: int,
         max_seq_len: int,
     ) -> None:
-        self.paged_manager = paged_manager
+        self.kv_cache = kv_cache
         self.max_num_steps = max_num_steps
         self.max_seq_len = max_seq_len
         self._prev_num_steps: int | None = None
@@ -210,12 +209,13 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         ctxs: list[TTSContext] = list(inputs.batch.values())
 
         for context in ctxs:
-            self.paged_manager.alloc(context, num_steps=num_tokens)
-        self.paged_manager.get_runtime_inputs(ctxs, num_steps=num_tokens)
+            self.kv_cache.alloc(context, replica_idx=0, num_steps=num_tokens)
+        self.kv_cache.get_runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}
-        for req_id, context in inputs.batch.items():
+        for context in inputs.batch.values():
+            req_id = context.request_id
             resp = AudioGenerationOutput(
                 GenerationStatus.ACTIVE, steps_executed=num_tokens
             )
@@ -240,12 +240,12 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
             responses[req_id] = resp
 
         # Step the kv cache manager
-        self.paged_manager.step(ctxs)
+        self.kv_cache.step([ctxs])
 
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        self.paged_manager.release(request_id)
+        pass
 
 
 @dataclass(eq=True)
@@ -366,61 +366,6 @@ def enqueue_request_with_prompt(
 
 CE = BatchType.CE
 TG = BatchType.TG
-
-
-# =============================================================================
-# Tests for exception handling in AudioGenerationScheduler
-# =============================================================================
-
-
-def test_audio_pipeline_exception_sends_error_to_client() -> None:
-    """Test that audio scheduler catches exceptions and sends error results."""
-    max_seq_len = 2048
-    paged_manager = create_paged_manager(
-        num_blocks=100, max_batch_size=4, max_seq_len=max_seq_len, page_size=128
-    )
-
-    request_queue: queue.Queue[TTSContext] = queue.Queue()
-    response_queue: queue.Queue[
-        dict[RequestID, SchedulerResult[AudioGenerationOutput]]
-    ] = queue.Queue()
-
-    # Create a mock pipeline that raises on execute
-    failing_pipeline = Mock()
-    failing_pipeline.execute.side_effect = RuntimeError("CUDA out of memory")
-
-    scheduler = AudioGenerationScheduler(
-        scheduler_config=AudioGenerationSchedulerConfig(
-            max_batch_size=4,
-            max_forward_steps_tg=10,
-            target_tokens_per_batch_ce=8192,
-            max_seq_len=max_seq_len,
-            enable_in_flight_batching=False,
-            max_queue_size_tg=None,
-            min_batch_size_tg=None,
-            ce_delay_ms=0.0,
-            enable_prioritize_first_decode=False,
-        ),
-        pipeline=failing_pipeline,
-        request_queue=request_queue,
-        response_queue=response_queue,
-        cancel_queue=queue.Queue(),
-        paged_manager=paged_manager,
-    )
-
-    mock_request = create_text_context(prompt_len=100, max_seq_len=max_seq_len)
-    request_queue.put_nowait(mock_request)
-    ce_batch = scheduler._create_ce_batch()
-
-    scheduler._schedule(ce_batch)
-
-    result = response_queue.get_nowait()[mock_request.request_id]
-    assert result.is_done is True
-    assert result.error is not None
-    assert result.error.error_type == "RuntimeError"
-    assert "CUDA out of memory" in result.error.error_message
-    assert result.error.traceback_str  # Non-empty traceback
-    assert "RuntimeError" in result.error.traceback_str
 
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])

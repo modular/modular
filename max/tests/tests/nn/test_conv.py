@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.conv import Conv2d
+from max.nn.legacy.conv import Conv2d
 
 
 def test_conv2d_shard_replicate() -> None:

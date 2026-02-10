@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import GptOssModel
+from .model_config import GptOssConfig
 
 gpt_oss_arch = SupportedArchitecture(
     name="GptOssForCausalLM",
@@ -42,9 +43,10 @@ gpt_oss_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=True,
+    multi_gpu_supported=False,
     rope_type=RopeType.yarn,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=GptOssConfig,
 )

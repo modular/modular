@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,33 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Normalization layers for MAX neural networks."""
 
-from .fused_norm import RMSNorm as FusedRMSNorm
-from .fused_norm import layer_norm_fn, rms_norm_fn
 from .group_norm import GroupNorm
-from .layer_norm import ConstantLayerNorm, LayerNorm
-from .layer_norm_gated import (
-    LayerNorm as GatedLayerNorm,
-)
-from .layer_norm_gated import (
-    RMSNorm as GatedRMSNorm,
-)
-from .layer_norm_gated import (
-    layernorm_fn,
-    rmsnorm_fn,
-)
-from .rms_norm import RMSNorm
+from .layer_norm import LayerNorm
+from .rms_norm import GemmaRMSNorm, RMSNorm, rms_norm
 
-__all__ = [
-    "ConstantLayerNorm",
-    "FusedRMSNorm",
-    "GatedLayerNorm",
-    "GatedRMSNorm",
-    "GroupNorm",
-    "LayerNorm",
-    "RMSNorm",
-    "layer_norm_fn",
-    "layernorm_fn",
-    "rms_norm_fn",
-    "rmsnorm_fn",
-]
+__all__ = ["GemmaRMSNorm", "GroupNorm", "LayerNorm", "RMSNorm", "rms_norm"]

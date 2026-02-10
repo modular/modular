@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -124,7 +124,7 @@ fn test_transpose_8x8_ndbuffer():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[IndexList[2](i, j)] = val
+            matrix[IndexList[2](i, j)] = Scalar[DType.int](val)
 
     transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
@@ -154,7 +154,7 @@ fn test_transpose_16x16_ndbuffer():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[IndexList[2](i, j)] = val
+            matrix[IndexList[2](i, j)] = Scalar[DType.int](val)
 
     transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
@@ -764,7 +764,7 @@ fn test_transpose_8x8():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[i, j] = val
+            matrix[i, j] = Scalar[DType.int](val)
 
     transpose_inplace[num_rows, num_cols](matrix)
 
@@ -793,7 +793,7 @@ fn test_transpose_16x16():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[i, j] = val
+            matrix[i, j] = Scalar[DType.int](val)
 
     transpose_inplace[num_rows, num_cols](matrix)
 

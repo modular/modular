@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -70,7 +70,7 @@ from builtin.int import (
 )
 from builtin.int_literal import IntLiteral
 from builtin.len import Sized, SizedRaising, UIntSized, len
-from builtin.math import (
+from math.math import (
     Absable,
     Powable,
     Roundable,
@@ -116,6 +116,7 @@ from builtin.simd import (
     UInt64,
     UInt128,
     UInt256,
+    UInt,
 )
 from builtin.sort import partition, sort
 from builtin.str import Stringable
@@ -137,7 +138,6 @@ from builtin.type_aliases import (
     MutExternalOrigin,
     unsafe_origin_mutcast,
 )
-from builtin.uint import UInt
 from builtin.value import (
     Copyable,
     Defaultable,
@@ -145,6 +145,8 @@ from builtin.value import (
     ImplicitlyCopyable,
     Movable,
     materialize,
+    RegisterPassable,
+    TrivialRegisterPassable,
 )
 from builtin.variadics import (
     Variadic,

@@ -19,12 +19,10 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "@mojo//:std",
+            "//max:MOGGKernelAPI",
             "//max:tensor",
-        ] + select({
-            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-            "//conditions:default": [],
-        }),
+            "@mojo//:std",
+        ],
         deps = [
             "//max/python/max/driver",
             "//max/python/max/dtype",
@@ -35,6 +33,9 @@ def custom_op_example_py_binary(
         target_compatible_with = target_compatible_with,
         ignore_extra_deps = [
             requirement("numpy"),  # Provided as a convenience, most examples use it
+            # Eager tensor API uses these, but doesn't need the direct dependencies
+            "//max/python/max/engine",
+            "//max/python/max/graph",
         ],
     )
 

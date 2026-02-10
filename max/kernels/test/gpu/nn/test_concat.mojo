@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
+from collections import Optional
 from sys import size_of
 
-from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._fillers import arange
+from gpu.host import DeviceContext, HostBuffer
+from layout._coord import Coord, CoordLike, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
@@ -29,20 +27,6 @@ from testing import assert_true
 
 from utils import IndexList, StaticTuple
 from utils.index import product
-
-
-fn _create_buffer_host[
-    rank: Int, dtype: DType
-](dims: IndexList[rank]) -> LayoutTensor[
-    dtype, Layout.row_major[rank](), MutAnyOrigin
-]:
-    var total_size: Int = product(dims)
-    var mem_ptr = UnsafePointer[Scalar[dtype]].alloc(total_size)
-    comptime layout = Layout.row_major[rank]()
-    var buffer = LayoutTensor[dtype, layout, MutAnyOrigin](
-        mem_ptr, RuntimeLayout[layout].row_major(dims)
-    )
-    return buffer
 
 
 fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
@@ -57,118 +41,157 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     comptime d3 = 64
     comptime d4 = 1
 
-    var input_layout = Layout.row_major(d0, d1, d2, d3, d4)
-    var output_layout = Layout.row_major(d0, d1, d2, d3, 4)
-    var input_shape = IndexList[5](d0, d1, d2, d3, d4)
-    var output_shape = IndexList[5](d0, d1, d2, d3, 4)
+    comptime input_layout = row_major[d0, d1, d2, d3, d4]()
+    comptime output_layout = row_major[d0, d1, d2, d3, 4]()
 
-    var input_0_host = _create_buffer_host[rank, dtype](input_shape)
-    var input_1_host = _create_buffer_host[rank, dtype](input_shape)
-    var input_2_host = _create_buffer_host[rank, dtype](input_shape)
-    var input_3_host = _create_buffer_host[rank, dtype](input_shape)
-
-    arange(input_0_host)
-    arange(input_1_host)
-    arange(input_2_host)
-    arange(input_3_host)
-
-    var total_size_inp: Int = product(input_shape)
-    var input_0_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-    var input_1_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-    var input_2_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-    var input_3_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-
-    comptime layout = Layout.row_major[rank]()
-    var input_0_device_ref = LayoutTensor[dtype, layout](
-        input_0_device,
-        RuntimeLayout[layout].row_major(input_shape),
+    # Create host buffers
+    var input_0_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        input_layout.product()
     )
-    var input_1_device_ref = LayoutTensor[dtype, layout](
-        input_1_device,
-        RuntimeLayout[layout].row_major(input_shape),
+    var input_1_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        input_layout.product()
     )
-    var input_2_device_ref = LayoutTensor[dtype, layout](
-        input_2_device,
-        RuntimeLayout[layout].row_major(input_shape),
+    var input_2_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        input_layout.product()
     )
-    var input_3_device_ref = LayoutTensor[dtype, layout](
-        input_3_device,
-        RuntimeLayout[layout].row_major(input_shape),
+    var input_3_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        input_layout.product()
+    )
+    var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        output_layout.product()
+    )
+    ctx.synchronize()
+
+    # Create TileTensors from host buffers and fill with arange pattern
+    var input_0_host = TileTensor(input_0_host_buffer, input_layout)
+    var input_1_host = TileTensor(input_1_host_buffer, input_layout)
+    var input_2_host = TileTensor(input_2_host_buffer, input_layout)
+    var input_3_host = TileTensor(input_3_host_buffer, input_layout)
+
+    # Fill with arange pattern
+    for i in range(input_layout.product()):
+        input_0_host_buffer[i] = Float32(i)
+        input_1_host_buffer[i] = Float32(i)
+        input_2_host_buffer[i] = Float32(i)
+        input_3_host_buffer[i] = Float32(i)
+
+    # Create device buffers
+    var input_0_device_buffer = ctx.enqueue_create_buffer[dtype](
+        input_layout.product()
+    )
+    var input_1_device_buffer = ctx.enqueue_create_buffer[dtype](
+        input_layout.product()
+    )
+    var input_2_device_buffer = ctx.enqueue_create_buffer[dtype](
+        input_layout.product()
+    )
+    var input_3_device_buffer = ctx.enqueue_create_buffer[dtype](
+        input_layout.product()
+    )
+    var output_device_buffer = ctx.enqueue_create_buffer[dtype](
+        output_layout.product()
     )
 
-    ctx.enqueue_copy(input_0_device, input_0_host.ptr)
-    ctx.enqueue_copy(input_1_device, input_1_host.ptr)
-    ctx.enqueue_copy(input_2_device, input_2_host.ptr)
-    ctx.enqueue_copy(input_3_device, input_3_host.ptr)
+    # Copy host to device
+    ctx.enqueue_copy(input_0_device_buffer, input_0_host_buffer)
+    ctx.enqueue_copy(input_1_device_buffer, input_1_host_buffer)
+    ctx.enqueue_copy(input_2_device_buffer, input_2_host_buffer)
+    ctx.enqueue_copy(input_3_device_buffer, input_3_host_buffer)
+    ctx.synchronize()
 
-    var total_size_outp: Int = product(output_shape)
-    var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
-    var output_device_ref = LayoutTensor[dtype, layout](
-        output_device,
-        RuntimeLayout[layout].row_major(output_shape),
+    # Create TileTensors from device buffers using dynamic layouts
+    # Use Coord(IndexList) pattern that benchmark uses to create runtime layouts
+    var input_shape = IndexList[rank](d0, d1, d2, d3, d4)
+    var output_shape = IndexList[rank](d0, d1, d2, d3, 4)
+
+    var input_0_dyn = TileTensor(
+        input_0_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+    )
+    var input_1_dyn = TileTensor(
+        input_1_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+    )
+    var input_2_dyn = TileTensor(
+        input_2_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+    )
+    var input_3_dyn = TileTensor(
+        input_3_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+    )
+    var output_dyn = TileTensor(
+        output_device_buffer.unsafe_ptr(), row_major(Coord(output_shape))
     )
 
     comptime B_SIZE = 32
 
     @parameter
     @always_inline
-    @__copy_capture(output_device_ref)
+    @__copy_capture(output_dyn)
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        output_device_ref.store[width=width](
-            rebind[IndexList[rank]](indices),
+        var coord = Coord(indices)
+        comptime assert coord.rank == output_dyn.rank
+        output_dyn.store[width=width](
+            coord,
             rebind[SIMD[dtype, width]](val + 1),
         )
 
     comptime kernel = _concat_inner_most_single_dim[
-        output_layout=layout,
-        inputs_layout=layout,
+        OutputLayoutType = output_dyn.LayoutType,
+        output_origin=MutAnyOrigin,
+        InputLayoutType = input_0_dyn.LayoutType,
+        input_origin=ImmutAnyOrigin,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
-        epilogue_fn = OptionalReg[elementwise_epilogue_type](
+        epilogue_fn = Optional[elementwise_epilogue_type](
             epilogue_plus_one
         ) if test_epilogue else None,
     ]
 
     @always_inline
     @__copy_capture(
-        output_device_ref,
-        input_0_device_ref,
-        input_1_device_ref,
-        input_2_device_ref,
-        input_3_device_ref,
+        output_dyn,
+        input_0_dyn,
+        input_1_dyn,
+        input_2_dyn,
+        input_3_dyn,
     )
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel, kernel](
-            output_device_ref.as_any_origin(),
-            StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
-                input_0_device_ref.as_any_origin(),
-                input_1_device_ref.as_any_origin(),
-                input_2_device_ref.as_any_origin(),
-                input_3_device_ref.as_any_origin(),
+            output_dyn.as_any_origin(),
+            StaticTuple[
+                TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+                4,
+            ](
+                input_0_dyn.as_any_origin().as_immut(),
+                input_1_dyn.as_any_origin().as_immut(),
+                input_2_dyn.as_any_origin().as_immut(),
+                input_3_dyn.as_any_origin().as_immut(),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
         )
 
     var nstime_kernel = ctx.execution_time[run_concat_inner_most_single_dim](1)
-    print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
+    print(
+        "concat_inner_most_single_dim time = ",
+        Float64(nstime_kernel) * 1e-6,
+        " ms",
+    )
     print(
         "transfer rate = ",
-        output_device_ref.size()
-        * size_of[UInt8]()
-        * 2
+        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
         * 1e9
-        / (1024**3)
-        / nstime_kernel,
+        / Float64((1024**3))
+        / Float64(nstime_kernel),
         "GB/s",
     )
 
-    var output_host = _create_buffer_host[rank, dtype](output_shape)
-    ctx.enqueue_copy(output_host.ptr, output_device)
+    # Copy output back to host
+    var output_host = TileTensor(output_host_buffer, output_layout)
+    ctx.enqueue_copy(output_host_buffer, output_device_buffer)
+    ctx.synchronize()
 
     fn validate_results() raises:
         for i in range(d0):
@@ -176,22 +199,18 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 for k in range(d2):
                     for l in range(d3):
                         comptime tail_val = 1 if test_epilogue else 0
-                        var not_match_0 = (
-                            output_host[i, j, k, l, 0]
-                            != input_0_host[i, j, k, l, 0] + tail_val
-                        )
-                        var not_match_1 = (
-                            output_host[i, j, k, l, 1]
-                            != input_1_host[i, j, k, l, 0] + tail_val
-                        )
-                        var not_match_2 = (
-                            output_host[i, j, k, l, 2]
-                            != input_2_host[i, j, k, l, 0] + tail_val
-                        )
-                        var not_match_3 = (
-                            output_host[i, j, k, l, 3]
-                            != input_3_host[i, j, k, l, 0] + tail_val
-                        )
+                        var not_match_0 = output_host[
+                            i, j, k, l, 0
+                        ] != input_0_host[i, j, k, l, 0] + Float32(tail_val)
+                        var not_match_1 = output_host[
+                            i, j, k, l, 1
+                        ] != input_1_host[i, j, k, l, 0] + Float32(tail_val)
+                        var not_match_2 = output_host[
+                            i, j, k, l, 2
+                        ] != input_2_host[i, j, k, l, 0] + Float32(tail_val)
+                        var not_match_3 = output_host[
+                            i, j, k, l, 3
+                        ] != input_3_host[i, j, k, l, 0] + Float32(tail_val)
                         if (
                             not_match_0
                             or not_match_1
@@ -207,53 +226,55 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(
-        output_device_ref,
-        input_0_device_ref,
-        input_1_device_ref,
-        input_2_device_ref,
-        input_3_device_ref,
+        output_dyn,
+        input_0_dyn,
+        input_1_dyn,
+        input_2_dyn,
+        input_3_dyn,
     )
     @parameter
     fn run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
         _concat_gpu[
-            epilogue_fn = OptionalReg[elementwise_epilogue_type](
+            epilogue_fn = Optional[elementwise_epilogue_type](
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
-            output_device_ref.as_any_origin(),
+            output_dyn.as_any_origin(),
             4,
-            StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
-                input_0_device_ref.as_any_origin(),
-                input_1_device_ref.as_any_origin(),
-                input_2_device_ref.as_any_origin(),
-                input_3_device_ref.as_any_origin(),
+            StaticTuple[
+                TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+                4,
+            ](
+                input_0_dyn.as_any_origin().as_immut(),
+                input_1_dyn.as_any_origin().as_immut(),
+                input_2_dyn.as_any_origin().as_immut(),
+                input_3_dyn.as_any_origin().as_immut(),
             ),
             ctx,
         )
 
     var nstime = ctx.execution_time[run_concat_gpu](1)
-    print("concat_gpu time = ", nstime * 1e-6, " ms")
+    print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",
-        output_device_ref.size()
-        * size_of[UInt8]()
-        * 2
+        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
         * 1e9
-        / (1024**3)
-        / nstime,
+        / Float64((1024**3))
+        / Float64(nstime),
         "GB/s",
     )
 
-    ctx.enqueue_copy(output_host.ptr, output_device)
+    ctx.enqueue_copy(output_host_buffer, output_device_buffer)
+    ctx.synchronize()
 
     validate_results()
 
-    _ = input_0_device
-    _ = input_1_device
-    _ = input_2_device
-    _ = input_3_device
-    _ = output_device
+    _ = input_0_device_buffer
+    _ = input_1_device_buffer
+    _ = input_2_device_buffer
+    _ = input_3_device_buffer
+    _ = output_device_buffer
 
 
 def main():

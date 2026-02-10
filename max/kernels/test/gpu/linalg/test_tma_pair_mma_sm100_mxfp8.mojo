@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -124,7 +124,7 @@ fn blockscaled_pair_cta_mxfp8[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert (
+    comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "a_type and b_type must be the same and either float8_e4m3fn"
 
@@ -151,7 +151,7 @@ fn blockscaled_pair_cta_mxfp8[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    __comptime_assert (
+    comptime assert (
         BK == 128 and BM == 128 and MMA_N == 128
     ), "Only support 128x128x128, 128x256x128, and 256x128x1128 block size"
 
@@ -247,7 +247,7 @@ fn blockscaled_pair_cta_mxfp8[
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
@@ -255,7 +255,9 @@ fn blockscaled_pair_cta_mxfp8[
 
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
-        mma_mbar[0].init(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
+        mma_mbar[0].init(
+            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+        )
 
     cluster_sync()
 
@@ -266,8 +268,10 @@ fn blockscaled_pair_cta_mxfp8[
 
     comptime SFA_NUM_COLS = BM // 32
     comptime SFB_NUM_COLS = MMA_N // 32
-    var a_scales_tmem_addr_start = tmem_addr + MMA_N
-    var b_scales_tmem_addr_start = a_scales_tmem_addr_start + SFA_NUM_COLS
+    var a_scales_tmem_addr_start = tmem_addr + UInt32(MMA_N)
+    var b_scales_tmem_addr_start = a_scales_tmem_addr_start + UInt32(
+        SFA_NUM_COLS
+    )
 
     comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
     comptime b_canonical_layout = tile_to_descriptor[
@@ -317,11 +321,11 @@ fn blockscaled_pair_cta_mxfp8[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
     @parameter
     for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -336,12 +340,12 @@ fn blockscaled_pair_cta_mxfp8[
     for k_iter in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
-                tma_mbar[0].expect_bytes(expected_bytes)
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            var a_gmem_slice_coord = UInt(
-                peer_cta_coord[2] * UInt(a_tma_rows) + block_idx.x * UInt(BM)
-            )
-            var b_gmem_slice_coord = UInt(
+            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+                a_tma_rows
+            ) + block_idx.x * UInt(BM)
+            var b_gmem_slice_coord = (
                 peer_cta_coord[1] * UInt(b_tma_rows)
                 + peer_cta_coord[0] * UInt(BN)
                 + block_idx.y * UInt(MMA_N)
@@ -370,10 +374,10 @@ fn blockscaled_pair_cta_mxfp8[
                 a_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    UInt((block_idx.x) * UInt(BM // SF_MN_GROUP_SIZE)),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.x) * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -381,10 +385,10 @@ fn blockscaled_pair_cta_mxfp8[
                 b_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    UInt(block_idx.y * UInt(MMA_N // SF_MN_GROUP_SIZE)),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.y) * (MMA_N // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -403,7 +407,7 @@ fn blockscaled_pair_cta_mxfp8[
                         ) * size_of[a_scales_type]()
                         var a_scales_tmem_addr = (
                             a_scales_tmem_addr_start
-                            + i * (SF_MN_GROUP_SIZE // 32)
+                            + UInt32(i * (SF_MN_GROUP_SIZE // 32))
                         )
                         var a_scales_desc = MMASmemDescriptor.create[
                             8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
@@ -423,7 +427,7 @@ fn blockscaled_pair_cta_mxfp8[
                         ) * size_of[b_scales_type]()
                         var b_scales_tmem_addr = (
                             b_scales_tmem_addr_start
-                            + i * (SF_MN_GROUP_SIZE // 32)
+                            + UInt32(i * (SF_MN_GROUP_SIZE // 32))
                         )
                         var b_scales_desc = MMASmemDescriptor.create[
                             8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
@@ -467,7 +471,7 @@ fn blockscaled_pair_cta_mxfp8[
                         if elect_one_thread:
                             runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
-                            ].update_desc_with_sf_id[j](
+                            ].update_desc_with_sf_id[UInt32(j)](
                                 idesc,
                             )
                             mma[cta_group](
@@ -486,7 +490,7 @@ fn blockscaled_pair_cta_mxfp8[
                         if elect_one_thread:
                             var runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
-                            ].update_desc_with_sf_id[j](
+                            ].update_desc_with_sf_id[UInt32(j)](
                                 idesc,
                             )
                             mma[cta_group](
@@ -517,8 +521,8 @@ fn blockscaled_pair_cta_mxfp8[
     tcgen05_load_wait()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
     warp_id = get_warp_id()
 
@@ -582,9 +586,9 @@ fn sm100_blockscaled_mxfp8_cta_pair[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
@@ -600,38 +604,40 @@ fn sm100_blockscaled_mxfp8_cta_pair[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    __comptime_assert MMA_M == 256 and MMA_N in (
+    comptime assert MMA_M == 256 and MMA_N in (
         128,
         256,
     ), "MMA_M and MMA_N must be divisible by 128"
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
+        ) if transpose_b else Index(
+            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type and a_scales_type == MXFP8_SF_DTYPE
     ), "Only support F8-UE8M0 scales"
-    __comptime_assert (
+    comptime assert (
         a_scales.rank == b_scales.rank == 5
     ), "a_scales and b_scales must be 5D tensors"
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[2].value()
         == b_scales_layout.shape[2].value()
         == SF_ATOM_M[0]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[3].value()
         == b_scales_layout.shape[3].value()
         == SF_ATOM_M[1]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[4].value()
         == b_scales_layout.shape[4].value()
         == SF_ATOM_K
@@ -741,7 +747,9 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         ),
         block_dim=(128),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
 
@@ -757,7 +765,7 @@ def test_blockscaled_pair_cta_mxfp8[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    __comptime_assert transpose_b, "transpose_b must be true"
+    comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value
@@ -904,14 +912,14 @@ def test_blockscaled_pair_cta_mxfp8[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1]))
+        ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1])
         * Int(ceildiv(sf_k, SF_ATOM_K))
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1]))
+        ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1])
         * Int(ceildiv(sf_k, SF_ATOM_K))
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]

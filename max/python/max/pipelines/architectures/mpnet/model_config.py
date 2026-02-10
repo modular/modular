@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,42 +14,71 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import ArchConfig
+from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
+from typing_extensions import Self, override
 
 
-class MPNetConfig(MAXModelConfigBase):
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
+@dataclass(kw_only=True)
+class MPNetConfig(ArchConfig):
+    """Configuration for MPNet models."""
 
-    @staticmethod
-    def get_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_attention_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
+    dtype: DType
+    device: DeviceRef
+    pool_embeddings: bool
+    huggingface_config: AutoConfig
+    pipeline_config: PipelineConfig
+
+    def get_max_seq_len(self) -> int:
+        try:
+            return upper_bounded_default(
+                upper_bound=self.huggingface_config.max_position_embeddings,
+                default=self.pipeline_config.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Unable to infer max_length for MPNet, the provided "
+                f"max_length ({self.pipeline_config.max_length}) exceeds the "
+                f"model's max_position_embeddings "
+                f"({self.huggingface_config.max_position_embeddings})."
+            ) from e
+
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes an MPNetConfig instance from pipeline configuration.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+
+        Returns:
+            An initialized MPNetConfig instance.
+        """
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        if len(pipeline_config.model.device_specs) != 1:
+            raise ValueError("MPNet model is only supported on a single device")
+        device_spec = pipeline_config.model.device_specs[0]
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        return cls(
+            dtype=quantization_encoding.dtype,
+            device=DeviceRef(
+                device_type=device_spec.device_type, id=device_spec.id
             ),
-            num_layers=MPNetConfig.get_num_layers(huggingface_config),
-            cache_strategy=kv_cache_config.cache_strategy,
-            devices=devices,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            pool_embeddings=pipeline_config.pool_embeddings,
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
         )
-
-    @staticmethod
-    def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers

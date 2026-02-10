@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@ from collections.string.string_slice import get_static_string
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
-from sys.ffi import (
+from ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -46,8 +46,7 @@ from ._mpi import (
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
-struct ROCSHEMIVersion:
+struct ROCSHEMIVersion(RegisterPassable):
     var major: c_int
     var minor: c_int
     var patch: c_int
@@ -172,10 +171,10 @@ struct ROCSHMEMInitAttr:
     var args: ROCSHMEMInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 144
         ), "ROCSHMEMInitAttr must be 144 bytes"
-        self.version = (1 << 16) + size_of[ROCSHMEMInitAttr]()
+        self.version = c_int((1 << 16) + size_of[ROCSHMEMInitAttr]())
         self.mpi_comm = mpi_comm
         self.args = ROCSHMEMInitArgs()
 
@@ -186,10 +185,10 @@ struct ROCSHMEMInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "ROCSHMEMInitArgs must be 128 bytes"
-        self.version = (1 << 16) + size_of[ROCSHMEMInitArgs]()
+        self.version = c_int((1 << 16) + size_of[ROCSHMEMInitArgs]())
         self.uid_args = ROCSHMEMUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
 
@@ -201,10 +200,10 @@ struct ROCSHMEMUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 24
         ), "ROCSHMEMUniqueIDArgs must be 24 bytes"
-        self.version = (1 << 16) + size_of[ROCSHMEMUniqueIDArgs]()
+        self.version = c_int((1 << 16) + size_of[ROCSHMEMUniqueIDArgs]())
         self.id = UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]()
         self.myrank = 0
         self.nranks = 0
@@ -215,10 +214,10 @@ struct ROCSHMEMUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "rocshmem_uniqueid_t must be 128 bytes"
-        self.version = (1 << 16) + size_of[ROCSHMEMUniqueID]()
+        self.version = c_int((1 << 16) + size_of[ROCSHMEMUniqueID]())
         self.internal = InlineArray[Byte, 124](fill=0)
 
 
@@ -301,7 +300,7 @@ fn _dtype_to_rocshmem_type[
 fn _rocshmem_init() raises:
     _get_rocshmem_function[
         "rocshmem_init",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -333,7 +332,7 @@ fn rocshmem_init_attr(
 ) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_init_attr",
-        fn (UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
+        fn(UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
@@ -342,14 +341,14 @@ fn rocshmem_get_uniqueid(
 ) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_get_uniqueid",
-        fn (UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
+        fn(UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
     ]()(uid)
 
 
 fn rocshmem_finalize():
     _get_rocshmem_function[
         "rocshmem_finalize",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -371,7 +370,7 @@ fn rocshmemx_hipmodule_init[T: AnyType](module: T) -> c_int:
     """
     return _get_rocshmem_function[
         "rocshmemx_hipmodule_init",
-        fn (T) -> c_int,
+        fn(T) -> c_int,
     ]()(module)
 
 
@@ -382,7 +381,7 @@ fn rocshmem_my_pe() -> c_int:
     else:
         return _get_rocshmem_function[
             "rocshmem_my_pe",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -395,7 +394,7 @@ fn rocshmem_n_pes() -> c_int:
     else:
         return _get_rocshmem_function[
             "rocshmem_n_pes",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -409,7 +408,7 @@ fn rocshmem_malloc[
 ](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        fn(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -422,7 +421,7 @@ fn rocshmem_calloc[
 ]:
     var ptr = _get_rocshmem_function[
         "rocshmem_calloc",
-        fn (
+        fn(
             c_size_t, c_size_t
         ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
@@ -457,7 +456,7 @@ fn rocshmem_free[
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_rocshmem_function[
         "rocshmem_free",
-        fn (type_of(ptr)) -> NoneType,
+        fn(type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -469,7 +468,7 @@ fn rocshmem_free[
 fn rocshmem_team_my_pe(team: c_int) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_team_my_pe",
-        fn (c_int) -> c_int,
+        fn(c_int) -> c_int,
     ]()(team)
 
 
@@ -495,7 +494,7 @@ fn rocshmem_put[
     else:
         _get_rocshmem_function[
             symbol,
-            fn (
+            fn(
                 UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
                 c_size_t,
@@ -532,7 +531,7 @@ fn rocshmem_p[
     else:
         _get_rocshmem_function[
             symbol,
-            fn (
+            fn(
                 UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 Scalar[dtype],
                 c_int,
@@ -605,7 +604,7 @@ fn rocshmem_put_signal_nbi[
 fn rocshmem_sync_all():
     _get_rocshmem_function[
         "rocshmem_sync_all",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -616,14 +615,14 @@ fn rocshmem_barrier_all():
     else:
         _get_rocshmem_function[
             "rocshmem_barrier_all",
-            fn () -> NoneType,
+            fn() -> NoneType,
         ]()()
 
 
 fn rocshmem_barrier_all_wave(stream: hipStream_t):
     _get_rocshmem_function[
         "rocshmem_barrier_all_wave",
-        fn (hipStream_t) -> NoneType,
+        fn(hipStream_t) -> NoneType,
     ]()(stream)
 
 

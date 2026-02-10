@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,25 +13,24 @@
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
-from layout import (
-    Layout,
-    RuntimeLayout,
-    LayoutTensor,
-    RuntimeTuple,
-    IntTuple,
-)
+from layout._coord import Coord, Idx
+from layout._layout import TensorLayout, Layout, row_major
+from layout._tile_tensor import TileTensor
 from utils.index import Index, IndexList
 
 
 fn spatial_merge_kernel[
     dtype: DType,
-    input_layout: Layout,
-    output_layout: Layout,
-    grid_thw_layout: Layout,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    GridThwLayoutType: TensorLayout,
+    grid_thw_origin: ImmutOrigin,
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
-    input: LayoutTensor[dtype, input_layout, MutAnyOrigin],
-    grid_thw: LayoutTensor[DType.int64, grid_thw_layout, MutAnyOrigin],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    input: TileTensor[dtype, InputLayoutType, input_origin],
+    grid_thw: TileTensor[DType.int64, GridThwLayoutType, grid_thw_origin],
     batch_size: Int,
     hidden_size: Int,
     merge_size: Int,
@@ -50,6 +49,8 @@ fn spatial_merge_kernel[
         hidden_size: Hidden dimension size.
         merge_size: Size of spatial merge blocks.
     """
+    comptime assert grid_thw.rank == 2
+
     # Global patch index.
     var patch_idx = Int(block_idx.x)
 
@@ -83,24 +84,20 @@ fn spatial_merge_kernel[
     var T = grid_thw[b, 0]
     var H = grid_thw[b, 1]
     var W = grid_thw[b, 2]
-    var H_out = H // merge_size
-    var W_out = W // merge_size
+    var H_out = H // Int64(merge_size)
+    var W_out = W // Int64(merge_size)
     var C_out = hidden_size * merge_size * merge_size
 
     # Create a RuntimeLayout for the patch space [T, H_out, W_out]
     # to convert linear patch_local_idx to (t, ho, wo) coordinates.
-    var patch_space_rt_layout = RuntimeLayout[Layout.row_major[3]()].row_major(
-        Index(T, H_out, W_out)
-    )
+    var patch_space_rt_layout = row_major((Idx(T), Idx(H_out), Idx(W_out)))
 
     # Convert linear patch index to 3D coordinates (t, ho, wo).
-    var patch_coords = patch_space_rt_layout.idx2crd(
-        RuntimeTuple[1](patch_local_idx)
-    )
+    var patch_coords = patch_space_rt_layout.idx2crd(Int(patch_local_idx))
     var t, ho, wo = (
-        Int(patch_coords.value[0]),
-        Int(patch_coords.value[1]),
-        Int(patch_coords.value[2]),
+        patch_coords[0].value(),
+        patch_coords[1].value(),
+        patch_coords[2].value(),
     )
 
     # Create a tiled layout for input representing
@@ -121,31 +118,31 @@ fn spatial_merge_kernel[
         1,  # stride for c: move one channel.
     )
 
-    var input_tiled_layout = RuntimeLayout[Layout.row_major[5]()](
-        input_tiled_shape,
-        input_tiled_stride,
+    var input_tiled_layout = Layout(
+        Coord(input_tiled_shape),
+        Coord(input_tiled_stride),
     )
 
-    var input_tensor = LayoutTensor[dtype, Layout.row_major[5]()](
-        input.ptr + Int(offset_in * hidden_size),
+    var input_tensor = TileTensor(
+        input.ptr + Int(offset_in * Int64(hidden_size)),
         input_tiled_layout,
     )
 
     # Create LayoutTensor for output: [T, H_out, W_out, C_out].
     # Note: in reality we want 2D flattened to [T * H_out * W_out, C_out], but
     # we use 4D for semantic clarity - internally in memory it is handled correctly.
-    var output_runtime_layout = RuntimeLayout[Layout.row_major[4]()].row_major(
-        Index(T, H_out, W_out, C_out)
+    var output_runtime_layout = row_major(
+        (Idx(T), Idx(H_out), Idx(W_out), Idx(C_out))
     )
-    var output_tensor = LayoutTensor[dtype, Layout.row_major[4]()](
-        output.ptr + Int(offset_out * C_out),
+    var output_tensor = TileTensor(
+        output.ptr + Int(offset_out * Int64(C_out)),
         output_runtime_layout,
     )
 
     # Create layout for the merged channel dimension structure.
     # C_out represents [merge_size, merge_size, hidden_size] flattened row-major.
-    var channel_layout = RuntimeLayout[Layout.row_major[3]()].row_major(
-        Index(merge_size, merge_size, hidden_size)
+    var channel_layout = row_major(
+        (Idx(merge_size), Idx(merge_size), Idx(hidden_size))
     )
 
     # Copy patch - threads loop over output channels.
@@ -153,11 +150,11 @@ fn spatial_merge_kernel[
     # flattened in the permute(0, 1, 3, 2, 4, 5) order.
     for c_out in range(thread_idx.x, C_out, block_dim.x):
         # Decompose c_out into (dh, dw, c) using the channel layout.
-        var channel_coords = channel_layout.idx2crd(RuntimeTuple[1](c_out))
+        var channel_coords = channel_layout.idx2crd(c_out)
         var dh, dw, c = (
-            channel_coords.value[0],
-            channel_coords.value[1],
-            channel_coords.value[2],
+            channel_coords[0].value(),
+            channel_coords[1].value(),
+            channel_coords[2].value(),
         )
         output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
 
@@ -165,25 +162,35 @@ fn spatial_merge_kernel[
 fn spatial_merge[
     dtype: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, ...],
-    input: LayoutTensor[dtype, ...],
-    grid_thw: LayoutTensor[DType.int64, ...],
+    output: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    grid_thw: TileTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     hidden_size: Int,
     merge_size: Int,
     ctx: DeviceContext,
 ) raises:
     comptime threads_per_block = 256
-    var batch_size = grid_thw.dim[0]()
-    var num_blocks = input.dim[0]()
+    var batch_size = Int(grid_thw.dim[0]())
+    var num_blocks = Int(input.dim[0]())
 
     comptime kernel = spatial_merge_kernel[
-        dtype, input.layout, output.layout, grid_thw.layout
+        dtype,
+        input.LayoutType,
+        ImmutOrigin(input.origin),
+        output.LayoutType,
+        output.origin,
+        grid_thw.LayoutType,
+        ImmutOrigin(grid_thw.origin),
     ]
 
     ctx.enqueue_function_experimental[kernel](
         output,
-        input,
-        grid_thw,
+        input.as_immut(),
+        grid_thw.as_immut(),
         batch_size,
         hidden_size,
         merge_size,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -66,7 +66,6 @@ comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
-@export(ABI="C")
 fn static_conv(
     output: LayoutTensor[mut=True, value_type, Layout.row_major(N, HO, WO, F)],
     input: LayoutTensor[value_type, Layout.row_major(N, H, W, C)],

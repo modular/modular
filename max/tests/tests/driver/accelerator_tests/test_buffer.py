@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -180,6 +180,23 @@ def test_scalar() -> None:
 
     host_scalar = scalar.to(CPU())
     assert host_scalar.item() == 5
+
+
+def test_pinned_zeros() -> None:
+    tensor = Buffer.zeros(
+        (2, 1), DType.int32, device=Accelerator(), pinned=True
+    )
+    assert tensor.pinned
+    assert tensor[0, 0].item() == 0
+    assert tensor[1, 0].item() == 0
+
+    if accelerator_api() == "hip":
+        pytest.skip(
+            "FIXME SERVOPT-947: __setitem__ / __getitem__ is buggy on HIP."
+        )
+
+    tensor[1, 0] = 42
+    assert tensor[1, 0].item() == 42
 
 
 def test_accelerator_to_numpy() -> None:

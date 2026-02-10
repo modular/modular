@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,16 +26,12 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Llama3RotaryEmbedding,
-    ReturnHiddenStates,
-    ReturnLogits,
-    RMSNorm,
-)
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -294,6 +290,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             rope=rope,
             return_hidden_states=ReturnHiddenStates.ALL,  # Return un-normalized states, pooling+norm happens after
             embedding_multiplier=1.0,
+            device=device_refs[0],
         )
 
         # Load weights into model
@@ -384,6 +381,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             raise ValueError("Model does not support DP>1")
 
         context_batch = replica_batches[0]
+        device = self.devices[0]
 
         # Collect all tokens from the batch
         all_tokens: list[int] = []
@@ -406,7 +404,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         )
 
         return Qwen3EmbeddingInputs(
-            tokens=tokens_buffer,
+            tokens=tokens_buffer.to(device),
             input_row_offsets=row_offsets_buffer,
             return_n_logits=return_n_logits_buffer,
         )

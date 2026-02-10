@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,6 +29,7 @@ from max.interfaces import (
     TokenBuffer,
     TokenSlice,
 )
+from max.kv_cache import DummyKVCache
 from max.pipelines.core import TextContext
 
 
@@ -152,6 +153,7 @@ class EchoTokenGenerator(
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[RequestID, int] = {}
+        self.kv_managers = [DummyKVCache()]
 
     def execute(
         self,
@@ -159,7 +161,8 @@ class EchoTokenGenerator(
     ) -> dict[RequestID, TextGenerationOutput]:
         responses = {}
 
-        for request_id, context in inputs.batch.items():
+        for context in inputs.flat_batch:
+            request_id = context.request_id
             if request_id not in responses:
                 responses[request_id] = TextGenerationOutput(
                     request_id=request_id,

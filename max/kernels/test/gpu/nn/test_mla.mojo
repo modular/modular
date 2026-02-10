@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import ceildiv, isclose
 from random import randn
 from sys import argv, has_nvidia_gpu_accelerator
@@ -53,7 +52,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
     use_causal_mask: Bool = True,
 ](
@@ -80,8 +79,8 @@ fn test[
         mask_rank,
     )
 
-    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
-    __comptime_assert (
+    comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    comptime assert (
         against_gpu_naive or mask_rank == 3
     ), "Testing against cpu requires mask of rank 3."
 
@@ -111,17 +110,21 @@ fn test[
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
-                    q_ptr[(i * num_heads + h) * depth + j] = i * depth + j
+                    q_ptr[(i * num_heads + h) * depth + j] = Scalar[qkv_type](
+                        i * depth + j
+                    )
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
-                    k_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+                    k_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
+                        qkv_type
+                    ](i * depth + j)
 
         @parameter
         if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
-                    mask_ptr[i * num_keys + j] = (
+                    mask_ptr[i * num_keys + j] = Scalar[mask_type](
                         (seq_len - i) * num_keys + num_keys - j
                     )
         else:
@@ -129,7 +132,7 @@ fn test[
                 var mask_head_ptr = mask_ptr + h * seq_len * num_keys
                 for i in range(seq_len):
                     for j in range(num_keys):
-                        mask_head_ptr[i * num_keys + j] = (
+                        mask_head_ptr[i * num_keys + j] = Scalar[mask_type](
                             (seq_len - i) * num_keys + num_keys - j
                         )
 
@@ -174,7 +177,7 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        __comptime_assert (
+        comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
@@ -281,7 +284,9 @@ fn test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
 
@@ -464,10 +469,10 @@ fn test_prefill[
     var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
     var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
     for i in range(batch_size):
-        input_row_offsets[i] = i * seq_len
-        cache_row_offsets[i] = i * num_keys
-    input_row_offsets[batch_size] = batch_size * seq_len
-    cache_row_offsets[batch_size] = batch_size * num_keys
+        input_row_offsets[i] = UInt32(i * seq_len)
+        cache_row_offsets[i] = UInt32(i * num_keys)
+    input_row_offsets[batch_size] = UInt32(batch_size * seq_len)
+    cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
 
     # ragged inputs
     var q = LayoutTensor[qkv_type, Layout.row_major[3]()](
@@ -613,15 +618,19 @@ fn test_prefill[
         for i in range(20):
             kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
 
         var tflops = (
-            2
-            * batch_size
-            * num_heads
-            * ((-seq_len * seq_len + 2 * seq_len * num_keys))
-            * (depth + kv_depth)
+            Float64(
+                2
+                * batch_size
+                * num_heads
+                * ((-seq_len * seq_len + 2 * seq_len * num_keys))
+                * (depth + kv_depth)
+            )
             / sectime
             / 1e9
         )
@@ -784,6 +793,7 @@ fn test_prefill[
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
+                    # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
                         lhs,
                         rhs,
@@ -812,7 +822,7 @@ fn test_prefill[
 
 fn test_decoding[
     batch_size: Int,
-    num_partitions: OptionalReg[Int],
+    num_partitions: Optional[Int],
     split_k: Bool,
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
@@ -999,7 +1009,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](140, 140, ctx)
+    ](1179, 1179, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,
@@ -1027,6 +1037,24 @@ fn test_mla_prefill[
         cache_num_heads=1,
         batch_size=batch_size,
     ](12, 12, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](350, 700, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](120, 240, ctx)
 
 
 def main():
@@ -1046,5 +1074,6 @@ def main():
 
         # test mla prefill
         test_mla_prefill[2](ctx)
+        test_mla_prefill[4](ctx)
         # Test with zero batch size
         test_mla_prefill[0](ctx)

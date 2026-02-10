@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,9 +23,9 @@ from os.path import isdir
 from collections.string.string_slice import _unsafe_strlen
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import CompilationTarget, external_call
+from ffi import MAX_PATH, c_char, external_call, get_errno
+from sys import CompilationTarget
 from sys._libc import realpath as libc_realpath
-from sys.ffi import MAX_PATH, c_char, get_errno
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -526,7 +526,7 @@ fn _split_extension(
         # skip all leading dots
         var file_start = head_end + 1
         while file_start < file_end:
-            if path[byte=file_start].as_string_slice() != extension_sep:
+            if StringSlice(path[byte=file_start]) != extension_sep:
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
@@ -603,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables = InlineArray[Int, 17](
+    comptime shell_variables: InlineArray[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),
@@ -621,7 +621,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("7"),
         ord("8"),
         ord("9"),
-    )
+    ]
     return Int(byte) in materialize[shell_variables]()
 
 
@@ -658,18 +658,18 @@ fn _parse_variable_name[
     Returns:
         The environment variable name and the byte count required to extract it.
     """
-    if bytes[0] == ord("{"):
+    if bytes[0] == UInt8(ord("{")):
         if (
             len(bytes) > 2
             and _is_shell_special_variable(bytes[1])
-            and bytes[2] == ord("}")
+            and bytes[2] == UInt8(ord("}"))
         ):
             return StringSlice(unsafe_from_utf8=bytes[1:2]), 3
 
         # Scan until the closing brace or the end of the bytes.
         var i = 1
         while i < len(bytes):
-            if bytes[i] == ord("}"):
+            if bytes[i] == UInt8(ord("}")):
                 return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
         return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
@@ -705,7 +705,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     i = 0
     j = 0
     while j < len(bytes):
-        if bytes[j] == ord("$") and j + 1 < len(bytes):
+        if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
                 buf.reserve(new_capacity=2 * len(bytes))
             buf.write_string(path_str[i:j])

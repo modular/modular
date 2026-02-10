@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -80,7 +80,7 @@ comptime shuf3 = SIMD[DType.uint8, 16](
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT
 )
 
-comptime UTF8_CHAR_WIDTHS = InlineArray[Byte, 256](
+comptime UTF8_CHAR_WIDTHS: InlineArray[Byte, 256] = [
     #  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 0
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 1
@@ -98,7 +98,7 @@ comptime UTF8_CHAR_WIDTHS = InlineArray[Byte, 256](
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, # D
     3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, # E
     4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # F
-)
+]
 # fmt: on
 
 
@@ -276,12 +276,22 @@ fn _is_utf8_continuation_byte[
 
 
 @always_inline
+fn _is_utf8_start_byte(w: Byte) -> Bool:
+    """Determine if `w` is either an ASCII character or the start
+    of a UTF-8 multibyte character. This does _not_ validate `w` in
+    any other way, for example `_is_utf8_start_byte(0b1111_1000)`
+    will return True.
+    """
+    return w < 128 or w >= 192
+
+
+@always_inline
 fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
     return Int(span.count[func=_is_utf8_continuation_byte]())
 
 
 @always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
+fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
@@ -292,9 +302,7 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
         not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
     )
-    return UInt(
-        Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
-    )
+    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
 
 
 fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):

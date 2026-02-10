@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -156,11 +156,7 @@ struct Rng(Movable):
         Raises:
             If the underlying random number generator raises an error.
         """
-        return UInt(
-            self.rand_scalar[DType.uint](
-                min=Scalar[DType.uint](min), max=Scalar[DType.uint](max)
-            )
-        )
+        return self.rand_scalar(min=min, max=max)
 
     # TODO (MSTDL-1185): Can remove when Int and SIMD are unified.
     fn rand_int(
@@ -181,4 +177,9 @@ struct Rng(Movable):
         Raises:
             If the underlying random number generator raises an error.
         """
-        return Int(self.rand_scalar[DType.int](min=min, max=max))
+        return Int(
+            self.rand_scalar[DType.int](
+                min=Scalar[DType.int](min),
+                max=Scalar[DType.int](max),
+            )
+        )

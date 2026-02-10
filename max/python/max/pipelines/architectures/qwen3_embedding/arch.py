@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,9 +22,10 @@ from max.pipelines.lib import (
 )
 
 from .model import Qwen3EmbeddingModel
+from .model_config import Qwen3EmbeddingConfig
 
 qwen3_embedding_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM",
+    name="Qwen3ForCausalLM_Legacy",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen3-Embedding-0.6B",
@@ -44,4 +45,5 @@ qwen3_embedding_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Qwen3EmbeddingConfig,
 )

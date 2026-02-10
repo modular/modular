@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,20 +23,23 @@ from typing import TYPE_CHECKING, Any
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
+from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
     computed_field,
+    field_validator,
 )
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
+from .device_specs import coerce_device_specs_input
 from .hf_utils import (
     HuggingFaceRepo,
     try_to_load_from_cache,
@@ -68,71 +71,128 @@ class MAXModelConfigBase(ConfigFileModel):
     # Allow arbitrary types (like DeviceRef, AutoConfig) to avoid schema generation errors.
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
-
 
 class MAXModelConfig(MAXModelConfigBase):
-    use_subgraphs: bool = Field(default=True)
-    """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
+    use_subgraphs: bool = Field(
+        default=True,
+        description=(
+            "Whether to use subgraphs for the model. This can significantly "
+            "reduce compile time, especially for large models with identical "
+            "blocks. Default is true."
+        ),
+    )
 
-    data_parallel_degree: int = Field(default=1)
-    """Data-parallelism parameter. The degree to which the model is replicated
-    is dependent on the model type."""
+    data_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Data-parallelism parameter. The degree to which the model is "
+            "replicated is dependent on the model type."
+        ),
+    )
 
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
-    model_path: str = Field(default="")
-    """:obj:`repo_id` of a Hugging Face model repository to use."""
+    model_path: str = Field(
+        default="",
+        description=(
+            "The repository ID of a Hugging Face model to use. "
+            "The `--model` option also works as an alias."
+        ),
+    )
 
-    served_model_name: str | None = Field(default=None)
-    """Optional override for client-facing model name. Defaults to model_path."""
+    served_model_name: str | None = Field(
+        default=None,
+        description=(
+            "Optional override for client-facing model name. Defaults to "
+            "model_path."
+        ),
+    )
 
-    weight_path: list[Path] = Field(default_factory=list)
-    """Optional path or url of the model weights to use."""
+    weight_path: list[Path] = Field(
+        default_factory=list,
+        description="Optional path or url of the model weights to use.",
+    )
 
     # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: SupportedEncoding | None = Field(default=None)
-    """Weight encoding type."""
+    quantization_encoding: SupportedEncoding | None = Field(
+        default=None,
+        description="Weight encoding type.",
+    )
 
     allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = Field(
-        default=False
+        default=False,
+        description=(
+            "Whether to allow automatic float32 to/from bfloat16 safetensors "
+            "weight type casting, if needed. Currently only supported in "
+            "Llama3 models."
+        ),
     )
-    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
     huggingface_model_revision: str = Field(
-        default=hf_hub_constants.DEFAULT_REVISION
+        default=hf_hub_constants.DEFAULT_REVISION,
+        description=(
+            "Branch or Git revision of Hugging Face model repository to use."
+        ),
     )
-    """Branch or Git revision of Hugging Face model repository to use."""
 
     huggingface_weight_revision: str = Field(
-        default=hf_hub_constants.DEFAULT_REVISION
+        default=hf_hub_constants.DEFAULT_REVISION,
+        description=(
+            "Branch or Git revision of Hugging Face model repository to use."
+        ),
     )
-    """Branch or Git revision of Hugging Face model repository to use."""
 
-    trust_remote_code: bool = Field(default=False)
-    """Whether or not to allow for custom modelling files on Hugging Face."""
+    trust_remote_code: bool = Field(
+        default=False,
+        description=(
+            "Whether or not to allow for custom modelling files on Hugging Face."
+        ),
+    )
 
     device_specs: list[DeviceSpec] = Field(
-        default_factory=scan_available_devices
+        default_factory=scan_available_devices,
+        description=(
+            "Devices to run inference upon. This option should not be used "
+            "directly via the CLI entrypoint."
+        ),
     )
-    """Devices to run inference upon. This option is not documented in :obj:`help()` as it shouldn't be used directly via the CLI entrypoint."""
 
-    force_download: bool = False
-    """Whether to force download a given file if it's already present in the local cache."""
+    @field_validator("device_specs", mode="before")
+    @classmethod
+    def _coerce_device_specs(cls, value: Any) -> list[DeviceSpec]:
+        return coerce_device_specs_input(value)
 
-    vision_config_overrides: dict[str, Any] = Field(default_factory=dict)
-    """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
+    force_download: bool = Field(
+        default=False,
+        description=(
+            "Whether to force download a given file if it's already present in "
+            "the local cache."
+        ),
+    )
 
-    rope_type: RopeType | None = Field(default=None)
-    """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
+    vision_config_overrides: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Model-specific vision configuration overrides. For example, for "
+            'InternVL: {"max_dynamic_patch": 24}.'
+        ),
+    )
 
-    kv_cache: KVCacheConfig = Field(default_factory=KVCacheConfig)
-    """The KVCache config."""
+    rope_type: RopeType | None = Field(
+        default=None,
+        description=(
+            "Force using a specific rope type: none, normal, or neox. Only "
+            "matters for GGUF weights."
+        ),
+    )
+
+    kv_cache: KVCacheConfig = Field(
+        default_factory=KVCacheConfig,
+        description="The KVCache config.",
+    )
 
     _applied_dtype_cast_from: SupportedEncoding | None = PrivateAttr(
         default=None
@@ -144,6 +204,9 @@ class MAXModelConfig(MAXModelConfigBase):
 
     _huggingface_config: AutoConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
+
+    _diffusers_config: dict[str, Any] | None = PrivateAttr(default=None)
+    """Diffusers config for diffusion pipelines. This should only be set by internal code."""
 
     _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
@@ -176,36 +239,40 @@ class MAXModelConfig(MAXModelConfigBase):
             explicitly define this __init__ method to seed the PrivateAttr(s).
             """
             seeded_huggingface_config = data.pop("_huggingface_config", None)
+            seeded_diffusers_config = data.pop("_diffusers_config", None)
             super().__init__(**data)
             if seeded_huggingface_config is not None:
                 self._huggingface_config = seeded_huggingface_config
+            if seeded_diffusers_config is not None:
+                self._diffusers_config = seeded_diffusers_config
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
         """Customize pickling to avoid serializing non-picklable HF config.
 
-        Drops `_huggingface_config` from the serialized state to ensure
-        the object remains pickleable across processes; it will be
-        lazily re-initialized on access via the `huggingface_config` property.
+        Drops `_huggingface_config` and `_diffusers_config` from the serialized state to ensure
+        the object remains pickleable across processes; they will be
+        lazily re-initialized on access via their respective properties.
         """
         # NOTE: In pydantic v2, PrivateAttr values live in `__pydantic_private__`,
         # not necessarily in `__dict__`. Preserve private state across processes,
-        # but explicitly drop `_huggingface_config` to avoid serializing possibly
+        # but explicitly drop `_huggingface_config` and `_diffusers_config` to avoid serializing possibly
         # non-picklable / remote-code-derived transformer objects.
         state = self.__dict__.copy()
         private = getattr(self, "__pydantic_private__", None)
         if private is not None:
             private_state = dict(private)
             private_state["_huggingface_config"] = None
+            private_state["_diffusers_config"] = None
             state["__pydantic_private__"] = private_state
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore state while ensuring `_huggingface_config` is reset.
+        """Restore state while ensuring `_huggingface_config` and `_diffusers_config` are reset.
 
-        `_huggingface_config` is restored as None to preserve the lazy
-        loading behavior defined in `huggingface_config`.
+        `_huggingface_config` and `_diffusers_config` are restored as None to preserve the lazy
+        loading behavior defined in their respective properties.
         """
         private_state = dict(state.pop("__pydantic_private__", None) or {})
 
@@ -213,6 +280,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Restore pydantic private attrs (and fill any missing defaults).
         private_state.setdefault("_huggingface_config", None)
+        private_state.setdefault("_diffusers_config", None)
         private_state.setdefault("_weights_repo_id", None)
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
@@ -238,7 +306,6 @@ class MAXModelConfig(MAXModelConfigBase):
         1. Validate that the device_specs provided are available
         2. Parse the weight path(s) and initialize the _weights_repo_id
         """
-
         # Validate that --quantization-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
         if (
             self.allow_safetensors_weights_fp32_bf6_bidirectional_cast
@@ -281,6 +348,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def model_name(self) -> str:
+        """Returns the served model name or model path."""
         if self.served_model_name is not None:
             return self.served_model_name
         return self.model_path
@@ -303,10 +371,9 @@ class MAXModelConfig(MAXModelConfigBase):
         return self.quantization_encoding.quantization_encoding
 
     def weights_size(self) -> int:
-        """Calculates the total size in bytes of all weight files specified in
-        `weight_path`.
+        """Calculates the total size in bytes of all weight files in ``weight_path``.
 
-        This method attempts to find the weights locally first to avoid network
+        Attempts to find the weights locally first to avoid network
         calls, checking in the following order:
 
         1. If `repo_type` is :obj:`RepoType.local`, it checks if the path
@@ -367,6 +434,7 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_weight_repo_id(self) -> str:
+        """Returns the Hugging Face repo ID used for weight files."""
         # `_weights_repo_id` is a PrivateAttr. Some construction paths (notably
         # unpickling) can bypass __init__, so the PrivateAttr may be absent.
         weights_repo_id: str | None = getattr(self, "_weights_repo_id", None)
@@ -375,6 +443,7 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
+        """Returns the Hugging Face repo handle for weight files."""
         return HuggingFaceRepo(
             repo_id=self.huggingface_weight_repo_id,
             revision=self.huggingface_weight_revision,
@@ -384,6 +453,7 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_model_repo(self) -> HuggingFaceRepo:
+        """Returns the Hugging Face repo handle for the model."""
         return HuggingFaceRepo(
             repo_id=self.model_path,
             revision=self.huggingface_model_revision,
@@ -392,22 +462,142 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def huggingface_config(self) -> AutoConfig:
+    def huggingface_config(self) -> AutoConfig | None:
+        """Returns the Hugging Face model config (loaded on first access)."""
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
         # before pickling. Each worker process will reload the config fresh,
         # which properly handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo
+            try:
+                self._huggingface_config = (
+                    PIPELINE_REGISTRY.get_active_huggingface_config(
+                        huggingface_repo=self.huggingface_model_repo
+                    )
                 )
-            )
+            except Exception as e:
+                # Not a transformers-style model (e.g., diffusers model)
+                logger.debug(
+                    f"Could not load HuggingFace config for "
+                    f"{self.model_path}: {e}"
+                )
+                return None
         return self._huggingface_config
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def diffusers_config(self) -> dict[str, Any] | None:
+        """Retrieve the diffusers config for diffusion pipelines.
+
+        Note: For multiprocessing, __getstate__ clears _diffusers_config
+        before pickling. Each worker process will reload the config fresh.
+
+        Returns:
+            The diffusers config dict if this is a diffusion pipeline, None otherwise.
+            The dict will have a structure with "_class_name" and "components" keys,
+            where each component includes "class_name" and "config_dict" fields.
+        """
+        if self._diffusers_config is None:
+            model_index = PIPELINE_REGISTRY.get_active_diffusers_config(
+                huggingface_repo=self.huggingface_model_repo
+            )
+            if model_index is not None:
+                # Enhance the model_index with component configs
+                self._diffusers_config = self._load_diffusers_components(
+                    model_index
+                )
+            else:
+                self._diffusers_config = None
+        return self._diffusers_config
+
+    def _load_diffusers_components(
+        self, model_index: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Load component configs for a diffusers pipeline.
+
+        Args:
+            model_index: The raw model_index.json dict from Hugging Face.
+
+        Returns:
+            Enhanced config dict with "components" key containing loaded configs.
+        """
+        import json
+
+        from huggingface_hub import hf_hub_download, list_repo_files
+
+        # Extract class name and version
+        class_name = model_index.get("_class_name")
+        diffusers_version = model_index.get("_diffusers_version")
+
+        # Build components dict with loaded configs
+        components = {}
+        repo = self.huggingface_model_repo
+        repo_root: Path | None = None
+        if repo.repo_type == RepoType.local:
+            repo_root = Path(repo.repo_id)
+            assert repo_root.exists(), (
+                "Local Hugging Face repository path does not exist: "
+                f"{repo_root}"
+            )
+            repo_files = [
+                path.relative_to(repo_root).as_posix()
+                for path in repo_root.rglob("*")
+                if path.is_file()
+            ]
+        else:
+            repo_files = list_repo_files(
+                repo_id=repo.repo_id,
+                revision=repo.revision,
+            )
+
+        component_configs = {}
+        for file_name in repo_files:
+            if file_name.endswith("config.json") and "/" in file_name:
+                try:
+                    component_name = file_name.split("/")[0]
+                    if repo.repo_type == RepoType.local:
+                        assert repo_root is not None, (
+                            "repo_root must be set for local repo types."
+                        )
+                        cfg_path = repo_root / file_name
+                    else:
+                        cfg_path = Path(
+                            hf_hub_download(
+                                repo_id=repo.repo_id,
+                                filename=file_name,
+                                revision=repo.revision,
+                            )
+                        )
+                    with open(cfg_path) as f:
+                        component_configs[component_name] = json.load(f)
+                except Exception as e:
+                    logger.debug(f"Could not load config for {file_name}: {e}")
+
+        for component_name, component_info in model_index.items():
+            if component_name.startswith("_"):
+                continue
+
+            if not isinstance(component_info, list) or len(component_info) != 2:
+                continue
+
+            library, class_type = component_info
+
+            components[component_name] = {
+                "library": library,
+                "class_name": class_type,
+                "config_dict": component_configs.get(component_name, {}),
+            }
+
+        # Build the final config structure
+        return {
+            "_class_name": class_name,
+            "_diffusers_version": diffusers_version,
+            "components": components,
+        }
 
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def generation_config(self) -> GenerationConfig:
-        """Retrieve the HuggingFace GenerationConfig for this model.
+        """Retrieve the Hugging Face GenerationConfig for this model.
 
         This property lazily loads the GenerationConfig from the model repository
         and caches it to avoid repeated remote fetches.
@@ -436,6 +626,7 @@ class MAXModelConfig(MAXModelConfigBase):
     def sampling_params_defaults(
         self,
     ) -> SamplingParamsGenerationConfigDefaults:
+        """Returns sampling defaults derived from the generation config."""
         defaults = {}
         for (
             field_name,
@@ -467,14 +658,12 @@ class MAXModelConfig(MAXModelConfigBase):
     def validate_and_resolve_quantization_encoding_weight_path(
         self, default_encoding: SupportedEncoding
     ) -> None:
-        """Verifies that the quantization encoding and weight path provided
-        are consistent.
+        """Verifies that the quantization encoding and weight path are consistent.
 
         Args:
             weight_path: The path to the weight file.
             default_encoding: The default encoding to use if no encoding is provided.
         """
-
         try:
             curr_weights_format = weights_format(self.weight_path)
         except ValueError:
@@ -491,12 +680,12 @@ class MAXModelConfig(MAXModelConfigBase):
             )
 
     def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
+        """Resolves rope_type from architecture default if not set."""
         if self.rope_type is None:
             self.rope_type = arch_rope_type
 
     def validate_lora_compatibility(self) -> None:
-        """
-        Validates that LoRA configuration is compatible with model settings.
+        """Validates that LoRA configuration is compatible with model settings.
 
         Raises:
             ValueError: If LoRA is enabled but incompatible with current model configuration.
@@ -512,10 +701,9 @@ class MAXModelConfig(MAXModelConfigBase):
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
         default_weights_format: WeightsFormat,
     ) -> None:
-        """
-        Validates that the model path, and weight path
-        provided are consistent with a resolved quantization encoding. Also resolves
-        the KV cache strategy and finalizes the encoding config.
+        """Validates model path and weight path against resolved quantization encoding.
+
+        Also resolves the KV cache strategy and finalizes the encoding config.
 
         Args:
             supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
@@ -536,14 +724,14 @@ class MAXModelConfig(MAXModelConfigBase):
     def _validate_and_resolve_dtype_casting(
         self, from_encoding: SupportedEncoding, to_encoding: SupportedEncoding
     ) -> None:
-        """Validates that the dtype casting is allowed and resolves the dtype
-        casting if needed. It will also update the quantization_encoding to the
-        desired encoding. If the source and target encodings are the same, this
-        function does nothing.
+        """Validates dtype casting and resolves quantization_encoding if needed.
 
-        Note: We currently only support float32 to bfloat16 weight type casting.
+        Updates the quantization_encoding to the desired encoding. No-op if
+        source and target encodings are the same. We currently only support
+        float32 <-> bfloat16 weight type casting.
 
         Args:
+            from_encoding: The current encoding to cast from.
             to_encoding: The desired encoding to cast to.
 
         Raises:
@@ -576,9 +764,7 @@ class MAXModelConfig(MAXModelConfigBase):
     def _validate_and_resolve_with_given_quantization_encoding(
         self, weights_format: WeightsFormat | None
     ) -> None:
-        """
-        Helper function to validate the quantization encoding when it is provided by the user.
-        """
+        """Validates quantization encoding when it is provided by the user."""
         assert self.quantization_encoding, (
             "quantization_encoding must be set (given by user)."
         )
@@ -646,9 +832,7 @@ class MAXModelConfig(MAXModelConfigBase):
         weights_format: WeightsFormat | None,
         default_encoding: SupportedEncoding,
     ) -> None:
-        """
-        Validates and resolves the quantization encoding when it is not specified by user.
-        """
+        """Validates and resolves quantization encoding when not specified by user."""
         assert self.quantization_encoding is None, (
             "quantization_encoding must be None (not specified by user)."
         )
@@ -694,7 +878,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 and len(supported_encodings) > 1
             ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
-                # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
+                # If we are running on an accelerator and the quantization encoding is not set, override to bfloat16.
                 if SupportedEncoding.float4_e2m1fnx2 in supported_encodings:
                     self.quantization_encoding = (
                         SupportedEncoding.float4_e2m1fnx2
@@ -712,12 +896,9 @@ class MAXModelConfig(MAXModelConfigBase):
         self,
         supported_encodings_list: list[SupportedEncoding],
     ) -> None:
-        """
-        Validates that the resolved quantization encoding is supported on the
-        specified devices.
+        """Validates that the quantization encoding is supported on the specified devices.
 
-        This method should only be called after the quantization encoding has
-        been set.
+        Should only be called after the quantization encoding has been set.
         """
         assert self.quantization_encoding, (
             "quantization_encoding must be set by now."
@@ -748,8 +929,7 @@ class MAXModelConfig(MAXModelConfigBase):
     def _resolve_weight_path(
         self, default_weights_format: WeightsFormat
     ) -> None:
-        """
-        Resolves the weight path.
+        """Resolves the weight path.
 
         This method should only be called after the quantization encoding has
         been set.
@@ -789,8 +969,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
     ) -> None:
-        """
-        Resolves the KVCacheStrategy.
+        """Resolves the KVCacheStrategy.
 
         This method should only be called after the quantization encoding has
         been set / resolved.
@@ -857,8 +1036,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
 
     def _finalize_encoding_config(self) -> None:
-        """
-        Finalizes the encoding config.
+        """Finalizes the encoding config.
 
         This method should only be called after the quantization encoding has
         been set.
@@ -866,6 +1044,12 @@ class MAXModelConfig(MAXModelConfigBase):
         assert self.quantization_encoding, "quantization_encoding must be set."
 
         if self.quantization_encoding == SupportedEncoding.gptq:
+            if self.huggingface_config is None:
+                raise ValueError(
+                    f"GPTQ quantization requires a HuggingFace config for '{self.model_path}', "
+                    "but config could not be loaded. "
+                    "Please ensure the model repository contains a valid config.json with quantization_config."
+                )
             hf_quant_config = self.huggingface_config.quantization_config
 
             # This is a bit hacky, but seems like we need it for now.
@@ -888,8 +1072,7 @@ class MAXModelConfig(MAXModelConfigBase):
             self._quant = default_quantization_config
 
     def _local_weight_path(self, relative_path: Path) -> str | None:
-        """Checks common local locations for a weight file and returns its
-        absolute path if found.
+        """Returns the absolute path if the weight file is found locally.
 
         Checks locations based on the repository type:
         - If `RepoType.local`, try directly using `relative_path` (absolute or
@@ -945,41 +1128,106 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def default_device_spec(self) -> DeviceSpec:
-        """
-        Returns the default device spec for the model.
-        This is the first device spec in the list and is mostly used for device
-        spec checks throughout config validation.
+        """Returns the default device spec for the model.
+
+        This is the first device spec in the list, used for device spec checks
+        throughout config validation.
 
         Returns:
             The default device spec for the model.
         """
         return self.device_specs[0]
 
-    # TODO: This documentation dictionary is incomplete. Fortunately, we won't
-    # need this anymore once we've migrated to cyclopts for MAX CLI bindings.
-    @staticmethod
-    def help() -> dict[str, str]:
-        max_model_help = {
-            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
-            "served_model_name": "Optional override for client-facing model name. Defaults to model_path.",
-            "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
-            "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
-            "allow_safetensors_weights_fp32_bf6_bidirectional_cast": "Specify whether to allow automatic float32 to bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models.",
-            "huggingface_model_revision": "Branch or Git revision of Hugging Face model repository to use.",
-            "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
-            "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
-            "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
-            "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
-            "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
-            "data_parallel_degree": "Data-parallelism parameter. The degree to which the model is replicated is dependent on the model type.",
-            "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
-        }
+    def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
+        """Create and set the KV cache configuration with the given parameters.
 
-        config_help = KVCacheConfig.help()
-        for key in config_help:
-            if key in max_model_help:
-                raise ValueError(
-                    f"Duplicate help key '{key}' found in {KVCacheConfig.__name__}"
-                )
-        max_model_help.update(config_help)
-        return max_model_help
+        This method creates a new KVCacheConfig from the provided keyword arguments
+        and automatically sets the cache_dtype based on the model's quantization
+        encoding (or any explicit override in kv_cache_kwargs).
+
+        Args:
+            **kv_cache_kwargs: Keyword arguments to pass to KVCacheConfig constructor.
+                Common options include:
+                - cache_strategy: The KV cache strategy (continuous, paged, etc.)
+                - kv_cache_page_size: Number of tokens per page for paged cache
+                - enable_prefix_caching: Whether to enable prefix caching
+                - device_memory_utilization: Fraction of device memory to use
+                - cache_dtype: Override for the cache data type
+        """
+        self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+        # Note: the quantization_encoding is possibly not set yet here, so we first check for an explicit override.
+        if cache_dtype := self._get_cache_override():
+            self.kv_cache._cache_dtype = cache_dtype
+
+    def set_cache_dtype_given_quantization_encoding(
+        self,
+    ) -> None:
+        """Determine the KV cache dtype based on quantization encoding configuration.
+
+        The dtype is determined in the following priority order:
+        1. Explicit override from kv_cache.kv_cache_format (if set)
+        2. Derived from the model's quantization_encoding
+        3. Falls back to float32 if no encoding is specified
+
+        Returns:
+            The DType to use for the KV cache. Typical values are:
+            - DType.float32 for float32, q4_k, q4_0, q6_k encodings
+            - DType.bfloat16 for bfloat16, float8_e4m3fn, float4_e2m1fnx2, gptq encodings
+        """
+        # First check for an explicit override.
+        if self.kv_cache.kv_cache_format is not None:
+            return  # No default needed, override is set.
+
+        # If there's no quantization encoding return a default value.
+        if not self.quantization_encoding:
+            self.kv_cache._cache_dtype = DType.float32
+            return
+
+        # Otherwise select the default KV cache dtype based on the quantization encoding.
+        supported_encoding_to_cache_dtype = {
+            SupportedEncoding.float32: DType.float32,
+            SupportedEncoding.bfloat16: DType.bfloat16,
+            SupportedEncoding.float8_e4m3fn: DType.bfloat16,
+            SupportedEncoding.float4_e2m1fnx2: DType.bfloat16,
+            SupportedEncoding.q4_k: DType.float32,
+            SupportedEncoding.q4_0: DType.float32,
+            SupportedEncoding.q6_k: DType.float32,
+            SupportedEncoding.gptq: DType.bfloat16,
+        }
+        if self.quantization_encoding in supported_encoding_to_cache_dtype:
+            self.kv_cache._cache_dtype = supported_encoding_to_cache_dtype[
+                self.quantization_encoding
+            ]
+            return
+        else:
+            raise ValueError(
+                f"Unsupported quantization encoding for KV cache dtype resolution: {self.quantization_encoding}"
+            )
+
+    def _get_cache_override(self) -> DType | None:
+        """Check for an explicit KV cache dtype override from kv_cache_format.
+
+        Parses the kv_cache.kv_cache_format string (if set) and converts it
+        to the corresponding DType.
+
+        Returns:
+            The DType corresponding to the override string, or None if no
+            override is set or the string is not recognized. Supported values
+            are 'float32', 'bfloat16', and 'float8_e4m3fn' (case-insensitive).
+        """
+        if self.kv_cache.kv_cache_format is None:
+            return None
+
+        dtype_str = self.kv_cache.kv_cache_format.lower()
+        cache_format_to_dtype = {
+            "float32": DType.float32,
+            "bfloat16": DType.bfloat16,
+            "float8_e4m3fn": DType.float8_e4m3fn,
+        }
+        if dtype_str in cache_format_to_dtype:
+            return cache_format_to_dtype[dtype_str]
+        else:
+            raise ValueError(
+                f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
+                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+            )

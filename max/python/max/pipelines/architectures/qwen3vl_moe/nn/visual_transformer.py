@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,16 +25,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import (
-    Allreduce,
-    Embedding,
-    LayerList,
-    LayerNorm,
-    Linear,
-    Shardable,
-)
-from max.nn.kernels import spatial_merge
-from max.nn.layer import Module
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kernels import spatial_merge
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm
 
 from ...qwen2_5vl.nn.vision_attention import DistributedVisionWindowAttention
 from ..model_config import VisionConfig

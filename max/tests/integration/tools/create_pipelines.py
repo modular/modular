@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import shutil
@@ -36,18 +35,15 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from peft.peft_model import PeftModel
 
 # Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
-from test_common import (
-    test_data,
-    torch_utils,
-)
-from test_common.storage import load_image
+from test_common import test_data, torch_utils
 from test_common.torch_utils import MockTextGenerationRequest
 
 
@@ -86,7 +82,7 @@ class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
     pipeline: (
-        pipelines.TextGenerationPipeline[Any] | pipelines.EmbeddingsPipeline
+        TextGenerationPipelineInterface[Any] | pipelines.EmbeddingsPipeline
     )
     tokenizer: PipelineTokenizer[Any, Any, Any]
 
@@ -116,6 +112,7 @@ class VLLMPipeline:
     model_path: str
     trust_remote_code: bool = False
     encoding: str | None = None
+    tensor_parallel_size: int = 1
 
 
 class PipelineOracle(ABC):
@@ -168,11 +165,14 @@ class PipelineOracle(ABC):
                 f"Cannot find `model_path` for {self.__class__.__name__}"
             )
         config = getattr(self, "config_params", {})
+        # Use tensor parallelism across all GPU devices
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=path,
             trust_remote_code=config.get("trust_remote_code", False)
             or getattr(self, "trust_remote_code", False),
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
     @property
@@ -196,6 +196,7 @@ class PipelineOracle(ABC):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using the standard torch_utils implementation.
 
@@ -209,6 +210,7 @@ class PipelineOracle(ABC):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -256,7 +258,7 @@ class InternVLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -290,6 +292,7 @@ class InternVLPipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using InternVL-specific preprocessing logic."""
         return internvl_torch_utils.run_text_generation(
@@ -299,16 +302,19 @@ class InternVLPipelineOracle(PipelineOracle):
             textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
+            generate_logprobs=generate_logprobs,
             # Omit `use_cache` since the InternVL code hardcodes it.
         )
 
     def create_vllm_pipeline(
         self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
     ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=True,
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
 
@@ -349,6 +355,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             cache_strategy=KVCacheStrategy.PAGED,
             model_path=self.model_path,
             huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
             max_length=max_length,
             max_num_steps=1,
             trust_remote_code=True,
@@ -356,7 +363,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -387,6 +394,7 @@ class Idefics3PipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using Idefics3-specific preprocessing logic."""
 
@@ -398,6 +406,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -420,20 +429,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Qwen2.5VL."""
-
-        multi_modal_requests = copy.deepcopy(qwen2_5vl_utils.INSTRUCT_REQUESTS)
-
-        # Download images from s3 and update the messages.
-        for request in multi_modal_requests:
-            for message in request.messages:
-                if isinstance(message.content, list):
-                    for content in message.content:
-                        if (
-                            isinstance(content, dict)
-                            and content["type"] == "image"
-                        ):
-                            content["image"] = load_image(content["image"])
-
         # Torch model tries to return EOT for the default long text prompt,
         # so add another bullet point to get it to generate more tokens.
         long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
@@ -442,7 +437,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             MockTextGenerationRequest.text_only(prompt)
             for prompt in text_only_prompts
         ]
-        return multi_modal_requests + text_only_requests
+        return qwen2_5vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -467,7 +462,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.6,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -497,6 +492,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using Qwen2.5VL-specific preprocessing logic."""
 
@@ -508,6 +504,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -517,33 +514,22 @@ class Qwen3VLPipelineOracle(PipelineOracle):
     model_path: str
     """ID of the Hugging Face repository."""
 
-    def __init__(self, model_path: str) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        device_encoding_map: dict[str, list[str]] | None = None,
+    ) -> None:
         super().__init__()
         self.model_path = model_path
+        self._device_encoding_map = device_encoding_map or {"gpu": ["bfloat16"]}
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
+        return self._device_encoding_map
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Qwen3VL."""
-
-        multi_modal_requests = copy.deepcopy(qwen3vl_utils.INSTRUCT_REQUESTS)
-
-        # Download images from s3 and update the messages.
-        for request in multi_modal_requests:
-            for message in request.messages:
-                if isinstance(message.content, list):
-                    for content in message.content:
-                        if (
-                            isinstance(content, dict)
-                            and content["type"] == "image"
-                        ):
-                            content["image"] = load_image(content["image"])
-
         # Torch model tries to return EOT for the default long text prompt,
         # so add another bullet point to get it to generate more tokens.
         long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
@@ -552,7 +538,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             MockTextGenerationRequest.text_only(prompt)
             for prompt in text_only_prompts
         ]
-        return multi_modal_requests + text_only_requests
+        return qwen3vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -577,7 +563,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             device_memory_utilization=0.4,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -590,12 +576,20 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         processor = transformers.AutoProcessor.from_pretrained(
             self.model_path, revision=revision, trust_remote_code=True
         )
+        # For FP8 models, use bfloat16 as compute dtype since the FP8 weights
+        # are pre-quantized and have their own scale tensors.
+        if encoding == "float8_e4m3fn":
+            torch_dtype = torch.bfloat16
+        else:
+            torch_dtype = (
+                ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
+            )
         model = transformers.AutoModelForVision2Seq.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
+            torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
@@ -607,6 +601,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using Qwen3VL-specific preprocessing logic."""
 
@@ -618,6 +613,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -641,17 +637,19 @@ class PixtralPipelineOracle(PipelineOracle):
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
+            huggingface_model_revision=revision,
             max_length=8192,
             max_num_steps=1,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -709,19 +707,42 @@ class GenericOracle(PipelineOracle):
             return self._weight_path_map[encoding]
         return None
 
+    def _parse_weight_path(
+        self, weight_path: str
+    ) -> tuple[str, str, str | None]:
+        """Parse weight path into (repo_id, filename, revision)."""
+        path_pieces = weight_path.split("/")
+        weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
+        weight_filename = "/".join(path_pieces[2:])
+        weight_revision = hf_repo_lock.revision_for_hf_repo(weight_repo_id)
+        return weight_repo_id, weight_filename, weight_revision
+
     def create_max_pipeline(
         self,
         *,
         encoding: str,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
+
+        # Determine weight revision: use weight repo's revision if different
+        weight_revision = model_revision
+        if weight_path:
+            weight_repo_id, _, weight_revision = self._parse_weight_path(
+                weight_path
+            )
+            if weight_repo_id == self.model_path:
+                weight_revision = model_revision
+
         config = pipelines.PipelineConfig(
             device_specs=device_specs if device_specs else None,
             quantization_encoding=pipelines.SupportedEncoding[encoding]
             if encoding
             else None,
             model_path=self.model_path,
+            huggingface_model_revision=model_revision,
+            huggingface_weight_revision=weight_revision,
             weight_path=[] if weight_path is None else [weight_path],
             max_num_steps=1,
             **self.config_params,
@@ -732,7 +753,8 @@ class GenericOracle(PipelineOracle):
         )
         assert isinstance(
             pipeline,
-            pipelines.TextGenerationPipeline | pipelines.EmbeddingsPipeline,
+            pipelines.TextGenerationPipelineInterface
+            | pipelines.EmbeddingsPipeline,
         )
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -753,14 +775,14 @@ class GenericOracle(PipelineOracle):
                     revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 )
             )
-            path_pieces = weight_path.split("/")
-            weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
-            weight_filename = "/".join(path_pieces[2:])
+            weight_repo_id, weight_filename, weight_revision = (
+                self._parse_weight_path(weight_path)
+            )
             downloaded_weight_path = Path(
                 huggingface_hub.hf_hub_download(
                     repo_id=weight_repo_id,
                     filename=weight_filename,
-                    revision=hf_repo_lock.revision_for_hf_repo(weight_repo_id),
+                    revision=weight_revision,
                 )
             )
             config = transformers.AutoConfig.from_pretrained(config_path)
@@ -1040,6 +1062,16 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
+    "nvidia/Llama-3.1-8B-Instruct-NVFP4": GenericOracle(
+        model_path="nvidia/Llama-3.1-8B-Instruct-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": GenericOracle(
+        model_path="nvidia/Llama-3.1-405B-Instruct-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},
@@ -1205,11 +1237,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "unsloth/gpt-oss-20b-BF16_ModuleV3": GenericOracle(
-        model_path="unsloth/gpt-oss-20b-BF16",
-        config_params={"max_length": 512, "use_module_v3": True},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
     "Qwen/Qwen2.5-VL-3B-Instruct": Qwen2_5VLPipelineOracle(
         "Qwen/Qwen2.5-VL-3B-Instruct"
     ),
@@ -1226,6 +1253,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"
     ),
+    "Qwen/Qwen3-VL-4B-Instruct": Qwen3VLPipelineOracle(
+        "Qwen/Qwen3-VL-4B-Instruct"
+    ),
+    "Qwen/Qwen3-VL-4B-Instruct-FP8": Qwen3VLPipelineOracle(
+        "Qwen/Qwen3-VL-4B-Instruct-FP8",
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",
         config_params={"max_length": 512},
@@ -1238,6 +1272,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "Qwen/Qwen3-30B-A3B": GenericOracle(
         model_path="Qwen/Qwen3-30B-A3B",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -1389,11 +1428,22 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_length": 516,
             "trust_remote_code": False,
-            "prefill_chunk_size": 512,
+            "max_batch_input_tokens": 512,
             "ep_size": 8,
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
+        model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
+        config_params={
+            "max_length": 1028,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 1024,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -89,7 +89,7 @@ from reflection.type_info import _unqualified_type_name
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer:
+trait Writer(ImplicitlyDestructible):
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such
@@ -149,7 +149,7 @@ trait Writer:
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writable:
+trait Writable(ImplicitlyDestructible):
     """A trait for types that can format themselves as text.
 
     The `Writable` trait provides a simple, straightforward interface for types
@@ -241,6 +241,11 @@ trait Writable:
         fn write_repr_to(self, mut writer: Some[Writer]):
             writer.write("Point: x=", self.x, ", y=", self.y)
         ```
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
 
         @always_inline
@@ -257,7 +262,7 @@ fn _reflection_write_to[
     T: Writable,
     W: Writer,
     //,
-    f: fn[FieldType: Writable] (field: FieldType, mut writer: W),
+    f: fn[FieldType: Writable](field: FieldType, mut writer: W),
 ](this: T, mut writer: W,):
     comptime names = struct_field_names[T]()
     comptime types = struct_field_types[T]()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,14 +41,13 @@ from .runtime_tuple import (
 # IntTuple.
 
 
-@register_passable("trivial")
 struct RuntimeLayout[
     layout: Layout,
     /,
     *,
     element_type: DType = DType.int64,
     linear_idx_type: DType = DType.int64,
-](Defaultable, Stringable, Writable):
+](Defaultable, Stringable, TrivialRegisterPassable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
@@ -101,7 +100,7 @@ struct RuntimeLayout[
             dimensions known.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.layout.all_dims_known()
         ), "Static layout with known dims is required"
 
@@ -380,7 +379,7 @@ struct RuntimeLayout[
         Returns:
             The number of dimensions (rank) of the layout.
         """
-        return len(Self.layout)
+        return comptime (len(Self.layout))
 
 
 fn coalesce[
@@ -410,7 +409,7 @@ fn coalesce[
         A new `RuntimeLayout` with coalesced dimensions.
     """
 
-    __comptime_assert not keep_rank, "Unsupported coalesce mode"
+    comptime assert not keep_rank, "Unsupported coalesce mode"
 
     var res_shape = RuntimeTuple[
         coalesce_layout(l, keep_rank).shape, element_type = layout.element_type

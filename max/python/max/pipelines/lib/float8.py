@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Float8 configuration parsing utilities for HuggingFace models."""
+"""Float8 configuration parsing utilities for Hugging Face models."""
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from collections.abc import Mapping
+from typing import Any
 
+import huggingface_hub
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.float8_config import (
+from max.nn.legacy.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
@@ -390,10 +395,10 @@ def _parse_float8_config(
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
-    """Parses Float8Config from HuggingFace config by dispatching to format-specific parsers.
+    """Parses Float8Config from Hugging Face config (if exists) by dispatching to format-specific parsers.
 
     Dispatches to the appropriate format-specific parser based on the
-    quantization method in the HuggingFace config.
+    quantization method in the Hugging Face config. Returns None if the dtype is not float8_e4m3fn.
     """
     if dtype != DType.float8_e4m3fn:
         return None
@@ -429,16 +434,112 @@ def _parse_float8_config(
     )
 
 
+logger = logging.getLogger("max.pipelines")
+
+
+_FP4_DTYPES = (DType.uint8, DType.float4_e2m1fn)
+
+
+def _load_standalone_quant_config(
+    huggingface_config: AutoConfig,
+) -> dict[str, Any] | None:
+    """Try to load quantization config from a standalone hf_quant_config.json file.
+
+    Some models (e.g., nvidia/Llama-3.1-405B-Instruct-NVFP4) store their quantization
+    config in a separate hf_quant_config.json file rather than in the main config.json.
+
+    The standalone file has a different structure:
+    {
+        "producer": {"name": "modelopt", "version": "..."},
+        "quantization": {"quant_algo": "NVFP4", ...}
+    }
+
+    This function maps it to the standard format:
+    {"quant_method": "modelopt", "quant_algo": "NVFP4", ...}
+
+    Returns:
+        dict with quant_method and quant_algo if found, None otherwise.
+    """
+    model_path = getattr(huggingface_config, "_name_or_path", None)
+    if not model_path:
+        return None
+
+    quant_config_filename = "hf_quant_config.json"
+
+    try:
+        # Try local path first
+        if os.path.isdir(model_path):
+            local_path = os.path.join(model_path, quant_config_filename)
+            if os.path.exists(local_path):
+                with open(local_path) as f:
+                    standalone_config = json.load(f)
+            else:
+                return None
+        else:
+            # Try to download from HuggingFace
+            try:
+                downloaded_path = huggingface_hub.hf_hub_download(
+                    repo_id=model_path,
+                    filename=quant_config_filename,
+                    local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
+                )
+                with open(downloaded_path) as f:
+                    standalone_config = json.load(f)
+            except Exception:
+                # File doesn't exist or can't be downloaded
+                return None
+
+        # Map the standalone format to the standard format
+        producer = standalone_config.get("producer", {})
+        quantization = standalone_config.get("quantization", {})
+
+        quant_method = producer.get("name")
+        quant_algo = quantization.get("quant_algo")
+
+        if quant_method and quant_algo:
+            return {"quant_method": quant_method, "quant_algo": quant_algo}
+        return None
+
+    except Exception as e:
+        logger.debug(f"Failed to load standalone quant config: {e}")
+        return None
+
+
+def _resolve_quant_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+) -> dict[str, Any] | None:
+    if hf_quant_config := getattr(
+        huggingface_config, "quantization_config", None
+    ):
+        return hf_quant_config
+
+    standalone_config = _load_standalone_quant_config(huggingface_config)
+    if standalone_config:
+        return standalone_config
+
+    if any("weight_scale_2" in name for name in state_dict):
+        return {"quant_method": "modelopt", "quant_algo": "NVFP4"}
+
+    return None
+
+
 def _parse_modelopt_float4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
+    *,
+    quant_method_override: str | None = None,
+    quant_algo_override: str | None = None,
 ) -> Float8Config | None:
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if not hf_quant_config:
+    quant_method = quant_method_override
+    quant_algo = quant_algo_override
+    if hf_quant_config:
+        quant_method = hf_quant_config.get("quant_method", quant_method)
+        quant_algo = hf_quant_config.get("quant_algo", quant_algo)
+    if not quant_method or not quant_algo:
         return None
-    quant_method = hf_quant_config.get("quant_method")
-    quant_algo = hf_quant_config.get("quant_algo")
 
     input_spec = Float8InputScaleSpec(
         granularity=Float8ScaleGranularity.BLOCK,
@@ -454,11 +555,14 @@ def _parse_modelopt_float4_config(
 
     bias_dtype = _bias_dtype(state_dict)
 
+    # All layers use float4 in modelopt NVFP4 checkpoints.
+    all_layers = set(range(huggingface_config.num_hidden_layers))
+
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_in_float8=all_layers,
+        attn_qkv_in_float8=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         quant_method=quant_method,
@@ -474,28 +578,28 @@ def _parse_float4_config(
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
     # Accept both uint8 (fp4-e2m1fnX2 format) and float4_e2m1fn
-    if dtype not in (DType.uint8, DType.float4_e2m1fn):
+    if dtype not in _FP4_DTYPES:
         return None
 
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if not hf_quant_config:
-        raise ValueError(
-            "expected a `quantization_config` field in Hugging Face config when "
-            "the dtype is float4"
-        )
+    quant_config = _resolve_quant_config(huggingface_config, state_dict)
+    if not quant_config:
+        return None
 
-    quant_method = hf_quant_config.get("quant_method")
-
+    quant_method = quant_config.get("quant_method")
     if quant_method == "modelopt":
         return _parse_modelopt_float4_config(
-            huggingface_config, state_dict, dtype
+            huggingface_config,
+            state_dict,
+            dtype,
+            quant_method_override=quant_method,
+            quant_algo_override=quant_config.get("quant_algo"),
         )
 
-    raise ValueError(
-        "FP4 dtype specified, but an unsupported or incompatible 'quantization_config' "
-        f"was found. Quant method: '{quant_method}'. "
-        "Supported methods are 'modelopt'."
+    logger.debug(
+        "Skipping FP4 parsing for unsupported quant method: %s",
+        quant_method,
     )
+    return None
 
 
 def parse_float8_config(  # TODO: rename to generic
@@ -505,10 +609,20 @@ def parse_float8_config(  # TODO: rename to generic
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
-    quant_config = getattr(huggingface_config, "quantization_config", {})
-    quant_method = quant_config.get("quant_method")
-    quant_algo = quant_config.get("quant_algo")
-    if quant_method == "modelopt" and quant_algo == "NVFP4":
+    """Parses Float8 or Float4 config from HuggingFace config and state dict.
+
+    Args:
+        huggingface_config: HuggingFace model configuration.
+        state_dict: Weight state dict to inspect for scales.
+        dtype: Target dtype (e.g. float8_e4m3fn or packed fp4).
+        state_dict_name_prefix: Optional prefix for state dict keys.
+        ignored_modules_prefix: Prefix of modules to ignore when parsing.
+
+    Returns:
+        Float8Config or Float4 config if supported, otherwise None.
+    """
+    # uint8 is packed fp4 (float4_e2m1fnx2) in NVFP4 checkpoints.
+    if dtype in _FP4_DTYPES:
         return _parse_float4_config(
             huggingface_config,
             state_dict,

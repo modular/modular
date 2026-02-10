@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from utils.numerics import FPUtils
 
 from sys import CompilationTarget, bit_width_of, llvm_intrinsic
 from sys._assembly import inlined_assembly
-from sys.ffi import _external_call_const
+from ffi import _external_call_const
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from builtin.simd import _simd_apply
@@ -33,7 +33,7 @@ from memory import bitcast
 
 
 fn _constrain_fp_type[dtype: DType]():
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "dtype must be a floating point type"
 
@@ -120,8 +120,7 @@ struct FPUtils[
         Returns:
             The sign mask.
         """
-        # convert to `Int` first to bypass overflow check
-        return 1 << Int(Self.exponent_width() + Self.mantissa_width())
+        return 1 << (Self.exponent_width() + Self.mantissa_width())
 
     @staticmethod
     @always_inline
@@ -265,8 +264,9 @@ struct FPUtils[
             The biased exponent as an Int.
         """
         return Int(
-            Self.bitcast_to_uint(value) >> Self.mantissa_width()
-            & ((1 << Self.exponent_width()) - 1)
+            Self.bitcast_to_uint(value)
+            >> Scalar[Self.uint_type](Self.mantissa_width())
+            & Scalar[Self.uint_type]((1 << Self.exponent_width()) - 1)
         )
 
     @staticmethod
@@ -312,7 +312,9 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
-        return Self.bitcast_to_uint(value) & Self.mantissa_mask()
+        return Self.bitcast_to_uint(value) & Scalar[Self.uint_type](
+            Self.mantissa_mask()
+        )
 
     @staticmethod
     @always_inline
@@ -480,7 +482,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The NaN value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support NaN."
 
@@ -593,7 +595,7 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The +inf value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support +inf."
 
@@ -649,7 +651,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The -inf value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support -inf."
 
@@ -973,7 +975,7 @@ fn nextafter[
     Returns:
         The `nextafter` of the inputs.
     """
-    __comptime_assert dtype in (
+    comptime assert dtype in (
         DType.float32,
         DType.float64,
     ), "nextafter only supports float32 and float64 types"
@@ -996,7 +998,7 @@ fn nextafter[
             arg0, arg1
         )
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input dtype must be floating point"
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@ fn my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn (Scalar[dtype], Scalar[dtype]) -> Int,
+    compare: fn(Scalar[dtype], Scalar[dtype]) -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,

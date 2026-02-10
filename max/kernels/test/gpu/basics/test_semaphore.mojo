@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -58,7 +58,7 @@ fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_host, shared_data)
 
     for i in range(NUM_BLOCKS):
-        assert_equal(a_host[i], i)
+        assert_equal(a_host[i], Int32(i))
 
     _ = shared_data^
     _ = locks_data^
@@ -102,7 +102,7 @@ fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_host, shared_data)
 
     for i in range(NUM_BLOCKS):
-        assert_equal(a_host[i], i)
+        assert_equal(a_host[i], Int32(i))
 
     _ = shared_data^
     _ = locks_data^

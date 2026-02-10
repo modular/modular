@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,10 +21,10 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
 )
-from max.nn import Module
-from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )

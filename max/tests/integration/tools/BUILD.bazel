@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -16,7 +16,7 @@ modular_py_library(
     deps = [
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
     ],
 )
@@ -36,12 +36,13 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/architectures/idefics3:torch_utils",
+        "//max/tests/integration/architectures/internvl:torch_utils",
+        "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
+        "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common",
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("einops"),  # Req'd by replit
         requirement("peft"),  # Required for LoRA support
@@ -68,18 +69,27 @@ modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    ignore_extra_deps = [
+        requirement("einops"),  # Req'd by replit
+        requirement("timm"),  # Required by InternVL.
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+    ],
+    imports = ["."],
     deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/architectures/idefics3:torch_utils",
+        "//max/tests/integration/architectures/internvl:torch_utils",
+        "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
+        "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common:torch_utils",
         requirement("einops"),  # Req'd by replit
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
+        requirement("huggingface-hub"),
         requirement("transformers"),
         requirement("peft"),  # Required for LoRA support
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
@@ -94,14 +104,17 @@ modular_py_library(
         "@nvshmem_prebuilt//:host",
     ],
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
-        "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python/test_common",
-        "//max/tests/integration/pipelines/python/test_common:vllm_utils",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:vllm_utils",
+        requirement("huggingface-hub"),
         requirement("requests"),
         requirement("torch"),
+        requirement("typing-extensions"),
     ],
 )
 
@@ -112,11 +125,11 @@ modular_py_binary(
         "generate_llm_logits.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
         "PIPELINES_TESTDATA": (
-            "max/tests/integration/pipelines/python/llama3/testdata"
+            "max/tests/integration/architectures/llama3/testdata"
         ),
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
@@ -129,12 +142,13 @@ modular_py_binary(
         ":run_models",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/architectures/idefics3:torch_utils",
+        "//max/tests/integration/architectures/internvl:torch_utils",
+        "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
+        "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common",
         requirement("click"),
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("einops"),  # Req'd by replit
@@ -165,11 +179,11 @@ modular_py_binary(
         "debug_model.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
         "PIPELINES_TESTDATA": (
-            "max/tests/integration/pipelines/python/llama3/testdata"
+            "max/tests/integration/architectures/llama3/testdata"
         ),
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
@@ -182,21 +196,42 @@ modular_py_binary(
         ":hf_config_overrides",
         ":run_models",
         "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/lib",
         requirement("click"),
         requirement("torch"),
     ],
 )
 
 modular_py_binary(
-    name = "compare_buffers",
+    name = "compare_tensors",
     testonly = True,
-    srcs = ["compare_buffers.py"],
+    srcs = ["compare_tensors.py"],
     imports = ["."],
-    main = "compare_buffers.py",
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    main = "compare_tensors.py",
     deps = [
         "//max/python/max/driver",
         requirement("click"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_hf_config_overrides",
+    size = "small",
+    srcs = ["test_hf_config_overrides.py"],
+    imports = ["."],
+    tags = [
+        "no-pydeps",  # TODO: Fix pydeps import mapping for tools.hf_config_overrides
+    ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/tools:hf_config_overrides",
+        requirement("transformers"),
     ],
 )

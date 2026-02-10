@@ -1,15 +1,15 @@
-# Modular Design Docs
+# Modular design docs
 
-As part of our promise to progressively open source Mojo and MAX, and to drive
-deeper community engagement, we are publishing engineering design documents to
-help educate our developer base about how our core technologies work, how to
-best use the Modular platform, and how to become core kernel and model
-contributors.
+This is a collection of engineering docs that describe how the core
+Modular Platform technologies work and some of the lessons we learned while
+building them.
 
 This directory includes Markdown docs, formatted for MKDocs, and basic
 scaffolding to build a static docs site with MKDocs.
 
-## Get started
+You can see the docs in a website at <https://modular.github.io/modular/>.
+
+## Build the site locally
 
 1. Install uv
 

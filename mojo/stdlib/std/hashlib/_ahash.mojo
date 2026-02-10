@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -130,7 +130,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         """
         var length = len(data)
         var ptr = data.unsafe_ptr()
-        self.buffer = (self.buffer + length) * MULTIPLE
+        self.buffer = (self.buffer + UInt64(length)) * MULTIPLE
         if length > 8:
             if length > 16:
                 var tail = (ptr + length - 16).bitcast[UInt64]().load[width=2]()
@@ -179,14 +179,16 @@ struct AHasher[key: U256](Defaultable, Hasher):
             @parameter
             for i in range(new_data.size):
                 var v = new_data[i]
-                __comptime_assert (
-                    size_of[v.dtype]() > 8 and v.dtype.is_integral()
-                )
+                comptime assert size_of[v.dtype]() > 8 and v.dtype.is_integral()
 
                 @parameter
                 for r in range(0, rounds, 2):
-                    var u64_1 = (v >> (r * 64)).cast[DType.uint64]()
-                    var u64_2 = (v >> ((r + 1) * 64)).cast[DType.uint64]()
+                    var u64_1 = (v >> Scalar[new_data.dtype](r * 64)).cast[
+                        DType.uint64
+                    ]()
+                    var u64_2 = (
+                        v >> Scalar[new_data.dtype]((r + 1) * 64)
+                    ).cast[DType.uint64]()
                     self._large_update(U128(u64_1, u64_2))
 
     fn update[T: Hashable](mut self, value: T):

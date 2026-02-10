@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -209,17 +209,6 @@ struct Interval[T: IntervalElement](
             False otherwise.
         """
         return self.start <= other.start and self.end >= other.end
-
-    fn __eq__(self, other: Self) -> Bool:
-        """Returns whether this interval equals another interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if both intervals have the same start and end values.
-        """
-        return self.start == other.start and self.end == other.end
 
     fn __le__(self, other: Self) -> Bool:
         """Returns whether this interval is less than or equal to another

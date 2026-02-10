@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,6 +19,7 @@ from test_utils import (
     DelCounter,
     MoveCounter,
     TriviallyCopyableMoveCounter,
+    check_write_to,
 )
 from testing import (
     assert_equal,
@@ -38,7 +39,7 @@ from testing.prop.strategy import SIMD, List
 def test_mojo_issue_698():
     var list = List[Float64]()
     for i in range(5):
-        list.append(i)
+        list.append(Float64(i))
 
     assert_equal(0.0, list[0])
     assert_equal(1.0, list[1])
@@ -682,9 +683,8 @@ def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        # FIXME(MOCO-3012): Why is applying `^` required here?
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()
@@ -802,16 +802,13 @@ def test_list_boolable():
     assert_false(List[Int]())
 
 
-def test_converting_list_to_string():
-    # This is also testing the method `to_format` because
-    # essentially, `List.__str__()` just creates a String and applies `to_format` to it.
-    # If we were to write unit tests for `to_format`, we would essentially copy-paste the code
-    # of `List.__str__()`
-    var my_list = [1, 2, 3]
-    assert_equal(my_list.__str__(), "[1, 2, 3]")
-
-    var my_list4 = ["a", "b", "c", "foo"]
-    assert_equal(my_list4.__str__(), "['a', 'b', 'c', 'foo']")
+def test_list_write_to():
+    check_write_to([1, 2, 3], expected="[1, 2, 3]", is_repr=False)
+    check_write_to(
+        ["a", "b", "c", "foo"], expected="[a, b, c, foo]", is_repr=False
+    )
+    check_write_to(List[Int](), expected="[]", is_repr=False)
+    check_write_to([42], expected="[42]", is_repr=False)
 
 
 def test_list_count():
@@ -983,11 +980,12 @@ def test_destructor_trivial_elements():
     assert_equal(dtor_count, 0)
 
 
-def test_list_repr():
-    var l = [1, 2, 3]
-    assert_equal(l.__repr__(), "[1, 2, 3]")
-    var empty = List[Int]()
-    assert_equal(empty.__repr__(), "[]")
+def test_list_write_repr_to():
+    check_write_to(
+        [1, 2, 3], expected="List[Int]([Int(1), Int(2), Int(3)])", is_repr=True
+    )
+    check_write_to([1], expected="List[Int]([Int(1)])", is_repr=True)
+    check_write_to(List[Int](), expected="List[Int]([])", is_repr=True)
 
 
 def test_list_fill_constructor():
@@ -1031,7 +1029,7 @@ def _test_copyinit_trivial_types[dt: DType]():
         comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
-            x.append(i)
+            x.append(Scalar[dt](i))
         y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
@@ -1065,19 +1063,6 @@ def test_list_comprehension():
 
     var l2 = [x * y for x in range(3) for y in l1]
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
-
-
-def test_list_repr_wrap():
-    assert_equal(repr(List[String](["Hello", "World"])), "['Hello', 'World']")
-    assert_equal(
-        repr(List[UInt8]([UInt8(0), 1])),
-        "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
-    )
-    var l = List[DType]([DType.int8, DType.int16])
-    assert_equal(
-        repr(l),
-        "[DType.int8, DType.int16]",
-    )
 
 
 # ===-------------------------------------------------------------------===#

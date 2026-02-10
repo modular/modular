@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -120,14 +120,14 @@ def test_matmul[
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            a[IndexList[2]((i, p))] = cnt % vnni_range
+            a[IndexList[2]((i, p))] = Scalar[a_type](cnt % vnni_range)
             cnt += 1
 
     cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            b[IndexList[2]((p, j))] = cnt % 256 - 128
+            b[IndexList[2]((p, j))] = Scalar[b_type](cnt % 256 - 128)
             bp[IndexList[2]((p, j))] = b[IndexList[2]((p, j))]
             cnt += 1
 

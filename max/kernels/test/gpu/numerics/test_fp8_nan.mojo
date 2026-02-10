@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,7 @@ fn print_bits[dtype: DType](val: Scalar[dtype]):
 
     @parameter
     for i in reversed(range(8)):
-        bits.write((u8 >> i) & 1)
+        bits.write((u8 >> UInt8(i)) & 1)
 
     print(dtype, "nan:", u8, bits)
 

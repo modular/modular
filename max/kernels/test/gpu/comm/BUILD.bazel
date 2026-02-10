@@ -22,7 +22,7 @@ mojo_test(
     tags = ["gpu"],
     target_compatible_with = select({
         "//:h100_gpu": ["//:has_multi_gpu"],
-        "//:b200_gpu": ["//:has_multi_gpu"],
+        # "//:b200_gpu": ["//:has_multi_gpu"], # TODO(INFRA-2158): re-enable once multimem working on B200
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
@@ -39,7 +39,6 @@ mojo_test(
 HIGH_GPU_MEMORY_TESTS = [
     "test_p2p_ep_combine.mojo",
     "test_p2p_ep_dispatch.mojo",
-    "test_p2p_ep_dispatch_fp8.mojo",
 ]
 
 # Regular tests for all other files

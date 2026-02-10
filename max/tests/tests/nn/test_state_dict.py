@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Weight
-from max.nn.layer.layer import Module
+from max.nn.legacy.layer.layer import Module
 
 
 # Dummy module for testing load_state_dict

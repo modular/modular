@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 from max import mlir
+from max._mlir_context import default_mlir_context
 from max.graph import KernelLibrary
 from max.torch import CustomOpLibrary
 
@@ -36,7 +37,9 @@ def modular_path() -> Path:
 def kernel_library() -> Generator[KernelLibrary]:
     """Set up the kernel library for the current system."""
     path = Path(os.environ["MODULAR_PYTORCH_CUSTOM_OPS"])
-    yield KernelLibrary(mlir.Context(), [path])
+    default_mlir_context()
+    with mlir.Location.unknown():
+        yield KernelLibrary([path])
 
 
 # Reset op cache between test functions

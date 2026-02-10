@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,9 +31,15 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.parallel import ParallelArrayOps
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.qwen2_5vl.util import (
     compute_multimodal_merge_indices,
 )
@@ -197,7 +203,7 @@ class Qwen3VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen3VL."""
-        return Qwen3VLConfig.get_kv_params(
+        return Qwen3VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -276,15 +282,14 @@ class Qwen3VLModel(
                 )
 
         # Generate Qwen3VL config from HuggingFace config
-        qwen3vl_config = Qwen3VLConfig.generate(
+        qwen3vl_config = Qwen3VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
+            huggingface_config=self.huggingface_config,
+        )
+        qwen3vl_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_state_dict,
             vision_state_dict=vision_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         self.model_config = qwen3vl_config

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,6 +35,6 @@ fn managed_tensor_slice_to_ndbuffer[
         # exclusive = spec.exclusive,
     ],
 ):
-    __comptime_assert not tensor.io_spec.input == IO.FusedInput
+    comptime assert not tensor.io_spec.input == IO.FusedInput
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return type_of(result)(ptr, tensor.shape(), tensor._runtime_strides)

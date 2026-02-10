@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ from testing import TestSuite, assert_equal
 
 
 fn vec_func[
-    op: fn (Float32, Float32) capturing [_] -> Float32
+    op: fn(Float32, Float32) capturing[_] -> Float32
 ](
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
@@ -56,8 +56,8 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     # Initialize the input and outputs with known values.
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
+            in0_host[i] = Float32(i)
+            out_host[i] = Float32(length + i)
 
     @parameter
     fn add_with_captured(left: Float32, right: Float32) -> Float32:
@@ -83,7 +83,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
                 print("at index", i, "the value is", out_host[i])
             assert_equal(
                 out_host[i],
-                i + 2 + captured,
+                Float32(Float32(i + 2) + captured),
                 String("at index ", i, " the value is ", out_host[i]),
             )
 

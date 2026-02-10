@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,7 +25,7 @@ Key features:
 
 from gpu import thread_idx, WARP_SIZE
 from layout import Layout
-from linalg.structuring import SMemArrayType
+from linalg.structuring import SMemArray
 from os.atomic import Atomic
 from sys._assembly import inlined_assembly
 from utils import StaticTuple
@@ -45,12 +45,11 @@ from .ring_buffer_traits import (
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct ProducerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-]:
+](TrivialRegisterPassable):
     """Context manager for producer access to a single ring buffer tile."""
 
     comptime ProducerViewType = ProducerView[
@@ -91,12 +90,11 @@ struct ProducerTile[
         self.producer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
 
 
-@register_passable("trivial")
 struct ConsumerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-]:
+](TrivialRegisterPassable):
     """Context manager for consumer access to a single ring buffer tile."""
 
     comptime ConsumerViewType = ConsumerView[
@@ -142,12 +140,11 @@ struct ConsumerTile[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct ProducerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-]:
+](TrivialRegisterPassable):
     """Producer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
@@ -245,12 +242,11 @@ struct ProducerView[
         )
 
 
-@register_passable("trivial")
 struct ConsumerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-]:
+](TrivialRegisterPassable):
     """Consumer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]

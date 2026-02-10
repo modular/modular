@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,7 +55,7 @@ fn test_vec_init[
             verification_data.fill(1)
         elif init_type == InitializationType.arange:
             for i in range(length):
-                verification_data.data[i] = i
+                verification_data.data[i] = Scalar[dtype](i)
         for i in range(length):
             assert_equal(verification_ptr[i], out_host[i])
         verification_ptr.free()

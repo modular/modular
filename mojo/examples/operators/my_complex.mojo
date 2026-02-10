@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,13 +14,12 @@
 from math import sqrt
 
 
-@register_passable("trivial")
 struct Complex(
     Boolable,
     Equatable,
-    ImplicitlyCopyable,
     Representable,
     Stringable,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Represents a complex value.
@@ -73,7 +72,7 @@ struct Complex(
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[idx: Int](ref self) -> ref [self] Float64:
+    fn __getitem__[idx: Int](ref self) -> ref[self] Float64:
         constrained[idx in (0, 1), "idx must be 0 or 1"]()
 
         @parameter

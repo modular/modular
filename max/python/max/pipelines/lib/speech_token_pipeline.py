@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.legacy.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 
@@ -64,8 +64,11 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         num_steps: int,
         tokens_to_generate: dict[RequestID, int],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
+        """Processes the batch and returns decoded tokens.
+
+        Given a batch, executes the graph for num_steps in a multi-step
+        scenario, then decodes the tokens holistically and returns the list
+        of decoded tokens.
         """
         if not batch or num_steps == 0:
             return {}
@@ -77,11 +80,11 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Reserve KV cache blocks for the batch.
         for kv_manager in self.kv_managers:
             for context in batch.values():
-                kv_manager.alloc(context, num_steps=num_steps)
+                kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask, context_batch = self.prepare_batch(
-            [batch], num_steps
+            [list(batch.values())], num_steps
         )
 
         # Multistep execution loop.
@@ -191,7 +194,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(context_batch)
+        self._pipeline_model.kv_manager.step([context_batch])
         tracer.pop()  # pops kv_manager.step
 
         return res

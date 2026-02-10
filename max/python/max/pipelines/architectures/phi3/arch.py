@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -23,10 +23,11 @@ from max.pipelines.lib import (
 )
 
 from ..llama3 import weight_adapters
+from ..llama3.model_config import Llama3Config
 from .model import Phi3Model
 
 phi3_arch = SupportedArchitecture(
-    name="Phi3ForCausalLM",
+    name="Phi3ForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["microsoft/phi-4", "microsoft/Phi-3.5-mini-instruct"],
     default_weights_format=WeightsFormat.gguf,
@@ -43,4 +44,5 @@ phi3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Llama3Config,
 )

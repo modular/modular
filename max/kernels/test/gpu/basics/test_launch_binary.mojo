@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,7 +41,7 @@ def test_vec_add(ctx: DeviceContext):
 
     with in0_device.map_to_host() as in0_host, in1_device.map_to_host() as in1_host, out_device.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
+            in0_host[i] = Float32(i)
             in1_host[i] = 2
 
     var block_dim = 32
@@ -65,7 +65,7 @@ def test_vec_add(ctx: DeviceContext):
         for i in range(length):
             assert_equal(
                 out_host[i],
-                i + 2,
+                Float32(i + 2),
                 msg=String("at index", i, "the value is", out_host[i]),
             )
 

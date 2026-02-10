@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -391,7 +391,7 @@ def test_issue_1625():
     comptime simd_width = 8
     var ptr = alloc[Int64](size)
     for i in range(size):
-        ptr[i] = i
+        ptr[i] = Int64(i)
 
     var x = ptr.load[width = 2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
@@ -411,7 +411,7 @@ def test_issue_1625():
 def test_issue_20421():
     var a = alloc[UInt8](count=16 * 64, alignment=64)
     for i in range(16 * 64):
-        a[i] = i & 255
+        a[i] = UInt8(i & 255)
     var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
     assert_equal(
         av16,
@@ -424,7 +424,7 @@ def test_issue_30237():
     comptime dtype = DType.float32
     comptime simd_width = 1
     comptime coefficients_len = 7
-    var coefficients = InlineArray[SIMD[dtype, simd_width], coefficients_len](
+    var coefficients: InlineArray[SIMD[dtype, simd_width], coefficients_len] = [
         4.89352455891786e-03,
         6.37261928875436e-04,
         1.48572235717979e-05,
@@ -432,7 +432,7 @@ def test_issue_30237():
         -8.60467152213735e-11,
         2.00018790482477e-13,
         -2.76076847742355e-16,
-    )
+    ]
 
     @parameter
     @always_inline
@@ -746,6 +746,13 @@ def test_round():
     comptime F = SIMD[DType.float32, 4]
     assert_equal(F.__round__(F(1.5, 2.5, -2.5, -3.5)), F(2.0, 2.0, -2.0, -4.0))
 
+    assert_equal(Int32.__round__(1342, 0), 1342)
+    assert_equal(Int32.__round__(1342, -1), 1340)
+    assert_equal(Int32.__round__(1342, -2), 1300)
+    assert_equal(Int32.__round__(1342, -3), 1000)
+    assert_equal(Int32.__round__(1342, -4), 0)
+    assert_equal(Int32.__round__(1342, -5), 0)
+
 
 def test_div():
     assert_false(isfinite(Float32(33).__truediv__(0)))
@@ -833,7 +840,7 @@ def test_mod():
     assert_equal(UInt32(99) % UInt32(3), 0)
 
     assert_equal(
-        SIMD[DType.int32, 2](7, 7) % Int(4), SIMD[DType.int32, 2](3, 3)
+        SIMD[DType.int32, 2](7, 7) % Int32(Int(4)), SIMD[DType.int32, 2](3, 3)
     )
 
     # fmt: off
@@ -938,11 +945,11 @@ def test_divmod():
 
 
 def test_rmod():
-    assert_equal(Int32(3).__rmod__(Int(4)), 1)
+    assert_equal(Int32(3).__rmod__(Int32(Int(4))), 1)
 
     comptime I = SIMD[DType.int32, 2]
     var i = I(78, 78)
-    assert_equal(i.__rmod__(Int(78)), I(0, 0))
+    assert_equal(i.__rmod__(Int32(Int(78))), I(0, 0))
 
     comptime F = SIMD[DType.float32, 4]
     var f = F(3, -4, 1, 5)
@@ -1304,16 +1311,15 @@ def test_interleave():
 
 def test_deinterleave():
     var tup2 = SIMD[DType.float32, 2](1, 2).deinterleave()
-    assert_equal(tup2[0], Float32(1))
-    assert_equal(tup2[1], Float32(2))
+    assert_equal(tup2, (Float32(1), Float32(2)))
 
     var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
-    assert_equal(tup4[0], type_of(tup4[0])(0, -2))
-    assert_equal(tup4[1], type_of(tup4[0])(1, -3))
+    assert_equal(tup4, (type_of(tup4[0])(0, -2), type_of(tup4[0])(1, -3)))
 
     var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
-    assert_equal(tup8[0], type_of(tup8[0])(0, 2, 4, 6))
-    assert_equal(tup8[1], type_of(tup8[0])(1, 3, 5, 7))
+    assert_equal(
+        tup8, (type_of(tup8[0])(0, 2, 4, 6), type_of(tup8[0])(1, 3, 5, 7))
+    )
 
 
 def test_extract():
@@ -1876,9 +1882,9 @@ def test_rpow():
     assert_equal(2**i32x4_val, I32x4(1, 2, 4, 8))
     assert_equal((-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_equal(Int(0) ** i32x4_val, I32x4(1, 0, 0, 0))
-    assert_equal(Int(2) ** i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal(Int(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
+    assert_equal(Int32(Int(0)) ** i32x4_val, I32x4(1, 0, 0, 0))
+    assert_equal(Int32(Int(2)) ** i32x4_val, I32x4(1, 2, 4, 8))
+    assert_equal(Int32(Int(-1)) ** i32x4_val, I32x4(1, -1, 1, -1))
 
     assert_almost_equal(1.0**f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
     assert_almost_equal(2.5**f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
@@ -2161,34 +2167,31 @@ def test_float_conversion():
 
 def test_from_bytes_as_bytes():
     # Test scalar types with specific byte patterns
-    comptime TwoBytes = InlineArray[Byte, size_of[Int16]()]
-    comptime TwoUBytes = InlineArray[Byte, size_of[UInt16]()]
-    comptime FourBytes = InlineArray[Byte, size_of[Int32]()]
 
-    assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(0, 16)), 16)
-    assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(0, 16)), 4096)
-    assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(252, 0)), -1024)
-    assert_equal(UInt16.from_bytes[big_endian=True](TwoUBytes(252, 0)), 64512)
-    assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(252, 0)), 252)
-    assert_equal(Int32.from_bytes[big_endian=True](FourBytes(0, 0, 0, 1)), 1)
+    assert_equal(Int16.from_bytes[big_endian=True]([0, 16]), 16)
+    assert_equal(Int16.from_bytes[big_endian=False]([0, 16]), 4096)
+    assert_equal(Int16.from_bytes[big_endian=True]([252, 0]), -1024)
+    assert_equal(UInt16.from_bytes[big_endian=True]([252, 0]), 64512)
+    assert_equal(Int16.from_bytes[big_endian=False]([252, 0]), 252)
+    assert_equal(Int32.from_bytes[big_endian=True]([0, 0, 0, 1]), 1)
     assert_equal(
-        Int32.from_bytes[big_endian=False](FourBytes(0, 0, 0, 1)),
+        Int32.from_bytes[big_endian=False]([0, 0, 0, 1]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(1, 0, 0, 0)),
+        Int32.from_bytes[big_endian=True]([1, 0, 0, 0]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(1, 0, 0, 1)),
+        Int32.from_bytes[big_endian=True]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=False](FourBytes(1, 0, 0, 1)),
+        Int32.from_bytes[big_endian=False]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(255, 0, 0, 0)),
+        Int32.from_bytes[big_endian=True]([255, 0, 0, 0]),
         -16777216,
     )
 
@@ -2372,19 +2375,23 @@ def test_is_power_of_two():
 
     # Test with different integer types and larger powers (avoiding duplicate zero tests)
     # Note that for DType.int8, the maximum value is 127, so 2**7 == 128 which overflows.
-    comptime var1 = SIMD[DType.int8, 4](-114, 100, 2**6, 2**7)
+    comptime var1 = SIMD[DType.int8, 4](-114, 100, Int8(2**6), Int8(2**7))
     assert_equal(
         var1.is_power_of_two(),
         SIMD[DType.bool, 4](False, False, True, False),
     )
 
-    comptime var2 = SIMD[DType.int16, 4](-11444, 3000, 2**13, 2**14)
+    comptime var2 = SIMD[DType.int16, 4](
+        -11444, 3000, Int16(2**13), Int16(2**14)
+    )
     assert_equal(
         var2.is_power_of_two(),
         SIMD[DType.bool, 4](False, False, True, True),
     )
 
-    comptime var3 = SIMD[DType.int32, 4](-111444, 30000, 2**29, 2**30)
+    comptime var3 = SIMD[DType.int32, 4](
+        -111444, 30000, Int32(2**29), Int32(2**30)
+    )
     assert_equal(
         var3.is_power_of_two(),
         SIMD[DType.bool, 4](False, False, True, True),
@@ -2401,7 +2408,9 @@ def test_is_power_of_two():
     )
 
     # Test edge cases: negative numbers and boundary values
-    var signed_edge_cases = SIMD[DType.int32, 4](-4, -1, Int32.MAX, 2**31)
+    var signed_edge_cases = SIMD[DType.int32, 4](
+        -4, -1, Int32.MAX, Int32(2**31)
+    )
     var signed_results = signed_edge_cases.is_power_of_two()
     var expected_signed = SIMD[DType.bool, 4](False, False, False, False)
     assert_equal(signed_results, expected_signed)

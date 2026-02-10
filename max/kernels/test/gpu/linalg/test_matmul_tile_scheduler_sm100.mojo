@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -212,8 +212,8 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
     comptime grid_dim = (88, 16, 1)
 
     comptime cluster_dim = StaticTuple[Int32, 3](
-        Int(grid_dim[0] // cluster_shape[0]),
-        Int(grid_dim[1] // cluster_shape[1]),
+        Int32(Int(Int32(grid_dim[0]) // cluster_shape[0])),
+        Int32(Int(Int32(grid_dim[1]) // cluster_shape[1])),
         cluster_shape[2],
     )
     comptime kernel = test_kernel[2, cluster_shape]

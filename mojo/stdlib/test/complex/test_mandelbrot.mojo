@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,7 +34,8 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     var maxY = -0.5 + yRange
 
     var c = ComplexFloat32(
-        minX + col * xRange / width, maxY - row * yRange / height
+        minX + Float32(col) * xRange / width,
+        maxY - Float32(row) * yRange / height,
     )
 
     var z = c

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,15 +13,16 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .model import InternVLModel
+from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
 
 internvl_arch = SupportedArchitecture(
-    name="InternVLChatModel",
+    name="InternVLChatModel_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["OpenGVLab/InternVL3-8B-Instruct"],
     default_encoding=SupportedEncoding.bfloat16,
@@ -35,4 +36,5 @@ internvl_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },
+    config=InternVLConfig,
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -64,7 +64,7 @@ struct Fnv1a(Defaultable, Hasher):
 
             @parameter
             for r in range(rounds):
-                self._value ^= (v >> (r * 64)).cast[DType.uint64]()
+                self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
     fn update[T: Hashable](mut self, value: T):

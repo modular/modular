@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -69,7 +69,7 @@ fn _load_a_reg_tile[
         ...,
     ],
 ):
-    __comptime_assert ret.layout[0].shape[0].value() > 0
+    comptime assert ret.layout[0].shape[0].value() > 0
     ret = type_of(ret).stack_allocation()
     var tid = thread_idx.x
     comptime WGMMA_M = wgmma_shape[0]
@@ -80,9 +80,7 @@ fn _load_a_reg_tile[
 
     comptime num_wgmma_m = ceildiv(rows, WGMMA_M)
     comptime num_wgmma_k = ceildiv(cols, WGMMA_K)
-    __comptime_assert (
-        num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()
-    )
+    comptime assert num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()
 
     comptime simd_size = 4 // size_of[dtype]()
     var vret = ret.vectorize[1, simd_size]()
@@ -194,21 +192,21 @@ fn tma_wgmma_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
-                (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
+                (Int(i) * BK, Int(block_idx.y) * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
                 (
-                    UInt(i) * UInt(BK),
-                    block_idx.x * UInt(BN),
+                    Int(i) * BK,
+                    Int(block_idx.x) * BN,
                 ) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    UInt(i) * UInt(BK),
+                    Int(block_idx.x) * BN,
+                    Int(i) * BK,
                 ),
             )
 

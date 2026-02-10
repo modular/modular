@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ from benchmark import (
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.sync import can_enable_p2p
-from comm.reducescatter import reducescatter
+from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
@@ -51,9 +51,10 @@ fn _get_test_str[
     dtype: DType,
     use_multimem: Bool,
     cache_busting: Bool,
-](ngpus: Int, num_bytes: Int) -> String:
+](ngpus: Int, num_bytes: Int, ragged: Bool) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
     var cache_tag = "-cachebust" if cache_busting else ""
+    var ragged_tag = "-ragged" if ragged else ""
     return String(
         "reducescatter-",
         dtype,
@@ -61,6 +62,7 @@ fn _get_test_str[
         ngpus,
         multimem_tag,
         cache_tag,
+        ragged_tag,
         "-",
         human_readable_size(num_bytes),
     )
@@ -78,18 +80,28 @@ fn bench_reducescatter[
     list_of_ctx: List[DeviceContext],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
+    ragged: Bool,
 ) raises:
     constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
     var name = String(
-        _get_test_str[dtype, use_multimem, cache_busting](ngpus, num_bytes)
+        _get_test_str[dtype, use_multimem, cache_busting](
+            ngpus, num_bytes, ragged
+        )
     )
     print("Running " + name)
 
-    # Total input size per GPU and output size per GPU (1/ngpus)
+    # Total input size per GPU
     var input_length = num_bytes // size_of[dtype]()
-    var output_length = input_length // ngpus
+
+    # Use ReduceScatterConfig to compute per-GPU partition info (w/ dummy nthreads)
+    var rs_config = ReduceScatterConfig[dtype, ngpus](input_length, 0)
+    var output_lengths = List[Int](capacity=ngpus)
+    var rank_starts = List[Int](capacity=ngpus)
+    for gpu_idx in range(ngpus):
+        rank_starts.append(rs_config.rank_start(gpu_idx))
+        output_lengths.append(rs_config.rank_part(gpu_idx))
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
@@ -107,8 +119,7 @@ fn bench_reducescatter[
     )
 
     # Cache busting: allocate larger buffer to avoid cache reuse
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
-    var stride = align_up(input_length, simd_size)
+    var stride = align_up(input_length, rs_config.simd_width)
     comptime m512 = 512 * 1024 * 1024
     var cache_elems = (
         align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
@@ -121,7 +132,9 @@ fn bench_reducescatter[
             list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](cache_elems)
         )
         out_bufs_list.append(
-            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](output_length)
+            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](
+                output_lengths[gpu_idx]
+            )
         )
 
         # Create and initialize host buffers
@@ -162,7 +175,7 @@ fn bench_reducescatter[
             in_bufs_list[i].unsafe_ptr(), DimList(input_length)
         )
         out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_length)
+            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
         )
         list_of_ctx[i].synchronize()
 
@@ -220,10 +233,10 @@ fn bench_reducescatter[
     #  - finally casting to `dtype` for the expected value
     @parameter
     for i in range(ngpus):
-        for j in range(output_length):
+        for j in range(output_lengths[i]):
             comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
-            var global_idx = i * output_length + j
+            var global_idx = rank_starts[i] + j
 
             @parameter
             for k in range(ngpus):
@@ -252,6 +265,7 @@ def main():
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
     comptime num_gpus = env_get_int["num_gpus", 2]()
     comptime rank = env_get_int["rank", 1]()
+    comptime ragged = env_get_bool["ragged", False]()
 
     var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
@@ -260,6 +274,13 @@ def main():
 
     comptime use_multimem = env_get_bool["multimem", False]()
     comptime cache_busting = True
+
+    # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
+    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+
+    @parameter
+    if ragged:
+        num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()
 
     var m = Bench()
 
@@ -285,4 +306,4 @@ def main():
         ngpus=num_gpus,
         use_multimem=use_multimem,
         cache_busting=cache_busting,
-    ](m, ctx, num_bytes, max_num_blocks)
+    ](m, ctx, num_bytes, max_num_blocks, ragged)

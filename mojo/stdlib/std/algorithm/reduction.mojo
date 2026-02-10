@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,8 +26,7 @@ from sys.info import align_of, simd_width_of, size_of
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from bit import log2_floor
-from builtin.math import max as _max
-from builtin.math import min as _min
+from math.math import max as _max, min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from runtime.asyncrt import DeviceContextPtr
@@ -88,7 +87,7 @@ fn _get_nd_indices_from_flat_index(
             res[i] = 0
         else:
             res[i] = curr_index._positive_rem(shape[i])
-            curr_index = curr_index._positive_div(shape[i])
+            curr_index = curr_index / shape[i]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -103,14 +102,14 @@ fn map_reduce[
     dtype: DType,
     acc_type: DType,
     origins_gen: OriginSet,
-    input_gen_fn: fn[dtype: DType, width: Int] (Int) capturing [
+    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
         origins_gen
     ] -> SIMD[dtype, width],
     origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int] (
+    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
         SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing [origins_vec] -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int] (
+    ) capturing[origins_vec] -> SIMD[acc_type, width],
+    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> Scalar[dtype],
 ](dst: Span[mut=True, Scalar[dtype]], init: Scalar[acc_type]) -> Scalar[
@@ -169,17 +168,17 @@ fn map_reduce[
     dtype: DType,
     acc_type: DType,
     origins_gen: OriginSet,
-    input_gen_fn: fn[dtype: DType, width: Int] (Int) capturing [
+    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
         origins_gen
     ] -> SIMD[dtype, width],
     origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int] (
+    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
         SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing [origins_vec] -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int] (
+    ) capturing[origins_vec] -> SIMD[acc_type, width],
+    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> Scalar[dtype],
-    output_fn: fn[dtype_: DType, width: Int, alignment: Int] (
+    output_fn: fn[dtype_: DType, width: Int, alignment: Int](
         idx: Int, val: SIMD[dtype_, width]
     ) capturing -> None,
 ](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
@@ -235,9 +234,9 @@ fn map_reduce[
 @always_inline
 @parameter
 fn reduce[
-    reduce_fn: fn[acc_type: DType, dtype: DType, width: Int] (
+    reduce_fn: fn[acc_type: DType, dtype: DType, width: Int](
         SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[acc_type, width],
+    ) capturing[_] -> SIMD[acc_type, width],
     dtype: DType,
 ](src: Span[Scalar[dtype]], init: Scalar[dtype]) raises -> Scalar[dtype]:
     """Computes a custom reduction of buffer elements.
@@ -297,10 +296,10 @@ fn reduce[
 @always_inline
 @parameter
 fn reduce_boolean[
-    reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) capturing [
+    reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) capturing[
         _
     ] -> Bool,
-    continue_fn: fn (Bool) capturing [_] -> Bool,
+    continue_fn: fn(Bool) capturing[_] -> Bool,
     dtype: DType,
 ](src: Span[Scalar[dtype]], init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
@@ -360,15 +359,15 @@ fn reduce_boolean[
 fn _reduce_generator[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -399,7 +398,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    __comptime_assert is_valid_target[target](), "unsupported target"
+    comptime assert is_valid_target[target](), "unsupported target"
 
     for i in range(len(shape)):
         if shape[i] == 0:
@@ -430,15 +429,15 @@ fn _reduce_generator[
 fn _reduce_generator_gpu[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -486,15 +485,15 @@ fn _reduce_generator_gpu[
 fn _reduce_generator_cpu[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -562,15 +561,15 @@ fn _reduce_generator_cpu[
 @always_inline
 fn _reduce_generator_wrapper[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
-    reduce_function: fn[width: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -617,15 +616,15 @@ fn _reduce_generator_wrapper[
 
 @always_inline
 fn _reduce_generator[
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
-    reduce_function: fn[ty: DType, width: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -672,7 +671,7 @@ fn _reduce_generator[
     fn reduce_fn_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_function[dtype, width](val, acc)
@@ -692,15 +691,15 @@ fn _reduce_generator[
 fn _reduce_along_inner_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -865,15 +864,15 @@ fn _reduce_along_inner_dimension[
 fn _reduce_along_outer_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
-    ) capturing [_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int] (
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing [_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -940,7 +939,7 @@ fn _reduce_along_outer_dimension[
         if length <= 0:
             return
 
-        for slice_idx in range(start_parallel_offset, end_parallel_offset):
+        for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
             fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
@@ -1033,12 +1032,12 @@ fn max[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
 @always_inline
 fn max[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -1148,12 +1147,12 @@ fn min[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
 @always_inline
 fn min[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -1273,12 +1272,12 @@ fn sum[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
 @always_inline
 fn sum[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -1342,7 +1341,7 @@ fn sum[
 
 fn sum[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int) raises -> Scalar[dtype]:
@@ -1454,12 +1453,12 @@ fn product[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
 @always_inline
 fn product[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -1558,12 +1557,12 @@ fn mean[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
 @always_inline
 fn mean[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -1633,7 +1632,7 @@ fn mean[
         @parameter
         if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
-            var reciprocal = 1.0 / input_shape[reduce_dim]
+            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
 
             @always_inline
             @__copy_capture(reciprocal)
@@ -1669,7 +1668,7 @@ fn mean[
             fn wrapped_output_div[
                 _dtype: DType, width: Int, rank: Int
             ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-                var mean_val = value / dim_size
+                var mean_val = value / SIMD[_dtype, width](dim_size)
                 output_fn[width, rank](
                     indices, mean_val._refine[dtype, width]()
                 )
@@ -1690,7 +1689,7 @@ fn mean[
 
 fn mean[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int) raises -> Scalar[dtype]:
@@ -1713,9 +1712,9 @@ fn mean[
 
     @parameter
     if dtype.is_integral():
-        return total // length
+        return total // Scalar[dtype](length)
     else:
-        return total / length
+        return total / Scalar[dtype](length)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1768,7 +1767,7 @@ fn variance[
 
 fn variance[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int, mean_value: Scalar[dtype], correction: Int = 1) raises -> Scalar[
@@ -1842,7 +1841,7 @@ fn variance[
         reduce_dim=0,
     )
 
-    return out / (length - correction)
+    return out / Scalar[dtype](length - correction)
 
 
 fn variance[
@@ -1882,7 +1881,7 @@ fn variance[
 
 fn variance[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int, correction: Int = 1) raises -> Scalar[dtype]:

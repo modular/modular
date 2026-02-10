@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import LayoutTensor
+from layout._tile_tensor import TileTensor
 from memory import memcpy
 
 from utils import IndexList
@@ -28,11 +28,11 @@ from utils import IndexList
 fn tile[
     dtype: DType, type_repeats: DType
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    repeats: LayoutTensor[
+    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    repeats: TileTensor[
         type_repeats, address_space = AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ) raises:
@@ -51,22 +51,19 @@ fn tile[
                  input tensor rank.
         output: The output tensor. Has the same dimensions and type as input.
     """
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input and output must have the same rank"
 
-    if input.rank > 4:
-        raise Error(
-            "Currently only inputs of up to three dimensions are supported."
-        )
+    comptime assert (
+        input.rank <= 4
+    ), "Currently only inputs of up to three dimensions are supported."
 
-    if repeats.rank != 1 or type_repeats != DType.int64:
-        raise Error(
-            "Rank of repeats tensor needs to be one-dimensional and of int64"
-            " type."
-        )
+    comptime assert (
+        repeats.rank == 1 and type_repeats == DType.int64
+    ), "Rank of repeats tensor needs to be one-dimensional and of int64 type."
 
-    if input.rank != Int(repeats.runtime_layout.shape[0]):
+    if input.rank != Int(repeats.dim(0)):
         raise Error(
             "Length of repeats tensor should be equal to the rank of the input"
             " tensor."
@@ -78,18 +75,18 @@ fn tile[
 
     @parameter
     if input.rank == 4:
-        num_dp_input = Int(input.runtime_layout.shape[input.rank - 4])
+        num_dp_input = Int(input.dim(input.rank - 4))
 
     @parameter
     if input.rank >= 3:
-        num_depth_input = Int(input.runtime_layout.shape[input.rank - 3])
+        num_depth_input = Int(input.dim(input.rank - 3))
 
     @parameter
     if input.rank >= 2:
-        num_rows_input = Int(input.runtime_layout.shape[input.rank - 2])
-    var num_cols_input = Int(input.runtime_layout.shape[input.rank - 1])
+        num_rows_input = Int(input.dim(input.rank - 2))
+    var num_cols_input = Int(input.dim(input.rank - 1))
 
-    var repeats_len = Int(repeats.runtime_layout.shape[0])
+    var repeats_len = Int(repeats.dim(0))
 
     # Pre-compute repeat values, using 1 for dimensions that don't exist
     # to avoid negative index access when rank < 4
@@ -249,8 +246,8 @@ fn tile_shape[
     repeats_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, ...],
-    repeats_buf: LayoutTensor[repeats_type, ...],
+    input_buf: TileTensor[input_type, ...],
+    repeats_buf: TileTensor[repeats_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are
@@ -269,11 +266,11 @@ fn tile_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
+    comptime assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.
-    if Int(repeats_buf.runtime_layout.shape[0]) != input_buf.rank:
+    if Int(repeats_buf.dim(0)) != input_buf.rank:
         raise Error("[tile] requires (len(repeats) == input_rank)")
 
     # Compute and return the output shape.
@@ -281,8 +278,6 @@ fn tile_shape[
 
     @parameter
     for i in range(input_buf.rank):
-        output_shape[i] = Int(input_buf.runtime_layout.shape[i]) * Int(
-            repeats_buf[i]
-        )
+        output_shape[i] = Int(input_buf.dim(i)) * Int(repeats_buf[i])
 
     return output_shape

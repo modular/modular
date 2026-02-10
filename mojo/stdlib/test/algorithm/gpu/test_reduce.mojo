@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,9 +21,9 @@ comptime num_reductions = 2
 
 
 fn fused_reduce_inner_test[
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing [_] -> SIMD[ty, width],
+    ) capturing[_] -> SIMD[ty, width],
     rank: Int,
     dtype: DType,
 ](
@@ -55,7 +55,7 @@ fn fused_reduce_inner_test[
     var vec_device = ctx.enqueue_create_buffer[dtype](in_size)
     with vec_device.map_to_host() as vec_host:
         for i in range(in_size):
-            vec_host[i] = i // shape[axis] + offset
+            vec_host[i] = Scalar[dtype](i // shape[axis] + offset)
 
     var res_device0 = ctx.enqueue_create_buffer[dtype](out_size)
     var res_device1 = ctx.enqueue_create_buffer[dtype](out_size)
@@ -135,9 +135,9 @@ fn fused_reduce_inner_test[
 
 
 fn reduce_inner_test[
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     rank: Int,
     dtype: DType,
     expected_vals_type: DType,
@@ -164,7 +164,7 @@ fn reduce_inner_test[
 
     with vec_device.map_to_host() as vec_host:
         for i in range(in_size):
-            vec_host[i] = i // shape[axis] + offset
+            vec_host[i] = Scalar[dtype](i // shape[axis] + offset)
 
     var res_device = ctx.enqueue_create_buffer[dtype](out_size)
     var input_buf_device = Span[Scalar[dtype]](
@@ -179,9 +179,7 @@ fn reduce_inner_test[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            reduction_idx < num_reductions
-        ), "invalid reduction idx"
+        comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 
@@ -257,7 +255,7 @@ def test_reduce():
         width: Int,
         reduction_idx: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert reduction_idx < 2, "reduction idx OOB"
+        comptime assert reduction_idx < 2, "reduction idx OOB"
 
         comptime func = reduce_max if reduction_idx == 0 else reduce_add
         return func(x, y)
@@ -393,7 +391,13 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             Int64.MIN,
-            [Int64(offset), offset + 1, offset + 2, offset + 3, offset + 4],
+            [
+                Int64(offset),
+                Int64(offset + 1),
+                Int64(offset + 2),
+                Int64(offset + 3),
+                Int64(offset + 4),
+            ],
             ctx,
             offset=offset,
         )
@@ -402,17 +406,17 @@ def test_reduce():
             StaticTuple[Int64, 2](Int64.MIN, 0),
             [
                 Float32(offset),
-                Float32(offset + 1.0),
-                Float32(offset + 2.0),
-                Float32(offset + 3.0),
-                Float32(offset + 4.0),
+                Float32(Float64(offset) + 1.0),
+                Float32(Float64(offset) + 2.0),
+                Float32(Float64(offset) + 3.0),
+                Float32(Float64(offset) + 4.0),
             ],
             [
-                Float32(offset * 3 + 3.0),
-                Float32(offset * 3 + 6.0),
-                Float32(offset * 3 + 9.0),
-                Float32(offset * 3 + 12.0),
-                Float32(offset * 3 + 15.0),
+                Float32(Float64(offset) * 3 + 3.0),
+                Float32(Float64(offset) * 3 + 6.0),
+                Float32(Float64(offset) * 3 + 9.0),
+                Float32(Float64(offset) * 3 + 12.0),
+                Float32(Float64(offset) * 3 + 15.0),
             ],
             ctx,
             offset=offset,

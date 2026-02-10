@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,8 +45,7 @@ from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
 from bit import log2_floor
-from builtin.math import max as _max
-from builtin.math import min as _min
+from math.math import max as _max, min as _min
 from gpu import lane_id
 from gpu.intrinsics import permlane_shuffle
 from gpu.globals import WARP_SIZE
@@ -77,7 +76,7 @@ fn _shuffle[
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
-    __comptime_assert (
+    comptime assert (
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
@@ -119,7 +118,7 @@ fn _shuffle[
             )
             return bitcast[dtype, simd_width](result_packed)
     elif dtype == DType.bool:
-        __comptime_assert simd_width == 1, "unhandled simd width"
+        comptime assert simd_width == 1, "unhandled simd width"
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val.cast[DType.int32](), offset
         ).cast[dtype]()
@@ -141,7 +140,7 @@ fn _shuffle_amd_helper[
         )
         return bitcast[dtype, simd_width](result_packed)
     else:
-        __comptime_assert simd_width == 1, "Unsupported simd width"
+        comptime assert simd_width == 1, "Unsupported simd width"
 
         @parameter
         if dtype == DType.bool:
@@ -181,7 +180,7 @@ fn _shuffle_apple_helper[
       simd_shuffle_xor              → llvm.air.simd_shuffle_xor
     """
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
@@ -287,7 +286,7 @@ fn _shuffle_idx_amd[
     # But it's also masking out the upper two bits. Why?
     # The lane should not be > 64 so the upper 2 bits should always be zero.
     # Use -64 for now.
-    var t0 = lane & -WARP_SIZE
+    var t0 = lane & Int32(-WARP_SIZE)
     var dst_lane = t0 | offset.cast[DType.int32]()
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
@@ -333,7 +332,7 @@ fn shuffle_idx[
     if is_nvidia_gpu():
         return _shuffle[
             "idx",
-            WIDTH_MASK=_WIDTH_MASK,
+            WIDTH_MASK = Int32(_WIDTH_MASK),
         ](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
@@ -391,7 +390,7 @@ fn _shuffle_up_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = Int32(lane_id())
     var t0 = lane - offset.cast[DType.int32]()
-    var t1 = lane & -WARP_SIZE
+    var t1 = lane & Int32(-WARP_SIZE)
     var dst_lane = t0.lt(t1).select(lane, t0)
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
@@ -489,7 +488,9 @@ fn _shuffle_down_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = UInt32(lane_id())
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset).le(_WIDTH_MASK).select(offset, 0) + lane
+    var dst_lane = (lane + offset).le(UInt32(_WIDTH_MASK)).select(
+        offset, 0
+    ) + lane
     return _shuffle_amd_helper(dst_lane, val)
 
 
@@ -529,7 +530,9 @@ fn shuffle_down[
 
     @parameter
     if is_nvidia_gpu():
-        return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+        return _shuffle["down", WIDTH_MASK = Int32(_WIDTH_MASK)](
+            mask, val, offset
+        )
     elif is_amd_gpu():
         return _shuffle_down_amd(mask, val, offset)
     elif is_apple_gpu():
@@ -582,9 +585,9 @@ fn _shuffle_xor_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = UInt32(lane_id())
     var t0 = lane ^ offset
-    var t1 = lane & -WARP_SIZE
+    var t1 = lane & UInt32(-WARP_SIZE)
     # This needs to be "add nsw" = add no sign wrap
-    var t2 = t1 + WARP_SIZE
+    var t2 = t1 + UInt32(WARP_SIZE)
     var dst_lane = t0.lt(t2).select(t0, lane)
     return _shuffle_amd_helper(dst_lane, val)
 
@@ -630,7 +633,9 @@ fn shuffle_xor[
 
     @parameter
     if is_nvidia_gpu():
-        return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+        return _shuffle["bfly", WIDTH_MASK = Int32(_WIDTH_MASK)](
+            mask, val, offset
+        )
     elif is_amd_gpu():
         return _shuffle_xor_amd(mask, val, offset)
     elif is_apple_gpu():
@@ -654,10 +659,10 @@ fn lane_group_reduce[
     val_type: DType,
     simd_width: Int,
     //,
-    shuffle: fn[dtype: DType, simd_width: Int] (
+    shuffle: fn[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
-    func: fn[dtype: DType, width: Int] (
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
     num_lanes: Int,
@@ -705,7 +710,7 @@ fn lane_group_reduce[
     @parameter
     for i in reversed(range(limit)):
         comptime offset = 1 << i
-        res = func(res, shuffle(res, offset * stride))
+        res = func(res, shuffle(res, UInt32(offset * stride)))
 
     return res
 
@@ -715,10 +720,10 @@ fn reduce[
     val_type: DType,
     simd_width: Int,
     //,
-    shuffle: fn[dtype: DType, simd_width: Int] (
+    shuffle: fn[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
-    func: fn[dtype: DType, width: Int] (
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -922,7 +927,7 @@ fn prefix_sum[
     @parameter
     for i in range(log2_floor(WARP_SIZE)):
         comptime offset = 1 << i
-        var n = shuffle_up(res, offset)
+        var n = shuffle_up(res, UInt32(offset))
         if lane >= UInt(offset):
             res += n
 
@@ -1217,7 +1222,7 @@ fn _vote_nvidia_helper(vote: Bool) -> UInt32:
 
 @always_inline
 fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
-    __comptime_assert ret_type in (
+    comptime assert ret_type in (
         DType.uint32,
         DType.uint64,
     ), "Unsupported return type"
@@ -1253,7 +1258,7 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
 
     @parameter
     if is_nvidia_gpu():
-        __comptime_assert ret_type == DType.uint32, "Unsupported return type"
+        comptime assert ret_type == DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)

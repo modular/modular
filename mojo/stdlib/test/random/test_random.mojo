@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -103,13 +103,13 @@ def test_seed_normal():
     for sample in samples:
         sum += sample
 
-    var mean: Float64 = sum / num_samples
+    var mean: Float64 = sum / Float64(num_samples)
 
     var sum_sq: Float64 = 0.0
     for sample in samples:
         sum_sq += (sample - mean) ** 2
 
-    var variance = sum_sq / num_samples
+    var variance = sum_sq / Float64(num_samples)
 
     # Calculate absolute differences (errors)
     var mean_error = abs(mean)

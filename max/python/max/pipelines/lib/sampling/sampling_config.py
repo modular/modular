@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,29 +27,50 @@ logger = logging.getLogger("max.pipelines")
 
 
 class SamplingConfig(ConfigFileModel):
-    in_dtype: DType = Field(default=DType.float32)
-    """The data type of the input tokens."""
+    in_dtype: DType = Field(
+        default=DType.float32,
+        description="The data type of the input tokens.",
+    )
 
-    out_dtype: DType = Field(default=DType.float32)
-    """The data type of the output logits."""
+    out_dtype: DType = Field(
+        default=DType.float32,
+        description="The data type of the output logits.",
+    )
 
-    enable_structured_output: bool = Field(default=False)
-    """Enable structured generation/guided decoding for the server. This allows the user to pass a json
-    schema in the response_format field, which the LLM will adhere to."""
+    enable_structured_output: bool = Field(
+        default=False,
+        description=(
+            "Enable structured generation/guided decoding for the server. This "
+            "allows the user to pass a json schema in the response_format "
+            "field, which the LLM will adhere to."
+        ),
+    )
 
-    enable_variable_logits: bool = Field(default=False)
-    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
-    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
-    decoding purposes."""
+    enable_variable_logits: bool = Field(
+        default=False,
+        description=(
+            "Enable the sampling graph to accept a ragged tensor of different "
+            "sequences as inputs, along with their associated logit_offsets. "
+            "This is needed to produce additional logits for echo and "
+            "speculative decoding purposes."
+        ),
+    )
 
-    enable_penalties: bool = Field(default=False)
-    """Whether to apply frequency and presence penalties to the model's output."""
+    enable_penalties: bool = Field(
+        default=False,
+        description=(
+            "Whether to apply frequency and presence penalties to the model's "
+            "output."
+        ),
+    )
 
-    enable_min_tokens: bool = Field(default=False)
-    """Whether to enable min_tokens, which blocks the model from generating
-    stopping tokens before the min_tokens count is reached. This defaults to
-    false.
-    """
+    enable_min_tokens: bool = Field(
+        default=False,
+        description=(
+            "Whether to enable min_tokens, which blocks the model from "
+            "generating stopping tokens before the min_tokens count is reached."
+        ),
+    )
 
     _config_file_section_name: str = PrivateAttr(default="sampling_config")
     """The section name to use when loading this config from a ConfigFileModel file.
@@ -62,21 +83,21 @@ class SamplingConfig(ConfigFileModel):
         sampling_params_defaults: SamplingParamsGenerationConfigDefaults,
         **kwargs,
     ) -> SamplingConfig:
-        """
-        Create a SamplingConfig instance from SamplingParamsGenerationConfigDefaults and additional keyword arguments.
+        """Creates a SamplingConfig from generation config defaults and kwargs.
 
-        This method inspects the provided SamplingParamsGenerationConfigDefaults to determine if penalty-related
-        or min-tokens-related fields are set to non-default values. If so, it enables the corresponding flags
-        ('enable_penalties' and 'enable_min_tokens') in the resulting SamplingConfig unless they are already set
-        in kwargs.
+        Inspects the provided defaults to determine if penalty-related or
+        min-tokens-related fields are set to non-default values; if so,
+        enables the corresponding flags in the result unless already set in
+        kwargs.
 
         Args:
-            sampling_params_defaults (SamplingParamsGenerationConfigDefaults): The generation config defaults
+            sampling_params_defaults: The generation config defaults
                 containing explicit values for sampling parameters.
-            **kwargs: Additional keyword arguments to override or supplement the config.
+            **kwargs: Additional keyword arguments to override or supplement
+                the config.
 
         Returns:
-            SamplingConfig: A new SamplingConfig instance with the appropriate fields set.
+            A new SamplingConfig instance with the appropriate fields set.
         """
         config_kwargs = kwargs.copy()
 
@@ -110,15 +131,4 @@ class SamplingConfig(ConfigFileModel):
         """Get the enum mapping for SamplingConfig."""
         return {
             "DType": DType,
-        }
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
-            "enable_variable_logits": "Whether to enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with their associated logit_offsets. This is needed to produce additional logits for echo and speculative decoding purposes. This defaults to false.",
-            "enable_min_tokens": "Whether to enable min_tokens, which blocks the model from generating stopping tokens before the min_tokens count is reached. This defaults to false.",
-            "enable_penalties": "Whether to apply frequency and presence penalties to the model's output. This defaults to false.",
-            "in_dtype": "The data type of the input tokens. This defaults to float32.",
-            "out_dtype": "The data type of the output logits. This defaults to float32.",
         }

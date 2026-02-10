@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, external_call
+from ffi import c_int, external_call
 from sys.info import CompilationTarget, platform_map
 
 
@@ -59,12 +59,11 @@ fn set_errno(errno: ErrNo):
 
 
 # Alias to shorten the error definitions below
-comptime pm = platform_map
+comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
+struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -73,7 +72,7 @@ struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
     Example:
         ```mojo
         import os
-        from sys.ffi import get_errno, set_errno, ErrNo
+        from ffi import get_errno, set_errno, ErrNo
 
         try:
             _ = os.path.realpath("non-existent-file")
@@ -413,7 +412,7 @@ struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
             0 <= value <= Int(c_int.MAX),
             "constructed ErrNo from an `Int` out of range of `c_int`",
         )
-        self.value = value
+        self.value = c_int(value)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the human-readable error description to a writer.

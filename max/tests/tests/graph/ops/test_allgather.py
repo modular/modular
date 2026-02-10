@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 shared_types = st.shared(tensor_types())
 

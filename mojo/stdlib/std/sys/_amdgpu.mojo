@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,10 +16,10 @@ from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
+    llvm_intrinsic,
     readfirstlane,
     sendmsg,
 )
-from time import sleep
 
 from gpu.primitives.id import lane_id
 from memory import Span
@@ -155,7 +155,7 @@ fn append_bytes(
     msg_desc: UInt64,
     mut data: Span[UInt8],
 ) -> Tuple[UInt64, UInt64]:
-    var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
+    var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
 
     @parameter
     @always_inline
@@ -167,7 +167,7 @@ fn append_bytes(
         else:
             var ii = 0
             for byte in data:
-                arg |= byte.cast[DType.uint64]() << (ii * 8)
+                arg |= byte.cast[DType.uint64]() << UInt64(ii * 8)
                 ii += 1
             data = data[0:0]
         return arg
@@ -520,8 +520,7 @@ fn printf_append_string_n(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Header(ImplicitlyCopyable):
+struct Header(TrivialRegisterPassable):
     var _handle: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -596,7 +595,7 @@ struct Header(ImplicitlyCopyable):
             if ready_flag == 0:
                 break
 
-            sleep(UInt(1))
+            llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
         ref ptr = payload._handle[].slots[Int(me)]
         var value0 = ptr[0]
@@ -609,8 +608,7 @@ struct Header(ImplicitlyCopyable):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
-@register_passable("trivial")
-struct header_t(ImplicitlyCopyable):
+struct header_t(TrivialRegisterPassable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -618,8 +616,7 @@ struct header_t(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Payload(ImplicitlyCopyable):
+struct Payload(TrivialRegisterPassable):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
@@ -637,8 +634,7 @@ struct payload_t(Copyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Buffer(ImplicitlyCopyable):
+struct Buffer(TrivialRegisterPassable):
     var _handle: UnsafePointer[
         buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -668,8 +664,7 @@ struct Buffer(ImplicitlyCopyable):
             )
             if Atomic.compare_exchange(top, f, n):
                 break
-
-            sleep(UInt(1))
+            llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
         return f
 
     fn pop_free_stack(mut self, me: UInt32, low: UInt32) -> UInt64:
@@ -701,7 +696,7 @@ struct Buffer(ImplicitlyCopyable):
             p._handle[].next = f
             if Atomic.compare_exchange(top, f, ptr):
                 break
-            sleep(UInt(1))
+            llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
     fn push_ready_stack(mut self, ptr: UInt64, me: UInt32, low: UInt32):
         """
@@ -730,8 +725,7 @@ struct Buffer(ImplicitlyCopyable):
 # match of runtime buffer layout but matches its prefix that
 # this code tries to access.
 @fieldwise_init
-@register_passable("trivial")
-struct buffer_t(Copyable):
+struct buffer_t(Copyable, TrivialRegisterPassable):
     var headers: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -743,8 +737,7 @@ struct buffer_t(Copyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ControlOffset(ImplicitlyCopyable):
+struct ControlOffset(TrivialRegisterPassable):
     var value: UInt32
     comptime ready_flag = Self(0)
     comptime reserved0 = Self(1)
@@ -759,8 +752,7 @@ struct ControlOffset(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ControlWidth(ImplicitlyCopyable):
+struct ControlWidth(TrivialRegisterPassable):
     var value: UInt32
     comptime ready_flag = Self(1)
     comptime reserved0 = Self(31)

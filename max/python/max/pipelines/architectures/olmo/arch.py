@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -24,9 +24,10 @@ from max.pipelines.lib import (
 
 from ..llama3 import weight_adapters
 from .model import OlmoModel
+from .model_config import OlmoConfig
 
 olmo_arch = SupportedArchitecture(
-    name="OlmoForCausalLM",
+    name="OlmoForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["allenai/OLMo-1B-hf", "allenai/OLMo-1B-0724-hf"],
     default_weights_format=WeightsFormat.gguf,
@@ -43,4 +44,5 @@ olmo_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=OlmoConfig,
 )

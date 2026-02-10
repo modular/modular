@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Types to interface with ML pipelines such as text/token generation."""
+"""Types to interface with ML pipelines such as text/token/pixel generation."""
 
 from .architectures import register_all_models
-from .core import TextAndVisionContext, TextContext, TTSContext
+from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
 from .lib.config import (
     AudioGenerationConfig,
     PipelineConfig,
@@ -39,7 +39,11 @@ from .lib.kv_cache_config import KVCacheConfig
 from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
 from .lib.model_config import MAXModelConfig
-from .lib.pipeline_variants.text_generation import TextGenerationPipeline
+from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
+from .lib.pipeline_variants.text_generation import (
+    TextGenerationPipeline,
+    TextGenerationPipelineInterface,
+)
 from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
@@ -71,6 +75,8 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PixelContext",
+    "PixelGenerationPipeline",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
     "ProfilingConfig",
@@ -86,6 +92,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
+    "TextGenerationPipelineInterface",
     "TextTokenizer",
     "download_weight_files",
     "upper_bounded_default",

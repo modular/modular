@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,9 +24,9 @@ def test_metric_to_string() -> None:
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
-        prefill_chunk_size=7,
+        max_batch_input_tokens=7,
         num_context_tokens=8,
-        max_batch_context_length=9,
+        max_batch_total_tokens=9,
         batch_creation_time_s=10.0,
         batch_execution_time_s=11.0,
         prompt_throughput=12.0,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -86,7 +86,7 @@ fn global_reduction_kernel[
     accum_type: DType,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int, _rank: Int] (
+    input_fn: fn[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):
@@ -137,7 +137,7 @@ fn tma_reduction_kernel[
     if thread_idx.x == 0:
         # Add expected_bytes requirement to barrier.
         var expected_bytes = cols * size_of[dtype]()
-        mbarrier_arrive_expect_tx_shared(mbar, expected_bytes)
+        mbarrier_arrive_expect_tx_shared(mbar, Int32(expected_bytes))
         cp_async_bulk_tensor_shared_cluster_global(
             shmem,
             descriptor_ptr,

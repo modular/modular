@@ -27,7 +27,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.interfaces.arch_config import (
@@ -82,6 +82,7 @@ def create_mock_pipeline_config(
         enable_kvcache_swapping_to_host
     )
     mock_kv_cache_config.host_kvcache_swap_space_gb = host_kvcache_swap_space_gb
+    mock_kv_cache_config.cache_dtype = DType.bfloat16
 
     mock_model.kv_cache = mock_kv_cache_config
     mock_config.model = mock_model
@@ -109,11 +110,14 @@ def test_arch_config_protocol_check() -> None:
         def initialize(cls, pipeline_config: PipelineConfig) -> TestConfig:
             return cls()
 
+        def get_max_seq_len(self) -> int:
+            return 2048
+
     assert isinstance(TestConfig(), ArchConfig)
 
 
 def test_arch_config_with_cache_protocol_check() -> None:
-    """Test that ArchConfigWithKVCache protocol requires kv_params property."""
+    """Test that ArchConfigWithKVCache protocol requires get_kv_params method."""
     mock_kv_params = NonCallableMock(spec=KVCacheParams)
 
     class TestConfigWithCache:
@@ -123,12 +127,10 @@ def test_arch_config_with_cache_protocol_check() -> None:
         ) -> TestConfigWithCache:
             return cls()
 
-        @property
-        def kv_params(self) -> KVCacheParams:
+        def get_kv_params(self) -> KVCacheParams:
             return mock_kv_params
 
-        @property
-        def max_seq_len(self) -> int:
+        def get_max_seq_len(self) -> int:
             return 2048
 
     instance = TestConfigWithCache()
@@ -168,7 +170,7 @@ class TestArchConfigWithAttentionKVCache:
         )
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
-        assert result.cache_dtype == DType.float32
+        assert result.cache_dtype == DType.bfloat16
         assert result.data_parallel_degree == 1
 
     def test_create_with_only_dtype(self) -> None:
@@ -176,7 +178,6 @@ class TestArchConfigWithAttentionKVCache:
         config = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
 
         assert config.dtype == DType.bfloat16
-        assert config.cache_dtype is None
         # devices should be what we passed
         assert config.devices == []
         # kv_cache_config should be default
@@ -230,10 +231,10 @@ class TestArchConfigWithAttentionKVCache:
         assert config.num_layers == 12
         assert config.model_max_seq_len == 2048
 
-    def test_kv_params_returns_correct_kv_cache_params(
+    def test_get_kv_params_returns_correct_kv_cache_params(
         self, mock_default_devices: list[DeviceRef]
     ) -> None:
-        """Test that kv_params property correctly constructs KVCacheParams."""
+        """Test that get_kv_params method correctly constructs KVCacheParams."""
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
             cache_strategy=KVCacheStrategy.PAGED,
@@ -248,7 +249,7 @@ class TestArchConfigWithAttentionKVCache:
             data_parallel_degree=2,
             devices=mock_default_devices,
         )
-        kv_params = config.kv_params
+        kv_params = config.get_kv_params()
 
         # Verify the KVCacheParams fields
         assert kv_params.dtype == DType.bfloat16
@@ -263,7 +264,7 @@ class TestArchConfigWithAttentionKVCache:
         assert kv_params.data_parallel_degree == 2
 
         # Test that kv params are cached.
-        kv_params_2 = config.kv_params
+        kv_params_2 = config.get_kv_params()
         assert kv_params is kv_params_2
 
     def test_model_equality(self) -> None:
@@ -291,26 +292,28 @@ class TestArchConfigWithAttentionKVCache:
         # cache_dtype should remain as explicitly set
         assert config.cache_dtype == DType.bfloat16
 
-    def test_max_seq_len_defaults_to_model_max_seq_len(self) -> None:
-        """Test that max_seq_len returns model_max_seq_len when max_length is None."""
+    def test_get_max_seq_len_defaults_to_model_max_seq_len(self) -> None:
+        """Test that get_max_seq_len returns model_max_seq_len when max_length is None."""
         config = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
 
-        # max_length is None by default, so max_seq_len should equal model_max_seq_len
+        # max_length is None by default, so get_max_seq_len should equal model_max_seq_len
         assert config.user_provided_max_length is None
-        assert config.max_seq_len == 2048
+        assert config.get_max_seq_len() == 2048
 
-    def test_max_seq_len_uses_max_length_when_set(self) -> None:
-        """Test that max_seq_len returns max_length when explicitly set."""
+    def test_get_max_seq_len_uses_max_length_when_set(self) -> None:
+        """Test that get_max_seq_len returns max_length when explicitly set."""
         config = ConcreteArchConfig(
             dtype=DType.bfloat16,
             devices=[],
             user_provided_max_length=1024,
         )
 
-        assert config.max_seq_len == 1024
+        assert config.get_max_seq_len() == 1024
 
-    def test_max_seq_len_raises_when_max_length_exceeds_default(self) -> None:
-        """Test that max_seq_len raises ValueError when max_length exceeds model_max_seq_len."""
+    def test_get_max_seq_len_raises_when_max_length_exceeds_default(
+        self,
+    ) -> None:
+        """Test that get_max_seq_len raises ValueError when max_length exceeds model_max_seq_len."""
         config = ConcreteArchConfig(
             dtype=DType.bfloat16,
             devices=[],
@@ -321,4 +324,4 @@ class TestArchConfigWithAttentionKVCache:
             ValueError,
             match=r"default value provided \(4096\) exceeds the upper bound \(2048\)",
         ):
-            _ = config.max_seq_len
+            _ = config.get_max_seq_len()

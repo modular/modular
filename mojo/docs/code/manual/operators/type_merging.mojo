@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,7 +20,7 @@ struct MyType(Copyable):
         return self.val > 0
 
     def __merge_with__[other_type: type_of(Int)](self) -> Int:
-        return Int(self.val)
+        return self.val
 
 
 def main():

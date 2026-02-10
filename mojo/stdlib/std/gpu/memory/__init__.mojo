@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,6 +39,8 @@ from .memory import (
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_shared_cluster_global_im2col,
+    cp_async_bulk_tensor_shared_cluster_global_im2col_multicast,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
     external_memory,
     fence_async_view_proxy,

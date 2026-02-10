@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,9 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 from sys.intrinsics import _type_is_eq
@@ -149,7 +147,7 @@ fn _mask_apply[
     comptime rowwise_stride = fragment_layout.shape[0].value()
     comptime colwise_stride = fragment_layout.shape[1].value()
     comptime frag_is_row_vector = rowwise_stride == 1
-    __comptime_assert frag_is_row_vector, "fragment layout is not a row vector"
+    comptime assert frag_is_row_vector, "fragment layout is not a row vector"
 
     var lane = lane_id()
 
@@ -170,14 +168,14 @@ fn _mask_apply[
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # Coordinates in mask for current mma tile.
-            var mask_frag_row = mask_warp_row + m_mma * mma_shape[0]
+            var mask_frag_row = mask_warp_row + UInt32(m_mma * mma_shape[0])
             var mask_frag_col = (
                 mask_warp_col
-                + n_mma * mma_shape[1]
+                + UInt32(n_mma * mma_shape[1])
                 + (kv_tile_start_row if token_gen else 0)
             )
-            mask_frag_row += lane_row
-            mask_frag_col += lane_col
+            mask_frag_row += UInt32(lane_row)
+            mask_frag_col += UInt32(lane_col)
             # The row in score matrix of shape seq_len x num_keys.
             # Mask col is score col since we don't partition in col.
             var score_row = (
@@ -261,7 +259,7 @@ fn _mask_apply[
                                 Int(score_row_with_start_pos),
                                 Int(
                                     score_col_with_cache_start_pos
-                                    + fragment_col
+                                    + UInt32(fragment_col)
                                 ),
                             ),
                             p_reg_vectorized[mma_id, 0][j],
@@ -288,7 +286,7 @@ fn _mask_apply[
                     p_reg_vectorized[mma_id, 0][j] = _kernel_mask(
                         IndexList[2, element_type = DType.uint32](
                             Int(score_row),
-                            Int(score_col + fragment_col),
+                            Int(score_col + UInt32(fragment_col)),
                         ),
                         IndexList[2, element_type = DType.uint32](
                             Int(bound_x), Int(bound_y)
@@ -389,10 +387,10 @@ struct Attention[
         UInt32(Self.BK),
         UInt32(Self.depth),
         UInt32(Self.num_heads),
-        Self.group,
+        UInt32(Self.group),
         Self.token_gen,
-        Self.q_depth,
-        Self.output_depth,
+        UInt32(Self.q_depth),
+        UInt32(Self.output_depth),
     ]
 
     comptime SharedMemoryManagerType = SharedMemoryManager[
@@ -427,7 +425,7 @@ struct Attention[
     var smem_manager: Self.SharedMemoryManagerType
 
     var q_buffer: Self.QRegisterBufferType
-    var output_ptr: UnsafePointer[Scalar[Self.output_type],]
+    var output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]
 
     var batch_idx: Int
 
@@ -526,7 +524,7 @@ struct Attention[
     fn mma_qk[
         k_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn () capturing -> None] = None,
+        prefetch_function: OptionalReg[fn() capturing -> None] = None,
         beg_iter: Int = 0,
         num_iters: Int = Int(Self.depth // Self.BK),
         prefetched_b_tile: Bool = False,
@@ -549,7 +547,7 @@ struct Attention[
     fn mma_pv[
         v_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn () capturing -> None] = None,
+        prefetch_function: OptionalReg[fn() capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
         mma[
@@ -575,7 +573,7 @@ struct Attention[
             # Decoding with mask checking: check single token at num_keys-1
             return self.mask.status(
                 Index[dtype = DType.uint32](
-                    Int(self.num_keys - 1),
+                    self.num_keys - 1,
                     Int(kv_tile_start_row),
                 ),
                 Index[dtype = DType.uint32](Int(1), Int(Self.BN)),
@@ -584,8 +582,8 @@ struct Attention[
             # Prefill or decoding without mask checking: check full tile
             return self.mask.status(
                 Index[dtype = DType.uint32](
-                    Int(self.mask_block_row + self.start_pos),
-                    Int(kv_tile_start_row + self.cache_start_pos),
+                    Int(self.mask_block_row + UInt32(self.start_pos)),
+                    Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
                 Index[dtype = DType.uint32](Int(Self.BM), Int(Self.BN)),
             )
@@ -643,17 +641,17 @@ struct Attention[
                 masked,
                 kv_tile_start_row,
                 kv_tile_num_rows,
-                self.start_pos,
-                self.seq_len,
-                self.num_keys,
-                Int(self.mask_block_row),
-                Int(self.mask_warp_row),
+                UInt32(self.start_pos),
+                UInt32(self.seq_len),
+                UInt32(self.num_keys),
+                UInt32(Int(self.mask_block_row)),
+                UInt32(Int(self.mask_warp_row)),
                 self.mask_warp_col,
                 self.scale,
                 self.mask,
                 self.p_reg_buffer.vectorize[stage](),
                 not_last_iter,
-                self.cache_start_pos,
+                UInt32(self.cache_start_pos),
             )
 
         # self.scale_p_reg[stage]()
@@ -672,8 +670,8 @@ struct Attention[
     fn __init__(
         out self,
         attention_config: Self.attention_config_t,
-        output_ptr: UnsafePointer[Scalar[Self.output_type],],
-        q: UnsafePointer[Scalar[Self.q_type]],
+        output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
+        q: UnsafePointer[Scalar[Self.q_type], MutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
@@ -724,8 +722,8 @@ struct Attention[
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        self.mask_warp_row = warp_row * Int(Self.WM)
-        self.mask_warp_col = warp_col * Int(Self.WN)
+        self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
+        self.mask_warp_col = UInt32(warp_col * Int(Self.WN))
 
         self.batch_idx = batch_idx
 
@@ -795,7 +793,7 @@ struct Attention[
             self.out_reg_buffer.vectorize(),
             self.p_reg_buffer.vectorize[stage](),
             warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
-                0, Int(warp_row)
+                0, warp_row
             ),
         )
 
@@ -846,8 +844,12 @@ struct Attention[
     fn store_partition_info(
         self,
         num_partitions: Int,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        exp_sum_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
+        qk_max_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
     ):
         @parameter
         if not Self.token_gen:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -53,22 +53,21 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
 
 
 # Compile time Tensor information
-@register_passable("trivial")
 struct StaticTensorSpec[
     dtype: DType,
     rank: Int,
-](ImplicitlyCopyable):
+](TrivialRegisterPassable):
     # Represents the DimList type (not accessible from KGEN tests).
-    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank]
     ) capturing -> SIMD[Self.dtype, simd_width]
-    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank], SIMD[Self.dtype, simd_width]
     ) capturing -> None
 
     comptime out_compute_lambda_t = fn[
         simd_width: Int, element_alignment: Int = 1
-    ] (IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
+    ](IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
         Self.dtype, simd_width
     ]
 
@@ -104,7 +103,7 @@ struct StaticTensorSpec[
         self.out_compute_lambda = out_compute_lambda
 
     fn __init__(out self, shape: DimList):
-        __comptime_assert Self.rank > 0, (
+        comptime assert Self.rank > 0, (
             "initializing `StaticTensorSpec` with just a shape only"
             " supports rank 1 to 3"
         )

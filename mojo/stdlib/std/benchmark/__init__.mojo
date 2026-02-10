@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -161,6 +161,6 @@ from .bencher import (
     ThroughputMeasure,
 )
 from .benchmark import Batch, Report, Unit, run
-from .compiler import keep
+from .compiler import black_box, keep
 from .memory import clobber_memory
 from .quick_bench import QuickBench

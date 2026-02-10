@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
@@ -66,7 +65,7 @@ from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import gemm_kernel_amd
 
-from ...structuring import SMemTileType
+from ...structuring import SMemTile
 
 
 @always_inline
@@ -80,7 +79,7 @@ fn distance[
 
 comptime WarpSplitKReductionSMem[
     c_type: DType, BM: Int, BN: Int, num_warp_k_partitions: Int
-] = SMemTileType[
+] = SMemTile[
     c_type,
     Layout.row_major(1, BM * BN * (num_warp_k_partitions // 2)),
 ]
@@ -230,7 +229,7 @@ fn multistage_mma[
     num_iters: Int,
     /,
     *,
-    num_b_rows: OptionalReg[Int] = None,
+    num_b_rows: Optional[Int] = None,
     next_op_b_iter: LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
@@ -259,8 +258,8 @@ fn multistage_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % UInt32(num_warps_n)
+    var warp_y = warp_id // UInt32(num_warps_n)
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
@@ -336,7 +335,9 @@ fn multistage_mma[
 
             @parameter
             if a_iter.address_space == AddressSpace.GENERIC:
-                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
+                var a_smem_tile = a_smem_iter.next_unsafe(
+                    a_smem_iter.linear_uint_type(stage)
+                )[]
                 _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
                     a_smem_tile, a_iter[]
                 )
@@ -345,7 +346,9 @@ fn multistage_mma[
 
             @parameter
             if b_iter.address_space == AddressSpace.GENERIC:
-                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
+                var b_smem_tile = b_smem_iter.next_unsafe(
+                    b_smem_iter.linear_uint_type(stage)
+                )[]
 
                 if num_b_rows:
                     var num_rows_bound = (
@@ -367,7 +370,7 @@ fn multistage_mma[
             async_copy_commit_group()
 
         # Guard stage 0.
-        async_copy_wait_group(num_pipeline_stages - 2)
+        async_copy_wait_group(Int32(num_pipeline_stages - 2))
         barrier()
 
     comptime mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
@@ -392,7 +395,7 @@ fn multistage_mma[
     comptime num_reg_tiles = 2 * Int(k_group_size)
     # Register tiles.
     comptime a_reg_layout = Layout.row_major(
-        Int(2 * Int(k_group_size) * num_m_mmas), a_frag_size
+        2 * Int(k_group_size) * num_m_mmas, a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -402,11 +405,11 @@ fn multistage_mma[
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
 
     comptime b_reg_layout = Layout.row_major(
-        Int(2 * Int(k_group_size) * num_n_mmas), b_frag_size
+        2 * Int(k_group_size) * num_n_mmas, b_frag_size
     )
     var b_reg_tiles = (
         LayoutTensor[
@@ -417,7 +420,7 @@ fn multistage_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -434,7 +437,7 @@ fn multistage_mma[
 
     comptime swizzle_a_pattern = make_ldmatrix_swizzle[
         a_type, a_warp_tile.stride[0]()
-    ]() if swizzle_a else OptionalReg[Swizzle](None)
+    ]() if swizzle_a else Optional[Swizzle]()
 
     @parameter
     for i in range(k_group_size):
@@ -480,7 +483,7 @@ fn multistage_mma[
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     comptime current = k_mma % num_reg_tiles
                     comptime k_mma_next = k_mma + UInt32(k_group_size)
-                    comptime next = Int(k_mma_next % num_reg_tiles)
+                    comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
                     @parameter
                     if k_mma_next == UInt32(num_k_mmas):
@@ -495,7 +498,9 @@ fn multistage_mma[
                             if prefetch_tile_id < static_num_iters.get():
                                 var b_smem_prefetch_tile = (
                                     b_smem_iter.next_unsafe(
-                                        num_pipeline_stages - 1
+                                        b_smem_iter.linear_uint_type(
+                                            num_pipeline_stages - 1
+                                        )
                                     )[]
                                 )
 
@@ -521,7 +526,9 @@ fn multistage_mma[
                             async_copy_commit_group()
 
                             # Guard the next k tile's shared memory buffer.
-                            async_copy_wait_group(num_pipeline_stages - 2)
+                            async_copy_wait_group(
+                                Int32(num_pipeline_stages - 2)
+                            )
                             barrier()
 
                         @parameter
@@ -545,12 +552,12 @@ fn multistage_mma[
                         )
                     else:
                         # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                        copy_local_to_local(a_reg_tiles[Int(next)], a_iter[])
+                        copy_local_to_local(a_reg_tiles[next], a_iter[])
                         a_iter._incr()
 
                     mma_op.load_b(
                         b_warp_tile,
-                        b_reg_tiles[Int(next)],
+                        b_reg_tiles[next],
                         UInt(kidx),
                         UInt(warp_x),
                     )
@@ -558,7 +565,7 @@ fn multistage_mma[
                 @parameter
                 for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                    comptime current = k_mma % num_reg_tiles
+                    comptime current = k_mma % UInt32(num_reg_tiles)
                     mma_op.mma(
                         a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
                         b_reg_tiles[Int(current)],
@@ -584,7 +591,7 @@ fn multistage_mma[
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % num_reg_tiles
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
-                comptime next = Int(k_mma_next % num_reg_tiles)
+                comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
                 @parameter
                 if k_mma_next == UInt32(num_k_mmas):
@@ -597,7 +604,9 @@ fn multistage_mma[
                         @parameter
                         if a_iter.address_space == AddressSpace.GENERIC:
                             var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
-                                num_pipeline_stages - 1
+                                a_smem_iter.linear_uint_type(
+                                    num_pipeline_stages - 1
+                                )
                             )[]
                             _copy_tensor_to_sram[
                                 async_copy_a_layout, swizzle_a
@@ -608,7 +617,9 @@ fn multistage_mma[
                         @parameter
                         if b_iter.address_space == AddressSpace.GENERIC:
                             var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                                num_pipeline_stages - 1
+                                b_smem_iter.linear_uint_type(
+                                    num_pipeline_stages - 1
+                                )
                             )[]
 
                             if num_b_rows:
@@ -636,7 +647,9 @@ fn multistage_mma[
                         @parameter
                         if continue_prefetch_b:
                             var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                                num_pipeline_stages - 1
+                                b_smem_iter.linear_uint_type(
+                                    num_pipeline_stages - 1
+                                )
                             )[].reshape[b_next_smem_layout]()
 
                             comptime row_size = b_next_smem_layout.stride[
@@ -676,7 +689,7 @@ fn multistage_mma[
                     async_copy_commit_group()
 
                     # Guard the next k tile's shared memory buffer.
-                    async_copy_wait_group(num_pipeline_stages - 2)
+                    async_copy_wait_group(Int32(num_pipeline_stages - 2))
                     barrier()
 
                     a_smem_iter._incr()
@@ -703,7 +716,7 @@ fn multistage_mma[
             @parameter
             for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                comptime current = k_mma % num_reg_tiles
+                comptime current = k_mma % UInt32(num_reg_tiles)
                 mma_op.mma(
                     a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
                     b_reg_tiles[Int(current)],
@@ -726,7 +739,7 @@ fn multistage_gemm_kernel[
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[
         c_type,
@@ -973,14 +986,14 @@ fn multistage_gemm_kernel[
 
                 @parameter
                 if dst_simd_width_x == 1:
-                    epilogue[alignment=alignment]((Int(m), Int(n)), vec)
+                    epilogue[alignment=alignment]((m, n), vec)
                 else:
 
                     @parameter
                     for j in range(dst_simd_width_x):
                         if m + j < Int(M):
                             epilogue[alignment=alignment](
-                                (Int(m + j), Int(n)), vec[j].cast[c_type]()
+                                (m + j, n), vec[j].cast[c_type]()
                             )
 
     # Store FP32 mma results to half precision buffer in global memory.
@@ -1038,9 +1051,10 @@ fn multistage_gemm_kernel[
                 comptime src_idx = type_of(c_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = (
-                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
-                )
+                var swizzled_idx = swizzle(
+                    c_smem_frag_offset
+                    + type_of(c_smem_frag_offset)(src_idx_base)
+                ) + type_of(c_smem_frag_offset)(src_idx_diff)
 
                 comptime dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
@@ -1056,7 +1070,7 @@ fn multistage_gemm_kernel[
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
-                        (Int(m), Int(n)),
+                        (m, n),
                         accum_smem_warp_tile.ptr.load[
                             width=simd_size, alignment=alignment
                         ](swizzled_idx).cast[c_type](),
@@ -1133,7 +1147,7 @@ fn multistage_gemm_split_k_kernel[
     workspace_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1149,10 +1163,10 @@ fn multistage_gemm_split_k_kernel[
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
     var a_part = a.split[axis=1, split_alignment=BK](
-        Int(num_partitions), Int(block_idx.z)
+        num_partitions, Int(block_idx.z)
     )
     var b_part = b.split[axis= 1 if transpose_b else 0, split_alignment=BK](
-        Int(num_partitions), Int(block_idx.z)
+        num_partitions, Int(block_idx.z)
     )
 
     comptime work_space_tensor_type = LayoutTensor[

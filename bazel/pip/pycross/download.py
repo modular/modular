@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,14 +19,23 @@ from packaging.tags import Tag
 from packaging.utils import parse_wheel_filename
 from utils import assert_keys
 
+# URL -> sha256 in format 'sha256:<hash>'
+_MISSING_HASHES: dict[str, str] = {}
+
 
 class Download:
     def __init__(self, blob: dict[str, Any]):
         assert_keys(
-            blob, required={"hash", "url"}, optional={"upload-time", "size"}
+            blob,
+            required={
+                "url",
+            },
+            optional={"upload-time", "size", "hash"},
         )
 
-        download_hash = blob["hash"]
+        # NOTE: Hashes can be missing if the registry is missing them, but we need them for bazel downloading
+        # https://github.com/pytorch/pytorch/issues/173099
+        download_hash = blob.get("hash") or _MISSING_HASHES[blob["url"]]
         assert download_hash.startswith("sha256:")
         self.hash = download_hash[len("sha256:") :]
         self.url = blob["url"]

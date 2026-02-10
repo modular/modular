@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -71,10 +71,10 @@ def execute_ragged_flash_attention():
     var true_ce_max_prompt_length = 0
     var mixed_ce_max_prompt_length = 0
     for i in range(batch_size):
-        true_ce_row_offsets[i] = true_ce_total_length
-        mixed_ce_row_offsets[i] = mixed_ce_total_length
-        true_ce_cache_lengths[i] = true_ce_cache_lens[i]
-        mixed_ce_cache_lengths[i] = mixed_ce_cache_lens[i]
+        true_ce_row_offsets[i] = UInt32(true_ce_total_length)
+        mixed_ce_row_offsets[i] = UInt32(mixed_ce_total_length)
+        true_ce_cache_lengths[i] = UInt32(true_ce_cache_lens[i])
+        mixed_ce_cache_lengths[i] = UInt32(mixed_ce_cache_lens[i])
 
         true_ce_max_full_context_length = max(
             true_ce_max_full_context_length,
@@ -95,8 +95,8 @@ def execute_ragged_flash_attention():
         true_ce_total_length += true_ce_prompt_lens[i]
         mixed_ce_total_length += mixed_ce_prompt_lens[i]
 
-    true_ce_row_offsets[batch_size] = true_ce_total_length
-    mixed_ce_row_offsets[batch_size] = mixed_ce_total_length
+    true_ce_row_offsets[batch_size] = UInt32(true_ce_total_length)
+    mixed_ce_row_offsets[batch_size] = UInt32(mixed_ce_total_length)
     comptime layout_3d = Layout.row_major[3]()
     var true_ce_q_ragged = LayoutTensor[type, layout_3d](
         alloc[Scalar[type]](
@@ -129,7 +129,9 @@ def execute_ragged_flash_attention():
         mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
         true_ce_offset = true_ce_q_ragged.ptr + true_ce_q_ragged._offset(
-            IndexList[3](Int(true_ce_row_offset + mixed_ce_cache_len), 0, 0)
+            IndexList[3](
+                Int(true_ce_row_offset + UInt32(mixed_ce_cache_len)), 0, 0
+            )
         )
         mixed_ce_offset = mixed_ce_q_ragged.ptr + mixed_ce_q_ragged._offset(
             IndexList[3](Int(mixed_ce_row_offset), 0, 0)
@@ -209,7 +211,7 @@ def execute_ragged_flash_attention():
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
-            paged_lut[bs, block_idx] = randval
+            paged_lut[bs, block_idx] = UInt32(randval)
 
     true_ce_kv_collection = PagedCollectionType(
         LayoutTensor[
@@ -239,8 +241,8 @@ def execute_ragged_flash_attention():
                 paged_lut.runtime_layout.stride.value,
             ),
         ),
-        true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_full_context_length),
     )
 
     mixed_ce_kv_collection = PagedCollectionType(
@@ -271,8 +273,8 @@ def execute_ragged_flash_attention():
                 paged_lut.runtime_layout.stride.value,
             ),
         ),
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_full_context_length),
     )
 
     # "true CE" execution
@@ -309,7 +311,9 @@ def execute_ragged_flash_attention():
         true_ce_row_offset = true_ce_row_offsets[bs]
         mixed_ce_cache_len = mixed_ce_cache_lens[bs]
 
-        true_ce_ragged_offset = Int(true_ce_row_offset + mixed_ce_cache_len)
+        true_ce_ragged_offset = Int(
+            true_ce_row_offset + UInt32(mixed_ce_cache_len)
+        )
         mixed_ce_ragged_offset = Int(mixed_ce_row_offset)
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):

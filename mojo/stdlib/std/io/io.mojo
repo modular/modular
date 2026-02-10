@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,8 +18,8 @@ These are Mojo built-ins, so you don't need to import them.
 from collections.string.string_slice import get_static_string
 from format._utils import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
+from ffi import c_char, external_call
 from sys import (
-    external_call,
     is_amd_gpu,
     is_compile_time,
     is_gpu,
@@ -29,7 +29,6 @@ from sys import (
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
-from sys.ffi import c_char
 from sys.info import CompilationTarget
 from sys.intrinsics import _type_is_eq
 
@@ -43,8 +42,7 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _fdopen[mode: StaticString = "a"]:
+struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
     var handle: FILE_ptr
 
     fn __init__(out self, stream_id: FileDescriptor):
@@ -55,7 +53,7 @@ struct _fdopen[mode: StaticString = "a"]:
         """
 
         self.handle = fdopen(
-            dup(stream_id.value),
+            dup(Int32(stream_id.value)),
             # Guarantee this is nul terminated.
             get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
@@ -129,7 +127,7 @@ struct _fdopen[mode: StaticString = "a"]:
         var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call["getdelim", Int,](
+        var bytes_read = external_call["getdelim", Int](
             UnsafePointer(to=buffer),
             UnsafePointer(to=n),
             ord(delimiter),
@@ -253,7 +251,7 @@ fn _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            comptime args_len = len(VariadicList(types))
+            comptime args_len = Variadic.size(types)
 
             var message = printf_begin()
             message = printf_append_string_n(
@@ -273,7 +271,7 @@ fn _printf[
                     arguments[i] = _to_uint64(args[group + i])
                 message = printf_append_args(
                     message,
-                    num_args,
+                    UInt32(num_args),
                     arguments[0],
                     arguments[1],
                     arguments[2],

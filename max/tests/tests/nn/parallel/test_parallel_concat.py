@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 import numpy as np
 import pytest
 from max.driver import Accelerator, Device
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.parallel import ParallelArrayOps
 from numpy.testing import assert_equal
 
 

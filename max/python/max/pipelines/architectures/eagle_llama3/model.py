@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,8 +19,8 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -74,7 +74,10 @@ class EagleLlama3Model(LlamaModelBase):
         assert (
             hasattr(model_inputs, "hidden_states")
             and model_inputs.hidden_states is not None
-        ), "EAGLE model requires hidden_states in model_inputs"
+            and isinstance(model_inputs.hidden_states, Buffer)
+        ), (
+            "EAGLE model requires hidden_states as a single Buffer in model_inputs"
+        )
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
@@ -100,16 +103,12 @@ class EagleLlama3Model(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
     ) -> Graph:
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Llama3Config.initialize(self.pipeline_config)
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )

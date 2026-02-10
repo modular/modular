@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,7 +60,7 @@ fn winograd_2d_convolution_3x3[
     signal: NDBuffer[dtype, 2, _, _],
     kernel: NDBuffer[
         dtype, 2, _, _
-    ],  # must be 3x3, let's __comptime_assert  somehow. Or parameter
+    ],  # must be 3x3, let's comptime assert  somehow. Or parameter
     output: NDBuffer[mut=True, dtype, 2, _, _],
 ):
     # Winograd transformation matrices as stack-allocated NDBuffers

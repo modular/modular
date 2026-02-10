@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,12 +16,12 @@
 import enum
 import inspect
 import os
+import types
 from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
-import typing_extensions
 from max import mlir
 from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
@@ -212,9 +212,30 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
+    def capture(self, *inputs: Buffer) -> list[Buffer]:
+        """
+        Capture execution into a device graph for the given inputs.
+
+        Capture is best-effort and model-dependent. It records the current execution
+        path; models that perform unsupported operations during capture (for example,
+        host-device synchronization) will fail to capture. Callers should decide which
+        phases are safe to capture (e.g. decode-only in serving).
+        """
+
+    def replay(self, *inputs: Buffer) -> None:
+        """Replay the captured device graph for these inputs."""
+
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
+    def _capture(
+        self, inputs: Sequence[max._core.driver.Buffer]
+    ) -> list[max._core.driver.Buffer]:
+        """Capture execution into a device graph."""
+
+    def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
+        """Replay the captured device graph."""
+
     def _export_mef(self, path: str) -> None:
         """
         Exports the compiled model as a mef to a file.
@@ -239,7 +260,7 @@ class InferenceSession:
     ) -> Model: ...
     def compile_from_object(
         self,
-        model: typing_extensions.CapsuleType,
+        model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
     ) -> Model: ...

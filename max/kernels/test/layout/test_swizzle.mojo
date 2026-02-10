@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,7 +47,7 @@ fn test_swizzle_basic():
     # CHECK: 17 16 19 18 21 20 23 22 25 24 27 26 29 28 31 30
     # CHECK: 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
     # CHECK: 49 48 51 50 53 52 55 54 57 56 59 58 61 60 63 62
-    print_swizzle(thread_layout, swizzle_bits1_per16)
+    print_swizzle(materialize[thread_layout](), swizzle_bits1_per16)
 
     # swizzle every 8 threads by 2 least significant bits.
     var swizzle_bits2_per8 = Swizzle(2, 0, 3)
@@ -60,7 +60,7 @@ fn test_swizzle_basic():
     # CHECK: 41 40 43 42 45 44 47 46
     # CHECK: 50 51 48 49 54 55 52 53
     # CHECK: 59 58 57 56 63 62 61 60
-    print_swizzle(thread_layout, swizzle_bits2_per8)
+    print_swizzle(materialize[thread_layout](), swizzle_bits2_per8)
 
     # swizzle every 16 threads the 2nd and 3rd least significant bits.
     var swizzle_bits2_base1_per8 = Swizzle(2, 1, 3)
@@ -73,7 +73,7 @@ fn test_swizzle_basic():
     # CHECK: 44 45 46 47 40 41 42 43
     # CHECK: 54 55 52 53 50 51 48 49
     # CHECK: 62 63 60 61 58 59 56 57
-    for tid in range(thread_layout.size()):
+    for tid in range(comptime (thread_layout.size())):
         # Verify the operator overloaded for different index types.
         var tid_u32 = UInt32(tid)
         print(swizzle_bits2_base1_per8(tid_u32), end=" ")
@@ -105,7 +105,9 @@ fn append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
 
 
 fn vectorize_layout[layout: Layout, *tile_sizes: Int]() -> Layout:
-    return zipped_divide(layout, MakeTileLayoutList[*tile_sizes]())
+    return zipped_divide(
+        materialize[layout](), MakeTileLayoutList[*tile_sizes]()
+    )
 
 
 fn vectorize_distribute_layout[
@@ -113,11 +115,10 @@ fn vectorize_distribute_layout[
 ]() -> Layout:
     comptime vlayout = vectorize_layout[data_layout, *element_tile_sizes]()
     comptime dlayout = _compute_distribute_layout[vlayout[1], thread_layout]()
-    return append_layout(vlayout[0], dlayout)
+    return append_layout(materialize[vlayout[0]](), materialize[dlayout]())
 
 
-@register_passable
-struct WaveFrontSummary(Defaultable, ImplicitlyCopyable):
+struct WaveFrontSummary(Defaultable, ImplicitlyCopyable, RegisterPassable):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 
@@ -150,7 +151,7 @@ fn count_wavefronts[
     num_banks: Int = 32,
     max_memop_bytes: Int = 16,
 ]() -> WaveFrontSummary:
-    __comptime_assert thread_layout.size() == num_banks
+    comptime assert thread_layout.size() == num_banks
     comptime layout = vectorize_distribute_layout[
         *element_tile_sizes,
         data_layout=data_layout,
@@ -161,8 +162,8 @@ fn count_wavefronts[
     # layout[2]: individual memory accesses
     #
     comptime coalesced_element = coalesce(layout[0])
-    __comptime_assert Int(coalesced_element.stride) == 1
-    __comptime_assert coalesced_element.rank() == 1
+    comptime assert Int(coalesced_element.stride) == 1
+    comptime assert coalesced_element.rank() == 1
     comptime element_bytes = coalesced_element.size() * type_bytes
     comptime bytes_per_op = element_bytes if element_bytes < max_memop_bytes else max_memop_bytes
     comptime ops_per_element = element_bytes // bytes_per_op
@@ -172,31 +173,32 @@ fn count_wavefronts[
     var banks = StaticTuple[Int, num_banks]()
     # TODO: 6 bytes should be convertible to 4 + 2 byte ops, or 3x 2-byte ops.
     # Not a high priority, as these will likely result in poor performance anyway.
-    __comptime_assert (
+    comptime assert (
         element_bytes % bytes_per_op == 0
     ), "vectorization should divide evenly by memop size used"
-    __comptime_assert (
+    comptime assert (
         bytes_per_op % bytes_per_bank == 0
     ), "for efficiency, we should at least write 4 bytes at a time."
     var wavefronts = WaveFrontSummary()
     wavefronts.expected_wavefronts = (
-        layout[2].size() * ops_per_element * num_phases
+        comptime (layout[2].size()) * ops_per_element * num_phases
     )
     wavefronts.total_wavefronts = 0
-    comptime thread_layout_perm = right_inverse(thread_layout)
+    var thread_layout_perm = right_inverse(materialize[thread_layout]())
     # print(layout)
     # print("num_phases =", num_phases)
     # print("bank_group_size =", bank_group_size)
     # iterate over elements
-    for i in range(layout[2].size()):
-        var elt_idx_base = layout[2](i)
+    var materialized_layout = materialize[layout]()
+    for i in range(comptime (layout[2].size())):
+        var elt_idx_base = materialized_layout[2](i)
         # memop per elements
         for j in range(ops_per_element):
             for p in range(num_phases):
                 for k in range(banks.size):
                     banks[k] = 0
                 for k in range(bank_group_size):
-                    var tidx = layout[1](
+                    var tidx = materialized_layout[1](
                         thread_layout_perm(p * bank_group_size + k)
                     )
                     var idx = tidx + elt_idx_base

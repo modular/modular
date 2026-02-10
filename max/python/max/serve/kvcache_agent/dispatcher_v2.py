@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,10 @@ from __future__ import annotations
 import queue
 from typing import Any, Generic, TypeVar
 
-from max.serve.queue.zmq_queue import ZmqDealerSocket, ZmqRouterSocket
+from max.serve.worker_interface.zmq_queue import (
+    ZmqDealerSocket,
+    ZmqRouterSocket,
+)
 
 Request = TypeVar("Request")
 Reply = TypeVar("Reply")

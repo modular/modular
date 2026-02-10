@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,10 +10,52 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MAX pipeline for model inference and generation (Text Generation variant).
+"""MAX pipeline for model inference and generation (Overlap Text Generation Variant).
 
 This pipeline supports overlap scheduling where GPU execution is overlapped with
 python host logic.
+
+Note that this pipeline only supports num_steps=1.
+
+Here is the CPU and GPU timeline for overlap scheduling:
+
+   I3: Input processing for batch 3
+   O3: Output processing for batch 3
+   K3: GPU kernel execution for batch 3
+
+   Time:
+    CPU: [I1][I2]          [O1][I3]      [O2][I4]      [O3][I5]      ...
+    GPU:     [     K1     ][     K2     ][     K3     ][     K4     ][ ...
+
+During I3, we have to prepare the model inputs for batch3. However, K2 may
+still be in flight. If batch 2 and 3 share the same requests, then we rely on the
+ScatterFutureTokenProcessor to prepare the ragged_input_tokens for batch 3 on
+the GPU. This essentially scatters the generated tokens from the output of batch 2
+on the slots corresponding to placeholder future tokens in batch 3's inputs.
+
+For example:
+
+  Batch 2 has reqA, reqB, reqC.
+  Batch 3 has reqB, reqC, reqD.
+
+    reqA = [I, dream, of, FUTURE_TOKEN]
+    reqB = [I, like, go, FUTURE_TOKEN]
+    reqC = [I, like, to, eat, FUTURE_TOKEN]
+    reqD = [I, like, to, read]
+
+  The ragged_input_tokens for Batch 3 would be:
+                      idx=4                           idx=9
+    [I, like, to, go, FUTURE_TOKEN, I, like, to, eat, FUTURE_TOKEN, I, like, to, read]
+
+  ScatterFutureTokenProcessor would scatter the outputs of batch2 to the right slots:
+    scatter_nd(
+       inputs=ragged_input_tokens,
+       indices=[[-99999], [4], [9]],
+       updates=[sheep, fishing, cake]
+    )
+
+  Note that reqA is part of Batch 2 but not present in Batch 3. As such the update
+  "sheep" corresponding to reqA is skipped since its idx=-99999 is out of bounds.
 """
 
 from __future__ import annotations
@@ -25,11 +67,11 @@ from typing import TYPE_CHECKING, Any, Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, load_devices
-from max.graph import DeviceRef
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
-    BatchLogitsProcessor,
-    Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
@@ -38,19 +80,24 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.legacy import kernels
+from max.nn.legacy.kv_cache import KVCacheInputsSequence
+from max.nn.legacy.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
-from .utils import calculate_num_steps, update_context_and_prepare_responses
+from .text_generation import TextGenerationPipelineInterface
+from .utils import (
+    get_eos_tokens,
+    get_weight_paths,
+    update_context_and_prepare_responses,
+)
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
-from ..config_enums import RepoType
-from ..hf_utils import download_weight_files
+from dataclasses import dataclass
+
 from ..interfaces import PipelineModel
-from ..interfaces.generate import GenerateMixin
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -60,13 +107,189 @@ from ..sampling import (
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
+class AsyncBatch(Generic[TextGenerationContextType]):
+    """A batch that is being asynchronously executed on the GPU."""
+
+    inputs: TextGenerationInputs[TextGenerationContextType]
+    """The inputs for the batch."""
+
+    generated_tokens_device: Buffer
+    """The generated tokens for the batch on the gpu.
+
+    The shape of the buffer is (batch_size,). The ordering of the generated tokens
+    should be the same as the ordering of the requests in the input batch.
+    """
+
+    generated_tokens_host: Buffer
+    """The generated tokens for the batch on the cpu.
+
+    It is backed by pinned memory which makes d2h transfers asynchronous.
+    This buffer is not ready to read until the batch has completed executing.
+
+    This buffers has the same contents as `generated_tokens_device`.
+    """
+
+    _is_processed: bool = False
+    """Whether the outputs have been already been processed."""
+
+    @traced
+    def sync_and_process_outputs(
+        self,
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Syncs on completion of this batch and processes the outputs.
+
+        Replaces the placeholder future tokens in the TextContext CPU numpy
+        token buffers with the real token values.
+        """
+        if self._is_processed:
+            raise ValueError("Outputs have already been processed.")
+        self._is_processed = True
+
+        # We assume that the call to `.to_numpy()` will insert a device
+        # synchronize to guarantee that the async d2h transfer is done.
+        generated_tokens_np = self.generated_tokens_host.to_numpy()
+
+        # Now that we have synced, it is safe to read the contents of the
+        # generated_tokens_np on the host.
+
+        # Update the context object, realizing the placeholder future tokens.
+        outputs = update_context_and_prepare_responses(
+            generated_tokens_np,
+            self.inputs.flat_batch,
+            num_steps=1,
+            overwrite_future=True,
+        )
+
+        return outputs
+
+
+@traced
+def build_scatter_future_tokens_graph() -> Graph:
+    """Builds a trivial scatter_nd graph."""
+    with Graph(
+        "my_scatter_future_tokens_graph",
+        input_types=[
+            # Ragged input tokens for batch N
+            TensorType(
+                DType.int64,
+                shape=[SymbolicDim("curr_batch_size")],
+                device=DeviceRef.GPU(0),
+            ),
+            # Generated tokens for batch N-1
+            TensorType(
+                DType.int64,
+                shape=[SymbolicDim("prev_batch_size"), Dim(1)],
+                device=DeviceRef.GPU(0),
+            ),
+            # Indices that maps generated tokens from batch N-1 to batch N
+            TensorType(
+                DType.int32,
+                shape=[SymbolicDim("prev_batch_size")],
+                device=DeviceRef.GPU(0),
+            ),
+        ],
+    ) as graph:
+        tokens = graph.inputs[0].tensor
+        future_token_inputs = graph.inputs[1].tensor
+        future_token_indices = graph.inputs[2].tensor
+        out = kernels.scatter_nd_skip_oob_indices(
+            input=tokens,
+            updates=ops.squeeze(future_token_inputs, axis=-1),
+            indices=ops.unsqueeze(future_token_indices, axis=-1),
+        )
+        graph.output(out)
+    return graph
+
+
+class ScatterFutureTokenProcessor:
+    """Processor for realizing placeholder future tokens in ragged input on the GPU.
+
+    We scatter the generated tokens from the previous batch into the slots
+    containing placeholder future tokens in the current batch. This all occurs
+    efficiently on the gpu. We use a variant of scatter_nd that skips out of
+    bound indices in cases where the current batch does not contain a request
+    present in the previous batch.
+    """
+
+    def __init__(self, session: InferenceSession) -> None:
+        self._scatter_future_tokens = session.load(
+            build_scatter_future_tokens_graph()
+        )
+
+    @traced
+    def scatter_future_tokens(
+        self,
+        prev_batch: AsyncBatch[TextGenerationContextType],
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        ragged_input_tokens: Buffer,
+    ) -> Buffer:
+        """Scatters generated tokens from the previous batch into placeholder slots.
+
+        Fills placeholder future tokens in the current batch on the GPU.
+        """
+        prev_generated_tokens = prev_batch.generated_tokens_device
+        device = prev_generated_tokens.device
+        if device.is_host:
+            raise ValueError(
+                "Scatter future tokens processor must be on the gpu."
+            )
+        if ragged_input_tokens.device != device:
+            raise ValueError(
+                "Ragged input tokens must be on the same device as the generated "
+                "tokens from the previous batch."
+            )
+
+        # Prepare the scatter indices.
+        prev_batch_size = prev_generated_tokens.shape[0]
+        future_tok_indices = Buffer(
+            shape=(prev_batch_size,),
+            dtype=DType.int32,
+            device=device,
+            pinned=True,
+        )
+        future_tok_indices.disable_auto_sync()
+        future_tok_indices_np = future_tok_indices.to_numpy()
+
+        # Initialize the scatter indices with an oob_idx. These updates will be
+        # skipped by the scatter_nd kernel.
+        oob_idx = np.iinfo(np.int32).min
+        future_tok_indices_np.fill(oob_idx)
+
+        # If a request is present in both the previous and current batch,
+        # then we must scatter the generated token into the placeholder future
+        # token slot.
+        prev_flat_batch = prev_batch.inputs.flat_batch
+        req_id_to_idx_in_batch = {
+            context.request_id: idx_in_batch
+            for idx_in_batch, context in enumerate(inputs.flat_batch)
+        }
+        for prev_idx, context in enumerate(prev_flat_batch):
+            req_id = context.request_id
+            # If generated_length is still 0, then there is no placeholder future
+            # token. This is possible due to chunked prefill.
+            if (
+                req_id in req_id_to_idx_in_batch
+                and context.tokens.generated_length
+            ):
+                future_tok_indices_np[prev_idx] = req_id_to_idx_in_batch[req_id]
+
+        # Execute the scatter_nd kernel.
+        (new_ragged_input_tokens,) = self._scatter_future_tokens.execute(
+            ragged_input_tokens,
+            prev_generated_tokens,
+            future_tok_indices.to(device),
+        )
+
+        return new_ragged_input_tokens
+
+
 class OverlapTextGenerationPipeline(
-    Pipeline[
-        TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
-    ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
+    TextGenerationPipelineInterface[TextGenerationContextType],
     Generic[TextGenerationContextType],
 ):
+    """Overlap text generation pipeline."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -99,38 +322,24 @@ class OverlapTextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._devices = load_devices(pipeline_config.model.device_specs)
-        self._weight_adapters = weight_adapters
+
+        model_config = pipeline_config.model
+        huggingface_config = model_config.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"Overlap text generation pipeline requires a HuggingFace config for '{model_config.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+
+        self._devices = load_devices(model_config.device_specs)
+        if self._devices[0].is_host:
+            raise ValueError(
+                "OverlapTextGenerationPipeline does not support CPU models."
+            )
         self._tokenizer = tokenizer
 
-        # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in self._pipeline_config.model.huggingface_config:
-            eos_tokens = (
-                self._pipeline_config.model.huggingface_config.eos_token_id
-            )
-            if isinstance(eos_tokens, int):
-                if eos_tokens != eos_token_id:
-                    msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-                    logger.warning(msg)
-
-                self._eos_token_id = set([eos_tokens])
-            elif isinstance(eos_tokens, list):
-                if eos_token_id in eos_tokens:
-                    self._eos_token_id = set(eos_tokens)
-                else:
-                    self._eos_token_id = set([eos_token_id])
-            else:
-                msg = f"eos_token_id in huggingface_config is neither int or list: {eos_tokens}"
-                logger.warning(msg)
-                self._eos_token_id = set([eos_token_id])
-
-        else:
-            self._eos_token_id = set([eos_token_id])
-
-        if pipeline_config.sampling.enable_structured_output:
-            raise ValueError(
-                "Structured output is not supported with overlap pipeline"
-            )
+        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # Initialize Session.
         from max.engine import InferenceSession  # local import to avoid cycles
@@ -142,34 +351,11 @@ class OverlapTextGenerationPipeline(
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not self._pipeline_config.model.quantization_encoding:
+        if not model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weights repo id (falls back to model_path when unset).
-        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
-
-        weight_paths: list[Path] = []
-        if (
-            self._pipeline_config.model.huggingface_weight_repo.repo_type
-            == RepoType.online
-        ):
-            # Download weight files if not existent.
-            weight_paths = download_weight_files(
-                huggingface_model_id=weight_model_id,
-                filenames=[
-                    str(x) for x in self._pipeline_config.model.weight_path
-                ],
-                revision=self._pipeline_config.model.huggingface_weight_revision,
-                force_download=self._pipeline_config.model.force_download,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            local_path = Path(
-                self._pipeline_config.model.huggingface_weight_repo.repo_id
-            )
-            weight_paths = [
-                local_path / x for x in self._pipeline_config.model.weight_path
-            ]
+        weight_paths: list[Path] = get_weight_paths(model_config)
 
         # late imports to minimize header deps
         from max.graph.weights import load_weights as _load_weights
@@ -178,14 +364,12 @@ class OverlapTextGenerationPipeline(
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.model.huggingface_config,
-            encoding=self._pipeline_config.model.quantization_encoding,
+            huggingface_config=huggingface_config,
+            encoding=model_config.quantization_encoding,
             devices=self._devices,
-            kv_cache_config=self._pipeline_config.model.kv_cache,
+            kv_cache_config=model_config.kv_cache,
             weights=_load_weights(weight_paths),
-            adapter=self._weight_adapters.get(
-                _weights_format(weight_paths), None
-            ),
+            adapter=weight_adapters.get(_weights_format(weight_paths)),
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,
@@ -198,6 +382,15 @@ class OverlapTextGenerationPipeline(
                 device=DeviceRef.from_device(self._devices[0]),
             )
         )
+
+        self._kv_manager = self._pipeline_model.kv_manager
+
+        # Overlap scheduling specific initialization.
+
+        # Load the scatter future tokens graph.
+        self._scatter_future_tokens = ScatterFutureTokenProcessor(session)
+        # Set previous asynchronously executing batch to None.
+        self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -220,200 +413,177 @@ class OverlapTextGenerationPipeline(
         self,
     ) -> list[Any]:
         """Return the list of KV cache managers backing this pipeline."""
-        return [self._pipeline_model.kv_manager]
+        return [self._kv_manager]
 
-    @traced
-    def prepare_batch(
-        self,
-        batches: list[dict[RequestID, TextGenerationContextType]],
-        num_steps: int,
-    ) -> tuple[
-        Any,
-        int,
-        list[TextGenerationContextType],
-    ]:
-        """Prepare model inputs and ancillary state for multi-step execution.
+    def has_pending_outputs(self) -> bool:
+        """Returns True if there are pending outputs for the previous batch.
 
-        This flattens replica batches, ensures KV-cache reservations, clamps
-        ``num_steps`` per context, and builds initial model inputs.
-
-        Args:
-            batches: Per-replica mapping of ``RequestID`` to context.
-            num_steps: Desired number of steps to run.
-
-        Returns:
-            A tuple of:
-                - ModelInputs: Prepared inputs for the first step.
-                - int: The clamped number of steps to run.
-                - list[TextGenerationContextType]: The flattened context batch.
+        If this is True, the caller should call `.execute()` even with empty
+        inputs to retrieve the outputs for the previous batch.
         """
-        for replica_idx, replica_batch in enumerate(batches):
-            for request_id, context in replica_batch.items():
-                if not self._pipeline_model.kv_manager.contains(request_id):
-                    self._pipeline_model.kv_manager.claim(
-                        request_id, replica_idx=replica_idx
-                    )
-
-                # Update num_steps.
-                num_steps = calculate_num_steps(
-                    context, num_steps, self._pipeline_model.max_seq_len
-                )
-
-        # Retrieve the KV Cache Inputs.
-        flat_batch = [
-            context for batch in batches for context in batch.values()
-        ]
-        kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
-        )
-
-        replica_batches = [
-            [context for context in batch.values()] for batch in batches
-        ]
-        return (
-            self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=replica_batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
-            ),
-            num_steps,
-            flat_batch,
-        )
+        return self._prev_batch is not None
 
     @traced
     def execute(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
+        """Executes a batch of requests asynchronously on the GPU.
+
+        This method will return before the outputs for the current batch are ready.
+        The caller may need to call `.execute()` again (possibly with an empty batch)
+        to retrieve these outputs. For example:
+
+        ```python
+        output_a = pipeline.execute(inputs)
+        assert len(outputs) == 0
+
+        output_b = pipeline.execute(empty_inputs)
+        assert len(outputs) == len(inputs.flat_batch)
+        ```
+
+        Args:
+            inputs: The inputs for the batch.
+
+        Returns:
+            A dictionary of request IDs to outputs. The outputs will not correspond
+            to the requests in the input batch. Instead they are of the previous batch.
         """
         if inputs.enable_log_probs:
             raise ValueError(
                 "Log probabilities are not supported with overlap pipeline"
             )
 
+        if inputs.num_steps > 1:
+            raise ValueError(
+                "Max num steps > 1 is not supported with the Overlap scheduler."
+            )
+
         device0 = self._devices[0]
-        pinned = not device0.is_host
+        assert not device0.is_host
+
         # Prepare the batch.
-        model_inputs, num_steps, flat_batch = self.prepare_batch(
-            inputs.batches, inputs.num_steps
+        kv_cache_inputs = self._kv_manager.get_runtime_inputs(
+            inputs.batches, num_steps=1
         )
 
-        batch_processors: list[BatchLogitsProcessor] = []
-        if len(flat_batch) > 0:
+        with Tracer("prepare_initial_token_inputs"):
+            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+                replica_batches=inputs.batches,
+                kv_cache_inputs=KVCacheInputsSequence(
+                    kv_cache_inputs=kv_cache_inputs
+                ),
+            )
+
+        assert hasattr(model_inputs, "tokens")
+        ragged_input_tokens = model_inputs.tokens
+        if self._prev_batch is not None:
+            new_ragged_input_tokens = (
+                self._scatter_future_tokens.scatter_future_tokens(
+                    prev_batch=self._prev_batch,
+                    inputs=inputs,
+                    ragged_input_tokens=ragged_input_tokens,
+                )
+            )
+            # Overwrite the ragged input tokens with the new ones.
+            model_inputs.tokens = new_ragged_input_tokens
+
+        flat_batch = inputs.flat_batch
+        if inputs:
             with Tracer("FusedSamplingProcessor"):
                 sampling_processor = FusedSamplingProcessor(
                     sampler=self._sampler,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    num_steps=num_steps,
+                    num_steps=1,
                     device=device0,
                 )
 
-            batch_processors.append(sampling_processor)
+        with Tracer("pipeline_model.execute"):
+            # Execute the model and get next tokens.
+            try:
+                model_outputs = self._pipeline_model.execute(
+                    model_inputs=model_inputs
+                )
+            except Exception:
+                batch_size = len(flat_batch)
+                cache_tokens = sum(
+                    ctx.tokens.processed_length for ctx in flat_batch
+                )
+                input_tokens = sum(
+                    ctx.tokens.active_length for ctx in flat_batch
+                )
+                logger.error(
+                    "Encountered an exception while executing batch: "
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}"
+                )
+                raise  # re-raise the original exception
+        assert model_outputs.logit_offsets is None
 
-        curr_step_inputs = model_inputs
-        for i in range(num_steps):
-            with Tracer(f"multistep_execution_loop_step_{i}"):
-                # Execute the model and get next tokens.
-                try:
-                    model_outputs = self._pipeline_model.execute(
-                        model_inputs=curr_step_inputs
-                    )
-                except Exception:
-                    batch_size = len(flat_batch)
-                    cache_tokens = sum(
-                        ctx.tokens.processed_length for ctx in flat_batch
-                    )
-                    input_tokens = sum(
-                        ctx.tokens.active_length for ctx in flat_batch
-                    )
-                    logger.error(
-                        "Encountered an exception while executing batch: "
-                        f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
-                    )
-                    raise  # re-raise the original exception
-
-            assert model_outputs.logit_offsets is None
-
-            # Continue and execute the next step if the batch.
-            if len(flat_batch) == 0:
-                continue
-
-            # Sample next token.
-            with Tracer("sample_next_token_step_{i}"):
+        # Sample next token unless this is an empty batch.
+        # Empty batches still need to be run for deepseek DP / EP barrier.
+        if inputs:
+            with Tracer("sample_next_token"):
                 apply_logits_processors(
                     context_batch=flat_batch,
                     batch_logits=model_outputs.logits,
                     batch_logit_offsets=model_outputs.logit_offsets,
-                    batch_processors=batch_processors,
+                    batch_processors=[sampling_processor],
                 )
                 new_tokens = sampling_processor.new_tokens
                 assert new_tokens is not None
 
-            # Check if we're on our last iteration. If so, skip preparing the next batch
-            if i == num_steps - 1:
-                break
-
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._pipeline_model.kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
-                    curr_step_inputs,
+            # Do the copy to host for each token generated.
+            with Tracer("D2H generated_tokens"):
+                generated_tokens_device = sampling_processor.generated_tokens
+                # Allocate a pinned tensor on the host for faster async d2h transfer
+                # speeds.
+                generated_tokens_host = Buffer(
+                    shape=generated_tokens_device.shape,
+                    dtype=generated_tokens_device.dtype,
+                    device=device0,
+                    pinned=True,
                 )
+                generated_tokens_host.disable_auto_sync()
+                generated_tokens_host.inplace_copy_from(generated_tokens_device)
+                # Record an event associated with the buffer to track the
+                # completion of the d2h copy.
+                # This will ensure that the subsequent call to `to_numpy()` will
+                # block until the d2h copy is complete, and no more.
+                generated_tokens_host.mark_as_ready()
+
+        if self._prev_batch is not None:
+            outputs: PipelineOutputsDict[TextGenerationOutput] = (
+                self._prev_batch.sync_and_process_outputs()
             )
-            with Tracer(f"prepare_next_token_inputs_{i}"):
-                curr_step_inputs = (
-                    self._pipeline_model.prepare_next_token_inputs(
-                        new_tokens, curr_step_inputs
-                    )
-                )
 
-        # Return early if the batch is empty.
-        if len(flat_batch) == 0:
-            return {}
+            self._prev_batch = None
+        else:
+            # Empty outputs as there is no previous batch.
+            outputs = {}
 
-        # Do the copy to host for each token generated.
-        with Tracer("D2H generated_tokens"):
-            generated_tokens_device = sampling_processor.generated_tokens
-            # Allocate a pinned tensor on the host for faster async d2h transfer
-            # speeds. If the model is on host, then fall back to normal pageable
-            # memory.
-            generated_tokens_host = Buffer(
-                shape=generated_tokens_device.shape,
-                dtype=generated_tokens_device.dtype,
-                device=device0,
-                pinned=pinned,
+        for context in inputs.flat_batch:
+            context.update_with_future_token()
+
+        # Commit the new KV blocks into the prefix cache, ignoring the final
+        # placeholder future token.
+        self._kv_manager.step(inputs.batches)
+
+        if inputs:
+            curr_batch = AsyncBatch(
+                inputs=inputs,
+                generated_tokens_device=generated_tokens_device,
+                generated_tokens_host=generated_tokens_host,
             )
-            generated_tokens_host.inplace_copy_from(generated_tokens_device)
-            # We assume that the call to `.to_numpy()` will insert a device
-            # synchronize to guarantee that the async d2h transfer is done.
-            # However, if this API changes we will have to add an explicit
-            # device0.synchronize() here.
-            generated_tokens_np = generated_tokens_host.to_numpy()
+            self._prev_batch = curr_batch
 
-        # Update the context object.
-        res = update_context_and_prepare_responses(
-            generated_tokens_np,
-            flat_batch,
-            num_steps,
-        )
-
-        # Update the cache lengths in our kv_cache manager.
-        # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(flat_batch)
-
-        return res
+        return outputs
 
     def release(self, request_id: RequestID) -> None:
-        """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        """Mark the context as complete, releasing the cache slot from the KV manager.
+
+        Note: KV cache lifecycle is now managed by the scheduler. This method
+        is kept for interface compatibility but is a no-op for regular pipelines.
+        """
+        # KV cache release is handled by the scheduler via batch_constructor
+        pass

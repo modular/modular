@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ from testing import TestSuite
 
 fn run_func[
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
@@ -49,11 +49,11 @@ fn scalb_fn(val: SIMD) -> type_of(val):
 
 
 fn gcd_fn(val: SIMD) -> type_of(val):
-    return gcd(Int(val), Int(val))
+    return type_of(val)(gcd(Int(val), Int(val)))
 
 
 fn lcm_fn(val: SIMD) -> type_of(val):
-    return lcm(Int(val), Int(val))
+    return type_of(val)(lcm(Int(val), Int(val)))
 
 
 fn sqrt_fn(val: SIMD) -> type_of(val):
@@ -93,7 +93,7 @@ def test_math():
 
         @parameter
         fn test[
-            *kernel_fns: fn[dtype: DType, width: Int] (
+            *kernel_fns: fn[dtype: DType, width: Int](
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:

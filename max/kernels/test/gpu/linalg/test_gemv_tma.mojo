@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -138,12 +138,9 @@ fn gemv_tma_kernel[
         b_size * Int(NUM_PIPELINE_STAGES),
     )
 
-    var tma_mbar_ptr = (
-        b_smem_base + b_size * Int(NUM_PIPELINE_STAGES)
-    ).bitcast[SharedMemBarrier]()
-    var tma_mbar = UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ](tma_mbar_ptr)
+    var tma_mbar = (b_smem_base + b_size * Int(NUM_PIPELINE_STAGES)).bitcast[
+        SharedMemBarrier
+    ]()
 
     # Initialize dot products for all rows before column processing.
     var dot_products = InlineArray[Scalar[accum_type], Int(ROWS_PER_WARP)](
@@ -204,8 +201,12 @@ fn gemv_tma_kernel[
         tma_mbar[stage].wait(phase)
 
         # Process current buffer.
-        var current_a_tile = a_smem.next_unsafe(Int(stage))[]
-        var current_b_tile = b_smem.next_unsafe(Int(stage))[]
+        var current_a_tile = a_smem.next_unsafe(
+            a_smem.linear_uint_type(Int(stage))
+        )[]
+        var current_b_tile = b_smem.next_unsafe(
+            b_smem.linear_uint_type(Int(stage))
+        )[]
 
         for k_idx in range(0, current_block_size, WARP_SIZE):
             var col_idx = k_idx + Int(lane_id())
@@ -262,9 +263,9 @@ def gemv_tma[
     var b = from_ndbuffer_row_major(b_device_nd)
     var c = from_ndbuffer_row_major(c_device_nd)
 
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 1
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 1
 
     var tma_desc_a = create_tma_descriptor[dtype, 2](
         a_device,
@@ -311,8 +312,10 @@ def gemv_tma[
         UInt(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
-        shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        shared_mem_bytes=smem_use,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -423,9 +426,11 @@ def test_gemv_tma[
             run_func(ctx)
         ctx.synchronize()
 
-        var nstime = ctx.execution_time[run_func](num_runs) / num_runs
+        var nstime = Float64(ctx.execution_time[run_func](num_runs)) / Float64(
+            num_runs
+        )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         # Round TFLOPS to two decimal places for cleaner output.
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 3)

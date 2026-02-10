@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,11 +31,18 @@ from max.pipelines.core import TextContext
 from ..speculative_config import SpeculativeMethod
 from .accepted_hidden_states_extractor import (
     accepted_hidden_states_extractor,
+    call_per_device_graph,
     compute_extractor_inputs,
+    compute_per_device_extractor_inputs,
 )
 from .base import SpeculativeDecodingPipelineBase
 from .eagle import EAGLESpeculativeDecodingPipeline
-from .hidden_states_filter import compute_filter_indices, filter_hidden_states
+from .hidden_states_filter import (
+    compute_filter_indices,
+    compute_local_active_indices,
+    compute_per_device_filter_indices,
+    filter_hidden_states,
+)
 from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger
 from .standalone import StandaloneSpeculativeDecodingPipeline
 
@@ -49,8 +56,12 @@ __all__ = [
     "SpeculativeDecodingPipelineBase",
     "StandaloneSpeculativeDecodingPipeline",
     "accepted_hidden_states_extractor",
+    "call_per_device_graph",
     "compute_extractor_inputs",
     "compute_filter_indices",
+    "compute_local_active_indices",
+    "compute_per_device_extractor_inputs",
+    "compute_per_device_filter_indices",
     "filter_hidden_states",
     "ragged_token_merger",
 ]

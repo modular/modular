@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,7 +34,7 @@ Suggested solutions:
 1. Reduce --device-memory-utilization to a smaller value
 2. Reduce batch size with --max-batch-size parameter
 3. Reduce sequence length with --max-length parameter
-4. Reduce prefill chunk size with --prefill-chunk-size parameter
+4. Reduce max batch input tokens with --max-batch-input-tokens parameter
 """)
 
 

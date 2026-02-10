@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -74,7 +74,7 @@ fn test_gather(ctx: DeviceContext) raises:
                 indices_host, indices_runtime
             )
             for i in range(num_indices):
-                indices_tensor[i] = i // 2
+                indices_tensor[i] = Scalar[indices_type](i // 2)
             indices_tensor[0] = -1
             indices_tensor[1] = -num_rows
 

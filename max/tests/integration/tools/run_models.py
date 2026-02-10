@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,12 +32,7 @@ from create_pipelines import (
 from max import driver, pipelines
 from max.interfaces import PipelineTask
 from max.pipelines.lib.hf_utils import HuggingFaceRepo
-from test_common import (
-    evaluate,
-    evaluate_embeddings,
-    torch_utils,
-    vllm_utils,
-)
+from test_common import evaluate, evaluate_embeddings, torch_utils, vllm_utils
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
 
@@ -203,11 +198,12 @@ def run_max_model(
     num_steps: int,
     evaluation_batch_size: int | list[int],
     reference: list[ModelOutput] | None,
+    generate_logprobs: bool = False,
 ) -> Any:
     if task == PipelineTask.TEXT_GENERATION:
         assert isinstance(
             max_pipeline_and_tokenizer.pipeline,
-            pipelines.TextGenerationPipeline,
+            pipelines.TextGenerationPipelineInterface,
         )
         results = evaluate.run_model(
             max_pipeline_and_tokenizer.pipeline,
@@ -217,6 +213,7 @@ def run_max_model(
             print_outputs=True,
             batch_size=evaluation_batch_size,
             reference=reference,
+            generate_logprobs=generate_logprobs,
         )
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         assert isinstance(
@@ -260,6 +257,7 @@ def run_torch_model(
     device: torch.device,
     inputs: list[Any],
     num_steps: int,
+    generate_logprobs: bool = False,
 ) -> Any:
     if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
         results = pipeline_oracle.run_torch_text_generation(
@@ -267,6 +265,7 @@ def run_torch_model(
             device=device,
             num_steps=num_steps,
             inputs=inputs,
+            generate_logprobs=generate_logprobs,
         )
     elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
         # Get pool_embeddings from oracle config if it has config_params (GenericOracle)
@@ -314,6 +313,7 @@ def run_vllm_model(
             encoding_name=vllm_pipeline.encoding,
             trust_remote_code=vllm_pipeline.trust_remote_code,
             max_batch_size=max_batch_size,
+            tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
         )
     else:
         raise NotImplementedError(

@@ -1,5 +1,5 @@
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 
 # Base Configuration for All Benchmarks
 # This is the root configuration that contains parameters common to all benchmark types.
-# It is inherited by serving_config.yaml and throughput_config.yaml.
+# It is inherited by serving_config.yaml.
 
 # Configuration metadata
 name: "Base Benchmark Configuration"

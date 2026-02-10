@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,9 +38,13 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flare_mla_decode_ragged
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flare_mla_decode_ragged
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
 
 LINE = "=" * 80
 
@@ -158,6 +162,7 @@ def bench_flashinfer_trtllm(
     model_config: Config,
     q_len_per_request: int = 1,
     enable_pdl: bool | None = None,
+    no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     """Benchmark FlashInfer MLA decode with paged KV cache.
 
@@ -269,6 +274,21 @@ def bench_flashinfer_trtllm(
     for _ in range(10):
         run_kernel()
 
+    # Calculate memory throughput
+    total_bytes = calculate_mla_memory_bytes(
+        batch_size,
+        q_len_per_request,
+        cache_len,
+        dtype,
+        model_config=model_config,
+    )
+
+    # If running under external profilers (ncu/nsys), skip kineto to avoid assertion failures.
+    if no_kineto:
+        run_kernel()
+        torch.cuda.synchronize()
+        return 1.0, total_bytes
+
     # Benchmark with CUPTI warmup for CUTLASS kernels
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
@@ -278,15 +298,6 @@ def bench_flashinfer_trtllm(
         flush_l2=True,
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
-
-    # Calculate memory throughput
-    total_bytes = calculate_mla_memory_bytes(
-        batch_size,
-        q_len_per_request,
-        cache_len,
-        dtype,
-        model_config=model_config,
-    )
 
     return time_s, total_bytes
 
@@ -298,6 +309,7 @@ def bench_max(
     dtype: torch.dtype,
     model_config: Config,
     q_len_per_request: int = 1,
+    no_kineto: bool = False,
 ) -> tuple[float, int]:
     """Benchmark MAX MLA decode with paged KV cache.
 
@@ -493,6 +505,21 @@ def bench_max(
     for _ in range(10):
         run_kernel()
 
+    # Calculate memory throughput
+    total_bytes = calculate_mla_memory_bytes(
+        batch_size,
+        q_len_per_request,
+        cache_len,
+        dtype,
+        model_config=model_config,
+    )
+
+    # If running under external profilers (ncu/nsys), skip kineto to avoid assertion failures.
+    if no_kineto:
+        run_kernel()
+        torch.cuda.synchronize()
+        return 1.0, total_bytes
+
     # Benchmark with CUPTI warmup
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
@@ -502,15 +529,6 @@ def bench_max(
         flush_l2=True,
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
-
-    # Calculate memory throughput
-    total_bytes = calculate_mla_memory_bytes(
-        batch_size,
-        q_len_per_request,
-        cache_len,
-        dtype,
-        model_config=model_config,
-    )
 
     return time_s, total_bytes
 
@@ -524,6 +542,7 @@ def bench_mla_decode(
     q_len_per_request: int = 1,
     backend: str = "trtllm-gen",
     enable_pdl: bool | None = None,
+    no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     """Run all MLA decode benchmarks and return results.
 
@@ -555,6 +574,7 @@ def bench_mla_decode(
                     model_config=model_config,
                     q_len_per_request=q_len_per_request,
                     enable_pdl=enable_pdl,
+                    no_kineto=no_kineto,
                 )
             except Exception as e:
                 print(f"FlashInfer benchmark failed: {e}")
@@ -572,6 +592,7 @@ def bench_mla_decode(
                 dtype=dtype,
                 model_config=model_config,
                 q_len_per_request=q_len_per_request,
+                no_kineto=no_kineto,
             )
         except Exception as e:
             print(f"MAX benchmark failed: {e}")
@@ -657,6 +678,11 @@ if __name__ == "__main__":
         help="Engine",
     )
     parser.add_argument(
+        "--no-kineto",
+        action="store_true",
+        help="Skip kineto timing (for ncu/nsys).",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -685,6 +711,7 @@ if __name__ == "__main__":
         q_len_per_request=args.q_len_per_request,
         backend="trtllm-gen",
         enable_pdl=True,
+        no_kineto=args.no_kineto,
     )
 
     met_sec, bytes = result if result else [0, 0]

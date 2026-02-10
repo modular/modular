@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,9 +18,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from max import nn
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn import legacy as nn
 
 
 class MLPBlock(nn.Module):

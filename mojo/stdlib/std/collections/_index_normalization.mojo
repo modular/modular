@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -65,7 +65,7 @@ fn normalize_index[
         return i
     else:
         var mlir_index = index(idx)._mlir_value
-        var i = UInt(mlir_value=mlir_index)
+        var i = UInt(Int(mlir_value=mlir_index))
         if Int(mlir_value=mlir_index) < 0:
             i += length
         # Checking the bounds after the normalization saves a comparison

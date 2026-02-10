@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -214,7 +214,7 @@ fn kernel_5[
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
@@ -222,7 +222,9 @@ fn kernel_5[
 
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
-        mma_mbar[0].init(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
+        mma_mbar[0].init(
+            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+        )
 
     cluster_sync()
 
@@ -247,11 +249,11 @@ fn kernel_5[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
     @parameter
     for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -281,7 +283,7 @@ fn kernel_5[
     for i in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
-                tma_mbar[0].expect_bytes(expected_bytes)
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
                 a_tma_rows
@@ -297,8 +299,8 @@ fn kernel_5[
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
-                __comptime_assert ((a_offset * size_of[a_type]()) % 128) == 0
-                __comptime_assert ((b_offset * size_of[b_type]()) % 128) == 0
+                comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
+                comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
@@ -313,14 +315,14 @@ fn kernel_5[
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(a_gmem_slice_coord)),
+                    (UInt(i * BK + k), a_gmem_slice_coord),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[cta_group](
                     b_smem_slice,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(b_gmem_slice_coord)),
+                    (UInt(i * BK + k), b_gmem_slice_coord),
                     b_multicast_mask,
                 )
 
@@ -459,13 +461,13 @@ fn kernel_5[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
+        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
     cluster_sync()
 
@@ -496,7 +498,7 @@ fn blackwell_kernel_5[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -507,13 +509,15 @@ fn blackwell_kernel_5[
     comptime MMA_K = umma_shape[2]
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], 64), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), 64
-        ) if transpose_b else Index(64, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), 64
+        ) if transpose_b else Index(
+            64, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -558,7 +562,9 @@ fn blackwell_kernel_5[
         ),
         block_dim=(128),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
 
@@ -695,9 +701,11 @@ def test_blackwell_kernel_5[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")

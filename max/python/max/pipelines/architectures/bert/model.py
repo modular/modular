@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,10 +24,9 @@ from collections.abc import Sequence
 import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
@@ -86,10 +85,6 @@ class BertPipelineModel(PipelineModel[TextContext]):
             return_logits,
         )
         self.model = self.load_model(session)
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return BertModelConfig.get_num_layers(huggingface_config)
 
     @classmethod
     def calculate_max_seq_len(
@@ -164,13 +159,8 @@ class BertPipelineModel(PipelineModel[TextContext]):
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
-        graph = build_graph(
-            self.pipeline_config,
-            state_dict,
-            self.huggingface_config,
-            self.dtype,
-            DeviceRef.from_device(self.devices[0]),
-        )
+        config = BertModelConfig.initialize(self.pipeline_config)
+        graph = build_graph(config, state_dict)
         after_build = time.perf_counter()
 
         logger.info(f"Building graph took {after_build - before:.6f} seconds")

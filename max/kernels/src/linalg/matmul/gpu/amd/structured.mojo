@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,6 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of
-from collections import OptionalReg
 from gpu import WARP_SIZE
 from gpu.compute.mma import mma
 from itertools import product
@@ -24,14 +23,13 @@ from layout.int_tuple import product as prod
 from layout.layout import blocked_product
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg, TensorCore
-from linalg.structuring import SMemTileType, RegTileType
+from linalg.structuring import SMemTile, RegTile
 from sys._assembly import inlined_assembly
 from utils import IndexList, StaticTuple
 from gpu.intrinsics import load_acquire, store_release
 
 
-@register_passable("trivial")
-trait Enum:
+trait Enum(TrivialRegisterPassable):
     @always_inline
     fn value(self) -> Int:
         ...
@@ -54,7 +52,6 @@ trait Enum:
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct ThreadRole(Enum, Stringable, Writable):
     var _value: Int
 
@@ -92,12 +89,13 @@ struct ThreadRole(Enum, Stringable, Writable):
 fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
     constrained[layout.rank() == 2]()
     return blocked_product(
-        layout, Layout.row_major(1, pipeline_stages), coalesce_output=True
+        materialize[layout](),
+        Layout.row_major(1, pipeline_stages),
+        coalesce_output=True,
     )
 
 
 # TODO: replace with Fabio's implementation
-@register_passable("trivial")
 struct SMemBuffer[
     dtype: DType,
     layout: Layout,
@@ -106,20 +104,20 @@ struct SMemBuffer[
     BN: Int,
     WM: Int,
     WN: Int,
-]:
+](TrivialRegisterPassable):
 
     """Manages shared memory and returns 2D tile slices of the buffer."""
 
-    comptime SMemTileType = SMemTileType[
+    comptime SMemTile = SMemTile[
         Self.dtype,
         pipeline_layout[Self.layout, Self.pipeline_stages](),
         alignment=128,
     ]
 
-    comptime BlockTileType = Self.SMemTileType.TileType[Self.BM, Self.BN]
+    comptime BlockTileType = Self.SMemTile.TileType[Self.BM, Self.BN]
     comptime WarpTileType = Self.BlockTileType.TileType[Self.WM, Self.WN]
 
-    var buffer: Self.SMemTileType
+    var buffer: Self.SMemTile
 
     @always_inline
     fn __init__(out self):
@@ -142,23 +140,22 @@ struct SMemBuffer[
             "BM and BN must be a multiple of WM and WN",
         ]()
 
-        self.buffer = Self.SMemTileType.stack_allocation()
+        self.buffer = Self.SMemTile.stack_allocation()
 
     @always_inline
     fn get_tile(self, stage: Int) -> Self.BlockTileType:
         return self.buffer.tile[Self.BM, Self.BN](0, stage)
 
 
-@register_passable("trivial")
-struct AMDSharedMemoryBarrier:
+struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
     var __repr: Int32
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
         self.__repr = 0
 
     @always_inline
-    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+    fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -167,7 +164,7 @@ struct AMDSharedMemoryBarrier:
         return load_acquire(bar)
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -176,23 +173,22 @@ struct AMDSharedMemoryBarrier:
         store_release(bar, load_acquire(bar) + 1)
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
             ]()
 
 
-@register_passable("trivial")
-struct AMDWarpSharedMemoryBarrier[size: Int]:
+struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
         self.__repr = StaticTuple[Int32, Self.size](fill=0)
 
     @always_inline
-    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+    fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var sum: Int32 = 0
 
         @parameter
@@ -201,7 +197,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int]:
         return sum
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -210,20 +206,19 @@ struct AMDWarpSharedMemoryBarrier[size: Int]:
         bar[warp_id] += 1
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
             ]()
 
 
-@register_passable("trivial")
 struct MMAConfig[
     InType: DType,
     OutType: DType,
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
-]:
+](TrivialRegisterPassable):
     comptime mma = TensorCore[
         Self.OutType,
         Self.InType,
@@ -253,16 +248,15 @@ struct MMAConfig[
         return Self.mma_shape[2] * Self.k_group_size_b
 
 
-@register_passable("trivial")
 struct AmdTileOperator[
     InType: DType,
     OutType: DType,
     warp_block_layout_a: Layout,
     warp_block_layout_b: Layout,
     mma_shape: IndexList[3],
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     transpose_b: Bool = True,
-]:
+](TrivialRegisterPassable):
     """Manages tensor core operations for matrix multiplication on AMD GPUs.
 
     This operator handles loading matrix fragments from shared memory to registers
@@ -334,15 +328,15 @@ struct AmdTileOperator[
         _k_tiles_per_simd: Int,
     ] = Layout.row_major(_k_tiles_per_simd * num_mmas, Self.simd_width)
 
-    comptime ARegTileType = RegTileType[
+    comptime ARegTile = RegTile[
         Self.InType, Self._in_layout[Self.num_m_mmas, Self._k_tiles_per_simd_a]
     ]
 
-    comptime BRegTileType = RegTileType[
+    comptime BRegTile = RegTile[
         Self.InType, Self._in_layout[Self.num_n_mmas, Self._k_tiles_per_simd_b]
     ]
 
-    comptime OutRegTileType = LayoutTensor[
+    comptime OutRegTile = LayoutTensor[
         Self.OutType,
         Self._out_layout,
         MutAnyOrigin,
@@ -350,14 +344,14 @@ struct AmdTileOperator[
         address_space = AddressSpace.LOCAL,
     ]
 
-    comptime OutRegTileFragmentType = Self.OutRegTileType.TileType[
+    comptime OutRegTileFragmentType = Self.OutRegTile.TileType[
         Self._out_frag_rows, Self._out_frag_cols
     ]
 
     # Register storage for matrix data
-    var _a_reg_tile: Self.ARegTileType
-    var _b_reg_tile: Self.BRegTileType
-    var out_reg_tile: Self.OutRegTileType
+    var _a_reg_tile: Self.ARegTile
+    var _b_reg_tile: Self.BRegTile
+    var out_reg_tile: Self.OutRegTile
 
     @always_inline
     fn __init__(out self):
@@ -380,16 +374,16 @@ struct AmdTileOperator[
             "k_tiles_per_simd must be equal for A and B",
         ]()
 
-        self._a_reg_tile = Self.ARegTileType.stack_allocation()
-        self._b_reg_tile = Self.BRegTileType.stack_allocation()
+        self._a_reg_tile = Self.ARegTile.stack_allocation()
+        self._b_reg_tile = Self.BRegTile.stack_allocation()
 
         # Initialize output accumulator to zero
-        self.out_reg_tile = Self.OutRegTileType.stack_allocation().fill(0)
+        self.out_reg_tile = Self.OutRegTile.stack_allocation().fill(0)
 
     @always_inline
     fn a_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.ARegTileType.TileType[Self.num_m_mmas, Self.simd_width]:
+    ) -> Self.ARegTile.TileType[Self.num_m_mmas, Self.simd_width]:
         """Get A register tile for a specific K tile."""
         return self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
             k_tile_idx, 0
@@ -398,7 +392,7 @@ struct AmdTileOperator[
     @always_inline
     fn b_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.BRegTileType.TileType[Self.num_n_mmas, Self.simd_width]:
+    ) -> Self.BRegTile.TileType[Self.num_n_mmas, Self.simd_width]:
         """Get B register tile for a specific K tile."""
         return self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
             k_tile_idx, 0

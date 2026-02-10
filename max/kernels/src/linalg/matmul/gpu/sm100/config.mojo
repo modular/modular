@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ This module re-exports configuration types from sm100_structured for backward
 compatibility. New code should import directly from sm100_structured.config.
 """
 
-from ..sm100_structured.config import (
+from ..sm100_structured.structured_kernels.config import (
     MatmulConfig,
     BlockScaledMatmulConfig,
     choose_config,

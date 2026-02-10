@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,57 +17,41 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import rsqrt
 
 from itertools import product
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout.math import mean, variance
 from nn.normalization import *
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 
-comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-
 
 fn run_layer_norm_cpu[
     dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
-    comptime layout = Layout.row_major[rank]()
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
-    var beta_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var input_ptr = alloc[Scalar[dtype]](rows * cols)
+    var output_ptr = alloc[Scalar[dtype]](rows * cols)
+    var gamma_ptr = alloc[Scalar[dtype]](cols)
+    var beta_ptr = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
         input_ptr[i] = val
 
     for i in range(cols):
-        gamma_ptr[i] = ((i + cols) / cols).cast[dtype]()
-        beta_ptr[i] = (i / cols).cast[dtype]()
+        gamma_ptr[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+        beta_ptr[i] = (Float64(i) / Float64(cols)).cast[dtype]()
 
     var param_shape = IndexList[1](cols)
 
-    var input_buf = LayoutTensor[dtype, layout](
-        input_ptr, RuntimeLayout[layout].row_major(shape)
-    )
-    var output_buf = LayoutTensor[dtype, layout](
-        output_ptr, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_ptr, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
-    var beta = LayoutTensor[dtype, layout_1d](
-        beta_ptr, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var input_buf = TileTensor(input_ptr, row_major(Coord(shape)))
+    var output_buf = TileTensor(output_ptr, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_ptr, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](0.0001)
 
     @__copy_capture(input_buf)
@@ -76,11 +60,7 @@ fn run_layer_norm_cpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = input_buf.runtime_layout(
-            RuntimeTuple[fill_like(input_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = input_buf.layout(Coord(coords))
         return input_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
@@ -89,9 +69,7 @@ fn run_layer_norm_cpu[
     fn gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.runtime_layout(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](IndexList[1](coords[0]))
-        )
+        var idx = gamma.layout(Idx(coords[0]))
         return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(output_buf)
@@ -100,11 +78,7 @@ fn run_layer_norm_cpu[
     fn output_fn[
         width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-        var idx = output_buf.runtime_layout(
-            RuntimeTuple[fill_like(output_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = output_buf.layout(Coord(coords))
         output_buf.ptr.store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -112,9 +86,9 @@ fn run_layer_norm_cpu[
     layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
 
     for r, c in product(range(rows), range(cols)):
-        var vec = LayoutTensor[dtype, layout_1d](
+        var vec = TileTensor(
             input_ptr + r * cols,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+            row_major(Idx(cols)),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)

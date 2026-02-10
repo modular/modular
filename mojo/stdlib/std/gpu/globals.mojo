@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,7 +39,7 @@ from .host.info import GPUInfo
 # ===-----------------------------------------------------------------------===#
 
 
-comptime WARP_SIZE = _resolve_warp_size()
+comptime WARP_SIZE: Int = _resolve_warp_size()
 """The number of threads that execute in lockstep within a warp on the GPU.
 
 This constant represents the hardware warp size, which is the number of threads that execute
@@ -78,7 +78,7 @@ fn _resolve_warp_size() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-comptime WARPGROUP_SIZE = _resolve_warpgroup_size()
+comptime WARPGROUP_SIZE: Int = _resolve_warpgroup_size()
 """The number of threads in a warpgroup on Nvidia GPUs.
 
 On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps

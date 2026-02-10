@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -85,7 +85,7 @@ fn test_softmax_2pass():
     var in_stack = InlineArray[Scalar[type], sz](uninitialized=True)
     var in_buf = LayoutTensor[type, Layout.row_major(sz)](in_stack)
     for i in range(sz):
-        in_buf[i] = i
+        in_buf[i] = Float32(i)
     var out_stack = InlineArray[Scalar[type], sz](uninitialized=True)
     var out_buf = LayoutTensor[type, Layout.row_major(sz)](out_stack).fill(0)
 

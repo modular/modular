@@ -36,7 +36,7 @@ from gpu.memory import (
 )
 from math import recip
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout.layout_tensor import LayoutTensorIter
 from gpu.host import DeviceContext, FuncAttribute
 from utils.static_tuple import StaticTuple
@@ -56,7 +56,7 @@ from linalg.fp4_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.fp4_quantization import (
-    quantize_dynamic_scaled_fp4,
+    quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
 )
 from layout._fillers import random
@@ -146,8 +146,8 @@ def test_nvfp4_quantization[
     )
 
     var scales_total = (
-        Int(ceildiv(m.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(n.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(n.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -193,7 +193,7 @@ def test_nvfp4_quantization[
         tensor_sf,
     )
 
-    quantize_dynamic_scaled_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+    quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
         output_tensor_ref,
         scales_tensor_ref,

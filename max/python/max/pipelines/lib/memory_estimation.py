@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,22 +17,23 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
-from max.driver import Device, is_virtual_device_mode
-from max.dtype import DType
-from max.graph import DeviceRef
+from max.driver import Device, is_virtual_device_mode, load_devices
+from max.kv_cache import estimate_kv_cache_size, infer_optimal_batch_size
+from max.nn.legacy.kv_cache import compute_max_seq_len_fitting_in_cache
 from max.support.human_readable_formatter import to_human_readable_bytes
-from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
-from .interfaces import KVCacheMixin, PipelineModel
-from .kv_cache_config import KVCacheConfig
+from .interfaces import ArchConfig, ArchConfigWithKVCache
 from .model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
+
+_MAX_DEFAULT_BATCH_SIZE = 4096
+_MIN_DEFAULT_BATCH_SIZE = 1
 
 
 class MemoryEstimator:
@@ -49,83 +50,33 @@ class MemoryEstimator:
             raise
 
     @classmethod
-    def model_weights_size(
-        cls,
-        pipeline_model: type[PipelineModel[Any]],
-        pipeline_config: PipelineConfig,
-    ) -> int:
-        """Calculate the size of the model weights in bytes.
-
-        Args:
-            pipeline_model: The model class.
-            pipeline_config: The pipeline configuration.
-
-        Returns:
-            Model weights size in bytes.
-        """
-
-        return pipeline_model.estimate_weights_size(pipeline_config)
-
-    @classmethod
-    def activation_memory_size(
-        cls,
-        pipeline_model: type[PipelineModel[Any]],
-        pipeline_config: PipelineConfig,
-        model_config: MAXModelConfig,
-    ) -> int:
-        """
-        Estimate the activation memory requirement for the model.
-
-        Args:
-            pipeline_model: The model class.
-            pipeline_config: The pipeline configuration.
-            model_config: The model configuration.
-
-        Returns:
-            Activation memory size in bytes.
-        """
-        return pipeline_model.estimate_activation_memory(
-            pipeline_config, model_config.huggingface_config
-        )
-
-    @classmethod
     def static_memory_size(
-        cls,
-        pipeline_model: type[PipelineModel[Any]],
-        pipeline_config: PipelineConfig,
-        model_config: MAXModelConfig,
+        cls, model_weights_size: int, activation_memory_size: int
     ) -> int:
-        """
-        Calculate the static memory usage: model weights plus activations.
+        """Calculates static memory usage: model weights plus activations.
 
         Args:
-            pipeline_model: The model class.
-            pipeline_config: The pipeline configuration.
-            model_config: The model configuration.
+            model_weights_size: Size of model weights.
+            activation_memory_size: Size of activation memory.
 
         Returns:
             Total static memory usage in bytes.
         """
-        return cls.model_weights_size(
-            pipeline_model, pipeline_config
-        ) + cls.activation_memory_size(
-            pipeline_model, pipeline_config, model_config
-        )
+        return model_weights_size + activation_memory_size
 
     @classmethod
     def available_kv_cache_memory(
         cls,
-        pipeline_model: type[PipelineModel[Any]],
-        pipeline_config: PipelineConfig,
+        model_weights_size: int,
+        activation_memory_size: int,
         model_config: MAXModelConfig,
         devices: list[Device],
     ) -> int:
-        """
-        Estimate the available KV cache memory after accounting for model weights and activations.
+        """Estimates available KV cache memory after model weights and activations.
 
         Args:
-            pipeline_model: The model class.
-            pipeline_config: The pipeline configuration.
+            model_weights_size: Size of model weights.
+            activation_memory_size: Size of activation memory.
             model_config: The model configuration.
             devices: The list of devices on which the model will run.
 
@@ -137,25 +88,23 @@ class MemoryEstimator:
                 cls.free_memory(devices)
                 * model_config.kv_cache.device_memory_utilization
             )
-            - cls.static_memory_size(
-                pipeline_model, pipeline_config, model_config
-            )
+            - cls.static_memory_size(model_weights_size, activation_memory_size)
         )
 
     @classmethod
     def max_supported_sequence_length(
         cls,
-        pipeline_model: type[PipelineModel[Any]],
-        pipeline_config: PipelineConfig,
+        model_weights_size: int,
+        activation_memory_size: int,
         model_config: MAXModelConfig,
         devices: list[Device],
+        arch_config: ArchConfig,
     ) -> int | None:
-        """Compute the hard upper bound on tokens for a single request.
+        """Computes the hard upper bound on tokens for a single request.
 
         Mirrors the paged KV cache constraint: per replica, a request cannot
         exceed total pages per device times page size.
         """
-
         # In virtual device mode (cross-compilation), skip memory-based constraints
         # since we're only compiling and not actually running the model.
         if is_virtual_device_mode():
@@ -171,138 +120,35 @@ class MemoryEstimator:
                 "quantization_encoding must be provided in model_config"
             )
 
-        # Ensure pipeline_model implements KVCacheMixin
-        if not issubclass(pipeline_model, KVCacheMixin):
+        if not isinstance(arch_config, ArchConfigWithKVCache):
             return None
 
-        kv_cache_model = cast(type[KVCacheMixin], pipeline_model)
-
-        params = kv_cache_model.get_kv_params(
-            huggingface_config=model_config.huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in devices],
-            kv_cache_config=model_config.kv_cache,
-            cache_dtype=model_config.quantization_encoding.cache_dtype,
-        )
+        arch_config = cast(ArchConfigWithKVCache, arch_config)
+        params = arch_config.get_kv_params()
 
         kvcache_mem = cls.available_kv_cache_memory(
-            pipeline_model, pipeline_config, model_config, devices
+            model_weights_size, activation_memory_size, model_config, devices
         )
-        return params.compute_max_seq_len_fitting_in_cache(
-            available_cache_memory=kvcache_mem
+        return compute_max_seq_len_fitting_in_cache(
+            params=params,
+            available_cache_memory=kvcache_mem,
         )
 
     @classmethod
     def estimate_memory_footprint(
         cls,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[Any]],
         model_config: MAXModelConfig,
+        arch_config: ArchConfig,
         devices: list[Device],
+        model_weights_size: int,
+        activation_memory_size: int,
     ) -> None:
-        from max.pipelines.lib import KVCacheMixin
-
-        huggingface_config = model_config.huggingface_config
+        """Estimates memory footprint and validates max_length/max_batch_size fit."""
         is_draft_model = (
             pipeline_config.draft_model is not None
             and model_config is pipeline_config.draft_model
         )
-
-        # Skip KV cache estimation for models that don't use KV cache
-        # (e.g., Mamba models use state-space models instead)
-        if not issubclass(pipeline_model, KVCacheMixin):
-            # Check if this is a Mamba model with SSM cache
-            model_name = pipeline_model.__name__
-            if "Mamba" in model_name:
-                # Estimate SSM cache memory for Mamba models
-                try:
-                    free_memory = cls.free_memory(devices)
-                    model_weights_size = cls.model_weights_size(
-                        pipeline_model, pipeline_config
-                    )
-                    activation_memory_size = cls.activation_memory_size(
-                        pipeline_model, pipeline_config, model_config
-                    )
-                    static_memory_size = (
-                        model_weights_size + activation_memory_size
-                    )
-
-                    # Calculate SSM cache memory (per batch item)
-                    # SSM cache = (num_layers * batch_size * intermediate_size * d_state * dtype_size) * 2
-                    # The *2 accounts for conv_state and ssm_state
-                    batch_size = pipeline_config.max_batch_size or 1
-                    num_layers = huggingface_config.num_hidden_layers
-                    intermediate_size = huggingface_config.intermediate_size
-                    d_state = huggingface_config.state_size
-                    conv_kernel = huggingface_config.conv_kernel
-
-                    # Get dtype size - SSM cache uses the model's compute dtype
-                    # Map encoding to bytes per element
-                    encoding_to_bytes = {
-                        "float32": 4,
-                        "bfloat16": 2,
-                        "float16": 2,
-                        "q4_k": 4,  # Conservative estimate
-                        "q4_0": 4,
-                        "q6_k": 4,
-                        "float8_e4m3fn": 1,
-                    }
-                    encoding_str = (
-                        str(model_config.quantization_encoding.value)
-                        if model_config.quantization_encoding
-                        else "float32"
-                    )
-                    dtype_size = encoding_to_bytes.get(encoding_str, 4)
-
-                    # conv_state: (num_layers, batch, intermediate_size, conv_kernel)
-                    conv_state_size = (
-                        num_layers
-                        * batch_size
-                        * intermediate_size
-                        * conv_kernel
-                        * dtype_size
-                    )
-                    # ssm_state: (num_layers, batch, intermediate_size, d_state)
-                    ssm_state_size = (
-                        num_layers
-                        * batch_size
-                        * intermediate_size
-                        * d_state
-                        * dtype_size
-                    )
-                    # seqlen_offset: (1,) - negligible
-
-                    ssm_cache_memory = conv_state_size + ssm_state_size
-
-                    logger.info(
-                        f"Estimated SSM cache memory for {model_name}: "
-                        f"{to_human_readable_bytes(ssm_cache_memory)} "
-                        f"(batch_size={batch_size})"
-                    )
-
-                    model_config.kv_cache_config._available_cache_memory = (
-                        ssm_cache_memory
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not estimate SSM cache memory: {e}")
-                    model_config.kv_cache_config._available_cache_memory = 0
-            else:
-                logger.info(
-                    f"Skipping memory estimation for {model_name} "
-                    "(model does not use KV cache)"
-                )
-                # Set a dummy value for _available_cache_memory to satisfy config validation
-                model_config.kv_cache_config._available_cache_memory = 0
-
-            if not pipeline_config.max_batch_size:
-                pipeline_config.max_batch_size = 1
-            if not pipeline_config.max_length:
-                pipeline_config.max_length = (
-                    pipeline_model.calculate_max_seq_len(
-                        pipeline_config, huggingface_config=huggingface_config
-                    )
-                )
-            return
 
         # In virtual device mode (cross-compilation), skip memory estimation
         # since we're only compiling and not actually running the model.
@@ -315,11 +161,7 @@ class MemoryEstimator:
             if not pipeline_config.max_batch_size:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
-                pipeline_config.max_length = (
-                    pipeline_model.calculate_max_seq_len(
-                        pipeline_config, huggingface_config=huggingface_config
-                    )
-                )
+                pipeline_config.max_length = arch_config.get_max_seq_len()
             # Set a large available cache memory value since we're not actually
             # allocating memory during cross-compilation. Use 1TB as a reasonable
             # large value that should work for any model.
@@ -337,21 +179,8 @@ class MemoryEstimator:
             if not pipeline_config.max_batch_size:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
-                pipeline_config.max_length = (
-                    pipeline_model.calculate_max_seq_len(
-                        pipeline_config, huggingface_config=huggingface_config
-                    )
-                )
+                pipeline_config.max_length = arch_config.get_max_seq_len()
             return
-
-        model_weights_size = cls.model_weights_size(
-            pipeline_model, pipeline_config
-        )
-
-        # Get activation memory estimate from the model
-        activation_memory_size = cls.activation_memory_size(
-            pipeline_model, pipeline_config, model_config
-        )
 
         # Total static memory requirement (weights + activations)
         static_memory_size = model_weights_size + activation_memory_size
@@ -394,14 +223,9 @@ class MemoryEstimator:
                 "max_batch_size must be provided for draft model"
             )
             kv_cache_size = cls._calculate_kv_cache_size(
-                pipeline_model=pipeline_model,
-                pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache,
-                devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                arch_config=arch_config,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                huggingface_config=huggingface_config,
             )
 
             model_config.kv_cache._available_cache_memory = kv_cache_size
@@ -409,9 +233,7 @@ class MemoryEstimator:
             return  # Don't modify pipeline config values
 
         if not user_provided_max_length:
-            pipeline_config.max_length = pipeline_model.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            )
+            pipeline_config.max_length = arch_config.get_max_seq_len()
 
         if not model_config.quantization_encoding:
             raise ValueError(
@@ -420,31 +242,25 @@ class MemoryEstimator:
 
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = cls._infer_optimal_batch_size(
-                pipeline_config,
-                pipeline_model,
-                available_kv_cache_memory,
-                huggingface_config=huggingface_config,
-                devices=devices,
-                kv_cache_config=model_config.kv_cache,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                arch_config, available_kv_cache_memory, devices
             )
 
         assert pipeline_config.max_batch_size is not None
-        if pipeline_config.max_batch_size > pipeline_config.prefill_chunk_size:
+        if (
+            pipeline_config.max_batch_size
+            > pipeline_config.max_batch_input_tokens
+        ):
             logger.info(
-                f"max_batch_size of {pipeline_config.max_batch_size} cannot be larger than prefill_chunk_size of {pipeline_config.prefill_chunk_size}, overriding max_batch_size to {pipeline_config.prefill_chunk_size}"
+                f"max_batch_size of {pipeline_config.max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.max_batch_input_tokens}"
             )
-            pipeline_config.max_batch_size = pipeline_config.prefill_chunk_size
+            pipeline_config.max_batch_size = (
+                pipeline_config.max_batch_input_tokens
+            )
 
         actual_kv_cache_size = cls._calculate_kv_cache_size(
-            pipeline_model=pipeline_model,
-            pipeline_config=pipeline_config,
-            kv_cache_config=model_config.kv_cache,
-            devices=devices,
-            cache_dtype=model_config.quantization_encoding.cache_dtype,
+            arch_config=arch_config,
             max_batch_size=pipeline_config.max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
-            huggingface_config=huggingface_config,
         )
 
         model_config.kv_cache._available_cache_memory = actual_kv_cache_size
@@ -460,10 +276,9 @@ class MemoryEstimator:
                 _,
             ) = cls._find_valid_max_length(
                 pipeline_config,
-                pipeline_model,
+                arch_config,
                 available_kv_cache_memory,
                 user_provided_max_batch_size,
-                huggingface_config=huggingface_config,
                 devices=devices,
             )
 
@@ -476,14 +291,9 @@ class MemoryEstimator:
                 pipeline_config.max_length = 1
 
             actual_kv_cache_size = cls._calculate_kv_cache_size(
-                pipeline_model=pipeline_model,
-                pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache,
-                devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                arch_config=arch_config,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                huggingface_config=huggingface_config,
             )
             total_size = model_weights_size + actual_kv_cache_size
 
@@ -493,15 +303,13 @@ class MemoryEstimator:
             if int(total_size) > int(free_memory):
                 cls._raise_oom_error(
                     pipeline_config,
+                    arch_config,
                     user_provided_max_length,
                     user_provided_max_batch_size,
-                    pipeline_model,
                     total_size,
                     free_memory,
                     available_kv_cache_memory,
-                    model_weights_size,
-                    huggingface_config,
-                    devices=devices,
+                    devices,
                 )
 
             elif int(total_size) > int(vram_usage_limit_scale * free_memory):
@@ -513,10 +321,9 @@ class MemoryEstimator:
     def _find_valid_max_length(
         cls,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[Any]],
+        arch_config: ArchConfig,
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
-        huggingface_config: AutoConfig,
         devices: list[Device],
     ) -> tuple[bool, int, int]:
         """Binary search to find a valid max_length configuration.
@@ -547,24 +354,15 @@ class MemoryEstimator:
 
             if not user_provided_max_batch_size:
                 pipeline_config.max_batch_size = cls._infer_optimal_batch_size(
-                    pipeline_config,
-                    pipeline_model,
-                    available_kv_cache_memory,
-                    huggingface_config,
-                    devices=devices,
-                    kv_cache_config=model_config.kv_cache,
-                    cache_dtype=model_config.quantization_encoding.cache_dtype,
+                    arch_config, available_kv_cache_memory, devices
                 )
 
+            # Use max_seq_len_override for binary search since we're varying pipeline_config.max_length
             kv_cache_size = cls._calculate_kv_cache_size(
-                pipeline_model=pipeline_model,
-                pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache,
-                devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                arch_config=arch_config,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                huggingface_config=huggingface_config,
+                max_seq_len_override=inferred_max_length,
             )
 
             if lower > upper:
@@ -588,12 +386,10 @@ class MemoryEstimator:
     def _find_valid_batch_size(
         cls,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
-        huggingface_config: AutoConfig,
-        devices: list[Device],
+        arch_config: ArchConfig,
     ) -> tuple[bool, int]:
         """Binary search to find a valid batch size configuration.
 
@@ -611,26 +407,16 @@ class MemoryEstimator:
         inferred_max_batch_size = cast(int, pipeline_config.max_batch_size)
         lower = 1
         upper = cast(int, pipeline_config.max_batch_size)
-        model_config = pipeline_config.model
 
         while not found_valid_max_batch_size:
             inferred_max_batch_size = (lower + upper) // 2
             pipeline_config.max_batch_size = inferred_max_batch_size
 
-            if not model_config.quantization_encoding:
-                raise ValueError(
-                    "quantization_encoding must be provided in pipeline_config"
-                )
-
             kv_cache_size = cls._calculate_kv_cache_size(
-                pipeline_model=pipeline_model,
-                pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache,
-                devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                arch_config=arch_config,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                huggingface_config=huggingface_config,
+                max_seq_len_override=original_max_length,
             )
 
             if lower > upper:
@@ -650,66 +436,69 @@ class MemoryEstimator:
     @classmethod
     def _calculate_kv_cache_size(
         cls,
-        pipeline_model: type[PipelineModel[Any]],
-        pipeline_config: PipelineConfig,
-        kv_cache_config: KVCacheConfig,
-        devices: list[Device],
-        cache_dtype: DType,
+        arch_config: ArchConfig,
         max_batch_size: int,
         available_kv_cache_memory: int,
-        huggingface_config: AutoConfig,
+        max_seq_len_override: int | None = None,
     ) -> int:
-        """Calculate the KV cache size for the current configuration."""
-        if issubclass(pipeline_model, KVCacheMixin):
-            params = pipeline_model.get_kv_params(
-                huggingface_config=huggingface_config,
-                pipeline_config=pipeline_config,
-                devices=[DeviceRef.from_device(d) for d in devices],
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
+        """Calculate the KV cache size for the current configuration.
+
+        Args:
+            arch_config: Architecture config that potentially provides KV cache
+                parameters.
+            max_batch_size: The maximum batch size.
+            available_kv_cache_memory: Available memory for KV cache in bytes.
+            max_seq_len_override: Optional override for max sequence length.
+                If provided, this value is used instead of querying arch_config.
+                Useful during binary search over max_length.
+        """
+        if isinstance(arch_config, ArchConfigWithKVCache):
+            params = arch_config.get_kv_params()
+            max_seq_len = (
+                max_seq_len_override
+                if max_seq_len_override is not None
+                else arch_config.get_max_seq_len()
             )
-            max_seq_len = pipeline_model.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            )
-            return pipeline_model.estimate_kv_cache_size(
-                huggingface_config=huggingface_config,
+            return estimate_kv_cache_size(
                 params=params,
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
                 available_cache_memory=available_kv_cache_memory,
             )
-        return 0
+        else:
+            return 0
 
     @classmethod
     def _raise_oom_error(
         cls,
         pipeline_config: PipelineConfig,
+        arch_config: ArchConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
-        pipeline_model: type[PipelineModel[Any]],
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
-        weights_size: int,
-        huggingface_config: AutoConfig,
         devices: list[Device],
     ) -> None:
-        """If we've determined the current configuration won't fit in device memory,
-        this method provides a friendly error message suggesting a viable configuration.
+        """Suggests a viable configuration when the current one does not fit in memory.
 
-        The approach is to:
+        If the current configuration won't fit in device memory, provides a
+        friendly error message. The approach is to:
+
         1. Binary search max_length until we find a setting that works
         2. If user provided max_batch_size, binary search that too
         3. Generate appropriate suggestions based on this truth table:
 
-                                                            max_length
-                                         +----------------------+--------------------------+
-                                         | set by user          | set to default           |
-                        +----------------+======================+==========================+
-                        | set by user    ║ Recommend both       | Recommend max_batch_size |
-        max_batch_size  +----------------+----------------------+--------------------------+
-                        | set to default ║ Recommend max_length | Recommend both           |
-                        +----------------+----------------------+--------------------------+
+        .. code-block:: text
+
+                                                                max_length
+                                             +----------------------+--------------------------+
+                                             | set by user          | set to default           |
+                            +----------------+======================+==========================+
+                            | set by user    ║ Recommend both       | Recommend max_batch_size |
+            max_batch_size  +----------------+----------------------+--------------------------+
+                            | set to default ║ Recommend max_length | Recommend both           |
+                            +----------------+----------------------+--------------------------+
         """
         original_max_length = cast(int, pipeline_config.max_length)
         original_max_batch_size = cast(int, pipeline_config.max_batch_size)
@@ -721,11 +510,10 @@ class MemoryEstimator:
             inferred_max_length_compatible_batch_size,
         ) = cls._find_valid_max_length(
             pipeline_config,
-            pipeline_model,
+            arch_config,
             available_kv_cache_memory,
             user_provided_max_batch_size,
-            huggingface_config,
-            devices=devices,
+            devices,
         )
 
         pipeline_config.max_batch_size = original_max_batch_size
@@ -733,12 +521,10 @@ class MemoryEstimator:
         found_valid_max_batch_size, inferred_max_batch_size = (
             cls._find_valid_batch_size(
                 pipeline_config,
-                pipeline_model,
                 available_kv_cache_memory,
                 original_max_length,
                 user_provided_max_batch_size,
-                huggingface_config,
-                devices=devices,
+                arch_config=arch_config,
             )
         )
 
@@ -916,19 +702,40 @@ class MemoryEstimator:
     @classmethod
     def _infer_optimal_batch_size(
         cls,
-        pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[Any]],
+        arch_config: ArchConfig,
         available_kv_cache_memory: int,
-        huggingface_config: AutoConfig,
         devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
     ) -> int:
-        return pipeline_model.infer_optimal_batch_size(
-            pipeline_config,
-            available_kv_cache_memory,
-            huggingface_config=huggingface_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
+        """Infer the optimal batch size for the model.
+
+        Args:
+            arch_config: Architecture config that provides KV cache parameters.
+            devices: The list of devices on which the model will run.
+            available_kv_cache_memory: Available memory for KV cache in bytes.
+        """
+        if not isinstance(arch_config, ArchConfigWithKVCache):
+            return _MIN_DEFAULT_BATCH_SIZE
+        if len(devices) == 1 and devices[0].is_host:
+            # batching on CPU is generally not useful, so we hard-code a batch size of 1.
+            return 1
+
+        kv_params = arch_config.get_kv_params()
+        max_seq_len = arch_config.get_max_seq_len()
+
+        device_objs = (
+            devices
+            if isinstance(devices[0], Device)
+            else load_devices([d for d in devices])
+        )
+
+        inferred_batch_size = infer_optimal_batch_size(
+            params=kv_params,
+            max_seq_len=max_seq_len,
+            available_cache_memory=available_kv_cache_memory,
+            devices=device_objs,
+        )
+        # Clamp the batch size
+        return max(
+            _MIN_DEFAULT_BATCH_SIZE,
+            min(inferred_batch_size, _MAX_DEFAULT_BATCH_SIZE),
         )

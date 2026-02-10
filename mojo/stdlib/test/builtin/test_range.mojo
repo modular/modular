@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,15 +26,32 @@ comptime DTYPES = [
 ]
 
 
+# Regression test for cyclic dependency bug in MSTDL-2217
+# This helper must be declared before any test function that calls it.
+# The bug was triggered when a function using range(Int, Int) was declared
+# before main/test functions, causing a cyclic dependency during overload
+# resolution: range -> Int -> Equatable.__eq__ -> range.
+fn _range_with_int_params_helper(start: Int, end: Int) -> Int:
+    var sum = 0
+    for i in range(start, end):
+        sum += i
+    return sum
+
+
+def test_range_with_int_params_declaration_order():
+    assert_equal(_range_with_int_params_helper(0, 5), 10)  # 0+1+2+3+4
+    assert_equal(_range_with_int_params_helper(1, 4), 6)  # 1+2+3
+    assert_equal(_range_with_int_params_helper(5, 5), 0)  # empty range
+
+
 def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
     var iter = range_iter^
     for i in range(len):
         var lower, upper = iter.bounds()
         assert_equal(len - i, lower)
         assert_equal(len - i, upper.value())
-        # FIXME(MOCO-3012): Why is applying `^` required here?
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()
@@ -312,7 +329,7 @@ def test_scalar_range():
     append_many(expected_elements, 2, 6, 10, 14)
     actual_elements = List[UInt8]()
     for e in r:
-        actual_elements.append(e)
+        actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)
 
 

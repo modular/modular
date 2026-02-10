@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -117,7 +117,7 @@ struct _DictEntryIter[
         out self,
         index: Int,
         seen: Int,
-        ref [Self.origin]dict: Dict[Self.K, Self.V, Self.H],
+        ref[Self.origin] dict: Dict[Self.K, Self.V, Self.H],
     ):
         self.index = index
         self.seen = seen
@@ -129,7 +129,7 @@ struct _DictEntryIter[
     @always_inline
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [self.src[]._entries[0].value()] Self.Element:
+    ) raises StopIteration -> ref[self.src[]._entries[0].value()] Self.Element:
         if self.seen >= len(self.src[]):
             raise StopIteration()
 
@@ -176,7 +176,7 @@ struct _TakeDictEntryIter[
     var index: Int
     var src: Pointer[Dict[Self.K, Self.V, Self.H], Self.origin]
 
-    fn __init__(out self, ref [Self.origin]dict: Dict[Self.K, Self.V, Self.H]):
+    fn __init__(out self, ref[Self.origin] dict: Dict[Self.K, Self.V, Self.H]):
         self.index = 0
         self.src = Pointer(to=dict)
 
@@ -244,7 +244,7 @@ struct _DictKeyIter[
     @always_inline
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [self.iter.__next__().key] Self.Element:
+    ) raises StopIteration -> ref[self.iter.__next__().key] Self.Element:
         return self.iter.__next__().key
 
     @always_inline
@@ -295,7 +295,7 @@ struct _DictValueIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
@@ -412,30 +412,30 @@ struct _DictIndex(Movable):
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
         elif reserved <= 2**16 - 2:
             var data = self.data.bitcast[Int16]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
         elif reserved <= 2**32 - 2:
             var data = self.data.bitcast[Int32]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
         else:
             var data = self.data.bitcast[Int64]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
 
     fn set_index(mut self, reserved: Int, slot: UInt64, value: Int):
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int8(value))
         elif reserved <= 2**16 - 2:
             var data = self.data.bitcast[Int16]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int16(value))
         elif reserved <= 2**32 - 2:
             var data = self.data.bitcast[Int32]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int32(value))
         else:
             var data = self.data.bitcast[Int64]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int64(value))
 
     fn __del__(deinit self):
         self.data.free()
@@ -842,9 +842,7 @@ struct Dict[
 
     fn __getitem__(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K] -> ref [
-        self._entries[0].value().value
-    ] Self.V:
+    ) raises DictKeyError[Self.K] -> ref[self._entries[0].value().value] Self.V:
         """Retrieve a value out of the dictionary.
 
         Args:
@@ -1042,9 +1040,7 @@ struct Dict[
 
     fn _find_ref(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K] -> ref [
-        self._entries[0].value().value
-    ] Self.V:
+    ) raises DictKeyError[Self.K] -> ref[self._entries[0].value().value] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
@@ -1244,7 +1240,7 @@ struct Dict[
 
     fn setdefault(
         mut self, key: Self.K, var default: Self.V
-    ) -> ref [self._entries[0].value().value] Self.V:
+    ) -> ref[self._entries[0].value().value] Self.V:
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
 
@@ -1317,10 +1313,12 @@ struct Dict[
     fn _next_index_slot(self, mut slot: UInt64, mut perturb: UInt64):
         comptime PERTURB_SHIFT = 5
         perturb >>= PERTURB_SHIFT
-        slot = ((5 * slot) + Int(perturb + 1)) & (self._reserved() - 1)
+        slot = ((5 * slot) + UInt64(Int(perturb + 1))) & UInt64(
+            self._reserved() - 1
+        )
 
     fn _find_empty_index(self, hash: UInt64) -> UInt64:
-        var slot = hash & (self._reserved() - 1)
+        var slot = hash & UInt64(self._reserved() - 1)
         var perturb = hash
         while True:
             var index = self._get_index(slot)
@@ -1330,7 +1328,7 @@ struct Dict[
 
     fn _find_index(self, hash: UInt64, key: Self.K) -> Tuple[Bool, UInt64, Int]:
         # Return (found, slot, index)
-        var slot = hash & (self._reserved() - 1)
+        var slot = hash & UInt64(self._reserved() - 1)
         var perturb = hash
         while True:
             var index = self._get_index(slot)
@@ -1432,7 +1430,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     @always_inline
     fn __getitem__(
         ref self, ref key: Self.key_type
-    ) raises DictKeyError[Self.key_type] -> ref [self._dict[key]] Self.V:
+    ) raises DictKeyError[Self.key_type] -> ref[self._dict[key]] Self.V:
         """Retrieve a value out of the keyword dictionary.
 
         Args:

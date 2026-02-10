@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -219,14 +219,14 @@ def test_to_tile_tensor():
     var tile_tensor = tensor.to_tile_tensor[DType.int64]()
 
     # Verify the layout tensor has the same data
-    __comptime_assert tile_tensor.rank == 2
-    assert_equal(tile_tensor[(0, 0)], 0.0)
-    assert_equal(tile_tensor[(1, 1)], 5.0)
-    assert_equal(tile_tensor[(2, 3)], 11.0)
+    comptime assert tile_tensor.rank == 2
+    assert_equal(tile_tensor[0, 0], 0.0)
+    assert_equal(tile_tensor[1, 1], 5.0)
+    assert_equal(tile_tensor[2, 3], 11.0)
 
     # Verify dimensions
-    assert_equal(tile_tensor.layout.shape[0].value(), 3)
-    assert_equal(tile_tensor.layout.shape[1].value(), 4)
+    assert_equal(tile_tensor.layout.shape[0]().value(), 3)
+    assert_equal(tile_tensor.layout.shape[1]().value(), 4)
 
 
 def main():

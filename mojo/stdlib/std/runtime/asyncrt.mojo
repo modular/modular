@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 from os import abort
 from os.atomic import Atomic
-from sys import external_call
+from ffi import external_call
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
@@ -26,8 +26,7 @@ from utils import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _Chain(Boolable, Defaultable):
+struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
@@ -40,8 +39,7 @@ struct _Chain(Boolable, Defaultable):
         return Bool(self.storage)
 
 
-@register_passable("trivial")
-struct _AsyncContext:
+struct _AsyncContext(TrivialRegisterPassable):
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
@@ -53,7 +51,7 @@ struct _AsyncContext:
     to available.
     """
 
-    comptime callback_fn_type = fn (_Chain) -> None
+    comptime callback_fn_type = fn(_Chain) -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
@@ -215,7 +213,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         )
         self._handle._set_result_slot(UnsafePointer(to=self._result))
 
-    fn get(self) -> ref [self._result] Self.type:
+    fn get(self) -> ref[self._result] Self.type:
         """Get the task's result value. Calling this on an incomplete task is
         undefined behavior.
 
@@ -233,7 +231,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         self._handle^.force_destroy()
 
     @always_inline
-    fn __await__(self) -> ref [self.get()] Self.type:
+    fn __await__(self) -> ref[self.get()] Self.type:
         """Suspend the current async function until the task completes and its
         result becomes available. This function must be force inlined into the
         calling async function.
@@ -256,7 +254,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         _suspend_async[await_body]()
         return self.get()
 
-    fn wait(self) -> ref [self.get()] Self.type:
+    fn wait(self) -> ref[self.get()] Self.type:
         """Block the current thread until the future value becomes available.
 
         This method is used in synchronous code to wait for an asynchronous task
@@ -278,8 +276,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TaskGroupContext(ImplicitlyCopyable):
+struct TaskGroupContext(TrivialRegisterPassable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -287,7 +284,7 @@ struct TaskGroupContext(ImplicitlyCopyable):
     when they complete.
     """
 
-    comptime tg_callback_fn_type = fn (mut TaskGroup) -> None
+    comptime tg_callback_fn_type = fn(mut TaskGroup) -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type
@@ -297,8 +294,7 @@ struct TaskGroupContext(ImplicitlyCopyable):
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
-@register_passable
-struct _TaskGroupBox(Copyable):
+struct _TaskGroupBox(Copyable, RegisterPassable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine
@@ -432,8 +428,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct DeviceContextPtr(Defaultable):
+struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -491,8 +486,7 @@ struct DeviceContextPtr(Defaultable):
         return self[]
 
 
-@register_passable("trivial")
-struct DeviceContextPtrList[size: Int](Sized):
+struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
     """A fixed-size collection of `DeviceContextPtr` objects.
 
     This struct provides a lightweight, register-passable container for a fixed number

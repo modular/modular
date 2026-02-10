@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,7 +30,10 @@ def test_runtime_and_compile_time_dim_and_stride(m: ValOrDim, k: ValOrDim):
     var dynamic_shape = IndexList[2](k.value, m.value)
     comptime layout = Layout.row_major[2](static_shape)
 
-    var tensor = LayoutTensor[DType.float32, layout,](
+    var tensor = LayoutTensor[
+        DType.float32,
+        layout,
+    ](
         UnsafePointer[Float32](),
         RuntimeLayout[layout].row_major(dynamic_shape),
     )
@@ -217,7 +220,10 @@ def test_aligned_load():
     # Use a 4x7 tensor so we can load 4 elements starting at columns 0,1,2,3
     # without going out of bounds (column 3 + width 4 = 7)
     var storage = InlineArray[Float32, 4 * 7](uninitialized=True)
-    var tensor = LayoutTensor[DType.float32, Layout([4, 7]),](
+    var tensor = LayoutTensor[
+        DType.float32,
+        Layout([4, 7]),
+    ](
         storage
     ).fill(0.0)
 

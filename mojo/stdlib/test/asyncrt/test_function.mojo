@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,8 +22,7 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-@register_passable("trivial")
-struct TwoS:
+struct TwoS(TrivialRegisterPassable):
     var s0: S
     var s1: S
 
@@ -43,10 +42,6 @@ struct OneS(DevicePassable):
     @staticmethod
     fn get_type_name() -> String:
         return "OneS"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return "TwoS"
 
     var s: S
 
@@ -84,8 +79,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
+            in0_host[i] = Scalar[T](i)
+            out_host[i] = Scalar[T](length + i)
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
@@ -107,7 +102,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
                 print("at index", i, "the value is", out_host[i])
             assert_equal(
                 out_host[i],
-                i + 5,
+                Scalar[T](i + 5),
                 String(
                     "at index ",
                     i,
@@ -134,8 +129,8 @@ fn _run_test_function_experimental(ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
+            in0_host[i] = Scalar[T](i)
+            out_host[i] = Scalar[T](length + i)
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
@@ -157,7 +152,7 @@ fn _run_test_function_experimental(ctx: DeviceContext) raises:
                 print("at index", i, "the value is", out_host[i])
             assert_equal(
                 out_host[i],
-                i + 5,
+                Scalar[T](i + 5),
                 String(
                     "at index ",
                     i,

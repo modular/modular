@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -74,7 +74,7 @@ fn tma_ragged_store_kernel[
 
     if thread_idx.x == 0:
         for i in range(sequence_length * shared_n):
-            smem_tensor.ptr[i] = i
+            smem_tensor.ptr[i] = Scalar[dtype](i)
 
     var smem_iterator = smem_tensor.tiled_iterator[
         sequence_store_length, shared_n, axis=0
@@ -135,11 +135,11 @@ fn test_tma_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM)),
+            (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -189,11 +189,11 @@ fn test_tma_multiple_loads_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
             tma_tile.async_copy(
                 tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
         # Ensure all threads sees initialized mbarrier
         barrier()
@@ -238,7 +238,8 @@ def test_tma_ragged_store[
     comptime global_layout = Layout.row_major(total_num_sequences, depth)
     var max_length = max_length(sequence_lengths)
 
-    var device_buffer = ctx.enqueue_create_buffer[dtype](global_layout.size())
+    comptime global_layout_size = global_layout.size()
+    var device_buffer = ctx.enqueue_create_buffer[dtype](global_layout_size)
 
     comptime GlobalTensorType[sequence_length: Int] = LayoutTensor[
         dtype,
@@ -647,7 +648,10 @@ def test_tma_async_reduce[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                src_host[m, n].cast[DType.float32]() + 3546 + m * dst_N + n,
+                src_host[m, n].cast[DType.float32]()
+                + 3546
+                + Float32(m * dst_N)
+                + Float32(n),
                 dst_host[m, n].cast[DType.float32](),
             )
 
@@ -710,16 +714,16 @@ fn test_tma_loads_two_buffers_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(Int32(expected_bytes * 2))
             a_tma_tile.async_copy(
                 a_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
             b_tma_tile.async_copy(
                 b_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -869,16 +873,16 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(Int32(expected_bytes * 2))
             a_tma_src_tile.async_copy(
                 a_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
             b_tma_src_tile.async_copy(
                 b_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
 
         # Ensure all threads sees initialized mbarrier

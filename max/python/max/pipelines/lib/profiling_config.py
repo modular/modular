@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,8 +28,10 @@ logger = logging.getLogger("max.pipelines")
 
 
 class ProfilingConfig(ConfigFileModel):
-    gpu_profiling: GPUProfilingMode = Field(default=GPUProfilingMode.OFF)
-    """Whether to enable GPU profiling of the model."""
+    gpu_profiling: GPUProfilingMode = Field(
+        default=GPUProfilingMode.OFF,
+        description="Whether to enable GPU profiling of the model.",
+    )
 
     _config_file_section_name: str = PrivateAttr(default="profiling_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -57,9 +59,3 @@ class ProfilingConfig(ConfigFileModel):
                     "gpu_profiling must be one of: " + ", ".join(valid_values)
                 )
         return self
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "gpu_profiling": "Whether to turn on GPU profiling for the model. This defaults to 'off'.",
-        }

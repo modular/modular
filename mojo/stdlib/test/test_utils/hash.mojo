@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -111,7 +111,7 @@ def assert_fill_factor[
 
     for idx, w in enumerate(words):
         var h = hash[HasherType=HasherType](w)
-        buckets[h % num_buckets] += 1
+        buckets[h % UInt64(num_buckets)] += 1
 
         # Collect first 5 hash samples for debugging
         if idx < 5:

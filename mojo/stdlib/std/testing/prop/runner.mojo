@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -59,7 +59,7 @@ struct PropTest(Movable):
     fn test[
         StrategyType: Strategy,
         //,
-        f: fn (var StrategyType.Value) capturing raises,
+        f: fn(var StrategyType.Value) capturing raises,
     ](self, var strategy: StrategyType) raises:
         """Run a property test with the given strategy.
 

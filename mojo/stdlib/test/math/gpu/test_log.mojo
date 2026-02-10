@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@ from utils import IndexList
 
 
 def run_elementwise[
-    dtype: DType, log_fn: fn (x: SIMD) -> type_of(x)
+    dtype: DType, log_fn: fn(x: SIMD) -> type_of(x)
 ](ctx: DeviceContext):
     comptime length = 8192
 

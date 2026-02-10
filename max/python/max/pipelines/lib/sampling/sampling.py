@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,13 +16,16 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
-from max.nn.sampling import RejectionSampler, RejectionSamplerWithResiduals
+from max.nn.legacy.sampling import (
+    RejectionSampler,
+    RejectionSamplerWithResiduals,
+)
 
 from .sampling_config import SamplingConfig
 
@@ -133,6 +136,16 @@ def token_sampler(
     device: DeviceRef,
     return_logits: bool = False,
 ) -> Graph:
+    """Builds a sampling graph that samples tokens from logits.
+
+    Args:
+        sampling_config: Sampling configuration (top-k, temperature, etc.).
+        device: Device for the graph inputs and ops.
+        return_logits: Whether the graph should expose logits as an output.
+
+    Returns:
+        A graph that takes logits (and optional penalty inputs) and outputs tokens.
+    """
     _input_dict = _sampling_input_types(
         sampling_config, return_logits=return_logits, device=device
     )
@@ -305,6 +318,19 @@ def rejection_sampler(
     *,
     seed: int = 0,
 ) -> Graph:
+    """Builds a graph that implements speculative decoding rejection sampling.
+
+    Accepts or rejects draft tokens using target vs draft probabilities and
+    resamples from the target distribution when rejected.
+
+    Args:
+        device: Device for the graph.
+        seed: Random seed for sampling.
+
+    Returns:
+        A graph that takes draft tokens, draft logits, and target logits and
+        outputs accepted tokens and metadata.
+    """
     # We have two distributions:
     #   p(x) - The target model distribution
     #   q(x) - The draft model distribution
@@ -354,14 +380,12 @@ def rejection_sampler_with_residuals(
     seed: int = 0,
     debug: bool = False,
 ) -> Graph:
-    """
-    Rejection sampler with residual sampling for speculative decoding.
+    """Builds a rejection sampler with residual sampling for speculative decoding.
 
     Computes acceptance ratios for draft tokens, finds first rejection,
-    samples from residual distribution (target - draft), and generates bonus tokens.
-
+    samples from residual distribution (target - draft), and generates bonus
+    tokens.
     """
-
     graph_inputs = [
         # Sampled Draft Tokens
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),

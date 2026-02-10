@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -518,7 +518,7 @@ fn test_simd_f32_to_e5m2fnuz():
     var f32_simd = SIMD[DType.float32, M](0.0)
 
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     f32_casted_e5m2 = f32_simd.cast[DType.float8_e5m2fnuz]()
 
@@ -661,7 +661,7 @@ fn test_simd_f32_to_e5m2fnuz_ptx_path(ctx: DeviceContext) raises:
     comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     comptime kernel = test_simd_float32[M, DType.float8_e5m2fnuz]
     ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)

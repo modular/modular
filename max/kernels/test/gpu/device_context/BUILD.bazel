@@ -2,28 +2,18 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
-    "test_function_attributes.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    "test_device_stream.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2554
-    "test_device_event.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2555
-    "test_external_shared_mem.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
-    "test_device_context_sub_buffer.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2562
+    "test_function_attributes.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_device_stream.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
+    "test_device_event.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2555
+    "test_external_shared_mem.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
+    "test_device_context_sub_buffer.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
 }
 
 [
@@ -45,11 +35,53 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
     for src in glob(
         ["**/*.mojo"],
         exclude = [
+            "test_device_external_function.mojo",
             "test_function_error.mojo",
             "test_function_error_sync_mode.mojo",
         ],
     )
 ]
+
+filegroup(
+    name = "vec_add_cubin_sm80",
+    testonly = True,
+    srcs = ["data/vec_add.sm80.cubin"],
+)
+
+filegroup(
+    name = "vec_add_cubin_sm90",
+    testonly = True,
+    srcs = ["data/vec_add.sm90.cubin"],
+)
+
+filegroup(
+    name = "vec_add_cubin_sm100",
+    testonly = True,
+    srcs = ["data/vec_add.sm100.cubin"],
+)
+
+mojo_test(
+    name = "test_device_external_function.mojo.test",
+    srcs = ["test_device_external_function.mojo"],
+    data = select({
+        "//:b200_gpu": [":vec_add_cubin_sm100"],
+        "//:h100_gpu": [":vec_add_cubin_sm90"],
+        "//conditions:default": [":vec_add_cubin_sm80"],
+    }),
+    env = select({
+        "//:b200_gpu": {"CUBIN_PATH": "$(location :vec_add_cubin_sm100)"},
+        "//:h100_gpu": {"CUBIN_PATH": "$(location :vec_add_cubin_sm90)"},
+        "//conditions:default": {"CUBIN_PATH": "$(location :vec_add_cubin_sm80)"},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
 
 mojo_filecheck_test(
     name = "test_function_error.mojo.test",

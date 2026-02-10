@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,15 +14,21 @@
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
+
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
+from typing_extensions import Self, override
 
 
-class MistralConfig(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class MistralConfig(ArchConfigWithKVCache):
     """Configuration for Mistral models."""
 
     # Required fields
@@ -39,18 +45,21 @@ class MistralConfig(MAXModelConfigBase):
 
     dtype: DType
     kv_params: KVCacheParams
-    return_logits: ReturnLogits
 
     attention_multiplier: float
     devices: list[DeviceRef]
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    """Whether to return the last token, all logits, or a variable number of logits."""
 
-    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
+    def get_kv_params(self) -> KVCacheParams:
+        return self.kv_params
+
+    def get_max_seq_len(self) -> int:
+        return self.max_seq_len
+
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -80,3 +89,79 @@ class MistralConfig(MAXModelConfigBase):
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.num_hidden_layers
+
+    @staticmethod
+    def calculate_max_seq_len(
+        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Calculates the maximum sequence length for the model."""
+        max_seq_len = pipeline_config.max_length
+        if max_seq_len:
+            return max_seq_len
+        return huggingface_config.max_position_embeddings
+
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes a MistralConfig instance from pipeline configuration.
+
+        This method creates a config instance with all fields that can be determined
+        from the pipeline configuration.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+
+        Returns:
+            An initialized MistralConfig instance.
+        """
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        return cls.initialize_from_config(pipeline_config, huggingface_config)
+
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        dtype = quantization_encoding.dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in pipeline_config.model.device_specs
+        ]
+
+        kv_params = cls.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=device_refs,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+        return cls(
+            hidden_size=huggingface_config.hidden_size,
+            num_attention_heads=huggingface_config.num_attention_heads,
+            num_key_value_heads=kv_params.n_kv_heads,
+            num_hidden_layers=huggingface_config.num_hidden_layers,
+            head_dim=huggingface_config.head_dim,
+            vocab_size=huggingface_config.vocab_size,
+            rope_theta=huggingface_config.rope_theta,
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config, huggingface_config
+            ),
+            rms_norm_eps=huggingface_config.rms_norm_eps,
+            feed_forward_length=huggingface_config.intermediate_size,
+            dtype=dtype,
+            kv_params=kv_params,
+            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            devices=device_refs,
+        )

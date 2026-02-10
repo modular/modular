@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,9 +35,9 @@ from format._utils import _WriteBufferStack
 from os import PathLike, abort, makedirs, remove
 from os import SEEK_END
 from os.path import dirname
-from sys import external_call, size_of
+from ffi import c_int, c_ssize_t, external_call
+from sys import size_of
 from sys._libc_errno import ErrNo, get_errno
-from sys.ffi import c_int, c_ssize_t
 from sys.info import platform_map
 
 from memory import Span
@@ -55,16 +55,20 @@ comptime O_RDWR = 0x0002
 """Open file for reading and writing."""
 
 # File creation flags
-comptime O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
+comptime O_CREAT = platform_map[T=Int, "O_CREAT", linux=0x0040, macos=0x0200]()
 """Create file if it doesn't exist."""
 
-comptime O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
+comptime O_TRUNC = platform_map[T=Int, "O_TRUNC", linux=0x0200, macos=0x0400]()
 """Truncate file to zero length."""
 
-comptime O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
+comptime O_APPEND = platform_map[
+    T=Int, "O_APPEND", linux=0x0400, macos=0x0008
+]()
 """Append mode: writes always go to end of file."""
 
-comptime O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+comptime O_CLOEXEC = platform_map[
+    T=Int, "O_CLOEXEC", linux=0x80000, macos=0x1000000
+]()
 """Close file descriptor on exec."""
 
 # ===----------------------------------------------------------------------=== #
@@ -341,7 +345,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var err = get_errno()
             raise Error("Failed to read from file: " + String(err))
 
-        return Int(bytes_read)
+        return bytes_read
 
     fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
@@ -415,7 +419,7 @@ struct FileHandle(Defaultable, Movable, Writer):
                 var err = get_errno()
                 raise Error("Failed to read from file: " + String(err))
 
-            num_read += Int(chunk_bytes_read)
+            num_read += chunk_bytes_read
 
             # If we read all of the 'size' bytes then we're done.
             if num_read == size or chunk_bytes_read == 0:
@@ -527,7 +531,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var err = get_errno()
             raise Error("Failed to write to file: " + String(err))
 
-        return Int(bytes_written)
+        return bytes_written
 
     fn write_all(mut self, bytes: Span[Byte, _]) raises:
         """Write all bytes to the file, handling partial writes automatically.
@@ -621,7 +625,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             if bytes_written == 0:
                 abort("write() returned 0 bytes (file may be full or closed)")
 
-            total_written += Int(bytes_written)
+            total_written += bytes_written
 
     fn write_string(mut self, string: StringSlice):
         """
@@ -694,7 +698,7 @@ struct FileHandle(Defaultable, Movable, Writer):
                     "Write returned 0 bytes (file may be full or closed)"
                 )
 
-            total_written += Int(bytes_written)
+            total_written += bytes_written
 
     fn __enter__(var self) -> Self:
         """The function to call when entering the context.

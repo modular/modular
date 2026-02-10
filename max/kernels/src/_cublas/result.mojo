@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,8 +14,7 @@
 from os import abort
 
 
-@register_passable("trivial")
-struct Result(Equatable, Writable):
+struct Result(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)
@@ -29,10 +28,7 @@ struct Result(Equatable, Writable):
     comptime LICENSE_ERROR = Self(16)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:

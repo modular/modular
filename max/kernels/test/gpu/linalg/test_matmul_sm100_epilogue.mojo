@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from random import random_si64, random_float64
 from sys import align_of, size_of, env_get_bool
 
@@ -26,10 +26,12 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.matmul import (
+from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100_structured.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    MatmulConfig,
+)
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import Index, IndexList
@@ -180,7 +182,7 @@ def test_matmul_sm100_epilogue[
         k_group_size=k_group_size,
     )
 
-    comptime optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
+    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
         test_lambda_add_coords_summ
     ) if test_lambda_fn else None
 
@@ -196,7 +198,7 @@ def test_matmul_sm100_epilogue[
         ctx,
     )
 
-    __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -325,7 +327,7 @@ def main():
                             block_tile_shape,
                             umma_shape,
                             cluster_shape = StaticTuple[Int32, 3](
-                                cluster_m, cluster_n, 1
+                                Int32(cluster_m), Int32(cluster_n), 1
                             ),
                             cta_group=2,
                             test_lambda_fn=True,

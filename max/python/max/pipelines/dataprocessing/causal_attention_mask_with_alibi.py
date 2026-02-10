@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,6 +60,17 @@ def causal_attention_mask_with_alibi(
     alibi_bias_max: int,
     n_heads: int,
 ) -> npt.NDArray[np.floating[Any]]:
+    """Builds a causal attention mask combined with ALiBi position bias.
+
+    Args:
+        original_start_pos: Per-example start position (context length) in the batch.
+        original_seq_len: Per-example sequence length for this pass.
+        alibi_bias_max: Maximum sequence length for ALiBi slope computation.
+        n_heads: Number of attention heads for broadcasting the bias.
+
+    Returns:
+        Causal mask plus ALiBi bias, one value per head and position.
+    """
     # Get original causal mask
     causal_mask = causal_attention_mask(original_start_pos, original_seq_len)
 

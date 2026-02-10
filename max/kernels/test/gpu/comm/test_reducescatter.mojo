@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,19 +16,29 @@ from itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import Optional
 from comm import Signal, MAX_GPUS
-from comm.reducescatter import reducescatter
+from comm.reducescatter import (
+    reducescatter,
+    ReduceScatterConfig,
+    elementwise_epilogue_type,
+)
 from internal_utils import human_readable_size
 from comm_test_utils import test_value_for_gpu_element
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from testing import assert_almost_equal, assert_true
+from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
 # Shared test configurations
 comptime test_lengths = (
     8 * 1024,  # Small
+    8 * 1024 + 8,  # Ragged: +1 bf16 SIMD vector / +2 f32 SIMD vectors
+    8 * 1024 + 24,  # Ragged: +3 bf16 SIMD vectors / +6 f32 SIMD vectors
     256 * 1024,  # Medium
     16 * 1024 * 1024,  # Large
+    16 * 1024 * 1024 + 8,  # Ragged: +1 bf16 SIMD vector / +2 f32 SIMD vectors
+    16 * 1024 * 1024 + 24,  # Ragged: +3 bf16 SIMD vectors / +6 f32 SIMD vectors
 )
 
 # Test hyperparameters
@@ -40,11 +50,12 @@ fn reducescatter_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    # TODO(KERN-2293): test use_custom_epilogue
+    use_custom_epilogue: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     """Test reduce-scatter operation.
 
     Each GPU receives 1/ngpus of the reduced data in its output partition.
+    When use_custom_epilogue is True, tests with a negating epilogue.
     """
     constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -57,17 +68,20 @@ fn reducescatter_test[
             ngpus,
             "-",
             human_readable_size(size_of[dtype]() * length),
+            "-custom_epilogue=" if use_custom_epilogue else "",
         )
     )
 
-    # TODO(KERN-2295): generalize to uneven shapes, & consider
-    # ceildiv(length, ngpus) for output lengths
-    # Each GPU gets 1/ngpus of the output
-    var output_length = length // ngpus
+    # Compute partition sizes matching ReduceScatterConfig logic.
+    # Lower ranks get an extra simd vector when there's a remainder.
+    var rs_config = ReduceScatterConfig[dtype, ngpus](
+        length, 0
+    )  # dummy num_threads
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var output_lengths = List[Int](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
     )
@@ -80,6 +94,9 @@ fn reducescatter_test[
 
     # Initialize buffers for each GPU
     for i in range(ngpus):
+        var output_length = rs_config.rank_part(i)
+        output_lengths.append(output_length)
+
         # Create input and output device buffers
         in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_bufs_list.append(
@@ -117,19 +134,51 @@ fn reducescatter_test[
             in_bufs_list[i].unsafe_ptr(), DimList(length)
         )
         out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_length)
+            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
         )
 
     # Synchronize all devices before reduce-scatter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
+    # Copy-capture in registers since the lambda will be used on GPU.
+    var out_bufs_capture = StaticTuple[
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+
+    for i in range(ngpus):
+        out_bufs_capture[i] = NDBuffer[dtype, rank](
+            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
+        )
+
+    # Custom epilogue that negates values to distinguish from default
+    @always_inline
+    @parameter
+    @__copy_capture(out_bufs_capture)
+    fn outputs_lambda[
+        input_index: Int,
+        _dtype: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords),
+            rebind[SIMD[dtype, _width]](
+                -val
+            ),  # Negate to distinguish from default
+        )
+
     # Perform reduce-scatter
     @parameter
     for i in range(ngpus):
-        reducescatter[ngpus=ngpus](
-            in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i]
-        )
+        reducescatter[
+            ngpus=ngpus,
+            output_lambda = Optional[elementwise_epilogue_type](
+                outputs_lambda[input_index=i]
+            ) if use_custom_epilogue else None,
+        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
     # Synchronize all devices after reduce-scatter
     for i in range(ngpus):
@@ -137,20 +186,21 @@ fn reducescatter_test[
 
     # Verify results:
     # For each element j in GPU gpu_idx's output, we sum across all GPUs
-    # at the global index (gpu_idx * output_length + j)
+    # at the global index rank_start(gpu_idx) + j
     for gpu_idx in range(ngpus):
-        var result_host = alloc[Scalar[dtype]](output_length)
+        var gpu_output_length = output_lengths[gpu_idx]
+        var result_host = alloc[Scalar[dtype]](gpu_output_length)
         list_of_ctx[gpu_idx].enqueue_copy(result_host, out_bufs_list[gpu_idx])
         list_of_ctx[gpu_idx].synchronize()
 
         # Verify each element in this GPU's partition
-        for j in range(output_length):
+        for j in range(gpu_output_length):
             # Compute expected value: sum of test values across all GPUs
-            # at global index (gpu_idx * output_length + j)
+            # at global index rank_start(gpu_idx) + j
             # Use higher precision accumulation like allreduce does
             comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
-            var global_idx = gpu_idx * output_length + j
+            var global_idx = rs_config.rank_start(gpu_idx) + j
 
             @parameter
             for k in range(ngpus):
@@ -158,7 +208,12 @@ fn reducescatter_test[
                     k, global_idx
                 )
                 accum += Scalar[accum_t](term_dtype)
-            var expected = Scalar[dtype](accum)
+            var expected_sum = Scalar[dtype](accum)
+
+            # Custom epilogue negates the result
+            var expected = (
+                -expected_sum if use_custom_epilogue else expected_sum
+            )
 
             var actual = result_host[j]
             assert_almost_equal(
@@ -191,21 +246,26 @@ fn run_reducescatter_sweep[
         list_of_ctx.append(DeviceContext(i))
 
     @parameter
-    for dtype_idx, ngpus_idx, length_idx in product(
+    for dtype_idx, ngpus_idx, length_idx, epilogue_idx in product(
         range(len(test_dtypes)),
         range(len(test_gpu_counts)),
         range(len(test_lengths)),
+        range(2),  # Test both default and custom epilogue
     ):
         comptime dtype = test_dtypes[dtype_idx]
         comptime ngpus = test_gpu_counts[ngpus_idx]
         comptime length = test_lengths[length_idx]
+        comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        reducescatter_test[dtype=dtype, rank=1, ngpus=ngpus](
-            list_of_ctx, length
-        )
+        reducescatter_test[
+            dtype=dtype,
+            rank=1,
+            ngpus=ngpus,
+            use_custom_epilogue=use_custom_epilogue,
+        ](list_of_ctx, length)
 
 
 def main():

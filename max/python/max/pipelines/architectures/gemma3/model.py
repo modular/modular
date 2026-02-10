@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,13 +24,14 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -195,7 +196,7 @@ class Gemma3Model(
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Gemma 3.
 
-        Delegates to the :obj:`Gemma3Config.get_kv_params` static method.
+        Delegates to the :obj:`Gemma3Config.construct_kv_params` static method.
 
         Args:
             huggingface_config: The HuggingFace model configuration object
@@ -210,7 +211,7 @@ class Gemma3Model(
         Returns:
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
-        return Gemma3Config.get_kv_params(
+        return Gemma3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -331,15 +332,12 @@ class Gemma3Model(
             ignored_modules_prefix=state_dict_prefix or "model.",
         )
 
-        model_config = Gemma3Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Gemma3Config.initialize_from_config(
+            self.pipeline_config, huggingface_config
+        )
+        model_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            attention_bias=huggingface_config.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             float8_config=float8_config,
         )
@@ -408,7 +406,6 @@ class Gemma3Model(
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
-        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
 
@@ -419,6 +416,24 @@ class Gemma3Model(
         tokens = gemma3_inputs.tokens.to_numpy()
         assert gemma3_inputs.input_row_offsets[0].device == self.logprobs_device
         input_row_offsets = gemma3_inputs.input_row_offsets[0].to_numpy()
+
+        # Determine if we have full logits for all tokens or only last-token logits.
+        # Full logits are only available when return_logits is ALL or VARIABLE.
+        has_full_logits = self.return_logits in (
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        )
+
+        # If echo is requested but we don't have full logits, raise an error.
+        if any(batch_echo) and not has_full_logits:
+            raise ValueError(
+                "Log probabilities with echo=true requires enable_echo=true "
+                "in the pipeline configuration to return logits for all tokens."
+            )
+
+        # Pass logits=None when we only have last-token logits.
+        # compute_log_probabilities_ragged will use next_token_logits instead.
+        logits = model_outputs.logits if has_full_logits else None
 
         return compute_log_probabilities_ragged(
             self.logprobs_device,

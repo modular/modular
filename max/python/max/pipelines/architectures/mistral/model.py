@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -22,15 +21,21 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -219,7 +224,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return MistralConfig.get_kv_params(
+        return MistralConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -262,7 +267,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             }
         return state_dict
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -271,7 +276,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
+        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -282,9 +287,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         if len(self.devices) > 1:
             # Flatten kv types for each device
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
             signals = Signals(
                 devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
@@ -293,14 +295,14 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *flattened_kv_types,
+                *kv_inputs,
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *kv_inputs[0],
+                *kv_inputs,
             )
 
     def _unflatten_kv_inputs(
@@ -328,25 +330,10 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
 
-        model_config = MistralConfig(
-            hidden_size=self.huggingface_config.hidden_size,
-            num_attention_heads=self.huggingface_config.num_attention_heads,
-            num_key_value_heads=self.kv_params.n_kv_heads,
-            num_hidden_layers=self.huggingface_config.num_hidden_layers,
-            vocab_size=self.huggingface_config.vocab_size,
-            dtype=self.dtype,
-            kv_params=self.kv_params,
-            return_logits=self.return_logits,
-            attention_multiplier=math.sqrt(1 / self.kv_params.head_dim),
-            head_dim=self.huggingface_config.head_dim,
-            rope_theta=self.huggingface_config.rope_theta,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            rms_norm_eps=self.huggingface_config.rms_norm_eps,
-            feed_forward_length=self.huggingface_config.intermediate_size,
-            devices=self.device_refs,
+        model_config = MistralConfig.initialize_from_config(
+            self.pipeline_config, self.huggingface_config
         )
+        model_config.return_logits = self.return_logits
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()

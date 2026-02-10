@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,20 +14,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import (
-    KVCacheConfig,
-    MAXModelConfig,
-    PipelineConfig,
-)
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
 from ..deepseekV3.model_config import DeepseekV3Config
 
 
-class DeepseekV3NextNConfig(MAXModelConfig, DeepseekV3Config):
+@dataclass(kw_only=True)
+class DeepseekV3NextNConfig(DeepseekV3Config):
     """Configuration for DeepseekV3 NextN model.
 
     The NextN (Next-N token prediction) model is a single-layer decoder that takes
@@ -36,11 +35,7 @@ class DeepseekV3NextNConfig(MAXModelConfig, DeepseekV3Config):
     """
 
     @staticmethod
-    def help() -> dict[str, str]:
-        return {}
-
-    @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -56,7 +51,7 @@ class DeepseekV3NextNConfig(MAXModelConfig, DeepseekV3Config):
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         if len(devices) != data_parallel_degree:
             raise ValueError(
-                "Number of devices must match data parallel degree"
+                f"Number of devices {len(devices)} must match data parallel degree: {data_parallel_degree}"
             )
         return KVCacheParams(
             dtype=cache_dtype,

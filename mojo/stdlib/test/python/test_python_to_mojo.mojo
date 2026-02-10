@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,33 +32,6 @@ def test_string():
 
     var os = Python.import_module("os")
     assert_true(String(os.environ).startswith("environ({"))
-
-
-def test_range():
-    var array_size = PythonObject(2)
-
-    # we check that the numbers appear in order
-    # and that there are not less iterations than expected
-    # by ensuring the list is empty at the end.
-    var expected = [0, 1]
-    for i in range(array_size):
-        assert_equal(i, expected.pop(0))
-    assert_false(expected)
-
-    var start = PythonObject(0)
-    var end = PythonObject(4)
-    expected = [0, 1, 2, 3]
-    for i in range(start, end):
-        assert_equal(i, expected.pop(0))
-    assert_false(expected)
-
-    var start2 = PythonObject(5)
-    var end2 = PythonObject(10)
-    var step = PythonObject(2)
-    expected = [5, 7, 9]
-    for i in range(start2, end2, step):
-        assert_equal(i, expected.pop(0))
-    assert_false(expected)
 
 
 def test_int():

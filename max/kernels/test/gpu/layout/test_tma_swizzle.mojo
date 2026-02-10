@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -64,11 +64,11 @@ fn tma_swizzle_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (UInt(block_idx.x * UInt(tileN)), UInt(block_idx.y * UInt(tileM))),
+            (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -87,7 +87,7 @@ def test_tma_swizzle[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     is_k_major: Bool = True,
 ](ctx: DeviceContext):
-    __comptime_assert (
+    comptime assert (
         shape == tile_shape
     ), "Only support same shape and tile shape."
 

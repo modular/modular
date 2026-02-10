@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ from sys.info import is_32bit
 from sys.info import bit_width_of
 
 from builtin.device_passable import DevicePassable
-from builtin.math import Absable, DivModable, Powable
+from math import Absable, DivModable, Powable
 from python import (
     ConvertibleFromPython,
     ConvertibleToPython,
@@ -42,11 +42,11 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer:
+trait Indexer(ImplicitlyDestructible):
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
-    types like `UInt` to not have to be converted to an `Int` first.
+    types like `SIMD` to not have to be converted to an `Int` first.
     """
 
     fn __mlir_index__(self) -> __mlir_type.index:
@@ -84,7 +84,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable:
+trait Intable(ImplicitlyDestructible):
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
@@ -165,7 +165,6 @@ trait IntableRaising:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Int(
     Absable,
     Boolable,
@@ -188,6 +187,7 @@ struct Int(
     Representable,
     Roundable,
     Stringable,
+    TrivialRegisterPassable,
     Truncable,
     Writable,
 ):
@@ -204,7 +204,7 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime BITWIDTH = Int(bit_width_of[DType.int]())
+    comptime BITWIDTH: Int = bit_width_of[DType.int]()
     """The bit width of the integer type."""
 
     comptime MAX = Int(Scalar[DType.int].MAX)
@@ -232,19 +232,6 @@ struct Int(
             This type's name.
         """
         return "Int"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -286,15 +273,6 @@ struct Int(
             value: The init value.
         """
         self = value.__int__()
-
-    @always_inline("builtin")
-    fn __init__(out self, value: UInt):
-        """Construct Int from the given UInt value.
-
-        Args:
-            value: The init value.
-        """
-        self._mlir_value = value._mlir_value
 
     @always_inline("nodebug")
     fn __init__[T: Intable](out self, value: T):
@@ -482,16 +460,21 @@ struct Int(
             mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    fn __truediv__(self, rhs: Int) -> Float64:
-        """Return the floating point division of `self` and `rhs`.
+    @always_inline("builtin")
+    fn __truediv__(self, rhs: Int) -> Self:
+        """Return the result of the division of `self` and `rhs`.
+
+        Performs truncating division (toward zero) for integers.
 
         Args:
             rhs: The value to divide on.
 
         Returns:
-            `Float64(self)/Float64(rhs)` value.
+            `self / rhs` value.
         """
-        return Float64(self) / Float64(rhs)
+        return Int(
+            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __floordiv__(self, rhs: Int) -> Int:
@@ -506,7 +489,7 @@ struct Int(
         """
         # This should raise an exception
         var denom = select(rhs == 0, 1, rhs)
-        var div = self._positive_div(denom)
+        var div = self / denom
         var rem = self._positive_rem(denom)
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
@@ -539,7 +522,7 @@ struct Int(
         """
         # this should raise an exception
         var denom = select(rhs == 0, 1, rhs)
-        var div = self._positive_div(denom)
+        var div = self / denom
         var rem = self._positive_rem(denom)
         var neg = ((rhs < 0) ^ (self < 0)) & Bool(rem)
         div = select(neg, div - 1, div)
@@ -1093,7 +1076,7 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
-        self = Int(Python.py_long_as_ssize_t(py.__int__()))
+        self = Python.py_long_as_ssize_t(py.__int__())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1109,21 +1092,6 @@ struct Int(
             If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
-
-    @always_inline("builtin")
-    fn _positive_div(self, rhs: Int) -> Int:
-        """Return the division of `self` and `rhs` assuming that the arguments
-        are both positive.
-
-        Args:
-            rhs: The value to divide on.
-
-        Returns:
-            The integer division of `self` and `rhs` .
-        """
-        return Int(
-            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
-        )
 
     @always_inline("builtin")
     fn _positive_rem(self, rhs: Int) -> Int:
@@ -1169,4 +1137,4 @@ struct Int(
         if n >> 32 == 0:
             return _calc_initial_buffer_size_int32(n)
 
-        return _calc_initial_buffer_size_int64(n)
+        return _calc_initial_buffer_size_int64(UInt64(n))

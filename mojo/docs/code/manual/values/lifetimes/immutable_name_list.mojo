@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,7 +20,7 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref [self.names] String:
+    def __getitem__(ref self, index: Int) -> ref[self.names] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:

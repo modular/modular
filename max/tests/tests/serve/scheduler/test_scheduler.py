@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,6 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from max.interfaces import (
-    GenerationStatus,
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
@@ -26,6 +25,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
+from max.kv_cache import DummyKVCache
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -42,16 +42,15 @@ def create_mock_pipeline() -> Mock:
     ) -> dict[RequestID, TextGenerationOutput]:
         responses: dict[RequestID, TextGenerationOutput] = {}
 
-        for request_id, request in inputs.batch.items():
-            request.update(0)
+        for request in inputs.flat_batch:
+            request_id = request.request_id
+
+            request.update(42)
 
             # Return a valid response.
-            responses[request_id] = TextGenerationOutput(
-                request_id=request_id,
-                tokens=[0, 0],  # Two tokens with ID 0
-                final_status=GenerationStatus.ACTIVE,
-                log_probabilities=None,
-            )
+            output = request.to_generation_output()
+            if output.tokens:
+                responses[request_id] = output
 
         return responses
 
@@ -68,6 +67,7 @@ def create_scheduler(
     max_forward_steps_tg: int = 8,
     target_tokens_per_batch_ce: int = 32,
     kvcache_ce_watermark: float = 0.95,
+    enable_chunked_prefill: bool = False,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext | TextAndVisionContext],
@@ -80,6 +80,7 @@ def create_scheduler(
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
+        enable_chunked_prefill=enable_chunked_prefill,
     )
 
     request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
@@ -96,6 +97,7 @@ def create_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        kv_cache=DummyKVCache(),
     )
 
     return (
@@ -132,30 +134,28 @@ def test_try_create_ce_batch() -> None:
     request_push_socket.put_nowait(mock_request)
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().batch
+    batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert len(batch) == 1
-    assert mock_request.request_id in batch
-    # Cache management is now handled by the paged_manager/pipeline
-    assert batch[mock_request.request_id] is not None
+    assert batch[0].request_id == mock_request.request_id
+    # Cache management is now handled by the kv_cache/pipeline
+    assert batch[0] is not None
 
 
 def test_try_create_chunked_ce_batch() -> None:
-    scheduler, request_push_socket, _, _ = create_scheduler()
-    # Configure scheduler for chunked prefill
-    scheduler.scheduler_config.enable_chunked_prefill = True
-    scheduler.scheduler_config.target_tokens_per_batch_ce = 20
-
+    scheduler, request_push_socket, _, _ = create_scheduler(
+        enable_chunked_prefill=True, target_tokens_per_batch_ce=20
+    )
     mock_data = create_mock_request(seq_len=30)
     request_push_socket.put_nowait(mock_data)
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().batch
+    batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert len(batch) == 1
-    assert mock_data.request_id in batch
-    # Cache management is now handled by the paged_manager/pipeline
-    assert batch[mock_data.request_id] is not None
-    assert batch[mock_data.request_id].tokens.current_position == 20
-    assert batch[mock_data.request_id].tokens.active_length == 20
+    assert batch[0].request_id == mock_data.request_id
+    # Cache management is now handled by the kv_cache/pipeline
+    assert batch[0] is not None
+    assert batch[0].tokens.current_position == 20
+    assert batch[0].tokens.active_length == 20
 
 
 def test_scheduler_handle_terminated_responses() -> None:
@@ -168,7 +168,7 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_constructor.enqueue_new_request(mock_2)
     mock_1.update(ARBITRARY_TOKEN_ID)
     mock_2.update(ARBITRARY_TOKEN_ID)
-    batch_executed = [{mock_1.request_id: mock_1, mock_2.request_id: mock_2}]
+    batch_executed = [[mock_1, mock_2]]
 
     resp_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     resp_2: TextGenerationOutput = Mock(is_done=True, tokens=[])
@@ -177,11 +177,9 @@ def test_scheduler_handle_terminated_responses() -> None:
         mock_2.request_id: resp_2,
     }
 
-    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
-        batch_executed
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[mock_1, mock_2]], num_steps=1)
     )
-    for request_id in chunked_ids:
-        del batch_responses[request_id]
 
     # Release terminated requests
     num_terminated_reqs = 0
@@ -203,20 +201,13 @@ def test_scheduler_handle_chunked_requests() -> None:
     # this is a partially encoded request
     req_2 = create_mock_request(seq_len=30, start_idx=20)
 
-    batch_executed = {
-        req_1.request_id: req_1,
-        req_2.request_id: req_2,
-    }
     mock_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
-    batch_responses = {req_1.request_id: mock_1, req_2.request_id: mock_2}
+    batch_responses = {req_1.request_id: mock_1}
 
-    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
-        [batch_executed]
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[req_1, req_2]], num_steps=1)
     )
-    for request_id in chunked_ids:
-        del batch_responses[request_id]
-
     assert req_2.request_id not in batch_responses
     assert batch_constructor.all_ce_reqs
 
@@ -242,11 +233,8 @@ def test_schedule_ce() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[RequestID, TextContext] = {
-        mock_request.request_id: mock_request
-    }
-    inputs = TextGenerationInputs(
-        batches=[batch_to_execute],
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[mock_request]],
         num_steps=1,
     )
 
@@ -258,23 +246,21 @@ def test_schedule_ce() -> None:
 
 
 def test_schedule_ce_with_chunked_prefill() -> None:
-    scheduler, request_push_socket, response_pull_socket, _ = create_scheduler()
+    scheduler, request_push_socket, response_pull_socket, _ = create_scheduler(
+        enable_chunked_prefill=True,
+        target_tokens_per_batch_ce=20,
+    )
     batch_constructor = scheduler.batch_constructor
-
-    # Setup scheduler with chunked prefill enabled
-    scheduler.scheduler_config.enable_chunked_prefill = True
-    scheduler.scheduler_config.target_tokens_per_batch_ce = 20
-
     mock_request = create_mock_request(seq_len=30)
 
     request_push_socket.put_nowait(mock_request)
     scheduler._retrieve_pending_requests()
     assert len(batch_constructor.all_ce_reqs) == 1
 
-    batch_to_execute = batch_constructor.construct_batch().batch
+    batch_to_execute = batch_constructor.construct_batch().batches[0]
     assert len(batch_to_execute) > 0
 
-    inputs = TextGenerationInputs(
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[batch_to_execute],
         num_steps=1,
     )
@@ -299,7 +285,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
 def test_should_schedule_ce_empty_queue() -> None:
     scheduler, _, _, _ = create_scheduler()
-    assert not scheduler.batch_constructor.construct_batch().batch
+    assert not scheduler.batch_constructor.construct_batch().flat_batch
 
 
 def test_should_schedule_ce_full_batch() -> None:
@@ -309,20 +295,19 @@ def test_should_schedule_ce_full_batch() -> None:
         scheduler.batch_constructor.enqueue_new_request(mock_request)
     mock_request_ce = create_mock_request()
     request_push_socket.put_nowait(mock_request_ce)
-    batch = scheduler.batch_constructor.construct_batch().batch
+    batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert batch
-    assert mock_request_ce.request_id not in batch
+    assert all(
+        context.request_id != mock_request_ce.request_id for context in batch
+    )
 
 
 def test_schedule_tg() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[RequestID, TextContext] = {
-        mock_request.request_id: mock_request
-    }
-    inputs = TextGenerationInputs(
-        batches=[batch_to_execute],
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[mock_request]],
         num_steps=scheduler.scheduler_config.max_forward_steps_tg,
     )
 
@@ -367,19 +352,10 @@ def test_scheduler_dp(dp: int) -> None:
 
     # Generate new tokens for the requests.
     for batch in inputs.batches:
-        for req in batch.values():
+        for req in batch:
             req.update(ARBITRARY_TOKEN_ID)
-    response: TextGenerationOutput = Mock(
-        is_done=False, tokens=[ARBITRARY_TOKEN_ID]
-    )
-    responses = {req.request_id: response for req in inputs.batch.values()}
 
-    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
-        inputs.batches
-    )
-    for request_id in chunked_ids:
-        del responses[request_id]
-
+    batch_constructor.advance_requests(inputs)
     assert len(batch_constructor.all_ce_reqs) == 0
     assert len(batch_constructor.all_tg_reqs) == num_reqs
 
@@ -432,72 +408,8 @@ def test_scheduler_empty_batch() -> None:
     scheduler, _, _, _ = create_scheduler(dp=100)
     inputs = scheduler.batch_constructor.construct_batch()
     assert len(inputs.batches) == 100
-    assert len(inputs.batch) == 0
+    assert len(inputs.flat_batch) == 0
     assert inputs.num_steps == 0
-
-
-def _create_failing_pipeline() -> Mock:
-    """Create a mock pipeline that raises an exception on execute."""
-    pipeline = Mock()
-    pipeline.execute = Mock(side_effect=RuntimeError("CUDA out of memory"))
-    pipeline.release = Mock()
-    pipeline._pipeline_model = Mock(_lora_manager=None)
-    return pipeline
-
-
-def test_pipeline_exception_sends_error_to_client() -> None:
-    """Test that pipeline exceptions are propagated to clients as error results.
-
-    When pipeline.execute() raises an exception (e.g., CUDA OOM), the scheduler
-    should catch it and send an error SchedulerResult to the response queue,
-    allowing clients to receive meaningful error information instead of hanging.
-    """
-    scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size=4,
-        max_forward_steps_tg=8,
-        target_tokens_per_batch_ce=32,
-        data_parallel_degree=1,
-        kvcache_ce_watermark=0.95,
-    )
-
-    request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
-        queue.Queue()
-    )
-    response_queue: queue.Queue[
-        dict[RequestID, SchedulerResult[TextGenerationOutput]]
-    ] = queue.Queue()
-    cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
-
-    # Create scheduler with a pipeline that will raise on execute
-    scheduler = TokenGenerationScheduler(
-        scheduler_config=scheduler_config,
-        pipeline=_create_failing_pipeline(),
-        request_queue=request_queue,
-        response_queue=response_queue,
-        cancel_queue=cancel_queue,
-    )
-
-    # Create a request and add to batch constructor
-    mock_request = create_mock_request()
-    scheduler.batch_constructor.enqueue_new_request(mock_request)
-
-    # Construct and execute the batch
-    inputs = scheduler.batch_constructor.construct_batch()
-
-    # Run _schedule - should NOT raise, should send error result
-    scheduler._schedule(inputs)
-
-    # Verify error result was sent to response queue
-    result_dict = response_queue.get_nowait()
-    result = result_dict[mock_request.request_id]
-
-    # Client should receive error details including traceback
-    assert result.is_done is True
-    assert result.error is not None
-    assert result.error.error_type == "RuntimeError"
-    assert "CUDA out of memory" in result.error.error_message
-    assert result.error.traceback_str  # Non-empty traceback
-    assert "RuntimeError" in result.error.traceback_str
 
 
 def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
@@ -523,6 +435,7 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
         request_queue=queue.Queue(),
         response_queue=queue.Queue(),
         cancel_queue=queue.Queue(),
+        kv_cache=DummyKVCache(),
     )
 
 

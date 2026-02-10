@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -63,7 +63,7 @@ struct PrintChecker(Movable):
             raise _assert_equal_error(
                 String(result), expected, msg, self.call_location
             )
-        self.cursor += len(result) + 1
+        self.cursor += UInt64(len(result) + 1)
 
     fn check_line_starts_with(
         mut self, prefix: String, msg: String = ""
@@ -78,7 +78,7 @@ struct PrintChecker(Movable):
             raise _assert_equal_error(
                 String(result[:prefix_len]), prefix, msg, self.call_location
             )
-        self.cursor += len(result) + 1
+        self.cursor += UInt64(len(result) + 1)
 
 
 def test_print():

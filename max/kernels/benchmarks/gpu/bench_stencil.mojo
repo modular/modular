@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -75,7 +75,7 @@ fn bench_stencil_avg_pool[
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.data[i] = i + 1
+        h_input.data[i] = Scalar[dtype](i + 1)
     h_output_ref.fill(0)
     h_output.fill(0)
 
@@ -146,7 +146,7 @@ fn bench_stencil_avg_pool[
     fn avg_pool_compute_finalize_gpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
-        var res = val / (pool_window_h * pool_window_w)
+        var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store(point, res)
 
     @parameter
@@ -189,7 +189,7 @@ fn bench_stencil_avg_pool[
     fn avg_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
-        var res = val / (pool_window_h * pool_window_w)
+        var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store(point, res)
 
     @parameter
@@ -295,7 +295,7 @@ fn bench_stencil_max_pool[
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.data[i] = i + 1
+        h_input.data[i] = Scalar[dtype](i + 1)
     h_output_ref.fill(0)
     h_output.fill(0)
 
@@ -509,7 +509,7 @@ fn bench_stencil_avg_pool_padded[
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.data[i] = i + 1
+        h_input.data[i] = Scalar[dtype](i + 1)
     h_output_ref.fill(0)
     h_output.fill(0)
 
@@ -582,7 +582,7 @@ fn bench_stencil_avg_pool_padded[
     fn avg_pool_compute_finalize_gpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
-        var res = val / (pool_window_h * pool_window_w)
+        var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store(point, res)
 
     @parameter
@@ -625,7 +625,7 @@ fn bench_stencil_avg_pool_padded[
     fn avg_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
-        var res = val / (pool_window_h * pool_window_w)
+        var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store(point, res)
 
     @parameter

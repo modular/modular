@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,17 +23,16 @@ from collections.optional import OptionalReg
 from math import align_up
 from os import abort
 from pathlib import Path
+from ffi import c_char, c_int, c_uint, external_call
 from sys import (
     bit_width_of,
     env_get_bool,
     env_get_string,
-    external_call,
     is_defined,
     is_gpu,
     size_of,
 )
 from sys.compile import DebugLevel, OptimizationLevel
-from sys.ffi import c_char, c_int, c_uint
 from sys.info import (
     CompilationTarget,
     _accelerator_arch,
@@ -114,7 +113,7 @@ comptime _ConstCharPtr = UnsafePointer[UInt8, ImmutAnyOrigin]
 comptime _IntPtr = UnsafePointer[Int32, MutAnyOrigin]
 comptime _SizeT = UInt
 
-comptime _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
+comptime _DumpPath = Variant[Bool, Path, StaticString, fn() capturing -> Path]
 
 # Define helper methods to call AsyncRT bindings.
 
@@ -221,8 +220,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
+struct StreamPriorityRange(Stringable, TrivialRegisterPassable, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -261,8 +259,7 @@ struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _DeviceBufferMode:
+struct _DeviceBufferMode(TrivialRegisterPassable):
     var _mode: Int
 
     comptime _SYNC = _DeviceBufferMode(0)
@@ -301,7 +298,7 @@ struct HostBuffer[dtype: DType](
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr = {}
         var host_ptr: Self._HostPtr = {}
@@ -330,7 +327,7 @@ struct HostBuffer[dtype: DType](
 
     @doc_private
     fn __init__(out self, handle: _DeviceBufferPtr, host_ptr: Self._HostPtr):
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self._host_ptr = host_ptr
         self._handle = handle
 
@@ -343,7 +340,7 @@ struct HostBuffer[dtype: DType](
         *,
         owning: Bool,
     ):
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr = {}
         # void AsyncRT_DeviceContext_createBuffer_owning(
@@ -380,7 +377,7 @@ struct HostBuffer[dtype: DType](
         Args:
             existing: The host buffer to copy.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
@@ -399,7 +396,7 @@ struct HostBuffer[dtype: DType](
         device context. The actual deallocation may occur asynchronously after
         all operations using this buffer have completed.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release", NoneType, _DeviceBufferPtr
@@ -416,7 +413,7 @@ struct HostBuffer[dtype: DType](
         Returns:
             The number of elements in the buffer.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # int64_t AsyncRT_DeviceBuffer_bytesize(const DeviceBuffer *buffer)
         return (
             external_call[
@@ -447,7 +444,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr = {}
         var new_host_ptr: UnsafePointer[Scalar[view_type], MutAnyOrigin] = {}
@@ -506,7 +503,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(
@@ -524,7 +521,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
     fn enqueue_copy_from(self, src: HostBuffer[Self.dtype, ...]) raises:
@@ -540,7 +537,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, ...]) raises:
@@ -556,7 +553,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
@@ -574,7 +571,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src_ptr)
 
     fn enqueue_fill(self, val: Scalar[Self.dtype]) raises:
@@ -590,7 +587,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_memset(self, val)
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
@@ -606,7 +603,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
         _checked(
             external_call[
@@ -629,7 +626,7 @@ struct HostBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
@@ -650,7 +647,7 @@ struct HostBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         return self._host_ptr
 
     fn context(self) raises -> DeviceContext:
@@ -665,7 +662,7 @@ struct HostBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # const DeviceContext *AsyncRT_DeviceBuffer_context(const DeviceBuffer *buffer)
         var ctx_ptr: _DeviceContextPtr = external_call[
             "AsyncRT_DeviceBuffer_context", _DeviceContextPtr, _DeviceBufferPtr
@@ -681,7 +678,7 @@ struct HostBuffer[dtype: DType](
         Args:
             writer: The writer to output the formatted string to.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         writer.write("HostBuffer")
         writer.write("(")
 
@@ -712,7 +709,7 @@ struct HostBuffer[dtype: DType](
         Returns:
             A string containing the formatted buffer contents.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         return String.write(self)
 
     fn __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
@@ -727,7 +724,7 @@ struct HostBuffer[dtype: DType](
         Returns:
             The scalar value at the specified index.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         return self._host_ptr[idx]
 
     fn __setitem__(
@@ -742,12 +739,12 @@ struct HostBuffer[dtype: DType](
             idx: The index of the element to modify.
             val: The new value to store at the specified index.
         """
-        __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self._host_ptr[idx] = val
 
     fn as_span[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> Span[Scalar[Self.dtype], origin]:
+    ](ref[origin] self) -> Span[Scalar[Self.dtype], origin]:
         """Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
         Parameters:
@@ -807,19 +804,6 @@ struct DeviceBuffer[dtype: DType](
         """
         return String("DeviceBuffer[", Self.dtype, "]")
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This dtype's name.
-        """
-        return String("UnsafePointer[Scalar[", Self.dtype, "]]")
-
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
@@ -838,7 +822,7 @@ struct DeviceBuffer[dtype: DType](
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr = {}
         var device_ptr: Self._DevicePtr = {}
@@ -881,7 +865,7 @@ struct DeviceBuffer[dtype: DType](
     fn __init__(
         out self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
     ):
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self._device_ptr = device_ptr
         self._handle = handle
 
@@ -894,7 +878,7 @@ struct DeviceBuffer[dtype: DType](
         *,
         owning: Bool,
     ):
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr = {}
         # void AsyncRT_DeviceContext_createBuffer_owning(
@@ -948,7 +932,7 @@ struct DeviceBuffer[dtype: DType](
             size: Number of elements.
             owning: Whether this buffer owns the memory.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[_dtype]()
         var cpp_handle: _DeviceBufferPtr = {}
         var device_ptr = rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](
@@ -985,7 +969,7 @@ struct DeviceBuffer[dtype: DType](
         Args:
             existing: The device buffer to copy.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
@@ -1005,7 +989,7 @@ struct DeviceBuffer[dtype: DType](
         device context. The actual deallocation may occur asynchronously after
         all operations using this buffer have completed.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release", NoneType, _DeviceBufferPtr
@@ -1022,7 +1006,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The number of elements in the buffer.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # int64_t AsyncRT_DeviceBuffer_bytesize(const DeviceBuffer *buffer)
         return (
             external_call[
@@ -1054,7 +1038,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr = {}
         var new_device_ptr: UnsafePointer[Scalar[view_type], MutAnyOrigin] = {}
@@ -1099,7 +1083,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype, ...]) raises:
@@ -1115,7 +1099,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(
@@ -1133,7 +1117,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
     fn enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, ...]) raises:
@@ -1149,7 +1133,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src: HostBuffer[Self.dtype, ...]) raises:
@@ -1165,7 +1149,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
@@ -1183,7 +1167,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src_ptr)
 
     fn enqueue_fill(self, val: Scalar[Self.dtype]) raises:
@@ -1199,7 +1183,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_memset(self, val)
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
@@ -1215,7 +1199,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
         _checked(
             external_call[
@@ -1239,7 +1223,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
@@ -1260,7 +1244,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         return self._device_ptr
 
     fn context(self) raises -> DeviceContext:
@@ -1275,7 +1259,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # const DeviceContext *AsyncRT_DeviceBuffer_context(const DeviceBuffer *buffer)
         var ctx_ptr: _DeviceContextPtr = external_call[
             "AsyncRT_DeviceBuffer_context", _DeviceContextPtr, _DeviceBufferPtr
@@ -1320,7 +1304,7 @@ struct DeviceBuffer[dtype: DType](
                 out_host[i] = 255
         ```
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         mapped_buffer = _HostMappedBuffer[Self.dtype](self.context(), self)
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -1332,7 +1316,7 @@ struct DeviceBuffer[dtype: DType](
         Args:
             writer: The writer to output the formatted string to.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         try:
             with self.map_to_host() as host_buffer:
                 writer.write("DeviceBuffer")
@@ -1367,7 +1351,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             A string containing the formatted buffer contents.
         """
-        __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         return String.write(self)
 
 
@@ -1668,8 +1652,7 @@ struct DeviceStream(ImplicitlyCopyable):
         )
 
 
-@register_passable("trivial")
-struct EventFlags:
+struct EventFlags(TrivialRegisterPassable):
     """Provides flags for creating events.
 
     These flags can be combined using the bitwise OR operator (`|`, `|=`).
@@ -1986,7 +1969,7 @@ struct DeviceFunction[
                 UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
-                Int(OptimizationLevel),
+                Int32(Int(OptimizationLevel)),
             )
         )
         self._handle = result
@@ -2054,7 +2037,7 @@ struct DeviceFunction[
             return val.unsafe_get[StaticString]() != "", val
 
         else:
-            return val.isa[fn () capturing -> Path](), val
+            return val.isa[fn() capturing -> Path](), val
 
     @staticmethod
     fn _cleanup_asm(s: StringSlice) -> String:
@@ -2135,9 +2118,9 @@ struct DeviceFunction[
             var asm = self._cleanup_asm(get_asm())
 
             @parameter
-            if dump_asm_val.isa[fn () capturing -> Path]():
+            if dump_asm_val.isa[fn() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
-                    fn () capturing -> Path
+                    fn() capturing -> Path
                 ]()
                 dump_asm_fn().write_text(asm)
             elif dump_asm_val.isa[Path]():
@@ -2161,9 +2144,9 @@ struct DeviceFunction[
             var sass = _to_sass[Self.target](ptx)
 
             @parameter
-            if dump_sass_val.isa[fn () capturing -> Path]():
+            if dump_sass_val.isa[fn() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
-                    fn () capturing -> Path
+                    fn() capturing -> Path
                 ]()
                 _dump_sass_fn().write_text(sass)
             elif dump_sass_val.isa[Path]():
@@ -2191,9 +2174,9 @@ struct DeviceFunction[
             ]().asm
 
             @parameter
-            if dump_llvm_val.isa[fn () capturing -> Path]():
+            if dump_llvm_val.isa[fn() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
-                    fn () capturing -> Path
+                    fn() capturing -> Path
                 ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm_val.isa[Path]():
@@ -2224,7 +2207,7 @@ struct DeviceFunction[
         *,
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2271,9 +2254,7 @@ struct DeviceFunction[
             _populate_arg_sizes[i]()
 
         for i in range(num_captures):
-            dense_args_sizes[num_args + i] = UInt64(
-                self._func_impl.capture_sizes[i]
-            )
+            dense_args_sizes[num_args + i] = self._func_impl.capture_sizes[i]
 
         if cluster_dim:
             attributes.append(
@@ -2322,15 +2303,15 @@ struct DeviceFunction[
                 ](
                     ctx._handle,
                     self._handle,
-                    grid_dim.x(),
-                    grid_dim.y(),
-                    grid_dim.z(),
-                    block_dim.x(),
-                    block_dim.y(),
-                    block_dim.z(),
-                    shared_mem_bytes.or_else(0),
+                    UInt32(grid_dim.x()),
+                    UInt32(grid_dim.y()),
+                    UInt32(grid_dim.z()),
+                    UInt32(block_dim.x()),
+                    UInt32(block_dim.y()),
+                    UInt32(block_dim.z()),
+                    UInt32(shared_mem_bytes.or_else(0)),
                     attributes.unsafe_ptr(),
-                    len(attributes),
+                    UInt32(len(attributes)),
                     dense_args_addrs,
                     dense_args_sizes,
                 ),
@@ -2358,15 +2339,15 @@ struct DeviceFunction[
                 ](
                     ctx._handle,
                     self._handle,
-                    grid_dim.x(),
-                    grid_dim.y(),
-                    grid_dim.z(),
-                    block_dim.x(),
-                    block_dim.y(),
-                    block_dim.z(),
-                    shared_mem_bytes.or_else(0),
+                    UInt32(grid_dim.x()),
+                    UInt32(grid_dim.y()),
+                    UInt32(grid_dim.z()),
+                    UInt32(block_dim.x()),
+                    UInt32(block_dim.y()),
+                    UInt32(block_dim.z()),
+                    UInt32(shared_mem_bytes.or_else(0)),
                     attributes.unsafe_ptr(),
-                    len(attributes),
+                    UInt32(len(attributes)),
                     dense_args_addrs,
                     dense_args_sizes,
                 ),
@@ -2395,7 +2376,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2503,10 +2484,11 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = len(
-            VariadicList(Self.declared_arg_types.value())
+        comptime declared_num_args = Variadic.size(
+            Self.declared_arg_types.value()
         )
-        __comptime_assert (
+
+        comptime assert (
             declared_num_args == num_args
         ), "Wrong number of arguments to enqueue"
 
@@ -2546,7 +2528,7 @@ struct DeviceFunction[
             @parameter
             if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
                 # Now check if they handed in the *correct* device dtype.
-                __comptime_assert is_convertible, String(
+                comptime assert is_convertible, String(
                     "argument #",
                     i,
                     " of type '",
@@ -2559,7 +2541,7 @@ struct DeviceFunction[
                 # They handed in a host dtype, in other words, a dtype that
                 # needs to be mapped before handing it to the device. In
                 # this case, we use a more informative error message.
-                __comptime_assert is_convertible, String(
+                comptime assert is_convertible, String(
                     "argument #",
                     i,
                     " of type '",
@@ -2596,7 +2578,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2720,7 +2702,7 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = len(VariadicList(Ts))
+        comptime num_passed_args = Variadic.size(Ts)
         var num_translated_args = 0
 
         var translated_arg_offsets = InlineArray[Int, num_passed_args](
@@ -2812,9 +2794,9 @@ struct DeviceFunction[
                 translated_arg_idx += 1
 
         for i in range(num_captures):
-            dense_args_sizes[num_passed_args + i] = UInt64(
-                self._func_impl.capture_sizes[i]
-            )
+            dense_args_sizes[
+                num_passed_args + i
+            ] = self._func_impl.capture_sizes[i]
 
         if cluster_dim:
             attributes.append(
@@ -2863,15 +2845,15 @@ struct DeviceFunction[
             ](
                 ctx._handle,
                 self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+                UInt32(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                len(attributes),
+                UInt32(len(attributes)),
                 dense_args_addrs,
                 dense_args_sizes,
             ),
@@ -2957,7 +2939,7 @@ struct DeviceFunction[
             ](
                 UnsafePointer(to=result),
                 self._handle,
-                block_size,
+                Int32(block_size),
                 UInt(dynamic_shared_mem_size),
             )
         )
@@ -3102,7 +3084,7 @@ struct DeviceExternalFunction:
                 UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
-                Int(OptimizationLevel),
+                Int32(Int(OptimizationLevel)),
             )
         )
         self._handle = result
@@ -3176,7 +3158,7 @@ struct DeviceExternalFunction:
         Raises:
             If the function launch fails.
         """
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
 
         var dense_args_addrs = InlineArray[
             OpaquePointer[MutAnyOrigin], num_args
@@ -3224,15 +3206,15 @@ struct DeviceExternalFunction:
             ](
                 ctx._handle,
                 self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+                UInt32(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                len(attributes),
+                UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
             )
         )
@@ -3268,8 +3250,7 @@ struct DeviceExternalFunction:
         return Int(result)
 
 
-@register_passable
-struct DeviceContext(ImplicitlyCopyable):
+struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 
@@ -3362,7 +3343,7 @@ struct DeviceContext(ImplicitlyCopyable):
             ](
                 UnsafePointer(to=result),
                 api.as_c_string_slice().unsafe_ptr(),
-                device_id,
+                Int32(device_id),
             )
         )
         self._handle = result
@@ -3728,7 +3709,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3749,7 +3730,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        signature_func: fn(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3806,7 +3787,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3825,7 +3806,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) -> None,
+        func: fn(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3879,7 +3860,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3900,7 +3881,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) capturing -> None,
+        signature_func: fn(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3958,7 +3939,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3977,7 +3958,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) capturing -> None,
+        func: fn(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4031,7 +4012,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -4307,7 +4288,7 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=call_location()
         )
 
-        __comptime_assert (
+        comptime assert (
             not f.declared_arg_types
         ), "A checked DeviceFunction should be called with `enqueue_function`."
         self._enqueue_function_unchecked(
@@ -4383,7 +4364,7 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=call_location()
         )
 
-        __comptime_assert Bool(
+        comptime assert Bool(
             f.declared_arg_types
         ), "Calling a non-checked function."
         self._enqueue_function(
@@ -4493,7 +4474,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        signature_func: fn(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4622,7 +4603,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) -> None,
+        func: fn(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4743,7 +4724,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) capturing -> None,
+        signature_func: fn(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4872,7 +4853,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) capturing -> None,
+        func: fn(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -5066,7 +5047,7 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=call_location()
         )
 
-        __comptime_assert Bool(
+        comptime assert Bool(
             f.declared_arg_types
         ), "Calling a non-checked function."
         self._enqueue_function(
@@ -5167,7 +5148,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn execution_time[
-        func: fn (Self) raises capturing [_] -> None
+        func: fn(Self) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5260,7 +5241,7 @@ struct DeviceContext(ImplicitlyCopyable):
         # Previous context is automatically restored
         ```
         """
-        __comptime_assert not is_gpu(), "DeviceContext is not supported on GPUs"
+        comptime assert not is_gpu(), "DeviceContext is not supported on GPUs"
         return _DeviceContextScope(self)
 
     fn set_as_current(self) raises:
@@ -5288,7 +5269,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn execution_time[
-        func: fn () raises capturing [_] -> None
+        func: fn() raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5358,7 +5339,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn execution_time_iter[
-        func: fn (Self, Int) raises capturing [_] -> None
+        func: fn(Self, Int) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 
@@ -5775,7 +5756,7 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         comptime bitwidth = bit_width_of[dtype]()
-        __comptime_assert (
+        comptime assert (
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
@@ -5824,7 +5805,7 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         comptime bitwidth = bit_width_of[dtype]()
-        __comptime_assert (
+        comptime assert (
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64

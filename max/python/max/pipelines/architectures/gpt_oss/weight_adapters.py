@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,6 +22,12 @@ GPT_OSS_SAFETENSOR_MAP: dict[str, str] = {
     "model.layers.": "language_model.layers.",
     # MoE weight mappings
     ".mlp.router": ".mlp.gate.gate_score",
+    "experts.gate_up_proj_bias": "_experts_gate_up_proj_bias",
+    "experts.down_proj_bias": "_experts_down_proj_bias",
+    # The following weights must be listed after the bias weights, because
+    # they share the same prefix.
+    "experts.gate_up_proj": "_experts_gate_up_proj_weight",
+    "experts.down_proj": "_experts_down_proj_weight",
 }
 
 

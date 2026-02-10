@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,8 +23,8 @@ from max.interfaces import (
     Pipeline,
     RequestID,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnLogits
+from max.kv_cache import PagedKVCacheManager
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TTSContext
 
 if TYPE_CHECKING:
@@ -43,6 +43,12 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     """Converts text to speech.
 
     This pipeline passes all of the work through to the PipelineModel.
+
+    Args:
+        pipeline_config: The configuration for the pipeline.
+        pipeline_model: The pipeline model to use.
+        **unused_kwargs: Optional keyword arguments for API compatibility;
+            ignored.
     """
 
     pipeline_model: PipelineModel[TTSContext]
@@ -54,12 +60,6 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         pipeline_model: type[PipelineModel],
         **unused_kwargs,
     ) -> None:
-        """Initializes the TTS pipeline.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            pipeline_model: The pipeline model to use.
-        """
         # Create the pipeline model.
         # None of the arguments are used except for the config and devices.
         devices = load_devices(pipeline_config.model.device_specs)
@@ -80,6 +80,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     def execute(
         self, inputs: AudioGenerationInputs[TTSContext]
     ) -> dict[RequestID, AudioGenerationOutput]:
+        """Runs the audio generation pipeline for the given inputs."""
         METRICS.input_tokens(
             sum(ctx.tokens.active_length for ctx in inputs.batch.values())
         )
@@ -100,10 +101,12 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         return outputs
 
     def release(self, request_id: RequestID) -> None:
+        """Releases resources associated with the given request."""
         release = getattr(self.pipeline_model, "release")  # noqa: B009
         release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager | NullKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache manager for this pipeline."""
         assert hasattr(self.pipeline_model, "kv_manager")
         return self.pipeline_model.kv_manager

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,8 +21,7 @@ from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable):
+struct RasterOrder(TrivialRegisterPassable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -38,8 +37,7 @@ struct RasterOrder(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -91,7 +89,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 # For simplicity, we always assume M is the static dimension here, because 2SM
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
-@register_passable("trivial")
 struct TileScheduler[
     offsets_layout: Layout,
     //,
@@ -104,7 +101,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-]:
+](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, MutAnyOrigin
@@ -121,8 +118,8 @@ struct TileScheduler[
     )
     var current_dynamic_dim_cumsum: UInt32
     var block_idx_start: UInt32
-    comptime num_static_dim_blocks: UInt32 = ceildiv(
-        Self.static_MN, Self.tile_shape[Self.static_dim]
+    comptime num_static_dim_blocks: UInt32 = UInt32(
+        ceildiv(Self.static_MN, Self.tile_shape[Self.static_dim])
     )
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
@@ -135,10 +132,10 @@ struct TileScheduler[
             DType.uint32, Self.offsets_layout, MutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        __comptime_assert Self.cta_group == Self.cluster[0], (
+        comptime assert Self.cta_group == Self.cluster[0], (
             "cta_group must be equal to cluster M size. Got cta_group = "
             + String(Self.cta_group)
             + " and cluster M size = "
@@ -146,7 +143,7 @@ struct TileScheduler[
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
-        __comptime_assert (
+        comptime assert (
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0
@@ -183,7 +180,7 @@ struct TileScheduler[
 
         # Trim to the next group
         while True:
-            if self.current_group_idx >= self.num_active_experts:
+            if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
@@ -225,12 +222,12 @@ struct TileScheduler[
         var m_block_idx, n_block_idx = self._get_swizzled_block_idx(
             num_n_blocks, group_local_block_idx, num_dynamic_dim_blocks
         )
-        var m = UInt32(m_block_idx) * UInt32(Self.tile_shape[0])
-        var n = UInt32(n_block_idx) * UInt32(Self.cta_group_tile_shape[1])
+        var m = m_block_idx * UInt32(Self.tile_shape[0])
+        var n = n_block_idx * UInt32(Self.cta_group_tile_shape[1])
         if Self.swapAB:
-            n += UInt32(start_idx)
+            n += start_idx
         else:
-            m += UInt32(start_idx)
+            m += start_idx
         # In GMM scheduler, a tile may be invalid, but that is an independent
         # condition from `is_done/terminate`, that is, the CTA might have more
         # work to do in the next group. This is the consequence of not aligning
@@ -276,7 +273,7 @@ struct TileScheduler[
         var secondary_num_blocks: UInt32 = (
             num_dynamic_dim_blocks if Self.swapAB else Self.num_static_dim_blocks
         )
-        var num_blocks_per_group = UInt32(
+        var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
         var div_num_blocks_per_group = FastDiv[DType.uint32](

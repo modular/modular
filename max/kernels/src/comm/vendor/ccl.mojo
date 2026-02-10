@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,11 +20,11 @@ comptime OpaquePointer = LegacyUnsafePointer[
 from memory import UnsafePointer as RealUnsafePointer
 from sys import has_amd_gpu_accelerator
 from pathlib import Path
-from sys.ffi import _get_global_or_null, external_call
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import OwnedDLHandle, _Global
-from collections.optional import OptionalReg
+from ffi import _get_global_or_null, external_call
+from ffi import _find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import OwnedDLHandle, _Global
+from collections.optional import Optional
 from buffer import NDBuffer
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
@@ -37,13 +37,12 @@ comptime ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ncclResult_t(Equatable, Writable):
+struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -53,25 +52,23 @@ struct ncclResult_t(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ncclRedOp_t:
+struct ncclRedOp_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclSum = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ncclDataType_t:
+struct ncclDataType_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclFloat16 = Self(6)
     comptime ncclFloat32 = Self(7)
     comptime ncclBfloat16 = Self(9)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 comptime RCCL_LIBRARY_PATHS: List[Path] = [
@@ -110,7 +107,7 @@ fn _get_ccl_function[
 
 
 # Common function signatures for CCL APIs (shared by RCCL/NCCL)
-comptime CCLAllReduceFn = fn (
+comptime CCLAllReduceFn = fn(
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -120,7 +117,7 @@ comptime CCLAllReduceFn = fn (
     OpaquePointer,
 ) -> ncclResult_t
 
-comptime CCLAllGatherFn = fn (
+comptime CCLAllGatherFn = fn(
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -129,7 +126,7 @@ comptime CCLAllGatherFn = fn (
     OpaquePointer,
 ) -> ncclResult_t
 
-comptime CCLBroadcastFn = fn (
+comptime CCLBroadcastFn = fn(
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -147,12 +144,12 @@ struct _Group:
 
     fn __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", fn() -> ncclResult_t]()()
         )
 
     fn __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", fn() -> ncclResult_t]()()
         )
 
 
@@ -165,7 +162,7 @@ fn ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        fn (
+        fn(
             UnsafePointer[ncclComm_t], Int, UnsafePointer[Int32]
         ) -> ncclResult_t,
     ]()(comms, ndev, devlist)
@@ -298,7 +295,7 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -320,13 +317,13 @@ fn allreduce[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not output_lambda
     ), "vendor_ccl allreduce does not support output epilogue lambdas yet"
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
-    __comptime_assert (
+    comptime assert (
         not use_quickreduce
     ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
@@ -358,7 +355,7 @@ fn _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, fn () -> ncclResult_t]()
+        _ = _get_ccl_function[name, fn() -> ncclResult_t]()
         return True
     except:
         return False
@@ -459,7 +456,7 @@ fn broadcast[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl broadcast does not support multimem path"
     # Determine this device's rank from its context id.

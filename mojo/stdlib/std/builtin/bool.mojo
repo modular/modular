@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,7 +34,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Boolable:
+trait Boolable(ImplicitlyDestructible):
     """The `Boolable` trait describes a type that can be explicitly converted to
     a `Bool` or evaluated as a boolean expression in `if` or `while` conditions.
 
@@ -65,7 +65,6 @@ trait Boolable:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Bool(
     Boolable,
     Comparable,
@@ -79,6 +78,7 @@ struct Bool(
     Intable,
     Representable,
     Stringable,
+    TrivialRegisterPassable,
     Writable,
 ):
     """The primitive Bool scalar value used in Mojo."""
@@ -94,10 +94,10 @@ struct Bool(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime MIN = Bool(False)
+    comptime MIN: Bool = False
     """The minimum value of a Bool."""
 
-    comptime MAX = Bool(True)
+    comptime MAX: Bool = True
     """The maximum value of a Bool."""
 
     # ===-------------------------------------------------------------------===#
@@ -215,6 +215,18 @@ struct Bool(
         """
 
         writer.write("True" if self else "False")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this boolean to a writer.
+
+        The repr of a boolean is the same as its string representation:
+        `True` or `False`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_to(writer)
 
     fn __repr__(self) -> String:
         """Get the bool as a string.
@@ -526,7 +538,7 @@ fn any[
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
 
-    for item0 in iterable:
+    for var item0 in iterable:
         var item = trait_downcast_var[
             ImplicitlyDestructible & Boolable & Movable
         ](item0^)
@@ -570,7 +582,7 @@ fn all[
     Returns:
         `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
-    for item0 in iterable:
+    for var item0 in iterable:
         var item = trait_downcast_var[
             ImplicitlyDestructible & Boolable & Movable
         ](item0^)

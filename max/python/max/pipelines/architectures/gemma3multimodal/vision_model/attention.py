@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,10 +16,10 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn import Linear
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import Module
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 

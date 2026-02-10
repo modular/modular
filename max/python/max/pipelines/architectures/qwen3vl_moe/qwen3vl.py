@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,9 +14,7 @@
 
 from __future__ import annotations
 
-from max.nn import (
-    Module,
-)
+from max.nn.legacy.layer import Module
 
 from .model_config import Qwen3VLConfig
 from .nn.decoder import Qwen3VLMoEDecoder

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, ops
-from max.nn.kernels import scatter_nd_skip_oob_indices
+from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
 
 
 def merge_multimodal_embeddings(

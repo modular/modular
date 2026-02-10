@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,10 +29,10 @@ class RepoType(str, Enum):
     """
 
     online = "online"
-    """Indicates an online repository, typically hosted on HuggingFace Hub.
+    """Indicates an online repository, typically hosted on Hugging Face Hub.
 
     Paths for weights within an online repository are resolved primarily
-    through the local HuggingFace cache, but fall back to downloading through
+    through the local Hugging Face cache, but fall back to downloading through
     the HF API if the local cache isn't populated.
     """
 
@@ -100,6 +100,7 @@ class SupportedEncoding(str, Enum):
 
     @classmethod
     def parse_from_file_name(cls, name: str):  # noqa: ANN206
+        """Infers a SupportedEncoding from a file name string."""
         # TODO(AITLIB-127): Robustify detection of quantization encoding
         name = name.lower()
         if "f32" in name or "fp32" in name or "float32" in name:
@@ -126,6 +127,7 @@ class SupportedEncoding(str, Enum):
 
     @property
     def quantization_encoding(self) -> QuantizationEncoding | None:
+        """Returns the QuantizationEncoding for this encoding, or None if unsupported."""
         if self not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
             raise ValueError(
                 f"SupportedEncoding({self}) does not have corresponding QuantizationEncoding."
@@ -142,14 +144,9 @@ class SupportedEncoding(str, Enum):
         return _SUPPORTED_ENCODING_TO_DTYPE[self]
 
     @property
-    def cache_dtype(self) -> DType:
-        """The underlying dtype used in the kvcache for correctness."""
-        if self not in _SUPPORTED_ENCODING_TO_CACHE_DTYPE:
-            raise ValueError(
-                f"SupportedEncoding({self}) does not have corresponding cache dtype."
-            )
-
-        return _SUPPORTED_ENCODING_TO_CACHE_DTYPE[self]
+    def is_float4(self) -> bool:
+        """Returns True if this encoding represents FP4 (NVFP4)."""
+        return self == SupportedEncoding.float4_e2m1fnx2
 
     def supported_on(self, device_spec: DeviceSpec) -> bool:
         """Returns whether this quantization encoding is supported on a device."""
@@ -170,18 +167,6 @@ _SUPPORTED_ENCODING_TO_DTYPE = {
     SupportedEncoding.q4_0: DType.uint8,
     SupportedEncoding.q6_k: DType.uint8,
     SupportedEncoding.gptq: DType.uint8,
-}
-
-
-_SUPPORTED_ENCODING_TO_CACHE_DTYPE = {
-    SupportedEncoding.float32: DType.float32,
-    SupportedEncoding.bfloat16: DType.bfloat16,
-    SupportedEncoding.float8_e4m3fn: DType.bfloat16,
-    SupportedEncoding.float4_e2m1fnx2: DType.float8_e4m3fn,
-    SupportedEncoding.q4_k: DType.float32,
-    SupportedEncoding.q4_0: DType.float32,
-    SupportedEncoding.q6_k: DType.float32,
-    SupportedEncoding.gptq: DType.bfloat16,
 }
 
 _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from sys import simd_width_of, size_of
@@ -29,6 +28,7 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor import ManagedTensorSlice
 
 from utils import Index, IndexList, StaticTuple
+from collections import OptionalReg
 
 
 @always_inline
@@ -41,7 +41,8 @@ fn _unsafe_normalize_neg_index[
     dtype: DType, width: Int, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
-        idx.cast[out_type]() + dim_size, idx.cast[out_type]()
+        idx.cast[out_type]() + Scalar[out_type](dim_size),
+        idx.cast[out_type](),
     )
 
 
@@ -67,7 +68,7 @@ fn normalize_neg_index[
 
     Returns val + dim if val < 0 else val
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_integral()
     ), "normalize_neg_index expects index to be an integral dtype"
 
@@ -79,8 +80,7 @@ fn normalize_neg_index[
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
-@register_passable("trivial")
-struct Axis(Indexer, Intable):
+struct Axis(Indexer, Intable, TrivialRegisterPassable):
     var axis: Int
 
     @always_inline
@@ -111,7 +111,7 @@ fn gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](
@@ -128,10 +128,10 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    __comptime_assert input.rank == 2
-    __comptime_assert indices.rank == 2
-    __comptime_assert gather_axis == 0
-    __comptime_assert reduce_axis == 1
+    comptime assert input.rank == 2
+    comptime assert indices.rank == 2
+    comptime assert gather_axis == 0
+    comptime assert reduce_axis == 1
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices.size() == 0:
@@ -496,7 +496,7 @@ fn gather_guards(
         raise Error("gather: axis must be less than input rank")
 
 
-comptime error_index_fn_type = fn (Int) capturing -> None
+comptime error_index_fn_type = fn(Int) capturing -> None
 
 
 @always_inline
@@ -504,22 +504,22 @@ fn gather_elementwise_fn_wrapper[
     *,
     dtype: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    indices_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     simd_width: Int,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
+        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
-    error_index_fn: OptionalReg[error_index_fn_type] = None,
+    error_index_fn: Optional[error_index_fn_type] = None,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -609,19 +609,19 @@ fn gather[
     *,
     dtype: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    indices_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
+        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -656,7 +656,7 @@ fn gather[
         fn error_index_fn(val: Int):
             error_index = val
 
-        comptime error_fn = OptionalReg[error_index_fn_type](
+        comptime error_fn = Optional[error_index_fn_type](
             error_index_fn
         ) if is_cpu[target]() else None
 
@@ -708,7 +708,7 @@ fn gather[
         @parameter
         if is_cpu[target]():
             if error_index != -1:
-                var invalid_index = Int(error_index)
+                var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"
@@ -722,19 +722,19 @@ fn gather[
     *,
     dtype: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    indices_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
+        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -773,7 +773,7 @@ fn gather[
         fn error_index_fn(val: Int):
             error_index = val
 
-        comptime error_fn = OptionalReg[error_index_fn_type](
+        comptime error_fn = Optional[error_index_fn_type](
             error_index_fn
         ) if is_cpu[target]() else None
 
@@ -819,7 +819,7 @@ fn gather[
         @parameter
         if is_cpu[target]():
             if error_index != -1:
-                var invalid_index = Int(error_index)
+                var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"
@@ -863,7 +863,7 @@ fn scatter_nd_generator[
     reduce_fn: OptionalReg[
         fn[
             dtype: DType, width: Int
-        ] (SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
+        ](SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
             dtype, width
         ]
     ] = None,
@@ -1036,16 +1036,14 @@ fn scatter_nd_generator[
                 @parameter
                 if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
                     # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
-                    if (
-                        idx_on_axis < -input_ax_dim
-                        or idx_on_axis >= input_ax_dim
-                    ):
+                    if idx_on_axis < Scalar[indices_type](
+                        -input_ax_dim
+                    ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
-                    output_index_tensor[dim] = Int(idx_on_axis)
-                else:
-                    output_index_tensor[dim] = Int(
-                        _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
-                    )
+
+                output_index_tensor[dim] = Int(
+                    _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
 
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0
@@ -1267,7 +1265,7 @@ fn gather_shape[
 
 @always_inline
 fn scatter_elements[
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
     rank: Int,
@@ -1283,7 +1281,7 @@ fn scatter_elements[
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
     """
-    __comptime_assert (
+    comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
     ), "indices in scatter_elements must be int32 or int64"
 
@@ -1406,7 +1404,7 @@ fn gather_elements[
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
     """
-    __comptime_assert (
+    comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
     ), "indices in gather_elements must be int32 or int64"
 
@@ -1586,7 +1584,7 @@ fn _gather_nd_impl[
     output: LayoutTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
@@ -1659,7 +1657,7 @@ fn _gather_nd_impl[
     var slice_rank = data.rank - batch_dims - indices.dim[indices.rank - 1]()
     var slice_last_dim = output.dim[output.rank - 1]() if slice_rank > 0 else 1
 
-    __comptime_assert data.rank - 1 != UNKNOWN_VALUE
+    comptime assert data.rank - 1 != UNKNOWN_VALUE
     var use_simd = (
         data.stride[data.rank - 1]() == 1
         and (slice_last_dim % target_simd_width) == 0
@@ -1746,13 +1744,13 @@ fn scatter_set_constant[
         fill_value: The value to fill the data with.
         ctx: The device context.
     """
-    __comptime_assert (
+    comptime assert (
         index_type.is_integral()
     ), "index_type must be an integer dtype"
-    __comptime_assert (
+    comptime assert (
         data.layout.rank() == 2
     ), "scatter_set: data must have rank 2"
-    __comptime_assert (
+    comptime assert (
         indices.layout.rank() == 2
     ), "scatter_set: indices must have rank 2"
     debug_assert(
@@ -1765,7 +1763,7 @@ fn scatter_set_constant[
     fn scatter_set_constant_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        __comptime_assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
+        comptime assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 

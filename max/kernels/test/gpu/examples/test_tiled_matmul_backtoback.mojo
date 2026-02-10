@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from io.io import _printf
 from math import ceildiv
 from os import abort
@@ -52,13 +52,12 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
-@register_passable("trivial")
 struct BackToBackMatmulConfig[
     dst_type: DType,
     src_type: DType,
     transpose_b: Bool = False,
     transpose_c: Bool = False,
-]:
+](TrivialRegisterPassable):
     # A is MxK
     # B is KxL
     # C is LxN
@@ -79,7 +78,7 @@ struct BackToBackMatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE))
+        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
 
     fn shared_mem_usage(self, K: Int) -> Int:
         return (
@@ -150,18 +149,18 @@ fn b2b_gemm[
     transpose_b: Bool,
     transpose_c: Bool,
     config: BackToBackMatmulConfig[d_type, in_type, transpose_b, transpose_c],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     D: LayoutTensor[d_type, d_layout, MutAnyOrigin],
     A: LayoutTensor[in_type, a_layout, MutAnyOrigin],
     B: LayoutTensor[in_type, b_layout, MutAnyOrigin],
     C: LayoutTensor[in_type, c_layout, MutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         A.dtype in (DType.float32, DType.bfloat16)
         and A.dtype == B.dtype == C.dtype
     ), "B2B gemm only supports tf32 or BF16 mma"
-    __comptime_assert (
+    comptime assert (
         Int(a_layout.shape[1]) != UNKNOWN_VALUE
     ), "The number of columns of `A` must be known."
 
@@ -185,7 +184,7 @@ fn b2b_gemm[
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
     comptime num_pipeline_stages = Int(config.num_pipeline_stages)
-    __comptime_assert WN == BN
+    comptime assert WN == BN
     # We have, roughly
     #
     #
@@ -198,11 +197,11 @@ fn b2b_gemm[
     #             D += AB[0:BM,(0:BK)+bk*BK] * C[0:BK,0:BN]
 
     # To avoid recalculating `A*B`:
-    __comptime_assert N == UInt(BN)
+    comptime assert N == UInt(BN)
     # TODO: lift this restriction
-    __comptime_assert K % UInt(BK) == 0, "K must be an integer multiple of BK"
-    __comptime_assert BN % BK == 0, "BN must be an integer multiple of BK"
-    __comptime_assert K == UInt(
+    comptime assert K % UInt(BK) == 0, "K must be an integer multiple of BK"
+    comptime assert BN % BK == 0, "BN must be an integer multiple of BK"
+    comptime assert K == UInt(
         BK
     ), "FIXME: currently, K == BK must be true, but that is a bug."
 
@@ -497,9 +496,10 @@ fn b2b_gemm[
                 comptime src_idx = type_of(d_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = (
-                    swizzle(d_smem_frag_offset + src_idx_base) + src_idx_diff
-                )
+                var swizzled_idx = swizzle(
+                    d_smem_frag_offset
+                    + Scalar[d_smem_frag.linear_idx_type](src_idx_base)
+                ) + Scalar[d_smem_frag.linear_idx_type](src_idx_diff)
 
                 comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
 
@@ -510,10 +510,18 @@ fn b2b_gemm[
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
                 var m = Int(
-                    (thread_offset + dst_idx) // type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    // type_of(thread_offset)(N)
                 )
                 var n = Int(
-                    (thread_offset + dst_idx) % type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    % type_of(thread_offset)(N)
                 )
                 if m < Int(M) and n < Int(N):
                     epilogue(
@@ -557,10 +565,18 @@ fn b2b_gemm[
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
                 var m = Int(
-                    (thread_offset + dst_idx) // type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    // type_of(thread_offset)(N)
                 )
                 var n = Int(
-                    (thread_offset + dst_idx) % type_of(thread_offset)(N)
+                    (
+                        thread_offset
+                        + Scalar[d_gmem_frag.linear_idx_type](dst_idx)
+                    )
+                    % type_of(thread_offset)(N)
                 )
                 if m < Int(M) and n < Int(N):
                     var vec = (d_reg_frag.ptr + src_idx).load[
@@ -584,7 +600,7 @@ fn multistage_b2b_gemm[
     config: BackToBackMatmulConfig[
         dst_type, src_type, transpose_b, transpose_c
     ],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     D: LayoutTensor,
     A: LayoutTensor,
@@ -593,10 +609,10 @@ fn multistage_b2b_gemm[
     ctx: DeviceContext,
 ):
     try:
-        __comptime_assert dst_type == D.dtype
-        __comptime_assert src_type == A.dtype
-        __comptime_assert src_type == B.dtype
-        __comptime_assert src_type == C.dtype
+        comptime assert dst_type == D.dtype
+        comptime assert src_type == A.dtype
+        comptime assert src_type == B.dtype
+        comptime assert src_type == C.dtype
         comptime b2b_fn = b2b_gemm[
             dst_type,
             src_type,
@@ -622,7 +638,7 @@ fn multistage_b2b_gemm[
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
+                UInt32(smem_use)
             ),
         )
     except e:
@@ -634,15 +650,15 @@ fn matmul_naive(
     A: LayoutTensor,
     B: LayoutTensor,
 ):
-    __comptime_assert len(C.layout) == 2
-    __comptime_assert len(A.layout) == 2
-    __comptime_assert len(B.layout) == 2
+    comptime assert len(C.layout) == 2
+    comptime assert len(A.layout) == 2
+    comptime assert len(B.layout) == 2
     comptime M: Int = size(Layout(C.layout.shape[0]))
     comptime N: Int = size(Layout(C.layout.shape[1]))
     comptime K: Int = size(Layout(A.layout.shape[1]))
-    __comptime_assert M == size(Layout(A.layout.shape[0]))
-    __comptime_assert N == size(Layout(B.layout.shape[1]))
-    __comptime_assert K == size(Layout(B.layout.shape[0]))
+    comptime assert M == size(Layout(A.layout.shape[0]))
+    comptime assert N == size(Layout(B.layout.shape[1]))
+    comptime assert K == size(Layout(B.layout.shape[0]))
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[C.dtype]()
@@ -698,14 +714,16 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
         for k in range(K):
             # mat_a.tensor[m, k] = ((m + 1) / K).cast[src_type]()
             # mat_a.tensor[m, k] = (1 / K).cast[src_type]()
-            mat_a_tensor[m, k] = ((k + m * K) / (M * K)).cast[src_type]()
+            mat_a_tensor[m, k] = (Float64(k + m * K) / Float64(M * K)).cast[
+                src_type
+            ]()
     for k in range(K):
         for l in range(L):
             # mat_b.tensor[k, l] = 1
-            mat_b_tensor[k, l] = l + k * L
+            mat_b_tensor[k, l] = BFloat16(l + k * L)
     for l in range(L):
         for n in range(N):
-            mat_c_tensor[l, n] = ((n * L + l) * 0.125).cast[src_type]()
+            mat_c_tensor[l, n] = (Float64((n * L + l)) * 0.125).cast[src_type]()
             # mat_c.tensor[l, n] = n + l * N
     matmul_naive(host_ab, mat_a_tensor, mat_b_tensor)
     for m in range(M):

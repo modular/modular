@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -56,6 +56,7 @@ _THIRD_PARTY_IMPORTS = {
     "pillow": ["PIL"],
     "python_json_logger": ["pythonjsonlogger"],
     "ruamel_yaml": ["ruamel.yaml"],
+    "pytest": ["pytest", "_pytest"],
     "pyyaml": ["yaml"],
     "pyzmq": ["zmq"],
 }

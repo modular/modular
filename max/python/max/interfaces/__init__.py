@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,6 +21,7 @@ from .context import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
 )
+from .generation import GenerationOutput
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
     BatchLogitsProcessor,
@@ -50,6 +51,10 @@ from .pipeline_variants import (
     EmbeddingsGenerationOutput,
     ImageContentPart,
     ImageMetadata,
+    PixelGenerationContext,
+    PixelGenerationContextType,
+    PixelGenerationInputs,
+    PixelGenerationOutput,
     TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
@@ -63,8 +68,14 @@ from .pipeline_variants import (
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
-from .request import Request, RequestID, RequestType
-from .scheduler import Scheduler, SchedulerError, SchedulerResult
+from .request import (
+    DUMMY_REQUEST_ID,
+    OpenResponsesRequest,
+    Request,
+    RequestID,
+    RequestType,
+)
+from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
@@ -93,6 +104,7 @@ Example:
 """
 
 __all__ = [
+    "DUMMY_REQUEST_ID",
     "AudioGenerationContextType",
     "AudioGenerationInputs",
     "AudioGenerationMetadata",
@@ -107,6 +119,7 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "GenerationOutput",
     "GenerationStatus",
     "ImageContentPart",
     "ImageMetadata",
@@ -119,6 +132,7 @@ __all__ = [
     "LogitsProcessor",
     "MAXPullQueue",
     "MAXPushQueue",
+    "OpenResponsesRequest",
     "Pipeline",
     "PipelineInputs",
     "PipelineInputsType",
@@ -127,8 +141,11 @@ __all__ = [
     "PipelineOutputsDict",
     "PipelineTask",
     "PipelineTokenizer",
-    "PipelineTokenizer",
     "PipelinesFactory",
+    "PixelGenerationContext",
+    "PixelGenerationContextType",
+    "PixelGenerationInputs",
+    "PixelGenerationOutput",
     "ProcessorInputs",
     "Request",
     "RequestID",
@@ -137,7 +154,6 @@ __all__ = [
     "SamplingParamsGenerationConfigDefaults",
     "SamplingParamsInput",
     "Scheduler",
-    "SchedulerError",
     "SchedulerResult",
     "SharedMemoryArray",
     "TextContentPart",
@@ -145,6 +161,7 @@ __all__ = [
     "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
+    "TextGenerationPipelineInterface",
     "TextGenerationRequest",
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",

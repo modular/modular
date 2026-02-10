@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -36,9 +36,11 @@ from .pointer import (
     AddressSpace,
     _GPUAddressSpace,
     GPUAddressSpace,
+    ImmutPointer,
+    MutPointer,
     Pointer,
 )
-from .span import Span
+from .span import ImmutSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,

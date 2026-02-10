@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,15 +17,13 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from utils import IndexList
 
 
-@register_passable("trivial")
-trait BaseT:
+trait BaseT(TrivialRegisterPassable):
     fn get_val(self, idx: Int) -> Float32:
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ImplT(BaseT, ImplicitlyCopyable):
+struct ImplT(BaseT):
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(
@@ -43,7 +41,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
     @__copy_capture(thing)
     fn kernel_fn():
         var idx = Int(thread_idx.x)
-        print(Float32(thing.get_val(idx)) * 2)
+        print(thing.get_val(idx) * 2)
 
     comptime kernel = kernel_fn
     ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))
@@ -57,7 +55,7 @@ def trait_repro(ctx: DeviceContext):
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
     )
     for i in range(size):
-        host_buf[i] = i
+        host_buf[i] = Float32(i)
 
     var device_buf = ctx.enqueue_create_buffer[DType.float32](size)
     with device_buf.map_to_host() as mapped:

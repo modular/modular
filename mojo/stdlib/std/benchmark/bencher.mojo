@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -212,7 +212,7 @@ struct ThroughputMeasure(ImplicitlyCopyable):
             The throughput values as a floating point 64.
         """
         # TODO: do we need support other units of time (ms, ns)?
-        return (self.value) * 1e-9 / elapsed_sec
+        return Float64(self.value) * 1e-9 / elapsed_sec
 
 
 @fieldwise_init
@@ -662,9 +662,9 @@ struct Bench(Stringable, Writable):
         if self.config.out_file:
             stem = String(self.config.out_file.value())
             current_suffix = String("")
-            split = String(stem).split(".")
+            split = stem.split(".")
             if len(split) > 1:
-                stem = String(".".join(split[:-1]))
+                stem = ".".join(split[:-1])
                 current_suffix = String(split[-1])
 
             self.config.out_file = Path(
@@ -673,7 +673,7 @@ struct Bench(Stringable, Writable):
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -708,15 +708,15 @@ struct Bench(Stringable, Writable):
         self.bench_function[input_closure](bench_id, measures)
 
     fn bench_with_input[
-        T: __TypeOfAllTypes,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
+        T: TrivialRegisterPassable,
+        bench_fn: fn(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
         input: T,
         measures: List[ThroughputMeasure] = {},
     ) raises:
-        """Benchmarks an input function with input args of type __TypeOfAllTypes.
+        """Benchmarks an input function with input args of type TrivialRegisterPassable.
 
         Parameters:
             T: Benchmark function input type.
@@ -745,7 +745,7 @@ struct Bench(Stringable, Writable):
 
     @always_inline
     fn bench_multicontext[
-        bench_fn: fn (mut Bencher, DeviceContext, Int) raises capturing [
+        bench_fn: fn(mut Bencher, DeviceContext, Int) raises capturing[
             _
         ] -> None,
     ](
@@ -815,7 +815,7 @@ struct Bench(Stringable, Writable):
 
     @always_inline
     fn bench_function[
-        bench_fn: fn () raises capturing [_] -> None,
+        bench_fn: fn() raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -854,7 +854,7 @@ struct Bench(Stringable, Writable):
     # TODO: add a variant of the following function for with DeviceContext
     @always_inline
     fn bench_function[
-        bench_fn: fn () capturing [_] -> None,
+        bench_fn: fn() capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -888,7 +888,7 @@ struct Bench(Stringable, Writable):
         self.bench_function[bench_iter](bench_id, measures=measures)
 
     fn bench_function[
-        bench_fn: fn (mut Bencher) raises capturing [_] -> None
+        bench_fn: fn(mut Bencher) raises capturing[_] -> None
     ](
         mut self,
         bench_id: BenchId,
@@ -932,7 +932,7 @@ struct Bench(Stringable, Writable):
         elif self.mode == Mode.Test:
             self._test[bench_with_abort_on_err]()
 
-    fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
+    fn _test[bench_fn: fn(mut Bencher) capturing[_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
 
         Parameters:
@@ -943,7 +943,7 @@ struct Bench(Stringable, Writable):
         bench_fn(b)
 
     fn _bench[
-        user_bench_fn: fn (mut Bencher) capturing [_] -> None
+        user_bench_fn: fn(mut Bencher) capturing[_] -> None
     ](
         mut self,
         bench_id: BenchId,
@@ -1053,7 +1053,7 @@ struct Bench(Stringable, Writable):
         Returns:
             A string padded to the given width.
         """
-        __comptime_assert len(pad_str) == 1, "pad_str must be length 1."
+        comptime assert len(pad_str) == 1, "pad_str must be length 1."
 
         if self.config.format == Format.csv:
             return ""
@@ -1214,7 +1214,7 @@ struct Bench(Stringable, Writable):
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)
         for i in range(len(self.info_vec)):
-            var namelen = len(String(self.info_vec[i].name))
+            var namelen = len(self.info_vec[i].name)
             max_val = max(max_val, namelen)
         return max_val
 
@@ -1289,8 +1289,7 @@ struct _Metric(Copyable):
 
 
 @fieldwise_init
-@register_passable
-struct Bencher:
+struct Bencher(RegisterPassable):
     """Defines a Bencher struct which facilitates the timing of a target function.
     """
 
@@ -1310,7 +1309,7 @@ struct Bencher:
         self.num_iters = num_iters
         self.elapsed = 0
 
-    fn iter[iter_fn: fn () capturing [_] -> None](mut self):
+    fn iter[iter_fn: fn() capturing[_] -> None](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -1318,15 +1317,32 @@ struct Bencher:
             iter_fn: The target function to benchmark.
         """
 
+        @always_inline
+        fn unified_closure() unified {}:
+            iter_fn()
+
+        self.iter(unified_closure)
+
+    fn iter[IterFn: fn() unified](mut self, f: IterFn):
+        """Returns the total elapsed time by running a target closure a
+        particular number of times.
+
+        Parameters:
+            IterFn: Type of the closure to benchmark.
+
+        Args:
+            f: The closure to benchmark.
+        """
+
         var start = time.perf_counter_ns()
         for _ in range(self.num_iters):
-            iter_fn()
+            f()
         var stop = time.perf_counter_ns()
         self.elapsed = Int(stop - start)
 
     fn iter_preproc[
-        iter_fn: fn () capturing [_] -> None,
-        preproc_fn: fn () capturing [_] -> None,
+        iter_fn: fn() capturing[_] -> None,
+        preproc_fn: fn() capturing[_] -> None,
     ](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
@@ -1343,7 +1359,7 @@ struct Bencher:
             var stop = time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    fn iter_custom[iter_fn: fn (Int) raises capturing [_] -> Int](mut self):
+    fn iter_custom[iter_fn: fn(Int) raises capturing[_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:
@@ -1356,7 +1372,7 @@ struct Bencher:
             abort(String(e))
 
     fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
+        kernel_launch_fn: fn(DeviceContext) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1372,7 +1388,7 @@ struct Bencher:
             abort(String(e))
 
     fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
+        kernel_launch_fn: fn(DeviceContext, Int) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1390,7 +1406,7 @@ struct Bencher:
             abort(String(e))
 
     fn iter_custom_multicontext[
-        kernel_launch_fn: fn () raises capturing [_] -> None
+        kernel_launch_fn: fn() raises capturing[_] -> None
     ](mut self, ctxs: List[DeviceContext]):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1411,7 +1427,7 @@ struct Bencher:
         except e:
             abort(String(e))
 
-    fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
+    fn iter[iter_fn: fn() capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
 

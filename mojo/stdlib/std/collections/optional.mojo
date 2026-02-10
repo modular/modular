@@ -47,9 +47,10 @@ struct _NoneType(ImplicitlyCopyable):
     pass
 
 
-@register_passable
 @fieldwise_init
-struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
+struct EmptyOptionalError[T: AnyType](
+    ImplicitlyCopyable, RegisterPassable, Writable
+):
     """An error type for when an empty `Optional` is accessed.
 
     Parameters:
@@ -387,7 +388,7 @@ struct Optional[T: Movable](
     @always_inline
     fn __getitem__(
         ref self,
-    ) raises EmptyOptionalError[Self.T] -> ref [self._value] Self.T:
+    ) raises EmptyOptionalError[Self.T] -> ref[self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -472,7 +473,7 @@ struct Optional[T: Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(ref self) -> ref [self._value] Self.T:
+    fn value(ref self) -> ref[self._value] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -502,7 +503,7 @@ struct Optional[T: Movable](
         return self.unsafe_value()
 
     @always_inline
-    fn unsafe_value(ref self) -> ref [self._value] Self.T:
+    fn unsafe_value(ref self) -> ref[self._value] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -681,8 +682,9 @@ struct Optional[T: Movable](
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
+struct OptionalReg[T: __TypeOfAllTypes](
+    Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
+):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register
@@ -710,15 +712,6 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
         return String("OptionalReg[", get_type_name[Self.T](), "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Get the human-readable device type name for this `OptionalReg` type.
-
-        Returns:
-            A string representation of the device type (same as type name for `OptionalReg`).
-        """
-        return Self.get_type_name()
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

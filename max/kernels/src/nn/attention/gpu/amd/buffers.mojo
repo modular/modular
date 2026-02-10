@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, recip
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 
@@ -134,7 +130,7 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](Int(warp_col), 0)
+        return IndexList[2](warp_col, 0)
 
 
 @fieldwise_init
@@ -152,7 +148,7 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](0, Int(warp_col))
+        return IndexList[2](0, warp_col)
 
 
 struct KVBufferImpl[
@@ -167,7 +163,7 @@ struct KVBufferImpl[
     //,
     config: KVBufferConfig,
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -300,14 +296,14 @@ struct KVBufferImpl[
     fn __init__(
         out self,
         global_tile: Self.GlobalTensorType,
-        num_b_rows: OptionalReg[Int],
+        num_b_rows: Optional[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
-        # __comptime_assert
+        # comptime assert
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
@@ -334,7 +330,7 @@ struct KVBufferImpl[
                 self.load_tile_id
             ].vectorize[1, Self.simd_width](),
             self.global_iterator,
-            self.bounds,
+            UInt32(self.bounds),
         )
         self.global_iterator._incr()
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
@@ -382,7 +378,7 @@ struct KVBufferImpl[
 
 comptime KBuffer[
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -405,7 +401,7 @@ comptime KBuffer[
 
 comptime VBuffer[
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -566,16 +562,16 @@ struct VBufferTransposeLoads[
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
-        __comptime_assert Self.depth in (
+        comptime assert Self.depth in (
             64,
             128,
             256,
         ), "depth must be 64, 128, or 256"
-        __comptime_assert (
+        comptime assert (
             Self.tensor_core_mma.shape[2] * Self.tensor_core_mma.group_size
             == 16
         ), "tensor_core_mma.shape[2] * tensor_core_mma.group_size must be 16"
@@ -607,7 +603,7 @@ struct VBufferTransposeLoads[
         var global_tile = self.global_iterator[]
         var warp_id = get_warp_id()
 
-        __comptime_assert (
+        comptime assert (
             Self.loads_per_thread_per_depth_tile == 2
         ), "loads_per_thread_per_depth_tile must be 2"
         var load_tile = self.load_tile.split[Self.num_stages]()[
@@ -811,7 +807,7 @@ struct QRegisterBuffer[
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var bounds = max(
             min(Int32(Self.WM), Int32(tensor.dim[0]() - Self.WM * warp_row))
-            * tensor.stride[0](),
+            * Int32(tensor.stride[0]()),
             0,
         )
         var gmem_warp_iter = tensor.tiled_iterator[Self.WM, Self.BK, axis=1](
@@ -828,7 +824,7 @@ struct QRegisterBuffer[
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
-                Int(readfirstlane(Int32(bounds))),
+                UInt32(Int(readfirstlane(bounds))),
             )
             gmem_warp_iter._incr()
 
@@ -973,7 +969,9 @@ struct PRegisterBuffer[
     fn __init__(
         out self,
         shared_ptr: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED, ...
+            Scalar[Self.dtype],
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
         ],
     ):
         self.reg_tile = Self.RegisterTileType_.stack_allocation()
@@ -999,7 +997,7 @@ struct PRegisterBuffer[
 
             @parameter
             if Self.mma_shape[0] == 32:
-                __comptime_assert (
+                comptime assert (
                     Self.output_frag_size == 16
                 ), "output_frag_size must be 16 for 32x32 mma shape"
 
@@ -1007,7 +1005,7 @@ struct PRegisterBuffer[
                 for j in range(Self.output_frag_size):
                     out[0, j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
             elif Self.mma_shape[0] == 16:
-                __comptime_assert (
+                comptime assert (
                     Self.output_frag_size == 4
                 ), "output_frag_size must be 4 for 16x16 mma shape"
 
@@ -1076,8 +1074,12 @@ struct PRegisterBuffer[
         return mma_reg_tile
 
     @always_inline
+    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+        return self.get_mma_tile[tile_idx, k_idx, 0]()
+
+    @always_inline
     fn get_mma_tile[
-        tile_idx: Int, k_idx: Int, stage: Int = 0
+        tile_idx: Int, k_idx: Int, stage: Int
     ](self) -> Self.MMATileType:
         return self.get_mma_tile_reg[
             tile_idx, k_idx, stage
@@ -1104,8 +1106,12 @@ struct PRegisterBuffer[
         )
 
     @always_inline
-    fn zero[stage: Int = 0](self):
+    fn zero[stage: Int](self):
         _ = self.reg_tile.split[Self.num_stages]()[stage].fill(0)
+
+    @always_inline
+    fn zero(self):
+        self.zero[0]()
 
     @always_inline
     fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
@@ -1129,7 +1135,7 @@ struct PRegisterBuffer[
         comptime num_n_mmas_per_bk = Self.num_n_mmas // (Self.WN // Self.BK)
 
         # for the following indexing logic, WN must be equal to BN or BK
-        __comptime_assert (
+        comptime assert (
             Self.WN == Self.BK or Self.WN == Self.BN
         ), "WN must be equal to BN or BK"
 

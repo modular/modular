@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -69,10 +69,10 @@ def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
 def test_color_to_grayscale():
     with DeviceContext() as ctx:
         var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
-            rgb_layout_orig.size()
+            comptime (rgb_layout_orig.size())
         )
         var gray_buffer = ctx.enqueue_create_buffer[int_dtype](
-            gray_layout_orig.size()
+            comptime (gray_layout_orig.size())
         )
 
         var rgb_tensor = InputTensor[static_spec=rgb_spec](
@@ -88,9 +88,9 @@ def test_color_to_grayscale():
             # Fill the image with initial colors.
             for row in range(HEIGHT):
                 for col in range(WIDTH):
-                    rgb_tensor[row, col, 0] = row + col
-                    rgb_tensor[row, col, 1] = row + col + 20
-                    rgb_tensor[row, col, 2] = row + col + 40
+                    rgb_tensor[row, col, 0] = UInt8(row + col)
+                    rgb_tensor[row, col, 1] = UInt8(row + col + 20)
+                    rgb_tensor[row, col, 2] = UInt8(row + col + 40)
 
         var gray_tensor = OutputTensor[static_spec=gray_spec](
             gray_buffer.unsafe_ptr(), IndexList[2](HEIGHT, WIDTH)
