@@ -118,6 +118,25 @@ def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
     return _reduce(rmo.mo_reduce_max, x, axis=axis)
 
 
+def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
+    """Reduces a symbolic tensor using a product operation.
+
+    Computes the product of elements along a specified axis.
+
+    Args:
+        x: The input tensor for the operation.
+        axis: The axis along which to compute the reduction. If negative,
+            indexes from the last dimension. For example, a value of -1 will
+            compute the reduction along the last dimension.
+
+    Returns:
+        A symbolic tensor representing the result of the product operation.
+        The tensor will have the same rank as the input tensor, and the same
+        shape except along the ``axis`` dimension which will have size 1.
+    """
+    return _reduce(rmo.mo_reduce_mul, x, axis=axis)
+
+
 def _reduce(
     op,  # noqa: ANN001
     x: TensorValueLike,

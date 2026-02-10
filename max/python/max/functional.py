@@ -708,6 +708,26 @@ permute = functional(ops.permute)
 #: Raises tensor elements to a power.
 #: See :func:`max.graph.ops.pow` for details.
 pow = functional(ops.pow)
+
+
+@functional
+def prod(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Computes the product along specified axes.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to compute the product. If None,
+            computes the product across all elements (flattened).
+
+    Returns:
+        A tensor containing the product values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.prod(x, axis=axis)
+
+
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
 arange = functional(ops.range)
