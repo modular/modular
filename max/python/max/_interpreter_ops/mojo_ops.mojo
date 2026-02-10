@@ -25,6 +25,7 @@ from algorithm import max as reduce_max
 from algorithm import min as reduce_min
 from algorithm import sum as reduce_sum
 from algorithm import mean as reduce_mean
+from algorithm import product as reduce_product
 from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
@@ -315,6 +316,9 @@ fn PyInit_mojo_ops() -> PythonObject:
             "ReduceAdd", docstring="Reduce add along axis"
         )
         b.def_function[mean_dispatcher]("Mean", docstring="Mean along axis")
+        b.def_function[reduce_mul_dispatcher](
+            "ReduceMul", docstring="Reduce mul along axis"
+        )
 
         # Static broadcast to operation
         b.def_function[static_broadcast_to_dispatcher](
@@ -2336,6 +2340,32 @@ fn _reduce_mean[
     ](input_shape, reduce_dim, output_shape, context)
 
 
+fn _reduce_mul[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.product for use with ReduceFn."""
+    reduce_product[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
 fn reduce_dispatcher[
     reduce_fn: ReduceFn
 ](
@@ -2613,6 +2643,17 @@ fn mean_dispatcher(
     device_context_ptr: PythonObject,
 ) raises:
     reduce_dispatcher[_reduce_mean](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn reduce_mul_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_mul](
         out_buffer, in_buffer, axis, device_context_ptr
     )
 
