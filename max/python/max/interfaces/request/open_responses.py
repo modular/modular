@@ -25,18 +25,22 @@ Spec: https://www.openresponses.org/reference
 from __future__ import annotations
 
 import base64
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.provider_options import ProviderOptions
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .base import Request, RequestID
+
+if TYPE_CHECKING:
+    from max.interfaces.generation import GenerationOutput
 
 # ============================================================================
 # Section 1: Enumerations
@@ -329,10 +333,11 @@ class OutputImageContent(BaseModel):
         suitable for the OpenResponses API.
 
         Args:
-            array: A numpy array containing image data. Expected shapes:
+            array: A numpy array containing image data with dtype float32.
+                   Expected shapes:
                    - [H, W, C] for color images (C=3 for RGB, C=4 for RGBA)
                    - [H, W] for grayscale images
-                   Values should be in range [0, 1] (float) or [0, 255] (uint8).
+                   Values should be in range [0, 1].
             format: The image format to use for encoding (e.g., 'png', 'jpeg', 'webp').
                     Defaults to 'png'.
             detail: Optional detail level for the generated image.
@@ -360,12 +365,12 @@ class OutputImageContent(BaseModel):
             )
 
         # Convert to uint8 if needed
-        if array.dtype in (np.float32, np.float64):
+        if array.dtype == np.float32:
             # Assume values are in [0, 1] range
             array = np.clip(array * 255, 0, 255).astype(np.uint8)
-        elif array.dtype != np.uint8:
+        else:
             raise ValueError(
-                f"Unsupported dtype {array.dtype}. Expected float32, float64, or uint8."
+                f"Unsupported dtype {array.dtype}. Expected float32."
             )
 
         # Handle different array shapes
@@ -1176,6 +1181,27 @@ class OpenResponsesRequestBody(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def validate_streaming_not_supported(self) -> OpenResponsesRequestBody:
+        """Validate that streaming is not requested.
+
+        Streaming is not currently supported in the MAX implementation of the
+        OpenResponses API. This validator ensures that requests with stream=True
+        are rejected during validation.
+
+        Raises:
+            ValueError: If stream is set to True.
+
+        Returns:
+            The validated OpenResponsesRequestBody instance.
+        """
+        if self.stream is True:
+            raise ValueError(
+                "Streaming is not currently supported. "
+                "Please set 'stream' to false or omit it from the request."
+            )
+        return self
+
 
 # ============================================================================
 # Section 9: Main Response Type
@@ -1331,6 +1357,65 @@ class ResponseResource(BaseModel):
         None,
         description="The verbosity level used.",
     )
+
+    @classmethod
+    def from_generation_output(
+        cls,
+        generation_output: GenerationOutput,
+        model: str,
+    ) -> ResponseResource:
+        """Create a ResponseResource from a GenerationOutput.
+
+        Converts pipeline generation output to the OpenResponses API response format.
+
+        Args:
+            generation_output: The generation output from the pipeline, containing
+                the generated content (images, etc.) and request metadata.
+            model: The model name used for generation.
+
+        Returns:
+            A ResponseResource instance with the generated content formatted as
+            an assistant message in the output field.
+
+        Example:
+            >>> from max.interfaces.generation import GenerationOutput
+            >>> from max.interfaces.request import RequestID
+            >>> from max.interfaces.request.open_responses import OutputImageContent
+            >>> from max.interfaces.status import GenerationStatus
+            >>> import numpy as np
+            >>>
+            >>> # Create generation output
+            >>> img_array = np.random.rand(512, 512, 3).astype(np.float32)
+            >>> gen_output = GenerationOutput(
+            ...     request_id=RequestID(value="req-123"),
+            ...     final_status=GenerationStatus.END_OF_SEQUENCE,
+            ...     output=[OutputImageContent.from_numpy(img_array, format="png")]
+            ... )
+            >>>
+            >>> # Convert to ResponseResource
+            >>> response = ResponseResource.from_generation_output(
+            ...     gen_output, model="flux-1-schnell"
+            ... )
+        """
+        # Create a message from the generation output
+        # Message IDs follow the format: msg_<request_id>_<index>
+        message_index = 0
+        message = Message(
+            id=f"msg_{generation_output.request_id.value}_{message_index}",
+            role=MessageRole.assistant,
+            content=generation_output.output,
+            status=MessageStatus.completed,
+        )
+
+        return cls(
+            id=f"resp_{generation_output.request_id.value}",
+            object="response",
+            created_at=int(time.time()),
+            status="completed",
+            model=model,
+            output=[message],
+            usage=None,  # TODO: Populate token usage if available from generation_output
+        )
 
 
 # ============================================================================

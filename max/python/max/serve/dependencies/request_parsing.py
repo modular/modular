@@ -67,17 +67,17 @@ async def parse_request_generic(
         # that returns an instance of T
         result = await parser_class.from_fastapi_request(request)  # type: ignore[attr-defined]
         return cast(T, result)
-    except ValueError as e:
-        logger.error("Request parsing failed: %s", e)
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail=f"Invalid request: {str(e)}",
-        ) from e
     except ValidationError as e:
         logger.error("Request validation failed: %s", e)
         raise HTTPException(
             status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             detail=f"Validation error: {str(e)}",
+        ) from e
+    except ValueError as e:
+        logger.error("Request parsing failed: %s", e)
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f"Invalid request: {str(e)}",
         ) from e
 
 

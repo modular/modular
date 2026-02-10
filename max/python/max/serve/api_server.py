@@ -39,6 +39,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -177,8 +178,24 @@ async def lifespan(
             model_worker=model_worker,
         )
 
+        # Store modality-specific pipeline (TokenGeneratorPipeline, AudioGeneratorPipeline)
+        # This is used by legacy API routes (OpenAI, KServe, SageMaker) which have
+        # modality-specific assumptions baked into their request/response handling.
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+        app.state.model_worker_interface = model_worker_interface
+
+        # Store GeneralPipelineHandler for OpenResponses API route
+        # This handler is modality-agnostic and implements the OpenResponses standard,
+        # providing a cleaner abstraction without API-specific assumptions.
+        # Long-term goal: migrate all routes to use this unified handler as we adopt
+        # standards-based APIs and deprecate legacy modality-specific handlers.
+        app.state.handler = GeneralPipelineHandler(
+            model_name=pipeline.model_name,
+            tokenizer=serving_settings.tokenizer,
+            model_worker=model_worker,
+            lora_queue=lora_queue,
+        )
 
         logger.info(
             f"\n\n{'*' * 80}\n\n"

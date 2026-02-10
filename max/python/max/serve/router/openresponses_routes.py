@@ -23,11 +23,11 @@ from __future__ import annotations
 
 import logging
 from http import HTTPStatus
-from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from max.interfaces import OpenResponsesRequest
+from max.interfaces.request.open_responses import ResponseResource
 from max.serve.dependencies import create_request_parser
 
 router = APIRouter(prefix="/v1")
@@ -45,23 +45,24 @@ async def create_response(
     """Create a response using the OpenResponses API schema.
 
     This endpoint provides a clean implementation of the OpenResponses
-    standard. Currently stubbed for development - streaming and full
-    response generation will be implemented in future iterations.
+    standard for generating responses from AI models.
 
     Args:
         request: The incoming FastAPI request containing OpenResponses data.
         open_responses_request: Parsed and validated OpenResponses request
-            (automatically injected via dependency injection).
+            (automatically injected via dependency injection). Validation
+            includes checking that streaming is not requested.
 
     Returns:
-        A JSONResponse with the stubbed response data.
+        A JSONResponse with the generated response data.
 
     Raises:
-        HTTPException: If request parsing or validation fails (handled by
-            the dependency).
+        HTTPException: If request parsing or validation fails, including
+            if streaming is requested (not currently supported).
     """
 
     # Request is already parsed and validated via dependency injection
+    # (including validation that streaming is not requested)
     logger.debug(
         "OpenResponses request parsed successfully - "
         "request_id=%s, model=%s, stream=%s",
@@ -70,34 +71,40 @@ async def create_response(
         open_responses_request.body.stream,
     )
 
-    # TODO: Implement actual response generation
-    # This is where we will:
-    # 1. Get the pipeline from request.app.state.pipeline
-    # 2. Convert OpenResponses request to internal format
-    # 3. Generate response (with streaming support if requested)
-    # 4. Convert internal response back to OpenResponses format
+    # Generate response using the GeneralPipelineHandler from app state
+    logger.debug("Starting response generation")
 
-    # Stubbed response for now
-    stubbed_response: dict[str, Any] = {
-        "id": f"resp_{open_responses_request.request_id.value}",
-        "object": "response",
-        "created_at": 1234567890,
-        "status": "completed",
-        "model": open_responses_request.body.model,
-        "output": [
-            {
-                "id": "msg_stub",
-                "role": "assistant",
-                "content": "This is a stubbed response. Full implementation coming soon.",
-                "status": "completed",
-            }
-        ],
-        "usage": {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-        },
-    }
+    # Get the first chunk from the handler (raises StopAsyncIteration if empty)
+    generator = request.app.state.handler.next(open_responses_request)
+    final_output = await anext(generator)
+    logger.debug(
+        "Received chunk - is_done=%s, status=%s",
+        final_output.is_done,
+        final_output.final_status,
+    )
 
-    logger.debug("Returning stubbed response: %s", stubbed_response)
-    return JSONResponse(content=stubbed_response, status_code=HTTPStatus.OK)
+    # Continue consuming chunks until we get is_done=True
+    if not final_output.is_done:
+        async for chunk in generator:
+            logger.debug(
+                "Received chunk - is_done=%s, status=%s",
+                chunk.is_done,
+                chunk.final_status,
+            )
+            final_output = chunk
+            if chunk.is_done:
+                break
+
+    # Convert GenerationOutput to ResponseResource format
+    response = ResponseResource.from_generation_output(
+        final_output, model=open_responses_request.body.model
+    )
+
+    logger.debug(
+        "Returning response for request_id=%s",
+        open_responses_request.request_id.value,
+    )
+    return JSONResponse(
+        content=response.model_dump(mode="json", exclude_none=True),
+        status_code=HTTPStatus.OK,
+    )
