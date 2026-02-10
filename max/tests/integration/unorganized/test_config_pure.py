@@ -12,8 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
@@ -21,7 +25,13 @@ from max.dtype import DType
 from max.entrypoints.cli.config import parse_task_flags
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
-from max.pipelines.lib import MAXModelConfig, PipelineConfig, SamplingConfig
+from max.pipelines.lib import (
+    MAXModelConfig,
+    PipelineConfig,
+    PipelineRole,
+    SamplingConfig,
+)
+from max.pipelines.lib.config import AudioGenerationConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -1176,3 +1186,127 @@ class TestSamplingConfig:
 
         # Assert that enable_penalties is False
         assert sampling_config.enable_penalties is False
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_validate_and_resolve_overlap_scheduler__auto_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    @contextmanager
+    def patch_retrieve_architecture(
+        arch_name: str,
+    ) -> Generator[None, None, None]:
+        with monkeypatch.context() as m:
+            # Mock .huggingface_model_repo so that we don't reach out to HF
+            m.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+            # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch
+            arch = SimpleNamespace(name=arch_name)
+            m.setattr(
+                PIPELINE_REGISTRY,
+                "retrieve_architecture",
+                Mock(return_value=arch),
+            )
+            yield
+
+    # Override enable_overlap_scheduler to True for Llama
+    with patch_retrieve_architecture("LlamaForCausalLM_Legacy"):
+        config = PipelineConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.accelerator()],
+            max_num_steps=42,
+        )
+        config._validate_and_resolve_overlap_scheduler()
+        assert config.enable_overlap_scheduler is True
+        assert config.max_num_steps == 1
+
+    # Don't override if the device is CPU
+    with patch_retrieve_architecture("LlamaForCausalLM_Legacy"):
+        config = PipelineConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.cpu()],
+        )
+        config._validate_and_resolve_overlap_scheduler()
+        assert config.enable_overlap_scheduler is False
+
+    # Don't override if structured output is enabled
+    with patch_retrieve_architecture("LlamaForCausalLM_Legacy"):
+        config = PipelineConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.accelerator()],
+            sampling=SamplingConfig(enable_structured_output=True),
+        )
+        config._validate_and_resolve_overlap_scheduler()
+        assert config.enable_overlap_scheduler is False
+
+    # Don't override if the pipeline role is not PrefillAndDecode
+    with patch_retrieve_architecture("LlamaForCausalLM_Legacy"):
+        config = PipelineConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.accelerator()],
+            pipeline_role=PipelineRole.PrefillOnly,
+        )
+        config._validate_and_resolve_overlap_scheduler()
+        assert config.enable_overlap_scheduler is False
+
+    # Don't override for other architectures
+    with patch_retrieve_architecture("SomeOtherArchitecture"):
+        config = PipelineConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.accelerator()],
+        )
+        config._validate_and_resolve_overlap_scheduler()
+        assert config.enable_overlap_scheduler is False
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_validate_and_resolve_overlap_scheduler__validate() -> None:
+    # Allow user to manually enable overlap scheduler
+    config = PipelineConfig(
+        model_path="test/model",
+        device_specs=[DeviceSpec.accelerator()],
+        enable_overlap_scheduler=True,
+    )
+    config._validate_and_resolve_overlap_scheduler()
+    assert config.enable_overlap_scheduler is True
+
+    # Error out if user tries to enable overlap scheduler on CPU
+    config = PipelineConfig(
+        model_path="test/model",
+        device_specs=[DeviceSpec.cpu()],
+        enable_overlap_scheduler=True,
+    )
+    with pytest.raises(ValueError):
+        config._validate_and_resolve_overlap_scheduler()
+
+    # Error out if user tries to enable overlap scheduler without PrefillAndDecode
+    config = PipelineConfig(
+        model_path="test/model",
+        device_specs=[DeviceSpec.accelerator()],
+        pipeline_role=PipelineRole.PrefillOnly,
+        enable_overlap_scheduler=True,
+    )
+    with pytest.raises(ValueError):
+        config._validate_and_resolve_overlap_scheduler()
+
+    # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
+    config = AudioGenerationConfig(
+        model_path="test/model",
+        device_specs=[DeviceSpec.accelerator()],
+        pipeline_role=PipelineRole.PrefillAndDecode,
+        audio_decoder=Mock(),
+        enable_overlap_scheduler=True,
+    )
+    with pytest.raises(ValueError):
+        config._validate_and_resolve_overlap_scheduler()
+
+    # Error out if user tries to enable overlap scheduler with structured output
+    config = PipelineConfig(
+        model_path="test/model",
+        device_specs=[DeviceSpec.accelerator()],
+        sampling=SamplingConfig(enable_structured_output=True),
+        enable_overlap_scheduler=True,
+    )
+    with pytest.raises(ValueError):
+        config._validate_and_resolve_overlap_scheduler()
