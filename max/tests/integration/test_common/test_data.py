@@ -21,11 +21,18 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from max.interfaces import (
-    PixelGenerationRequest,
     RequestID,
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+)
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
+from max.interfaces.request import (
+    OpenResponsesRequest,
+    OpenResponsesRequestBody,
 )
 from max.support import fetch_bytes_from_s3
 
@@ -198,24 +205,28 @@ class MockPixelGenerationRequest:
             model_name=model_name,
         )
 
-    def to_pixel_generation_request(
+    def to_open_responses_request(
         self, request_id: RequestID, model_name: str | None = None
-    ) -> PixelGenerationRequest:
-        """Convert to a PixelGenerationRequest."""
-        return PixelGenerationRequest(
-            request_id=request_id,
-            model_name=model_name or self.model_name,
-            prompt=self.prompt,
-            secondary_prompt=self.secondary_prompt,
-            negative_prompt=self.negative_prompt,
-            secondary_negative_prompt=self.secondary_negative_prompt,
-            height=self.height,
-            width=self.width,
-            num_inference_steps=self.num_inference_steps,
-            guidance_scale=self.guidance_scale,
-            true_cfg_scale=self.true_cfg_scale,
+    ) -> OpenResponsesRequest:
+        """Convert to an OpenResponsesRequest for pixel generation."""
+        body = OpenResponsesRequestBody(
+            model=model_name or self.model_name,
+            input=self.prompt,
             seed=self.seed,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    negative_prompt=self.negative_prompt,
+                    secondary_prompt=self.secondary_prompt,
+                    secondary_negative_prompt=self.secondary_negative_prompt,
+                    height=self.height,
+                    width=self.width,
+                    steps=self.num_inference_steps,
+                    guidance_scale=self.guidance_scale,
+                    true_cfg_scale=self.true_cfg_scale,
+                )
+            ),
         )
+        return OpenResponsesRequest(request_id=request_id, body=body)
 
 
 # Existing test data extracted from evaluate.py

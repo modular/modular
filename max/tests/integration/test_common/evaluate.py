@@ -15,8 +15,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from io import BytesIO
 from typing import Any, TypedDict, TypeVar
 
 import numpy as np
@@ -42,11 +43,26 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationRequest,
 )
+from PIL import Image
 from transformers import PreTrainedTokenizerBase
 from typing_extensions import NotRequired
 
 from .numerics import log_softmax
 from .test_data import MockPixelGenerationRequest, MockTextGenerationRequest
+
+
+def _decode_base64_image_to_numpy(image_data: str) -> np.ndarray:
+    """Decode base64-encoded image to numpy array (H, W, C) float32 [0, 1].
+
+    Mirrors the decode logic used in simple_offline_generation.save_image,
+    but returns numpy for evaluation/comparison instead of saving to file.
+    """
+    image_bytes = base64.b64decode(image_data)
+    pil_image = Image.open(BytesIO(image_bytes))
+    img_array = np.array(pil_image, dtype=np.float32) / 255.0
+    if img_array.ndim == 2:
+        img_array = np.stack([img_array] * 3, axis=-1)
+    return img_array
 
 
 class TokenInfo(TypedDict, total=False):
@@ -577,19 +593,21 @@ def run_pixel_generation(
 
     for mock_request in requests:
         prompt = mock_request.prompt
-        if print_outputs:
-            print(f"Generating image for prompt: {prompt}")
+        # Override num_steps if explicitly provided (for verification with different step counts)
+        if num_steps != mock_request.num_inference_steps:
+            mock_request = replace(mock_request, num_inference_steps=num_steps)
 
-        # Convert MockPixelGenerationRequest to PixelGenerationRequest
+        if print_outputs:
+            print(
+                f'Generating image for prompt (steps={num_steps}): "{prompt}"'
+            )
+
+        # Convert MockPixelGenerationRequest to OpenResponsesRequest
         request_id = RequestID()
-        request = mock_request.to_pixel_generation_request(
+        request = mock_request.to_open_responses_request(
             request_id=request_id,
             model_name=tokenizer.model_path,
         )
-
-        # Override num_steps if explicitly provided (for verification with different step counts)
-        if num_steps != mock_request.num_inference_steps:
-            request = replace(request, num_inference_steps=num_steps)
 
         # Create context from request using tokenizer
         context = asyncio.run(tokenizer.new_context(request))
@@ -614,22 +632,37 @@ def run_pixel_generation(
             print(f"WARNING: Generation status: {output.final_status}")
             continue
 
-        if print_outputs:
-            print(f"Generated image shape (raw): {output.pixel_data.shape}")
-
-        # Post-process the pixel data to convert from model format (NCHW, [-1, 1])
-        # to display format (NHWC, [0, 1]) - same as torch output
-        pixel_data = asyncio.run(tokenizer.postprocess(output.pixel_data))
-
-        if print_outputs:
-            print(f"Generated image shape (postprocessed): {pixel_data.shape}")
-
-        # Take first image from batch dimension if present
-        if pixel_data.shape[0] > 0:
-            image_np = pixel_data[0]  # Shape: (H, W, C)
-        else:
-            print("ERROR: No pixel data generated")
+        # GenerationOutput has output: list[OutputImageContent] (see simple_offline_generation example).
+        # Extract images from OutputImageContent (base64 -> numpy) for evaluation.
+        if not output.output:
+            print("ERROR: No images generated")
             continue
+
+        pixel_data_list: list[np.ndarray] = []
+        for image_content in output.output:
+            if image_content.image_data:
+                pixel_data_list.append(
+                    _decode_base64_image_to_numpy(image_content.image_data)
+                )
+            elif image_content.image_url:
+                print("WARNING: image_url not supported; skipping")
+            else:
+                print("ERROR: No image data or URL in output")
+
+        if not pixel_data_list:
+            print("ERROR: No pixel data in output")
+            continue
+
+        pixel_data = np.stack(pixel_data_list, axis=0)
+
+        if print_outputs:
+            print(
+                f"Generated image shape: {pixel_data.shape}, "
+                f"dtype: {pixel_data.dtype}, range: [{pixel_data.min():.3f}, {pixel_data.max():.3f}]"
+            )
+
+        # Take first image from batch dimension
+        image_np = pixel_data[0]  # Shape: (H, W, C)
 
         results.append({"prompt": prompt, "images": image_np})
 
