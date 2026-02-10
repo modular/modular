@@ -1,21 +1,33 @@
 # Remaining LayoutTensor Dependencies in SM100 Structured Kernels
 
-## Status
+## Status (2026-02-10)
 
-As of the TileTensor migration (PR #77201), all SM100 structured kernel
-**entry points** and **primary data paths** use TileTensor. LayoutTensor
-remains only in:
+All 8 SM100 kernel families have been migrated to new Layout types:
 
-1. Internal epilogue component implementations (SMEM epilogue path)
-2. Boundary conversions hidden inside TileTensor overloads (non-transpose
-   store, TMA async_store in transpose store)
-3. The `enqueue_function` kernel parameter signatures (compiler limitation)
+- `blockwise_fp8_1d2d` -- 0 legacy Layout struct params
+- `blockwise_fp8` -- 0 legacy Layout struct params
+- `block_scaled` -- 0 legacy Layout struct params
+- `default` (BlackwellMatmulSM100Kernel) -- 0 legacy Layout struct params
+- `grouped_block_scaled_1d1d` -- 0 legacy Layout struct params
+  (1 TensorLayout for c_device)
+- `grouped_block_scaled` -- 0 legacy Layout struct params
+- `conv2d_fprop` -- 0 legacy Layout struct params
+- `fallback` -- 0 legacy Layout struct params (1 TensorLayout for c_layout)
 
-Note: Transpose paths now use TileTensor natively for reshape/tile operations,
-with LayoutTensor conversion only at the TMA `async_store` boundary.
+TMA layouts are computed from config via `static_row_major`/`RowMajorLayout`/
+`tma_desc_layout_3d/4d/5d`, with TMATensorTile types derived via
+`_to_legacy_layout`. `TileLoader`/`ScalesLoader` handle the legacy bridge.
 
-These remaining usages are fully encapsulated -- no kernel code outside
-`epilogue_components.mojo` and `output_writer.mojo` touches LayoutTensor.
+The fallback kernel uses `tile_with_offset[stride_layout=...]` to produce
+tiles with static strides from a dynamic-stride parent, enabling the full
+`tile → vectorize → distribute_with_offset` chain.
+
+LayoutTensor remains in:
+
+1. Internal epilogue components (SMEM epilogue, layout algebra)
+2. ~~`BlockwiseFP8Accumulator` / `RegTile`~~ -- DONE (TileTensor stack_allocation)
+3. Host-side function signatures (from graph compiler)
+4. `TileLoaderTMA` / `TileLoaderTMAIm2col` (legacy loader structs)
 
 ---
 
@@ -146,58 +158,71 @@ equivalent.
 
 ## Priority Order for Future Migration
 
-1. ~~**Add `tt_reshape` to TileTensor**~~ ✅ Done. TileTensor now has
-   `.reshape(layout_val)`. All transpose paths converted.
+1. ~~**Add `tt_reshape` to TileTensor**~~ ✅ Done.
+2. ~~**Convert residual source C tiles**~~ ✅ Done.
+3. ~~**Move lt_to_tt to CPU side**~~ ✅ Done for all kernels.
+4. ~~**Remove TMA legacy Layout params**~~ ✅ Done for all 8 kernels.
+5. ~~**Apply kernel signature pattern to all kernels**~~ ✅ Done.
+6. ~~**Migrate fallback kernel C output**~~ ✅ Done with `stride_layout`.
+7. ~~**Migrate split-K reduction tensor**~~ ✅ Done.
+8. **Convert `SMemEpilogueWriter` internals** to TileTensor.
+9. **Implement layout algebra for TileTensor** (`zipped_divide`, `upcast`,
+   `blocked_product`). Unlocks `shared_memory_epilogue*` and bounds-check path.
+10. ~~**Migrate `RegTile`/`BlockwiseFP8Accumulator`**~~ DONE.
+11. **Remove host-side LayoutTensor function signatures** (cross-cutting).
 
-2. **Convert `SMemEpilogueWriter` internals** -- now that `reshape` is
-   available, convert the struct to use TileTensor arrays and native tile ops.
+## Key Lessons Learned
 
-3. ~~**Convert residual source C tiles**~~ ✅ Done. `SourceTileStorage`,
-   `write_with_residual`, conv2d kernel all use TileTensor arrays now.
-
-4. **Implement layout algebra for TileTensor** -- `zipped_divide`, `upcast`,
-   `blocked_product` equivalents. This unlocks `shared_memory_epilogue*` and
-   `_store_with_bounds_check`.
-
-5. **Fix `_IntTupleToCoordLike` compiler crash** -- enables changing
-   `enqueue_function` kernel signatures to accept TileTensor directly.
+- `_int_to_dim()` is NOT comptime-evaluable (runtime branching). Don't use
+  it in comptime type aliases. Build Layout types directly with `ComptimeInt`
+  and `RuntimeInt`.
+- `TensorLayout` trait as a struct param **erases concrete type info** -- the
+  compiler cannot prove `all_dims_known` through the trait even when the
+  underlying strides are `ComptimeInt`. Use `tile[stride_layout=...]` to
+  provide explicit static strides when the parent has dynamic stride types.
+- TMA layouts are fully static and redundant with config. Compute them inside
+  the kernel struct using `static_row_major` instead of passing as params.
+- Never use `rebind` to solve type mismatches. Use `TmaOpType` to derive
+  `TMATensorTile` types from a single source of truth.
+- `tile()` inherits the parent's stride TYPES (not values). For dynamic-stride
+  parents, use `tile[stride_layout=MyLayout]` to get static-stride tiles.
 
 ---
 
-## Current Architecture
+## Current Architecture (all kernels migrated)
 
 ```text
-Kernel entry (LayoutTensor args)
-    │
-    ├── lt_to_tt() conversion at entry
-    │
-    ▼
-Kernel internals (ALL TileTensor)
-    │
-    ├── TMA loads: TileTensor directly ✅
-    ├── MMA: TileTensor directly ✅
-    ├── Accumulator: TileTensor ✅
-    │
-    ▼
-Tile Writer (TileTensor interface)
-    │
-    ├── Non-transpose path: TileTensor natively ✅
-    │   ├── write_fragments TT overload → _write_non_transpose_tt ✅
-    │   └── execute TT overload → _store_non_transpose (LT internally) ⚠️
-    │
-    ├── Transpose path: TileTensor natively ✅
-    │   ├── write_fragments TT overload → _write_transpose_tt ✅
-    │   └── execute TT overload → _store_transpose_tt (LT at TMA boundary) ✅
-    │
-    ├── Residual path (write_with_residual): TileTensor natively ✅
-    │   ├── src_tiles: SMemTileArray2DRowMajor (TileTensor) ✅
-    │   └── add_residual: uses TileTensor .ptr for SMEM access ✅
-    │
-    └── SMEM epilogue path: TileTensor → LayoutTensor at SMemEpilogueWriter ⚠️
-        ├── SMemEpilogueWriter.__init__ TT overload converts internally ⚠️
-        ├── shared_memory_epilogue_transpose (LT) ⚠️
-        └── shared_memory_epilogue (LT) ⚠️
+Host side
+    ├── Kernel instantiated FIRST (computes TMA layouts from config)
+    ├── create_tensor_tile with Kernel.XTmaOp.layout (types match) ✅
+    ├── lt_to_tt / lt_to_tt_1d → TileTensor at enqueue boundary ✅
+    └── enqueue_function passes TMATensorTile + TileTensor to kernel
 
-✅ = fully TileTensor
-⚠️ = LayoutTensor internally (encapsulated, zero-cost conversion)
+Kernel struct
+    ├── TMA layouts computed from config: static_row_major, RowMajorLayout,
+    │   tma_desc_layout_3d/4d/5d ✅
+    ├── TmaOpType / TmaOpTypeIm2col derive TMATensorTile types ✅
+    ├── Zero legacy Layout struct params ✅
+    └── TensorLayout struct params only for dynamic C layouts
+
+Kernel run() params
+    ├── TMA ops: Self.ATmaOp, Self.BTmaOp, Self.CTmaOp, etc. ✅
+    ├── 1D data: TileTensor with GMEMLayout1D ✅
+    ├── C device: TileTensor with TensorLayout ✅
+    └── Scalars and other non-tensor params unchanged
+
+Kernel output path (fallback kernel)
+    ├── tile_with_offset[stride_layout=CGmemStrideLayout] ✅
+    ├── vectorize[1, 2]() on static-stride tile ✅
+    ├── distribute_with_offset[row_major[8, 4]()] ✅
+    └── layout(coord[m, n]()) for element offset ✅
+
+Remaining LayoutTensor (encapsulated)
+    ├── SMEM epilogue: zipped_divide, upcast, blocked_product ⚠️
+    ├── BlockwiseFP8Accumulator / RegTile ✅ (TileTensor)
+    ├── TileLoaderTMA / TileLoaderTMAIm2col (legacy loaders) ⚠️
+    └── Host function signatures (LayoutTensor from callers) ⚠️
+
+✅ = new Layout + TileTensor
+⚠️ = legacy Layout / LayoutTensor (encapsulated)
 ```

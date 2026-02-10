@@ -46,6 +46,9 @@ from ..structured_kernels.epilogue_components import (
     tma_wait_pipelined,
 )
 from ..structured_kernels.barriers import WarpGroupBarrier
+from layout._layout import TensorLayout
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 
@@ -63,7 +66,8 @@ struct BlockwiseFP8TileWriter[
     c_smem_dim0: Int,
     c_smem_dim1: Int,
     accum_type: DType,
-    accum_layout: Layout,
+    accum_num_stages: Int,
+    accum_num_elements: Int,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -99,8 +103,8 @@ struct BlockwiseFP8TileWriter[
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
 
-    comptime num_stages = Self.accum_layout.shape[0].value()
-    comptime num_elements = Self.accum_layout.shape[1].value()
+    comptime num_stages = Self.accum_num_stages
+    comptime num_elements = Self.accum_num_elements
 
     comptime data_paths = 16
     comptime bits = 256
@@ -140,7 +144,8 @@ struct BlockwiseFP8TileWriter[
     ](
         accum: BlockwiseFP8Accumulator[
             Self.accum_type,
-            Self.accum_layout,
+            Self.accum_num_stages,
+            Self.accum_num_elements,
             Self.is_lower_frag_required,
             Self.block_tile_shape,
             Self.mma_shape,
@@ -166,7 +171,8 @@ struct BlockwiseFP8TileWriter[
     ](
         accum: BlockwiseFP8Accumulator[
             Self.accum_type,
-            Self.accum_layout,
+            Self.accum_num_stages,
+            Self.accum_num_elements,
             Self.is_lower_frag_required,
             Self.block_tile_shape,
             Self.mma_shape,
@@ -183,10 +189,10 @@ struct BlockwiseFP8TileWriter[
         @parameter
         for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                stage, 0
+                Coord(Idx(stage), Idx(0))
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                stage, 0
+                Coord(Idx(stage), Idx(0))
             )
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
@@ -260,12 +266,13 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn write_absolute_with_bounds_check[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
             Self.accum_type,
-            Self.accum_layout,
+            Self.accum_num_stages,
+            Self.accum_num_elements,
             Self.is_lower_frag_required,
             Self.block_tile_shape,
             Self.mma_shape,
@@ -276,23 +283,18 @@ struct BlockwiseFP8TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
         """Write accumulated register tiles to GMEM with bounds checking.
 
-        For 1D-1D grouped kernels where M coordinate is absolute in contiguous
-        token space. Applies expert_scale to fragments before store.
-        Handles partial tiles that cross expert boundaries by using
-        element-by-element stores for rows that would exceed m_end.
-
         Args:
             accum: Blockwise FP8 accumulator with upper/lower register tiles.
-            c_tiles: SMEM tile array for C output (TileTensor-based).
+            c_tiles: SMEM tile array for C output.
             m_abs: Absolute M coordinate (start of tile in token space).
             n_abs: Absolute N coordinate (start of tile).
             m_end: End offset for bounds checking (exclusive).
             expert_scale: Per-expert output scaling factor.
-            c_tensor: C tensor in GMEM (for bounds-checked stores).
+            c_tensor: C tensor in GMEM (TileTensor for bounds-checked stores).
         """
         var c_tiles_lt = Self.CTileArrayLT(c_tiles.ptr)
         Self._write_absolute_impl[c_tensor_layout, cluster_size](
@@ -302,12 +304,13 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn _write_absolute_impl[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
             Self.accum_type,
-            Self.accum_layout,
+            Self.accum_num_stages,
+            Self.accum_num_elements,
             Self.is_lower_frag_required,
             Self.block_tile_shape,
             Self.mma_shape,
@@ -318,12 +321,12 @@ struct BlockwiseFP8TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
         """Internal implementation for bounds-checked register-to-GMEM write.
 
-        Uses stsm_helper (legacy approach) for register -> SMEM path to support
-        all output tile shapes (including narrow c_smem_dim1=32 with bf16).
+        Uses stsm_helper for register -> SMEM path to support all output
+        tile shapes (including narrow c_smem_dim1=32 with bf16).
         """
         var warp_id = get_warp_id()
         var scale = expert_scale.cast[Self.accum_type]()
@@ -334,10 +337,10 @@ struct BlockwiseFP8TileWriter[
         @parameter
         for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                stage, 0
+                Coord(Idx(stage), Idx(0))
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                stage, 0
+                Coord(Idx(stage), Idx(0))
             )
 
             # Apply expert scale
@@ -391,14 +394,14 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn _store_with_bounds_check[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
     ](
         c_smem_tile: SMemTile[
             Self.c_type,
             Layout.row_major(Self.c_smem_dim0, Self.c_smem_dim1),
             alignment=128,
         ],
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -469,6 +472,11 @@ struct BlockwiseFP8TileWriter[
 
                 # Bounds check: only store if within expert boundary
                 if global_i < m_end:
+                    # Compute destination pointer via TileTensor layout
+                    var dst_offset = c_tensor.layout(
+                        Coord(Idx(Int(global_i)), Idx(Int(global_j)))
+                    )
+                    var dst_ptr = c_tensor.ptr + Int(dst_offset)
 
                     @parameter
                     if size_of[Self.c_type]() == 2:
@@ -476,22 +484,10 @@ struct BlockwiseFP8TileWriter[
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_crd = RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
-                        ](Int(global_i), Int(global_j))
-                        var dst_ptr = c_tensor.ptr + c_tensor.runtime_layout(
-                            dst_crd
-                        )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
                         var src_ptr = c_smem_split.ptr + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_crd = RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
-                        ](Int(global_i), Int(global_j))
-                        var dst_ptr = c_tensor.ptr + c_tensor.runtime_layout(
-                            dst_crd
-                        )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)

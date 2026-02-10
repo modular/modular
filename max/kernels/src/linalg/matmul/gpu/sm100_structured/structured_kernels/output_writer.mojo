@@ -32,13 +32,13 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
+from layout._tile_tensor import TileTensor
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
@@ -223,13 +223,13 @@ struct TileWriter[
 
     @always_inline
     fn write_splitk[
-        reduction_layout: Layout,
+        reduction_layout: TensorLayout,
     ](
         self,
         c_tiles: Self.CTileArray,
         stage: Self.Stage,
         scheduler: TileScheduler,
-        reduction_tensor: LayoutTensor[
+        reduction_tensor: TileTensor[
             Self.accum_type, reduction_layout, MutAnyOrigin
         ],
         work_info: WorkInfo,

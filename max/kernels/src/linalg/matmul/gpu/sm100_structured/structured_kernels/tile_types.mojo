@@ -13,9 +13,8 @@
 """Native TileTensor types for SM100 structured kernels.
 
 This module provides TileTensor-based tile types for SM100 structured kernels.
-All SMEM storage uses TileTensor natively. Conversion to LayoutTensor only
-happens at external API boundaries (TMA, MMA) using explicit LayoutTensor
-construction from the tile pointer.
+All SMEM storage uses TileTensor natively. TileTensors are passed directly
+to TMA and MMA via TileTensor overloads.
 
 Usage:
     from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
@@ -26,9 +25,8 @@ Usage:
     comptime my_layout = row_major[64, 32]()
     comptime MyTile = SMemTile[DType.float16, my_layout]
 
-    # At TMA/MMA boundaries, construct LayoutTensor from pointer
-    comptime lt_type = LayoutTensor[dtype, layout, ...]
-    tma_op.async_load(lt_type(tile.ptr), barrier, coords)
+    # TileTensors are passed directly to TMA/MMA
+    tma_op.async_copy(tile, barrier, coords)
 """
 
 from sys import size_of
@@ -36,13 +34,28 @@ from sys import size_of
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import LayoutTensor
+from layout import Layout as LegacyLayout, UNKNOWN_VALUE
+from layout.int_tuple import IntTuple
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    TMATensorTileIm2col,
+)
 from builtin.variadics import Variadic
 from buffer import Dim, DimList
-from layout._coord import Coord, CoordLike, Idx, RuntimeInt, _DimsToCoordLike
-from layout._layout import Layout, row_major
+from layout._coord import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    RuntimeInt,
+    _DimsToCoordLike,
+)
+from layout._layout import Layout, TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 from memory import LegacyUnsafePointer, stack_allocation
+from utils.static_tuple import StaticTuple
 
 # Alias for mutable UnsafePointer (same pattern as structuring.mojo)
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -83,7 +96,7 @@ Returns:
 #
 # The key insight: new Layout (from _layout.mojo) has compile-time type
 # parameters (shape_types, stride_types) that are preserved through struct
-# chains, unlike old Layout (from layout.mojo) which uses runtime IntTuple.
+# chains, unlike LegacyLayout (from layout.mojo) which uses runtime IntTuple.
 
 # Internal swizzled layout for K-major access with configurable swizzle
 # Matches tile_layout_k_major[dtype, BM, BK, TensorMapSwizzle.SWIZZLE_*]()
@@ -229,6 +242,233 @@ fn _int_to_dim(value: Int) -> Dim:
     return Dim()
 
 
+# ============================================================================
+# GMEMLayout1D -- 1D layout type for flat arrays (dynamic shape, stride 1)
+# ============================================================================
+
+comptime GMEMLayout1D = Layout[
+    Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
+    Variadic.types[T=CoordLike, ComptimeInt[1]],
+]
+"""1D layout for flat global memory arrays.
+
+Shape is dynamic (RuntimeInt), stride is 1 (ComptimeInt[1]).
+Rank is provably 1 at compile time.
+"""
+
+
+# ============================================================================
+# static_row_major -- 2D row-major layout with fully static dimensions
+# ============================================================================
+
+comptime static_row_major[dim0: Int, dim1: Int] = Layout[
+    Variadic.types[T=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]],
+    Variadic.types[T=CoordLike, ComptimeInt[dim1], ComptimeInt[1]],
+]
+"""2D row-major layout with fully static dimensions.
+
+Equivalent to `LegacyLayout.row_major(dim0, dim1)` but using new Layout
+types with rank=2 provable at compile time.
+"""
+
+comptime _StridedLayout[dim0: Int, dim1: Int, stride0: Int] = Layout[
+    Variadic.types[T=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]],
+    Variadic.types[T=CoordLike, ComptimeInt[stride0], ComptimeInt[1]],
+]
+"""2D layout with explicit stride for dim0.
+
+Used for sub-tiles that are strided views into wider rows. Shape is
+[dim0, dim1] but stride is [stride0, 1] where stride0 >= dim1.
+"""
+
+
+fn _strided_layout[
+    dim0: Int, dim1: Int, stride0: Int
+]() -> _StridedLayout[dim0, dim1, stride0]:
+    return Layout(
+        Coord(ComptimeInt[dim0](), ComptimeInt[dim1]()),
+        Coord(ComptimeInt[stride0](), ComptimeInt[1]()),
+    )
+
+
+# ============================================================================
+# _to_legacy_layout -- Convert new Layout static dims to legacy Layout
+# ============================================================================
+
+
+@parameter
+fn _to_legacy_layout[L: TensorLayout]() -> LegacyLayout:
+    """Convert a new Layout to a legacy Layout using static dimensions.
+
+    Works for any rank. TMA layouts are always fully static.
+    """
+    var shape = IntTuple()
+    var stride = IntTuple()
+
+    @parameter
+    for i in range(L.rank):
+        shape.append(L.static_shape[i])
+        stride.append(L.static_stride[i])
+
+    return LegacyLayout(shape, stride)
+
+
+# ============================================================================
+# tma_desc_layout -- Compute TMA descriptor layout from tile layout + swizzle
+# ============================================================================
+
+# TMA descriptor layouts have the same shape as tile layouts except the
+# last dimension is replaced with swizzle_bytes // element_size. All
+# strides are 1 (flat layout for the TMA descriptor).
+comptime tma_desc_layout_2d[
+    dtype: DType,
+    tile_dim0: Int,
+    swizzle: TensorMapSwizzle,
+] = Layout[
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[tile_dim0],
+        ComptimeInt[swizzle.bytes() // size_of[dtype]()],
+    ],
+    Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
+]
+"""2D TMA descriptor layout: [dim0, swizzle_elems], strides [1, 1]."""
+
+comptime tma_desc_layout_3d[
+    dtype: DType,
+    tile_dim0: Int,
+    tile_dim1: Int,
+    swizzle: TensorMapSwizzle,
+] = Layout[
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[tile_dim0],
+        ComptimeInt[tile_dim1],
+        ComptimeInt[swizzle.bytes() // size_of[dtype]()],
+    ],
+    Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+]
+"""3D TMA descriptor layout: [dim0, dim1, swizzle_elems], strides [1,1,1]."""
+
+comptime tma_desc_layout_4d[
+    dtype: DType,
+    tile_dim0: Int,
+    tile_dim1: Int,
+    tile_dim2: Int,
+    swizzle: TensorMapSwizzle,
+] = Layout[
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[tile_dim0],
+        ComptimeInt[tile_dim1],
+        ComptimeInt[tile_dim2],
+        ComptimeInt[swizzle.bytes() // size_of[dtype]()],
+    ],
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[1],
+        ComptimeInt[1],
+        ComptimeInt[1],
+        ComptimeInt[1],
+    ],
+]
+"""4D TMA descriptor layout: [d0,d1,d2,swizzle_elems], strides all 1."""
+
+comptime tma_desc_layout_5d[
+    dtype: DType,
+    tile_dim0: Int,
+    tile_dim1: Int,
+    tile_dim2: Int,
+    tile_dim3: Int,
+    swizzle: TensorMapSwizzle,
+] = Layout[
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[tile_dim0],
+        ComptimeInt[tile_dim1],
+        ComptimeInt[tile_dim2],
+        ComptimeInt[tile_dim3],
+        ComptimeInt[swizzle.bytes() // size_of[dtype]()],
+    ],
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[1],
+        ComptimeInt[1],
+        ComptimeInt[1],
+        ComptimeInt[1],
+        ComptimeInt[1],
+    ],
+]
+"""5D TMA descriptor layout: [d0,d1,d2,d3,swizzle_elems], strides all 1."""
+
+
+# ============================================================================
+# TMA op type from new Layout -- derive TMATensorTile with legacy layouts
+# ============================================================================
+
+comptime TmaOpType[
+    dtype: DType,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout,
+] = TMATensorTile[
+    dtype,
+    _to_legacy_layout[tile_layout](),
+    _to_legacy_layout[desc_layout](),
+]
+"""TMATensorTile type derived from new Layout types.
+
+Single source of truth: new Layout types determine the TMATensorTile
+type parameters via _to_legacy_layout.
+"""
+
+comptime TmaOpTypeIm2col[
+    dtype: DType,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout,
+] = TMATensorTileIm2col[
+    dtype,
+    _to_legacy_layout[tile_layout](),
+    _to_legacy_layout[desc_layout](),
+]
+"""TMATensorTileIm2col type derived from new Layout types.
+
+Same as TmaOpType but for im2col TMA (used by conv2d activation loads).
+"""
+
+
+# ============================================================================
+# GMEMTile -- TileTensor type for global memory kernel parameters
+# ============================================================================
+
+comptime GMEMTile[
+    dtype: DType,
+    lt_layout: LegacyLayout,
+] = TileTensor[
+    dtype,
+    Layout[
+        _DimsToCoordLike[
+            DType.int64,
+            DimList(
+                _int_to_dim(lt_layout.shape[0].value()),
+                _int_to_dim(lt_layout.shape[1].value()),
+            ),
+        ],
+        _DimsToCoordLike[
+            DType.int64,
+            DimList(
+                _int_to_dim(lt_layout.stride[0].value()),
+                _int_to_dim(lt_layout.stride[1].value()),
+            ),
+        ],
+    ],
+    MutAnyOrigin,
+]
+"""Global memory 2D TileTensor derived from a legacy Layout.
+
+Used for kernel parameter types, replacing LayoutTensor parameters.
+"""
+
+
 @always_inline
 fn lt_to_tt[
     dtype: DType,
@@ -306,50 +546,22 @@ fn lt_to_tt_1d[
     dtype: DType,
     lt_layout: LegacyLayout,
 ](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
-    dtype,
-    Layout[
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(_int_to_dim(lt_layout.shape[0].value())),
-        ],
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(_int_to_dim(lt_layout.stride[0].value())),
-        ],
-    ],
-    lt.origin,
+    dtype, GMEMLayout1D, lt.origin
 ]:
-    """Convert a 1D LayoutTensor to a TileTensor."""
-    comptime ShapeTypes = _DimsToCoordLike[
-        DType.int64,
-        DimList(_int_to_dim(lt_layout.shape[0].value())),
-    ]
-    comptime StrideTypes = _DimsToCoordLike[
-        DType.int64,
-        DimList(_int_to_dim(lt_layout.stride[0].value())),
-    ]
-    var shape = Coord[*ShapeTypes]()
-    var stride = Coord[*StrideTypes]()
-
-    @parameter
-    if not shape.element_types[0].is_static_value:
-        shape[0] = rebind[shape.element_types[0]](
+    """Convert a 1D LayoutTensor to a TileTensor with GMEMLayout1D."""
+    var shape = Coord(
+        RuntimeInt[DType.int64](
             Scalar[DType.int64](lt.runtime_layout.shape.value[0])
         )
+    )
+    var stride = Coord(Idx[1]())
 
-    @parameter
-    if not stride.element_types[0].is_static_value:
-        stride[0] = rebind[stride.element_types[0]](
-            Scalar[DType.int64](lt.runtime_layout.stride.value[0])
-        )
-
-    comptime ResultLayout = Layout[ShapeTypes, StrideTypes]
     from memory import UnsafePointer as Ptr
 
     var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
-    return TileTensor[dtype, ResultLayout, lt.origin](
+    return TileTensor[dtype, GMEMLayout1D, lt.origin](
         ptr=ptr,
-        layout=ResultLayout(shape, stride),
+        layout=GMEMLayout1D(shape, stride),
     )
 
 
@@ -686,44 +898,13 @@ struct SMemTileArray[
 
 
 # ============================================================================
-# Compatibility Patterns - Converting TileTensor at API boundaries
+# TileTensor Usage Patterns
 # ============================================================================
 #
-# TileTensor is used natively throughout the kernel. At external API boundaries
-# (TMA, MMA), convert to LayoutTensor using one of these patterns:
+# TileTensor is used natively throughout SM100 kernels. TMA and MMA
+# operations accept TileTensors directly via overloaded methods.
 #
-# 1. {ptr} SYNTAX (preferred when type inference works)
-#
-#    The {ptr} syntax constructs LayoutTensor from just the pointer, inferring
-#    the type from the function parameter signature:
-#
-#        tma_op.async_multicast_load[...](
-#            {tile.ptr},  # LayoutTensor inferred from parameter type
-#            barrier, coords, mask
-#        )
-#
-#        mma_op.mma(
-#            {a_tile.ptr},
-#            {b_tile.ptr},
-#            ...
-#        )
-#
-# 2. EXPLICIT CONSTRUCTION (when {ptr} doesn't work)
-#
-#    For TMA functions with complex type parameters (e.g., async_multicast_load_3d),
-#    construct LayoutTensor explicitly:
-#
-#        comptime ATileLT = LayoutTensor[
-#            Self.a_type,
-#            Self.a_smem_layout,
-#            address_space = AddressSpace.SHARED,
-#        ]
-#        tma_op.async_multicast_load_3d[...](
-#            ATileLT(tile.ptr),
-#            barrier, coords, mask
-#        )
-#
-# 3. PEER TILE CREATION (offset pointer with same layout)
+# PEER TILE CREATION (offset pointer with same layout)
 #
 #    TileTensor requires both ptr and layout for construction:
 #

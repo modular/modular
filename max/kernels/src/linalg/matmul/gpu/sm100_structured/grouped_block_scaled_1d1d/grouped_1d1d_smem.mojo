@@ -135,7 +135,7 @@ struct Grouped1D1DSmem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, sfa, sfb
-    # Note: Layouts are still defined above for LayoutTensor boundary conversion
+    # Layouts are used by tile storage types for allocation and sizing
     comptime Tiles = BlockScaledTileStorage[
         Self.a_type,
         Self.b_type,

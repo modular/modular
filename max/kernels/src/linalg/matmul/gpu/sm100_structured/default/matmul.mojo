@@ -29,7 +29,12 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    UNKNOWN_VALUE,
+    Layout as LegacyLayout,
+    LayoutTensor,
+    RuntimeLayout,
+)
 from layout.tma_async import create_tensor_tile
 
 from utils.index import Index
@@ -56,11 +61,11 @@ from .matmul_kernels import (
 
 fn _blackwell_matmul_tma_umma_warp_specialized[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -129,8 +134,43 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
+    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+
+    comptime SmemType = B200MatmulSmem[
+        a_type, b_type, c_type, transpose_b, config=config
+    ]
+    comptime smem_size = size_of[SmemType]()
+
+    comptime max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
+    comptime enable_profiling = max_profiled_tiles > 0
+
+    # Instantiate kernel first -- TMA layouts are computed from config
+    comptime matmul_kernel = BlackwellMatmulSM100Kernel[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        config=config,
+        cluster_shape = StaticTuple[Int32, 3](
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
+        ),
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+        pdl_level=pdl_level,
+        max_profiled_tiles_per_SM=max_profiled_tiles,
+    ]
+
+    # Create TMA descriptors using kernel-derived layout types
+    comptime KernelType = type_of(matmul_kernel)
+
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
+        Index(BM // cluster_shape[1], BK),
+        swizzle_mode = config.a_swizzle,
+        __tile_layout = KernelType.ATmaOp.layout,
+        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_device)
 
     # fmt: off
@@ -141,6 +181,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
+        __tile_layout = KernelType.BTmaOp.layout,
+        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
@@ -159,43 +201,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
         swizzle_mode = config.c_swizzle,
+        __tile_layout = KernelType.CTmaOp.layout,
+        __desc_layout = KernelType.CTmaOp.desc_layout,
     ](ctx, c_device)
     # fmt: on
-
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
-    comptime SmemType = B200MatmulSmem[
-        a_type, b_type, c_type, transpose_b, config=config
-    ]
-    comptime smem_size = size_of[SmemType]()
-
-    comptime max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
-    comptime enable_profiling = max_profiled_tiles > 0
-
-    # Instantiate the kernel struct with all configuration
-    comptime matmul_kernel = BlackwellMatmulSM100Kernel[
-        a_type,
-        b_type,
-        c_type,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
-        transpose_b,
-        config=config,
-        cluster_shape = StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-        pdl_level=pdl_level,
-        max_profiled_tiles_per_SM=max_profiled_tiles,
-    ]
 
     # Get the kernel entry point from the struct
     comptime kernel = matmul_kernel.run
@@ -261,11 +270,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
 fn blackwell_matmul_tma_umma_warp_specialized[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -360,11 +369,11 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 
 fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -432,8 +441,43 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
+    comptime SmemType = B200MatmulSmem[
+        a_type, b_type, c_type, transpose_b, config=config
+    ]
+    comptime smem_size = size_of[SmemType]()
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+
+    comptime max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
+    comptime enable_profiling = max_profiled_tiles > 0
+
+    comptime reduction_layout = LegacyLayout.row_major(UNKNOWN_VALUE, BM, MMA_N)
+    from ..structured_kernels.tile_types import lt_to_tt
+
+    # Instantiate kernel first -- TMA layouts are computed from config
+    comptime matmul_kernel = BlackwellMatmulSM100Kernel[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        config=config,
+        cluster_shape = StaticTuple[Int32, 3](
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
+        ),
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+        max_profiled_tiles_per_SM=max_profiled_tiles,
+    ]
+
+    # Create TMA descriptors using kernel-derived layout types
+    comptime KernelType = type_of(matmul_kernel)
+
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
+        Index(BM // cluster_shape[1], BK),
+        swizzle_mode = config.a_swizzle,
+        __tile_layout = KernelType.ATmaOp.layout,
+        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_device)
 
     b_tma_op = create_tensor_tile[
@@ -443,6 +487,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
+        __tile_layout = KernelType.BTmaOp.layout,
+        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
@@ -463,44 +509,15 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
         swizzle_mode = config.c_swizzle,
+        __tile_layout = KernelType.CTmaOp.layout,
+        __desc_layout = KernelType.CTmaOp.desc_layout,
     ](ctx, c_device)
 
-    comptime SmemType = B200MatmulSmem[
-        a_type, b_type, c_type, transpose_b, config=config
-    ]
-    comptime smem_size = size_of[SmemType]()
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
-    comptime max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
-    comptime enable_profiling = max_profiled_tiles > 0
-
-    comptime reduction_layout = Layout.row_major(UNKNOWN_VALUE, BM, MMA_N)
-
-    # Instantiate the kernel struct with all configuration
-    comptime matmul_kernel = BlackwellMatmulSM100Kernel[
-        a_type,
-        b_type,
-        c_type,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
-        transpose_b,
-        config=config,
-        cluster_shape = StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-        max_profiled_tiles_per_SM=max_profiled_tiles,
-    ]
-
-    # Get the split-K kernel entry point from the struct
-    comptime kernel = matmul_kernel.run_splitk[reduction_layout]
+    # Get the split-K kernel entry point.
+    # Reduction TileTensor layout: shape = (UNKNOWN, BM, MMA_N),
+    # strides = (BM*MMA_N, MMA_N, 1) -- all strides are static.
+    comptime ReductionTTLayout = type_of(lt_to_tt(reduction_tensor)).LayoutType
+    comptime kernel = matmul_kernel.run_splitk[ReductionTTLayout]
 
     var grid_dim = (
         align_up(ceildiv(M_maybe_swapped, BM), cluster_shape[0]),
@@ -566,7 +583,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        reduction_tensor,
+        lt_to_tt(reduction_tensor),
         locks_buffer,
         cluster_dim,
         mnk,
@@ -594,9 +611,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
 
 fn matmul_sm100_fallback[
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
+    a_layout: LegacyLayout,
+    b_layout: LegacyLayout,
+    c_layout: LegacyLayout,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -624,29 +641,21 @@ fn matmul_sm100_fallback[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tensor_tile[
-        Index(BN, BK) if transpose_b else Index(BK, BN),
-        swizzle_mode=b_swizzle,
-    ](ctx, b)
-
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
     ) * BK + 24
 
     comptime block_dim = 128
 
-    # Use the fallback kernel struct directly
+    # Instantiate fallback kernel first (TMA layouts computed from config)
+    from ..structured_kernels.tile_types import GMEMTile, lt_to_tt
+
+    comptime CDeviceTileType = GMEMTile[c_type, c_layout]
     comptime fallback_kernel = BlackwellMatmulSM100FallbackKernel[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(c).layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
+        CDeviceTileType.LayoutType,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -655,7 +664,22 @@ fn matmul_sm100_fallback[
         num_threads=block_dim,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
+    comptime FallbackKernelType = type_of(fallback_kernel)
     comptime kernel = fallback_kernel.run
+
+    # Create TMA descriptors using kernel-derived layout types
+    a_tma_op = create_tensor_tile[
+        Index(BM, BK),
+        swizzle_mode=a_swizzle,
+        __tile_layout = FallbackKernelType.ATmaOp.layout,
+        __desc_layout = FallbackKernelType.ATmaOp.desc_layout,
+    ](ctx, a)
+    b_tma_op = create_tensor_tile[
+        Index(BN, BK) if transpose_b else Index(BK, BN),
+        swizzle_mode=b_swizzle,
+        __tile_layout = FallbackKernelType.BTmaOp.layout,
+        __desc_layout = FallbackKernelType.BTmaOp.desc_layout,
+    ](ctx, b)
 
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -664,7 +688,7 @@ fn matmul_sm100_fallback[
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
-        c,
+        lt_to_tt(c),
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

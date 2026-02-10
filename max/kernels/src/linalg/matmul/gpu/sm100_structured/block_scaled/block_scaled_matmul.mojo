@@ -27,7 +27,11 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    Layout as LegacyLayout,
+    LayoutTensor,
+    RuntimeLayout,
+)
 from layout.tma_async import create_tensor_tile
 
 from utils.index import Index, IndexList
@@ -59,7 +63,7 @@ from .block_scaled_smem import BlockScaledSmem
 
 
 @parameter
-fn _reshape_to_3d[layout: Layout]() -> Layout:
+fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
     """Reshape 2D layout to 3D by prepending batch dimension of 1."""
     comptime rank = len(layout.shape)
 
@@ -67,7 +71,7 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
     if rank == 3:
         return materialize[layout]()
     else:
-        return Layout.row_major(
+        return LegacyLayout.row_major(
             1,
             comptime (layout.shape[0].value()),
             comptime (layout.shape[1].value()),
@@ -76,8 +80,8 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
 
 fn _convert_input_to_batched_tensor[
     dtype: DType,
-    layout: Layout,
-    reshape_layout: Layout = _reshape_to_3d[layout](),
+    layout: LegacyLayout,
+    reshape_layout: LegacyLayout = _reshape_to_3d[layout](),
 ](
     tensor: LayoutTensor[dtype, layout, ...],
 ) -> LayoutTensor[
@@ -111,15 +115,15 @@ fn _convert_input_to_batched_tensor[
 
 fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     sfa_dtype: DType,
-    sfa_layout: Layout,
+    sfa_layout: LegacyLayout,
     sfb_dtype: DType,
-    sfb_layout: Layout,
+    sfb_layout: LegacyLayout,
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[
@@ -245,15 +249,15 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
 fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: LegacyLayout,
     b_type: DType,
-    b_layout: Layout,
+    b_layout: LegacyLayout,
     sfa_dtype: DType,
-    sfa_layout: Layout,
+    sfa_layout: LegacyLayout,
     sfb_dtype: DType,
-    sfb_layout: Layout,
+    sfb_layout: LegacyLayout,
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[
@@ -340,14 +344,42 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    # ===== Create TMA Descriptors =====
+    # ===== Profiling Setup =====
+    comptime max_profiled_tiles = (
+        0 if max_profiled_tiles_per_SM
+        is None else max_profiled_tiles_per_SM.value()
+    )
+    comptime enable_profiling = max_profiled_tiles > 0
+
+    # ===== Instantiate Kernel (computes TMA layout types from config) =====
+    comptime matmul_kernel = BlackwellBlockScaledMatmulKernel[
+        a_type,
+        b_type,
+        c_type,
+        sfa_dtype,
+        sfb_dtype,
+        transpose_b,
+        config=config,
+        cluster_shape = StaticTuple[Int32, 3](
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
+        ),
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+        pdl_level=pdl_level,
+        max_profiled_tiles_per_SM=max_profiled_tiles,
+    ]
+
+    # ===== Create TMA Descriptors (using kernel's derived layouts) =====
 
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     a_tma_op = create_tensor_tile[
         a_tma_tile_shape,
         swizzle_mode = config.a_swizzle,
-        __tile_layout = Layout.row_major(a_tma_tile_shape),
+        __tile_layout = matmul_kernel.ATmaOp.layout,
+        __desc_layout = matmul_kernel.ATmaOp.desc_layout,
     ](ctx, a_tensor_batched)
 
     # B matrix TMA
@@ -359,7 +391,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_tma_op = create_tensor_tile[
         b_tma_tile_shape,
         swizzle_mode = config.b_swizzle,
-        __tile_layout = Layout.row_major(b_tma_tile_shape),
+        __tile_layout = matmul_kernel.BTmaOp.layout,
+        __desc_layout = matmul_kernel.BTmaOp.desc_layout,
     ](ctx, b_tensor_batched)
 
     # C matrix TMA
@@ -376,11 +409,12 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape_final,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = Layout.row_major(c_tma_tile_shape_final),
+        __tile_layout = matmul_kernel.CTmaOp.layout,
+        __desc_layout = matmul_kernel.CTmaOp.desc_layout,
     ](ctx, c_tensor_batched)
 
     # Scaling factors TMA - 5D tensors
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
+    comptime scales_5d_layout[layout: LegacyLayout] = LegacyLayout.row_major(
         layout.shape[0].value() if is_batched_matmul else 1,
         layout.shape[1]
         .value() if is_batched_matmul else layout.shape[0]
@@ -449,7 +483,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var sfa_tma_op = create_tensor_tile[
         sfa_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(sfa_tma_tile_shape),
+        __tile_layout = matmul_kernel.SFATmaOp.layout,
+        __desc_layout = matmul_kernel.SFATmaOp.desc_layout,
     ](ctx, sfa_5d_tensor)
 
     comptime sfb_tma_tile_shape = Index(
@@ -462,7 +497,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var sfb_tma_op = create_tensor_tile[
         sfb_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(sfb_tma_tile_shape),
+        __tile_layout = matmul_kernel.SFBTmaOp.layout,
+        __desc_layout = matmul_kernel.SFBTmaOp.desc_layout,
     ](ctx, sfb_5d_tensor)
 
     # ===== Shared Memory Size =====
@@ -479,44 +515,6 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         config=config,
     ]
     comptime smem_size = size_of[SmemType]()
-
-    # ===== Profiling Setup =====
-    comptime max_profiled_tiles = (
-        0 if max_profiled_tiles_per_SM
-        is None else max_profiled_tiles_per_SM.value()
-    )
-    comptime enable_profiling = max_profiled_tiles > 0
-
-    # ===== Instantiate Kernel =====
-    # V3: Ported from working legacy kernel
-    comptime matmul_kernel = BlackwellBlockScaledMatmulKernel[
-        a_type,
-        b_type,
-        c_type,
-        sfa_dtype,
-        sfb_dtype,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        sfa_tma_op.layout,
-        sfb_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
-        sfa_tma_op.desc_layout,
-        sfb_tma_op.desc_layout,
-        transpose_b,
-        config=config,
-        cluster_shape = StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-        pdl_level=pdl_level,
-        max_profiled_tiles_per_SM=max_profiled_tiles,
-    ]
 
     # Validate kernel configuration
     matmul_kernel.validate_config()

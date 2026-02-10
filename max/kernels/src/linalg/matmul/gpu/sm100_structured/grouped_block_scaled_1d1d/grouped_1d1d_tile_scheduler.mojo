@@ -27,6 +27,9 @@ from math import ceildiv
 
 from gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._tile_tensor import TileTensor
+
+from ..structured_kernels.tile_types import GMEMLayout1D
 from memory import UnsafePointer
 
 from utils.fast_div import FastDiv
@@ -147,9 +150,6 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
 
 
 struct GroupedWorkIterator1D1D[
-    offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
     static_N: Int,  # N dimension (expert output dim, static)
     tile_shape: IndexList[3],  # Block tile shape (BM, BN, BK)
     cluster: IndexList[3] = Index(1, 1, 1),
@@ -162,30 +162,19 @@ struct GroupedWorkIterator1D1D[
     - a_offsets: Prefix sum of token counts per active expert
     - expert_ids: Mapping from active expert index to actual expert ID
     - expert_scales: Per-expert output scaling factors
-
-    Usage:
-        var work_iter = GroupedWorkIterator1D1D[...](
-            num_active_experts, a_offsets, expert_ids, expert_scales
-        )
-        while True:
-            var ctx = work_iter.next()
-            if ctx.info.is_done():
-                break
-            if ctx.info.is_valid():
-                # Process tile at (ctx.m(), ctx.n()) for expert ctx.expert_id()
-                # Apply scaling with ctx.expert_scale
     """
 
+    # 1D TileTensor types: dynamic shape, stride 1 (flat arrays)
+    comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
+    comptime ExpertIdsTile = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin]
+    comptime ExpertScalesTile = TileTensor[
+        DType.float32, GMEMLayout1D, MutAnyOrigin
+    ]
+
     var num_active_experts: Int
-    var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, MutAnyOrigin
-    ]
-    var expert_ids: LayoutTensor[
-        DType.int32, Self.expert_ids_layout, MutAnyOrigin
-    ]
-    var expert_scales: LayoutTensor[
-        DType.float32, Self.expert_scales_layout, MutAnyOrigin
-    ]
+    var group_offsets: Self.OffsetsTile
+    var expert_ids: Self.ExpertIdsTile
+    var expert_scales: Self.ExpertScalesTile
 
     # Iteration state
     var current_iter: Int32
@@ -209,15 +198,9 @@ struct GroupedWorkIterator1D1D[
     fn __init__(
         out self,
         num_active_experts: Int,
-        group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
-        ],
-        expert_ids: LayoutTensor[
-            DType.int32, Self.expert_ids_layout, MutAnyOrigin
-        ],
-        expert_scales: LayoutTensor[
-            DType.float32, Self.expert_scales_layout, MutAnyOrigin
-        ],
+        group_offsets: Self.OffsetsTile,
+        expert_ids: Self.ExpertIdsTile,
+        expert_scales: Self.ExpertScalesTile,
     ):
         comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
