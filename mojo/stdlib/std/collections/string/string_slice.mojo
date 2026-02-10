@@ -2690,17 +2690,31 @@ fn _unsafe_strlen(
 fn _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], ...], *chars: Scalar[dtype]
 ) -> source.UnsafePointerType:
+    """Finds the first occurrence of any of the given characters in `source`.
+
+    Uses SIMD-accelerated scanning to search for one or more byte values
+    simultaneously in a single pass, similar to Rust's memchr crate.
+
+    Args:
+        source: The span of data to search through.
+        chars: One or more byte values to search for.
+
+    Returns:
+        A pointer to the first occurrence of any character, or a null
+        pointer if none is found.
+    """
     if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
         var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
-            if ptr[i] == char:
-                return ptr + i
+            for j in range(len(chars)):
+                if ptr[i] == chars[j]:
+                    return ptr + i
         return {}
     else:
-        return _memchr_impl(source, char)
+        return _memchr_impl(source, chars)
 
 
 @always_inline
@@ -2708,89 +2722,19 @@ fn _memchr_impl[
     dtype: DType, //
 ](
     source: Span[mut=False, Scalar[dtype], ...],
-    char: Scalar[dtype],
+    chars: VariadicList[Scalar[dtype]],
     out output: source.UnsafePointerType,
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
-    var first_needle = SIMD[dtype, bool_mask_width](char)
-    var vectorized_end = align_down(length, bool_mask_width)
-
-    for i in range(0, vectorized_end, bool_mask_width):
-        var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
-        var mask = pack_bits(bool_mask)
-        if mask:
-            output = haystack + Int(
-                type_of(mask)(i) + count_trailing_zeros(mask)
-            )
-            return
-
-    for i in range(vectorized_end, length):
-        if haystack[i] == char:
-            output = haystack + i
-            return
-
-    output = {}
-
-
-# TODO: Generalize _memchr/_memchr2 into a single variadic _memchr_any that
-# accepts N needle characters and builds the SIMD mask with a parameter loop,
-# similar to Rust's memchr crate which provides memchr, memchr2, and memchr3.
-
-
-@always_inline
-fn _memchr2[
-    dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], ...],
-    char1: Scalar[dtype],
-    char2: Scalar[dtype],
-) -> source.UnsafePointerType:
-    """Finds the first occurrence of either `char1` or `char2` in `source`.
-
-    This is like `_memchr` but searches for two byte values simultaneously in a
-    single SIMD pass, avoiding the overhead of two separate scans.
-
-    Args:
-        source: The span of data to search through.
-        char1: The first byte value to search for.
-        char2: The second byte value to search for.
-
-    Returns:
-        A pointer to the first occurrence of either character, or a null
-        pointer if neither is found.
-    """
-    if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
-        var ptr = source.unsafe_ptr()
-
-        for i in range(len(source)):
-            if ptr[i] == char1 or ptr[i] == char2:
-                return ptr + i
-        return {}
-    else:
-        return _memchr2_impl(source, char1, char2)
-
-
-@always_inline
-fn _memchr2_impl[
-    dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], ...],
-    char1: Scalar[dtype],
-    char2: Scalar[dtype],
-    out output: source.UnsafePointerType,
-):
-    var haystack = source.unsafe_ptr()
-    var length = len(source)
-    comptime bool_mask_width = simd_width_of[DType.bool]()
-    var needle1 = SIMD[dtype, bool_mask_width](char1)
-    var needle2 = SIMD[dtype, bool_mask_width](char2)
     var vectorized_end = align_down(length, bool_mask_width)
 
     for i in range(0, vectorized_end, bool_mask_width):
         var block = haystack.load[width=bool_mask_width](i)
-        var bool_mask = block.eq(needle1) | block.eq(needle2)
+        var bool_mask = block.eq(SIMD[dtype, bool_mask_width](chars[0]))
+        for j in range(1, len(chars)):
+            bool_mask |= block.eq(SIMD[dtype, bool_mask_width](chars[j]))
         var mask = pack_bits(bool_mask)
         if mask:
             output = haystack + Int(
@@ -2799,9 +2743,10 @@ fn _memchr2_impl[
             return
 
     for i in range(vectorized_end, length):
-        if haystack[i] == char1 or haystack[i] == char2:
-            output = haystack + i
-            return
+        for j in range(len(chars)):
+            if haystack[i] == chars[j]:
+                output = haystack + i
+                return
 
     output = {}
 
