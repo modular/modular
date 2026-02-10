@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from io import BytesIO
 from typing import Any, TypedDict, TypeVar
 
@@ -43,6 +44,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationRequest,
 )
+from max.pipelines.lib import PixelGenerationTokenizer
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 from typing_extensions import NotRequired
@@ -571,7 +573,7 @@ def compare_images(
 
 def run_pixel_generation(
     pipeline: pipelines.PixelGenerationPipeline,
-    tokenizer: PipelineTokenizer,
+    tokenizer: PixelGenerationTokenizer,
     requests: list[MockPixelGenerationRequest],
     num_steps: int,
     print_outputs: bool = False,
