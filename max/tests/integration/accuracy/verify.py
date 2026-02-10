@@ -284,6 +284,7 @@ class DiscrepancyReport:
         elif self.model_modality == ModelModality.EMBEDDING:
             return self.avg_mae
         elif self.model_modality == ModelModality.IMAGE:
+            assert self.avg_lpips is not None
             return self.avg_lpips
         else:
             raise ValueError(f"Unknown model modality: {self.model_modality}")

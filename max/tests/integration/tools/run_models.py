@@ -24,6 +24,7 @@ import huggingface_hub
 import requests
 import torch
 from create_pipelines import (
+    ImageGenerationOracle,
     MaxPipelineAndTokenizer,
     PipelineOracle,
     TorchModelAndDataProcessor,
@@ -295,6 +296,7 @@ def run_torch_model(
             pool_embeddings=pool_embeddings,
         )
     elif pipeline_oracle.task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(pipeline_oracle, ImageGenerationOracle)
         results = pipeline_oracle.run_torch_image_generation(
             torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
             device=device,

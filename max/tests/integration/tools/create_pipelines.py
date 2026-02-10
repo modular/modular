@@ -1029,7 +1029,6 @@ class ImageGenerationOracle(PipelineOracle):
         )
 
         # Step 2: Initialize the tokenizer
-        # The tokenizer handles prompt encoding and context preparation
         tokenizer = PixelGenerationTokenizer(
             model_path=self.model_path,
             pipeline_config=config,
@@ -1046,7 +1045,7 @@ class ImageGenerationOracle(PipelineOracle):
 
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore
-            tokenizer=tokenizer,  # type: ignore
+            tokenizer=tokenizer,
         )
 
     def create_torch_pipeline(
@@ -1060,14 +1059,14 @@ class ImageGenerationOracle(PipelineOracle):
         pipeline = diffusers.AutoPipelineForText2Image.from_pretrained(
             self.model_path,
             revision=revision,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE.get(encoding, torch.bfloat16),
+            torch_dtype=ENCODING_TO_TORCH_DTYPE.get(encoding, torch.bfloat16),  # type: ignore
         )
         pipeline = pipeline.to(device)
 
         # Return pipeline as "model" and None as data_processor (not needed for diffusers)
         return TorchModelAndDataProcessor(
-            model=pipeline,  # type: ignore
-            data_processor=None,  # type: ignore
+            model=pipeline,
+            data_processor=None,
         )
 
     def run_torch_image_generation(
