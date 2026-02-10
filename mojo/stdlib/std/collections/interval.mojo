@@ -52,7 +52,8 @@ query interval data, particularly for finding overlaps.
 from builtin.string_literal import StaticString
 
 from .deque import Deque
-
+import format._utils as fmt
+from format._utils import TypeNames
 
 trait IntervalElement(Comparable, Copyable, Intable, Writable):
     """The trait denotes a trait composition of the `Copyable`,
@@ -281,6 +282,19 @@ struct Interval[T: IntervalElement](
             writer: The writer to write the interval to.
         """
         writer.write("(", self.start, ", ", self.end, ")")
+    
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            w.write(self.start)
+            w.write(", ")
+            w.write(self.end)
+
+        fmt.FormatStruct(writer, "Interval").params(TypeNames[Self.T]()).fields[
+            FieldsFn=write_fields
+        ]()
+
 
     fn __str__(self) -> String:
         """Returns a string representation of this interval.
@@ -291,14 +305,9 @@ struct Interval[T: IntervalElement](
         return String.write(self)
 
     fn __repr__(self) -> String:
-        """Returns a string representation of this interval suitable for
-        debugging.
-
-        Returns:
-            A string in the format '(start, end)' representing this interval.
-        """
-        return String("Interval", self, "")
-
+        output = String()
+        self.write_repr_to(output)
+        return output^
 
 struct _IntervalNode[
     T: IntervalElement,
@@ -419,6 +428,19 @@ struct _IntervalNode[
         writer.write(self.interval, "=", String(self.data))
         # writer.write(str(self.data))
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            fmt.write_repr_to[Interval[Self.T]](self.interval, w)
+            w.write(", ")
+            fmt.write_repr_to[Self.U](self.data, w)
+
+        fmt.FormatStruct(writer, "IntervalNode").params(TypeNames[Self.T, Self.U]()).fields[
+            FieldsFn=write_fields
+        ]()
+
+
     fn __str__(self) -> String:
         """Returns a string representation of this interval node.
 
@@ -429,14 +451,9 @@ struct _IntervalNode[
         return String.write(self)
 
     fn __repr__(self) -> String:
-        """Returns a string representation of this interval node suitable for
-        debugging.
-
-        Returns:
-            A string in the format '(start, end): data' representing this
-            interval node.
-        """
-        return String("IntervalNode(", String.write(self), ")")
+        output = String()
+        self.write_repr_to(output)
+        return output^
 
     fn depth(self) -> Int:
         """Returns the depth of this interval node.
@@ -759,13 +776,10 @@ struct IntervalTree[
         return String.write(self)
 
     fn __repr__(self) -> String:
-        """Returns a string representation of the interval tree suitable for
-        debugging.
+        output = String()
+        self.write_repr_to(output)
+        return output^
 
-        Returns:
-            A string representation of the interval tree.
-        """
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the interval tree to a writer.
@@ -774,6 +788,17 @@ struct IntervalTree[
             writer: The writer to write the interval tree to.
         """
         self._draw(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            w.write("len=", self._len)
+
+        fmt.FormatStruct(writer, "IntervalTree").params(TypeNames[Self.T, Self.U]()).fields[
+            FieldsFn=write_fields
+        ]()
+
 
     @no_inline
     fn _draw[w: Writer](self, mut writer: w):
