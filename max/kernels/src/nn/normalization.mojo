@@ -2428,7 +2428,9 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
         var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
             thread_m2
         )
-        var norm_factor = rsqrt((row_m2 / cols) + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
+        )
 
         # Phases 2 & 3: Find max and quantize (using cached vec_data)
         @parameter
@@ -2679,7 +2681,9 @@ fn _rms_norm_fused_fp8_kernel_block[
         var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
             thread_m2
         )
-        var norm_factor = rsqrt((row_m2 / cols) + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
+        )
 
         # Phase 2: Find max for dynamic scaling (single pass)
         var thread_max = Scalar[accum_type](0)

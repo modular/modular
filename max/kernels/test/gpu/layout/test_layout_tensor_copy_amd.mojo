@@ -68,7 +68,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
 
     @parameter
     for i in range(BN // BK):
-        var smem_tile = smem_iter.next_unsafe(i)[]
+        var smem_tile = smem_iter.next_unsafe(smem_iter.linear_uint_type(i))[]
         copy_dram_to_sram[thread_layout=thread_layout](
             smem_tile.vectorize[1, 4](),
             q_gmem_iter,

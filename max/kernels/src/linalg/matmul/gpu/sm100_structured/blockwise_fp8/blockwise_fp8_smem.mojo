@@ -91,7 +91,7 @@ struct BlockwiseFP8Smem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, a_scales
-    # Note: Layouts are still defined above for LayoutTensor boundary conversion
+    # Layouts are used by tile storage types for allocation and sizing
     comptime Tiles = BlockwiseFP8TileStorage[
         Self.a_type,
         Self.b_type,
@@ -113,10 +113,10 @@ struct BlockwiseFP8Smem[
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types (all TileTensor-based now)
+    # Re-export tile array types
     comptime ATileArray = Self.Tiles.ATileArray
     comptime BTileArray = Self.Tiles.BTileArray
-    comptime CTileArray = Self.Tiles.CTileArray  # TileTensor-based
+    comptime CTileArray = Self.Tiles.CTileArray
     comptime AScalesTileArray = Self.Tiles.AScalesTileArray
 
     # ========== Tile Storage Field ==========
@@ -125,22 +125,22 @@ struct BlockwiseFP8Smem[
     # ========== Tile Accessors (TileTensor - Delegated) ==========
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
-        """Get A tile array accessor (TileTensor-based)."""
+        """Get A tile array accessor."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
-        """Get B tile array accessor (TileTensor-based)."""
+        """Get B tile array accessor."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        """Get C tile array accessor (TileTensor-based)."""
-        return self.tiles.c_tiles_tt()
+        """Get C tile array accessor."""
+        return self.tiles.c_tiles()
 
     @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
-        """Get A-scales tile array accessor (TileTensor-based)."""
+        """Get A-scales tile array accessor."""
         return self.tiles.a_scales_tiles()
 
     # ========== Pipeline Storage (Composed Bundle) ==========

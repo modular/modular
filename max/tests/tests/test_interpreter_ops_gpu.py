@@ -24,9 +24,11 @@ import torch
 from max import _realization_context as rc
 from max import functional as F
 from max import random as max_random
+from max._interpreter import MOInterpreter
 from max._realization_context import set_seed
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
+from max.graph import DeviceRef, Graph, TensorType
 from max.tensor import Tensor, realization_context
 
 # Mapping from MAX DType to torch dtype
@@ -1289,3 +1291,567 @@ class TestRandomNormalGPU:
         torch.testing.assert_close(
             torch.from_dlpack(result1), torch.from_dlpack(result2)
         )
+
+
+class TestRandomUniformGPU:
+    """Tests for random uniform op on GPU with interpreter."""
+
+    def test_random_uniform_gpu_shape_and_device(self) -> None:
+        """Test random uniform on GPU produces correct shape and device."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.uniform(
+                (3, 4), dtype=DType.float32, device=Accelerator()
+            )
+
+        result_torch = torch.from_dlpack(result)
+        assert result_torch.shape == (3, 4)
+        assert result_torch.dtype == torch.float32
+        assert result_torch.is_cuda
+
+    def test_random_uniform_gpu_statistics(self) -> None:
+        """Test random uniform on GPU has approximately correct statistics."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(123)
+            result = max_random.uniform(
+                (1000, 1000),
+                range=(2.0, 5.0),
+                dtype=DType.float32,
+                device=Accelerator(),
+            )
+
+        result_torch = torch.from_dlpack(result).float()
+        torch.testing.assert_close(
+            result_torch.mean(),
+            torch.tensor(3.5, device="cuda"),
+            atol=0.1,
+            rtol=0.1,
+        )
+        assert result_torch.min().item() >= 2.0
+        assert result_torch.max().item() <= 5.0
+
+    def test_random_uniform_gpu_deterministic(self) -> None:
+        """Test that same seed produces identical results on GPU."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result1 = max_random.uniform(
+                (5, 5), dtype=DType.float32, device=Accelerator()
+            )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result2 = max_random.uniform(
+                (5, 5), dtype=DType.float32, device=Accelerator()
+            )
+
+        torch.testing.assert_close(
+            torch.from_dlpack(result1), torch.from_dlpack(result2)
+        )
+
+
+class TestTransferOpsGPU:
+    """Tests for GPU transfer operations via Tensor.to() with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_cpu_to_gpu(self, dtype: DType) -> None:
+        """Test transferring a tensor from CPU to GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        gpu = Accelerator()
+
+        x_torch_cpu = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch_dtype, device="cpu"
+        )
+        x = Tensor.from_dlpack(x_torch_cpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(gpu)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_cpu.to("cuda")
+        assert torch.equal(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_gpu_to_cpu(self, dtype: DType) -> None:
+        """Test transferring a tensor from GPU to CPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+
+        x_torch_gpu = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch_dtype, device="cuda"
+        )
+        x = Tensor.from_dlpack(x_torch_gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(CPU())
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_gpu.to("cpu")
+        assert torch.equal(result_torch, expected)
+
+    def test_cpu_to_gpu_2d(self) -> None:
+        """Test transferring a 2D tensor from CPU to GPU."""
+        gpu = Accelerator()
+
+        x_torch_cpu = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        x = Tensor.from_dlpack(x_torch_cpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(gpu)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_cpu.to("cuda")
+        assert torch.equal(result_torch, expected)
+
+    def test_gpu_to_cpu_2d(self) -> None:
+        """Test transferring a 2D tensor from GPU to CPU."""
+        x_torch_gpu = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        x = Tensor.from_dlpack(x_torch_gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(CPU())
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_gpu.to("cpu")
+        assert torch.equal(result_torch, expected)
+
+    def test_cpu_to_gpu_large_tensor(self) -> None:
+        """Test transferring a larger tensor from CPU to GPU."""
+        gpu = Accelerator()
+
+        x_torch_cpu = torch.randn(64, 128, dtype=torch.float32, device="cpu")
+        x = Tensor.from_dlpack(x_torch_cpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.to(gpu)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch_cpu.to("cuda")
+        assert torch.equal(result_torch, expected)
+
+    def test_transfer_preserves_data_roundtrip(self) -> None:
+        """Test CPU -> GPU -> CPU preserves data exactly."""
+        gpu = Accelerator()
+
+        x_torch = torch.tensor(
+            [1.0, -2.5, 3.14, 0.0, -100.0],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y_gpu = x.to(gpu)
+            y_cpu = y_gpu.to(CPU())
+
+        result_torch = torch.from_dlpack(y_cpu)
+        assert torch.equal(result_torch, x_torch)
+
+    def test_same_device_elide_true_aliases(self) -> None:
+        """Test same-device transfer with alwaysElideSameDeviceCopy=True aliases."""
+        from max._core.dialects import m, mo
+
+        gpu_ref = DeviceRef.GPU(0)
+        input_type = TensorType(DType.float32, [4], gpu_ref)
+
+        with Graph("same_device_transfer", input_types=[input_type]) as g:
+            x = g.inputs[0]
+            in_chain = g.always_ready_chain
+            (result, _) = g._add_op_generated(
+                mo.TransferOp,
+                x,
+                m.DeviceRefAttr("gpu", 0),
+                in_chain,
+                always_elide_same_device_copy=True,
+            )
+            g.output(result)
+
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+        input_buf = Buffer.from_dlpack(x_torch)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(g, [input_buf])
+
+        out_buf = outputs[0]
+        assert isinstance(out_buf, Buffer)
+        result_torch = torch.from_dlpack(out_buf)
+        assert torch.equal(result_torch, x_torch)
+        # alwaysElideSameDeviceCopy=True should alias, not copy.
+        assert out_buf._data_ptr() == input_buf._data_ptr()
+
+    def test_same_device_elide_false_copies(self) -> None:
+        """Test same-device transfer with alwaysElideSameDeviceCopy=False copies."""
+        from max._core.dialects import m, mo
+
+        gpu_ref = DeviceRef.GPU(0)
+        input_type = TensorType(DType.float32, [4], gpu_ref)
+
+        with Graph("same_device_elide_false", input_types=[input_type]) as g:
+            x = g.inputs[0]
+            in_chain = g.always_ready_chain
+            (result, _) = g._add_op_generated(
+                mo.TransferOp,
+                x,
+                m.DeviceRefAttr("gpu", 0),
+                in_chain,
+                always_elide_same_device_copy=False,
+            )
+            g.output(result)
+
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+        input_buf = Buffer.from_dlpack(x_torch)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(g, [input_buf])
+
+        out_buf = outputs[0]
+        assert isinstance(out_buf, Buffer)
+        result_torch = torch.from_dlpack(out_buf)
+        assert torch.equal(result_torch, x_torch)
+        # alwaysElideSameDeviceCopy=False should produce a copy, not alias.
+        assert out_buf._data_ptr() != input_buf._data_ptr()
+
+
+class TestReshapeOpsGPU:
+    """Tests for reshape operations (squeeze, unsqueeze, reshape) on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16, DType.int32],
+    )
+    def test_squeeze_on_gpu(self, dtype: DType) -> None:
+        """Test squeeze removes a size-1 dimension on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(12, dtype=torch_dtype, device="cuda").reshape(
+            3, 1, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.squeeze(1)
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16, DType.int32],
+    )
+    def test_unsqueeze_on_gpu(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(12, dtype=torch_dtype, device="cuda").reshape(
+            3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.unsqueeze(1)
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16],
+    )
+    def test_reshape_split_dim_on_gpu(self, dtype: DType) -> None:
+        """Test reshape splitting a dimension on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(36, dtype=torch_dtype, device="cuda").reshape(
+            12, 3
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([3, 4, 3])
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.reshape(3, 4, 3)
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16],
+    )
+    def test_reshape_merge_dims_on_gpu(self, dtype: DType) -> None:
+        """Test reshape merging adjacent dimensions on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(24, dtype=torch_dtype, device="cuda").reshape(
+            2, 3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([6, 4])
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.reshape(6, 4)
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16],
+    )
+    def test_reshape_add_singleton_on_gpu(self, dtype: DType) -> None:
+        """Test reshape adding a singleton dimension on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(12, dtype=torch_dtype, device="cuda").reshape(
+            3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([3, 1, 4])
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.reshape(3, 1, 4)
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_squeeze_then_unsqueeze_roundtrip_on_gpu(self) -> None:
+        """Test squeeze then unsqueeze roundtrip on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 1, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            squeezed = x.squeeze(axis=1)
+            unsqueezed = squeezed.unsqueeze(axis=1)
+
+        result_torch = torch.from_dlpack(unsqueezed)
+        assert result_torch.shape == x_torch.shape
+        torch.testing.assert_close(result_torch, x_torch)
+
+
+class TestSoftmaxGPU:
+    """Tests for softmax and logsoftmax on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_softmax_gpu(self, dtype: DType) -> None:
+        """Test softmax on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.randn(3, 4, 5, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.softmax(x, axis=-1)
+
+        expected = torch.softmax(x_torch, dim=-1)
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_logsoftmax_gpu(self, dtype: DType) -> None:
+        """Test logsoftmax on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.randn(3, 4, 5, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.logsoftmax(x, axis=-1)
+
+        expected = torch.log_softmax(x_torch, dim=-1)
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+
+class TestSelectGPU:
+    """Tests for GPU select (where) operations with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_select_basic_gpu(self, dtype: DType) -> None:
+        """Test basic select op on GPU with float dtypes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        cond_torch = torch.tensor(
+            [True, False, True, False, True, False],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+        y_torch = torch.tensor(
+            [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_select_int_gpu(self, dtype: DType) -> None:
+        """Test select op with integer dtypes on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        cond_torch = torch.tensor(
+            [True, False, True, False],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.tensor([1, 2, 3, 4], dtype=torch_dtype, device="cuda")
+        y_torch = torch.tensor(
+            [10, 20, 30, 40], dtype=torch_dtype, device="cuda"
+        )
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    def test_select_2d_gpu(self) -> None:
+        """Test select with 2D tensors on GPU."""
+        cond_torch = torch.tensor(
+            [[True, False, True], [False, True, False]],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.arange(
+            1, 7, dtype=torch.float32, device="cuda"
+        ).reshape(2, 3)
+        y_torch = torch.arange(
+            10, 70, 10, dtype=torch.float32, device="cuda"
+        ).reshape(2, 3)
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)

@@ -118,10 +118,10 @@ fn bench_blockwise_fp8_1d2d[
     # Setup offsets, expert ids, scales
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids_list[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids_list[i])
     for i in range(num_experts):
         expert_scales_host_ptr[i] = Float32(1.0)
 

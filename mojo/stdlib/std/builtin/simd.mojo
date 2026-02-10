@@ -624,7 +624,7 @@ struct SIMD[dtype: DType, size: Int](
         self = value.cast[Self.dtype]()
 
     @always_inline("builtin")
-    @implicit
+    @implicit(deprecated=True)
     fn __init__(out self, value: Int, /):
         """Initializes the SIMD vector with a signed integer.
 
@@ -1926,7 +1926,10 @@ struct SIMD[dtype: DType, size: Int](
     fn __round__(self) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
-        This rounding goes to the nearest integer with ties away from zero.
+        This rounding goes to the nearest integer with ties towards the nearest
+        even value ("banker's rounding"). This is the default rounding mode for
+        binary floating point in the IEEE 754 Standard for Floating Point
+        Arithmetic.
 
         Returns:
             The elementwise rounded value of this SIMD vector.
@@ -1937,7 +1940,10 @@ struct SIMD[dtype: DType, size: Int](
     fn __round__(self, ndigits: Int) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
-        This rounding goes to the nearest integer with ties away from zero.
+        This rounding goes to the nearest integer with ties towards the nearest
+        even value ("banker's rounding"). This is the default rounding mode for
+        binary floating point in the IEEE 754 Standard for Floating Point
+        Arithmetic.
 
         Args:
             ndigits: The number of digits to round to.

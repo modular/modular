@@ -111,15 +111,21 @@ fn test[
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
-                    q_ptr[(i * num_heads + h) * depth + j] = i * depth + j
+                    q_ptr[(i * num_heads + h) * depth + j] = Scalar[qkv_type](
+                        i * depth + j
+                    )
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
-                    k_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+                    k_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
+                        qkv_type
+                    ](i * depth + j)
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
-                    v_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
+                    v_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
+                        qkv_type
+                    ](i * depth + j)
 
     else:
         rand[qkv_type](q_ptr, q_size)

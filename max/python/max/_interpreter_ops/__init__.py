@@ -102,6 +102,14 @@ UNARY_MIXED: dict[
     mo.IsInfOp: mojo_ops.IsInf,
 }
 
+# Softmax ops: output shape matches input, applied along an axis
+SOFTMAX: dict[
+    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
+] = {
+    mo.SoftmaxOp: mojo_ops.Softmax,
+    mo.LogsoftmaxOp: mojo_ops.LogSoftmax,
+}
+
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
@@ -110,6 +118,7 @@ __all__ = [
     "BINARY_ELEMENTWISE",
     "BINARY_ELEMENTWISE_COMPARISON",
     "REDUCE",
+    "SOFTMAX",
     "UNARY_ELEMENTWISE",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
