@@ -1103,10 +1103,10 @@ struct ScatterND:
             single_thread_blocking_override=False,
             target=target,
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1118,9 +1118,9 @@ struct ScatterND:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1154,10 +1154,10 @@ struct ScatterNDSkipNegIndices:
             reduce_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1191,10 +1191,10 @@ struct ScatterNDAdd:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1206,9 +1206,9 @@ struct ScatterNDAdd:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1242,10 +1242,10 @@ struct ScatterNDMul:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1257,9 +1257,9 @@ struct ScatterNDMul:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1293,24 +1293,24 @@ struct ScatterNDMin:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
     @staticmethod
-    fn shape[](
+    fn shape(
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1345,10 +1345,10 @@ struct ScatterNDMax:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1360,9 +1360,9 @@ struct ScatterNDMax:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1382,8 +1382,8 @@ struct ScatterSetConstant:
         ctx: DeviceContextPtr,
     ) raises:
         scatter_set_constant[target, False](
-            data.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             fill_value,
             ctx,
         )
@@ -1433,9 +1433,9 @@ struct Scatter:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1480,9 +1480,9 @@ struct ScatterAdd:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1527,9 +1527,9 @@ struct ScatterMax:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1574,9 +1574,9 @@ struct ScatterMin:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1621,9 +1621,9 @@ struct ScatterMul:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -3212,9 +3212,9 @@ struct GatherND:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gather_nd[batch_dims=batchDims, target=target](
-                data.to_layout_tensor(),
-                indices.to_layout_tensor(),
-                output.to_layout_tensor(),
+                data.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
                 ctx,
             )
 
@@ -3232,8 +3232,8 @@ struct GatherND:
             output_rank=output_rank,
             single_thread_blocking_override=False,
         ](
-            data.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
 
 
@@ -3309,8 +3309,8 @@ struct Gather:
             output_rank=output_rank,
             single_thread_blocking_override=True,
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             Int(axis),
         )
 
@@ -3331,9 +3331,9 @@ struct GatherSum:
             return x + y
 
         gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
-            output.to_layout_tensor(),
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             0,
         )
 

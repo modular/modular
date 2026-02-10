@@ -110,6 +110,14 @@ trait TensorLayout(TrivialRegisterPassable):
     fn stride_coord(self) -> Coord[*Self._stride_types]:
         ...
 
+    fn make_dynamic[
+        dtype: DType
+    ](self) -> Layout[
+        _CoordToDynamic[dtype, *Self._shape_types],
+        _CoordToDynamic[dtype, *Self._stride_types],
+    ]:
+        ...
+
 
 comptime RowMajorLayout[*shape_types: CoordLike] = Layout[
     shape_types, _RowMajor[*shape_types]

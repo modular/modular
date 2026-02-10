@@ -27,6 +27,8 @@ from gpu import thread_idx, block_dim, lane_id
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
+from sys import prefetch
+from sys.intrinsics import PrefetchOptions, readfirstlane
 from utils import IndexList
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
@@ -210,7 +212,7 @@ struct TileTensor[
 
         # Initialize host buffer and copy to device buffer
         for i in range(16):
-            host_buf[i] = i
+            host_buf[i] = Scalar[dtype](i)
         ctx.enqueue_copy(dev_buf, host_buf)
 
         # Create TileTensor to use on device
@@ -413,6 +415,57 @@ struct TileTensor[
         """
         self.ptr.mut_cast[True]().store[alignment=alignment](
             self.layout[linear_idx_type = Self.linear_idx_type](coord), value
+        )
+
+    @always_inline
+    fn ptr_at_offset(
+        self, coords: Coord[...]
+    ) -> UnsafePointer[
+        Scalar[Self.dtype], Self.origin, address_space = Self.address_space
+    ] where (coords.rank == Self.rank):
+        """Get a pointer offset at the given flattened coordinates.
+
+        Args:
+            coords: A flattened list of the offset coordinates.
+
+        Returns:
+            A pointer offset at the given flattened coordinates.
+        """
+
+        return self.ptr + self.layout[linear_idx_type = Self.linear_idx_type](
+            coords
+        )
+
+    @always_inline
+    fn prefetch(self, coords: Coord[...]) where coords.rank == Self.rank:
+        """Prefetch tensor data at the specified coordinates into cache.
+
+        Issues a software prefetch hint to the processor to load the data at
+        coords into the cache hierarchy. This can improve performance
+        by reducing memory latency for subsequent accesses to the same location.
+
+        Args:
+            coords: The indices.
+
+        Performance:
+
+        - Prefetching is a performance hint and does not guarantee data will be
+            cached.
+        - Most effective when issued sufficiently ahead of the actual data
+            access.
+        - Uses high locality prefetch to the data cache, optimized for data that
+            will be accessed multiple times.
+        - Can reduce memory access latency by 50-90% when used correctly.
+
+        Notes:
+
+        - Excessive prefetching can pollute the cache and degrade performance.
+        - Most beneficial for predictable access patterns that would otherwise
+            cause cache misses.
+        - No operation is performed on the prefetched data.
+        """
+        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
+            self.ptr_at_offset(coords)
         )
 
     fn numel(self) -> Int:
