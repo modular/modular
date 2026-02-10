@@ -109,6 +109,7 @@ modular_py_library(
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
     ],
 )
 
