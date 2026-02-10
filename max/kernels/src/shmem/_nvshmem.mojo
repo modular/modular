@@ -331,15 +331,10 @@ fn nvshmemx_init() raises:
 
 # Modular specific, initialize a DeviceContext on this thread to be SHMEM
 # enabled.
-fn nvshmemx_init_thread(
-    ctx: DeviceContext, number_of_devices_node: Int = -1
-) raises:
+fn nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
     # Must set the associated CUcontext on this thread prior to init
     ctx.set_as_current()
-    var nranks = (
-        number_of_devices_node if number_of_devices_node
-        > 0 else ctx.number_of_devices()
-    )
+    var nranks = gpus_per_node if gpus_per_node > 0 else ctx.number_of_devices()
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()

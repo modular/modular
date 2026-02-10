@@ -10,22 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
-
+# RUN: %mojo %s
 from os import abort
-
 from gpu import block_dim, block_idx, global_idx
-from memory import LegacyUnsafePointer, alloc
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import UnsafePointer, alloc
 from shmem import *
 from testing import assert_equal
 
 
 fn set_and_shift_kernel(
-    send_data: UnsafePointer[Float32],
-    recv_data: UnsafePointer[Float32],
+    send_data: UnsafePointer[Float32, MutAnyOrigin],
+    recv_data: UnsafePointer[Float32, MutAnyOrigin],
     num_elems: UInt,
     mype: Int32,
     npes: Int32,

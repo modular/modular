@@ -10,35 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from collections.string import atol
 from collections.string.string_slice import get_static_string
+from gpu.host import DeviceContext
+from gpu.host._amdgpu_hip import hipStream_t, HIP
+from gpu.host._nvidia_cuda import CUmodule, CUstream
 from os import abort, getenv
 from pathlib import Path
-from sys import argv, size_of
+from sys import argv, size_of, has_amd_gpu_accelerator
+from sys.info import CompilationTarget, is_nvidia_gpu, is_amd_gpu
 from ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
-    OwnedDLHandle,
     c_int,
-    c_uint,
     c_size_t,
+    c_uint,
+    CStringSlice,
     external_call,
+    OwnedDLHandle,
     RTLD,
-)
-from sys.info import CompilationTarget, is_nvidia_gpu, is_amd_gpu
-
-from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import hipStream_t, HIP
-from gpu.host._nvidia_cuda import CUmodule, CUstream
-
-from ._mpi import (
-    MPI_Comm_rank,
-    MPI_Init,
-    MPI_Initialized,
-    MPIComm,
-    get_mpi_comm_world,
-    MPI_THREAD_MULTIPLE,
-    MPI_Init_thread,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -96,7 +87,6 @@ fn _get_rocshmem_function[
 # Types
 # ===-----------------------------------------------------------------------===#
 
-# TODO: verify constants and structs in https://github.com/modular/rocSHMEM
 comptime rocshmem_team_id_t = Int32
 
 # ===-----------------------------------------------------------------------===#
@@ -105,7 +95,7 @@ comptime rocshmem_team_id_t = Int32
 
 comptime ROCSHMEM_SUCCESS = 0
 
-comptime ROCSHMEM_INIT_WITH_MPI_COMM = 1 << 1
+comptime ROCSHMEM_INIT_WITH_UNIQUEID: UInt32 = 1
 
 comptime CHANNEL_BUF_SIZE: c_int = 1 << 22
 comptime CHANNEL_BUF_SIZE_LOG: c_int = 22
@@ -116,17 +106,16 @@ comptime ROCSHMEM_MAX_NAME_LEN: c_int = 256
 
 comptime ROCSHMEM_THREAD_SINGLE: c_int = 0
 comptime ROCSHMEM_THREAD_FUNNELED: c_int = 1
-comptime ROCSHMEM_THREAD_SERIALIZED: c_int = 2
-comptime ROCSHMEM_THREAD_MULTIPLE: c_int = 3
-comptime ROCSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
+comptime ROCSHMEM_THREAD_WG_FUNNELED: c_int = 2
+comptime ROCSHMEM_THREAD_SERIALIZED: c_int = 3
+comptime ROCSHMEM_THREAD_MULTIPLE: c_int = 4
 
 comptime ROCSHMEM_CMP_EQ: c_int = 0
 comptime ROCSHMEM_CMP_NE: c_int = 1
 comptime ROCSHMEM_CMP_GT: c_int = 2
-comptime ROCSHMEM_CMP_LE: c_int = 3
+comptime ROCSHMEM_CMP_GE: c_int = 3
 comptime ROCSHMEM_CMP_LT: c_int = 4
-comptime ROCSHMEM_CMP_GE: c_int = 5
-comptime ROCSHMEM_CMP_SENTINEL: c_int = c_int.MAX
+comptime ROCSHMEM_CMP_LE: c_int = 5
 
 comptime PROXY_GLOBAL_EXIT_INIT: c_int = 1
 comptime PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
@@ -144,8 +133,8 @@ comptime ROCSHMEM_STATUS_LIMITED_MPG: c_int = 4
 comptime ROCSHMEM_STATUS_FULL_MPG: c_int = 5
 comptime ROCSHMEM_STATUS_INVALID: c_int = c_int.MAX
 
-comptime ROCSHMEM_SIGNAL_SET: c_int = 9
-comptime ROCSHMEM_SIGNAL_ADD: c_int = 10
+comptime ROCSHMEM_SIGNAL_SET: c_int = 0
+comptime ROCSHMEM_SIGNAL_ADD: c_int = 1
 
 comptime ROCSHMEM_TEAM_INVALID: rocshmem_team_id_t = -1
 comptime ROCSHMEM_TEAM_WORLD: rocshmem_team_id_t = 0
@@ -165,60 +154,56 @@ comptime ROCSHMEM_TEAM_INDEX_MAX: rocshmem_team_id_t = rocshmem_team_id_t.MAX
 
 
 # Structs
-struct ROCSHMEMInitAttr:
-    var version: c_int
-    var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
-    var args: ROCSHMEMInitArgs
+struct ROCSHMEMUniqueID(ImplicitlyCopyable):
+    """Unique ID for a process (ROCSHMEM_UNIQUE_ID_BYTES = 128 bytes)."""
 
-    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
+    var data: InlineArray[Byte, 128]
+
+    fn __init__(out self):
+        self.data = InlineArray[Byte, 128](fill=0)
+
+    fn __copyinit__(out self, existing: Self):
+        self.data = existing.data.copy()
+
+
+struct ROCSHMEMInitAttr(ImplicitlyCopyable):
+    """Data structure used for attribute based initialization.
+
+    Maps to rocshmem_init_attr_t:
+        int32_t rank;
+        int32_t nranks;
+        rocshmem_uniqueid_t uid;  // 128 bytes
+        void* mpi_comm;
+
+    mpi_comm is always a null pointer in our implementation, as we bootstrap with TCP.
+    """
+
+    var rank: Int32
+    var nranks: Int32
+    var uid: ROCSHMEMUniqueID
+    var mpi_comm: UnsafePointer[NoneType, ImmutAnyOrigin]
+
+    fn __init__(out self):
         comptime assert (
             size_of[Self]() == 144
         ), "ROCSHMEMInitAttr must be 144 bytes"
-        self.version = c_int((1 << 16) + size_of[ROCSHMEMInitAttr]())
-        self.mpi_comm = mpi_comm
-        self.args = ROCSHMEMInitArgs()
-
-
-struct ROCSHMEMInitArgs:
-    var version: c_int
-    var uid_args: ROCSHMEMUniqueIDArgs
-    var content: InlineArray[Byte, 96]
-
-    fn __init__(out self):
-        comptime assert (
-            size_of[Self]() == 128
-        ), "ROCSHMEMInitArgs must be 128 bytes"
-        self.version = c_int((1 << 16) + size_of[ROCSHMEMInitArgs]())
-        self.uid_args = ROCSHMEMUniqueIDArgs()
-        self.content = InlineArray[Byte, 96](fill=0)
-
-
-struct ROCSHMEMUniqueIDArgs:
-    var version: c_int
-    var id: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]
-    var myrank: c_int
-    var nranks: c_int
-
-    fn __init__(out self):
-        comptime assert (
-            size_of[Self]() == 24
-        ), "ROCSHMEMUniqueIDArgs must be 24 bytes"
-        self.version = c_int((1 << 16) + size_of[ROCSHMEMUniqueIDArgs]())
-        self.id = UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]()
-        self.myrank = 0
+        self.rank = 0
         self.nranks = 0
+        self.uid = ROCSHMEMUniqueID()
+        self.mpi_comm = UnsafePointer[NoneType, ImmutAnyOrigin]()
 
+    fn __init__(out self, rank: Int32, nranks: Int32, uid: ROCSHMEMUniqueID):
+        self.rank = rank
+        self.nranks = nranks
+        self.uid = uid
+        # Null pointer, we're not using MPI
+        self.mpi_comm = UnsafePointer[NoneType, ImmutAnyOrigin]()
 
-struct ROCSHMEMUniqueID:
-    var version: c_int
-    var internal: InlineArray[Byte, 124]
-
-    fn __init__(out self):
-        comptime assert (
-            size_of[Self]() == 128
-        ), "rocshmem_uniqueid_t must be 128 bytes"
-        self.version = c_int((1 << 16) + size_of[ROCSHMEMUniqueID]())
-        self.internal = InlineArray[Byte, 124](fill=0)
+    fn __copyinit__(out self, existing: Self):
+        self.rank = existing.rank
+        self.nranks = existing.nranks
+        self.uid = existing.uid
+        self.mpi_comm = existing.mpi_comm
 
 
 fn _dtype_to_rocshmem_type[
@@ -304,45 +289,141 @@ fn _rocshmem_init() raises:
     ]()()
 
 
-fn rocshmem_init() raises:
-    var _argv = argv()
-    var argc = len(_argv)
-
-    var world_rank, world_nranks = c_int(0), c_int(0)
-    var provided = c_int(0)
-
-    MPI_Init_thread(
-        argc, _argv, MPI_THREAD_MULTIPLE, UnsafePointer(to=provided)
-    )
-    if provided != MPI_THREAD_MULTIPLE:
-        raise Error("MPI_THREAD_MULTIPLE support disabled.")
-
-    _rocshmem_init()
-
-
 fn rocshmem_init_thread(
-    ctx: DeviceContext, number_of_devices_node: Int = -1
+    ctx: DeviceContext,
+    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+    var node_id: Int = -1,
+    var total_nodes: Int = -1,
+    var gpus_per_node: Int = -1,
 ) raises:
-    raise Error("shmem_init_thread is not implemented for ROCSHMEM")
+    """Initialize rocSHMEM for the given device using a unique ID for TCP bootstrap.
+
+    Computes a global rank from the node ID, GPUs per node, and device ID, then
+    initializes rocSHMEM with attribute-based initialization using the provided
+    unique ID. Parameters default to -1, in which case values are read from
+    environment variables (`SHMEM_NODE_ID`, `SHMEM_TOTAL_NODES`,
+    `SHMEM_GPUS_PER_NODE`). If `SHMEM_GPUS_PER_NODE` is also unset, the number
+    of attached GPUs is detected automatically.
+
+    Args:
+        ctx: The device context to initialize rocSHMEM on. This device is set
+            as the current device before initialization.
+        uid: Pointer to a `ROCSHMEMUniqueID` shared across all participating
+            PEs, typically created by `rocshmem_create_uniqueid` on one PE
+            and broadcast to the others.
+        node_id: The ID of this node in the cluster. Defaults to -1, which
+            reads from `SHMEM_NODE_ID` (default: 0).
+        total_nodes: The total number of nodes in the cluster. Defaults to -1,
+            which reads from `SHMEM_TOTAL_NODES` (default: 1).
+        gpus_per_node: The number of GPUs per node. Defaults to -1, which
+            reads from `SHMEM_GPUS_PER_NODE`, falling back to the number of
+            detected devices.
+    """
+    ctx.set_as_current()
+    # Check env vars if the defaults are not overridden
+    if total_nodes == -1:
+        total_nodes = atol(getenv("SHMEM_TOTAL_NODES", "1"))
+    if node_id == -1:
+        node_id = atol(getenv("SHMEM_NODE_ID", "0"))
+    if gpus_per_node == -1:
+        gpus_per_node = atol(getenv("SHMEM_GPUS_PER_NODE", "-1"))
+        # If not defined by argument or env var, use the number of attached GPUs
+        if gpus_per_node == -1:
+            gpus_per_node = DeviceContext.number_of_devices()
+
+    var global_rank = node_id * gpus_per_node + Int(ctx.id())
+    var total_gpus = gpus_per_node * total_nodes
+
+    var attr = ROCSHMEMInitAttr()
+    rocshmem_set_attr_uniqueid_args(
+        c_int(global_rank), c_int(total_gpus), uid, UnsafePointer(to=attr)
+    )
+    rocshmem_init_attr(ROCSHMEM_INIT_WITH_UNIQUEID, UnsafePointer(to=attr))
+
+
+fn rocshmem_create_uniqueid() raises -> ROCSHMEMUniqueID:
+    """Create a unique ID for rocSHMEM TCP bootstrap.
+
+    Generates a `ROCSHMEMUniqueID` that must be identical across all participating
+    PEs to establish communication. One PE should call this function and
+    broadcast the result to all others before calling `rocshmem_init_thread`.
+
+    - `SHMEM_SERVER_IP`: Bootstrap server IP address (default: "0.0.0.0" for running on single node).
+    - `SHMEM_SERVER_PORT`: Bootstrap server port (default: 44434).
+
+    Returns:
+        A `ROCSHMEMUniqueID` to be passed to `rocshmem_init_thread`.
+    """
+    var ip = getenv("SHMEM_SERVER_IP", "0.0.0.0")
+    var port = c_int(atol(getenv("SHMEM_SERVER_PORT", "44434")))
+    var uid = ROCSHMEMUniqueID()
+    _get_rocshmem_function[
+        "rocshmem_create_uniqueid",
+        fn(
+            CStringSlice[origin_of(ip)],
+            c_int,
+            UnsafePointer[ROCSHMEMUniqueID, origin_of(uid)],
+        ) -> None,
+    ]()(ip.as_c_string_slice(), port, UnsafePointer(to=uid))
+    return uid
+
+
+fn rocshmem_set_attr_uniqueid_args(
+    rank: c_int,
+    nranks: c_int,
+    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+    attr: UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
+) raises:
+    """Populate a `ROCSHMEMInitAttr` with rank, size, and unique ID for
+    attribute-based initialization.
+
+    Args:
+        rank: The global rank of this PE.
+        nranks: The total number of PEs across all nodes.
+        uid: Pointer to the shared `ROCSHMEMUniqueID` obtained from
+            `rocshmem_create_uniqueid`.
+        attr: Pointer to a `ROCSHMEMInitAttr` to be populated. The resulting
+            attr is passed to `rocshmem_init_attr`.
+
+    Raises:
+        Error: If the underlying rocSHMEM call returns a non-zero error code.
+    """
+    var result = _get_rocshmem_function[
+        "rocshmem_set_attr_uniqueid_args",
+        fn(
+            c_int,
+            c_int,
+            UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+            UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
+        ) -> c_int,
+    ]()(rank, nranks, uid, attr)
+    if result:
+        raise Error(
+            "rocshmem_set_attr_uniqueid_args failed with error code:", result
+        )
 
 
 fn rocshmem_init_attr(
     flags: UInt32,
     attr: UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
-) -> c_int:
-    return _get_rocshmem_function[
+) raises:
+    var result = _get_rocshmem_function[
         "rocshmem_init_attr",
         fn(UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
+    if result:
+        raise Error("rocshmem_init_attr failed with error code:", result)
 
 
 fn rocshmem_get_uniqueid(
     uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]
-) -> c_int:
-    return _get_rocshmem_function[
+) raises:
+    var result = _get_rocshmem_function[
         "rocshmem_get_uniqueid",
         fn(UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
     ]()(uid)
+    if result:
+        raise Error("rocshmem_get_uniqueid failed with error code:", result)
 
 
 fn rocshmem_finalize():
@@ -352,7 +433,7 @@ fn rocshmem_finalize():
     ]()()
 
 
-fn rocshmemx_hipmodule_init[T: AnyType](module: T) -> c_int:
+fn rocshmemx_hipmodule_init[T: AnyType](module: T) raises:
     """Initialize rocSHMEM device state in a dynamically loaded HIP module.
 
     This is the AMD equivalent of NVSHMEM's nvshmemx_cumodule_init().
@@ -364,14 +445,13 @@ fn rocshmemx_hipmodule_init[T: AnyType](module: T) -> c_int:
 
     Args:
         module: The HIP module handle to initialize.
-
-    Returns:
-        A hipSuccess (0) on success, error code otherwise.
     """
-    return _get_rocshmem_function[
+    var result = _get_rocshmem_function[
         "rocshmemx_hipmodule_init",
         fn(T) -> c_int,
     ]()(module)
+    if result:
+        raise Error("rocshmemx_hipmodule_init failed with error code:", result)
 
 
 fn rocshmem_my_pe() -> c_int:
@@ -481,34 +561,21 @@ fn rocshmem_put[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    source: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dest: UnsafePointer[Scalar[dtype]],
+    source: UnsafePointer[Scalar[dtype]],
     nelems: c_size_t,
     pe: c_int,
 ):
     comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_put"]()
-
-    @parameter
-    if is_amd_gpu():
-        external_call[symbol, NoneType](dest, source, nelems, pe)
-    else:
-        _get_rocshmem_function[
-            symbol,
-            fn(
-                UnsafePointer[Scalar[dtype], MutAnyOrigin],
-                UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-                c_size_t,
-                c_int,
-            ) -> NoneType,
-        ]()(dest, source, nelems, pe)
+    external_call[symbol, NoneType](dest, source, nelems, pe)
 
 
 fn rocshmem_put_nbi[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    source: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dest: UnsafePointer[Scalar[dtype]],
+    source: UnsafePointer[Scalar[dtype]],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -596,6 +663,29 @@ fn rocshmem_put_signal_nbi[
     )
 
 
+fn rocshmemx_signal_op(
+    sig_addr: UnsafePointer[UInt64],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
+):
+    """Atomically update a remote signal value.
+
+    The rocshmemx_signal_op operation atomically updates sig_addr with signal
+    using operation sig_op on the specified PE. This operation can be used
+    together with wait and test routines for efficient point-to-point
+    synchronization.
+
+    Args:
+        sig_addr: Symmetric address of the signal word to be updated.
+        signal: The value used to update sig_addr.
+        sig_op: Operation used to update sig_addr (ROCSHMEM_SIGNAL_SET or
+            ROCSHMEM_SIGNAL_ADD).
+        pe: PE number of the remote PE.
+    """
+    external_call["rocshmemx_signal_op", NoneType](sig_addr, signal, sig_op, pe)
+
+
 # ===----------------------------------------------------------------------=== #
 # 10: Collective Communication
 # ===----------------------------------------------------------------------=== #
@@ -619,9 +709,9 @@ fn rocshmem_barrier_all():
         ]()()
 
 
-fn rocshmem_barrier_all_wave(stream: hipStream_t):
+fn rocshmem_barrier_all_on_stream(stream: hipStream_t):
     _get_rocshmem_function[
-        "rocshmem_barrier_all_wave",
+        "rocshmem_barrier_all_on_stream",
         fn(hipStream_t) -> NoneType,
     ]()(stream)
 
@@ -633,7 +723,7 @@ fn rocshmem_barrier_all_wave(stream: hipStream_t):
 
 fn rocshmem_signal_wait_until[
     dtype: DType
-](sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64):
+](sig_addr: UnsafePointer[Scalar[dtype]], cmp: c_int, cmp_value: Scalar[dtype]):
     comptime symbol = _dtype_to_rocshmem_type[
         "rocshmem_", dtype, "_wait_until"
     ]()

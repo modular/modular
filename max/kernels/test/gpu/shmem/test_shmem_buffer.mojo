@@ -10,10 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
-
+# RUN: %mojo %s
 from math import iota
 
 from shmem import SHMEMBuffer, SHMEMContext, shmem_launch

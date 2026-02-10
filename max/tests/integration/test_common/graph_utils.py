@@ -37,6 +37,16 @@ def is_b100_b200() -> bool:
     )
 
 
+def is_nvidia_gpu() -> bool:
+    """Checks if the GPU is an NVIDIA GPU."""
+    return bool(NVITOPDevice.all())
+
+
+def gpu_warp_size() -> int:
+    """Returns the warp/wavefront size for the current GPU."""
+    return 32 if is_nvidia_gpu() else 64
+
+
 def is_a10() -> bool:
     """Checks if this is an A10 GPU."""
     devices = NVITOPDevice.all()

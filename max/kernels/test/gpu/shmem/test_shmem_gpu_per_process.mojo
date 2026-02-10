@@ -19,6 +19,7 @@ if running on a single node you can run the compiled binary directly without
 mpirun.
 """
 
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
