@@ -61,7 +61,7 @@ from ._mpi import (
 )
 from ._rocshmem import (
     rocshmem_my_pe,
-    rocshmem_init,
+    rocshmem_create_uniqueid,
     rocshmem_finalize,
     rocshmem_n_pes,
     rocshmem_malloc,
@@ -69,11 +69,19 @@ from ._rocshmem import (
     rocshmem_team_my_pe,
     rocshmem_free,
     rocshmem_barrier_all,
-    rocshmem_barrier_all_wave,
+    rocshmem_barrier_all_on_stream,
+    rocshmem_fence,
+    rocshmem_g,
+    rocshmem_get_nbi,
     rocshmem_p,
-    rocshmemx_hipmodule_init,
     rocshmem_put,
+    rocshmem_put_nbi,
+    rocshmem_put_signal_nbi,
+    rocshmem_signal_wait_until,
+    rocshmemx_hipmodule_init,
+    rocshmemx_signal_op,
     rocshmem_init_thread,
+    ROCSHMEMUniqueID,
 )
 from ._nvshmem import (
     NVSHMEM_CMP_EQ,
@@ -195,23 +203,19 @@ fn shmem_init() raises:
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_init()
-    elif has_amd_gpu_accelerator():
-        rocshmem_init()
     else:
         return CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
         ]()
 
 
-fn shmem_init_thread(
-    ctx: DeviceContext, number_of_devices_node: Int = -1
-) raises:
+fn shmem_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
     """Modular-specific init that enables initializing SHMEM on one GPU per
     thread.
 
     Arguments:
         ctx: the `DeviceContext` to associate with this thread
-        number_of_devices_node: the number of devices participating on this node,
+        gpus_per_node: the number of devices participating on this node,
             by default this will use ctx.number_of_devices() to use all
             available GPUs.
 
@@ -221,9 +225,48 @@ fn shmem_init_thread(
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        nvshmemx_init_thread(ctx, number_of_devices_node)
-    elif has_amd_gpu_accelerator():
-        rocshmem_init_thread(ctx, number_of_devices_node)
+        nvshmemx_init_thread(ctx, gpus_per_node)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
+
+
+fn shmem_init_thread(
+    ctx: DeviceContext,
+    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+    node_id: Int = -1,
+    total_nodes: Int = -1,
+    gpus_per_node: Int = -1,
+) raises:
+    """Modular-specific init that enables initializing SHMEM on one GPU per
+    thread using TCP bootstrapping, without mpirun or other launchers. The
+    bootstrap will wait until `total_nodes * gpus_per_node` have completed
+    the exchange of information before moving on from this function call.
+
+    By default it will run in single node mode with all attached GPUS.
+    If the default arguments are not overridden, you can override with
+    environment variables:
+        export SHMEM_NODE_ID=0              # 0-3 on 4 separate nodes
+        export SHMEM_TOTAL_NODES=4          # 4 nodes participating
+        export SHMEM_GPUS_PER_NODE=8        # 8 GPUs per node participating
+        export SHMEM_SERVER_IP=10.24.8.107  # IP of the network interface e.g. `ip addr show eno0`
+        export SHMEM_SERVER_PORT            # Port for TCP bootstrapping
+
+    Arguments:
+        ctx: the `DeviceContext` to associate with this thread.
+        uid: encodes the server IP, and port, and validation data for TCP bootstrapping,
+        node_id: a number from 0..N where N is the amount of `total_nodes - 1`.
+        gpus_per_node: the number of GPUs participating on this node.
+        total_nodes: the amount of nodes participating.
+
+    Raises:
+        If SHMEM initialization fails on any thread.
+    """
+
+    @parameter
+    if has_amd_gpu_accelerator():
+        rocshmem_init_thread(ctx, uid, node_id, total_nodes, gpus_per_node)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -538,6 +581,8 @@ fn shmem_get_nbi[
     @parameter
     if is_nvidia_gpu():
         nvshmem_get_nbi[scope](dest, source, nelems, pe)
+    elif is_amd_gpu():
+        rocshmem_get_nbi(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -563,6 +608,8 @@ fn shmem_g[
     @parameter
     if is_nvidia_gpu():
         return nvshmem_g(source, pe)
+    elif is_amd_gpu():
+        return rocshmem_g(source, pe)
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype], operation = __get_current_function_name()
@@ -599,6 +646,8 @@ fn shmem_put[
     @parameter
     if is_nvidia_gpu():
         nvshmem_put[kind](dest, source, nelems, pe)
+    elif is_amd_gpu():
+        rocshmem_put(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -637,6 +686,8 @@ fn shmem_put_nbi[
     @parameter
     if is_nvidia_gpu():
         nvshmem_put_nbi[kind](dest, source, nelems, pe)
+    elif is_amd_gpu():
+        rocshmem_put_nbi(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -746,6 +797,10 @@ fn shmem_put_signal_nbi[
         nvshmem_put_signal_nbi(
             dest, source, nelems, sig_addr, signal, sig_op, pe
         )
+    elif is_amd_gpu():
+        rocshmem_put_signal_nbi(
+            dest, source, nelems, sig_addr, signal, sig_op, pe
+        )
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -816,6 +871,8 @@ fn shmem_signal_wait_until(
     @parameter
     if is_nvidia_gpu():
         nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
+    elif is_amd_gpu():
+        rocshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -841,6 +898,8 @@ fn shmem_fence():
     @parameter
     if is_nvidia_gpu():
         nvshmem_fence()
+    elif is_amd_gpu():
+        rocshmem_fence()
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -878,6 +937,8 @@ fn shmem_signal_op(
     @parameter
     if is_nvidia_gpu():
         nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
+    elif is_amd_gpu():
+        rocshmemx_signal_op(sig_addr, signal, sig_op, pe)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -906,7 +967,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
     if has_nvidia_gpu_accelerator():
         nvshmemx_barrier_all_on_stream(CUDA(stream))
     elif has_amd_gpu_accelerator():
-        rocshmem_barrier_all_wave(HIP(stream))
+        rocshmem_barrier_all_on_stream(HIP(stream))
     else:
         return CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name(),
@@ -934,12 +995,10 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
         var func = CUDA_MODULE(device_function)
         var status = nvshmemx_cumodule_init(func)
         if status != 0:
-            raise Error("nvshmemx_hipmodule_init failed with status:", status)
+            raise Error("nvshmemx_cumodule_init failed with status:", status)
     elif has_amd_gpu_accelerator():
         var hip_module = HIP_MODULE(device_function)
-        var status = rocshmemx_hipmodule_init(hip_module)
-        if status != 0:
-            raise Error("rocshmemx_hipmodule_init failed with status:", status)
+        rocshmemx_hipmodule_init(hip_module)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name(),

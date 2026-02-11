@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     PipelineRole,
     SamplingConfig,
 )
+from max.pipelines.lib.config import AudioGenerationConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -1284,6 +1285,17 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
         model_path="test/model",
         device_specs=[DeviceSpec.accelerator()],
         pipeline_role=PipelineRole.PrefillOnly,
+        enable_overlap_scheduler=True,
+    )
+    with pytest.raises(ValueError):
+        config._validate_and_resolve_overlap_scheduler()
+
+    # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
+    config = AudioGenerationConfig(
+        model_path="test/model",
+        device_specs=[DeviceSpec.accelerator()],
+        pipeline_role=PipelineRole.PrefillAndDecode,
+        audio_decoder=Mock(),
         enable_overlap_scheduler=True,
     )
     with pytest.raises(ValueError):

@@ -40,8 +40,14 @@ from gpu.primitives.cluster import (
 )
 from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor
+from layout._layout import TensorLayout
+from layout._tile_tensor import TileTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
+from ..structured_kernels.tile_types import (
+    GMEMTile,
+    TmaOpType,
+    static_row_major,
+)
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -63,8 +69,6 @@ from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
 )
-from ..structured_kernels.tile_loader import TileLoaderTMA, ScalesTileLoader
-
 from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from ..grouped_block_scaled_1d1d.grouped_1d1d_tile_scheduler import (
     GroupedWorkIterator1D1D,
@@ -77,7 +81,7 @@ from ..grouped_block_scaled_1d1d.grouped_1d1d_matmul_kernel import (
 # Blockwise FP8 specific components
 from ..blockwise_fp8.blockwise_fp8_accumulator import (
     BlockwiseFP8Accumulator,
-    get_accumulator_layout,
+    get_accumulator_dims,
     is_lower_fragment_required,
 )
 from ..blockwise_fp8.blockwise_fp8_output_writer import BlockwiseFP8TileWriter
@@ -95,20 +99,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    # Tensor layouts
-    a_layout: Layout,
-    b_layout: Layout,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
-    # Offset/ID layouts
-    offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
-    # Full C device tensor layout (for bounds-checked stores)
-    c_device_layout: Layout,
+    # B-scales layout (new Layout type for TileTensor)
+    b_scales_layout: TensorLayout,
+    # C device layout (for bounds-check global memory stores)
+    c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -252,16 +246,6 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
 
-    # ========== LayoutTensor for TMA Boundary ==========
-    # Only a_scales needs LayoutTensor (async_copy has no TileTensor overload).
-    # A/B tiles use TileTensor directly for TMA multicast_load and MMA.
-    comptime AScalesTileLT = LayoutTensor[
-        Self.a_scales_type,
-        Self.SmemType.a_scales_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-
     # ========== TMA Load Size Constants ==========
     comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
         Self.a_type
@@ -278,17 +262,46 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         + Self.a_scales_expected_bytes
     )
 
-    comptime a_tma_load_size = Self.a_desc_layout.size()
-    comptime b_tma_load_size = Self.b_desc_layout.size()
-    comptime a_tma_rows = Self.a_desc_layout.shape[0].value()
-    comptime b_tma_rows = Self.b_desc_layout.shape[0].value()
+    # ========== TMA Layouts (computed from config, new Layout types) ==========
+
+    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
+    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
+        Self.a_type
+    ]()
+    comptime b_swizzle_elems = Self.config.b_swizzle.bytes() // size_of[
+        Self.b_type
+    ]()
+
+    comptime ATileLayout = static_row_major[Self.a_tile_dim0, Self.BK]
+    comptime ADescLayout = static_row_major[
+        Self.a_tile_dim0, Self.a_swizzle_elems
+    ]
+    comptime BTileLayout = static_row_major[Self.b_tile_dim0, Self.BK]
+    comptime BDescLayout = static_row_major[
+        Self.b_tile_dim0, Self.b_swizzle_elems
+    ]
+    comptime AScalesLayout = static_row_major[1, Self.BM]
+
+    # TMA operation types (derived from new Layout types)
+    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime AScalesTmaOp = TmaOpType[
+        Self.a_scales_type, Self.AScalesLayout, Self.AScalesLayout
+    ]
+
+    # TMA load size constants (from desc layout dimensions)
+    comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim0 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim0
+    comptime b_tma_rows = Self.b_tile_dim0
 
     # ========== Accumulator Type ==========
     comptime is_lower_required = is_lower_fragment_required[
         Self.cta_group, Self.config.block_tile_shape
     ]()
 
-    comptime accum_layout = get_accumulator_layout[
+    comptime accum_dims = get_accumulator_dims[
         c_smem_dim1 = Self.OutputN,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
@@ -297,7 +310,8 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     comptime Accumulator = BlockwiseFP8Accumulator[
         Self.accum_type,
-        Self.accum_layout,
+        Self.accum_dims[0],
+        Self.accum_dims[1],
         Self.is_lower_required,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
@@ -310,7 +324,8 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.OutputM,
         Self.OutputN,
         Self.accum_type,
-        Self.accum_layout,
+        Self.accum_dims[0],
+        Self.accum_dims[1],
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
         is_lower_frag_required = Self.is_lower_required,
@@ -322,9 +337,6 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     # ========== Work Iterator Type ==========
     comptime WorkIterator = GroupedWorkIterator1D1D[
-        offsets_layout = Self.offsets_layout,
-        expert_ids_layout = Self.expert_ids_layout,
-        expert_scales_layout = Self.expert_scales_layout,
         static_N = Self.static_N,
         tile_shape = Self.config.block_tile_shape,
         cluster = Self.config.cluster_shape,
@@ -347,6 +359,12 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         ]()
         constrained[Self.BK == 128, "Only support BK = 128"]()
 
+    # ========== Kernel Parameter TileTensor Types ==========
+
+    comptime BScalesTile = TileTensor[
+        Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
+    ]
+
     # ========== Kernel Entry Point ==========
 
     @staticmethod
@@ -357,27 +375,17 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
     fn run(
         # Grid-constant TMA descriptors
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        a_scales_tma_op: TMATensorTile[
-            Self.a_scales_type, Self.a_scales_layout, Self.a_scales_desc_layout
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        a_scales_tma_op: Self.AScalesTmaOp,
         # B-scales from GMEM (not TMA)
-        b_scales: LayoutTensor[
-            Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
-        ],
+        b_scales: Self.BScalesTile,
         # Offset tensors for 1D-1D addressing
-        a_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
-        ],
-        expert_ids: LayoutTensor[
-            DType.int32, Self.expert_ids_layout, MutAnyOrigin
-        ],
-        expert_scales: LayoutTensor[
-            DType.float32, Self.expert_scales_layout, MutAnyOrigin
-        ],
-        # C tensor for bounds-checked stores (full tensor layout)
-        c_device: LayoutTensor[Self.c_type, Self.c_device_layout, MutAnyOrigin],
+        a_offsets: Self.WorkIterator.OffsetsTile,
+        expert_ids: Self.WorkIterator.ExpertIdsTile,
+        expert_scales: Self.WorkIterator.ExpertScalesTile,
+        # C tensor for bounds-checked stores
+        c_device: TileTensor[Self.c_type, Self.c_device_layout, MutAnyOrigin],
         # Number of active experts
         num_active_experts: Int,
         # K dimension for iteration
@@ -573,21 +581,18 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                     # Offset b_scales to current expert's section.
                     # b_scales is (num_experts * N//128, K//128), we need
                     # to index with local tile index within the expert.
-                    comptime b_scales_n = Self.b_scales_layout.shape[0].value()
-                    comptime b_scales_k = Self.b_scales_layout.shape[1].value()
-                    comptime expert_b_scales_n = b_scales_n // Self.static_N  # TODO: double check. b_scales was reshaped to (experts*scales_n, scales_k)
-                    # Actually b_scales is already (expert*N//128, K//128)
-                    # expert_id * (N//128) gives the offset
+                    comptime b_scales_n = Self.b_scales_layout.static_shape[0]
+                    comptime b_scales_k = Self.b_scales_layout.static_shape[1]
+                    # b_scales shape is (num_experts * N//128, K//128).
+                    # expert_id * (N//128) gives the row offset.
+                    comptime expert_b_scales_n = b_scales_n // Self.static_N
                     comptime n_scale_blocks = Self.static_N // Self.BK
                     var expert_b_scale_offset = (
                         Int(ctx.expert_id()) * n_scale_blocks
                     )
-                    var b_scales_expert = LayoutTensor[
-                        Self.b_scales_type,
-                        Self.b_scales_layout,
-                        MutAnyOrigin,
-                    ](
-                        b_scales.ptr + expert_b_scale_offset * b_scales_k,
+                    var b_scales_expert = Self.BScalesTile(
+                        ptr=b_scales.ptr + expert_b_scale_offset * b_scales_k,
+                        layout=b_scales.layout,
                     )
 
                     # Convert absolute N to tile index for b_scales lookup
@@ -603,7 +608,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                                     UInt(ctx.m()),
                                     n_tile,
                                 ),
-                                k_iter=k_iter,
+                                k_iter=UInt(k_iter),
                                 problem_shape=StaticTuple[Int32, 3](
                                     Int32(0),
                                     Int32(Self.static_N),
@@ -635,11 +640,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        a_scales_tma_op: TMATensorTile[
-            Self.a_scales_type, Self.a_scales_layout, Self.a_scales_desc_layout
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        a_scales_tma_op: Self.AScalesTmaOp,
         tiles: InputProducerStage[
             tiles_origin,
             Self.TilePayload,
@@ -708,9 +711,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                 UInt16((1 << Self.CLUSTER_N) - 1),
             )
 
-            # Load A-scales - convert to LayoutTensor at TMA boundary
+            # Load A-scales via TMA (TileTensor directly)
             a_scales_tma_op.async_copy[Self.cta_group](
-                Self.AScalesTileLT(a_scales_tile.ptr),
+                a_scales_tile,
                 barrier[0],
                 (Int(m_coord), iter_idx),
             )

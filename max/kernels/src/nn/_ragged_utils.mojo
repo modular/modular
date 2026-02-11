@@ -55,7 +55,7 @@ fn get_batch_from_row_offsets(
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
-    comptime assert row_offsets.rank == 1
+    comptime assert row_offsets.flat_rank == 1
 
     var row_offsets_size = row_offsets.numel()
 
@@ -83,7 +83,7 @@ fn get_batch_and_token_idx_from_row_offsets(
 ) -> Tuple[Int, Int]:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
-    comptime assert row_offsets.rank == 1
+    comptime assert row_offsets.flat_rank == 1
 
     var row_offsets_size = row_offsets.numel()
 

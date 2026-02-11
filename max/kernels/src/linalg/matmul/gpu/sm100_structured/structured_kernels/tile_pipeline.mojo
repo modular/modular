@@ -121,7 +121,7 @@ struct StandardTilePayload[
     """Tile payload for standard matmul (A and B tiles).
 
     Uses explicit dimensions for tile arrays. The tiles are stored as TileTensor
-    with row_major layout and converted to LayoutTensor with swizzled layouts
+    with row_major layout. TileTensors are passed directly to TMA/MMA.
     at TMA/MMA boundaries.
     """
 

@@ -35,7 +35,7 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from .config_enums import PipelineRole
 from .hf_utils import is_diffusion_pipeline
@@ -1581,3 +1581,14 @@ class AudioGenerationConfig(PipelineConfig):
             prometheus_metrics_mode=prometheus_metrics_mode,
             **config_flags,
         )
+
+    @override
+    def _validate_and_resolve_overlap_scheduler(self) -> None:
+        if self.force:
+            return
+
+        if self.enable_overlap_scheduler:
+            raise ValueError(
+                "The Overlap scheduler does not support Audio Generation. "
+                "Detected AudioGenerationConfig."
+            )

@@ -111,7 +111,7 @@ struct BlockScaledSmem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, sfa, sfb
-    # Note: Layouts are still defined above for LayoutTensor boundary conversion
+    # Layouts are used by tile storage types for allocation and sizing
     comptime Tiles = BlockScaledTileStorage[
         Self.a_type,
         Self.b_type,
@@ -137,10 +137,10 @@ struct BlockScaledSmem[
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types (all TileTensor-based now)
+    # Re-export tile array types
     comptime ATileArray = Self.Tiles.ATileArray
     comptime BTileArray = Self.Tiles.BTileArray
-    comptime CTileArray = Self.Tiles.CTileArray  # TileTensor-based
+    comptime CTileArray = Self.Tiles.CTileArray
     comptime SFATileArray = Self.Tiles.SFATileArray
     comptime SFBTileArray = Self.Tiles.SFBTileArray
 
@@ -150,27 +150,27 @@ struct BlockScaledSmem[
     # ========== Tile Accessors (TileTensor - Delegated) ==========
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
-        """Get A tile array accessor (TileTensor-based)."""
+        """Get A tile array accessor."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
-        """Get B tile array accessor (TileTensor-based)."""
+        """Get B tile array accessor."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        """Get C tile array accessor (TileTensor-based)."""
-        return self.tiles.c_tiles_tt()
+        """Get C tile array accessor."""
+        return self.tiles.c_tiles()
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
-        """Get SFA tile array accessor (TileTensor-based)."""
+        """Get SFA tile array accessor."""
         return self.tiles.sfa_tiles()
 
     @always_inline
     fn sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
-        """Get SFB tile array accessor (TileTensor-based)."""
+        """Get SFB tile array accessor."""
         return self.tiles.sfb_tiles()
 
     # ========== Pipeline Storage (Composed Bundle) ==========

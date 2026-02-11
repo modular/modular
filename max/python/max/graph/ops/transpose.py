@@ -30,6 +30,7 @@ def _axis_bounds(rank: int) -> tuple[int, int]:
 
 def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
     """Transposes two axes of a symbolic tensor.
+
     For more information, see :obj:`~max.graph.TensorValue.transpose()`.
 
     Args:

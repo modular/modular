@@ -186,7 +186,7 @@ class Dim:
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
+            attr: The MLIR Attribute to parse into a dimension.
 
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
@@ -268,6 +268,7 @@ class SymbolicDim(Dim):
 
         Args:
             other: The other dimension to check equality against.
+
         Returns:
             True if the dimensions have the same name, false otherwise.
         """
@@ -291,7 +292,7 @@ class SymbolicDim(Dim):
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
+            attr: The MLIR Attribute to parse into a dimension.
 
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
@@ -308,8 +309,7 @@ class SymbolicDim(Dim):
 
 @dataclass(frozen=True)
 class AlgebraicDim(Dim):
-    """An algebraic tensor dimension to enable expressions over symbolic
-    dimensions.
+    """An algebraic tensor dimension to enable expressions over symbolic dimensions.
 
     That is, any expression over a symbolic dimension returns ``AlgebraicDim``.
     Furthermore, algebraic dimensions automatically simplify into a canonical
@@ -338,6 +338,7 @@ class AlgebraicDim(Dim):
 
     @classmethod
     def apply(cls, op: kgen.POC, *operands: DimLike):  # noqa: ANN206
+        """Applies a parametric operator to operands and returns the resulting dimension."""
         # kgen.ParamOperatorAttr eagerly folds on construction!
         #  - this can return static or symbolic dims
         #  - let Dim decide what type to return
@@ -383,6 +384,7 @@ class AlgebraicDim(Dim):
 
     def to_mlir(self) -> kgen.ParamOperatorAttr:
         """Creates an mlir.Attribute representing this dimension.
+
         This is used internally when constructing tensor MLIR types.
 
         Returns:
@@ -392,6 +394,7 @@ class AlgebraicDim(Dim):
 
     @staticmethod
     def from_mlir(attr: builtin.TypedAttr) -> Dim:
+        """Constructs a dimension from an ``mlir.Attribute`` (algebraic)."""
         if not isinstance(attr, kgen.ParamOperatorAttr):
             raise TypeError(f"Attribute is not an algebraic dimension: {attr}")
         return AlgebraicDim(attr)
@@ -478,7 +481,7 @@ class StaticDim(Dim):
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
+            attr: The MLIR Attribute to parse into a dimension.
 
         Returns:
             The dimension represented by the MLIR Attr value.

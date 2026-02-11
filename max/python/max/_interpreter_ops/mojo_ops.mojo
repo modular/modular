@@ -18,17 +18,19 @@ from python import PythonObject
 from python.bindings import PythonModuleBuilder
 from sys.info import has_accelerator, simd_width_of
 
-from math import iota
-from random import NormalRandom
+from math import exp, iota, log
+from random import NormalRandom, Random
 from algorithm.functional import elementwise, IndexList
 from algorithm import max as reduce_max
 from algorithm import min as reduce_min
 from algorithm import sum as reduce_sum
 from algorithm import mean as reduce_mean
+from algorithm import product as reduce_product
 from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
+from nn.softmax import softmax as nn_softmax
 from reflection import get_base_type_name
 from runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import ManagedTensorSlice
@@ -314,10 +316,21 @@ fn PyInit_mojo_ops() -> PythonObject:
             "ReduceAdd", docstring="Reduce add along axis"
         )
         b.def_function[mean_dispatcher]("Mean", docstring="Mean along axis")
+        b.def_function[reduce_mul_dispatcher](
+            "ReduceMul", docstring="Reduce mul along axis"
+        )
 
         # Static broadcast to operation
         b.def_function[static_broadcast_to_dispatcher](
             "StaticBroadcastTo", docstring="Static broadcast to"
+        )
+
+        # Softmax operations
+        b.def_function[softmax_dispatcher](
+            "Softmax", docstring="Softmax along axis"
+        )
+        b.def_function[logsoftmax_dispatcher](
+            "LogSoftmax", docstring="LogSoftmax along axis"
         )
 
         # Pow operation (custom dispatch - Pow doesn't conform to
@@ -327,6 +340,22 @@ fn PyInit_mojo_ops() -> PythonObject:
         # Random normal operation
         b.def_function[random_normal_dispatcher](
             "RandomNormal", docstring="Random normal distribution"
+        )
+
+        # Random uniform operation
+        b.def_function[random_uniform_dispatcher](
+            "RandomUniform", docstring="Random uniform distribution"
+        )
+
+        # Select operation (ternary: cond ? x : y)
+        b.def_function[select_dispatcher](
+            "Select", docstring="Elementwise select (cond ? x : y)"
+        )
+
+        # Memcpy operation (copy elements between buffers with offsets)
+        b.def_function[memcpy_dispatcher](
+            "Memcpy",
+            docstring="Copy elements between buffers with offsets",
         )
 
         return b.finalize()
@@ -2050,6 +2079,139 @@ fn random_normal_dispatcher(
 
 
 # ===----------------------------------------------------------------------=== #
+# Random uniform operation
+# ===----------------------------------------------------------------------=== #
+
+
+fn random_uniform_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    lower_bound: Float32,
+    upper_bound: Float32,
+    seed_value: UInt64,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Random uniform operation: fill output with uniformly distributed values.
+
+    Parameters:
+        dtype: The data type of the output array.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        size: Number of elements to produce.
+        lower_bound: Lower bound of the uniform distribution.
+        upper_bound: Upper bound of the uniform distribution.
+        seed_value: Seed for the random number generator.
+        ctx: Device context pointer (null for CPU).
+    """
+    if lower_bound > upper_bound:
+        raise Error("lower_bound must be less than or equal to upper_bound")
+
+    var delta = upper_bound - lower_bound
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, lower_bound, delta, seed_value)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+        var generator = Random(seed=seed_value, offset=UInt64(i))
+        var values: SIMD[DType.float32, 4] = generator.step_uniform()
+        values = values * delta + lower_bound
+        out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[func, simd_width=4, use_blocking_impl=True](
+            IndexList[1](size)
+        )
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=4, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for random_uniform"
+                    " with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+fn random_uniform_dispatcher(
+    out_buffer: PythonObject,
+    lower_val: PythonObject,
+    upper_val: PythonObject,
+    seed_val: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Random uniform dispatcher with dtype dispatch.
+
+    Args:
+        out_buffer: The output buffer object.
+        lower_val: Python float for the lower bound.
+        upper_val: Python float for the upper bound.
+        seed_val: Python int for the seed.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(out_buffer)
+    var size = _get_size(out_buffer)
+    var lower_bound = Float32(py=lower_val)
+    var upper_bound = Float32(py=upper_val)
+    var seed = UInt64(Int(py=seed_val))
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float32:
+        random_uniform_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            size,
+            lower_bound,
+            upper_bound,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        random_uniform_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            size,
+            lower_bound,
+            upper_bound,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.float16:
+        random_uniform_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            size,
+            lower_bound,
+            upper_bound,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        random_uniform_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            size,
+            lower_bound,
+            upper_bound,
+            seed,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for random_uniform: " + String(dtype))
+
+
+# ===----------------------------------------------------------------------=== #
 # Reduce operations (max, min, sum, mean)
 # ===----------------------------------------------------------------------=== #
 
@@ -2182,6 +2344,32 @@ fn _reduce_mean[
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input_shape, reduce_dim, output_shape, context)
+
+
+fn _reduce_mul[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.product for use with ReduceFn."""
+    reduce_product[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
 
 
 fn reduce_dispatcher[
@@ -2465,6 +2653,17 @@ fn mean_dispatcher(
     )
 
 
+fn reduce_mul_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_mul](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # StaticBroadcastTo operation
 # ===----------------------------------------------------------------------=== #
@@ -2706,3 +2905,707 @@ fn static_broadcast_to_dispatcher(
         raise Error(
             "Unsupported dtype for static_broadcast_to: " + String(dtype)
         )
+
+
+# ===----------------------------------------------------------------------=== #
+# Softmax / LogSoftmax operations
+# ===----------------------------------------------------------------------=== #
+
+
+fn _softmax_cpu[
+    dtype: DType,
+    is_logsoftmax: Bool,
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    batch_dim: Int,
+    axis_dim: Int,
+) where dtype.is_floating_point():
+    """CPU softmax/logsoftmax on a rank-2 [batch, axis_dim] buffer.
+
+    Uses a numerically stable 3-pass algorithm:
+    1. Find max along axis for numerical stability
+    2. Compute exp(x - max) and accumulate sum
+    3. Normalize (divide by sum, or subtract log(sum) for logsoftmax)
+
+    Parameters:
+        dtype: The data type (must be floating point).
+        is_logsoftmax: If True, compute log(softmax(x)).
+
+    Args:
+        out_ptr: Pointer to the output buffer.
+        in_ptr: Pointer to the input buffer.
+        batch_dim: Number of rows (batch dimension).
+        axis_dim: Size of the softmax axis.
+    """
+    for row in range(batch_dim):
+        var offset = row * axis_dim
+
+        # Pass 1: find max for numerical stability
+        var max_val = in_ptr[offset]
+        for i in range(1, axis_dim):
+            var v = in_ptr[offset + i]
+            if v > max_val:
+                max_val = v
+
+        # Pass 2: compute exp(x - max) and accumulate sum
+        var sum_val = Scalar[dtype](0)
+        for i in range(axis_dim):
+            var exp_val = exp(in_ptr[offset + i] - max_val)
+            out_ptr[offset + i] = exp_val
+            sum_val += exp_val
+
+        # Pass 3: normalize
+        @parameter
+        if is_logsoftmax:
+            var log_sum = log(sum_val)
+            for i in range(axis_dim):
+                out_ptr[offset + i] = in_ptr[offset + i] - max_val - log_sum
+        else:
+            for i in range(axis_dim):
+                out_ptr[offset + i] /= sum_val
+
+
+fn softmax_op[
+    dtype: DType,
+    is_logsoftmax: Bool,
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    shape: IndexList[2],
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises where dtype.is_floating_point():
+    """Softmax/LogSoftmax operation on a rank-2 normalized tensor.
+
+    The input is normalized to rank-2 [batch, axis_dim] with softmax applied
+    along axis=1 (the last axis).
+
+    Parameters:
+        dtype: The data type of the arrays.
+        is_logsoftmax: If True, compute log(softmax(x)) instead of softmax(x).
+
+    Args:
+        out_ptr: Pointer to the output buffer.
+        in_ptr: Pointer to the input buffer.
+        shape: The normalized rank-2 shape [batch_dim, axis_dim].
+        ctx: Device context pointer.
+    """
+    var batch_dim = shape[0]
+    var axis_dim = shape[1]
+
+    if not ctx:
+        # CPU path: use direct implementation to avoid runtime dependency
+        # (nn.softmax requires AsyncRT parallelism_level which isn't
+        # available in the interpreter context)
+        _softmax_cpu[dtype, is_logsoftmax](out_ptr, in_ptr, batch_dim, axis_dim)
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype in (DType.float32, DType.float16, DType.bfloat16):
+                # GPU path: use nn.softmax kernel via input_fn + LayoutTensor
+                @always_inline
+                @parameter
+                @__copy_capture(in_ptr, axis_dim)
+                fn input_fn[
+                    width: Int, rank: Int
+                ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+                    var c = rebind[IndexList[2]](coords)
+                    var flat_idx = c[0] * axis_dim + c[1]
+                    return in_ptr.load[width=width](flat_idx)
+
+                comptime out_layout = Layout.row_major(
+                    UNKNOWN_VALUE, UNKNOWN_VALUE
+                )
+                var rt = RuntimeLayout[out_layout].row_major(shape)
+                var output_tensor = LayoutTensor[
+                    dtype,
+                    out_layout,
+                    MutExternalOrigin,
+                ](out_ptr, rt)
+
+                var device_ctx = DeviceContextPtr(ctx)
+
+                # Always use nn_softmax (not nn_logsoftmax) on GPU
+                # because the GPU logsoftmax kernel has a bug (KERN-2447)
+                # where the log() is applied outside the normalization
+                # loop. For logsoftmax, we compute softmax then apply
+                # log element-wise below.
+                nn_softmax[
+                    dtype,
+                    simd_width_of[dtype](),
+                    2,
+                    input_fn,
+                    target="gpu",
+                ](shape, output_tensor, 1, device_ctx)
+
+                @parameter
+                if is_logsoftmax:
+                    var total = batch_dim * axis_dim
+
+                    @always_inline
+                    @parameter
+                    @__copy_capture(out_ptr)
+                    fn log_fn[
+                        width: Int, rank: Int, alignment: Int = 1
+                    ](idx: IndexList[rank]):
+                        var i = rebind[IndexList[1]](idx)[0]
+                        out_ptr.store(i, log(out_ptr.load[width=width](i)))
+
+                    elementwise[log_fn, simd_width=1, target="gpu"](
+                        IndexList[1](total), device_ctx
+                    )
+
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for softmax with dtype "
+                    + String(dtype)
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+fn _softmax_dispatch[
+    is_logsoftmax: Bool,
+](
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Softmax/LogSoftmax dispatcher with dtype dispatch.
+
+    Normalizes the input to rank-2 [batch, axis_dim] and dispatches by dtype.
+
+    Parameters:
+        is_logsoftmax: If True, compute log(softmax(x)).
+    """
+    var dtype = _get_dtype(in_buffer)
+    var axis_val = Int(py=axis)
+    var ctx = _get_ctx(device_context_ptr)
+
+    # Extract input shape
+    var in_shape_py = in_buffer.shape
+    var rank = Int(py=len(in_shape_py))
+    var in_shape = _get_shape(in_shape_py, rank)
+
+    # Validate axis is the last dimension (kernel limitation)
+    if axis_val != rank - 1:
+        raise Error(
+            "softmax only supports the last axis, got axis="
+            + String(axis_val)
+            + " for rank="
+            + String(rank)
+        )
+
+    # Normalize to rank-2: [batch_dim, axis_dim]
+    var axis_dim = in_shape[axis_val]
+    var batch_dim = 1
+    for i in range(rank - 1):
+        batch_dim *= in_shape[i]
+
+    var normalized_shape = IndexList[2](batch_dim, axis_dim)
+
+    # Dispatch by dtype (float only)
+    if dtype == DType.float16:
+        softmax_op[DType.float16, is_logsoftmax](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.float16](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        softmax_op[DType.float32, is_logsoftmax](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.float32](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        softmax_op[DType.float64, is_logsoftmax](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.float64](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        softmax_op[DType.bfloat16, is_logsoftmax](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bfloat16](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for softmax: " + String(dtype))
+
+
+# Concrete dispatcher functions for def_function registration.
+
+
+fn softmax_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    _softmax_dispatch[is_logsoftmax=False](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn logsoftmax_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    _softmax_dispatch[is_logsoftmax=True](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Select operation (ternary: cond ? x : y)
+# ===----------------------------------------------------------------------=== #
+
+
+fn select_dispatcher(
+    out_buffer: PythonObject,
+    cond_buffer: PythonObject,
+    true_buffer: PythonObject,
+    false_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Select dispatcher with dtype dispatch.
+
+    Performs element-wise: out = cond ? true_val : false_val.
+
+    Args:
+        out_buffer: The output buffer object.
+        cond_buffer: Boolean condition buffer.
+        true_buffer: Values selected where condition is true.
+        false_buffer: Values selected where condition is false.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(true_buffer)
+    var false_dtype = _get_dtype(false_buffer)
+    if dtype != false_dtype:
+        raise Error(
+            "Mismatched input dtypes for select: "
+            + String(dtype)
+            + " and "
+            + String(false_dtype)
+        )
+
+    var cond_dtype = _get_dtype(cond_buffer)
+    if cond_dtype != DType.bool:
+        raise Error("Select condition must be bool, got: " + String(cond_dtype))
+
+    var size = _get_size(out_buffer)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float16:
+        select_elementwise_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.float16](true_buffer),
+            _get_buffer_ptr[DType.float16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        select_elementwise_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.float32](true_buffer),
+            _get_buffer_ptr[DType.float32](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        select_elementwise_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.float64](true_buffer),
+            _get_buffer_ptr[DType.float64](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        select_elementwise_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.bfloat16](true_buffer),
+            _get_buffer_ptr[DType.bfloat16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int8:
+        select_elementwise_op[DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int8](true_buffer),
+            _get_buffer_ptr[DType.int8](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        select_elementwise_op[DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int16](true_buffer),
+            _get_buffer_ptr[DType.int16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        select_elementwise_op[DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int32](true_buffer),
+            _get_buffer_ptr[DType.int32](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        select_elementwise_op[DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.int64](true_buffer),
+            _get_buffer_ptr[DType.int64](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint8:
+        select_elementwise_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint8](true_buffer),
+            _get_buffer_ptr[DType.uint8](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        select_elementwise_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint16](true_buffer),
+            _get_buffer_ptr[DType.uint16](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        select_elementwise_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint32](true_buffer),
+            _get_buffer_ptr[DType.uint32](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        select_elementwise_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.uint64](true_buffer),
+            _get_buffer_ptr[DType.uint64](false_buffer),
+            size,
+            ctx,
+        )
+    elif dtype == DType.bool:
+        select_elementwise_op[DType.bool](
+            _get_buffer_ptr[DType.bool](out_buffer),
+            _get_buffer_ptr[DType.bool](cond_buffer),
+            _get_buffer_ptr[DType.bool](true_buffer),
+            _get_buffer_ptr[DType.bool](false_buffer),
+            size,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for select operation: " + String(dtype))
+
+
+@always_inline
+fn select_elementwise_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    cond_ptr: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    true_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    false_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Select elementwise operation: out = cond ? true_val : false_val.
+
+    Parameters:
+        dtype: The data type of the value arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        cond_ptr: Pointer to the condition buffer data (bool).
+        true_ptr: Pointer to the true-case buffer data.
+        false_ptr: Pointer to the false-case buffer data.
+        size: Number of elements to process.
+        ctx: Device context pointer (null for CPU).
+    """
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, cond_ptr, true_ptr, false_ptr)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+
+        var cond = cond_ptr.load[width=width](i)
+        var tc = true_ptr.load[width=width](i)
+        var fc = false_ptr.load[width=width](i)
+        var res = Select.elementwise[DType.bool, dtype, width](cond, tc, fc)
+        out_ptr.store[width=width](i, res)
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](size))
+    else:
+        # GPU execution
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for select with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# Memcpy operation (copy elements between buffers with offsets)
+# ===----------------------------------------------------------------------=== #
+
+
+fn memcpy_dispatcher(
+    dst_buffer: PythonObject,
+    src_buffer: PythonObject,
+    dst_offset: PythonObject,
+    src_offset: PythonObject,
+    count: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Copy elements from src to dst buffer with offsets.
+
+    Args:
+        dst_buffer: The destination buffer object.
+        src_buffer: The source buffer object.
+        dst_offset: Element offset into the destination buffer.
+        src_offset: Element offset into the source buffer.
+        count: Number of elements to copy.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(src_buffer)
+    var dst_dtype = _get_dtype(dst_buffer)
+    if dtype != dst_dtype:
+        raise Error(
+            "Mismatched dtypes for memcpy: "
+            + String(dtype)
+            + " and "
+            + String(dst_dtype)
+        )
+
+    var d_off = Int(py=dst_offset)
+    var s_off = Int(py=src_offset)
+    var cnt = Int(py=count)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float16:
+        memcpy_op[DType.float16](
+            _get_buffer_ptr[DType.float16](dst_buffer),
+            _get_buffer_ptr[DType.float16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        memcpy_op[DType.float32](
+            _get_buffer_ptr[DType.float32](dst_buffer),
+            _get_buffer_ptr[DType.float32](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        memcpy_op[DType.float64](
+            _get_buffer_ptr[DType.float64](dst_buffer),
+            _get_buffer_ptr[DType.float64](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        memcpy_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](dst_buffer),
+            _get_buffer_ptr[DType.bfloat16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int8:
+        memcpy_op[DType.int8](
+            _get_buffer_ptr[DType.int8](dst_buffer),
+            _get_buffer_ptr[DType.int8](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        memcpy_op[DType.int16](
+            _get_buffer_ptr[DType.int16](dst_buffer),
+            _get_buffer_ptr[DType.int16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        memcpy_op[DType.int32](
+            _get_buffer_ptr[DType.int32](dst_buffer),
+            _get_buffer_ptr[DType.int32](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        memcpy_op[DType.int64](
+            _get_buffer_ptr[DType.int64](dst_buffer),
+            _get_buffer_ptr[DType.int64](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint8:
+        memcpy_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](dst_buffer),
+            _get_buffer_ptr[DType.uint8](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        memcpy_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](dst_buffer),
+            _get_buffer_ptr[DType.uint16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        memcpy_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](dst_buffer),
+            _get_buffer_ptr[DType.uint32](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        memcpy_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](dst_buffer),
+            _get_buffer_ptr[DType.uint64](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.bool:
+        memcpy_op[DType.bool](
+            _get_buffer_ptr[DType.bool](dst_buffer),
+            _get_buffer_ptr[DType.bool](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for memcpy: " + String(dtype))
+
+
+@always_inline
+fn memcpy_op[
+    dtype: DType
+](
+    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_offset: Int,
+    src_offset: Int,
+    count: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Copy count elements from src+src_offset to dst+dst_offset.
+
+    Parameters:
+        dtype: The data type of the buffers.
+
+    Args:
+        dst_ptr: Pointer to the destination buffer data.
+        src_ptr: Pointer to the source buffer data.
+        dst_offset: Element offset into the destination.
+        src_offset: Element offset into the source.
+        count: Number of elements to copy.
+        ctx: Device context pointer (null for CPU).
+    """
+    var d = dst_ptr + dst_offset
+    var s = src_ptr + src_offset
+
+    @always_inline
+    @parameter
+    @__copy_capture(d, s)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+        d.store[width=width](i, s.load[width=width](i))
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](count))
+    else:
+        # GPU execution
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](count), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for memcpy with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")

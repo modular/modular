@@ -122,9 +122,9 @@ fn causal_conv1d_varlen_states_cpu[
         for d in range(dim):
             for s in range(state_len):
                 var states_offset = (
-                    b * states_batch_stride
-                    + d * states_dim_stride
-                    + s * states_seqlen_stride
+                    UInt32(b) * states_batch_stride
+                    + UInt32(d) * states_dim_stride
+                    + UInt32(s) * states_seqlen_stride
                 )
                 states.ptr[states_offset] = Scalar[states_dtype](0)
 
@@ -142,11 +142,14 @@ fn causal_conv1d_varlen_states_cpu[
             var states_seq_idx = state_len - num_elements + i
 
             for d in range(dim):
-                var x_offset = x_seq_idx * x_seqlen_stride + d * x_dim_stride
+                var x_offset = (
+                    UInt32(x_seq_idx) * x_seqlen_stride
+                    + UInt32(d) * x_dim_stride
+                )
                 var states_offset = (
-                    b * states_batch_stride
-                    + d * states_dim_stride
-                    + states_seq_idx * states_seqlen_stride
+                    UInt32(b) * states_batch_stride
+                    + UInt32(d) * states_dim_stride
+                    + UInt32(states_seq_idx) * states_seqlen_stride
                 )
                 var val = x.ptr[x_offset]
                 states.ptr[states_offset] = Scalar[states_dtype](val)
@@ -253,7 +256,8 @@ fn causal_conv1d_varlen_fwd_cpu[
             var weights = List[Scalar[weight_dtype]]()
             for w_idx in range(width):
                 var weight_offset = (
-                    d * weight_dim_stride + w_idx * weight_width_stride
+                    UInt32(d) * weight_dim_stride
+                    + UInt32(w_idx) * weight_width_stride
                 )
                 weights.append(weight.ptr[weight_offset])
 
@@ -269,8 +273,8 @@ fn causal_conv1d_varlen_fwd_cpu[
                     if input_l >= 0:
                         # Within current sequence
                         var x_offset = (
-                            d * x_dim_stride
-                            + (seq_start + input_l) * x_seqlen_stride
+                            UInt32(d) * x_dim_stride
+                            + UInt32((seq_start + input_l)) * x_seqlen_stride
                         )
                         input_val = x.ptr[x_offset]
                     elif use_initial_state and has_conv_states:
@@ -280,9 +284,9 @@ fn causal_conv1d_varlen_fwd_cpu[
                         )  # Maps negative to state index
                         if state_idx >= 0:
                             var state_offset = (
-                                cache_idx * conv_states_batch_stride
-                                + d * conv_states_dim_stride
-                                + state_idx * conv_states_width_stride
+                                UInt32(cache_idx) * conv_states_batch_stride
+                                + UInt32(d) * conv_states_dim_stride
+                                + UInt32(state_idx) * conv_states_width_stride
                             )
                             input_val = Scalar[x_dtype](
                                 conv_states.ptr[state_offset]
@@ -306,7 +310,8 @@ fn causal_conv1d_varlen_fwd_cpu[
 
                 # Store output
                 var out_offset = (
-                    d * out_dim_stride + (seq_start + l) * out_seqlen_stride
+                    UInt32(d) * out_dim_stride
+                    + UInt32((seq_start + l)) * out_seqlen_stride
                 )
                 output.ptr[out_offset] = out_val
 
@@ -319,8 +324,8 @@ fn causal_conv1d_varlen_fwd_cpu[
 
                     if src_l >= 0:
                         var x_offset = (
-                            d * x_dim_stride
-                            + (seq_start + src_l) * x_seqlen_stride
+                            UInt32(d) * x_dim_stride
+                            + UInt32((seq_start + src_l)) * x_seqlen_stride
                         )
                         val = Scalar[conv_states_dtype](x.ptr[x_offset])
                     elif use_initial_state:
@@ -328,16 +333,16 @@ fn causal_conv1d_varlen_fwd_cpu[
                         var state_idx = width_minus_1 + src_l - (width_minus_1)
                         if state_idx >= 0 and state_idx < width_minus_1:
                             var state_offset = (
-                                cache_idx * conv_states_batch_stride
-                                + d * conv_states_dim_stride
-                                + state_idx * conv_states_width_stride
+                                UInt32(cache_idx) * conv_states_batch_stride
+                                + UInt32(d) * conv_states_dim_stride
+                                + UInt32(state_idx) * conv_states_width_stride
                             )
                             val = conv_states.ptr[state_offset]
 
                     var state_offset = (
-                        cache_idx * conv_states_batch_stride
-                        + d * conv_states_dim_stride
-                        + s * conv_states_width_stride
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(s) * conv_states_width_stride
                     )
                     conv_states.ptr[state_offset] = val
 
@@ -428,7 +433,8 @@ fn causal_conv1d_varlen_update_cpu[
             var weights = List[Scalar[weight_dtype]]()
             for w_idx in range(width):
                 var weight_offset = (
-                    d * weight_dim_stride + w_idx * weight_width_stride
+                    UInt32(d) * weight_dim_stride
+                    + UInt32(w_idx) * weight_width_stride
                 )
                 weights.append(weight.ptr[weight_offset])
 
@@ -462,9 +468,10 @@ fn causal_conv1d_varlen_update_cpu[
 
                         if state_pos >= 0 and state_pos < state_len:
                             var state_offset = (
-                                state_batch_idx * conv_state_batch_stride
-                                + d * conv_state_dim_stride
-                                + state_pos * conv_state_seqlen_stride
+                                UInt32(state_batch_idx)
+                                * conv_state_batch_stride
+                                + UInt32(d) * conv_state_dim_stride
+                                + UInt32(state_pos) * conv_state_seqlen_stride
                             )
                             input_val = Scalar[x_dtype](
                                 conv_state.ptr[state_offset]
@@ -474,9 +481,9 @@ fn causal_conv1d_varlen_update_cpu[
                         var x_l = rel_pos + l
                         if x_l >= 0 and x_l < seqlen:
                             var x_offset = (
-                                b * x_batch_stride
-                                + d * x_dim_stride
-                                + x_l * x_seqlen_stride
+                                UInt32(b) * x_batch_stride
+                                + UInt32(d) * x_dim_stride
+                                + UInt32(x_l) * x_seqlen_stride
                             )
                             input_val = x.ptr[x_offset]
 
@@ -503,16 +510,18 @@ fn causal_conv1d_varlen_update_cpu[
 
                 # Store output
                 var out_offset = (
-                    b * out_batch_stride
-                    + d * out_dim_stride
-                    + l * out_seqlen_stride
+                    UInt32(b) * out_batch_stride
+                    + UInt32(d) * out_dim_stride
+                    + UInt32(l) * out_seqlen_stride
                 )
                 output.ptr[out_offset] = out_val
 
             # Update state with new x values
             for l in range(seqlen):
                 var x_offset = (
-                    b * x_batch_stride + d * x_dim_stride + l * x_seqlen_stride
+                    UInt32(b) * x_batch_stride
+                    + UInt32(d) * x_dim_stride
+                    + UInt32(l) * x_seqlen_stride
                 )
                 var x_val = x.ptr[x_offset]
 
@@ -527,23 +536,26 @@ fn causal_conv1d_varlen_update_cpu[
                         # Shift existing values
                         for s in range(state_len - seqlen):
                             var src_offset = (
-                                state_batch_idx * conv_state_batch_stride
-                                + d * conv_state_dim_stride
-                                + (s + seqlen) * conv_state_seqlen_stride
+                                UInt32(state_batch_idx)
+                                * conv_state_batch_stride
+                                + UInt32(d) * conv_state_dim_stride
+                                + UInt32((s + seqlen))
+                                * conv_state_seqlen_stride
                             )
                             var dst_offset = (
-                                state_batch_idx * conv_state_batch_stride
-                                + d * conv_state_dim_stride
-                                + s * conv_state_seqlen_stride
+                                UInt32(state_batch_idx)
+                                * conv_state_batch_stride
+                                + UInt32(d) * conv_state_dim_stride
+                                + UInt32(s) * conv_state_seqlen_stride
                             )
                             var val = conv_state.ptr[src_offset]
                             conv_state.ptr[dst_offset] = val
                     state_pos = state_len - seqlen + l
 
                 var state_offset = (
-                    state_batch_idx * conv_state_batch_stride
-                    + d * conv_state_dim_stride
-                    + state_pos * conv_state_seqlen_stride
+                    UInt32(state_batch_idx) * conv_state_batch_stride
+                    + UInt32(d) * conv_state_dim_stride
+                    + UInt32(state_pos) * conv_state_seqlen_stride
                 )
                 conv_state.ptr[state_offset] = Scalar[conv_state_dtype](x_val)
 
@@ -629,7 +641,9 @@ fn causal_conv1d_varlen_states_gpu[
     # Load value from x if in valid range
     var val: Scalar[states_dtype] = 0
     if row >= start_idx and col < dim:
-        var x_offset = row * x_seqlen_stride + col * x_dim_stride
+        var x_offset = (
+            UInt32(row) * x_seqlen_stride + UInt32(col) * x_dim_stride
+        )
         val = Scalar[states_dtype](x.ptr[x_offset])
 
     # Calculate state row index
@@ -638,9 +652,9 @@ fn causal_conv1d_varlen_states_gpu[
     # Store to states if in valid range
     if states_row >= 0 and col < dim:
         var states_offset = (
-            batch_idx * states_batch_stride
-            + col * states_dim_stride
-            + states_row * states_seqlen_stride
+            UInt32(batch_idx) * states_batch_stride
+            + UInt32(col) * states_dim_stride
+            + UInt32(states_row) * states_seqlen_stride
         )
         states.ptr[states_offset] = val
 
@@ -749,7 +763,9 @@ fn causal_conv1d_varlen_fwd_gpu[
     # Load weights into registers
     var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
     for w_idx in range(WIDTH):
-        var weight_offset = d * weight_dim_stride + w_idx * weight_width_stride
+        var weight_offset = (
+            UInt32(d) * weight_dim_stride + UInt32(w_idx) * weight_width_stride
+        )
         weights[w_idx] = weight.ptr[weight_offset]
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
@@ -766,16 +782,17 @@ fn causal_conv1d_varlen_fwd_gpu[
 
             if input_l >= 0:
                 var x_offset = (
-                    d * x_dim_stride + (seq_start + input_l) * x_seqlen_stride
+                    UInt32(d) * x_dim_stride
+                    + UInt32((seq_start + input_l)) * x_seqlen_stride
                 )
                 input_val = x.ptr[x_offset]
             elif use_initial_state and has_conv_states != 0:
                 var state_idx = WIDTH_MINUS_1 + input_l
                 if state_idx >= 0:
                     var state_offset = (
-                        cache_idx * conv_states_batch_stride
-                        + d * conv_states_dim_stride
-                        + state_idx * conv_states_width_stride
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(state_idx) * conv_states_width_stride
                     )
                     input_val = Scalar[x_dtype](conv_states.ptr[state_offset])
 
@@ -797,7 +814,8 @@ fn causal_conv1d_varlen_fwd_gpu[
 
         # Store output
         var out_offset = (
-            d * out_dim_stride + (seq_start + l) * out_seqlen_stride
+            UInt32(d) * out_dim_stride
+            + UInt32((seq_start + l)) * out_seqlen_stride
         )
         output.ptr[out_offset] = out_val
 
@@ -811,14 +829,15 @@ fn causal_conv1d_varlen_fwd_gpu[
 
             if src_l >= 0:
                 var x_offset = (
-                    d * x_dim_stride + (seq_start + src_l) * x_seqlen_stride
+                    UInt32(d) * x_dim_stride
+                    + UInt32((seq_start + src_l)) * x_seqlen_stride
                 )
                 val = Scalar[conv_states_dtype](x.ptr[x_offset])
 
             var state_offset = (
-                cache_idx * conv_states_batch_stride
-                + d * conv_states_dim_stride
-                + s * conv_states_width_stride
+                UInt32(cache_idx) * conv_states_batch_stride
+                + UInt32(d) * conv_states_dim_stride
+                + UInt32(s) * conv_states_width_stride
             )
             conv_states.ptr[state_offset] = val
 
@@ -909,7 +928,9 @@ fn causal_conv1d_varlen_update_gpu[
     # Load weights
     var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
     for w_idx in range(WIDTH):
-        var weight_offset = d * weight_dim_stride + w_idx * weight_width_stride
+        var weight_offset = (
+            UInt32(d) * weight_dim_stride + UInt32(w_idx) * weight_width_stride
+        )
         weights[w_idx] = weight.ptr[weight_offset]
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
@@ -941,9 +962,9 @@ fn causal_conv1d_varlen_update_gpu[
 
                 if state_pos >= 0 and state_pos < state_len:
                     var state_offset = (
-                        state_batch_idx * conv_state_batch_stride
-                        + d * conv_state_dim_stride
-                        + state_pos * conv_state_seqlen_stride
+                        UInt32(state_batch_idx) * conv_state_batch_stride
+                        + UInt32(d) * conv_state_dim_stride
+                        + UInt32(state_pos) * conv_state_seqlen_stride
                     )
                     input_val = Scalar[x_dtype](conv_state.ptr[state_offset])
             else:
@@ -951,9 +972,9 @@ fn causal_conv1d_varlen_update_gpu[
                 var x_l = rel_pos + l
                 if x_l >= 0 and x_l < seqlen:
                     var x_offset = (
-                        batch_idx * x_batch_stride
-                        + d * x_dim_stride
-                        + x_l * x_seqlen_stride
+                        UInt32(batch_idx) * x_batch_stride
+                        + UInt32(d) * x_dim_stride
+                        + UInt32(x_l) * x_seqlen_stride
                     )
                     input_val = x.ptr[x_offset]
 
@@ -974,15 +995,17 @@ fn causal_conv1d_varlen_update_gpu[
 
         # Store output
         var out_offset = (
-            batch_idx * out_batch_stride
-            + d * out_dim_stride
-            + l * out_seqlen_stride
+            UInt32(batch_idx) * out_batch_stride
+            + UInt32(d) * out_dim_stride
+            + UInt32(l) * out_seqlen_stride
         )
         output.ptr[out_offset] = out_val
 
         # Update state
         var x_offset = (
-            batch_idx * x_batch_stride + d * x_dim_stride + l * x_seqlen_stride
+            UInt32(batch_idx) * x_batch_stride
+            + UInt32(d) * x_dim_stride
+            + UInt32(l) * x_seqlen_stride
         )
         var x_val = x.ptr[x_offset]
 
@@ -993,8 +1016,8 @@ fn causal_conv1d_varlen_update_gpu[
             state_pos = state_len - seqlen + l
 
         var state_offset = (
-            state_batch_idx * conv_state_batch_stride
-            + d * conv_state_dim_stride
-            + state_pos * conv_state_seqlen_stride
+            UInt32(state_batch_idx) * conv_state_batch_stride
+            + UInt32(d) * conv_state_dim_stride
+            + UInt32(state_pos) * conv_state_seqlen_stride
         )
         conv_state.ptr[state_offset] = Scalar[conv_state_dtype](x_val)
