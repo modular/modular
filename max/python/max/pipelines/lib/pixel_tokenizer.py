@@ -41,6 +41,16 @@ logger = logging.getLogger("max.pipelines")
 async def run_with_default_executor(
     fn: Callable[..., Any], *args: Any, **kwargs: Any
 ) -> Any:
+    """Runs a callable in the default thread pool executor.
+
+    Args:
+        fn: Callable to run.
+        *args: Positional arguments for ``fn``.
+        **kwargs: Keyword arguments for ``fn``.
+
+    Returns:
+        The result of ``fn(*args, **kwargs)``.
+    """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
 

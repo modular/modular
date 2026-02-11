@@ -572,24 +572,24 @@ def _reshape_common(
     inputs: Sequence[Buffer | None],
     op_name: str,
 ) -> Sequence[Buffer]:
-    """Common implementation for reshape operations."""
-    # Get target device from result type and check CPU-only
+    """Common implementation for reshape operations.
+
+    Uses Buffer.view() to create a reshaped view sharing the underlying
+    memory, supporting both CPU and GPU tensors without data movement.
+    """
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
     _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
 
     shape = result_type.shape
     if not graph.Shape.is_static(shape):
         raise NotImplementedError(f"Dynamic shapes not supported for {op_name}")
     target_shape = graph.Shape(shape).static_dims
 
-    result_np = input_np.reshape(target_shape)
-    return [Buffer.from_numpy(result_np)]
+    return [inputs[0].view(inputs[0].dtype, tuple(target_shape))]
 
 
 @register_op_handler(mo.ReshapeOp)
@@ -607,6 +607,157 @@ def _handle_static_reshape(
 ) -> Sequence[Buffer]:
     """Handle mo.static.reshape - reshape without inferred dimensions."""
     return _reshape_common(op, inputs, "static reshape")
+
+
+@register_op_handler(mo.SqueezeShapeOp)
+def _handle_squeeze_shape(
+    op: mo.SqueezeShapeOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.squeeze_shape - computes shape with specified dimensions removed.
+
+    This is a CPU-side shape metadata operation. Given an input shape vector
+    and a list of indices, returns a new shape vector with the indicated
+    dimensions removed. The indicated dimensions must have size 1.
+
+    Args:
+        op: The squeeze shape operation.
+        inputs: Input buffers - first is the shape vector, second is the
+            indices tensor specifying which dimensions to remove.
+
+    Returns:
+        List containing the new shape vector as a 1D si64 buffer.
+    """
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_shape = inputs[0].to_numpy().tolist()
+    remove_indices = inputs[1].to_numpy().tolist()
+
+    rank = len(input_shape)
+    # Normalize negative indices
+    normalized = set()
+    for idx in remove_indices:
+        idx = int(idx)
+        if idx < 0:
+            idx += rank
+        normalized.add(idx)
+
+    # Build output shape by removing indicated dimensions
+    result_shape = [
+        dim for i, dim in enumerate(input_shape) if i not in normalized
+    ]
+    result_np = np.array(result_shape, dtype=np.int64)
+    return [Buffer.from_numpy(result_np)]
+
+
+@register_op_handler(mo.UnsqueezeShapeOp)
+def _handle_unsqueeze_shape(
+    op: mo.UnsqueezeShapeOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.unsqueeze_shape - computes shape with size-1 dimensions inserted.
+
+    This is a CPU-side shape metadata operation. Given an input shape vector
+    of rank N and a list of M indices, returns a new shape vector of rank N+M
+    where the indicated positions are filled with 1 and the original dimensions
+    fill the remaining positions.
+
+    Args:
+        op: The unsqueeze shape operation.
+        inputs: Input buffers - first is the shape vector, second is the
+            padding indices tensor specifying where to insert size-1 dims.
+
+    Returns:
+        List containing the new shape vector as a 1D si64 buffer.
+    """
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_shape = inputs[0].to_numpy().tolist()
+    padding_indices = inputs[1].to_numpy().tolist()
+
+    new_rank = len(input_shape) + len(padding_indices)
+    # Normalize negative indices relative to the new rank
+    normalized = set()
+    for idx in padding_indices:
+        idx = int(idx)
+        if idx < 0:
+            idx += new_rank
+        normalized.add(idx)
+
+    # Build output shape: insert 1s at indicated positions, fill rest from input
+    result_shape = []
+    input_idx = 0
+    for i in range(new_rank):
+        if i in normalized:
+            result_shape.append(1)
+        else:
+            result_shape.append(int(input_shape[input_idx]))
+            input_idx += 1
+
+    result_np = np.array(result_shape, dtype=np.int64)
+    return [Buffer.from_numpy(result_np)]
+
+
+@register_op_handler(mo.AddSingletonDimOp)
+def _handle_add_singleton_dim(
+    op: mo.AddSingletonDimOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.add_singleton_dim - adds a dimension of size 1 at the given axis.
+
+    This is a shape-change op that does not copy data. It uses numpy.reshape
+    with the target shape from the MLIR result type.
+
+    Args:
+        op: The add singleton dim operation.
+        inputs: Input buffers - contains the tensor to reshape.
+
+    Returns:
+        List containing the reshaped tensor buffer.
+    """
+    return _reshape_common(op, inputs, "add_singleton_dim")
+
+
+@register_op_handler(mo.SplitDimOp)
+def _handle_split_dim(
+    op: mo.SplitDimOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.split_dim - splits one dimension into two dimensions.
+
+    E.g., a tensor of shape [N, K] with axis=0 becomes [S1, S2, K] where
+    S1 * S2 = N. The target shape comes from the MLIR result type.
+
+    Args:
+        op: The split dim operation.
+        inputs: Input buffers - contains the tensor to reshape.
+
+    Returns:
+        List containing the reshaped tensor buffer.
+    """
+    return _reshape_common(op, inputs, "split_dim")
+
+
+@register_op_handler(mo.MergeDimOp)
+def _handle_merge_dim(
+    op: mo.MergeDimOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handle mo.merge_dim - merges two adjacent dimensions into one.
+
+    E.g., a tensor of shape [A, B, C, D] with axis=1 becomes [A, B*C, D].
+    The target shape comes from the MLIR result type.
+
+    Args:
+        op: The merge dim operation.
+        inputs: Input buffers - contains the tensor to reshape.
+
+    Returns:
+        List containing the reshaped tensor buffer.
+    """
+    return _reshape_common(op, inputs, "merge_dim")
 
 
 @register_op_handler(mo.TransposeOp)
@@ -1035,4 +1186,48 @@ def _handle_random_uniform(
         seed_val,
         target_device._device_context_ptr(),
     )
+    return [output]
+
+
+# Select operations
+
+
+@register_op_handler(mo.SelectOp)
+def _handle_select(
+    op: mo.SelectOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.select by dispatching to Mojo select kernel.
+
+    Performs element-wise selection: result = cond ? x : y.
+
+    Args:
+        op: The select operation.
+        inputs: Input buffers - cond (bool tensor), x (true values),
+            y (false values).
+
+    Returns:
+        List containing the selected tensor buffer.
+    """
+    assert isinstance(inputs[0], Buffer)  # cond
+    assert isinstance(inputs[1], Buffer)  # x (true values)
+    assert isinstance(inputs[2], Buffer)  # y (false values)
+
+    target_device = _get_target_device(op)
+    _check_buffers_on_device(inputs, target_device)
+
+    # Output dtype matches x/y dtype (not cond dtype which is bool)
+    output = Buffer(
+        shape=inputs[1].shape,
+        dtype=inputs[1].dtype,
+        device=target_device,
+    )
+
+    ops.mojo_ops.Select(
+        output,
+        inputs[0],
+        inputs[1],
+        inputs[2],
+        target_device._device_context_ptr(),
+    )
+
     return [output]

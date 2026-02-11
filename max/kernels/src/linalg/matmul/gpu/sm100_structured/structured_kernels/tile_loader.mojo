@@ -26,7 +26,7 @@ Usage:
     a_loader.load(a_tile, barrier, k_coord, m_coord)
     b_loader.load(b_tile, barrier, k_coord, n_coord)
 
-    # TileTensor tiles are automatically converted to LayoutTensor for TMA ops
+    # TileTensor tiles are passed directly to TMA ops
 """
 
 from gpu.memory import AddressSpace
@@ -36,7 +36,7 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile as LTSMemTile
 
 # Import TileTensor types for overloaded load methods
-from .tile_types import SMemTile2D
+from .tile_types import SMemTile2D, _to_legacy_layout
 
 # Import variadic types for TileTensor load overload
 from builtin.variadics import Variadic
@@ -263,6 +263,130 @@ struct ScalesTileLoader[
             row_coord: Row coordinate (M for A-scales) in global memory.
             k_coord: K dimension coordinate in global memory.
         """
+        self.tma_op[].async_copy[Self.cta_group](
+            dest, barrier, (row_coord, k_coord)
+        )
+
+
+# =============================================================================
+# TileLoader -- TileTensor-native TMA loader (new Layout types)
+# =============================================================================
+
+
+struct TileLoader[
+    tma_origin: ImmutOrigin,
+    dtype: DType,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout,
+    /,
+    *,
+    cta_group: Int,
+](TrivialRegisterPassable):
+    """TMA tile loader parameterized on new Layout types.
+
+    Derives TMATensorTile internally from new Layout via
+    _to_legacy_layout. Accepts TileTensor destinations.
+    """
+
+    comptime _legacy_layout: LegacyLayout = _to_legacy_layout[
+        Self.tile_layout
+    ]()
+    comptime _legacy_desc: LegacyLayout = _to_legacy_layout[Self.desc_layout]()
+    comptime TmaOp = TMATensorTile[
+        Self.dtype, Self._legacy_layout, Self._legacy_desc
+    ]
+    comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
+
+    var tma_op: Self.TmaOpPtr
+    var multicast_mask: UInt16
+
+    @always_inline
+    fn __init__[
+        tma_op_type: AnyType
+    ](
+        out self,
+        tma_op: Pointer[tma_op_type, Self.tma_origin],
+        multicast_mask: UInt16,
+    ):
+        """Accepts any TMA pointer. Rebinds to the loader's derived type."""
+        self.tma_op = rebind[Self.TmaOpPtr](tma_op)
+        self.multicast_mask = multicast_mask
+
+    @always_inline
+    fn load[
+        LayoutType: TensorLayout
+    ](
+        self,
+        dest: TileTensor[
+            Self.dtype,
+            LayoutType,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ],
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+        k_coord: UInt,
+        row_coord: UInt,
+    ):
+        """Load a tile using TMA async multicast load."""
+        self.tma_op[].async_multicast_load[Self.cta_group](
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
+        )
+
+
+# =============================================================================
+# ScalesLoader -- TileTensor-native scales loader (new Layout types)
+# =============================================================================
+
+
+struct ScalesLoader[
+    tma_origin: ImmutOrigin,
+    dtype: DType,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout = tile_layout,
+    /,
+    *,
+    cta_group: Int,
+](TrivialRegisterPassable):
+    """TMA scales loader parameterized on new Layout types.
+
+    Uses async_copy (no multicast). Coordinate order is
+    (row_coord, k_coord) matching scales tensor layout.
+    """
+
+    comptime _legacy_layout: LegacyLayout = _to_legacy_layout[
+        Self.tile_layout
+    ]()
+    comptime _legacy_desc: LegacyLayout = _to_legacy_layout[Self.desc_layout]()
+    comptime TmaOp = TMATensorTile[
+        Self.dtype, Self._legacy_layout, Self._legacy_desc
+    ]
+    comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
+
+    var tma_op: Self.TmaOpPtr
+
+    @always_inline
+    fn __init__[
+        tma_op_type: AnyType
+    ](out self, tma_op: Pointer[tma_op_type, Self.tma_origin]):
+        """Accepts any TMA pointer. Rebinds to the loader's derived type."""
+        self.tma_op = rebind[Self.TmaOpPtr](tma_op)
+
+    @always_inline
+    fn load[
+        LayoutType: TensorLayout
+    ](
+        self,
+        dest: TileTensor[
+            Self.dtype,
+            LayoutType,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ],
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+        row_coord: Int,
+        k_coord: Int,
+    ):
+        """Load scales using TMA async copy."""
         self.tma_op[].async_copy[Self.cta_group](
             dest, barrier, (row_coord, k_coord)
         )
