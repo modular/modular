@@ -218,6 +218,7 @@ what we publish.
   of `write_to` and `write_repr_to`.
   - `Tuple`
   - `Variant`
+  - `Optional`
 
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests
