@@ -45,7 +45,7 @@ This new combination will replace the `@parameter` decorator for all cases.
 
 ### Interaction with `elif`
 
-In Mojo as of now, the `@parameter` decorator appied to an `if` statement
+In Mojo as of now, the `@parameter` decorator applied to an `if` statement
 quetly changes the behavior of the `elif` statements on the same if chain.
 
 We propose to keep this behavior as is. Adding `comptime` modifier to `elif`
@@ -69,7 +69,7 @@ in the [comptime expression proposal](comptime-expr.md)) and a statement
 modifier:
 
 - `comptime a, b = foo()` — assignment statement modifier (valid today)
-- `var x = comptime(foo()()` — expression modifier (parens requred)
+- `var x = comptime(foo())` — expression modifier (parens requred)
 - `comptime if foo()` — statement modifier
 - `comptime assert x != 4` — statement modifier
 - `if comptime(foo()):` — expression modifier; evaluates `foo()` into a bool
