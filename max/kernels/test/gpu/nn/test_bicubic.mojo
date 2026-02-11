@@ -41,8 +41,8 @@ fn test_bicubic_kernel[
 ](input_dim: Coord, output_dim: Coord, ctx: DeviceContext) raises where (
     input_dim.all_dims_known
     and output_dim.all_dims_known
-    and input_dim.rank == 4
-    and output_dim.rank == 4
+    and input_dim.flat_rank == 4
+    and output_dim.flat_rank == 4
 ):
     var input_dim_flattened = input_dim.static_product
     var output_dim_flattened = output_dim.static_product
