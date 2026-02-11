@@ -13,6 +13,7 @@
 
 from sys.info import size_of
 
+from compile import compile_info
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
 from testing import assert_equal, assert_true, assert_false, TestSuite
@@ -390,6 +391,31 @@ def test_inline_array_triviality():
     assert_false(InlineArray[String, 1].__del__is_trivial)
     assert_false(InlineArray[String, 1].__copyinit__is_trivial)
     assert_false(InlineArray[String, 1].__moveinit__is_trivial)
+
+
+fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
+    var arr = InlineArray[Int32, 4](fill=0)
+
+    @parameter
+    if copy:
+        return arr.copy()
+    else:
+        return arr^
+
+
+def test_inline_array_copy_and_move_llvm_ir():
+    def _test(ir: StringSlice):
+        assert_true("initializes((0, 16))" in ir)
+        assert_false('asm sideeffect "nop"' in ir)
+
+    var move_info = compile_info[
+        _return_array[copy=False], emission_kind="llvm-opt"
+    ]()
+    _test(move_info.asm)
+    var copy_info = compile_info[
+        _return_array[copy=True], emission_kind="llvm-opt"
+    ]()
+    _test(copy_info.asm)
 
 
 def main():
