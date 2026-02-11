@@ -32,7 +32,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
 )
-from layout.tma_async import create_tensor_tile
+from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -375,11 +375,11 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    a_tma_op = create_tensor_tile[
+    a_tma_op = create_tma_tile[
+        matmul_kernel.ATmaTile.tile_layout,
+        matmul_kernel.ATmaTile.desc_layout,
         a_tma_tile_shape,
         swizzle_mode = config.a_swizzle,
-        __tile_layout = matmul_kernel.ATmaOp.layout,
-        __desc_layout = matmul_kernel.ATmaOp.desc_layout,
     ](ctx, a_tensor_batched)
 
     # B matrix TMA
@@ -388,11 +388,11 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    b_tma_op = create_tensor_tile[
+    b_tma_op = create_tma_tile[
+        matmul_kernel.BTmaTile.tile_layout,
+        matmul_kernel.BTmaTile.desc_layout,
         b_tma_tile_shape,
         swizzle_mode = config.b_swizzle,
-        __tile_layout = matmul_kernel.BTmaOp.layout,
-        __desc_layout = matmul_kernel.BTmaOp.desc_layout,
     ](ctx, b_tensor_batched)
 
     # C matrix TMA
@@ -406,11 +406,11 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
         1, c_tma_tile_shape[1], config.c_swizzle.bytes() // size_of[c_type]()
     )
-    var c_tma_op = create_tensor_tile[
+    var c_tma_op = create_tma_tile[
+        matmul_kernel.CTmaTile.tile_layout,
+        matmul_kernel.CTmaTile.desc_layout,
         c_tma_tile_shape_final,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = matmul_kernel.CTmaOp.layout,
-        __desc_layout = matmul_kernel.CTmaOp.desc_layout,
     ](ctx, c_tensor_batched)
 
     # Scaling factors TMA - 5D tensors
@@ -480,11 +480,11 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfa_tma_op = create_tensor_tile[
+    var sfa_tma_op = create_tma_tile[
+        matmul_kernel.SFATmaTile.tile_layout,
+        matmul_kernel.SFATmaTile.desc_layout,
         sfa_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = matmul_kernel.SFATmaOp.layout,
-        __desc_layout = matmul_kernel.SFATmaOp.desc_layout,
     ](ctx, sfa_5d_tensor)
 
     comptime sfb_tma_tile_shape = Index(
@@ -494,11 +494,11 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfb_tma_op = create_tensor_tile[
+    var sfb_tma_op = create_tma_tile[
+        matmul_kernel.SFBTmaTile.tile_layout,
+        matmul_kernel.SFBTmaTile.desc_layout,
         sfb_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = matmul_kernel.SFBTmaOp.layout,
-        __desc_layout = matmul_kernel.SFBTmaOp.desc_layout,
     ](ctx, sfb_5d_tensor)
 
     # ===== Shared Memory Size =====

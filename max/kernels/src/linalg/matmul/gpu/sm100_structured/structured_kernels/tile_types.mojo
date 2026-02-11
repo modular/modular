@@ -31,6 +31,7 @@ Usage:
 
 from sys import size_of
 
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import LayoutTensor
@@ -40,6 +41,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     TMATensorTileIm2col,
+    create_tensor_tile,
 )
 from builtin.variadics import Variadic
 from buffer import Dim, DimList
@@ -434,6 +436,89 @@ comptime TmaOpTypeIm2col[
 
 Same as TmaOpType but for im2col TMA (used by conv2d activation loads).
 """
+
+
+# ============================================================================
+# TMATile -- New Layout wrapper around TMATensorTile
+# ============================================================================
+
+
+struct TMATile[
+    dtype: DType,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout,
+]:
+    """TMA tile descriptor parameterized on new Layout types.
+
+    Thin wrapper around TMATensorTile that preserves new Layout type
+    parameters. The underlying TMATensorTile uses legacy Layout
+    (via _to_legacy_layout), but callers work exclusively with new
+    Layout types.
+
+    The kernel `run()` accepts `Self.InnerType` (TMATensorTile) for
+    DevicePassable compatibility. Host code uses TMATile for type-safe
+    construction, then passes `.inner` through enqueue_function.
+
+    Parameters:
+        dtype: Element data type.
+        tile_layout: Tile shape as a new Layout (TensorLayout).
+        desc_layout: TMA descriptor layout as a new Layout.
+    """
+
+    # The underlying legacy TMATensorTile type
+    comptime InnerType = TmaOpType[
+        Self.dtype, Self.tile_layout, Self.desc_layout
+    ]
+
+    var inner: Self.InnerType
+
+    @always_inline
+    fn __init__(out self, inner: Self.InnerType):
+        """Wrap an existing TMATensorTile.
+
+        Args:
+            inner: The underlying legacy TMATensorTile descriptor.
+        """
+        self.inner = inner
+
+
+def create_tma_tile[
+    rank: Int,
+    //,
+    tma_tile_layout: TensorLayout,
+    tma_desc_layout: TensorLayout,
+    tile_shape: IndexList[rank],
+    *,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+](ctx: DeviceContext, tensor: LayoutTensor[...]) -> TmaOpType[
+    tensor.dtype, tma_tile_layout, tma_desc_layout
+]:
+    """Create a TMATensorTile using new Layout types.
+
+    Converts new Layout types to legacy Layout internally, calls
+    create_tensor_tile, and returns TMATensorTile. No LegacyLayout
+    is exposed to callers -- the conversion is encapsulated here.
+
+    Parameters:
+        rank: Rank of the tile shape (inferred from tile_shape).
+        tma_tile_layout: Tile layout as new TensorLayout.
+        tma_desc_layout: Descriptor layout as new TensorLayout.
+        tile_shape: Physical tile dimensions for the TMA descriptor.
+        swizzle_mode: TMA swizzle mode.
+
+    Args:
+        ctx: Device context for TMA descriptor creation.
+        tensor: Source tensor in global memory.
+
+    Returns:
+        A TMATensorTile (DevicePassable) for use with enqueue_function.
+    """
+    return create_tensor_tile[
+        tile_shape,
+        swizzle_mode=swizzle_mode,
+        __tile_layout = _to_legacy_layout[tma_tile_layout](),
+        __desc_layout = _to_legacy_layout[tma_desc_layout](),
+    ](ctx, tensor)
 
 
 # ============================================================================

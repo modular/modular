@@ -35,7 +35,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
 )
-from layout.tma_async import create_tensor_tile
+from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index
 from utils.static_tuple import StaticTuple
@@ -166,23 +166,23 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     # Create TMA descriptors using kernel-derived layout types
     comptime KernelType = type_of(matmul_kernel)
 
-    a_tma_op = create_tensor_tile[
+    a_tma_op = create_tma_tile[
+        KernelType.ATmaTile.tile_layout,
+        KernelType.ATmaTile.desc_layout,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ATmaOp.layout,
-        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_device)
 
     # fmt: off
-    b_tma_op = create_tensor_tile[
+    b_tma_op = create_tma_tile[
+        KernelType.BTmaTile.tile_layout,
+        KernelType.BTmaTile.desc_layout,
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.BTmaOp.layout,
-        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
@@ -196,13 +196,13 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     comptime assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tensor_tile[
-        c_tma_tile_shape if not config.AB_swapped else Index(
+    var c_tma_op = create_tma_tile[
+        KernelType.CTmaTile.tile_layout,
+        KernelType.CTmaTile.desc_layout,
+     c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.CTmaOp.layout,
-        __desc_layout = KernelType.CTmaOp.desc_layout,
     ](ctx, c_device)
     # fmt: on
 
@@ -473,22 +473,22 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # Create TMA descriptors using kernel-derived layout types
     comptime KernelType = type_of(matmul_kernel)
 
-    a_tma_op = create_tensor_tile[
+    a_tma_op = create_tma_tile[
+        KernelType.ATmaTile.tile_layout,
+        KernelType.ATmaTile.desc_layout,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ATmaOp.layout,
-        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_device)
 
-    b_tma_op = create_tensor_tile[
+    b_tma_op = create_tma_tile[
+        KernelType.BTmaTile.tile_layout,
+        KernelType.BTmaTile.desc_layout,
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.BTmaOp.layout,
-        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
@@ -504,13 +504,13 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # the tile shape with 128B swizzle mode, there should always be 64 elements
     # on the contiguous dim.
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tensor_tile[
+    var c_tma_op = create_tma_tile[
+        KernelType.CTmaTile.tile_layout,
+        KernelType.CTmaTile.desc_layout,
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.CTmaOp.layout,
-        __desc_layout = KernelType.CTmaOp.desc_layout,
     ](ctx, c_device)
 
     # Get the split-K kernel entry point.
@@ -668,17 +668,17 @@ fn matmul_sm100_fallback[
     comptime kernel = fallback_kernel.run
 
     # Create TMA descriptors using kernel-derived layout types
-    a_tma_op = create_tensor_tile[
+    a_tma_op = create_tma_tile[
+        FallbackKernelType.ATmaTile.tile_layout,
+        FallbackKernelType.ATmaTile.desc_layout,
         Index(BM, BK),
         swizzle_mode=a_swizzle,
-        __tile_layout = FallbackKernelType.ATmaOp.layout,
-        __desc_layout = FallbackKernelType.ATmaOp.desc_layout,
     ](ctx, a)
-    b_tma_op = create_tensor_tile[
+    b_tma_op = create_tma_tile[
+        FallbackKernelType.BTmaTile.tile_layout,
+        FallbackKernelType.BTmaTile.desc_layout,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
-        __tile_layout = FallbackKernelType.BTmaOp.layout,
-        __desc_layout = FallbackKernelType.BTmaOp.desc_layout,
     ](ctx, b)
 
     var M = c.dim[0]()

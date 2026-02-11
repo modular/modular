@@ -33,7 +33,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
 from layout.int_tuple import IntTuple
-from layout._layout import Layout as InternalLayout, row_major
+from layout._layout import Layout as InternalLayout, TensorLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
@@ -494,9 +494,7 @@ struct TMAStoreExecutor[
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
-                Self._store_non_transpose[c_layout, c_desc_layout](
-                    c_smem_tile, store_coords, c_tma_op
-                )
+                Self._store_non_transpose(c_smem_tile, store_coords, c_tma_op)
 
             c_tma_op.commit_group()
 
@@ -591,6 +589,7 @@ struct TMAStoreExecutor[
     fn _store_non_transpose[
         c_layout: Layout,
         c_desc_layout: Layout,
+        //,
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
@@ -661,7 +660,7 @@ struct TMAStoreExecutor[
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
-                # Non-transpose: convert to LayoutTensor for TMA async_store
+                # Non-transpose: wrap as SMemTile for _store_non_transpose
                 from memory import LegacyUnsafePointer
 
                 comptime SMemPtrType = LegacyUnsafePointer[
@@ -672,9 +671,7 @@ struct TMAStoreExecutor[
                 var c_lt = SMemTile[
                     Self.c_type, Self.c_smem_layout, alignment=128
                 ](rebind[SMemPtrType](c_smem_tile.ptr.mut_cast[True]()))
-                Self._store_non_transpose[c_layout, c_desc_layout](
-                    c_lt, store_coords, c_tma_op
-                )
+                Self._store_non_transpose(c_lt, store_coords, c_tma_op)
 
             c_tma_op.commit_group()
 

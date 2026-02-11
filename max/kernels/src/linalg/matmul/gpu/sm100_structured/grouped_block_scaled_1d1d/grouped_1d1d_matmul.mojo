@@ -39,7 +39,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
-from layout.tma_async import create_tensor_tile
+from ..structured_kernels.tile_types import create_tma_tile
 from ..structured_kernels.tile_types import lt_to_tt, lt_to_tt_1d
 
 from utils.index import Index, IndexList
@@ -270,22 +270,22 @@ fn grouped_matmul_1d1d_nvfp4[
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     # Create TMA descriptors using kernel-derived layout types
-    var a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tma_tile[
+        KernelType.ATmaTile.tile_layout,
+        KernelType.ATmaTile.desc_layout,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ATmaOp.layout,
-        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_device)
 
-    var b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tma_tile[
+        KernelType.BTmaTile.tile_layout,
+        KernelType.BTmaTile.desc_layout,
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.BTmaOp.layout,
-        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_device)
 
     comptime c_tma_tile_shape_mma128 = Index(
@@ -300,13 +300,13 @@ fn grouped_matmul_1d1d_nvfp4[
         "Only support 128B swizzle mode when AB_swapped is True",
     ]()
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tensor_tile[
+    var c_tma_op = create_tma_tile[
+        KernelType.CTmaTile.tile_layout,
+        KernelType.CTmaTile.desc_layout,
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.CTmaOp.layout,
-        __desc_layout = KernelType.CTmaOp.desc_layout,
     ](ctx, c_device)
 
     # Reshape scale tensors to 4D for TMA
@@ -349,11 +349,11 @@ fn grouped_matmul_1d1d_nvfp4[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
 
-    var sfa_tma_op = create_tensor_tile[
+    var sfa_tma_op = create_tma_tile[
+        KernelType.SFATmaTile.tile_layout,
+        KernelType.SFATmaTile.desc_layout,
         sfa_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = KernelType.SFATmaOp.layout,
-        __desc_layout = KernelType.SFATmaOp.desc_layout,
     ](ctx, sfa_4d)
 
     comptime sfb_tma_tile_shape = Index(
@@ -363,11 +363,11 @@ fn grouped_matmul_1d1d_nvfp4[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
 
-    var sfb_tma_op = create_tensor_tile[
+    var sfb_tma_op = create_tma_tile[
+        KernelType.SFBTmaTile.tile_layout,
+        KernelType.SFBTmaTile.desc_layout,
         sfb_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = KernelType.SFBTmaOp.layout,
-        __desc_layout = KernelType.SFBTmaOp.desc_layout,
     ](ctx, sfb_4d)
 
     # Define kernel function

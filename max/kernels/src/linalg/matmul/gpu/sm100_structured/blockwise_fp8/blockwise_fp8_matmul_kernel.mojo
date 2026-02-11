@@ -87,6 +87,7 @@ from ..structured_kernels.tile_pipeline import (
 from ..structured_kernels.tile_types import (
     BlockwiseFP8TilePayload,
     GMEMTile,
+    TMATile,
     TmaOpType,
     static_row_major,
 )
@@ -272,7 +273,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime b_tma_rows = Self.b_tile_dim0
 
     # TMA operation types (derived from new Layout types)
-    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaOp = Self.CTmaTile.InnerType
 
     # B-scales TileTensor type
     comptime BScalesTile = TileTensor[
@@ -352,11 +354,14 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]
 
     # ========== TMA Operation Types (for run() params) ==========
-    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime AScalesTmaOp = TmaOpType[
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime AScalesTmaTile = TMATile[
         Self.a_scales_type, Self.AScalesLayout, Self.AScalesLayout
     ]
+    comptime AScalesTmaOp = Self.AScalesTmaTile.InnerType
 
     # ========== TMEM Types ==========
     comptime Tmem = TmemAllocation[Self.cta_group]

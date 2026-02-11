@@ -1541,6 +1541,40 @@ struct TMATensorTile[
             )
 
     @always_inline
+    fn async_store[
+        rank: Int, //, cta_group: Int = 1
+    ](
+        self,
+        dst: TileTensor[
+            dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
+        ],
+        coords: StaticTuple[UInt32, rank],
+    ):
+        """Schedules an asynchronous store from shared memory to global memory.
+
+        TileTensor overload of the generic rank-dispatched async_store.
+        Dispatches to the rank-specific TileTensor async_store methods.
+
+        Parameters:
+            rank: The dimensionality of the tensor (must be 2 or 3).
+            cta_group: CTA group configuration. Defaults to 1.
+
+        Args:
+            dst: TileTensor in shared memory from which data will be copied.
+            coords: The N-dimensional coordinates in the destination tensor.
+        """
+        comptime assert rank in (2, 3)
+
+        @parameter
+        if rank == 2:
+            self.async_store(dst, (UInt(coords[0]), UInt(coords[1])))
+        elif rank == 3:
+            self.async_store_3d(
+                dst,
+                (UInt(coords[0]), UInt(coords[1]), UInt(coords[2])),
+            )
+
+    @always_inline
     fn async_multicast_load[
         cta_group: Int = 1
     ](
