@@ -463,7 +463,6 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             "model": request_func_input.model,
             "messages": messages_data,
             "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
         }
@@ -473,6 +472,9 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         for img in request_func_input.images:
             # TODO: Remove this type ignore
