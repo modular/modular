@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,9 +23,7 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
-from max.nn.legacy.kernels import (
-    rms_norm_key_cache as _rms_norm_key_cache,
-)
+from max.nn.legacy.kernels import rms_norm_key_cache as _rms_norm_key_cache
 
 grouped_matmul_ragged = F.functional(_grouped_matmul_ragged)
 

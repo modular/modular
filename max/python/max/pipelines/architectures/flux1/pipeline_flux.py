@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,10 +22,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.interfaces import PixelGenerationContext, TokenBuffer
-from max.pipelines.lib.interfaces import (
-    DiffusionPipeline,
-    PixelModelInputs,
-)
+from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.tensor import Tensor
 from tqdm import tqdm
 
