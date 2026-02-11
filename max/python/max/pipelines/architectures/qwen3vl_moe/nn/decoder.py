@@ -44,7 +44,7 @@ from max.pipelines.architectures.internvl.embedding_utils import (
 from max.pipelines.architectures.internvl.internvl import distribute_value
 
 from ..model_config import Qwen3VLConfig
-from .moe import Qwen3VLMoE
+from .moe import Qwen3VLMoE, Qwen3VLMoEGate
 from .text_attention import Qwen3VLMoEDecoderAttentionWithRope
 from .text_rotary import Qwen3VLTextRotaryEmbedding
 
@@ -201,7 +201,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
                 num_experts=config.num_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
-                mlp_only_layers=config.mlp_only_layers,
+                gate_cls=Qwen3VLMoEGate,
                 dtype=config.dtype,
                 float8_config=float8_config,
             )

@@ -136,6 +136,7 @@ class Qwen3TransformerBlock(Module):
         if use_moe:
             from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
                 Qwen3VLMoE,
+                Qwen3VLMoEGate,
             )
 
             return Qwen3VLMoE(
@@ -144,8 +145,8 @@ class Qwen3TransformerBlock(Module):
                 num_experts=config.num_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
+                gate_cls=Qwen3VLMoEGate,
                 dtype=config.dtype,
-                mlp_only_layers=config.mlp_only_layers,
                 float8_config=config.float8_config,
             )
         else:
