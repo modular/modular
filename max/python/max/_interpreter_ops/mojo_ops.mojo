@@ -30,7 +30,7 @@ from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
-from nn.softmax import softmax as nn_softmax
+from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
 from reflection import get_base_type_name
 from runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import ManagedTensorSlice
@@ -3028,35 +3028,23 @@ fn softmax_op[
 
                 var device_ctx = DeviceContextPtr(ctx)
 
-                # Always use nn_softmax (not nn_logsoftmax) on GPU
-                # because the GPU logsoftmax kernel has a bug (KERN-2447)
-                # where the log() is applied outside the normalization
-                # loop. For logsoftmax, we compute softmax then apply
-                # log element-wise below.
-                nn_softmax[
-                    dtype,
-                    simd_width_of[dtype](),
-                    2,
-                    input_fn,
-                    target="gpu",
-                ](shape, output_tensor, 1, device_ctx)
-
                 @parameter
                 if is_logsoftmax:
-                    var total = batch_dim * axis_dim
-
-                    @always_inline
-                    @parameter
-                    @__copy_capture(out_ptr)
-                    fn log_fn[
-                        width: Int, rank: Int, alignment: Int = 1
-                    ](idx: IndexList[rank]):
-                        var i = rebind[IndexList[1]](idx)[0]
-                        out_ptr.store(i, log(out_ptr.load[width=width](i)))
-
-                    elementwise[log_fn, simd_width=1, target="gpu"](
-                        IndexList[1](total), device_ctx
-                    )
+                    nn_logsoftmax[
+                        dtype,
+                        simd_width_of[dtype](),
+                        2,
+                        input_fn,
+                        target="gpu",
+                    ](shape, output_tensor, 1, device_ctx)
+                else:
+                    nn_softmax[
+                        dtype,
+                        simd_width_of[dtype](),
+                        2,
+                        input_fn,
+                        target="gpu",
+                    ](shape, output_tensor, 1, device_ctx)
 
                 # TODO(MXF-108): Remove device sync
                 device_ctx.get_device_context().synchronize()
