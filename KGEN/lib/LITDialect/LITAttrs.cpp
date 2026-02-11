@@ -120,8 +120,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
     if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
-        (pogs[idx - 1].getPassingKind() != PassingKind::Inferred &&
-         pogs[idx - 1].getPassingKind() != PassingKind::Contextual)) {
+        pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
       return emitError()
              << "'inferred' parameter follows non-inferred parameter";
     }

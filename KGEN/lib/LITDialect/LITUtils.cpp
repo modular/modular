@@ -674,7 +674,7 @@ size_t LIT::countNumPosOnly(ArrayRef<PogMetadataAttr> pogs) {
     PassingKind kind = pog.getPassingKind();
     if (kind == PassingKind::Inferred)
       continue;
-    if (kind != PassingKind::PosOnly && kind != PassingKind::Contextual)
+    if (kind != PassingKind::PosOnly)
       break;
     ++idx;
   }
@@ -691,8 +691,7 @@ size_t LIT::countNumPositional(ArrayRef<PogMetadataAttr> pogs) {
     PassingKind kind = pog.getPassingKind();
     if (kind == PassingKind::Inferred)
       continue;
-    if (kind != PassingKind::PosOnly && kind != PassingKind::Contextual &&
-        kind != PassingKind::PosOrKw)
+    if (kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
       break;
     ++idx;
   }
@@ -849,7 +848,6 @@ void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
     else if (passingKind == PassingKind::Implicit)
       os << "?, ";
     break;
-  case PassingKind::Contextual:
   case PassingKind::PosOnly:
     // Check if we are in the starting state; if no, this was the last
     // positional-only argument. Optionally, we may want to suppress '/' before
@@ -884,8 +882,7 @@ void PassingKindPrinter::printOptionalTrailingSlash(size_t idx) const {
   if (suppressSlashAfterSelf && idx == 0)
     return;
   if (idx == numPogs - 1) {
-    if (prevPassingKind == PassingKind::PosOnly ||
-        prevPassingKind == PassingKind::Contextual)
+    if (prevPassingKind == PassingKind::PosOnly)
       os << ", " << slash;
     else if (prevPassingKind == PassingKind::Inferred)
       os << ", " << plus;
