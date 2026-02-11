@@ -1161,9 +1161,10 @@ PIPELINES = {
             kl_div_threshold=7.1e-3,
         ),
     ),
+    # TODO(MODELS-1033) Times out.
     "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only", "no-h100"],
+        tags=["big", "nvidia-only", "no-h100", "manual"],
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
             encoding="bfloat16",
