@@ -21,6 +21,7 @@ Handlers are registered using the @register_op_handler decorator.
 """
 
 from collections.abc import Callable, Sequence
+from math import prod
 from typing import Any
 
 import max._interpreter_ops as ops
@@ -1229,5 +1230,84 @@ def _handle_select(
         inputs[2],
         target_device._device_context_ptr(),
     )
+
+    return [output]
+
+
+# Concat operations
+
+
+@register_op_handler(mo.ConcatOp)
+def _handle_concat(
+    op: mo.ConcatOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.concat by concatenating input tensors along a given axis.
+
+    Uses a Mojo memcpy kernel to copy contiguous slices from each input into
+    the output buffer, supporting both CPU and GPU.
+
+    The axis operand is the first input (a scalar tensor on CPU), followed
+    by the variadic tensor inputs to concatenate.
+
+    Args:
+        op: The concat operation.
+        inputs: Input buffers - first is the axis tensor (scalar si64 on CPU),
+            remaining are the tensors to concatenate.
+
+    Returns:
+        List containing the concatenated tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    # First operand is the axis (scalar tensor on CPU)
+    assert isinstance(inputs[0], Buffer)
+    axis = int(inputs[0].to_numpy().item())
+
+    # Remaining operands are the tensors to concatenate
+    tensor_inputs: list[Buffer] = []
+    for buf in inputs[1:]:
+        assert isinstance(buf, Buffer)
+        tensor_inputs.append(buf)
+    assert len(tensor_inputs) >= 1, (
+        "ConcatOp requires at least one input tensor"
+    )
+    _check_buffers_on_device(tensor_inputs, target_device)
+
+    # Normalize negative axis
+    ndim = len(tensor_inputs[0].shape)
+    if axis < 0:
+        axis += ndim
+
+    # Compute output shape
+    output_shape = list(tensor_inputs[0].shape)
+    output_shape[axis] = sum(inp.shape[axis] for inp in tensor_inputs)
+
+    output = Buffer(
+        shape=tuple(output_shape),
+        dtype=tensor_inputs[0].dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    # Decompose into contiguous memcpy calls.
+    # For axis=0, outer_size=1 so we get one call per input (optimal).
+    outer_size = prod(output_shape[:axis]) if axis > 0 else 1
+    suffix_size = prod(output_shape[axis + 1 :]) if axis < ndim - 1 else 1
+    out_axis_stride = output_shape[axis] * suffix_size
+
+    dst_axis_offset = 0
+    for inp in tensor_inputs:
+        inner_count = inp.shape[axis] * suffix_size
+        inp_stride = inner_count
+        for outer_idx in range(outer_size):
+            ops.mojo_ops.Memcpy(
+                output,
+                inp,
+                outer_idx * out_axis_stride + dst_axis_offset * suffix_size,
+                outer_idx * inp_stride,
+                inner_count,
+                ctx_ptr,
+            )
+        dst_axis_offset += inp.shape[axis]
 
     return [output]
