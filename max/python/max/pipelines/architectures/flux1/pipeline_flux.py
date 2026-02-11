@@ -70,11 +70,9 @@ class FluxPipelineOutput:
     """Output class for Flux image generation pipelines.
 
     Args:
-        images (`list[PIL.Image.Image]` or `np.ndarray` or `Tensor`)
-            List of denoised PIL images of length `batch_size` or numpy array or Max tensor of shape `(batch_size,
-            height, width, num_channels)`. PIL images or numpy array present the denoised images of the diffusion
-            pipeline. Max tensors can represent either the denoised images or the intermediate latents ready to be
-            passed to the decoder.
+        images (`np.ndarray` or `Tensor`)
+            Numpy array or Max tensor of shape `(batch_size, height, width, num_channels)`.
+            The denoised images of the diffusion pipeline.
     """
 
     images: np.ndarray | Tensor
