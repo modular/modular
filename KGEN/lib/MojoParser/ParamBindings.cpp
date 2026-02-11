@@ -125,6 +125,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     }
   }
 
+  auto traitSelfName = StringAttr::get(decl->getContext(), "_Self");
   // When binding a trait function, add the self type bindings.
   if (decl && isa_and_nonnull<TraitDeclOp>(decl->getIfOperation())) {
     auto typeAttr = PValue(type).get();
@@ -145,23 +146,35 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
       // so we can substitute the value into the signature.
       typeAttr = UpcastAttr::get(simpleTraitType, PValue(type));
     }
-    paramBindings.addPrechecked(expr, typeAttr);
+    paramBindings.addPrechecked(expr, typeAttr, traitSelfName);
   } else if (isa<TraitType>(decl->getIfTypeValue())) {
     if (optionalParentTraitType) {
       // If caller provided a parent trait type, we need to upcast the self.
       auto typeAttr = UpcastAttr::get(optionalParentTraitType, PValue(type));
-      paramBindings.addPrechecked(expr, typeAttr);
+      paramBindings.addPrechecked(expr, typeAttr, traitSelfName);
     } else {
       // If this is a trait composition, the method signature's self type won't
       // match directly (need to upcast the composition into the trait type that
       // declared the method). Add as _not_ prechecked.
-      paramBindings.add(expr, PValue(type).get());
+      paramBindings.add(expr, PValue(type).get(), traitSelfName);
     }
   }
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();
-  for (TypedAttr value : paramValues)
-    paramBindings.addPrechecked(expr, value);
+  if (!paramValues.empty()) {
+    type = isa<ParamType>(type) ? ASTType(type.getMetaType()) : type;
+    ArrayRef<PogMetadataAttr> pogs =
+        type.getWithoutParameters(declScope.getShared())
+            .getSignature()
+            .getParamListAttrs()
+            .getPogs();
+    assert(paramValues.size() <= pogs.size());
+    // Since we prepend struct parameters as inferred only, specify the name
+    // here to make sure we can verify the pog list correctly.
+    for (auto [value, pog] : llvm::zip(paramValues, pogs))
+      paramBindings.addPrechecked(expr, value, pog.getName());
+  }
+
   return paramBindings;
 }
 
@@ -170,6 +183,15 @@ void ParamBindings::addPrechecked(const ExprNode *expr,
   assert(numPreTypeChecked == parameters.size() &&
          "Cannot add type prechecked after other bindings!");
   parameters.add({precheckedBinding, expr});
+  ++numPreTypeChecked;
+}
+
+void ParamBindings::addPrechecked(const ExprNode *expr,
+                                  TypedAttr precheckedBinding,
+                                  StringAttr name) {
+  assert(numPreTypeChecked == parameters.size() &&
+         "Cannot add type prechecked after other bindings!");
+  parameters.add(name, {precheckedBinding, expr});
   ++numPreTypeChecked;
 }
 

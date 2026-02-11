@@ -1230,13 +1230,13 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   // Unbind the N capture parameters, creating a FuncType with N new input
   // parameters prepended.
   // TODO: what if we capture a variadic?
-  SmallVector<VariadicKind> variadicKinds(captured.size(), VariadicKind::None);
+  SmallVector<StringAttr> paramNames = llvm::map_to_vector(
+      captured, [](ParamDeclRefAttr ref) { return ref.getName(); });
+
   auto unbound = FnTypeGeneratorType::prependParams(
-      original,
-      llvm::map_to_vector(
-          captured,
-          [](ParamDeclRefAttr ref) { return ParamDeclAttr::get(ref); }),
-      variadicKinds);
+      original, llvm::map_to_vector(captured, [](ParamDeclRefAttr ref) {
+        return ParamDeclAttr::get(ref);
+      }));
   return {std::move(captured), unbound};
 }
 
@@ -3554,8 +3554,8 @@ DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
 
   MLIRContext *ctx = getContext();
   auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
-  auto paramListAttr =
-      PogListAttr::get(ctx, StringAttr::get(ctx), PassingKind::Implicit);
+  auto paramListAttr = PogListAttr::get(ctx, StringAttr::get(ctx, "_Self"),
+                                        PassingKind::Implicit);
   auto sig = TypeSignatureType::remapToSignature(silenceErrors(ctx), paramArray,
                                                  paramListAttr);
   if (!sig)

@@ -9,10 +9,10 @@
 # COM: Check that the parameter is properly added to the ClosureImpl despite being defined two levels up.
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK-SAME: <[[SELFO:.*]]: origin<0>, A: !Int, |>
+# CHECK-SAME: <{{.*}}*"self`2x": origin<0>, A: !Int, |>
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
-# CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:origin<0> [[SELFO]], :!Int A>(%self, %__call_result_tmp__)
+# CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:origin<0> {{.*}}*"self`2x", :!Int A>(%self, %__call_result_tmp__)
 # CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<!lit.struct<#escaping0 <:origin<0> *"self`2x", :!Int A>
 
 
@@ -20,7 +20,7 @@
 struct Foo[A: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
-    fn get[C: Int](self) -> fn (y: Int) escaping -> Int:
+    fn get[C: Int](self) -> fn(y: Int) escaping -> Int:
         fn bar(y: Int) -> Int:
             var w = Self.A + self.b + y
             return w

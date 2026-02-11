@@ -60,7 +60,7 @@ fn unbound_alias():
     comptime unbound_value = Unbound[2].value
     # CHECK: call {{.*}}@Param::@"foo()"<:!Int {2}>
     Unbound[2].foo()
-    # CHECK: unbound_function{{.*}}: !lit.generator<<"x": !Int, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<:!Int ?>>
+    # CHECK: unbound_function{{.*}}: !lit.generator<<"x": !Int, +>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<:!Int ?>>
     comptime unbound_function = Unbound.foo
 
     # COM: Test fully unbound alias can be fully bound.
@@ -76,10 +76,10 @@ fn partially_bound_alias():
     comptime PartiallyBound = TwoParam[1]
 
     # COM: Test taking a function from a partially bound type.
-    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": !Int, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
+    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": !Int, +>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
     comptime PartiallyBoundFn = PartiallyBound.foo
     # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
-    comptime FullyBoundFn = PartiallyBoundFn[2]
+    comptime FullyBoundFn = PartiallyBoundFn[y=2]
 
     # COM: Test fully binding a partially bound type.
     # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> =

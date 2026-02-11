@@ -120,19 +120,21 @@ struct SimpleTestStruct(ParamInputTrait):
 # COM: Test parameterized struct with parameters whose names are the same as a
 # parameters used in the trait methods.
 # CHECK-LABEL: lit.struct.decl @ParamTestStruct
-struct ParamTestStruct[T: Int, x: Bool](ParamInputTrait):
+# TODO(MOCO-3274): detect and raise a better error message when there is a name\
+# conflict between a struct parameter and a defaulted trait method parameter.
+struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait):
     # CHECK: lit.fn @"process_parameterized
-    # CHECK-SAME: <*"T`": !Barable>
-    # CHECK-SAME: %item: !lit.ref<:!Barable *"T`",
+    # CHECK-SAME: <T: !Barable>
+    # CHECK-SAME: %item: !lit.ref<:!Barable T,
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"process_parameterized
-    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Barable *"T`">
+    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Barable T>
 
     # CHECK: lit.fn @"return_parameterized
-    # CHECK-SAME: <*"x`1": !Int, y: !Int>
-    # CHECK-SAME: %self: !lit.ref<!lit.struct<#ParamTestStruct <:!Int T, :!Bool x>>,
-    # CHECK-SAME: -> !lit.struct<#ParamRPType <:!Int *"x`1", :!Int y>>
+    # CHECK-SAME: <x: !Int, y: !Int>
+    # CHECK-SAME: %self: !lit.ref<!lit.struct<#ParamTestStruct <:!Int T1, :!Bool x1>>,
+    # CHECK-SAME: -> !lit.struct<#ParamRPType <:!Int x, :!Int y>>
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
-    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Int *"x`1", :!Int y>
+    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Int x, :!Int y>
 
     # CHECK: kgen.conformance{{.*}}:ParamInputTrait
     # CHECK-DAG: kgen.witness "process_parameterized{{.*}}"

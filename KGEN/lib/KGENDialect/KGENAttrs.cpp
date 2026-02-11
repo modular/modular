@@ -1228,8 +1228,12 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 
     GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
     if (genMetadata) {
+      SmallVector<StringAttr> paramNames =
+          llvm::map_to_vector(paramDecls, [](const ParamDeclAttr &param) {
+            return param.getName();
+          });
       genMetadata = remapper.replace(genMetadata.prependContextualParamsFromOps(
-          paramDecls, llvm::drop_end(symbolOps)));
+          paramNames, llvm::drop_end(symbolOps)));
     }
 
     FnMetadataAttrInterface fnMetadata = baseSig.getMetadata();

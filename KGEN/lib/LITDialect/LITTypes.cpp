@@ -1732,7 +1732,7 @@ FnTypeGeneratorType FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
 FnTypeGeneratorType
 FnTypeGeneratorType::prependParams(FnTypeGeneratorType sigGen,
                                    ArrayRef<ParamDeclAttr> parentParams,
-                                   ArrayRef<VariadicKind> parentVariadics) {
+                                   ArrayRef<StringAttr> paramNames) {
   IndexRefRemapper remapper(parentParams, parentParams.size());
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : parentParams)
@@ -1742,13 +1742,22 @@ FnTypeGeneratorType::prependParams(FnTypeGeneratorType sigGen,
 
   FnType sig = sigGen.getBody();
   FnMetadataAttrInterface fnMetadata = remapper.replace(sig.getMetadata());
-  GeneratorMetadataAttrInterface genMetadata =
-      remapper.replace(sigGen.getMetadata().prependContextualParams(
-          parentParams, parentVariadics));
 
-  return FuncTypeGeneratorType::get(
-      inputParamTypes, remapper.replace(sig.getValues()),
-      sig.getArgConventions(), sig.getFnEffects(), fnMetadata, genMetadata);
+  GeneratorMetadataAttrInterface genMetadata;
+  if (paramNames.empty()) {
+    // If no param names are provided, use the mangled parameter names in param
+    // decls.
+    SmallVector<StringAttr> names = llvm::map_to_vector(
+        parentParams, [](ParamDeclAttr param) { return param.getName(); });
+    genMetadata = sigGen.getMetadata().prependAsInferredParams(names);
+  } else {
+    genMetadata = sigGen.getMetadata().prependAsInferredParams(paramNames);
+  }
+
+  return FuncTypeGeneratorType::get(inputParamTypes,
+                                    remapper.replace(sig.getValues()),
+                                    sig.getArgConventions(), sig.getFnEffects(),
+                                    fnMetadata, remapper.replace(genMetadata));
 }
 
 bool FnTypeGeneratorType::classof(FuncTypeGeneratorType type) {

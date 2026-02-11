@@ -383,6 +383,15 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
+TypeSignatureType ASTType::getSignature() const {
+  Type metatype = SugarAttr::strip(getMetaType());
+  if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
+    return metaType.getSignature();
+  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
+    return mmType.getSignature();
+  return {};
+}
+
 /// Return this type with any parameter bindings removed.
 ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)

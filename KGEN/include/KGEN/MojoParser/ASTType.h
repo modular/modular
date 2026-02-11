@@ -12,6 +12,7 @@
 #define KGEN_MOJOPARSER_ASTTYPE_H
 
 #include "KGEN/KGENDialect/KGENEnums.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
@@ -79,6 +80,7 @@ public:
   /// on this reference to the type.  Note that this is potentially a partial
   /// binding set - incomplete bindings (missing bindings) are valid.
   ArrayRef<TypedAttr> getParamBindings() const;
+  TypeSignatureType getSignature() const;
 
   /// Return this type with any parameter bindings removed.
   ASTType getWithoutParameters(SharedState &shared) const;

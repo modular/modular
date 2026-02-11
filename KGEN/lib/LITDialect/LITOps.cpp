@@ -90,33 +90,57 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
 
 /// Collect ancestor ops whose parameters are relevant, and create a
 /// concatenated list of their parameters.
-static std::pair<SmallVector<Operation *>, SmallVector<ParamDeclAttr>>
-collectParametricAncestors(Operation *op) {
-  std::pair<SmallVector<Operation *>, SmallVector<ParamDeclAttr>> res;
-  auto &[ancestors, params] = res;
+static SmallVector<std::pair<Operation *, PogListAttr>>
+collectAncestorPogListForFnOp(Operation *op) {
+  SmallVector<std::pair<Operation *, PogListAttr>> ret;
+  while (op) {
+    // If we are dealing with a struct, trait, or extension, we concatenate
+    // their variadic masks. For extensions, use the target struct's variadic
+    // information.
+    PogListAttr paramListAttr;
+    if (auto structDecl = ::dyn_cast<StructDeclOp>(op))
+      paramListAttr = structDecl.getSignature().getParamListAttrs();
+    else if (auto traitDecl = ::dyn_cast<TraitDeclOp>(op))
+      paramListAttr = traitDecl.getSignature().getParamListAttrs();
+    else if (auto extensionDecl = ::dyn_cast<ExtensionDeclOp>(op)) {
+      // Extensions inherit parameters from their target struct.
+      // The MojoParser already mirrors these parameters during resolution.
+      paramListAttr = extensionDecl.getSignature().getParamListAttrs();
+    }
 
-  auto isRelevantAncestor = [](Operation *op) {
-    auto decl = dyn_cast_or_null<DeclInterface>(op);
-    return decl && !isa<FuncInterface, ParamForOp>(*decl);
-  };
-  while (isRelevantAncestor(op)) {
-    ancestors.push_back(op);
+    // break upon detecting an irrelevant operation
+    if (!paramListAttr)
+      break;
+
+    // collect the pog list and the parent operation.
+    ret.emplace_back(std::make_pair(op, paramListAttr));
     op = op->getParentOp();
   }
-  for (Operation *op : ancestors)
-    llvm::append_range(params, cast<DeclInterface>(op).getInputParams());
-  return res;
+  return ret;
 }
 
 FnTypeGeneratorType LIT::getFullSignature(Operation *container,
                                           FnTypeGeneratorType signature) {
   // Collect contextual params, if there are none, the full signature is the
   // same as the local signature.
-  auto [ancestors, params] = collectParametricAncestors(container);
-  if (params.empty())
+  SmallVector<std::pair<Operation *, PogListAttr>> opAndPogLists =
+      collectAncestorPogListForFnOp(container);
+
+  if (opAndPogLists.empty())
     return signature;
-  return FnTypeGeneratorType::prependParams(
-      signature, params, getContextualVariadicParams(ancestors));
+
+  SmallVector<StringAttr> paramNames;
+  SmallVector<ParamDeclAttr> paramDecls;
+  for (auto [op, pogList] : opAndPogLists) {
+    // Get the user-defined parameter names from the pog list.
+    for (PogMetadataAttr pog : pogList.getPogs())
+      paramNames.push_back(pog.getName());
+    for (ParamDeclAttr param : cast<DeclInterface>(op).getInputParams())
+      paramDecls.push_back(param);
+  }
+
+  assert(paramNames.size() == paramDecls.size());
+  return FnTypeGeneratorType::prependParams(signature, paramDecls, paramNames);
 }
 
 //===----------------------------------------------------------------------===//
@@ -863,7 +887,13 @@ void FnOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
                                 function_ref<void(Type)> scanType) {}
 
 SmallVector<ParamDeclAttr> FnOp::collectAllParams(bool includeImplOrigins) {
-  auto [_, result] = collectParametricAncestors(getOperation()->getParentOp());
+  auto opAndPogLists =
+      collectAncestorPogListForFnOp(getOperation()->getParentOp());
+
+  SmallVector<ParamDeclAttr> result;
+  for (auto [op, pogList] : opAndPogLists)
+    for (ParamDeclAttr param : cast<DeclInterface>(op).getInputParams())
+      result.push_back(param);
 
   auto params = getParams();
   if (!includeImplOrigins)

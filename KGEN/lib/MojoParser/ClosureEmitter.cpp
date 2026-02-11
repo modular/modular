@@ -213,8 +213,10 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
   SmallPtrSet<StringAttr, 16> paramNamesSet;
 #endif
   for (ParamDeclAttr param : params) {
-    paramNames.push_back(StringAttr::get(
-        b.getContext(), demangleParameterName(param.getName())));
+    // The parameter for a synthesized closure are captured variable name, do
+    // not demangle the capture parameter name here, as they can never be
+    // referenced by user.
+    paramNames.push_back(param.getName());
     assert(paramNamesSet.insert(param.getName()).second &&
            "duplicate parameter name");
   }
@@ -1862,7 +1864,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   Value target = allocateHeapMemory(PointerType::get(closureImplType), builder);
   Value source = init.getBody()->getArgument(0);
 
-  // TODO(references): Move closures off pointers to correct origins.
+  // TODO(references): Move closures off pointers to correct origins
   auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
   Value targetRef = RefFromPointerOp::create(builder, target, immortal,
                                              /*startUninit=*/true,

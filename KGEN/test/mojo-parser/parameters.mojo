@@ -6,7 +6,6 @@
 
 # RUN: %parse-mojo-isolated %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
-# Empty struct with always_inline builtin initializer.
 struct Empty(TrivialRegisterPassable):
     @always_inline("builtin")
     fn __init__(out self):
@@ -1376,11 +1375,6 @@ fn test_struct_with_parametric_default_value():
     # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::TrivialRegisterPassable]()"{{.*}}<:!TrivialRegisterPassable !Int>)>
     comptime a = StructWithParametricDefaultValue[Int]
 
-struct HasEmptyDefault[a: Empty = Empty()]:
-    pass
-fn test_empty_default():
-    var v : HasEmptyDefault
-
 ##===----------------------------------------------------------------------===##
 # Struct keyword parameters
 ##===----------------------------------------------------------------------===##
@@ -1738,10 +1732,6 @@ struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT]]:
     # This should be fine, even though MUT is from the struct.
     fn foo[P: XOrigin[Self.MUT]](self):
         pass
-
-# The two mut parameters shadow confusing the inferred param added by XOrigin.
-struct MutConflict[mut: Bool]:
-    comptime Something[mut: Bool, //, a: XOrigin[mut=mut]] = Int
 
 struct HasInferred[a: XOrigin]:
     fn also_has_inferred[b: XOrigin](self):

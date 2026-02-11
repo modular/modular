@@ -115,7 +115,6 @@ struct LITLowerer {
   /// requirements. This function handles symbol table invalidation.
   LogicalResult lowerFunction(FnOp func,
                               ArrayRef<ParamDeclAttr> parentInputParams,
-                              ArrayRef<VariadicKind> parentVariadics,
                               Block::iterator mainSymbolTablePosIter,
                               StringAttr newName);
 
@@ -259,7 +258,6 @@ flattenNameAndReinsertOp(T op, SymbolTable &symbolTable,
 
 LogicalResult
 LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
-                          ArrayRef<VariadicKind> parentVariadics,
                           Block::iterator mainSymbolTablePosIter,
                           StringAttr newName) {
   // Caller is responsible for removing `func` since removal patterns differ:
@@ -292,8 +290,8 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
     llvm::append_range(inputParams, parentInputParams);
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    signature = FnTypeGeneratorType::prependParams(signature, parentInputParams,
-                                                   parentVariadics);
+    signature =
+        FnTypeGeneratorType::prependParams(signature, parentInputParams);
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
@@ -440,18 +438,13 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     if (!func)
       return member.emitError("unsupported op in lit lowering");
 
-    // Lower renamed function as usual.
-    SmallVector<VariadicKind> variadics = llvm::map_to_vector(
-        structDecl.getSignature().getParamListAttrs().getPogs(),
-        [](PogMetadataAttr pogAttr) { return pogAttr.getVariadic(); });
-
     // Calculate new name, mangled if not top level. Must be before
     // removal since MangledSymbol::mangle crawls up the ancestors.
     StringAttr nameToUse = MangledSymbol::mangle(func).mangled;
     // This is out here because removal is different for each
     // lowerFunction caller.
     func->remove();
-    if (failed(lowerFunction(func, structDecl.getInputParams(), variadics,
+    if (failed(lowerFunction(func, structDecl.getInputParams(),
                              mainSymbolTablePosIter, nameToUse)))
       return failure();
   }
@@ -506,13 +499,12 @@ LITLowerer::lowerExtensionDecl(ExtensionDeclOp extensionDecl,
     auto func = dyn_cast<FnOp>(member);
     if (!func)
       return member.emitError("unsupported op in lit lowering");
-    ArrayRef<ParamDeclAttr> inputParams = targetStructDeclInfo.decls;
-    SmallVector<VariadicKind> variadics(inputParams.size(), VariadicKind::None);
 
+    ArrayRef<ParamDeclAttr> inputParams = targetStructDeclInfo.decls;
     StringAttr nameToUse = MangledSymbol::mangle(func).mangled;
     func->remove();
-    if (failed(lowerFunction(func, inputParams, variadics,
-                             mainSymbolTablePosIter, nameToUse)))
+    if (failed(lowerFunction(func, inputParams, mainSymbolTablePosIter,
+                             nameToUse)))
       return failure();
   }
   // Invalidate symbol table before erasing to maintain consistency.
@@ -548,18 +540,13 @@ LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
                           isa<KGEN::UnreachableOp>(funcBody->front());
 
       if (!hasEmptyBody) {
-        // Lower the function with non-empty body.
-        SmallVector<VariadicKind> variadics = llvm::map_to_vector(
-            traitDecl.getSignature().getParamListAttrs().getPogs(),
-            [](PogMetadataAttr pogAttr) { return pogAttr.getVariadic(); });
-
         // Calculate new name, mangled if not top level. Must be before
         // removal since MangledSymbol::mangle crawls up the ancestors.
         StringAttr nameToUse = MangledSymbol::mangle(func).mangled;
         // This is out here because removal is different for each
         // lowerFunction caller.
         func->remove();
-        if (failed(lowerFunction(func, traitDecl.getInputParams(), variadics,
+        if (failed(lowerFunction(func, traitDecl.getInputParams(),
                                  mainSymbolTablePosIter, nameToUse)))
           return failure();
       }
@@ -689,7 +676,7 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
                 getTopLevelSymbolTable().remove(op);
               else
                 op->remove();
-              return lowerFunction(op, {}, {}, opSymTableIt, nameToUse);
+              return lowerFunction(op, {}, opSymTableIt, nameToUse);
             })
             .Case([&](StructDeclOp op) {
               // Structs should have been processed earlier by lowerAllStructs.

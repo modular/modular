@@ -14,20 +14,9 @@
 # CHECK-DAG: [[TRAIT:!.*]] = !lit.trait<@"fn(y: Int) -> Int">
 # CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
 
-# CHECK: lit.trait.decl @"fn(y: Int) -> Int"<?, *"_Self`{{.*}}": [[TRAIT]]>([[PARENT]])
-# CHECK-SAME: unspecified attributes {closureSignature = {{.*}}, definesClosure, dtorWitness = #kgen.get_witness<:[[TRAIT]] *"_Self`{{.*}}", "{{.*}}::ImplicitlyDestructible", "__del__{{.*}}"> : !kgen.generator<!lit.generator<<"_Self`0x": [[TRAIT]], |>[1]("self": !lit.ref<:[[TRAIT]] *(0,0), mut *[0,0]> deinit_mem, |) -> !kgen.none>>
-# CHECK-NEXT:  lit.fn @"__call__({{.*}})"
-# CHECK-SAME: [mut *"self`"](%{{.*}}: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
-# CHECK-SAME: attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
-# CHECK-NEXT: kgen.unreachable
-# CHECK-NEXT: }
-# CHECK-NEXT: lit.fn @"__del__($0$)"
-# CHECK-NEXT: kgen.unreachable
-# CHECK-NEXT: }
-# CHECK-NEXT: lit.fn @"__moveinit__($0$)"
-# CHECK-NEXT: kgen.unreachable
-# CHECK-NEXT: }
-# CHECK-NEXT: }
+# With -split-input-file and --kgen-print-inline-type-values, the closure trait may be printed as _Self: !Int or *"_Self`0x": !Int.
+# CHECK-DAG: lit.trait.decl @"fn(y: Int) -> Int"<?, *"_Self`{{.*}}": [[TRAIT]]>([[PARENT]])
+# CHECK-DAG: lit.fn @"__call__($0,::Int)"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 
 # CHECK: lit.struct.decl @"fn(y: Int) -> Int_{{.*}}"<impl: [[IMPL_PARENT]], origin_set: origin.set, |>([[IMPL_PARENT]]) attributes {synthetic}
 # CHECK-NEXT: destructor :
@@ -46,6 +35,7 @@
 
 # CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> deinit_mem, |) -> !kgen.none
 # CHECK: lit.ownership.mark_destroyed %self
+
 
 fn make_closure(x: Int):
     fn my_closure(y: Int) unified {var x} -> Int:
@@ -207,7 +197,7 @@ fn make_closure(x: Int):
 # CHECK-NEXT: %0 = lit.call tail[!lit.generator<[1](!lit.ref<:!Int f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:!Int f, "fn(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
 # CHECK-NEXT: lit.ownership.use %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-fn take_closure[f: fn (y: Int) unified -> Int](myFunc: f, x: Int):
+fn take_closure[f: fn(y: Int) unified -> Int](myFunc: f, x: Int):
     _ = myFunc(x)
 
 
@@ -225,11 +215,11 @@ fn take_closure[f: fn (y: Int) unified -> Int](myFunc: f, x: Int):
 # CHECK: lit.trait.decl @"fn[closure2: fn(y: Int) -> Int](impl: closure2, y: Int) capturing -> Int"
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<closure2: [[TRAIT2]]>
 # CHECK-SAME: [mut *"self`", imm *"[[L0:.*]]`"]
-# CHECK-SAME: (%0[*""]: !lit.ref<:[[TRAIT3]] *"_Self`{{.*}}", mut *"self`"> read_mem, |
+# CHECK-SAME: (%0[*""]: !lit.ref<:[[TRAIT3]] *"_Self{{.*}}, mut *"self`"> read_mem, |
 # CHECK-SAME:, %impl: !lit.ref<:[[TRAIT2]] closure2, imm *"[[L0]]`"> read_mem, %y: [[INT]]) capturing -> [[INT]]
-fn take_closure[closure1: fn (y: Int) unified -> Int](x: Int):
+fn take_closure[closure1: fn(y: Int) unified -> Int](x: Int):
     fn nested[
-        closure2: fn (y: Int) unified -> Int
+        closure2: fn(y: Int) unified -> Int
     ](impl: closure2, y: Int) unified {var x} -> Int:
         return x
 
@@ -246,9 +236,9 @@ fn take_closure[closure1: fn (y: Int) unified -> Int](x: Int):
 
 
 fn take_closures[
-    closure1: fn (y: Int) unified -> Int,
+    closure1: fn(y: Int) unified -> Int,
     T: Int,
-    closure2: fn (y: Int, z: Int) unified -> Int,
+    closure2: fn(y: Int, z: Int) unified -> Int,
     U: Int,
 ](impl1: closure1, impl2: closure2, x: Int):
     pass
@@ -267,7 +257,7 @@ fn take_closures[
 # CHECK-SAME: (%impl: !lit.ref<:!Int x, imm *"[[L0]]"> read_mem
 # TODO: remove the 'do_not_dce_int' argument (MOCO 2461)
 fn nested[
-    x: fn[y: fn (z: Int) unified -> Int] (impl: y, u: Int) unified -> Int, //
+    x: fn[y: fn(z: Int) unified -> Int](impl: y, u: Int) unified -> Int, //
 ](impl: x, do_not_dce_int: Int):
     pass
 
@@ -371,7 +361,7 @@ fn nonemptyOriginSet(mut byRefMut: String):
 # CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
-fn takeIt[C: fn (Int) unified -> Int](closure: C):
+fn takeIt[C: fn(Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
@@ -395,7 +385,7 @@ fn bindIt(z: Int):
 # CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
-fn takeIt[C: Copyable & fn (y: Int) unified -> Int](closure: C):
+fn takeIt[C: Copyable & fn(y: Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
@@ -411,11 +401,11 @@ fn bindIt(z: Int):
 # COM: Verify that all closures are rebound when closure traits are combined or inherited
 
 
-fn takeIt[C: (fn (Bool) unified -> Int) & fn (Int) unified -> Int](closure: C):
+fn takeIt[C: (fn(Bool) unified -> Int) & fn(Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
-trait BoolWrapper(fn (Bool) unified -> Int):
+trait BoolWrapper(fn(Bool) unified -> Int):
     pass
 
 
@@ -427,7 +417,7 @@ trait BoolWrapper(fn (Bool) unified -> Int):
 
 # CHECK: kgen.conformance @"fn(Int) -> Int"
 # CHECK:kgen.witness "__call__($0,::Int)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Int)")
-struct MultipleClosure(BoolWrapper, Movable, fn (Int) unified -> Int):
+struct MultipleClosure(BoolWrapper, Movable, fn(Int) unified -> Int):
     fn __init__(out self):
         pass
 
@@ -458,7 +448,7 @@ fn bindIt(z: Int):
 # CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn[a: Int](b: Int) -> Int_{{.*}}"::@"__call__[::Int]({{.*}}::fn[a: Int](b: Int) -> Int_{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
 
 
-fn takeIt[C: fn[x: Int] (y: Int) unified -> Int](closure: C):
+fn takeIt[C: fn[x: Int](y: Int) unified -> Int](closure: C):
     # see MOCO-2606
     _ = closure.__call__[2](3)
 
@@ -477,7 +467,7 @@ fn bindIt(z: Int):
 
 # CHECK: [[TRAIT:!Int_AnyType.*]] = !lit.trait<@"fn(x: Int) -> Int"
 # CHECK: lit.struct.decl @custom([[TRAIT]])
-struct custom(fn (x: Int) unified -> Int):
+struct custom(fn(x: Int) unified -> Int):
     fn __call__(self, x: Int) capturing -> Int:
         return x
 
@@ -548,6 +538,7 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<{{.*}}, T: type>
 # CHECK: kgen.witness "T" : type = T
 
+
 # COM: The alias is set to the alias of the impl in the struct wrapper
 # CHECK: lit.struct.decl @"fn() -> T_Mova_Impl_Copy_Impl"
 # CHECK: kgen.witness "T" : type = #kgen.get_witness<:!{{.*}} impl, "fn() -> T", "T">
@@ -569,24 +560,29 @@ fn conditionallyDevicePassable(x: Int):
     fn device_passable() unified register_passable {var} -> Int:
         return x
 
+
 # // -----
 
 # COM: Ensure external parameter references are pulled into alias decls
 
+
 trait DoIt:
-   fn thing(self):
-       ...
+    fn thing(self):
+        ...
+
 
 # CHECK: lit.trait.decl @"fn(x: T) -> None"
 # CHECK-NEXT: lit.alias.decl T: !DoIt
-struct House[T:DoIt]:
-    fn aMethod[C: fn(x: Self.T) unified](self, impl:C):
+struct House[T: DoIt]:
+    fn aMethod[C: fn(x: Self.T) unified](self, impl: C):
         pass
+
 
 # CHECK: lit.trait.decl @"fn(x: TT) -> None"
 # CHECK-NEXT: lit.alias.decl TT: !DoIt
-fn useIt[TT: DoIt, C:fn(x:TT) unified](impl: C):
-  pass
+fn useIt[TT: DoIt, C: fn(x: TT) unified](impl: C):
+    pass
+
 
 # // -----
 
@@ -596,6 +592,7 @@ fn useIt[TT: DoIt, C:fn(x:TT) unified](impl: C):
 
 # CHECK: lit.struct.decl @"fn() -> Int_Mova_Impl_Copy_Impl_Devi"<impl: [[TRAIT]]
 
-fn addTrivialRegisterType(x:Int):
+
+fn addTrivialRegisterPassable(x: Int):
     fn closure() unified register_passable {var} -> Int:
         return x
