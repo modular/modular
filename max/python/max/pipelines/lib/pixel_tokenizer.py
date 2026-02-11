@@ -500,10 +500,22 @@ class PixelGenerationTokenizer(
 
     async def postprocess(
         self,
-        pixel_data: npt.NDArray[np.float32],
-    ) -> npt.NDArray[np.float32]:
-        """Post-process pixel data from model output (NCHW -> NHWC, normalized)."""
-        pixel_data = (pixel_data * 0.5 + 0.5).clip(min=0.0, max=1.0)
+        output: Any,
+    ) -> Any:
+        """Post-process pipeline output.
+
+        Accepts either a raw numpy array or a GenerationOutput.
+        For raw numpy arrays, denormalizes from [-1, 1] to [0, 1].
+        For GenerationOutput, returns as-is (denormalization is handled
+        in the pipeline variant before encoding to OutputImageContent).
+        """
+        from max.interfaces.generation import GenerationOutput
+
+        if isinstance(output, GenerationOutput):
+            return output
+
+        # Raw numpy path
+        pixel_data = (output * 0.5 + 0.5).clip(min=0.0, max=1.0)
         return pixel_data
 
     async def new_context(
@@ -567,14 +579,12 @@ class PixelGenerationTokenizer(
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
         images_for_tokenization: list[PIL.Image.Image] | None = None
-        if request.input_image is not None:
+        if input_image is not None:
             input_img: PIL.Image.Image
-            if isinstance(request.input_image, np.ndarray):
-                input_img = PIL.Image.fromarray(
-                    request.input_image.astype(np.uint8)
-                )
+            if isinstance(input_image, np.ndarray):
+                input_img = PIL.Image.fromarray(input_image.astype(np.uint8))
             else:
-                input_img = request.input_image
+                input_img = input_image
             images_for_tokenization = [input_img]
 
         (
@@ -614,14 +624,14 @@ class PixelGenerationTokenizer(
         default_sample_size = self._default_sample_size
         vae_scale_factor = self._vae_scale_factor
 
-        height = request.height or default_sample_size * vae_scale_factor
-        width = request.width or default_sample_size * vae_scale_factor
+        height = image_options.height or default_sample_size * vae_scale_factor
+        width = image_options.width or default_sample_size * vae_scale_factor
 
         # 2. Preprocess input image if provided
         preprocessed_image = None
-        if request.input_image is not None:
+        if input_image is not None:
             preprocessed_image = self._preprocess_input_image(
-                request.input_image, height, width
+                input_image, height, width
             )
             height = preprocessed_image.height
             width = preprocessed_image.width
@@ -631,7 +641,7 @@ class PixelGenerationTokenizer(
         latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
         image_seq_len = (latent_height // 2) * (latent_width // 2)
 
-        num_inference_steps = request.num_inference_steps
+        num_inference_steps = image_options.steps
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
             image_seq_len, num_inference_steps
         )

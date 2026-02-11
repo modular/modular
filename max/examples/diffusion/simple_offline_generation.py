@@ -286,9 +286,9 @@ async def generate_image(args: argparse.Namespace) -> None:
                 guidance_scale=args.guidance_scale,
             )
         ),
-        input_image=load_image(args.input_image),
     )
     request = OpenResponsesRequest(request_id=RequestID(), body=body)
+    input_image = load_image(args.input_image)
 
     print(
         f"Parameters: steps={args.num_inference_steps}, guidance={args.guidance_scale}"
@@ -297,7 +297,7 @@ async def generate_image(args: argparse.Namespace) -> None:
     # Step 5: Create a PixelContext object from the request
     # The tokenizer handles prompt tokenization, timestep scheduling,
     # latent initialization, and all other preprocessing
-    context = await tokenizer.new_context(request)
+    context = await tokenizer.new_context(request, input_image=input_image)
 
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
@@ -323,6 +323,7 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 8: Get the output for our request
     output = outputs[context.request_id]
+    output = await tokenizer.postprocess(output)
 
     # Check if generation completed successfully
     if not output.is_done:
