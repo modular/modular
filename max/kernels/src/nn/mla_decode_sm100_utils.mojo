@@ -90,6 +90,8 @@ from nn.mha_sm100_2q import (
     MBarPipeline,
     sub_ftz,
 )
+from layout._layout import row_major
+from layout._tile_tensor import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 from builtin.device_passable import DevicePassable
 from sys._assembly import inlined_assembly
@@ -938,23 +940,6 @@ struct KVPipelineGeneric[
         return UInt32(2 * Self.num_qk_stages * Self.num_kv_stages)
 
 
-# -------------------------------------------------------------------------------
-# TMA DESTINATION
-# -------------------------------------------------------------------------------
-
-
-struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
-    var mbar: MBarType
-    var smem: SharedMemTensor[Self.dtype, Self.layout]
-
-    @always_inline
-    fn __init__(
-        out self, mbar: MBarType, smem: SharedMemTensor[Self.dtype, Self.layout]
-    ):
-        self.mbar = mbar
-        self.smem = smem
-
-
 # ------------------------------------------------------------------------------
 # MLA decoding MiscMBars for producer and consumer
 # ------------------------------------------------------------------------------
@@ -1671,19 +1656,18 @@ struct DecodeSM100PVSS[
 
 @always_inline
 fn write_bf16x2_row_to_smem_chunked[
-    layout: Layout,
+    local_tile_size: Int,
     *,
     out_dtype: DType,
     in_dtype: DType,
     config: MLA_SM100_Decode_Config,
-    local_tile_size: Int,
     chunk_size: Int = 16,
     scale_needed: Bool = False,
 ](
     shared_mem: UnsafePointer[
         Scalar[out_dtype], MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
-    local_mem: LocalTensor[in_dtype, layout],
+    local_mem: LocalTensor[in_dtype, row_major[local_tile_size]()],
     col_start: Int,
     row_start: Int,
     scale: Scalar[in_dtype] = 1.0,
@@ -1722,11 +1706,13 @@ fn write_bf16x2_row_to_smem_chunked[
             # vec_idx accounts for both chunk offset and position within chunk
             comptime vec_idx = chunk * groups_per_chunk + g
 
+            var vec_val = lmv[vec_idx]
+
             @parameter
             if scale_needed:
-                lmv[vec_idx] *= scale
+                vec_val *= scale
 
-            var bf16_vec = lmv[vec_idx].cast[out_dtype]()
+            var bf16_vec = vec_val.cast[out_dtype]()
             var packed = bitcast[DType.uint32, 4](bf16_vec)
             st_shared_v4_b32_at_bf16_elem_off[out_dtype=out_dtype](
                 shared_mem,
@@ -2006,7 +1992,7 @@ struct MLA_SM100_Decode_Common[
         tiles_done: Int,
         col0: Int,
         num_keys: Int,
-        s_row: LocalTensor[Self.AccumType, Layout.row_major(half_load)],
+        s_row: LocalTensor[Self.AccumType, row_major[half_load]()],
         mask: Self.MaskType,
         score_mod: Self.ScoreModType,
         prompt_idx: UInt32,
@@ -2208,9 +2194,9 @@ struct MLA_SM100_Decode_Common[
             tcgen05_fence_after()
 
             # Each thread reads one full 32-element row (128 rows x 32 columns)
-            var s_row = LocalTensor[
-                Self.AccumType, Layout.row_major(half_load)
-            ].stack_allocation()
+            var s_row = tt_stack_allocation[
+                dtype = Self.AccumType, address_space = AddressSpace.LOCAL
+            ](row_major[half_load]())
             var s_row_val = tcgen05_ld[
                 datapaths=32,
                 bits=32,
@@ -2225,7 +2211,13 @@ struct MLA_SM100_Decode_Common[
             s_cons.release()
 
             var s_row_val_vectorized = s_row.vectorize[2]()
-            s_row_val_vectorized *= scale_log2e
+            comptime vs_count = (half_load + 2 - 1) // 2
+
+            @parameter
+            for _vi in range(vs_count):
+                s_row_val_vectorized[_vi] = (
+                    s_row_val_vectorized[_vi] * scale_log2e
+                )
 
             @parameter
             if NoMask or CausalMask:
@@ -2330,11 +2322,10 @@ struct MLA_SM100_Decode_Common[
 
             # Write P to shared memory (no scaling needed)
             write_bf16x2_row_to_smem_chunked[
-                layout = Layout.row_major(half_load),
+                half_load,
                 out_dtype = Self.q_type,
                 in_dtype = Self.AccumType,
                 config = Self.config,
-                local_tile_size=half_load,
             ](p_smem, s_row, col0, row)
 
             fence_async_view_proxy()
@@ -2476,9 +2467,9 @@ struct MLA_SM100_Decode_Common[
                 ) * epi_half_load * UInt32(blocks_per_stage)
 
                 # Load all data for this tile into a LocalTensor
-                var o_row_subtile = LocalTensor[
-                    Self.AccumType, Layout.row_major(total_elems)
-                ].stack_allocation()
+                var o_row_subtile = tt_stack_allocation[
+                    dtype = Self.AccumType, address_space = AddressSpace.LOCAL
+                ](row_major[total_elems]())
                 o_row_subtile.ptr.store(
                     0,
                     tcgen05_ld[
@@ -2498,11 +2489,10 @@ struct MLA_SM100_Decode_Common[
 
                 # Write O to shared memory with scaling
                 write_bf16x2_row_to_smem_chunked[
-                    layout = Layout.row_major(total_elems),
+                    total_elems,
                     out_dtype = Self.output_type,
                     in_dtype = Self.AccumType,
                     config = Self.config,
-                    local_tile_size=total_elems,
                     chunk_size=chunk_size,
                     scale_needed=True,
                 ](stage_ptr, o_row_subtile, epi_col0, row, o_scale_li)
@@ -2582,9 +2572,10 @@ struct MLA_SM100_Decode_Common[
                             + UInt32(i) * UInt32(Self.config.BN)
                             + UInt32(slot_idx) * UInt32(o_stride)
                         )
-                        var o_row_subtile = LocalTensor[
-                            Self.AccumType, Layout.row_major(Self.config.BN)
-                        ].stack_allocation()
+                        var o_row_subtile = tt_stack_allocation[
+                            dtype = Self.AccumType,
+                            address_space = AddressSpace.LOCAL,
+                        ](row_major[Self.config.BN]())
                         o_row_subtile.ptr.store(
                             0,
                             tcgen05_ld[

@@ -28,6 +28,7 @@ from nn.mha_sm100_2q import (
     KVPipeline,
     SharedMemPointer,
     SharedMemTensor,
+    SharedMemLT,
     elect,
     MBarType,
     TMemTile,
@@ -44,7 +45,11 @@ from nn.mha_sm100_2q import (
     TMADestination,
     sub_ftz,
 )
+from layout._layout import row_major
+from layout._tile_tensor import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import (
+    get_seq_info,
+    KVTMATile,
     get_seq_info,
     KVTMATile,
     kv_coord,
@@ -53,6 +58,8 @@ from nn.mha_fa3_utils import (
     NullPointer,
     OptionalPointer,
     output_reg_to_smem_st_matrix,
+    _LocalTT,
+    _SharedMemTT,
     Pack,
     produce,
     q_coord,
@@ -184,29 +191,25 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         Self.config.swizzle_mode,
     ]()
 
-    comptime KType = SharedMemTensor[
+    comptime k_tma_layout = tile_layout_k_major[
         Self.dtype,
-        tile_layout_k_major[
-            Self.dtype,
-            Self.config.BN,
-            Self.config.BK0,
-            Self.config.swizzle_mode,
-        ](),
-    ]
+        Self.config.BN,
+        Self.config.BK0,
+        Self.config.swizzle_mode,
+    ]()
+    comptime v_tma_layout = tile_layout_mn_major[
+        Self.dtype,
+        128,
+        Self.config.BK1,
+        Self.config.swizzle_mode,
+    ]()
 
-    comptime VType = SharedMemTensor[
-        Self.dtype,
-        tile_layout_mn_major[
-            Self.dtype,
-            128,
-            Self.config.BK1,
-            Self.config.swizzle_mode,
-        ](),
-    ]
-    comptime KPairType = TMADestination[Self.dtype, Self.KType.layout]
-    comptime VPairType = TMADestination[Self.dtype, Self.VType.layout]
-    comptime k_elements = Self.KType.layout.size()
-    comptime v_elements = Self.VType.layout.size()
+    comptime KType = SharedMemLT[Self.dtype, Self.k_tma_layout]
+    comptime VType = SharedMemLT[Self.dtype, Self.v_tma_layout]
+    comptime KPairType = TMADestination[Self.dtype, Self.k_tma_layout]
+    comptime VPairType = TMADestination[Self.dtype, Self.v_tma_layout]
+    comptime k_elements = Self.k_tma_layout.size()
+    comptime v_elements = Self.v_tma_layout.size()
     comptime k_bytes = Self.k_elements * size_of[Self.dtype]()
     comptime v_bytes = Self.v_elements * size_of[Self.dtype]()
     comptime SMemType = SharedMemPointer[Scalar[Self.dtype]]
@@ -873,10 +876,7 @@ struct SM100MLA[
         @always_inline
         fn mask_row[
             BN: Int, //, mask_strategy: MaskStrategy
-        ](
-            s: LocalTensor[Self.accum_type, Layout.row_major(BN)],
-            kv_row: UInt32,
-        ):
+        ](s: LocalTensor[Self.accum_type, row_major[BN]()], kv_row: UInt32,):
             apply_mask[
                 use_score_mod = Self.use_score_mod, mask_strategy=mask_strategy
             ](
@@ -907,9 +907,9 @@ struct SM100MLA[
 
         pipeline_s.wait()
         tcgen05_fence_after()
-        s = LocalTensor[
-            Self.accum_type, Layout.row_major(Self.config.BN)
-        ].stack_allocation()
+        s = tt_stack_allocation[
+            dtype = Self.accum_type, address_space = AddressSpace.LOCAL
+        ](row_major[Self.config.BN]())
 
         @parameter
         @always_inline
@@ -994,9 +994,7 @@ struct SM100MLA[
             Self.BM, Self.BN
         ]()
         comptime num_sets = len(mask_sets)
-        var row_max: Scalar[Self.accum_type] = load_mask_max[
-            mask_strategy = mask_strategies[num_sets - 1]
-        ](kv_row)
+        var row_max: Scalar[Self.accum_type]
         var mask_iters: StaticTuple[UInt32, num_sets] = {}
 
         @parameter
@@ -1082,12 +1080,12 @@ struct SM100MLA[
             # independent of the number of batches.
             comptime AccType = SIMD[Self.accum_type, exp_simd]
             var acc: AccType = exp2(rebind[AccType](vs[0]) - row_max)
-            vs[0] = rebind[vs.element_type](acc)
+            vs[0] = rebind[vs.ElementType](acc)
 
             @parameter
             for i in range(1, batch_size // 2):
                 vsi = exp2(rebind[AccType](vs[i]) - row_max)
-                vs[i] = rebind[vs.element_type](vsi)
+                vs[i] = rebind[vs.ElementType](vsi)
                 acc += vsi
 
             # at this point, we need 32 fewer fp32 registers but 16 more u32
@@ -1097,8 +1095,8 @@ struct SM100MLA[
 
             BatchTileType(p_tmem).store(
                 LocalTensor[
-                    Self.accum_type, Layout.row_major(batch_size * exp_simd)
-                ](s.ptr)
+                    Self.accum_type, row_major[batch_size * exp_simd]()
+                ](s.ptr, row_major[batch_size * exp_simd]())
             )
 
             @parameter
@@ -1115,8 +1113,8 @@ struct SM100MLA[
                 ) // size_of[Self.accum_type]()
                 BatchTileType(p_tmem + UInt32(tmem_offset)).store(
                     LocalTensor[
-                        Self.accum_type, Layout.row_major(batch_size * exp_simd)
-                    ](s.ptr + el_offset)
+                        Self.accum_type, row_major[batch_size * exp_simd]()
+                    ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
                 )
 
             @parameter
@@ -1133,8 +1131,8 @@ struct SM100MLA[
                 ) // size_of[Self.accum_type]()
                 RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
                     LocalTensor[
-                        Self.accum_type, Layout.row_major(remainder * exp_simd)
-                    ](s.ptr + el_offset)
+                        Self.accum_type, row_major[remainder * exp_simd]()
+                    ](s.ptr + el_offset, row_major[remainder * exp_simd]())
                 )
 
             tcgen05_store_wait()
@@ -1320,9 +1318,9 @@ struct SM100MLA[
         ]()
 
         comptime num_rows = o.layout[0].size()
-        inv_row_sums = LocalTensor[
-            Self.accum_type, Layout.row_major(num_rows)
-        ].stack_allocation()
+        inv_row_sums = tt_stack_allocation[
+            dtype = Self.accum_type, address_space = AddressSpace.LOCAL
+        ](row_major[num_rows]())
         lane = local_row % 32
         lane_row = lane // 4
 
@@ -1383,22 +1381,18 @@ struct SM100MLA[
             @parameter
             for j in range(iters):
                 comptime ofs = i * ST.frag_size + j * (ST.frag_size // iters)
-                var rows_of_o_frags = LocalTensor[
-                    Self.accum_type,
-                    layout = Layout.row_major(1, ST.frag_size // iters),
-                ](
-                    o.ptr + ofs
+                comptime reg_layout = row_major[1, ST.frag_size // iters]()
+                var rows_of_o_frags = _LocalTT[Self.accum_type, reg_layout](
+                    o.ptr + ofs, reg_layout
                 )  # all the repeats across n and m
 
                 comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
                     j * (Self.BM // 2) * swizzle_granularity
                 )
-                accum_smem_warp_tile = LayoutTensor[
-                    Self.output_type,
-                    Layout.row_major(16, swizzle_granularity),
-                    MutAnyOrigin,
-                    address_space = AddressSpace.SHARED,
-                ](o_smem + warp_smem_offset)
+                comptime smem_layout = row_major[16, swizzle_granularity]()
+                var accum_smem_warp_tile = _SharedMemTT[
+                    Self.output_type, smem_layout
+                ](o_smem + warp_smem_offset, smem_layout)
 
                 output_reg_to_smem_st_matrix[
                     BM=16,
@@ -1488,13 +1482,13 @@ struct SM100MLA[
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        comptime SMemTensor[layout: Layout] = SharedMemTensor[
+        comptime SMemTensorLT[layout: Layout] = SharedMemLT[
             Self.KVLUTType.dtype, layout
         ]
-        comptime QType = SMemTensor[type_of(q_tma_op).layout]
-        comptime KType = SMemTensor[type_of(k_tma_op).layout]
-        comptime KRopeSMType = SMemTensor[type_of(k_rope_tma_op).layout]
-        comptime VType = SMemTensor[type_of(v_tma_op).layout]
+        comptime QType = SMemTensorLT[type_of(q_tma_op).layout]
+        comptime KType = SMemTensorLT[type_of(k_tma_op).layout]
+        comptime KRopeSMType = SMemTensorLT[type_of(k_rope_tma_op).layout]
+        comptime VType = SMemTensorLT[type_of(v_tma_op).layout]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
         var kv_head_idx: UInt32 = seq_info.head_idx

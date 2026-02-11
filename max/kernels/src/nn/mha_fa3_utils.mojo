@@ -30,6 +30,8 @@ from gpu.compute.mma import st_matrix
 from gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple
 from layout.layout import UNKNOWN_VALUE, Layout
+from layout._layout import Layout as InternalLayout, row_major
+from layout._tile_tensor import TileTensor
 from layout.layout_tensor import (
     LayoutTensor,
     copy_local_to_shared,
@@ -70,6 +72,26 @@ from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 from builtin.device_passable import DevicePassable
 from utils import StaticTuple
+
+
+comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
+    dtype,
+    InternalLayout[
+        shape_types = layout.shape_types,
+        stride_types = layout.stride_types,
+    ],
+    MutAnyOrigin,
+    address_space = AddressSpace.LOCAL,
+]
+comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
+    dtype,
+    InternalLayout[
+        shape_types = layout.shape_types,
+        stride_types = layout.stride_types,
+    ],
+    MutAnyOrigin,
+    address_space = AddressSpace.SHARED,
+]
 
 
 trait OptionalPointer(Copyable, TrivialRegisterPassable):
@@ -1448,18 +1470,8 @@ fn output_reg_to_smem_st_matrix[
 ](
     warp_group_thread_idx: UInt32,
     local_warp_group_idx: UInt32,
-    output_reg_tile: LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas, o_frag_size),
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ],
-    accum_smem_tile: LayoutTensor[
-        output_type,
-        Layout.row_major(BM, padded_depth),
-        MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ],
+    output_reg_tile: _LocalTT[accum_type, row_major[num_m_mmas, o_frag_size]()],
+    accum_smem_tile: _SharedMemTT[output_type, row_major[BM, padded_depth]()],
 ):
     comptime st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[
@@ -1484,11 +1496,9 @@ fn output_reg_to_smem_st_matrix[
             )
             var accum_smem_idx = swizzle(st_matrix_rt_layout(st_matrix_args))
             var offset = accum_smem_tile.ptr + accum_smem_idx
-            var output_frag = (
-                output_reg_tile.tile[1, 8](m_mma, i)
-                .load[8](0, 0)
-                .cast[output_type]()
-            )
+            var output_frag = output_reg_tile.ptr.load[width=8](
+                m_mma * o_frag_size + i * 8
+            ).cast[output_type]()
             var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)
             st_matrix[simd_width=4](offset, output_frag_f32_packed)
 
@@ -1536,11 +1546,15 @@ fn output_reg_to_smem[
     @parameter
     if use_stmatrix:
         var warp_group_thread_idx = tid % UInt32(WARPGROUP_SIZE)
+        comptime reg_layout = row_major[num_m_mmas, o_frag_size]()
+        comptime smem_layout = row_major[BM, padded_depth]()
         output_reg_to_smem_st_matrix[BM, swizzle, num_consumer](
             warp_group_thread_idx,
             local_warp_group_idx,
-            output_reg_tile,
-            accum_smem_tile,
+            _LocalTT[accum_type, reg_layout](output_reg_tile.ptr, reg_layout),
+            _SharedMemTT[output_type, smem_layout](
+                accum_smem_tile.ptr, smem_layout
+            ),
         )
     else:
         comptime mma_thread_layout = Layout.row_major(8, 4)

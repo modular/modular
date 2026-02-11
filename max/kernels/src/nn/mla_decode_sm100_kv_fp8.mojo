@@ -61,6 +61,8 @@ from nn.mha_sm100_2q import (
     LocalTensor,
     elect_mma_arrive,
 )
+from layout._layout import row_major
+from layout._tile_tensor import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 
 comptime logger = Logger()
@@ -740,18 +742,18 @@ struct MLA_SM100_Decode_KV_FP8[
             # This approach loads ALL blocks first, then uses ONE barrier,
             # then stores ALL blocks. This will significantly reduce the number of barriers.
             # and improve the performance (18 barriers vs 1 barrier here).
-            var p0a_all = LocalTensor[
-                DType.uint32, Layout.row_major(4, NumBlocks)
-            ].stack_allocation()
-            var p0b_all = LocalTensor[
-                DType.uint32, Layout.row_major(4, NumBlocks)
-            ].stack_allocation()
-            var p1a_all = LocalTensor[
-                DType.uint32, Layout.row_major(4, NumBlocks)
-            ].stack_allocation()
-            var p1b_all = LocalTensor[
-                DType.uint32, Layout.row_major(4, NumBlocks)
-            ].stack_allocation()
+            var p0a_all = tt_stack_allocation[
+                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+            ](row_major[4, NumBlocks]())
+            var p0b_all = tt_stack_allocation[
+                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+            ](row_major[4, NumBlocks]())
+            var p1a_all = tt_stack_allocation[
+                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+            ](row_major[4, NumBlocks]())
+            var p1b_all = tt_stack_allocation[
+                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+            ](row_major[4, NumBlocks]())
 
             @parameter
             for b in range(NumBlocks):
