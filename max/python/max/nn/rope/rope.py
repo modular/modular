@@ -21,22 +21,19 @@ from ..module import Module, module_dataclass
 
 
 def theta(dim: int, base: float) -> Tensor:
-    """Inverse-exponential frequencies for producing rotary positional
-    embeddings.
+    """Returns inverse-exponential frequencies for rotary positional embeddings.
 
     See 'Roformer: Enhanced Transformer with Rotary Embedding'
     (arxiv.org/pdf/2104.09864).
 
-    In the paper,
-
     Args:
         dim: The embedding dimension. By convention each component
             of the complex valued embedding is considered its own dim
-            in the embedding, so output has shape `dim // 2`.
-        base: ...
+            in the embedding, so output has shape ``dim // 2``.
+        base: Scaling factor for the frequency.
 
     Returns:
-        The 1d frequency tensor with shape (n // 2).
+        The 1D frequency tensor with shape ``(dim // 2,)``.
     """
     dtype, _ = defaults()
     # Use float64 for higher range in the exponential
@@ -49,8 +46,9 @@ def embed(
     frequencies: Tensor,
     max_sequence_length: int,
 ) -> Tensor:
-    """Computes the frequency tensor for complex exponentials
-    in cis representation (cos(s) + i * sin(s)) for a given sequence length.
+    """Computes the frequency tensor for complex exponentials in cis representation.
+
+    Uses ``cos(s) + i * sin(s)`` for the given sequence length.
 
     Args:
         frequencies: Frequencies to embed in the cyclic space
@@ -58,7 +56,7 @@ def embed(
 
     Returns:
         The embedded frequency tensor with shape
-        (max_sequence_length, n / 2, 2).
+        ``(max_sequence_length, n / 2, 2)``.
     """
     with defaults_like(frequencies):
         t = Tensor.arange(max_sequence_length, dtype=DType.float64)
@@ -71,8 +69,7 @@ def embed(
 def positional_embedding(
     dim: int, base: float, max_sequence_length: int
 ) -> Tensor:
-    """Computes rotary positional embeddings up to a specified
-    sequence length.
+    """Computes rotary positional embeddings up to a specified sequence length.
 
     See 'Roformer: Enhanced Transformer with Rotary Embedding'
     (arxiv.org/pdf/2104.09864).
@@ -84,7 +81,7 @@ def positional_embedding(
         max_sequence_length: The number of positional embeddings to compute.
 
     Returns:
-        RoPE positional embeddings of shape (max_sequence_length, dim / 2, 2).
+        RoPE positional embeddings of shape ``(max_sequence_length, dim / 2, 2)``.
     """
     return embed(theta(dim, base), max_sequence_length)
 
@@ -96,10 +93,12 @@ class RotaryEmbedding(Module[[Tensor, DimLike], Tensor]):
 
     @property
     def dim(self) -> int:
+        """Returns the embedding dimension."""
         return int(self.weight.shape[1]) * 2
 
     @property
     def max_sequence_length(self) -> int:
+        """Returns the maximum sequence length."""
         return int(self.weight.shape[0])
 
     def __rich_repr__(self):

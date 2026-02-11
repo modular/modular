@@ -193,9 +193,10 @@ def in_graph_context() -> bool:
 
 
 def functional(op: Op[..., Any]) -> Op[..., Any]:
-    """Decorator that converts a graph operation to support multiple tensor
-    types."""
+    """Converts a graph operation to support multiple tensor types.
 
+    Returns a wrapped op that can be called with various tensor types.
+    """
     op = _return_tensors(op)
 
     @functools.wraps(op)

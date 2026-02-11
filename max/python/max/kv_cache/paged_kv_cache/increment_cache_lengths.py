@@ -152,8 +152,12 @@ def _execute_ragged_increment_cache_lengths_graph(
     during multi-token generation.
 
     Args:
-        kv_cache_inputs: Current cache state tuples (blocks, lengths, lookup, max_lengths)
-        prev_model_inputs: Previous model inputs including row offsets
+        model: Loaded model executing the increment cache lengths graph.
+        params: KVCache parameters (e.g. data parallel degree).
+        devices: Devices to run on (one per replica).
+        use_broadcast: Whether to use broadcast for row-offset transfers.
+        kv_cache_inputs: Current cache state tuples (blocks, lengths, lookup, max_lengths).
+        prev_model_inputs: Previous model inputs including row offsets.
 
     Returns:
         Updated cache input tuples with incremented lengths.
@@ -255,6 +259,7 @@ class IncrementCacheLengthsProcessor:
         kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Any,
     ) -> Sequence[RaggedKVCacheInputs]:
+        """Runs the increment cache lengths graph and returns updated cache inputs."""
         return _execute_ragged_increment_cache_lengths_graph(
             self._model,
             self._params,

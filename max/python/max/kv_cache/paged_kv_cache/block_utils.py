@@ -100,8 +100,9 @@ class KVCacheBlock:
 
 
 class FreeKVCacheBlockQueue:
-    """This class organizes a list of KVCacheBlock objects to a doubly linked
-    list of free blocks. We implement this class instead of using Python
+    """Organizes KVCacheBlock objects as a doubly linked list of free blocks.
+
+    We implement this class instead of using Python
     builtin deque to support removing a block in the middle of the queue
     in O(1) time. To close the performance gap to the builtin deque which is
     implemented in C++, this class does not allocate any Python objects when
@@ -153,7 +154,7 @@ class FreeKVCacheBlockQueue:
 
     @traced
     def remove(self, block: KVCacheBlock) -> None:
-        """Remove a block in the free list and reduce num_free_blocks by 1.
+        """Removes a block from the free list and reduces num_free_blocks by 1.
 
         Args:
             block: The block to remove.
@@ -179,8 +180,7 @@ class FreeKVCacheBlockQueue:
 
     @traced
     def append(self, block: KVCacheBlock) -> None:
-        """Put a block back into the free list and increase
-        num_free_blocks by 1.
+        """Puts a block back into the free list and increases num_free_blocks by 1.
 
         Args:
             block: The block to append.

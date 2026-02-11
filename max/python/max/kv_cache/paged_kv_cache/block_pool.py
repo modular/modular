@@ -164,8 +164,7 @@ class BlockPool:
 
     @traced
     def alloc_block(self) -> tuple[KVCacheBlock, int | None]:
-        """Allocate a block from the free block queue."""
-
+        """Allocates a block from the free block queue."""
         # First allocate block
         curr_block = self.free_block_queue.popleft()
         assert curr_block.ref_cnt == 0
@@ -182,12 +181,11 @@ class BlockPool:
 
     @traced
     def free_block(self, block: KVCacheBlock) -> None:
-        """Free a block by decreasing its reference count.
+        """Frees a block by decreasing its reference count.
 
         If the reference count is 0, the block is added to the free block queue.
-
-        Note that a block can be in both the prefix cache and the free block
-        queue at the same time.
+        A block can be in both the prefix cache and the free block queue at the
+        same time.
         """
         block.ref_cnt -= 1
         assert block.ref_cnt >= 0
@@ -196,9 +194,9 @@ class BlockPool:
 
     @traced
     def touch(self, block: KVCacheBlock) -> None:
-        """Touching a block increases its reference count by 1, and may remove
-        the block from the free queue. This is used when a block is hit by
-        another request with the same prefix.
+        """Increases the block's reference count by 1 and may remove it from the free queue.
+
+        Used when a block is hit by another request with the same prefix.
         """
         # ref_cnt=0 means this block is in the free list (i.e. eviction
         # candidate), so remove it.
@@ -227,9 +225,7 @@ class BlockPool:
 
     @traced
     def assert_runtime_invariants(self, active_bids: list[int]) -> None:
-        """If runtime checks are enabled, assert that the runtime checks are
-        correct.
-        """
+        """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return
 

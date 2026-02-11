@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""KVCache Transfer Engine"""
+"""KVCache transfer engine."""
 
 from __future__ import annotations
 
@@ -36,8 +36,7 @@ logger = logging.getLogger("max.pipelines")
 def available_port(
     start_port: int = 8000, end_port: int = 9000, max_attempts: int = 100
 ) -> int:
-    """
-    Find an available TCP port in the given range.
+    """Finds an available TCP port in the given range.
 
     Args:
         start_port (int): The lower bound of the port range (inclusive).
@@ -199,6 +198,7 @@ class TensorAgent:
         elts_per_page: int,
         memory_type: nixl.MemoryType,
     ) -> TensorAgent:
+        """Creates and registers a NIXL agent for the given tensor."""
         # Create NIXL agent
         agent = nixl.Agent(
             agent_name,
@@ -278,7 +278,8 @@ class KVTransferEngineMetadata(
 ):
     """Metadata associated with a transfer engine.
 
-    This is safe to send between threads/processes."""
+    This is safe to send between threads/processes.
+    """
 
     name: str
     """Base name of the transfer engine."""
@@ -304,7 +305,8 @@ class TransferReqData(
 ):
     """Metadata associated with a transfer request.
 
-    This is safe to send between threads/processes."""
+    This is safe to send between threads/processes.
+    """
 
     dst_name: str
     """Base name of destination engine."""
@@ -820,7 +822,7 @@ class KVTransferEngine:
             self._cleanup_recv_transfer(transfer_req)
 
     def sync_and_release(self, transfer_req: TransferReqData) -> None:
-        """Wait for a transfer to complete and release the transfer after it completes."""
+        """Waits for a transfer to complete and releases it."""
         while not self.is_complete(transfer_req):
             time.sleep(0.001)
         self.cleanup_transfer(transfer_req)
@@ -832,7 +834,6 @@ class KVTransferEngine:
         Moving this logic into the __del__ destructor does causes a UCX error for
         unknown reasons.
         """
-
         # Release all transfers
         for send_transfer_req in list(self.inflight_send_transfers.values()):
             self._cleanup_send_transfer(send_transfer_req)

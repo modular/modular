@@ -75,7 +75,8 @@ class RMSNorm(Module[[Tensor], Tensor]):
     eps: float
 
     def __init__(self, dim: int, eps: float = 1e-6) -> None:
-        """Construct RMSNorm.
+        """Constructs RMSNorm.
+
         Args:
             dim: Size of last dimension of the expected input.
             eps: Value added to denominator for numerical stability.
@@ -85,6 +86,7 @@ class RMSNorm(Module[[Tensor], Tensor]):
 
     @property
     def dim(self) -> Dim:
+        """Returns the embedding dimension."""
         return self.weight.shape[0]
 
     def __rich_repr__(self):
@@ -93,6 +95,7 @@ class RMSNorm(Module[[Tensor], Tensor]):
         yield "eps", self.eps, 1e-6
 
     def forward(self, x: Tensor) -> Tensor:
+        """Applies RMS normalization to the input."""
         return rms_norm(x, self.weight, self.eps)
 
 
@@ -105,6 +108,7 @@ class GemmaRMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Applies Gemma-style RMS normalization to the input."""
         return rms_norm(
             x,
             self.weight,

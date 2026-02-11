@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Group Normalization"""
+"""Group normalization."""
 
 from __future__ import annotations
 

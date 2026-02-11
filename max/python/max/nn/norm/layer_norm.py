@@ -114,5 +114,6 @@ class LayerNorm(Module[[Tensor], Tensor]):
         return gamma, beta
 
     def forward(self, x: Tensor) -> Tensor:
+        """Applies layer normalization to the input."""
         gamma, beta = self._affine_params(x)
         return layer_norm(x, gamma, beta, self.eps, self.keep_dtype)
