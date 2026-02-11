@@ -1315,20 +1315,16 @@ PIPELINES = {
             kl_div_threshold=5.5e-03,
         ),
     ),
-    # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
-    # TODO(SERVOPT-571): Re-enable after fixing.
-    # "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     tags=["big", "nvidia-only"],
-    #     run=_make_pipeline_runner(
-    #         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
-    #         encoding="bfloat16",
-    #         # TODO(MODELS-516): Investigate need for high tolerances here.
-    #         # TODO(GENAI-216): Investigate non-deterministic output.
-    #         cos_dist_threshold=4.1e-03,
-    #         kl_div_threshold=2.6e-01,
-    #     ),
-    # ),
+    "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=_make_pipeline_runner(
+            pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
+            encoding="bfloat16",
+            cos_dist_threshold=4.0e-03,
+            kl_div_threshold=9.0e-02,
+        ),
+    ),
     # TODO(MODELS-812): Investigate deepseek timeout
     "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],

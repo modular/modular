@@ -76,6 +76,7 @@ class DeepseekV2(Transformer):
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
                     graph_mode=config.graph_mode,
+                    buffer_size=config.max_batch_context_length,
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(

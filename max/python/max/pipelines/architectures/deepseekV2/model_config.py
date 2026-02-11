@@ -79,6 +79,8 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    max_batch_context_length: int = 131072
+
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
     @override
