@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
-
+# RUN: %mojo %s
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from math import iota
@@ -154,7 +152,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
         var num_ints = size // size_of[DType.int32]()
 
         # Warmup iterations
-        for i in range(warmup_iters):
+        for _ in range(warmup_iters):
             ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
                 dst,
                 src,

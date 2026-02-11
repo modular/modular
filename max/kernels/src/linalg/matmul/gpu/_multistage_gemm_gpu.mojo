@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     align_of,
     has_amd_gpu_accelerator,
@@ -72,7 +69,8 @@ from ...structuring import SMemTile
 fn distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype]], arg1: UnsafePointer[Scalar[dtype]]
+    arg0: UnsafePointer[Scalar[dtype]],
+    arg1: UnsafePointer[Scalar[dtype]],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
@@ -100,7 +98,9 @@ fn warp_split_k_reduction[
         mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
     ],
     smem: UnsafePointer[
-        Scalar[c_type], address_space = AddressSpace.SHARED, ...
+        mut=True,
+        Scalar[c_type],
+        address_space = AddressSpace.SHARED,
     ],
 ):
     comptime red_layout = Layout.row_major(1, num_threads_per_warp_k_part)

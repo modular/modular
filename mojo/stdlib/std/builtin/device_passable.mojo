@@ -22,16 +22,16 @@ trait DevicePassable:
     """Indicate the type being used on accelerator devices."""
 
     @staticmethod
-    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
+    fn _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
         @parameter
         if not _type_is_eq[Self, Self.device_type]() and conforms_to(
             Self.device_type, DevicePassable
         ):
             return downcast[
                 Self.device_type, DevicePassable
-            ]._is_convertible_to_device_type[T]()
+            ]._is_convertible_to_device_type[SrcT]()
         else:
-            return _type_is_eq[T, Self.device_type]()
+            return _type_is_eq[SrcT, Self.device_type]()
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """

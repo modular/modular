@@ -25,12 +25,11 @@ from ..value import TensorValue, TensorValueLike
 
 
 def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
-    """
-    Returns a new Tensor as the result of copying the input tensor N_i times
-    on each dimension, where N_i = repeats[i].
+    """Returns a new tensor by tiling the input along each dimension.
 
-    The i-th dimension of output shape will be the ith dimension of input shape
-    multiplied by N_i.
+    The input is copied ``N_i`` times on the i-th dimension, where ``N_i = repeats[i]``.
+    The i-th dimension of output shape will be the i-th dimension of input shape
+    multiplied by ``N_i``.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape

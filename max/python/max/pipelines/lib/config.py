@@ -35,7 +35,7 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from .config_enums import PipelineRole
 from .hf_utils import is_diffusion_pipeline
@@ -269,7 +269,9 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "Whether to enable the overlap scheduler. This feature allows the scheduler "
             "to run alongside GPU execution. This helps improve GPU utilization. "
-            "This is an experimental feature which may crash and burn."
+            "This is an experimental feature which may crash and burn. "
+            "This feature will be enabled by default for some selected architectures. "
+            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
         ),
     )
 
@@ -827,7 +829,36 @@ class PipelineConfig(ConfigFileModel):
 
             self._validate_pipeline_config_for_speculative_decoding()
 
-        # Disable features that are not supported with the overlap scheduler.
+        self._validate_and_resolve_overlap_scheduler()
+
+    def _validate_and_resolve_overlap_scheduler(self) -> None:
+        if self.force:
+            return
+
+        # Automatically enable overlap scheduling for select architectures.
+        if not self.enable_overlap_scheduler:
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                huggingface_repo=self.model.huggingface_model_repo,
+                use_legacy_module=self.use_legacy_module,
+            )
+            if (
+                arch is not None
+                and arch.name == "LlamaForCausalLM_Legacy"
+                and self.pipeline_role == PipelineRole.PrefillAndDecode
+                and not self.sampling.enable_structured_output
+                and not self.sampling.enable_variable_logits
+                and not self.speculative
+                and not self.lora
+                and self.model.device_specs[0].device_type != "cpu"
+            ):
+                self.enable_overlap_scheduler = True
+                self.max_num_steps = 1
+                logger.info(
+                    f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
+                    "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+                )
+
+        # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.enable_overlap_scheduler:
             if self.pipeline_role != PipelineRole.PrefillAndDecode:
                 raise ValueError(
@@ -854,6 +885,10 @@ class PipelineConfig(ConfigFileModel):
             if self.max_num_steps > 1:
                 raise ValueError(
                     "Max num steps > 1 is not supported with the Overlap scheduler."
+                )
+            if self.model.device_specs[0].device_type == "cpu":
+                raise ValueError(
+                    "Overlap scheduler is not supported with CPU models."
                 )
 
     def _validate_and_resolve_max_num_steps(self) -> None:
@@ -1546,3 +1581,14 @@ class AudioGenerationConfig(PipelineConfig):
             prometheus_metrics_mode=prometheus_metrics_mode,
             **config_flags,
         )
+
+    @override
+    def _validate_and_resolve_overlap_scheduler(self) -> None:
+        if self.force:
+            return
+
+        if self.enable_overlap_scheduler:
+            raise ValueError(
+                "The Overlap scheduler does not support Audio Generation. "
+                "Detected AudioGenerationConfig."
+            )

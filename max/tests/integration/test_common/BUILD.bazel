@@ -92,16 +92,26 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "model_output",
+    testonly = True,
+    srcs = ["model_output.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_library(
     name = "evaluate",
     testonly = True,
     srcs = ["evaluate.py"],
     imports = [".."],
     deps = [
+        ":model_output",
         ":numerics",
         ":test_data",
-        requirement("numpy"),
         requirement("transformers"),
-        requirement("typing-extensions"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

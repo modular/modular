@@ -31,7 +31,7 @@ def compute_group_stats[
     Scalar[t],
     Scalar[t],
 ]:
-    comptime assert vec.rank == 1, "vec must be rank 1"
+    comptime assert vec.flat_rank == 1, "vec must be rank 1"
     comptime assert vec.element_size == 1
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
