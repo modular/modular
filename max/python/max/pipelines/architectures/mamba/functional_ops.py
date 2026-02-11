@@ -160,10 +160,12 @@ def causal_conv1d_update(
 
     # Dot product: sum(new_conv_state * weight, axis=-1)
     # weight: (channels, width) -> (1, channels, width) for broadcast
+    # Cast new_conv_state to x.dtype for the multiply to avoid mixed dtypes
     weight_cast = weight.cast(x.dtype)
     weight_3d = F.reshape(weight_cast, [1, weight.shape[0], weight.shape[1]])
+    new_conv_state_cast = new_conv_state.cast(x.dtype)
     # F.sum keeps the reduced dim (size 1), so result is (batch, channels, 1)
-    conv_out = F.sum(new_conv_state * weight_3d, axis=2)
+    conv_out = F.sum(new_conv_state_cast * weight_3d, axis=2)
 
     if bias is not None:
         bias_cast = bias.cast(x.dtype)

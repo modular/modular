@@ -27,7 +27,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
-from .interfaces import ArchConfig, ArchConfigWithKVCache
+from .interfaces import ArchConfig, ArchConfigWithKVCache, ArchConfigWithSSMCache
 from .model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -121,6 +121,18 @@ class MemoryEstimator:
             )
 
         if not isinstance(arch_config, ArchConfigWithKVCache):
+            # Check for SSM cache (Mamba models)
+            if isinstance(arch_config, ArchConfigWithSSMCache):
+                ssm_params = arch_config.get_ssm_cache_params()
+                cache_mem = cls.available_kv_cache_memory(
+                    model_weights_size,
+                    activation_memory_size,
+                    model_config,
+                    devices,
+                )
+                return ssm_params.compute_max_seq_len_fitting_in_cache(
+                    cache_mem
+                )
             return None
 
         arch_config = cast(ArchConfigWithKVCache, arch_config)
@@ -465,6 +477,18 @@ class MemoryEstimator:
                 max_seq_len=max_seq_len,
                 available_cache_memory=available_kv_cache_memory,
             )
+        elif isinstance(arch_config, ArchConfigWithSSMCache):
+            ssm_params = arch_config.get_ssm_cache_params()
+            max_seq_len = (
+                max_seq_len_override
+                if max_seq_len_override is not None
+                else arch_config.get_max_seq_len()
+            )
+            return ssm_params.estimated_memory_size(
+                available_cache_memory=available_kv_cache_memory,
+                max_batch_size=max_batch_size,
+                max_seq_len=max_seq_len,
+            )
         else:
             return 0
 
@@ -714,6 +738,8 @@ class MemoryEstimator:
             available_kv_cache_memory: Available memory for KV cache in bytes.
         """
         if not isinstance(arch_config, ArchConfigWithKVCache):
+            # SSM cache models (Mamba) have very small per-sequence state,
+            # so batch size defaults are fine. Return minimum for now.
             return _MIN_DEFAULT_BATCH_SIZE
         if len(devices) == 1 and devices[0].is_host:
             # batching on CPU is generally not useful, so we hard-code a batch size of 1.
