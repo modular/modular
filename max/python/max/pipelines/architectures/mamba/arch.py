@@ -26,7 +26,7 @@ from .model_config import MambaConfig
 from .tokenizer import MambaTokenizer
 
 mamba_arch = SupportedArchitecture(
-    name="MambaForCausalLM",
+    name="MambaForCausalLM_Legacy",
     example_repo_ids=[
         "state-spaces/mamba-130m-hf",
     ],
