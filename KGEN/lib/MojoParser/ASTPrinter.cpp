@@ -186,8 +186,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
         //                        align: Int = _default_alignment[type]()]:
         def = evaluator.getReboundAttribute(def);
         if (isEqualCanon(paramValue, def) &&
-            passingKind != PassingKind::PosOnly &&
-            passingKind != PassingKind::Contextual) {
+            passingKind != PassingKind::PosOnly) {
           // If we skip a posOrKw then include keyword names for any other
           // posOrKw's that come after it.
           skippedPositional |= (passingKind == PassingKind::PosOrKw);
@@ -200,7 +199,6 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
       case PassingKind::Implicit:
       case PassingKind::Inferred:
         continue; // Don't print implicit parameters at all.
-      case PassingKind::Contextual:
       case PassingKind::PosOnly:
         break; // Never include a name.
       case PassingKind::PosOrKw:
