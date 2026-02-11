@@ -13,7 +13,7 @@
 """Utilities for working with mock pipeline_model for unit testing"""
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -31,7 +31,6 @@ from max.nn.legacy.kv_cache import (
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    InputKey,
     KVCacheConfig,
     LoRAManager,
     ModelInputs,
@@ -40,6 +39,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
+from max.pipelines.lib.graph_capture import DeviceGraphExecutor
 from transformers import AutoConfig
 
 
@@ -114,7 +114,9 @@ class MockPipelineModel(PipelineModel):
         self._device_graph_capture_enabled = (
             pipeline_config.device_graph_capture
         )
-        self._device_graph_states: dict[InputKey, Any] = {}
+        self._device_graph_executor = DeviceGraphExecutor(
+            self._execution_trace_inputs
+        )
 
     @classmethod
     def calculate_max_seq_len(

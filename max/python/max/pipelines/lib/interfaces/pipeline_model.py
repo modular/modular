@@ -38,6 +38,7 @@ logger = logging.getLogger("max.pipelines")
 from max.graph import DeviceRef
 
 from ..config_enums import SupportedEncoding
+from ..graph_capture import DeviceGraphExecutor
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
@@ -163,25 +164,6 @@ class ModelInputs:
                 setattr(self, key, value)
 
 
-@dataclass
-class _DeviceGraphState:
-    buffers: list[Buffer]
-    outputs: ModelOutputs
-
-
-class InputKey:
-    def __init__(self, *inputs: Buffer):
-        self.keys = tuple((input.dtype, tuple(input.shape)) for input in inputs)
-
-    def __eq__(self, other: Any):
-        if not isinstance(other, InputKey):
-            return False
-        return self.keys == other.keys
-
-    def __hash__(self) -> int:
-        return hash(self.keys)
-
-
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 
@@ -259,7 +241,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self._device_graph_capture_enabled = (
             pipeline_config.device_graph_capture
         )
-        self._device_graph_states: dict[InputKey, _DeviceGraphState] = {}
+
+        self._device_graph_executor = DeviceGraphExecutor(
+            self._execution_trace_inputs
+        )
 
     @property
     def lora_manager(self) -> LoRAManager | None:
@@ -410,11 +395,28 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     def _execution_trace_inputs(
         self, model_inputs: ModelInputs
-    ) -> Sequence[Buffer]:
+    ) -> list[Buffer]:
         raise NotImplementedError(
             "Device graph inputs not implemented for model. "
             "Override _execution_trace_inputs to enable capture."
         )
+
+    def pre_capture_execution_trace(
+        self,
+        model_inputs: list[ModelInputs],
+        batch_size: int,
+    ) -> None:
+        """Pre-captures device graphs for the given model inputs.
+
+        Args:
+            model_inputs: List of model inputs to capture graphs for.
+            batch_size: The batch size for execution.
+        """
+        model = getattr(self, "model", None)
+        if model is None or not hasattr(model, "capture"):
+            return
+
+        self._device_graph_executor.capture(model, model_inputs)
 
     def execute_with_capture(
         self,
@@ -437,93 +439,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if batch_size > 1:
             return self.execute(model_inputs)
 
-        self.pre_capture_execution_trace([model_inputs], batch_size)
+        self._device_graph_executor.capture(model, [model_inputs])
 
-        graph_inputs = list(self._execution_trace_inputs(model_inputs))
-
-        state = self._device_graph_states.get(InputKey(*graph_inputs))
-
-        if state is None:
-            return self.execute(model_inputs)
-
-        if not self._copy_graph_inputs(graph_inputs, state.buffers):
-            return self.execute(model_inputs)
-
-        try:
-            model.replay(*state.buffers)
-        except Exception:
-            logger.exception("Device graph replay failed for replica.")
-            raise
-
-        return state.outputs
-
-    def pre_capture_execution_trace(
-        self,
-        model_inputs: Sequence[ModelInputs],
-        batch_size: int,
-    ) -> None:
-        """Captures execution traces for device graph replay when enabled."""
-        if not self._device_graph_capture_enabled:
-            return
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "capture"):
-            return
-
-        if batch_size > 1:
-            return
-
-        for inputs in model_inputs:
-            graph_inputs = list(self._execution_trace_inputs(inputs))
-
-            key = InputKey(*graph_inputs)
-
-            if key in self._device_graph_states:
-                continue
-
-            try:
-                outputs = model.capture(*graph_inputs)
-            except Exception:
-                logger.exception("Device graph capture failed for replica.")
-                raise
-
-            self._device_graph_states[key] = _DeviceGraphState(
-                buffers=graph_inputs,
-                outputs=ModelOutputs(*outputs),
-            )
-            logger.info(
-                f"Device graph captured {len(self._device_graph_states)}."
-            )
-
-    def _copy_graph_inputs(
-        self, src: Sequence[Buffer], dst: Sequence[Buffer]
-    ) -> bool:
-        if len(src) != len(dst):
-            logger.error(
-                "Device graph input count mismatch: src=%s dst=%s",
-                len(src),
-                len(dst),
-            )
-            return False
-
-        for src_value, dst_value in zip(src, dst, strict=True):
-            if src_value is dst_value:
-                continue
-
-            try:
-                dst_value.inplace_copy_from(src_value)
-            except ValueError:
-                logger.error(
-                    "Device graph input mismatch: src_shape=%s dst_shape=%s src_dtype=%s dst_dtype=%s src_device=%s dst_device=%s",
-                    src_value.shape,
-                    dst_value.shape,
-                    src_value.dtype,
-                    dst_value.dtype,
-                    src_value.device,
-                    dst_value.device,
-                )
-                return False
-        return True
+        return ModelOutputs(
+            *self._device_graph_executor.replay(model, model_inputs)
+        )
 
     @abstractmethod
     def prepare_initial_token_inputs(

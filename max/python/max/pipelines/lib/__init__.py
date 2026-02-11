@@ -35,7 +35,6 @@ from .hf_utils import (
 )
 from .interfaces import (
     AlwaysSignalBuffersMixin,
-    InputKey,
     KVCacheMixin,
     ModelInputs,
     ModelOutputs,
