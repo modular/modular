@@ -59,8 +59,9 @@ Python's float-returning semantics.
 7 // -3  # = -3 (floor toward -infinity)
 
 # Float __floordiv__ follows the same semantics, but still returns Self
-7.0 / 3.0     # = 2.0
-7.0 // -3.0   # = -3.0 (floor toward -infinity)
+7.0 / 3.0     # = 2.333... (regular floating-point division)
+7.0 // 3.0    # = 2.0      (floor toward -infinity)
+7.0 // -3.0   # = -3.0     (floor toward -infinity)
 ```
 
 ### Behavior Summary
