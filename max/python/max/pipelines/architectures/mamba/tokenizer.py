@@ -32,23 +32,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("max.pipelines")
 
-# Simple default chat template for base models without instruction tuning.
-# This template concatenates messages with role prefixes for basic chat functionality.
-# For production use, consider using an instruction-tuned Mamba variant or
+# Simple passthrough chat template for base models without instruction tuning.
+# This template concatenates message content without adding role prefixes,
+# since base models (like state-spaces/mamba-130m-hf) are not instruction-tuned
+# and role prefixes cause incoherent output.
+# For chat applications, consider using an instruction-tuned Mamba variant or
 # providing a custom chat template via --chat-template.
 DEFAULT_MAMBA_CHAT_TEMPLATE = (
     "{% for message in messages %}"
-    "{% if message['role'] == 'system' %}"
-    "{{ message['content'] }}\n\n"
-    "{% elif message['role'] == 'user' %}"
-    "User: {{ message['content'] }}\n\n"
-    "{% elif message['role'] == 'assistant' %}"
-    "Assistant: {{ message['content'] }}\n\n"
-    "{% endif %}"
+    "{{ message['content'] }}"
     "{% endfor %}"
-    "{% if add_generation_prompt %}"
-    "Assistant:"
-    "{% endif %}"
 )
 
 
