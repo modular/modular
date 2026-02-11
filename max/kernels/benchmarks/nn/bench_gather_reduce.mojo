@@ -18,7 +18,9 @@ from random import random_si64
 from sys import simd_width_of, size_of
 
 from benchmark import Bench, Bencher, BenchId
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._layout import row_major
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 from nn.gather_scatter import gather_reduce
 
 from utils import IndexList
@@ -52,18 +54,13 @@ fn bench_gather_reduce(mut b: Bencher):
     var indices_storage = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
     )
-    comptime layout_2d = Layout.row_major[2]()
-    var input = LayoutTensor[type, layout_2d](
-        input_storage, RuntimeLayout[layout_2d].row_major(input_shape)
-    ).fill(1)
-    var output = LayoutTensor[type, layout_2d](
-        output_storage, RuntimeLayout[layout_2d].row_major(output_shape)
+    var input = TileTensor(input_storage, row_major(Coord(input_shape))).fill(1)
+    var output = TileTensor(
+        output_storage, row_major(Coord(output_shape))
     ).fill(0)
-    var indices = LayoutTensor[DType.int32, layout_2d](
-        indices_storage, RuntimeLayout[layout_2d].row_major(indices_shape)
-    )
-    for i in range(indices.runtime_layout.shape.value[0]):
-        for j in range(indices.runtime_layout.shape.value[1]):
+    var indices = TileTensor(indices_storage, row_major(Coord(indices_shape)))
+    for i in range(Int(indices.dim[0]())):
+        for j in range(Int(indices.dim[1]())):
             indices[i, j] = random_si64(0, num_rows).cast[DType.int32]()
 
     @parameter

@@ -179,3 +179,30 @@ def test_coerce_device_specs_input_passthrough() -> None:
         DeviceSpec.accelerator(1),
         DeviceSpec.accelerator(3),
     ]
+
+
+def test_coerce_device_specs_input_string_list(
+    mocker: MockerFixture,
+) -> None:
+    """CLI parsers like cyclopts may pass device specs as list[str]."""
+    mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[DeviceSpec.cpu()],
+    )
+    # Single-element string list with gpu: prefix
+    assert coerce_device_specs_input(["gpu:0,1"]) == [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
+    ]
+    # Single-element string list with named values
+    assert coerce_device_specs_input(["cpu"]) == [DeviceSpec.cpu()]
+    assert coerce_device_specs_input(["gpu"]) == [DeviceSpec.accelerator(0)]
+    assert coerce_device_specs_input(["default"]) == [DeviceSpec.cpu()]
+    # Multi-element numeric string list (e.g. --device-specs 0 1)
+    assert coerce_device_specs_input(["0", "1"]) == [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
+    ]
+    assert coerce_device_specs_input(["3"]) == [DeviceSpec.accelerator(3)]

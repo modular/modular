@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.gather_scatter import gather
-
-from utils import IndexList
 
 
 # CHECK-LABEL: test_gather
@@ -29,40 +28,21 @@ fn test_gather(ctx: DeviceContext) raises:
         comptime row_size = 4
         comptime num_indices = 16
 
-        # Input tensor layout [num_rows, row_size]
-        comptime input_layout = Layout.row_major(num_rows, row_size)
-        var input_shape = IndexList[2](num_rows, row_size)
-        var input_runtime = RuntimeLayout[input_layout].row_major(input_shape)
-
-        # Indices tensor layout [num_indices]
-        comptime indices_layout = Layout.row_major(num_indices)
-        var indices_shape = IndexList[1](num_indices)
-        var indices_runtime = RuntimeLayout[indices_layout].row_major(
-            indices_shape
-        )
-
-        # Output tensor layout [num_indices, row_size]
-        comptime output_layout = Layout.row_major(num_indices, row_size)
-        var output_shape = IndexList[2](num_indices, row_size)
-        var output_runtime = RuntimeLayout[output_layout].row_major(
-            output_shape
-        )
-
         # Create device buffers
         var input_device = ctx.enqueue_create_buffer[DType.float32](
-            input_shape.flattened_length()
+            num_rows * row_size
         )
         var indices_device = ctx.enqueue_create_buffer[indices_type](
-            indices_shape.flattened_length()
+            num_indices
         )
         var output_device = ctx.enqueue_create_buffer[DType.float32](
-            output_shape.flattened_length()
+            num_indices * row_size
         )
 
         # Initialize input data
         with input_device.map_to_host() as input_host:
-            var input_tensor = LayoutTensor[DType.float32, input_layout](
-                input_host, input_runtime
+            var input_tensor = TileTensor(
+                input_host, row_major[num_rows, row_size]()
             )
             for i in range(num_rows):
                 for j in range(row_size):
@@ -70,37 +50,37 @@ fn test_gather(ctx: DeviceContext) raises:
 
         # Initialize indices
         with indices_device.map_to_host() as indices_host:
-            var indices_tensor = LayoutTensor[indices_type, indices_layout](
-                indices_host, indices_runtime
+            var indices_tensor = TileTensor(
+                indices_host, row_major[num_indices]()
             )
             for i in range(num_indices):
                 indices_tensor[i] = Scalar[indices_type](i // 2)
             indices_tensor[0] = -1
             indices_tensor[1] = -num_rows
 
-        # Create layout tensors for GPU operations
-        var input_tensor = LayoutTensor[DType.float32, input_layout](
-            input_device, input_runtime
+        # Create TileTensors for GPU operations
+        var input_tensor = TileTensor(
+            input_device, row_major[num_rows, row_size]()
         )
-        var indices_tensor = LayoutTensor[indices_type, indices_layout](
-            indices_device, indices_runtime
+        var indices_tensor = TileTensor(
+            indices_device, row_major[num_indices]()
         )
-        var output_tensor = LayoutTensor[DType.float32, output_layout](
-            output_device, output_runtime
+        var output_tensor = TileTensor(
+            output_device, row_major[num_indices, row_size]()
         )
 
         gather[axis=0, target="gpu"](
-            output_tensor,
-            input_tensor,
-            indices_tensor,
+            output_tensor.make_dynamic[DType.int64](),
+            input_tensor.make_dynamic[DType.int64](),
+            indices_tensor.make_dynamic[DType.int64](),
             context=ctx,
         )
         ctx.synchronize()
 
         # Read back and print results
         with output_device.map_to_host() as output_host:
-            var output_tensor_host = LayoutTensor[DType.float32, output_layout](
-                output_host, output_runtime
+            var output_tensor_host = TileTensor(
+                output_host, row_major[num_indices, row_size]()
             )
             print(output_tensor_host[0, 0])
             print(output_tensor_host[1, 0])

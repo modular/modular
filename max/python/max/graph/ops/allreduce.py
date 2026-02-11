@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max._core.dialects import mo
+from max._core.dialects import builtin, mo
 
 from ..graph import Graph
 from ..type import _ChainType
@@ -73,6 +73,8 @@ def sum(
     for input_tensor, device in zip(inputs, devices, strict=True):
         in_chain = graph.device_chains[device]
         # Each op takes all inputs but only produces output for its device.
+        # hasDeviceBarrier indicates this op has internal device barriers,
+        # so only same-device operand chains need to be waited on.
         result, out_chain = Graph.current._add_op_generated(
             mo.DistributedAllreduceSumOp,
             # Single output tensor type.
@@ -83,6 +85,7 @@ def sum(
             signal_buffers,
             in_chain,
             device,
+            has_device_barrier=builtin.UnitAttr(),
         )
 
         results.append(result.tensor)
@@ -97,6 +100,7 @@ def matmul_allreduce(
     weights: Iterable[TensorValueLike],
     signal_buffers: Iterable[BufferValueLike],
 ) -> list[TensorValue]:
+    """Performs batched matmul then all-reduce over the given inputs, weights, and signal buffers."""
     inputs = _tensor_values(inputs)
     weights = _tensor_values(weights)
     signal_buffers = _buffer_values(signal_buffers)

@@ -219,7 +219,7 @@ def test_to_tile_tensor():
     var tile_tensor = tensor.to_tile_tensor[DType.int64]()
 
     # Verify the layout tensor has the same data
-    comptime assert tile_tensor.rank == 2
+    comptime assert tile_tensor.flat_rank == 2
     assert_equal(tile_tensor[0, 0], 0.0)
     assert_equal(tile_tensor[1, 1], 5.0)
     assert_equal(tile_tensor[2, 3], 11.0)
