@@ -62,7 +62,7 @@ fn testTestParamStruct(a: Parameterized[4]):
     # expected-error-re @below {{invalid call to 'method': value passed to 'other' cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
     a.method[7](Parameterized[12]())
     a.method[2](Parameterized[6]())
-    # expected-error @below {{'method' expects 2 positional parameters, but 3 were specified}}
+    # expected-error @below {{'method' expects 1 positional parameter, but 2 were specified}}
     a.method[2, 7]
 
     # expected-error @below {{'Thing' failed to infer parameter 'b'}}
@@ -245,7 +245,7 @@ fn testStructWithParams():
     # expected-error @+1 {{cannot access comptime member 'a3' with unbound parameter 'StructWithParams.a'}}
     _ = StructWithParams.a3
 
-    # expected-error @+1 {{parametric value expects 1 positional parameter, but 2 were specified}}
+    # expected-error @+1 {{parametric value expects 0 positional parameters, but 2 were specified}}
     _ = StructWithRecReference.res[1, 2](1, 2, 3)
 
 

@@ -107,7 +107,7 @@ ParamInf::ParamInf(
   if (getNumPreCheckedParam()) {
     ArrayRef preChecked =
         ArrayRef(getGivenBindings().values).take_front(getNumPreCheckedParam());
-    for (auto &preCheckedOperand : preChecked) {
+    for (auto preCheckedOperand : preChecked) {
       auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
       if (sugarIsa<UnboundAttr>(preCheckParamVal))
         evaluator.appendIndexBinding(TypedAttr());
@@ -1480,7 +1480,14 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     // If not specified/inferrable, variadic always have a default empty
     // value.
-    if (!partial && declaredParamPogs.isPosVarArg(idx)) {
+    bool isInferableVA = [&]() -> bool {
+      return declaredParamPogs.isPosVarArg(idx) ||
+             (declaredParamPogs.getPogs()[idx].getPassingKind() ==
+                  PassingKind::Inferred &&
+              isa<VariadicType>(declaredParamTypes[idx]));
+    }();
+
+    if (!partial && isInferableVA) {
       // FIXME: This isn't rewriting the variadic list for dependent types.
       auto type = declaredParamTypes[idx];
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));

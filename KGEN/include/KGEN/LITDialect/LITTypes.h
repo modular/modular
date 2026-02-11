@@ -165,7 +165,7 @@ public:
   /// the current signature and references are remapped to index references.
   static FnTypeGeneratorType
   prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
-                ArrayRef<VariadicKind> parentVariadics);
+                ArrayRef<StringAttr> paramNames = {});
 
   //===--------------------------------------------------------------------===//
   // Acting as a FnType

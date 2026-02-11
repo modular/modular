@@ -23,14 +23,14 @@ struct MemType(ImplicitlyCopyable):
 
 
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
-# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping1"<[[A:.*]]: !Int, *"m`": origin<0>, |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping1"<[[A:.*]]: !Int, {{.*}}*"m`": origin<0>, |>
 
 
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
-# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<*"n`{{.*}}": origin<0>, [[A]]: !Int, |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<{{.*}}*"n`{{.*}}": origin<0>, [[A]]: !Int, |>
 fn makes_escaping_closure[
     A: Int
-](m: MemType) -> fn (n: MemType) escaping -> MemType:
+](m: MemType) -> fn(n: MemType) escaping -> MemType:
     fn myclosure(n: MemType) -> MemType:
         fn nested_nested(k: MemType, l: MemType) -> MemType:
             return n + k + A

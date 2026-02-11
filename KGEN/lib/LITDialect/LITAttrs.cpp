@@ -271,29 +271,27 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
 }
 
 /// Get a new metadata attribute for a generator with the given number of
-/// positional input parameters prepended to the generator.  An additional
-/// array of variadic info for each new parameter is also required.
+/// positional input parameters prepended to the generator.
 PogListAttr
-PogListAttr::prependContextualParams(ArrayRef<ParamDeclAttr> newParams,
-                                     ArrayRef<VariadicKind> variadic) const {
-  assert(variadic.size() == newParams.size());
+PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> newParams) const {
   if (newParams.empty())
     return *this;
 
   SmallVector<PogMetadataAttr> newPogs;
-  for (auto [param, variadic] : llvm::zip(newParams, variadic))
-    newPogs.push_back(PogMetadataAttr::get(param.getName(),
-                                           PassingKind::Contextual, variadic));
+  for (StringAttr paramName : newParams) {
+    // Strip off variadic kinds and turn the parameter into infer-only too.
+    newPogs.push_back(PogMetadataAttr::get(paramName, PassingKind::Inferred,
+                                           VariadicKind::None));
+  }
   newPogs.append(getPogs().begin(), getPogs().end());
   return PogListAttr::get(getContext(), newPogs, getOrigPackConvention(),
                           getOrigVariadicConvention());
 }
 
 GeneratorMetadataAttrInterface
-PogListAttr::prependContextualParamsFromOps(ArrayRef<ParamDeclAttr> newParams,
+PogListAttr::prependContextualParamsFromOps(ArrayRef<StringAttr> newParams,
                                             ArrayRef<Operation *> ops) const {
-  SmallVector<VariadicKind> variadicMask = getContextualVariadicParams(ops);
-  return prependContextualParams(newParams, variadicMask);
+  return prependAsInferredParams(newParams);
 }
 
 //===----------------------------------------------------------------------===//
