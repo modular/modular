@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""StackedMoE: A consolidated Mixture of Experts layer with stacked weights.
+"""Provides a consolidated Mixture of Experts layer with stacked weights.
 
 This module provides a unified MoE implementation that consolidates patterns
 from multiple architectures (Llama4, Qwen3VL, GptOss) into a single base layer
@@ -46,34 +46,56 @@ class RoutingInfo:
     """Intermediate routing tensors for MoE computation."""
 
     token_expert_order: TensorValue
+    """The indices that sort tokens into expert-processing order."""
+
     expert_start_indices: TensorValue
+    """The starting index of each expert's token group."""
+
     restore_token_order: TensorValue
+    """The indices that restore tokens to their original order."""
+
     expert_ids: TensorValue
+    """The expert identifier for each token group."""
+
     expert_usage_stats: TensorValue
+    """The usage statistics for each expert."""
+
     router_idx_flat: TensorValue
+    """The flattened router indices for each token."""
 
 
 class GateUpFormat(Enum):
-    """Format of the combined gate/up projection weights.
-
-    - CONCATENATED: [gate | up] stored as [num_experts, hidden_dim, 2*moe_dim]
-      Split at moe_dim: gate = output[:, :moe_dim], up = output[:, moe_dim:]
-      Used by: Llama4, Qwen3VL
-
-    - INTERLEAVED: [g0, u0, g1, u1, ...] stored as [num_experts, hidden_dim, 2*moe_dim]
-      Split with stride: gate = output[:, 0::2], up = output[:, 1::2]
-      Used by: GptOss
-    """
+    """Specifies the format of the combined gate/up projection weights."""
 
     CONCATENATED = "concatenated"
+    """Gate and up projections concatenated as ``[gate | up]``.
+
+    Stored as ``[num_experts, hidden_dim, 2 * moe_dim]``.
+    Split at ``moe_dim``: ``gate = output[:, :moe_dim]``,
+    ``up = output[:, moe_dim:]``. Used by Llama4 and Qwen3VL.
+    """
+
     INTERLEAVED = "interleaved"
+    """Gate and up projections interleaved as ``[g0, u0, g1, u1, ...]``.
+
+    Stored as ``[num_experts, hidden_dim, 2 * moe_dim]``.
+    Split with stride: ``gate = output[:, 0::2]``,
+    ``up = output[:, 1::2]``. Used by GptOss.
+    """
 
 
 def silu_activation(gate: TensorValue, up: TensorValue) -> TensorValue:
-    """Standard SiLU gated activation: up * silu(gate).
+    """Computes a SiLU gated activation as ``up * silu(gate)``.
 
     This is the default activation used by most MoE implementations
     including Llama4 and Qwen3VL.
+
+    Args:
+        gate: The gate projection tensor.
+        up: The up projection tensor.
+
+    Returns:
+        The element-wise product of ``up`` and ``silu(gate)``.
     """
     return up * ops.silu(gate)
 
@@ -81,15 +103,15 @@ def silu_activation(gate: TensorValue, up: TensorValue) -> TensorValue:
 def _compute_shard_range(
     shard_dim: int, shard_idx: int, num_devices: int
 ) -> tuple[int, int]:
-    """Compute the start and end indices for a shard.
+    """Computes the start and end indices for a shard.
 
     Args:
-        shard_dim: The dimension to shard.
-        shard_idx: The index of the shard.
+        shard_dim: The total size of the dimension to shard.
+        shard_idx: The index of the current shard.
         num_devices: The total number of devices.
 
     Returns:
-        A tuple of (start, end) indices for the shard.
+        A tuple of ``(start, end)`` indices for the shard.
     """
     base_size, remainder = divmod(shard_dim, num_devices)
 
@@ -117,6 +139,17 @@ def _gate_up_scale_sharding_strategy(
 
     This strategy properly maps weight shard indices to scale indices,
     accounting for the block size used in FP8 quantization.
+
+    Args:
+        weight: The scale weight tensor to shard.
+        i: The shard index.
+        num_devices: The total number of devices.
+        moe_dim: The intermediate dimension of each expert.
+        block_size: The block size used for FP8 quantization scaling.
+        axis: The axis along which to shard. Defaults to ``2``.
+
+    Returns:
+        The concatenated gate and up scale shards for this device.
     """
     weight_start, weight_end = _compute_shard_range(moe_dim, i, num_devices)
 
@@ -150,10 +183,21 @@ def _down_proj_scale_sharding_strategy(
     block_size: int,
     axis: int = 1,
 ) -> TensorValue:
-    """Shards a down projection scale tensor along axis.
+    """Shards a down projection scale tensor along the given axis.
 
     This strategy properly maps weight shard indices to scale indices,
     accounting for the block size used in FP8 quantization.
+
+    Args:
+        weight: The scale weight tensor to shard.
+        i: The shard index.
+        num_devices: The total number of devices.
+        moe_dim: The intermediate dimension of each expert.
+        block_size: The block size used for FP8 quantization scaling.
+        axis: The axis along which to shard. Defaults to ``1``.
+
+    Returns:
+        The down projection scale shard for this device.
     """
     weight_start, weight_end = _compute_shard_range(moe_dim, i, num_devices)
 
@@ -177,20 +221,24 @@ class StackedMoE(Module, Shardable):
     (Llama4, Qwen3VL, GptOss) into a single base layer. All expert weights
     are stored in stacked format rather than as individual MLP experts.
 
-    Weight Tensor Shapes:
-        - gate_up_proj: [num_experts, hidden_dim, 2 * moe_dim]
-        - down_proj: [num_experts, moe_dim, hidden_dim]
-        - Optional FP8 scales: [num_experts, scaled_rows, scaled_cols]
+    Weight tensor shapes:
 
-    Supported Configurations:
-        - Gate/Up formats: concatenated or interleaved
-        - Activation functions: configurable (default: SiLU)
-        - Optional bias support for projections
-        - Optional FP8 quantization with block scaling
-        - Optional shared experts
+    - ``gate_up_proj``: ``[num_experts, hidden_dim, 2 * moe_dim]``
+    - ``down_proj``: ``[num_experts, moe_dim, hidden_dim]``
+    - Optional FP8 scales: ``[num_experts, scaled_rows, scaled_cols]``
 
-    Example:
-        ```python
+    Supported configurations:
+
+    - Gate/up formats: concatenated or interleaved.
+    - Activation functions: configurable (default: SiLU).
+    - Optional bias support for projections.
+    - Optional FP8 quantization with block scaling.
+    - Optional shared experts.
+
+    For example:
+
+    .. code-block:: python
+
         # Basic usage (Llama4/Qwen3VL style)
         moe = StackedMoE(
             devices=[device],
@@ -224,7 +272,34 @@ class StackedMoE(Module, Shardable):
             activation_fn=my_custom_activation,
             has_bias=True,
         )
-        ```
+
+    Args:
+        devices: A list of devices to use for the MoE.
+        hidden_dim: The dimension of the hidden state.
+        num_experts: The total number of experts.
+        num_experts_per_token: The number of experts per token (top-k).
+        moe_dim: The intermediate dimension of each expert.
+        gate_cls: The model-specific gate implementation class.
+        dtype: The data type of the MoE weights. Defaults to
+            ``DType.bfloat16``.
+        gate_up_format: The format of the combined gate/up weights. Defaults
+            to ``GateUpFormat.CONCATENATED``.
+        activation_fn: The activation function taking ``(gate, up)`` and
+            returning the activated output. Defaults to
+            :func:`silu_activation`.
+        has_bias: Whether to include bias for projections. Defaults to
+            ``False``.
+        has_shared_experts: Whether to use shared experts. Defaults to
+            ``False``.
+        shared_experts_dim: The dimension of the shared experts. Defaults to
+            ``0``.
+        float8_config: The configuration for FP8 quantization. Defaults to
+            ``None``.
+        apply_router_weight_first: Whether to apply router weights before
+            expert computation. Defaults to ``False``.
+        is_sharding: Whether this instance is being created for sharding.
+            Set by :meth:`shard()` to skip weight initialization for sharded
+            instances. Defaults to ``False``.
     """
 
     _sharding_strategy: ShardingStrategy | None = None
@@ -249,25 +324,6 @@ class StackedMoE(Module, Shardable):
         apply_router_weight_first: bool = False,
         is_sharding: bool = False,
     ) -> None:
-        """Initialize the StackedMoE layer.
-
-        Args:
-            devices: List of devices to use for the MoE.
-            hidden_dim: The dimension of the hidden state.
-            num_experts: The total number of experts.
-            num_experts_per_token: The number of experts per token (top-k).
-            moe_dim: The intermediate dimension of each expert.
-            gate_cls: The model-specific gate implementation class.
-            dtype: The data type of the MoE weights.
-            gate_up_format: Format of combined gate/up weights.
-            activation_fn: Activation function taking (gate, up) -> output.
-            has_bias: Whether to include bias for projections.
-            has_shared_experts: Whether to use shared experts.
-            shared_experts_dim: The dimension of the shared experts.
-            float8_config: Configuration for FP8 quantization.
-            apply_router_weight_first: Whether to apply router weights first.
-            is_sharding: Set by shard() to skip weight init for sharded instances.
-        """
         super().__init__()
         self.devices = devices
         self.hidden_dim = hidden_dim
@@ -310,7 +366,7 @@ class StackedMoE(Module, Shardable):
             self._init_weights()
 
     def _init_weights(self) -> None:
-        """Initialize stacked weight tensors for all experts."""
+        """Initializes stacked weight tensors for all experts."""
         self._gate_up_weight = Weight(
             name="experts.gate_up_proj",
             shape=[self.num_experts, self.hidden_dim, 2 * self.moe_dim],
@@ -369,34 +425,36 @@ class StackedMoE(Module, Shardable):
 
     @property
     def gate_up_proj_transposed(self) -> TensorValue:
-        """Gate/up weights transposed to [num_experts, out_features, in_features] layout."""
+        """The gate/up weights transposed to ``[num_experts, out_features, in_features]`` layout."""
         return self._gate_up_weight.transpose(1, 2)
 
     @property
     def down_proj_transposed(self) -> TensorValue:
-        """Down weights transposed to [num_experts, out_features, in_features] layout."""
+        """The down weights transposed to ``[num_experts, out_features, in_features]`` layout."""
         return self._down_weight.transpose(1, 2)
 
     @property
     def gate_up_scale_transposed(self) -> TensorValue:
-        """Gate/up scales transposed for FP8 matmul."""
+        """The gate/up scales transposed for FP8 matmul."""
         return self._gate_up_scale.transpose(1, 2)
 
     @property
     def down_scale_transposed(self) -> TensorValue:
-        """Down scales transposed for FP8 matmul."""
+        """The down scales transposed for FP8 matmul."""
         return self._down_scale.transpose(1, 2)
 
     def _split_gate_up(
         self, gate_up_output: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
-        """Split combined gate/up output based on format.
+        """Splits the combined gate/up output based on the configured format.
 
         Args:
-            gate_up_output: Combined output of shape [tokens, 2*moe_dim]
+            gate_up_output: The combined output of shape
+                ``[tokens, 2 * moe_dim]``.
 
         Returns:
-            Tuple of (gate, up) tensors each of shape [tokens, moe_dim]
+            A tuple of ``(gate, up)`` tensors, each of shape
+            ``[tokens, moe_dim]``.
         """
         if self.gate_up_format == GateUpFormat.CONCATENATED:
             gate = gate_up_output[:, : self.moe_dim]
@@ -412,15 +470,16 @@ class StackedMoE(Module, Shardable):
         bias_weight: TensorValue,
         expert_assignments: TensorValue,
     ) -> TensorValue:
-        """Apply expert-specific bias to output.
+        """Applies expert-specific bias to the output.
 
         Args:
             output: The matmul output tensor.
-            bias_weight: Stacked bias tensor [num_experts, out_dim].
-            expert_assignments: Expert indices for each token.
+            bias_weight: The stacked bias tensor of shape
+                ``[num_experts, out_dim]``.
+            expert_assignments: The expert indices for each token.
 
         Returns:
-            Output with bias added.
+            The output with expert-specific bias added.
         """
         bias_per_token = ops.gather(bias_weight, expert_assignments, axis=0)
         return output + bias_per_token
@@ -430,7 +489,18 @@ class StackedMoE(Module, Shardable):
         gate_up_output: TensorValue,
         routing: RoutingInfo,
     ) -> TensorValue:
-        """Apply bias (if present), split gate/up, and compute gated activation."""
+        """Applies bias (if present), splits gate/up, and computes gated activation.
+
+        Args:
+            gate_up_output: The combined gate/up projection output.
+            routing: The routing information for expert assignments.
+
+        Returns:
+            The activated output tensor.
+
+        Raises:
+            ValueError: If ``gate_up_output`` is not BF16.
+        """
         if self.has_bias:
             expert_assignments = ops.gather(
                 routing.router_idx_flat, routing.token_expert_order, axis=0
@@ -446,7 +516,14 @@ class StackedMoE(Module, Shardable):
         return self.activation_fn(gate, up)
 
     def _prepare_routing(self, router_idx: TensorValue) -> RoutingInfo:
-        """Compute token-to-expert routing indices."""
+        """Computes token-to-expert routing indices.
+
+        Args:
+            router_idx: The router index tensor from the gate.
+
+        Returns:
+            A ``RoutingInfo`` containing all routing tensors.
+        """
         router_idx_flat = ops.reshape(router_idx, [-1])
         router_idx_int32 = ops.cast(router_idx_flat, DType.int32)
 
@@ -468,13 +545,13 @@ class StackedMoE(Module, Shardable):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Apply the StackedMoE layer.
+        """Applies the stacked MoE layer.
 
         Args:
-            x: Input tensor of shape (seq_len, hidden_dim)
+            x: The input tensor of shape ``(seq_len, hidden_dim)``.
 
         Returns:
-            Output tensor of shape (seq_len, hidden_dim)
+            The output tensor of shape ``(seq_len, hidden_dim)``.
         """
         seq_len = x.shape[0]
 
@@ -531,7 +608,15 @@ class StackedMoE(Module, Shardable):
         permuted_states: TensorValue,
         routing: RoutingInfo,
     ) -> TensorValue:
-        """BF16 forward pass."""
+        """Runs the BF16 forward pass through the expert projections.
+
+        Args:
+            permuted_states: The input states reordered by expert assignment.
+            routing: The routing information for expert assignments.
+
+        Returns:
+            The down-projected output tensor.
+        """
         gate_up_output = grouped_matmul_ragged(
             permuted_states,
             self.gate_up_proj_transposed,
@@ -568,7 +653,18 @@ class StackedMoE(Module, Shardable):
         permuted_states: TensorValue,
         routing: RoutingInfo,
     ) -> TensorValue:
-        """FP8 forward pass with dynamic quantization."""
+        """Runs the FP8 forward pass with dynamic quantization.
+
+        Args:
+            permuted_states: The input states reordered by expert assignment.
+            routing: The routing information for expert assignments.
+
+        Returns:
+            The down-projected output tensor.
+
+        Raises:
+            ValueError: If ``permuted_states`` is not BF16.
+        """
         assert self.float8_config is not None
         assert self.float8_config.input_scale.block_size is not None
         input_block_size = self.float8_config.input_scale.block_size[1]
@@ -635,12 +731,19 @@ class StackedMoE(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
-        """Get the sharding strategy for the module."""
+        """The sharding strategy for this module."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the module."""
+        """Sets the sharding strategy and configures sharding for all sub-components.
+
+        Args:
+            strategy: The tensor-parallel sharding strategy to apply.
+
+        Raises:
+            ValueError: If ``strategy`` is not tensor-parallel.
+        """
         if not strategy.is_tensor_parallel:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
@@ -658,13 +761,13 @@ class StackedMoE(Module, Shardable):
             self._set_scale_sharding(strategy)
 
     def _set_gate_sharding(self, strategy: ShardingStrategy) -> None:
-        """Configure sharding for the gate module."""
+        """Configures sharding for the gate module."""
         self.gate.sharding_strategy = ShardingStrategy.replicate(
             strategy.num_devices
         )
 
     def _set_weight_sharding(self, strategy: ShardingStrategy) -> None:
-        """Configure sharding for weight tensors."""
+        """Configures sharding for weight tensors."""
         if not strategy.is_tensor_parallel:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
@@ -683,7 +786,7 @@ class StackedMoE(Module, Shardable):
         )
 
     def _set_bias_sharding(self, strategy: ShardingStrategy) -> None:
-        """Configure sharding for bias tensors."""
+        """Configures sharding for bias tensors."""
         if not strategy.is_tensor_parallel:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
@@ -704,7 +807,7 @@ class StackedMoE(Module, Shardable):
         )
 
     def _set_scale_sharding(self, strategy: ShardingStrategy) -> None:
-        """Configure sharding for FP8 scale tensors."""
+        """Configures sharding for FP8 scale tensors."""
         if not strategy.is_tensor_parallel:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
@@ -739,17 +842,18 @@ class StackedMoE(Module, Shardable):
     def _create_sharded_instance(
         self, device: DeviceRef, sharded_moe_dim: int, sharded_shared_dim: int
     ) -> Self:
-        """Factory method to create a sharded instance.
+        """Creates a sharded instance of this module.
 
         Subclasses can override this to use config-based initialization.
 
         Args:
             device: The device to place the shard on.
-            sharded_moe_dim: The sharded moe_dim for this instance.
-            sharded_shared_dim: The sharded shared_experts_dim for this instance.
+            sharded_moe_dim: The sharded ``moe_dim`` for this instance.
+            sharded_shared_dim: The sharded ``shared_experts_dim`` for this
+                instance.
 
         Returns:
-            A new instance configured for sharding (without weights assigned).
+            A new instance configured for sharding, without weights assigned.
         """
         return self.__class__(
             devices=[device],
@@ -770,13 +874,16 @@ class StackedMoE(Module, Shardable):
         )
 
     def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Self]:
-        """Create sharded views of this MoE module across multiple devices.
+        """Creates sharded views of this MoE module across multiple devices.
 
         Args:
-            devices: Iterable of devices to place the shards on.
+            devices: The devices to place the shards on.
 
         Returns:
-            Sequence of sharded instances, one for each device.
+            A sequence of sharded instances, one for each device.
+
+        Raises:
+            ValueError: If no sharding strategy has been set.
         """
         if not self._sharding_strategy:
             raise ValueError(
