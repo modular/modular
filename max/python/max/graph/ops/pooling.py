@@ -31,8 +31,7 @@ def avg_pool2d(
     ceil_mode: bool = False,
     count_boundary: bool = True,
 ) -> TensorValue:
-    """
-    Perform a 2D average pooling operation on the input tensor.
+    """Perform a 2D average pooling operation on the input tensor.
 
     This function applies a 2D average pooling operation to the input tensor [N, H, W, C].
     The pooling operation slides a window of size `kernel_size` over the input
@@ -78,8 +77,7 @@ def max_pool2d(
     padding: int | tuple[int, int] = 0,
     ceil_mode: bool = False,
 ) -> TensorValue:
-    """
-    Perform a 2D max pooling operation on the input tensor.
+    """Perform a 2D max pooling operation on the input tensor.
 
     This function applies a 2D max pooling operation to the input tensor [N, H, W, C].
     The pooling operation slides a window of size `kernel_size` over the input

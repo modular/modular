@@ -100,6 +100,7 @@ def matmul_allreduce(
     weights: Iterable[TensorValueLike],
     signal_buffers: Iterable[BufferValueLike],
 ) -> list[TensorValue]:
+    """Performs batched matmul then all-reduce over the given inputs, weights, and signal buffers."""
     inputs = _tensor_values(inputs)
     weights = _tensor_values(weights)
     signal_buffers = _buffer_values(signal_buffers)

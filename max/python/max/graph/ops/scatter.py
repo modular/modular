@@ -31,8 +31,7 @@ def scatter(
     indices: TensorValueLike,
     axis: int = -1,
 ) -> TensorValue:
-    """
-    Creates a new symbolic tensor where the updates are written to input according to indices.
+    """Creates a new symbolic tensor where the updates are written to input according to indices.
 
     Args:
         input: The input symbolic tensor to write elements to.
@@ -43,7 +42,6 @@ def scatter(
     Returns:
         A new symbolic tensor representing the result of the scatter operation.
     """
-
     input = TensorValue(input)
 
     if not (-input.rank <= axis < input.rank):
@@ -88,8 +86,7 @@ def scatter_nd(
     updates: TensorValueLike,
     indices: TensorValueLike,
 ) -> TensorValue:
-    """
-    Creates a new symbolic tensor where the updates are scattered into input at specified indices.
+    """Creates a new symbolic tensor where the updates are scattered into input at specified indices.
 
     Args:
         input: The input symbolic tensor to write elements to.
@@ -134,8 +131,7 @@ def masked_scatter(
     updates: TensorValueLike,
     out_dim: DimLike,
 ) -> TensorValue:
-    """
-    Creates a new symbolic tensor where the updates are written to input where mask is true.
+    """Creates a new symbolic tensor where the updates are written to input where mask is true.
 
     Args:
         input: The input symbolic tensor to write elements to.

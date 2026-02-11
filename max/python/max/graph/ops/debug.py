@@ -21,8 +21,7 @@ from ..value import TensorValue
 
 
 def print(value: str | TensorValue, label: str = "debug_tensor") -> None:
-    """
-    Prints the value of a tensor or a string during graph execution.
+    """Prints the value of a tensor or a string during graph execution.
 
     This function is used to output the current value of a tensor and is
     primarily used for debugging purposes within the context of the Max

@@ -35,13 +35,13 @@ def range(
     dtype: DType,
     device: Device | DeviceRef,
 ) -> TensorValue:
-    """Creates a sequence of numbers. The sequence goes from `start` with
-    increments of size `step` up to (but not including) `stop`. All arguments
-    are mandatory and must have the same element type.
+    """Creates a sequence of numbers from start to stop (exclusive) with step.
+
+    All arguments are mandatory and must have the same element type.
 
     Note the following restrictions on input values:
-    1. `step` must be non-zero
-    2. `stop - start` must be zero or have the same sign as `step`
+    1. ``step`` must be non-zero.
+    2. ``stop - start`` must be zero or have the same sign as ``step``.
 
     Args:
         start: The start of the range to generate.
