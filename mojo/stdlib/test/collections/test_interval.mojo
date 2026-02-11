@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.interval import Interval, IntervalElement, IntervalTree
+
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 from testing import TestSuite
 
@@ -167,13 +168,33 @@ def test_interval_floating():
     assert_equal(len(union), 2)
 
 
+def test_interval_tree():
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((15, 20), MyType(33.0))
+    tree.insert((10, 30), MyType(34.0))
+    tree.insert((17, 19), MyType(35.0))
+    tree.insert((5, 20), MyType(36.0))
+    tree.insert((12, 15), MyType(37.0))
+    tree.insert((30, 40), MyType(38.0))
+    print(tree)
+
+    var elems = tree.search((10, 15))
+    assert_equal(len(elems), 3)
+    assert_equal(Float64(elems[0]), 34.0)
+    assert_equal(Float64(elems[1]), 37.0)
+    assert_equal(Float64(elems[2]), 36.0)
+
+# ---------------------------------------------------------------------------
+# Explicit write_repr_to tests
+# ---------------------------------------------------------------------------
+
 def test_interval_write_repr():
     var interval = Interval(1, 10)
 
-    # test write_to (string form)
+    # write_to (str form)
     assert_equal(String(interval), "(1, 10)")
 
-    # test write_repr_to (debug form)
+    # write_repr_to (debug form) — should include type parameter
     assert_equal(repr(interval), "Interval[Int](1, 10)")
 
 
@@ -181,9 +202,12 @@ def test_interval_tree_write_repr():
     var tree = IntervalTree[Int, MyType]()
     tree.insert((1, 5), MyType(1.0))
 
-    # basic sanity: repr should contain typename and len
     var r = repr(tree)
+
+    # Should include typename with parameters
     assert_true("IntervalTree[Int, MyType]" in r)
+
+    # Should include length information
     assert_true("len=1" in r)
 
 

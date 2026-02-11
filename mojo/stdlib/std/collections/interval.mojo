@@ -305,6 +305,11 @@ struct Interval[T: IntervalElement](
         return String.write(self)
 
     fn __repr__(self) -> String:
+        """Returns a debug representation of this interval.
+
+        Returns:
+            A string including the type parameters and bounds.
+        """
         output = String()
         self.write_repr_to(output)
         return output^
@@ -451,6 +456,11 @@ struct _IntervalNode[
         return String.write(self)
 
     fn __repr__(self) -> String:
+        """Returns a debug representation of this interval.
+
+        Returns:
+            A string including the type parameters and bounds.
+        """
         output = String()
         self.write_repr_to(output)
         return output^
@@ -776,6 +786,11 @@ struct IntervalTree[
         return String.write(self)
 
     fn __repr__(self) -> String:
+        """Returns a debug representation of this interval.
+
+        Returns:
+            A string including the type parameters and bounds.
+        """
         output = String()
         self.write_repr_to(output)
         return output^
