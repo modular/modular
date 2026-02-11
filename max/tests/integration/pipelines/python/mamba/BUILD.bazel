@@ -41,19 +41,16 @@ modular_py_test(
         requirement("torch"),
     ],
     imports = [
-        "../",  # For hf_repo_lock
+        "../../..",  # For hf_repo_lock
     ],
-    mojo_deps = select({
-        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
-        "//conditions:default": MAMBA_MOJOPKGS,
-    }),
+    mojo_deps = MAMBA_MOJOPKGS,
     tags = [
         "no-sandbox",
         "requires-network",
     ],
     deps = [
         "//max/python/max/entrypoints:pipelines",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration:hf_repo_lock",
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -77,18 +74,15 @@ modular_py_test(
         requirement("torch"),
     ],
     imports = [
-        "../",  # For hf_repo_lock
+        "../../..",  # For hf_repo_lock
     ],
-    mojo_deps = select({
-        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
-        "//conditions:default": MAMBA_MOJOPKGS,
-    }),
+    mojo_deps = MAMBA_MOJOPKGS,
     tags = [
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration:hf_repo_lock",
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -112,19 +106,16 @@ modular_py_test(
         requirement("torch"),
     ],
     imports = [
-        "../",  # For hf_repo_lock
+        "../../..",  # For hf_repo_lock
     ],
-    mojo_deps = select({
-        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
-        "//conditions:default": MAMBA_MOJOPKGS,
-    }),
+    mojo_deps = MAMBA_MOJOPKGS,
     tags = [
         "no-sandbox",
         "requires-network",
     ],
     deps = [
         "//max/python/max/entrypoints:pipelines",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),

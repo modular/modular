@@ -17,15 +17,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
+from typing_extensions import Self
+
 logger = logging.getLogger("max.pipelines")
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import (
+from max.nn.legacy import (
     ReturnHiddenStates,
     ReturnLogits,
 )
-from max.nn.float8_config import Float8Config
+from max.nn.legacy.float8_config import Float8Config
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -317,3 +319,31 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
         config.use_subgraphs = pipeline_config.model.use_subgraphs
         config.data_parallel_degree = pipeline_config.model.data_parallel_degree
         return config
+
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initialize MambaConfig from a PipelineConfig (ArchConfig protocol)."""
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for "
+                f"'{pipeline_config.model.model_path}', "
+                "but config could not be loaded."
+            )
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        dtype = quantization_encoding.dtype
+        n_devices = len(pipeline_config.model.device_specs)
+        config = cls.generate(
+            pipeline_config=pipeline_config,
+            huggingface_config=huggingface_config,
+            state_dict={},
+            dtype=dtype,
+            n_devices=n_devices,
+        )
+        return config  # type: ignore[return-value]
+
+    def get_max_seq_len(self) -> int:
+        """Get the maximum sequence length (ArchConfig protocol)."""
+        return self.max_seq_len

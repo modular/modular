@@ -22,7 +22,7 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
@@ -207,11 +207,11 @@ class TestSelectiveScanFn:
         compiled_model = session.load(graph)
 
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
         ]
 
         results = compiled_model.execute(*inputs)
@@ -275,12 +275,12 @@ class TestSelectiveScanFn:
         compiled_model = cpu_session.load(graph)
 
         inputs = [
-            Tensor.from_numpy(u).to(cpu_session.devices[0]),
-            Tensor.from_numpy(delta).to(cpu_session.devices[0]),
-            Tensor.from_numpy(A).to(cpu_session.devices[0]),
-            Tensor.from_numpy(B).to(cpu_session.devices[0]),
-            Tensor.from_numpy(C).to(cpu_session.devices[0]),
-            Tensor.from_numpy(D).to(cpu_session.devices[0]),
+            Buffer.from_numpy(u).to(cpu_session.devices[0]),
+            Buffer.from_numpy(delta).to(cpu_session.devices[0]),
+            Buffer.from_numpy(A).to(cpu_session.devices[0]),
+            Buffer.from_numpy(B).to(cpu_session.devices[0]),
+            Buffer.from_numpy(C).to(cpu_session.devices[0]),
+            Buffer.from_numpy(D).to(cpu_session.devices[0]),
         ]
 
         results = compiled_model.execute(*inputs)
@@ -353,11 +353,11 @@ class TestSelectiveScanFn:
         compiled_model = cpu_session.load(graph)
 
         inputs = [
-            Tensor.from_numpy(u).to(cpu_session.devices[0]),
-            Tensor.from_numpy(delta).to(cpu_session.devices[0]),
-            Tensor.from_numpy(A).to(cpu_session.devices[0]),
-            Tensor.from_numpy(B).to(cpu_session.devices[0]),
-            Tensor.from_numpy(C).to(cpu_session.devices[0]),
+            Buffer.from_numpy(u).to(cpu_session.devices[0]),
+            Buffer.from_numpy(delta).to(cpu_session.devices[0]),
+            Buffer.from_numpy(A).to(cpu_session.devices[0]),
+            Buffer.from_numpy(B).to(cpu_session.devices[0]),
+            Buffer.from_numpy(C).to(cpu_session.devices[0]),
         ]
 
         results = compiled_model.execute(*inputs)
@@ -422,12 +422,12 @@ class TestSelectiveScanFn:
         compiled_model = session.load(graph)
 
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
 
         results = compiled_model.execute(*inputs)
@@ -488,12 +488,12 @@ class TestSelectiveScanFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -557,13 +557,13 @@ class TestSelectiveScanFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
-            Tensor.from_numpy(z).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(z).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -627,13 +627,13 @@ class TestSelectiveScanFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
-            Tensor.from_numpy(delta_bias).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(delta_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -696,12 +696,12 @@ class TestSelectiveScanFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -764,12 +764,12 @@ class TestSelectiveScanFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -854,13 +854,13 @@ class TestSelectiveStateUpdateFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(state).to(session.devices[0]),
-            Tensor.from_numpy(x).to(session.devices[0]),
-            Tensor.from_numpy(dt).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(state).to(session.devices[0]),
+            Buffer.from_numpy(x).to(session.devices[0]),
+            Buffer.from_numpy(dt).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -949,14 +949,14 @@ class TestSelectiveStateUpdateFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(state).to(session.devices[0]),
-            Tensor.from_numpy(x).to(session.devices[0]),
-            Tensor.from_numpy(dt).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
-            Tensor.from_numpy(z).to(session.devices[0]),
+            Buffer.from_numpy(state).to(session.devices[0]),
+            Buffer.from_numpy(x).to(session.devices[0]),
+            Buffer.from_numpy(dt).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(z).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1045,14 +1045,14 @@ class TestSelectiveStateUpdateFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(state).to(session.devices[0]),
-            Tensor.from_numpy(x).to(session.devices[0]),
-            Tensor.from_numpy(dt).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
-            Tensor.from_numpy(dt_bias).to(session.devices[0]),
+            Buffer.from_numpy(state).to(session.devices[0]),
+            Buffer.from_numpy(x).to(session.devices[0]),
+            Buffer.from_numpy(dt).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(dt_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1135,13 +1135,13 @@ class TestSelectiveStateUpdateFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(state).to(session.devices[0]),
-            Tensor.from_numpy(x).to(session.devices[0]),
-            Tensor.from_numpy(dt).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(state).to(session.devices[0]),
+            Buffer.from_numpy(x).to(session.devices[0]),
+            Buffer.from_numpy(dt).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1271,16 +1271,16 @@ class TestMambaInnerFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(xz).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_weight).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_bias).to(session.devices[0]),
-            Tensor.from_numpy(x_proj_weight).to(session.devices[0]),
-            Tensor.from_numpy(delta_proj_weight).to(session.devices[0]),
-            Tensor.from_numpy(out_proj_weight).to(session.devices[0]),
-            Tensor.from_numpy(out_proj_bias).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
-            Tensor.from_numpy(delta_bias).to(session.devices[0]),
+            Buffer.from_numpy(xz).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_weight).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_bias).to(session.devices[0]),
+            Buffer.from_numpy(x_proj_weight).to(session.devices[0]),
+            Buffer.from_numpy(delta_proj_weight).to(session.devices[0]),
+            Buffer.from_numpy(out_proj_weight).to(session.devices[0]),
+            Buffer.from_numpy(out_proj_bias).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(delta_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1404,16 +1404,16 @@ class TestMambaInnerFn:
         # Compile and execute on CPU
         compiled_model = cpu_session.load(graph)
         inputs = [
-            Tensor.from_numpy(xz).to(cpu_session.devices[0]),
-            Tensor.from_numpy(conv1d_weight).to(cpu_session.devices[0]),
-            Tensor.from_numpy(conv1d_bias).to(cpu_session.devices[0]),
-            Tensor.from_numpy(x_proj_weight).to(cpu_session.devices[0]),
-            Tensor.from_numpy(delta_proj_weight).to(cpu_session.devices[0]),
-            Tensor.from_numpy(out_proj_weight).to(cpu_session.devices[0]),
-            Tensor.from_numpy(out_proj_bias).to(cpu_session.devices[0]),
-            Tensor.from_numpy(A).to(cpu_session.devices[0]),
-            Tensor.from_numpy(D).to(cpu_session.devices[0]),
-            Tensor.from_numpy(delta_bias).to(cpu_session.devices[0]),
+            Buffer.from_numpy(xz).to(cpu_session.devices[0]),
+            Buffer.from_numpy(conv1d_weight).to(cpu_session.devices[0]),
+            Buffer.from_numpy(conv1d_bias).to(cpu_session.devices[0]),
+            Buffer.from_numpy(x_proj_weight).to(cpu_session.devices[0]),
+            Buffer.from_numpy(delta_proj_weight).to(cpu_session.devices[0]),
+            Buffer.from_numpy(out_proj_weight).to(cpu_session.devices[0]),
+            Buffer.from_numpy(out_proj_bias).to(cpu_session.devices[0]),
+            Buffer.from_numpy(A).to(cpu_session.devices[0]),
+            Buffer.from_numpy(D).to(cpu_session.devices[0]),
+            Buffer.from_numpy(delta_bias).to(cpu_session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1499,12 +1499,12 @@ class TestMambaInnerFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1622,7 +1622,7 @@ class TestMambaInnerFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(x_dbl_np).to(session.devices[0]),
+            Buffer.from_numpy(x_dbl_np).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1781,11 +1781,11 @@ class TestMambaInnerFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(xz_np).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_weight_np).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_bias_np).to(session.devices[0]),
-            Tensor.from_numpy(x_proj_weight_np).to(session.devices[0]),
-            Tensor.from_numpy(delta_proj_weight_np).to(session.devices[0]),
+            Buffer.from_numpy(xz_np).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_weight_np).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_bias_np).to(session.devices[0]),
+            Buffer.from_numpy(x_proj_weight_np).to(session.devices[0]),
+            Buffer.from_numpy(delta_proj_weight_np).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -1956,11 +1956,11 @@ class TestMambaInnerFn:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(xz_np).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_weight_np).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_bias_np).to(session.devices[0]),
-            Tensor.from_numpy(x_proj_weight_np).to(session.devices[0]),
-            Tensor.from_numpy(delta_proj_weight_np).to(session.devices[0]),
+            Buffer.from_numpy(xz_np).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_weight_np).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_bias_np).to(session.devices[0]),
+            Buffer.from_numpy(x_proj_weight_np).to(session.devices[0]),
+            Buffer.from_numpy(delta_proj_weight_np).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2023,11 +2023,11 @@ class TestMambaInnerFn:
         # Compile and execute the same way as the working test
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2095,11 +2095,11 @@ class TestMambaInnerFn:
 
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2167,11 +2167,11 @@ class TestMambaInnerFn:
 
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(xz).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(xz).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2244,12 +2244,12 @@ class TestMambaInnerFn:
 
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(u).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
-            Tensor.from_numpy(weight).to(session.devices[0]),
+            Buffer.from_numpy(u).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(weight).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2320,11 +2320,11 @@ class TestMambaInnerFn:
 
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(large_tensor).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(large_tensor).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2410,13 +2410,13 @@ class TestMambaInnerFn:
 
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(x).to(session.devices[0]),
-            Tensor.from_numpy(conv_weight).to(session.devices[0]),
-            Tensor.from_numpy(conv_bias).to(session.devices[0]),
-            Tensor.from_numpy(delta).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(B).to(session.devices[0]),
-            Tensor.from_numpy(C).to(session.devices[0]),
+            Buffer.from_numpy(x).to(session.devices[0]),
+            Buffer.from_numpy(conv_weight).to(session.devices[0]),
+            Buffer.from_numpy(conv_bias).to(session.devices[0]),
+            Buffer.from_numpy(delta).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(B).to(session.devices[0]),
+            Buffer.from_numpy(C).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 
@@ -2613,16 +2613,16 @@ class TestMambaInnerRef:
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
-            Tensor.from_numpy(xz).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_weight).to(session.devices[0]),
-            Tensor.from_numpy(conv1d_bias).to(session.devices[0]),
-            Tensor.from_numpy(x_proj_weight).to(session.devices[0]),
-            Tensor.from_numpy(delta_proj_weight).to(session.devices[0]),
-            Tensor.from_numpy(out_proj_weight).to(session.devices[0]),
-            Tensor.from_numpy(out_proj_bias).to(session.devices[0]),
-            Tensor.from_numpy(A).to(session.devices[0]),
-            Tensor.from_numpy(D).to(session.devices[0]),
-            Tensor.from_numpy(delta_bias).to(session.devices[0]),
+            Buffer.from_numpy(xz).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_weight).to(session.devices[0]),
+            Buffer.from_numpy(conv1d_bias).to(session.devices[0]),
+            Buffer.from_numpy(x_proj_weight).to(session.devices[0]),
+            Buffer.from_numpy(delta_proj_weight).to(session.devices[0]),
+            Buffer.from_numpy(out_proj_weight).to(session.devices[0]),
+            Buffer.from_numpy(out_proj_bias).to(session.devices[0]),
+            Buffer.from_numpy(A).to(session.devices[0]),
+            Buffer.from_numpy(D).to(session.devices[0]),
+            Buffer.from_numpy(delta_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
 

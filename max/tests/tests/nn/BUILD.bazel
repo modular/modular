@@ -16,10 +16,7 @@ modular_py_test(
     name = "nn",
     timeout = "long",
     srcs = glob(["*.py"]),
-    mojo_deps = select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"] + MAMBA_MOJOPKGS,
-        "//conditions:default": MAMBA_MOJOPKGS,
-    }),
+    mojo_deps = ["//max:MOGGKernelAPI"] + MAMBA_MOJOPKGS,
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -27,6 +24,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
         requirement("numpy"),
     ],
 )

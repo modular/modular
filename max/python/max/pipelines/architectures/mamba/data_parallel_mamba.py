@@ -29,8 +29,8 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import Module
-from max.nn.data_parallelism import split_batch
+from max.nn.legacy import Module
+from max.nn.legacy.data_parallelism import split_batch
 from max.pipelines.lib.lora import LoRAManager
 
 from .mamba import Mamba

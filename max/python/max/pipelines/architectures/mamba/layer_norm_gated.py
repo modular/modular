@@ -30,7 +30,7 @@ from max.graph import (
     ops,
 )
 
-from ..layer import Module, Shardable
+from max.nn.legacy.layer import Module, Shardable
 
 
 def layernorm_fn(

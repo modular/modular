@@ -22,6 +22,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import MambaModel
+from .model_config import MambaConfig
 from .tokenizer import MambaTokenizer
 
 mamba_arch = SupportedArchitecture(
@@ -44,4 +45,5 @@ mamba_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
+    config=MambaConfig,
 )

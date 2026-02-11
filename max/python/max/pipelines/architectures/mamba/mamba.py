@@ -19,14 +19,14 @@ from functools import partial
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
-from max.nn import (
+from max.nn.legacy import (
     ConstantLayerNorm,
     Embedding,
-    FusedRMSNorm,
     LayerList,
     Linear,
     Module,
 )
+from .fused_norm import RMSNorm as FusedRMSNorm
 from .ssm import Block, MambaSSM
 from .ssm_state_cache import (
     SSMStateCacheParams,

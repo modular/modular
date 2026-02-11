@@ -27,15 +27,15 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import (
+from max.nn.legacy import (
     ConstantLayerNorm,
-    FusedRMSNorm,
     LayerList,
     Linear,
     Module,
     Signals,
     VocabParallelEmbedding,
 )
+from .fused_norm import RMSNorm as FusedRMSNorm
 from .ssm import Block, MambaSSM
 
 logger = logging.getLogger("max.pipelines")

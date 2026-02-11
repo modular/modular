@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from functools import reduce
 from operator import mul
 
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -85,14 +85,14 @@ class SSMStateValues:
 
 @dataclass
 class SSMStateCacheInputs:
-    """Runtime inputs for SSM state cache (Tensor form).
+    """Runtime inputs for SSM state cache (Buffer form).
 
-    These are the actual Tensors passed to model.execute() at runtime.
+    These are the actual Buffers passed to model.execute() at runtime.
     """
 
-    conv_state: Tensor
-    ssm_state: Tensor
-    seqlen_offset: Tensor
+    conv_state: Buffer
+    ssm_state: Buffer
+    seqlen_offset: Buffer
 
     def __iter__(self):
         """Iterate through tensors."""
@@ -361,7 +361,7 @@ class SSMStateCacheParams:
             ),
             dtype=self.dtype.to_numpy(),
         )
-        conv_state = Tensor.from_numpy(conv_state_np).to(
+        conv_state = Buffer.from_numpy(conv_state_np).to(
             self.device.to_device()
         )
 
@@ -370,10 +370,10 @@ class SSMStateCacheParams:
             (self.num_layers, batch_size, self.intermediate_size, self.d_state),
             dtype=self.dtype.to_numpy(),
         )
-        ssm_state = Tensor.from_numpy(ssm_state_np).to(self.device.to_device())
+        ssm_state = Buffer.from_numpy(ssm_state_np).to(self.device.to_device())
 
         # Initialize seqlen_offset to 0 (prefill mode)
-        seqlen_offset = Tensor.from_numpy(np.array([0], dtype=np.int64))
+        seqlen_offset = Buffer.from_numpy(np.array([0], dtype=np.int64))
 
         return SSMStateCacheInputs(
             conv_state=conv_state,

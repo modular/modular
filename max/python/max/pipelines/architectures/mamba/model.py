@@ -18,16 +18,16 @@ import os
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, DLPackArray, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputs
 from .ssm_state_cache import SSMStateCacheInputs, SSMStateValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -137,24 +137,24 @@ class MambaInputs(ModelInputs):
     execution.
     """
 
-    tokens: Tensor
-    """Tensor containing the input token IDs."""
+    tokens: Buffer
+    """Buffer containing the input token IDs."""
 
-    input_row_offsets: Tensor
-    """Tensor containing the offsets for each row in the ragged input
+    input_row_offsets: Buffer
+    """Buffer containing the offsets for each row in the ragged input
     sequence."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    return_n_logits: Tensor
+    return_n_logits: Buffer
 
-    data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None
-    """Tensor containing the data parallel splits."""
+    data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None
+    """Buffer containing the data parallel splits."""
 
     # For Mamba without SSM state caching, we need to track all tokens
     # so we can reprocess the full sequence each step
-    accumulated_tokens: Tensor | None = None
+    accumulated_tokens: Buffer | None = None
     """All tokens seen so far (prompt + generated). Used for reprocessing in step mode."""
 
     # SSM state cache for efficient autoregressive generation
@@ -163,20 +163,20 @@ class MambaInputs(ModelInputs):
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        signal_buffers: list[Tensor],
-        return_n_logits: Tensor,
-        lora_ids: Tensor | None = None,
-        lora_ranks: Tensor | None = None,
-        lora_grouped_offsets: Tensor | None = None,
-        num_active_loras: Tensor | None = None,
-        lora_end_idx: Tensor | None = None,
-        batch_seq_len: Tensor | None = None,
-        lora_ids_kv: Tensor | None = None,
-        lora_grouped_offsets_kv: Tensor | None = None,
-        data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None,
-        accumulated_tokens: Tensor | None = None,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        signal_buffers: list[Buffer],
+        return_n_logits: Buffer,
+        lora_ids: Buffer | None = None,
+        lora_ranks: Buffer | None = None,
+        lora_grouped_offsets: Buffer | None = None,
+        num_active_loras: Buffer | None = None,
+        lora_end_idx: Buffer | None = None,
+        batch_seq_len: Buffer | None = None,
+        lora_ids_kv: Buffer | None = None,
+        lora_grouped_offsets_kv: Buffer | None = None,
+        data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None,
+        accumulated_tokens: Buffer | None = None,
         ssm_state_cache: SSMStateCacheInputs | None = None,
     ) -> None:
         """
@@ -259,18 +259,22 @@ class MambaModelBase(PipelineModel[TextContext]):
 
         if self.pipeline_config.model.data_parallel_degree > 1:
             assert model_inputs.data_parallel_splits is not None
-            # Convert data_parallel_splits to Tensor if needed
-            if isinstance(model_inputs.data_parallel_splits, Tensor):
+            # Convert data_parallel_splits to Buffer if needed
+            if isinstance(model_inputs.data_parallel_splits, DLPackArray):
                 splits_tensor = model_inputs.data_parallel_splits
             else:
                 # Convert Sequence[Sequence[int]] to flat array
+                splits = cast(
+                    Sequence[Sequence[int]],
+                    model_inputs.data_parallel_splits,
+                )
                 splits_array = np.concatenate(
                     [
                         np.array(s, dtype=np.int64)
-                        for s in model_inputs.data_parallel_splits
+                        for s in splits
                     ]
                 )
-                splits_tensor = Tensor.from_numpy(splits_array).to(
+                splits_tensor = Buffer.from_numpy(splits_array).to(
                     self.devices[0]
                 )
             model_outputs = self.model.execute(
@@ -310,12 +314,12 @@ class MambaModelBase(PipelineModel[TextContext]):
         )
         has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
 
-        assert isinstance(model_outputs[0], Tensor)
+        assert isinstance(model_outputs[0], DLPackArray)
         if has_offsets and has_hidden_states:
             assert len(model_outputs) == 4
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
-            assert isinstance(model_outputs[3], Tensor)
+            assert isinstance(model_outputs[1], DLPackArray)
+            assert isinstance(model_outputs[2], DLPackArray)
+            assert isinstance(model_outputs[3], DLPackArray)
             return ModelOutputs(
                 logits=model_outputs[1],
                 next_token_logits=model_outputs[0],
@@ -324,8 +328,8 @@ class MambaModelBase(PipelineModel[TextContext]):
             )
         elif has_offsets:
             assert len(model_outputs) == 3
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[1], DLPackArray)
+            assert isinstance(model_outputs[2], DLPackArray)
             return ModelOutputs(
                 logits=model_outputs[1],
                 next_token_logits=model_outputs[0],
@@ -333,7 +337,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             )
         elif has_hidden_states:
             assert len(model_outputs) == 2
-            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[1], DLPackArray)
             return ModelOutputs(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
@@ -381,11 +385,11 @@ class MambaModelBase(PipelineModel[TextContext]):
             tokens_list.append(all_tokens)
 
         tokens_np = np.concatenate(tokens_list)
-        tokens = Tensor.from_numpy(tokens_np).to(self.devices[0])
+        tokens = Buffer.from_numpy(tokens_np).to(self.devices[0])
 
         # Constructs splits for the data parallel execution.
         if dp > 1:
-            data_parallel_splits = Tensor.from_numpy(
+            data_parallel_splits = Buffer.from_numpy(
                 compute_data_parallel_splits(replica_batches)
             )
         else:
@@ -407,11 +411,11 @@ class MambaModelBase(PipelineModel[TextContext]):
 
         inputs = MambaInputs(
             tokens=tokens,
-            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
+            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
                 self.devices[0]
             ),
             signal_buffers=self.signal_buffers,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             data_parallel_splits=data_parallel_splits,
@@ -448,7 +452,7 @@ class MambaModelBase(PipelineModel[TextContext]):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> MambaInputs:
         """Prepare the inputs for the next token in multistep execution.
@@ -467,7 +471,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             prev_tokens_np = prev_model_inputs.accumulated_tokens.to_numpy()
             next_tokens_np = next_tokens.to_numpy()
             accumulated_np = np.concatenate([prev_tokens_np, next_tokens_np])
-            accumulated_tokens = Tensor.from_numpy(accumulated_np).to(
+            accumulated_tokens = Buffer.from_numpy(accumulated_np).to(
                 self.devices[0]
             )
         else:
@@ -484,7 +488,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             [i * accumulated_length for i in range(batch_size + 1)],
             dtype=np.uint32,
         )
-        input_row_offsets = Tensor.from_numpy(row_offsets).to(self.devices[0])
+        input_row_offsets = Buffer.from_numpy(row_offsets).to(self.devices[0])
 
         return MambaInputs(
             tokens=accumulated_tokens,
@@ -518,7 +522,7 @@ class MambaModelBase(PipelineModel[TextContext]):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -583,7 +587,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             dtype=self.dtype,
             n_devices=len(self.devices),
             norm_method=self.norm_method,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=None,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
@@ -596,7 +600,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             self.state_dict = new_state_dict
             return graph
 
-        # Tensor Parallel case
+        # Buffer Parallel case
         if len(self.devices) > 1:
             dist_model: DistributedMamba = DistributedMamba(model_config)
 
@@ -749,7 +753,7 @@ class MambaModelBase(PipelineModel[TextContext]):
         session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
