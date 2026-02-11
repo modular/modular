@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv
+from memory import UnsafePointer as NewUnsafePointer, LegacyUnsafePointer
+from builtin.rebind import rebind
 
 from sys import align_of, simd_width_of
 
@@ -1193,7 +1195,9 @@ fn accumulate_wo_tile[
     ]()
 
     acc.load[partial_load=partial_load](
-        output,
+        rebind[NewUnsafePointer[Scalar[output_dt], MutAnyOrigin]](
+            NewUnsafePointer(output)
+        ),
         output_stride,
         partial_load_size,
     )
@@ -1208,7 +1212,9 @@ fn accumulate_wo_tile[
     )
 
     acc.store[partial_store=partial_load](
-        output,
+        rebind[NewUnsafePointer[Scalar[output_dt], MutAnyOrigin]](
+            NewUnsafePointer(output)
+        ),
         output_stride,
         partial_load_size,
     )
