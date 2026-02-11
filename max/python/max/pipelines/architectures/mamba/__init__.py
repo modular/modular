@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import mamba_arch
+from .arch import mamba_arch, mamba_arch_new
 from .ssm import Block, MambaSSM
 from .ssm_state_cache import (
     SSMStateCacheInputs,
@@ -21,6 +21,7 @@ from .ssm_state_cache import (
 
 __all__ = [
     "mamba_arch",
+    "mamba_arch_new",
     "Block",
     "MambaSSM",
     "SSMStateCacheInputs",

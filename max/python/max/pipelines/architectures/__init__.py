@@ -50,7 +50,7 @@ def register_all_models() -> None:
     from .internvl import internvl_arch
     from .llama3 import llama_arch
     from .llama4 import llama4_arch
-    from .mamba import mamba_arch
+    from .mamba import mamba_arch, mamba_arch_new
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
@@ -82,6 +82,7 @@ def register_all_models() -> None:
         llama_arch,
         llama4_arch,
         mamba_arch,
+        mamba_arch_new,
         bert_arch,
         mistral_arch,
         mistral3_arch,

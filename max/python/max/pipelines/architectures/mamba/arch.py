@@ -21,7 +21,7 @@ from max.pipelines.lib import (
 )
 
 from . import weight_adapters
-from .model import MambaModel
+from .model import MambaModel, MambaModelNew
 from .model_config import MambaConfig
 from .tokenizer import MambaTokenizer
 
@@ -41,6 +41,29 @@ mamba_arch = SupportedArchitecture(
     rope_type=RopeType.normal,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    task=PipelineTask.TEXT_GENERATION,
+    config=MambaConfig,
+)
+
+mamba_arch_new = SupportedArchitecture(
+    name="MambaForCausalLM",
+    example_repo_ids=[
+        "state-spaces/mamba-130m-hf",
+    ],
+    default_encoding=SupportedEncoding.bfloat16,
+    supported_encodings={
+        SupportedEncoding.bfloat16: [],
+        SupportedEncoding.float32: [],
+    },
+    pipeline_model=MambaModelNew,
+    tokenizer=MambaTokenizer,
+    context_type=TextContext,
+    rope_type=RopeType.normal,
+    default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
