@@ -529,6 +529,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         end = Int(a_offsets_host_ptr[i + 1])
         expert_id = expert_ids_host_ptr[i]
 
+        if expert_id < 0 or end - start == 0:
+            continue
+
         var c_stride = c_ref_tensor.runtime_layout.stride[0].get_int()
         var c_slice = LayoutTensor[c_type, new_c_layout, MutAnyOrigin](
             c_ref_tensor.ptr + start * Int(c_stride),
@@ -616,6 +619,16 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
+    # Zero output regions for skipped experts (expert_id == -1 or 0 tokens)
+    # so both kernel and reference outputs match in those regions.
+    for i in range(num_active_experts):
+        start = Int(a_offsets_host_ptr[i])
+        end = Int(a_offsets_host_ptr[i + 1])
+        if expert_ids_host_ptr[i] < 0 or end - start == 0:
+            for j in range(start * N, end * N):
+                c_host_ptr[j] = Scalar[c_type](0)
+                c_host_ref_ptr[j] = Scalar[c_type](0)
+
     assert_almost_equal(
         c_host.data,
         c_host_ref.data,
@@ -661,65 +674,211 @@ def main():
         comptime block_tile_shape = Index(bm, bn, BK)
         comptime umma_shape = Index(bm, bn, MMA_K)
 
-        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            dtype,
-            dtype,
-            out_dtype,
-            scale_dtype,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-            cta_group=1,
-            a_swizzle=swizzle,
-            b_swizzle=swizzle,
-            block_swizzle_size=8,
-            num_experts=6,
-            expert_shape = Index(2048, 1024),
-        ](
-            4,
-            [512, 1000, 2000, 3000],
-            [0, 3, 2, 4],
-            ctx,
-        )
+        @parameter
+        for swapAB in [False, True]:
+            # Large token counts
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                4,
+                [512, 1000, 2000, 3000],
+                [0, 3, 2, 4],
+                ctx,
+            )
 
-        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            dtype,
-            dtype,
-            out_dtype,
-            scale_dtype,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-            cta_group=1,
-            a_swizzle=swizzle,
-            b_swizzle=swizzle,
-            block_swizzle_size=8,
-            num_experts=4,
-            expert_shape = Index(2048, 1024),
-        ](
-            3,
-            [64 + 1, 1024 + 3, 128 * 3 + 2],
-            [2, 0, 1],
-            ctx,
-        )
+            # Unaligned token counts
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                3,
+                [64 + 1, 1024 + 3, 128 * 3 + 2],
+                [2, 0, 1],
+                ctx,
+            )
 
-        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            dtype,
-            dtype,
-            out_dtype,
-            scale_dtype,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-            cta_group=1,
-            a_swizzle=swizzle,
-            b_swizzle=swizzle,
-            block_swizzle_size=8,
-            num_experts=4,
-            expert_shape = Index(2048, 1024),
-        ](
-            3,
-            [128, 256, 1024],
-            [2, 0, 1],
-            ctx,
-        )
+            # Aligned token counts
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                3,
+                [128, 256, 1024],
+                [2, 0, 1],
+                ctx,
+            )
+
+            # Mixed aligned/unaligned per-expert token counts
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                4,
+                [256, 512 + 7, 1024 + 13, 128 + 1],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            # Just-off-alignment: 128-1, 256+1, 512+1, 1024+1
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                4,
+                [127, 257, 513, 1025],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            # Small token counts (total tiles < SM count)
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                3,
+                [31, 97, 63],
+                [2, 0, 1],
+                ctx,
+            )
+
+            # Very small token counts (common MoE case)
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                4,
+                [0, 1, 2, 3],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            # -1 expert_id (invalid expert skipped by kernel)
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                3,
+                [128, 256, 512],
+                [-1, 0, 2],
+                ctx,
+            )
+
+            # -1 expert_id with very small token counts
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape = Index(2048, 1024),
+                swapAB=swapAB,
+            ](
+                4,
+                [0, 3, 1, 2],
+                [-1, 2, -1, 0],
+                ctx,
+            )
