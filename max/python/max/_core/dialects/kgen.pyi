@@ -73,7 +73,7 @@ class GeneratorMetadataAttrInterface(Protocol):
     ) -> GeneratorMetadataAttrInterface: ...
     def prepend_contextual_params_from_ops(
         self,
-        arg0: Sequence[ParamDeclAttr],
+        arg0: Sequence[max._core.dialects.builtin.StringAttr],
         arg1: Sequence[max._core.Operation],
         /,
     ) -> GeneratorMetadataAttrInterface: ...
