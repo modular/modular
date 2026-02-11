@@ -36,8 +36,7 @@ class Scheduler(ABC):
 
 
 class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
-    """
-    Structure representing the result of a scheduler operation for a specific pipeline execution.
+    """Structure representing the result of a scheduler operation for a specific pipeline execution.
 
     This class encapsulates the outcome of a pipeline operation as managed by the scheduler,
     including both the execution status and any resulting data from the pipeline. The scheduler
@@ -57,8 +56,7 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
 
     @classmethod
     def cancelled(cls) -> SchedulerResult[PipelineOutputType]:
-        """
-        Create a SchedulerResult representing a cancelled pipeline operation.
+        """Create a SchedulerResult representing a cancelled pipeline operation.
 
         Returns:
             SchedulerResult: A SchedulerResult that is done.
@@ -69,8 +67,7 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     def create(
         cls, result: PipelineOutputType
     ) -> SchedulerResult[PipelineOutputType]:
-        """
-        Create a SchedulerResult representing a pipeline operation with some result.
+        """Create a SchedulerResult representing a pipeline operation with some result.
 
         Args:
             result: The pipeline output data.

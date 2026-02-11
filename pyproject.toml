@@ -96,7 +96,7 @@ convention = "google"
 # To add more modules to this list, test them with:
 #   ./bazelw run //oss/modular/bazel/lint:ruff.check -- --no-cache <file>
 # and verify no errors are reported for that specific file.
-"!max/python/max/{driver/**/*.py,dtype/**/*.py,engine/**/*.py,graph/**/*.py,interfaces/context.py,interfaces/status.py,interfaces/tokens.py,nn/embedding.py,nn/float8_config.py,nn/linear.py,torch/torch.py,pipelines/**/*.py}" = ["D"]
+"!max/python/max/{driver/**/*.py,dtype/**/*.py,engine/**/*.py,graph/**/*.py,interfaces/**/*.py,nn/embedding.py,nn/float8_config.py,nn/linear.py,torch/torch.py,pipelines/**/*.py}" = ["D"]
 # Don't enforce docstrings for architectures.
 "max/python/max/pipelines/architectures/**/*.py" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated
