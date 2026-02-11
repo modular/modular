@@ -135,8 +135,6 @@ fn mla_decode_sm100_dispatch[
 
     # This can get threshold like min 8 pages etc.
     # require heuristinc to test
-    var num_element_per_CTA = ceildiv(effective_max_cache_len, available_SMs)
-    var num_page_per_CTA = ceildiv(num_element_per_CTA, page_size)
     var num_kv_cache_pages = ceildiv(effective_max_cache_len, page_size)
     # Clamp num_partitions to:
     # 1. MAX_SPLITS (96) - combine kernel supports up to 96 splits via multi-LSE-per-thread

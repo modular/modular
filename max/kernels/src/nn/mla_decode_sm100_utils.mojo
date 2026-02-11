@@ -2163,7 +2163,6 @@ struct MLA_SM100_Decode_Common[
         var p_prod = DecodePProducer(p_bars.producer())
         var c_prod = DecodeCProducer(c_bars.producer())
         var warp_idx = warp.broadcast(warp_id())
-        var warp_group_idx = Int32(warp_idx >> 2)
         # 0..127 inside the softmax WG
         var lane_id = Int(thread_idx.x)
         # Lane mapping inside the softmax warpgroup
