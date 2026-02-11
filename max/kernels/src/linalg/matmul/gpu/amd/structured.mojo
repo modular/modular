@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of
 from gpu import WARP_SIZE
 from gpu.compute.mma import mma
@@ -151,29 +148,29 @@ struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
     var __repr: Int32
 
     @always_inline
-    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
+    fn initialize[origin: MutOrigin](ref[AddressSpace.SHARED, origin] self):
         self.__repr = 0
 
     @always_inline
-    fn value(ref[AddressSpace.SHARED] self) -> Int32:
-        var bar = rebind[
-            UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
-            ]
-        ](Pointer(to=self.__repr))
+    fn value[origin: MutOrigin](ref[AddressSpace.SHARED, origin] self) -> Int32:
+        var bar = UnsafePointer(to=self.__repr).address_space_cast[
+            AddressSpace.SHARED
+        ]()
         return load_acquire(bar)
 
     @always_inline
-    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
-        var bar = rebind[
-            UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
-            ]
-        ](Pointer(to=self.__repr))
+    fn increment[
+        origin: MutOrigin
+    ](ref[AddressSpace.SHARED, origin] self, warp_id: Int):
+        var bar = UnsafePointer(to=self.__repr).address_space_cast[
+            AddressSpace.SHARED
+        ]()
         store_release(bar, load_acquire(bar) + 1)
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
+    fn wait_until_greater_or_equal_to[
+        origin: MutOrigin
+    ](ref[AddressSpace.SHARED, origin] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
@@ -200,7 +197,9 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
+                Scalar[DType.int32],
+                MutAnyOrigin,
+                address_space = AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
