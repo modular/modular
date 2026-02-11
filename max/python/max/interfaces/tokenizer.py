@@ -64,8 +64,9 @@ class PipelineTokenizer(
         ...
 
     async def new_context(self, request: RequestType) -> UnboundContextType:
-        """Creates a new context from a request object. This is sent to the
-        worker process once and then cached locally.
+        """Creates a new context from a request object.
+
+        This is sent to the worker process once and then cached locally.
 
         Args:
             request (RequestType): Incoming request.
@@ -82,6 +83,7 @@ class PipelineTokenizer(
 
         Args:
             prompt (str): Un-encoded prompt text.
+            add_special_tokens (bool): Whether to add special tokens (e.g. BOS).
 
         Raises:
             ValueError: If the prompt exceeds the configured maximum length.
@@ -93,6 +95,7 @@ class PipelineTokenizer(
 
         Args:
             encoded (TokenizerEncoded): Encoded response tokens.
+            **kwargs: Additional decoder options (e.g. skip_special_tokens).
 
         Returns:
             str: Un-encoded response text.

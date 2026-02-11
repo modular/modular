@@ -39,8 +39,7 @@ DUMMY_REQUEST_ID = RequestID("cuda_graph_dummy")
 
 @dataclasses.dataclass(frozen=True)
 class Request:
-    """
-    Base class representing a generic request within the MAX API.
+    """Base class representing a generic request within the MAX API.
 
     This class provides a unique identifier for each request, ensuring that
     all requests can be tracked and referenced consistently throughout the

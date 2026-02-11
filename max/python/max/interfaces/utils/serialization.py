@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Msgpack Support for Numpy Arrays"""
+"""Msgpack support for NumPy arrays."""
 
 from __future__ import annotations
 
@@ -32,8 +32,7 @@ def numpy_encoder_hook(
     use_shared_memory: bool = False,
     shared_memory_threshold: int = 24000000,
 ) -> Callable[[Any], Any]:
-    """
-    Create a configurable numpy encoding hook.
+    """Create a configurable numpy encoding hook.
 
     Args:
         use_shared_memory: Whether to attempt shared memory conversion for numpy arrays.
@@ -99,7 +98,6 @@ class MsgpackNumpyEncoder:
             shared_memory_threshold: Minimum size in bytes for shared memory conversion.
                                     If 0, all arrays are candidates for conversion.
         """
-
         if (
             use_shared_memory
             and float(os.environ.get("MODULAR_MAX_SHM_WATERMARK", 0.9)) == 0.0

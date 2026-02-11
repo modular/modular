@@ -23,8 +23,7 @@ from .request import RequestID
 
 
 class PipelineInputs:
-    """
-    Base class representing inputs to a pipeline operation.
+    """Base class representing inputs to a pipeline operation.
 
     This class serves as a marker interface for all pipeline input types.
     Concrete implementations should inherit from this class and define
@@ -45,8 +44,7 @@ class PipelineInputs:
 # msgspec.Struct implementations of this class.
 @runtime_checkable
 class PipelineOutput(Protocol):
-    """
-    Protocol representing the output of a pipeline operation.
+    """Protocol representing the output of a pipeline operation.
 
     Subclasses must implement the `is_done` property to indicate whether
     the pipeline operation has completed.
@@ -54,8 +52,7 @@ class PipelineOutput(Protocol):
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the pipeline operation has completed.
+        """Indicates whether the pipeline operation has completed.
 
         Returns:
             bool: True if the operation is done, False otherwise.
@@ -100,8 +97,7 @@ Bounds:
 
 
 class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
-    """
-    Abstract base class for pipeline operations.
+    """Abstract base class for pipeline operations.
 
     This generic abstract class defines the interface for pipeline operations that
     transform inputs of type PipelineInputsType into outputs of type PipelineOutputsDict[PipelineOutputType].
@@ -124,8 +120,7 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
     def execute(
         self, inputs: PipelineInputsType
     ) -> PipelineOutputsDict[PipelineOutputType]:
-        """
-        Execute the pipeline operation with the given inputs.
+        """Execute the pipeline operation with the given inputs.
 
         This method must be implemented by all concrete pipeline classes.
         It takes inputs of the specified type and returns outputs according
@@ -144,8 +139,7 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
 
     @abstractmethod
     def release(self, request_id: RequestID) -> None:
-        """
-        Release any resources or state associated with a specific request.
+        """Release any resources or state associated with a specific request.
 
         This method should be implemented by concrete pipeline classes to perform
         cleanup or resource deallocation for the given request ID. It is typically

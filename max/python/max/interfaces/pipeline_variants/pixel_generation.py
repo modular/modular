@@ -90,8 +90,7 @@ context type that implements the PixelGenerationContext protocol.
 class PixelGenerationInputs(
     PipelineInputs, Generic[PixelGenerationContextType]
 ):
-    """
-    Input data structure for pixel generation pipelines.
+    """Input data structure for pixel generation pipelines.
 
     This class represents the input data required for pixel generation operations
     within the pipeline framework. It extends PipelineInputs and provides type-safe
@@ -107,8 +106,7 @@ class PixelGenerationInputs(
 
 
 class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
-    """
-    Represents a response from the pixel generation API.
+    """Represents a response from the pixel generation API.
 
     This class encapsulates the result of a pixel generation request, including
     the request ID, final status, and generated pixel data.
@@ -127,8 +125,7 @@ class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the pixel generation process is complete.
+        """Indicates whether the pixel generation process is complete.
 
         Returns:
             bool: True if the generation is done, False otherwise.

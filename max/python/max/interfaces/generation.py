@@ -27,8 +27,7 @@ from .status import GenerationStatus
 
 @dataclass(kw_only=True)
 class GenerationOutput:
-    """
-    Output container for image generation pipeline operations.
+    """Output container for image generation pipeline operations.
 
     This class holds a list of generated images in OpenResponses API format,
     along with request tracking and status information. It implements the
@@ -86,8 +85,7 @@ class GenerationOutput:
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the pipeline operation has completed.
+        """Indicates whether the pipeline operation has completed.
 
         Returns:
             bool: True if the generation is done (status is not ACTIVE),

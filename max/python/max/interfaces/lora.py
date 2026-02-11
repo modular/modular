@@ -24,9 +24,7 @@ LORA_RESPONSE_ENDPOINT = "lora_response"
 
 
 class LoRAType(Enum):
-    """
-    Enumeration for LoRA Types.
-    """
+    """Enumeration for LoRA Types."""
 
     A = "lora_A"
     """Represents the LoRA A matrix (high rank tensor to low rank tensor)."""
