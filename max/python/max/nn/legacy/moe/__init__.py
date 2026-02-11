@@ -21,14 +21,18 @@ from .quant_strategy import (
     QuantStrategy,
     silu_gate,
 )
+from .stacked_moe import GateUpFormat, StackedMoE, silu_activation
 
 __all__ = [
     "Fp8Strategy",
+    "GateUpFormat",
     "MoE",
     "MoEGate",
     "MoEQuantized",
     "Nvfp4Scales",
     "Nvfp4Strategy",
     "QuantStrategy",
+    "StackedMoE",
+    "silu_activation",
     "silu_gate",
 ]
