@@ -80,8 +80,7 @@ class AudioGenerationRequest(Request):
 class AudioGenerationMetadata(
     msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
 ):
-    """
-    Represents metadata associated with audio generation.
+    """Represents metadata associated with audio generation.
 
     This class will eventually replace the metadata dictionary used throughout
     the AudioGenerationOutput object, providing a structured and type-safe
@@ -112,8 +111,7 @@ class AudioGenerationMetadata(
     echo: str | None = None
 
     def to_dict(self) -> dict[str, int | float | str | bool]:
-        """
-        Convert the metadata to a dictionary format.
+        """Convert the metadata to a dictionary format.
 
         Returns:
             dict[str, any]: Dictionary representation of the metadata.

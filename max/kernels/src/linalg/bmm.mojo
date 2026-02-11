@@ -720,6 +720,12 @@ fn naive_batched_matmul_kernel[
     comptime assert (
         c_tensor.rank == 3 and a_tensor.rank == 3 and b_tensor.rank == 3
     ), "expecting rank-3 TileTensor"
+    # Provide evidence for flat indexing constraint (for non-nested layouts)
+    comptime assert (
+        c_tensor.flat_rank == 3
+        and a_tensor.flat_rank == 3
+        and b_tensor.flat_rank == 3
+    )
     var batch_size = UInt(c_tensor.dim(0))
     var m = UInt(c_tensor.dim(1))
     var n = UInt(c_tensor.dim(2))

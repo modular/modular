@@ -127,7 +127,7 @@ fn _get_bounding_box[
     Returns:
         A BoundingBox instance constructed from the extracted coordinates.
     """
-    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
     comptime assert boxes.element_size == 1
 
     var y1 = boxes[batch_size, box_idx, 0][0]
@@ -168,9 +168,9 @@ fn non_max_suppression[
         score_threshold: Minimum score threshold. Boxes with score < threshold
                         are filtered out.
     """
-    comptime assert boxes.rank == 3, "boxes must be of rank 3"
-    comptime assert scores.rank == 3, "scores must be of rank 3"
-    comptime assert output.rank == 2, "output must be of rank 2"
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert scores.flat_rank == 3, "scores must be of rank 3"
+    comptime assert output.flat_rank == 2, "output must be of rank 2"
 
     var pred_count = 0
 
@@ -217,8 +217,8 @@ fn non_max_suppression_shape_func[
     Returns:
         A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
     """
-    comptime assert boxes.rank == 3, "boxes must be of rank 3"
-    comptime assert scores.rank == 3, "scores must be of rank 3"
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert scores.flat_rank == 3, "scores must be of rank 3"
 
     var box_pred_count: Int64 = 0
 

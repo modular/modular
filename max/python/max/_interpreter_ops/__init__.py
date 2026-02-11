@@ -89,6 +89,7 @@ REDUCE: dict[
     mo.ReduceMinOp: mojo_ops.ReduceMin,
     mo.ReduceAddOp: mojo_ops.ReduceAdd,
     mo.MeanOp: mojo_ops.Mean,
+    mo.ReduceMulOp: mojo_ops.ReduceMul,
 }
 
 # Unary mixed-dtype ops: output dtype differs from input dtype

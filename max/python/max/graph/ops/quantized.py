@@ -28,6 +28,7 @@ def repack_gguf_quantized_weights(
     weight: TensorValue,
     quantization_encoding: QuantizationEncoding,
 ) -> TensorValue:
+    """Repacks GGUF quantized weights for the given encoding."""
     quantization_encoding_str = quantization_encoding.name
     return _repack_quantized_weights(
         f"vroom_{quantization_encoding_str}_repack_weights", (weight,), "vroom"
@@ -173,13 +174,12 @@ def qmatmul(
     lhs: TensorValue,
     *rhs: TensorValue,
 ) -> TensorValue:
-    """Performs matrix multiplication between floating point and quantized
-    tensors.
+    """Performs matrix multiplication between floating point and quantized tensors.
 
     This quantizes the ``lhs`` floating point value to match the encoding of the
     ``rhs`` quantized value, performs matmul, and then dequantizes the result.
     Beware that, compared to a regular matmul op, this one expects the ``rhs``
-    value to be transposed. For example, if the ``lhs`` shape is `[32, 64]`, and
+    value to be transposed. For example, if the ``lhs`` shape is ``[32, 64]``, and
     the quantized ``rhs`` shape is also ``[32, 64]``, then the output shape is
     ``[32, 32]``.
 
@@ -195,10 +195,9 @@ def qmatmul(
 
     Args:
         encoding: The quantization encoding to use.
+        config: Optional quantization config; required for some encodings (e.g. GPTQ).
         lhs: The non-quantized, left-hand-side of the matmul.
-        *rhs: The transposed and quantized right-hand-side of the matmul and
-              auxiliary tensor (if has). Must be rank 2 and in a supported
-              [quantization encoding] (/max/api/mojo/graph/quantization/).
+        rhs: The transposed and quantized right-hand-side tensor(s).
 
     Returns:
         The dequantized result (a floating point tensor).

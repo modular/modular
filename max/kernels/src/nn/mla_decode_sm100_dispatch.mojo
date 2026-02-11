@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from math import ceildiv, clamp
 from sys import size_of
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import AddressSpace
+from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout.layout import (
     Layout,
 )
@@ -35,6 +36,9 @@ from nn.mha_utils import (
     MHAConfig,
 )
 from nn.mha_fa3_utils import KVTMATile
+from layout.runtime_layout import RuntimeLayout
+from utils.numerics import get_accum_type
+from utils.index import Index
 
 comptime logger = Logger()
 from nn.mla_decode_sm100_utils import (
@@ -68,6 +72,7 @@ from nn.mla_decode_sm100_utils import (
 )
 from nn.mla_decode_sm100_kv_bf16 import MLA_SM100_Decode_KV_BF16
 from nn.mla_decode_sm100_kv_fp8 import MLA_SM100_Decode_KV_FP8
+from nn.mla_decode_sm100_combine import mla_decode_combine_partial_outputs
 
 
 # ------------------------------------------------------------------------------
@@ -78,6 +83,7 @@ fn mla_decode_sm100_dispatch[
     q_layout: Layout,
     k_t: MHAOperand,
     output_type: DType,
+    output_layout: Layout,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     valid_layout: Layout,
@@ -95,9 +101,243 @@ fn mla_decode_sm100_dispatch[
         q_type, q_layout, address_space = AddressSpace.GENERIC, ...
     ],
     k: k_t,
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[
+        output_type, output_layout, address_space = AddressSpace.GENERIC, ...
+    ],
     scale: Float32,
     batch_size: Int,
+    max_cache_valid_length: Int,  # longest KV cache entry
+    q_max_seq_len: Int,
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: mask_t,
+    score_mod: score_mod_t,
+    ctx: DeviceContext,
+) raises:
+    comptime hw_info = ctx.default_device_info
+    comptime sm_count = hw_info.sm_count
+    var available_SMs = ceildiv(
+        sm_count,
+        (q_max_seq_len * ceildiv(num_heads, 64) * batch_size),
+    )
+    var page_size = 128
+
+    # CRITICAL: The kernel's OffsetPosition adds q_max_seq_len to num_keys when
+    # _is_cache_length_accurate=False. We must use the same effective num_keys
+    # here to compute num_partitions correctly, otherwise there's a mismatch
+    # between how the dispatcher divides work and how the kernel sees it.
+    var effective_max_cache_len = max_cache_valid_length
+
+    @parameter
+    if not _is_cache_length_accurate:
+        effective_max_cache_len += q_max_seq_len
+
+    # This can get threshold like min 8 pages etc.
+    # require heuristinc to test
+    var num_element_per_CTA = ceildiv(effective_max_cache_len, available_SMs)
+    var num_page_per_CTA = ceildiv(num_element_per_CTA, page_size)
+    var num_kv_cache_pages = ceildiv(effective_max_cache_len, page_size)
+    # Clamp num_partitions to:
+    # 1. MAX_SPLITS (96) - combine kernel supports up to 96 splits via multi-LSE-per-thread
+    # 2. num_kv_cache_pages - ensure at least 1 page per split to avoid empty splits
+    #    (empty splits cause hangs due to barrier deadlocks or infinite loops)
+    # 3. At least 1 partition (even if num_kv_cache_pages is 0, we need 1 partition)
+    var num_partitions = clamp(available_SMs, 1, min(96, num_kv_cache_pages))
+    # Eliminate empty splits caused by ceil division mismatch.
+    # The main kernel uses pages_per_split = ceildiv(total_pages, num_partitions),
+    # which means only ceildiv(total_pages, pages_per_split) splits actually have
+    # work. Splits beyond that have start_page >= total_pages and return early
+    # with uninitialized LSE, causing combine kernel corruption.
+    # Recompute to ensure every split has at least 1 page of work.
+    if num_partitions > 1 and num_kv_cache_pages > 0:
+        var pages_per_split = ceildiv(num_kv_cache_pages, num_partitions)
+        num_partitions = ceildiv(num_kv_cache_pages, pages_per_split)
+    var block_z = batch_size * num_partitions
+
+    comptime AccumType = get_accum_type[output.dtype]()
+    comptime v_depth = depth - 64
+
+    if num_partitions > 1:
+        comptime SplitAccumType = NonNullPointer[AccumType]
+        # Create partial output buffer (same type as output - bfloat16)
+        # Each split writes its partial attention result here
+        # Note: Output dimension is v_depth (512), not depth (576)
+        o_accum_split_data = ctx.enqueue_create_buffer[output_type](
+            Int(
+                num_partitions
+                * batch_size
+                * q_max_seq_len
+                * num_heads
+                * v_depth
+            )
+        )
+        var o_accum_split = LayoutTensor[output_type, Layout.row_major[5]()](
+            o_accum_split_data.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[5]()].row_major(
+                Index(
+                    num_partitions,
+                    batch_size,
+                    q_max_seq_len,
+                    Int(num_heads),
+                    Int(v_depth),
+                )
+            ),
+        )
+        # Create LSE accumulator buffer (AccumType = float32 for numerical stability)
+        var lse_accum_data = ctx.enqueue_create_buffer[AccumType](
+            Int(num_partitions * batch_size * q_max_seq_len * num_heads)
+        )
+        var lse_accum_split = LayoutTensor[AccumType, Layout.row_major[4]()](
+            lse_accum_data.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[4]()].row_major(
+                Index(
+                    num_partitions,
+                    batch_size,
+                    q_max_seq_len,
+                    Int(num_heads),
+                )
+            ),
+        )
+        var lse_accum_split_ptr: SplitAccumType = {
+            lse_accum_split.to_device_buffer(ctx).unsafe_ptr()
+        }
+
+        # Launch main MLA decode kernel (writes partial results to accumulators)
+        mla_decode_sm100_sink_split_k[
+            q_type=q_type,
+            q_layout=q_layout,
+            k_t=k_t,
+            output_type=output_type,
+            mask_t=mask_t,
+            score_mod_t=score_mod_t,
+            valid_layout=valid_layout,
+            config=config,
+            depth=depth,
+            num_heads=num_heads,
+            SplitAccumType=SplitAccumType,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding_warp_split_k=True,
+        ](
+            q,
+            k,
+            o_accum_split,
+            lse_accum_split_ptr,
+            scale,
+            batch_size,
+            block_z,
+            num_partitions,
+            max_cache_valid_length,
+            q_max_seq_len,
+            valid_length,
+            mask,
+            score_mod,
+            ctx,
+        )
+
+        # Get input_row_offsets pointer for combine kernel's ragged output writes.
+        var input_row_offsets_ptr = rebind[
+            UnsafePointer[Scalar[DType.uint32], origin=MutAnyOrigin]
+        ](valid_length.to_device_buffer(ctx).unsafe_ptr())
+
+        # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
+        # Supports up to 96 splits (max_splits) to allow higher SM utilization on B200.
+        # For batch_size=1 on B200 (148 SMs),
+        @parameter
+        fn launch_combine[n_splits: Int]() raises:
+            mla_decode_combine_partial_outputs[
+                output_type=output_type,
+                accum_type=AccumType,
+                head_dim=v_depth,
+                num_splits=n_splits,
+                ragged=ragged,
+            ](
+                o_accum_split,
+                lse_accum_split,
+                output,
+                input_row_offsets_ptr,
+                batch_size,
+                q_max_seq_len,
+                Int(num_heads),
+                ctx,
+            )
+
+        # Dispatch to the appropriate compile-time specialization.
+        # we go from 2 to 96 inclusively
+        @parameter
+        for i in range(2, 97):
+            if num_partitions == i:
+                launch_combine[i]()
+    else:
+        comptime SplitAccumType = NullPointer[AccumType]
+        var lse_accum_split_ptr: SplitAccumType = {}
+
+        mla_decode_sm100_sink_split_k[
+            q_type=q_type,
+            q_layout=q_layout,
+            k_t=k_t,
+            output_type=output_type,
+            mask_t=mask_t,
+            score_mod_t=score_mod_t,
+            valid_layout=valid_layout,
+            config=config,
+            depth=depth,
+            num_heads=num_heads,
+            SplitAccumType=SplitAccumType,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding_warp_split_k=False,
+        ](
+            q,
+            k,
+            output,
+            lse_accum_split_ptr,
+            scale,
+            batch_size,
+            block_z,
+            num_partitions,
+            max_cache_valid_length,
+            q_max_seq_len,
+            valid_length,
+            mask,
+            score_mod,
+            ctx,
+        )
+
+
+fn mla_decode_sm100_sink_split_k[
+    q_type: DType,
+    q_layout: Layout,
+    k_t: MHAOperand,
+    output_type: DType,
+    mask_t: MHAMask,
+    *,
+    score_mod_t: ScoreModTrait,
+    valid_layout: Layout,
+    config: MHAConfig,
+    depth: Int,
+    num_heads: Int,
+    SplitAccumType: OptionalPointer,
+    group: Int,
+    use_score_mod: Bool,
+    ragged: Bool,
+    _is_cache_length_accurate: Bool,
+    decoding_warp_split_k: Bool,
+](
+    q: LayoutTensor[
+        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: k_t,
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    lse_accum_split_ptr: SplitAccumType,
+    scale: Float32,
+    batch_size: Int,
+    block_z: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
     q_max_seq_len: Int,
@@ -120,7 +360,7 @@ fn mla_decode_sm100_dispatch[
         page_size=k_t.page_size,
         decoding_warp_split_k=decoding_warp_split_k,
     )
-    var num_rows_qo = num_matrix_view_rows_decode(q)
+    var num_rows_q = num_matrix_view_rows_decode(q)
     q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
         q.to_device_buffer(ctx).unsafe_ptr()
     )
@@ -129,7 +369,7 @@ fn mla_decode_sm100_dispatch[
         BM = mla_config.BM,  # tile_m =64
         BK = mla_config.BK0,  # tile_n =576
         depth = mla_config.q_depth,
-    ](ctx, q_ptr, num_rows_qo)
+    ](ctx, q_ptr, num_rows_q)
 
     k_tma_op = k.create_tma_tile[
         BN = mla_config.BK1,  # tile_m =64
@@ -143,12 +383,13 @@ fn mla_decode_sm100_dispatch[
     o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
         output.to_device_buffer(ctx).unsafe_ptr()
     )
+    var num_rows_o = num_matrix_view_rows_decode(output)
     o_tma_op = tma_tile_qo[
         swizzle_mode = mla_config.swizzle_mode,
         BM = mla_config.out_rows,
         BK = mla_config.BN,
         depth = mla_config.depth,
-    ](ctx, o_ptr, num_rows_qo)
+    ](ctx, o_ptr, num_rows_o)
 
     if ragged:
         comptime ValidLengthType = NonNullPointer[DType.uint32]
@@ -159,6 +400,7 @@ fn mla_decode_sm100_dispatch[
             q_type=q_type,
             KVLUTType=k_t,
             output_type=output_type,
+            SplitAccumType=SplitAccumType,
             MaskType=mask_t,
             ScoreModType=score_mod_t,
             config=mla_config,
@@ -171,8 +413,10 @@ fn mla_decode_sm100_dispatch[
             k_tma_op,
             o_tma_op,
             k,
+            lse_accum_split_ptr,
             scale,
             batch_size,
+            block_z,
             num_partitions,
             max_cache_valid_length,
             q_max_seq_len,
@@ -188,6 +432,7 @@ fn mla_decode_sm100_dispatch[
             q_type=q_type,
             KVLUTType=k_t,
             output_type=output_type,
+            SplitAccumType=SplitAccumType,
             MaskType=mask_t,
             ScoreModType=score_mod_t,
             config=mla_config,
@@ -200,8 +445,10 @@ fn mla_decode_sm100_dispatch[
             k_tma_op,
             o_tma_op,
             k,
+            lse_accum_split_ptr,
             scale,
             batch_size,
+            block_z,
             num_partitions,
             max_cache_valid_length,
             q_max_seq_len,
@@ -217,6 +464,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
+    SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
@@ -244,8 +492,10 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         swizzle_mode = config.swizzle_mode,
     ],
     kv_lut: KVLUTType,
+    lse_accum_split_ptr: SplitAccumType,
     scale: Float32,
     batch_size: Int,
+    block_z: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry,
     q_max_seq_len: Int,
@@ -258,16 +508,10 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         ScoreModType=ScoreModType,
-    ](mask, score_mod, valid_len)
+        SplitAccumType=SplitAccumType,
+    ](mask, score_mod, valid_len, lse_accum_split_ptr)
     var block_x = ceildiv(config.num_q_heads, config.BM)
-    # TODO: this should be seq_len and batch to be distributed across the grid
-    var block_y = q_max_seq_len
-    # TODO: # currently this is fixed for batch size, Next step is to modify it
-    # to support the split k when the KVcachesize is varrable length per batch so
-    # the num_partitions would create more load balanced work per block based on
-    # the KV cache size per batch.
-    var block_z = batch_size
-    var grid_dim = (block_x, block_y, block_z)
+    var grid_dim = (block_x, q_max_seq_len, block_z)
     # we have 3 warp groups:
     # - one for load/store/2xMMA
     # - one for compute softmax
@@ -329,7 +573,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         "//",
         config.num_kv_heads,
         "Batch Size:",
-        batch_size,
+        block_z,
         "Num Partitions:",
         num_partitions,
         "Max Cache Valid Length:",
@@ -340,6 +584,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         q_type=q_type,
         KVLUTType=KVLUTType,
         output_type=output_type,
+        SplitAccumType=SplitAccumType,
         MaskType=MaskType,
         ScoreModType=ScoreModType,
         config=config,
@@ -351,6 +596,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         q_type=q_type,
         KVLUTType=KVLUTType,
         output_type=output_type,
+        SplitAccumType=SplitAccumType,
         MaskType=MaskType,
         ScoreModType=ScoreModType,
         config=config,
@@ -359,6 +605,9 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         _is_cache_length_accurate=_is_cache_length_accurate,
         ragged=ragged,
     ].kernel
+    # Enable PDL (Programmatic Dependent Launch) for split-K mode to chain
+    # the MLA decode kernel with the combine kernel, reducing host synchronization.
+    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     ctx.enqueue_function[kernel, kernel](
         q_tma,
         k_tma,
@@ -376,4 +625,5 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(config.smem_used)
         ),
+        attributes=pdl_launch_attributes(pdl_level),
     )

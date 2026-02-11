@@ -25,6 +25,7 @@ from algorithm import max as reduce_max
 from algorithm import min as reduce_min
 from algorithm import sum as reduce_sum
 from algorithm import mean as reduce_mean
+from algorithm import product as reduce_product
 from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
@@ -315,6 +316,9 @@ fn PyInit_mojo_ops() -> PythonObject:
             "ReduceAdd", docstring="Reduce add along axis"
         )
         b.def_function[mean_dispatcher]("Mean", docstring="Mean along axis")
+        b.def_function[reduce_mul_dispatcher](
+            "ReduceMul", docstring="Reduce mul along axis"
+        )
 
         # Static broadcast to operation
         b.def_function[static_broadcast_to_dispatcher](
@@ -346,6 +350,12 @@ fn PyInit_mojo_ops() -> PythonObject:
         # Select operation (ternary: cond ? x : y)
         b.def_function[select_dispatcher](
             "Select", docstring="Elementwise select (cond ? x : y)"
+        )
+
+        # Memcpy operation (copy elements between buffers with offsets)
+        b.def_function[memcpy_dispatcher](
+            "Memcpy",
+            docstring="Copy elements between buffers with offsets",
         )
 
         return b.finalize()
@@ -2336,6 +2346,32 @@ fn _reduce_mean[
     ](input_shape, reduce_dim, output_shape, context)
 
 
+fn _reduce_mul[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.product for use with ReduceFn."""
+    reduce_product[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
 fn reduce_dispatcher[
     reduce_fn: ReduceFn
 ](
@@ -2613,6 +2649,17 @@ fn mean_dispatcher(
     device_context_ptr: PythonObject,
 ) raises:
     reduce_dispatcher[_reduce_mean](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn reduce_mul_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_mul](
         out_buffer, in_buffer, axis, device_context_ptr
     )
 
@@ -3340,6 +3387,225 @@ fn select_elementwise_op[
             else:
                 raise Error(
                     "GPU execution not supported for select with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# Memcpy operation (copy elements between buffers with offsets)
+# ===----------------------------------------------------------------------=== #
+
+
+fn memcpy_dispatcher(
+    dst_buffer: PythonObject,
+    src_buffer: PythonObject,
+    dst_offset: PythonObject,
+    src_offset: PythonObject,
+    count: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Copy elements from src to dst buffer with offsets.
+
+    Args:
+        dst_buffer: The destination buffer object.
+        src_buffer: The source buffer object.
+        dst_offset: Element offset into the destination buffer.
+        src_offset: Element offset into the source buffer.
+        count: Number of elements to copy.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(src_buffer)
+    var dst_dtype = _get_dtype(dst_buffer)
+    if dtype != dst_dtype:
+        raise Error(
+            "Mismatched dtypes for memcpy: "
+            + String(dtype)
+            + " and "
+            + String(dst_dtype)
+        )
+
+    var d_off = Int(py=dst_offset)
+    var s_off = Int(py=src_offset)
+    var cnt = Int(py=count)
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float16:
+        memcpy_op[DType.float16](
+            _get_buffer_ptr[DType.float16](dst_buffer),
+            _get_buffer_ptr[DType.float16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        memcpy_op[DType.float32](
+            _get_buffer_ptr[DType.float32](dst_buffer),
+            _get_buffer_ptr[DType.float32](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        memcpy_op[DType.float64](
+            _get_buffer_ptr[DType.float64](dst_buffer),
+            _get_buffer_ptr[DType.float64](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        memcpy_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](dst_buffer),
+            _get_buffer_ptr[DType.bfloat16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int8:
+        memcpy_op[DType.int8](
+            _get_buffer_ptr[DType.int8](dst_buffer),
+            _get_buffer_ptr[DType.int8](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        memcpy_op[DType.int16](
+            _get_buffer_ptr[DType.int16](dst_buffer),
+            _get_buffer_ptr[DType.int16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        memcpy_op[DType.int32](
+            _get_buffer_ptr[DType.int32](dst_buffer),
+            _get_buffer_ptr[DType.int32](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        memcpy_op[DType.int64](
+            _get_buffer_ptr[DType.int64](dst_buffer),
+            _get_buffer_ptr[DType.int64](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint8:
+        memcpy_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](dst_buffer),
+            _get_buffer_ptr[DType.uint8](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        memcpy_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](dst_buffer),
+            _get_buffer_ptr[DType.uint16](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        memcpy_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](dst_buffer),
+            _get_buffer_ptr[DType.uint32](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        memcpy_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](dst_buffer),
+            _get_buffer_ptr[DType.uint64](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    elif dtype == DType.bool:
+        memcpy_op[DType.bool](
+            _get_buffer_ptr[DType.bool](dst_buffer),
+            _get_buffer_ptr[DType.bool](src_buffer),
+            d_off,
+            s_off,
+            cnt,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for memcpy: " + String(dtype))
+
+
+@always_inline
+fn memcpy_op[
+    dtype: DType
+](
+    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_offset: Int,
+    src_offset: Int,
+    count: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Copy count elements from src+src_offset to dst+dst_offset.
+
+    Parameters:
+        dtype: The data type of the buffers.
+
+    Args:
+        dst_ptr: Pointer to the destination buffer data.
+        src_ptr: Pointer to the source buffer data.
+        dst_offset: Element offset into the destination.
+        src_offset: Element offset into the source.
+        count: Number of elements to copy.
+        ctx: Device context pointer (null for CPU).
+    """
+    var d = dst_ptr + dst_offset
+    var s = src_ptr + src_offset
+
+    @always_inline
+    @parameter
+    @__copy_capture(d, s)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+        d.store[width=width](i, s.load[width=width](i))
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](count))
+    else:
+        # GPU execution
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](count), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for memcpy with dtype float64"
                 )
         else:
             raise Error("No GPU accelerator available")

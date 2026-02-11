@@ -18,8 +18,7 @@ from .validation import assert_valid_axis
 
 
 def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
-    """
-    Chunk the tensor into an exact number of chunks along the specified dim.
+    """Chunk the tensor into an exact number of chunks along the specified dim.
 
     Example:
         >>> a = TensorValue([1, 2, 3, 4, 5])

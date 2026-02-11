@@ -39,6 +39,7 @@ def _rotate_seed(seed: TensorValue):  # noqa: ANN202
 
 
 def assert_scalar(value: TensorValueLike) -> None:
+    """Raises :class:`ValueError` if value is not a scalar (has non-empty ``shape``)."""
     if isinstance(value, np.ndarray | TensorValue) and value.shape:
         raise ValueError("Expected a scalar value")
 
@@ -86,6 +87,10 @@ def gaussian(
     mean: TensorValueLike = 0,
     std: TensorValueLike = 1,
 ) -> TensorValue:
+    """Samples from a Gaussian (normal) distribution with the given mean and standard deviation.
+
+    Output shape and dtype match the ``like`` tensor type.
+    """
     assert_scalar(mean)
     assert_scalar(std)
     # Check whether we have a seed before we add other constants to the graph.
@@ -117,6 +122,11 @@ def uniform(
     like: TensorType,
     range: tuple[TensorValueLike, TensorValueLike] = (0, 1),
 ) -> TensorValue:
+    """Samples uniformly from the half-open interval ``[lower, upper)``.
+
+    That is, values satisfy ``lower ≤ x < upper``. Output shape and
+    dtype match the ``like`` tensor type.
+    """
     lower, upper = range
 
     assert_scalar(lower)

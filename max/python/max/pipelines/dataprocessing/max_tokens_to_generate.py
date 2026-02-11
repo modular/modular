@@ -25,7 +25,7 @@ def max_tokens_to_generate(
     Args:
         prompt_size: Current prompt (context) length in tokens.
         max_length: Maximum total sequence length.
-        max_new_tokens: Cap on new tokens, or -1 to use only ``max_length``.
+        max_new_tokens: Cap on new tokens, or ``-1`` to use only ``max_length``.
 
     Returns:
         The effective cap on new tokens to generate.

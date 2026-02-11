@@ -26,37 +26,35 @@ from .constant import constant
 
 
 def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """
-    Reduces a symbolic tensor using a sum operation.
+    """Reduces a symbolic tensor using a sum operation.
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
 
     Returns:
         A symbolic tensor representing the result of the sum operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.mo_reduce_add, x, axis=axis)
 
 
 def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """
-    Reduces a symbolic tensor using a mean operation.
+    """Reduces a symbolic tensor using a mean operation.
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
 
     Returns:
         A symbolic tensor representing the result of the mean operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.mo_mean, x, axis=axis)
 
@@ -89,33 +87,51 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
 
     Returns:
         A symbolic tensor representing the result of the min operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.mo_reduce_min, x, axis=axis)
 
 
 def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """
-    Reduces a symbolic tensor using a max operation.
+    """Reduces a symbolic tensor using a max operation.
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
 
     Returns:
         A symbolic tensor representing the result of the max operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.mo_reduce_max, x, axis=axis)
+
+
+def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
+    """Reduces a symbolic tensor using a product operation.
+
+    Computes the product of elements along a specified axis.
+
+    Args:
+        x: The input tensor for the operation.
+        axis: The axis along which to compute the reduction. If negative,
+            indexes from the last dimension. For example, a value of ``-1`` will
+            compute the reduction along the last dimension.
+
+    Returns:
+        A symbolic tensor representing the result of the product operation.
+        The tensor will have the same rank as the input tensor, and the same
+        shape except along the ``axis`` dimension which will have size ``1``.
+    """
+    return _reduce(rmo.mo_reduce_mul, x, axis=axis)
 
 
 def _reduce(
@@ -124,20 +140,20 @@ def _reduce(
     axis: int = -1,
     out_dtype: DType | None = None,
 ) -> TensorValue:
-    """
-    Reduces a symbolic tensor using a reduction operation.
+    """Reduces a symbolic tensor using a reduction operation.
 
     Args:
+        op: The reduction operation (e.g. sum, product).
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
-        out_dtype: The dtype of the result. Defaults to the dtype of `x`.
+        out_dtype: The dtype of the result. Defaults to the dtype of ``x``.
 
     Returns:
         A symbolic tensor representing the result of the reduction operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     x = TensorValue(x)
 
@@ -155,8 +171,7 @@ def _reduce(
 
 
 def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """
-    Reduces a symbolic tensor using an argmin operation.
+    """Reduces a symbolic tensor using an argmin operation.
 
     When provided with a tensor with all identical elements,
     on CPU this will return the first element index in the tensor,
@@ -165,20 +180,19 @@ def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
 
     Returns:
         A symbolic tensor representing the result of the argmin operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.mo_arg_min, x, axis, out_dtype=DType.int64)
 
 
 def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """
-    Reduces a symbolic tensor using an argmax operation.
+    """Reduces a symbolic tensor using an argmax operation.
 
     When provided with a tensor with all identical elements,
     on CPU this will return the first element index in the tensor,
@@ -187,12 +201,12 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of -1 will
+            indexes from the last dimension. For example, a value of ``-1`` will
             compute the reduction along the last dimension.
 
     Returns:
         A symbolic tensor representing the result of the argmax operation.
         The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size 1.
+        shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.mo_arg_max, x, axis, out_dtype=DType.int64)
