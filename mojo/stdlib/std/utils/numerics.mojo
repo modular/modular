@@ -524,7 +524,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "unsupported float type"]()
+        comptime assert "" != "", "unsupported float type"
         return {}
 
 
@@ -629,7 +629,7 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "unsupported float type"]()
+        comptime assert "" != "", "unsupported float type"
         return {}
 
 
@@ -689,7 +689,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "unsupported float type"]()
+        comptime assert "" != "", "unsupported float type"
         return {}
 
 
@@ -736,7 +736,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
     elif dtype == DType.bool:
         return Scalar(True)._refine[dtype]()
     else:
-        constrained[False, "max_finite() called on unsupported dtype"]()
+        comptime assert "" != "", "max_finite() called on unsupported dtype"
         return {}
 
 
@@ -767,7 +767,7 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
     elif dtype == DType.bool:
         return Scalar(False)._refine[dtype]()
     else:
-        constrained[False, "min_finite() called on unsupported dtype"]()
+        comptime assert "" != "", "min_finite() called on unsupported dtype"
         return {}
 
 

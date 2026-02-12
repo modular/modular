@@ -153,6 +153,7 @@ from builtin.variadics import (
     VariadicList,
     VariadicListMem,
     VariadicPack,
+    Several,
 )
 from documentation import doc_private
 from iter import (

@@ -749,6 +749,22 @@ struct VariadicListMem[
 # VariadicPack
 # ===-----------------------------------------------------------------------===#
 
+comptime Several[
+    elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
+    //,
+    T: AnyType,
+    element_trait: type_of(AnyType) = type_of(T),
+    *element_types: element_trait,
+    is_owned: Bool = False,
+] = VariadicPack[
+    elt_is_mutable=elt_is_mutable,
+    origin=origin,
+    is_owned,
+    element_trait,
+    *element_types,
+]
+
 
 struct VariadicPack[
     elt_is_mutable: Bool,

@@ -195,7 +195,7 @@ fn rope_ragged[
 
         @parameter
         if width == 1:
-            # constrained[False, "ROPE SIMD_WIDTH=1, We should never be here"]()
+            # copmtime assert "" != "", "ROPE SIMD_WIDTH=1, We should never be here"
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)

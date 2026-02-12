@@ -3508,7 +3508,7 @@ fn _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
     elif dtype == DType.float64:
         return "f64"
     else:
-        constrained[False, "Extend to support additional dtypes."]()
+        comptime assert "" != "", "Extend to support additional dtypes."
         return ""
 
 

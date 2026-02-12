@@ -375,5 +375,26 @@ def test_variadic_list_linear_type():
     take_owned_linear(ExplicitDelOnly(5), ExplicitDelOnly(10))
 
 
+def test_several():
+    def test_trivial_type(a: Several[Int]):
+        @parameter
+        for i in range(a.__len__()):
+            assert_equal(a[i], 0)
+
+    def test_non_trivial_type(a: Several[String]):
+        @parameter
+        for i in range(a.__len__()):
+            assert_equal(a[i], "")
+
+    def test_trait(a: Several[_, Boolable]):
+        @parameter
+        for i in range(a.__len__()):
+            assert_false(a[i])
+
+    test_trivial_type(0, 0, 0)
+    test_non_trivial_type("", "", "")
+    test_trait("", 0, False, [])
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

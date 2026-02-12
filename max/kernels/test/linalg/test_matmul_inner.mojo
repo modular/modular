@@ -110,7 +110,7 @@ fn _matmul_inner_loop[
             skip_boundary_check,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert "" != "", "no _run_inner_loop implementation"
 
 
 fn matmul_inner_loop[

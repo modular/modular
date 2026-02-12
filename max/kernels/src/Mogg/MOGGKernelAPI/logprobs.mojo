@@ -200,7 +200,7 @@ struct LogProbabilitiesRagged:
                 block_dim=block_size,
             )
         else:
-            constrained[False, "unsupported target"]()
+            comptime assert "" != "", "unsupported target"
 
     @staticmethod
     fn shape[

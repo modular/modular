@@ -241,7 +241,9 @@ fn _get_f16_mma_shape[
 
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             abort("MMA shape not supported.")
 
@@ -275,7 +277,9 @@ fn _get_f16_mma_shape[
 
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             abort("MMA shape not supported.")
 
@@ -326,7 +330,9 @@ fn _get_tf32_mma_shape[
 
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             abort("MMA shape not supported.")
     else:
@@ -359,7 +365,9 @@ fn _get_tf32_mma_shape[
 
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             abort("MMA shape not supported.")
 
@@ -411,7 +419,9 @@ fn _get_f8f6f4_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
 
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             abort("MMA shape not supported.")
 
@@ -445,7 +455,9 @@ fn _get_f8f6f4_mma_shape[
 
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             return IndexList[3, element_type = DType.uint32](0, 0, 0)
 
@@ -487,7 +499,9 @@ fn _get_mxf8f6f4_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
 
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             abort("MMA shape not supported.")
 
@@ -521,7 +535,9 @@ fn _get_mxf8f6f4_mma_shape[
 
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+            comptime assert "" != "", String(
+                "Invalid MMA shape: ", mma_m, mma_n
+            )
 
             return IndexList[3, element_type = DType.uint32](0, 0, 0)
 
@@ -1106,7 +1122,9 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
             elif mode == TensorMapSwizzle.SWIZZLE_128B:
                 return 2
             else:
-                constrained[False, String("Unsupported swizzle mode: ", mode)]()
+                comptime assert "" != "", String(
+                    "Unsupported swizzle mode: ", mode
+                )
                 return 0
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
@@ -1267,7 +1285,9 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
             elif mode == TensorMapSwizzle.SWIZZLE_128B:
                 return 2
             else:
-                constrained[False, String("Unsupported swizzle mode: ", mode)]()
+                comptime assert "" != "", String(
+                    "Unsupported swizzle mode: ", mode
+                )
                 return 0
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
@@ -1416,7 +1436,7 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert "" != "", String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
@@ -1513,7 +1533,7 @@ fn mma[
             sfb_tmem,
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert "" != "", String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
@@ -1601,7 +1621,7 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert "" != "", String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
@@ -1688,7 +1708,7 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert "" != "", String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
@@ -1780,7 +1800,7 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert "" != "", String("Unsupported cta group: ", cta_group)
 
 
 # ===----------------------------------------------------------------------=== #

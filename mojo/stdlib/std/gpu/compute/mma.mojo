@@ -1277,12 +1277,12 @@ fn wgmma_async[
                 )
             )
         else:
-            constrained[False, "the n value '", String(n), "' is not valid"]()
+            comptime assert "" != "", String("the n value '", n, "' is not valid")
             return c
         # fmt: on
 
     else:
-        constrained[False, "unsupported config"]()
+        comptime assert "" != "", "unsupported config"
         return c
 
 

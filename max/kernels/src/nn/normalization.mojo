@@ -802,7 +802,7 @@ fn layer_norm[
                 ctx=ctx.get_device_context(),
             )
         else:
-            constrained[False, "unsupported target " + target]()
+            comptime assert "" != "", String("unsupported target ", target)
 
 
 @always_inline
@@ -1483,7 +1483,7 @@ fn _rms_norm_impl[
             ctx.get_device_context(),
         )
     else:
-        constrained[False, "unsupported target " + target]()
+        comptime assert "" != "", String("unsupported target ", target)
 
 
 fn rms_norm_fused_residual_add_gpu_warp_tiling[

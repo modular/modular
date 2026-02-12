@@ -281,7 +281,9 @@ fn schedule_barrier(
     if is_amd_gpu():
         llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
     else:
-        constrained[False, "schedule_barrier is only supported on AMDGPU."]()
+        comptime assert (
+            "" != ""
+        ), "schedule_barrier is only supported on AMDGPU."
 
 
 @always_inline("nodebug")
@@ -516,7 +518,7 @@ fn _mbarrier_impl[
             address.address_space_cast[AddressSpace.GENERIC]().address
         )
     else:
-        constrained[False, "invalid address space"]()
+        comptime assert "" != "", "invalid address space"
 
 
 @always_inline("nodebug")

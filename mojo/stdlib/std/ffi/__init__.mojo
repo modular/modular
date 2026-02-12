@@ -150,7 +150,7 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
         # ILP32: long is 32-bit on 32-bit systems (e.g. x86 or RISC-V 32bit)
         return DType.uint32 if unsigned else DType.int32
     else:
-        constrained[False, "size of C `long` is unknown on this target"]()
+        comptime assert "" != "", "size of C `long` is unknown on this target"
         abort()
 
 
@@ -162,7 +162,9 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     if is_64bit() or is_32bit():
         return DType.uint64 if unsigned else DType.int64
     else:
-        constrained[False, "size of C `long long` is unknown on this target"]()
+        comptime assert (
+            "" != ""
+        ), "size of C `long long` is unknown on this target"
         abort()
 
 

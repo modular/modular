@@ -1933,4 +1933,4 @@ __extension SIMD:
             self = Scalar[dtype](Int(py=py))
         else:
             self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()
+            comptime assert "" != "", "unsupported dtype"

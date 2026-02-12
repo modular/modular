@@ -286,7 +286,7 @@ struct TensorCore[
         elif _out_type == DType.float64 and _in_type == DType.float64:
             return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
         else:
-            constrained[False, "No valid shape of mma"]()
+            comptime assert "" != "", "No valid shape of mma"
             return [shape_null]
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -655,7 +655,7 @@ struct TensorCore[
             var b_ram_frags = b.distribute[warp_layout](lane_id())
             b_reg_tile.copy_from(b_ram_frags)
         else:
-            constrained[False, "No valid type to load matrix fragment b"]()
+            comptime assert "" != "", "No valid type to load matrix fragment b"
         return b_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -701,7 +701,7 @@ struct TensorCore[
             )
             c_reg_tile.vectorize[1, 4]().copy_from(c_ram_frags)
         else:
-            constrained[False, "No valid type to load matrix fragment c"]()
+            comptime assert "" != "", "No valid type to load matrix fragment c"
         return c_reg_tile
 
     @always_inline
@@ -732,7 +732,7 @@ struct TensorCore[
             ](lane_id())
             c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
         else:
-            constrained[False, "No valid type to load matrix fragment c"]()
+            comptime assert "" != "", "No valid type to load matrix fragment c"
         return c_reg_tile
 
     @always_inline
@@ -788,7 +788,7 @@ struct TensorCore[
                 )
                 dst.copy_from(d_src.vectorize[1, 4]())
         else:
-            constrained[False, "No valid type to store to LayoutTensor d"]()
+            comptime assert "" != "", "No valid type to store to LayoutTensor d"
 
     @always_inline
     fn _store_d_nvidia(
@@ -824,7 +824,7 @@ struct TensorCore[
             ).copy_from(d_src.vectorize[1, 2]())
 
         else:
-            constrained[False, "No valid type to store to LayoutTensor d"]()
+            comptime assert "" != "", "No valid type to store to LayoutTensor d"
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
@@ -1465,7 +1465,7 @@ fn get_mma_shape[
         ):
             return shape_16x8x32
         else:
-            constrained[False, "Unsupported mma shape."]()
+            comptime assert "" != "", "Unsupported mma shape."
             return shape_null
     else:
 
@@ -1508,7 +1508,7 @@ fn get_mma_shape[
             elif accum_type == DType.int32 and (input_type == DType._uint4):
                 return shape_16x16x16
             else:
-                constrained[False, "Unsupported RDNA mma shape."]()
+                comptime assert "" != "", "Unsupported RDNA mma shape."
                 return shape_null
         else:
 
@@ -1520,7 +1520,7 @@ fn get_mma_shape[
             elif accum_type == DType.float32 and input_type.is_float8():
                 return shape_16x16x32
             else:
-                constrained[False, "Unsupported CDNA mma shape."]()
+                comptime assert "" != "", "Unsupported CDNA mma shape."
                 return shape_null
 
 
