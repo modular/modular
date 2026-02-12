@@ -45,7 +45,9 @@ def _get_state_space_paths() -> tuple[Path, ...]:
     """
     import_path_env = os.environ.get(_MODULAR_MOJO_MAX_IMPORT_PATH, "")
     if not import_path_env:
-        logger.warning("MODULAR_MOJO_MAX_IMPORT_PATH not set for functional_ops")
+        logger.warning(
+            "MODULAR_MOJO_MAX_IMPORT_PATH not set for functional_ops"
+        )
         return ()
 
     paths: list[Path] = []

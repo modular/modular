@@ -39,9 +39,7 @@ logger = logging.getLogger("max.pipelines")
 # For chat applications, consider using an instruction-tuned Mamba variant or
 # providing a custom chat template via --chat-template.
 DEFAULT_MAMBA_CHAT_TEMPLATE = (
-    "{% for message in messages %}"
-    "{{ message['content'] }}"
-    "{% endfor %}"
+    "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 )
 
 

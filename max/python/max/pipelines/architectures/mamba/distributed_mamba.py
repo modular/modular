@@ -35,6 +35,7 @@ from max.nn.legacy import (
     Signals,
     VocabParallelEmbedding,
 )
+
 from .fused_norm import RMSNorm as FusedRMSNorm
 from .ssm import Block, MambaSSM
 

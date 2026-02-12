@@ -20,11 +20,11 @@ from .ssm_state_cache import (
 )
 
 __all__ = [
-    "mamba_arch",
-    "mamba_arch_new",
     "Block",
     "MambaSSM",
     "SSMStateCacheInputs",
     "SSMStateCacheParams",
     "SSMStateValues",
+    "mamba_arch",
+    "mamba_arch_new",
 ]

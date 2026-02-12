@@ -26,15 +26,15 @@ from max.nn.legacy import (
     Linear,
     Module,
 )
+from max.pipelines.lib.lora import LoRAManager
+
 from .fused_norm import RMSNorm as FusedRMSNorm
+from .model_config import MambaConfig
 from .ssm import Block, MambaSSM
 from .ssm_state_cache import (
     SSMStateCacheParams,
     SSMStateValues,
 )
-from max.pipelines.lib.lora import LoRAManager
-
-from .model_config import MambaConfig
 
 
 class Mamba(Module):

@@ -26,7 +26,6 @@ from max.graph import (
     Weight,
     ops,
 )
-
 from max.nn.legacy.layer import Module, Shardable
 
 

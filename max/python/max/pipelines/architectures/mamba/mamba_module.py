@@ -270,9 +270,7 @@ class MambaBase(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
     layers: ModuleList[MambaLayer]
     norm: RMSNorm
 
-    def forward(
-        self, tokens: Tensor, aux: Tensor
-    ) -> tuple[Tensor, ...]:
+    def forward(self, tokens: Tensor, aux: Tensor) -> tuple[Tensor, ...]:
         raise NotImplementedError("Use MambaPrefill or MambaStep")
 
     def __init__(self, config: MambaConfig) -> None:
@@ -301,7 +299,9 @@ class MambaPrefill(MambaBase):
             if i == 0:
                 residual = h
                 h_normed = rms_norm(
-                    h, layer.norm.weight, layer.norm.eps,
+                    h,
+                    layer.norm.weight,
+                    layer.norm.eps,
                     multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
                 )
             else:
@@ -311,15 +311,20 @@ class MambaPrefill(MambaBase):
                     h_fp32 = h.cast(DType.float32)
                     res_fp32 = residual.cast(DType.float32)
                     h_normed, residual = rms_norm_fused_residual(
-                        h_fp32, res_fp32,
-                        layer.norm.weight, layer.norm.eps,
+                        h_fp32,
+                        res_fp32,
+                        layer.norm.weight,
+                        layer.norm.eps,
                         multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
                     )
                     h_normed = h_normed.cast(h.dtype)
                     residual = residual.cast(h.dtype)
                 else:
                     h_normed, residual = rms_norm_fused_residual(
-                        h, residual, layer.norm.weight, layer.norm.eps,
+                        h,
+                        residual,
+                        layer.norm.weight,
+                        layer.norm.eps,
                         multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
                     )
             h, conv_s, ssm_s = layer.mixer.prefill(h_normed)
@@ -360,7 +365,9 @@ class MambaStep(MambaBase):
             if i == 0:
                 residual = h
                 h_normed = rms_norm(
-                    h, layer.norm.weight, layer.norm.eps,
+                    h,
+                    layer.norm.weight,
+                    layer.norm.eps,
                     multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
                 )
             else:
@@ -368,15 +375,20 @@ class MambaStep(MambaBase):
                     h_fp32 = h.cast(DType.float32)
                     res_fp32 = residual.cast(DType.float32)
                     h_normed, residual = rms_norm_fused_residual(
-                        h_fp32, res_fp32,
-                        layer.norm.weight, layer.norm.eps,
+                        h_fp32,
+                        res_fp32,
+                        layer.norm.weight,
+                        layer.norm.eps,
                         multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
                     )
                     h_normed = h_normed.cast(h.dtype)
                     residual = residual.cast(h.dtype)
                 else:
                     h_normed, residual = rms_norm_fused_residual(
-                        h, residual, layer.norm.weight, layer.norm.eps,
+                        h,
+                        residual,
+                        layer.norm.weight,
+                        layer.norm.eps,
                         multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
                     )
             h, conv_s, ssm_s = layer.mixer.step(

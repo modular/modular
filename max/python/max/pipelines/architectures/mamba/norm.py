@@ -41,9 +41,7 @@ class RMSNormFusedResidual(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
     def dim(self) -> Dim:
         return self.weight.shape[0]
 
-    def forward(
-        self, x: Tensor, residual: Tensor
-    ) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, residual: Tensor) -> tuple[Tensor, Tensor]:
         """Apply fused residual addition and RMSNorm.
 
         Args:
@@ -55,9 +53,7 @@ class RMSNormFusedResidual(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
                 normalized: RMSNorm(x + residual) of shape (*, hidden)
                 updated_residual: x + residual of shape (*, hidden)
         """
-        return _rms_norm_fused_residual(
-            x, residual, self.weight, self.eps
-        )
+        return _rms_norm_fused_residual(x, residual, self.weight, self.eps)
 
 
 class RMSNormForFirstBlock(Module[[Tensor], Tensor]):

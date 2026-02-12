@@ -21,14 +21,13 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
-from max.driver import Buffer, DLPackArray, Device
+from max.driver import Buffer, Device, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn.legacy import ReturnHiddenStates, ReturnLogits
 from max.nn.legacy.kv_cache import KVCacheInputs
-from .ssm_state_cache import SSMStateCacheInputs, SSMStateValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -51,6 +50,7 @@ from .data_parallel_mamba import create_graph as create_data_parallel_graph
 from .distributed_mamba import DistributedMamba
 from .mamba import Mamba
 from .model_config import MambaConfig
+from .ssm_state_cache import SSMStateCacheInputs, SSMStateValues
 
 logger = logging.getLogger("max.pipelines")
 
@@ -269,10 +269,7 @@ class MambaModelBase(PipelineModel[TextContext]):
                     model_inputs.data_parallel_splits,
                 )
                 splits_array = np.concatenate(
-                    [
-                        np.array(s, dtype=np.int64)
-                        for s in splits
-                    ]
+                    [np.array(s, dtype=np.int64) for s in splits]
                 )
                 splits_tensor = Buffer.from_numpy(splits_array).to(
                     self.devices[0]
@@ -907,12 +904,12 @@ class MambaModelNew(PipelineModel[TextContext]):
         import functools
 
         from max import functional as F
-        from max.driver import CPU
-        from max.graph import Graph, TensorType
         from max._realization_context import (
             GraphRealizationContext,
             _session,
         )
+        from max.driver import CPU
+        from max.graph import Graph, TensorType
         from max.tensor import Tensor, realization_context
 
         graph = Graph(
@@ -921,9 +918,7 @@ class MambaModelNew(PipelineModel[TextContext]):
             custom_extensions=custom_extensions,
         )
         with realization_context(GraphRealizationContext(graph)) as ctx, ctx:
-            inputs = [
-                Tensor.from_graph_value(inp) for inp in graph.inputs
-            ]
+            inputs = [Tensor.from_graph_value(inp) for inp in graph.inputs]
 
             weight_names_used: list[str] = []
 
@@ -944,9 +939,7 @@ class MambaModelNew(PipelineModel[TextContext]):
                     f"Module needs weights not in state_dict: {missing}"
                 )
             if extra:
-                logger.info(
-                    f"State dict has unused weights: {len(extra)} keys"
-                )
+                logger.info(f"State dict has unused weights: {len(extra)} keys")
 
             if isinstance(outputs, Tensor):
                 graph.output(outputs)
@@ -956,14 +949,10 @@ class MambaModelNew(PipelineModel[TextContext]):
                 unary = False
 
         session = _session()
-        compiled = F.functional(
-            session.load(graph, weights_registry=weights)
-        )
+        compiled = F.functional(session.load(graph, weights_registry=weights))
 
         if unary:
-            return functools.wraps(module)(
-                lambda *inputs: compiled(*inputs)[0]
-            )
+            return functools.wraps(module)(lambda *inputs: compiled(*inputs)[0])
         return compiled
 
     @traced
@@ -979,9 +968,7 @@ class MambaModelNew(PipelineModel[TextContext]):
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.max_batch_size + 1, dtype=np.uint32
-            )
+            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
         # Prepare state dict
@@ -1123,9 +1110,7 @@ class MambaModelNew(PipelineModel[TextContext]):
             [0] + [ctx.tokens.active_length for ctx in context_batch],
             dtype=np.uint32,
         )
-        tokens = np.concatenate(
-            [ctx.tokens.active for ctx in context_batch]
-        )
+        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
         return MambaModelNewInputs(
             tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
