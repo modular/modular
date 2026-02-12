@@ -200,7 +200,7 @@ fn reversed[
     """
     var src = value.src
     return _DictEntryIter[K, V, H, dict_origin, False](
-        src[]._reserved() - 1, 0, src
+        len(src[]._order) - 1, 0, src
     )
 
 

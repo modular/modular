@@ -115,6 +115,14 @@ what we publish.
 
 ### Library changes
 
+- `Dict` internals have been replaced with a Swiss Table implementation using
+  SIMD group probing for lookups. This improves lookup, insertion, and deletion
+  performance — especially when looking up keys not in the dict — while
+  increasing the load factor from 2/3 to 7/8 for better memory efficiency.
+  The `power_of_two_initial_capacity` keyword argument has been renamed to
+  `capacity` and now accepts any positive integer (it is rounded up to the
+  next power of two internally, minimum 16).
+
 - Implicit conversions from `Int` to `SIMD` are now deprecated, and will be
   removed in a future version of Mojo. This includes deprecating converions from
   `Int` to specific `SIMD` scalar types like `Int8` or `Float32`.
@@ -299,6 +307,9 @@ what we publish.
     architectures (NVIDIA, AMD, Apple Metal).
 
 ### ❌ Removed
+
+- `Dict.EMPTY` and `Dict.REMOVED` comptime aliases have been removed. These
+  were internal implementation details of the old hash table design.
 
 ### 🛠️ Fixed
 

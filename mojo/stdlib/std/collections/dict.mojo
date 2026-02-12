@@ -14,7 +14,7 @@
 
 Dict provides an efficient, O(1) amortized
 average-time complexity for insert, lookup, and removal of dictionary elements.
-Its implementation closely mirrors Python's `dict` implementation:
+It uses a Swiss Table implementation with SIMD group probing for fast lookups:
 
 - Performance and size are heavily optimized for small dictionaries, but can
   scale to large dictionaries.
@@ -40,14 +40,150 @@ See the `Dict` docs for more details.
 from builtin.constrained import _constrained_conforms_to
 from compile import get_type_name
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
-from sys.intrinsics import likely
+from sys.intrinsics import is_compile_time, likely
 
-from memory import bitcast, memcpy
+from bit import count_trailing_zeros, next_power_of_two
+from memory import alloc, bitcast, memcpy, memset, pack_bits
 
 comptime KeyElement = Copyable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
 dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
+
+# ===-----------------------------------------------------------------------===#
+# Swiss Table constants and helpers
+# ===-----------------------------------------------------------------------===#
+
+comptime _CTRL_EMPTY: UInt8 = 0xFF
+"""Control byte for an empty slot."""
+comptime _CTRL_DELETED: UInt8 = 0x80
+"""Control byte for a deleted (tombstone) slot."""
+comptime _GROUP_WIDTH: Int = 16
+"""Number of control bytes processed in one SIMD operation."""
+comptime _INITIAL_CAPACITY: Int = 16
+"""Minimum table capacity. Must be >= _GROUP_WIDTH."""
+
+
+@always_inline
+fn _h2(hash: UInt64) -> UInt8:
+    """Extract the top 7 bits of the hash as a fingerprint (0x00-0x7F)."""
+    return UInt8(hash >> 57)
+
+
+@always_inline
+fn _is_occupied(ctrl: UInt8) -> Bool:
+    """Check if a control byte represents an occupied slot.
+
+    Occupied slots have h2 values in range 0x00-0x7F (top bit clear).
+    DELETED (0x80) and EMPTY (0xFF) both have top bit set.
+    """
+    return ctrl < _CTRL_DELETED
+
+
+# ===-----------------------------------------------------------------------===#
+# _Group: SIMD group operations on 16 control bytes
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Group(Copyable, Movable):
+    """A group of control bytes for SIMD probing.
+
+    Loads 16 control bytes at once and performs parallel matching using
+    SIMD comparison operations, enabling fast hash table lookups.
+    """
+
+    var ctrl: SIMD[DType.uint8, _GROUP_WIDTH]
+
+    @always_inline
+    fn __init__(out self, ptr: UnsafePointer[UInt8]):
+        """Load a group of control bytes from memory.
+
+        Args:
+            ptr: Pointer to the start of 16 consecutive control bytes.
+        """
+        self.ctrl = ptr.load[width=_GROUP_WIDTH]()
+
+    # TODO: Remove `is_compile_time()` branches once `pack_bits` is supported
+    # by the compile-time interpreter. Currently `pack_bits` uses `pop.bitcast`
+    # which the interpreter can't handle, so we fall back to scalar loops for
+    # comptime contexts (e.g., Dict used in `comptime` expressions).
+
+    @always_inline
+    fn match_h2(self, h2: UInt8) -> UInt16:
+        """Return a bitmask of slots matching the given h2 fingerprint.
+
+        Args:
+            h2: The h2 fingerprint to match (0x00-0x7F).
+
+        Returns:
+            A bitmask where bit i is set if ctrl[i] == h2.
+        """
+        if is_compile_time():
+            return Self._scalar_match(self.ctrl, h2)
+        return pack_bits(self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](h2)))
+
+    @always_inline
+    fn match_empty(self) -> UInt16:
+        """Return a bitmask of empty slots.
+
+        Returns:
+            A bitmask where bit i is set if ctrl[i] == EMPTY (0xFF).
+        """
+        if is_compile_time():
+            return Self._scalar_match(self.ctrl, _CTRL_EMPTY)
+        return pack_bits(
+            self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY))
+        )
+
+    @always_inline
+    fn match_empty_or_deleted(self) -> UInt16:
+        """Return a bitmask of empty or deleted slots.
+
+        Both EMPTY (0xFF) and DELETED (0x80) have the top bit set,
+        so they are >= 0x80. All occupied h2 values are 0x00-0x7F.
+
+        Returns:
+            A bitmask where bit i is set if ctrl[i] is EMPTY or DELETED.
+        """
+        if is_compile_time():
+            var result = UInt16(0)
+
+            @parameter
+            for i in range(_GROUP_WIDTH):
+                if self.ctrl[i] >= _CTRL_DELETED:
+                    result |= UInt16(1) << UInt16(i)
+            return result
+        return pack_bits(
+            self.ctrl.ge(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED))
+        )
+
+    @staticmethod
+    @always_inline
+    fn _scalar_match(
+        ctrl: SIMD[DType.uint8, _GROUP_WIDTH], target: UInt8
+    ) -> UInt16:
+        """Scalar fallback for compile-time evaluation.
+
+        Args:
+            ctrl: The control byte vector.
+            target: The byte value to match.
+
+        Returns:
+            A bitmask where bit i is set if ctrl[i] == target.
+        """
+        var result = UInt16(0)
+
+        @parameter
+        for i in range(_GROUP_WIDTH):
+            if ctrl[i] == target:
+                result |= UInt16(1) << UInt16(i)
+        return result
+
+
+# ===-----------------------------------------------------------------------===#
+# Error types
+# ===-----------------------------------------------------------------------===#
 
 
 struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
@@ -81,6 +217,11 @@ struct EmptyDictError(ImplicitlyCopyable, Writable):
             writer: The writer to write to.
         """
         writer.write("EmptyDictError")
+
+
+# ===-----------------------------------------------------------------------===#
+# Iterators
+# ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
@@ -129,12 +270,12 @@ struct _DictEntryIter[
     @always_inline
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref[self.src[]._entries[0].value()] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         if self.seen >= len(self.src[]):
             raise StopIteration()
 
-        while True:
-            ref opt_entry_ref = self.src[]._entries[self.index]
+        while 0 <= self.index < len(self.src[]._order):
+            var idx = self.index
 
             @parameter
             if Self.forward:
@@ -142,9 +283,20 @@ struct _DictEntryIter[
             else:
                 self.index -= 1
 
-            if opt_entry_ref:
+            var slot = Int(self.src[]._order[idx])
+            if _is_occupied(self.src[]._ctrl[slot]):
                 self.seen += 1
-                return opt_entry_ref.value()
+                return (
+                    (self.src[]._slots + slot)
+                    .unsafe_mut_cast[Self.mut]()
+                    .unsafe_origin_cast[Self.origin]()[]
+                )
+
+        debug_assert(
+            self.seen == len(self.src[]),
+            "_order exhausted but not all entries seen: _len out of sync",
+        )
+        raise StopIteration()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -191,19 +343,21 @@ struct _TakeDictEntryIter[
         if len(self.src[]) <= 0:
             raise StopIteration()
 
-        while True:
-            ref opt_entry_ref = self.src[]._entries[self.index]
+        while self.index < len(self.src[]._order):
+            var slot = Int(self.src[]._order[self.index])
             self.index += 1
 
-            if opt_entry_ref:
-                ref key = opt_entry_ref.unsafe_value().key
-                var hash = hash[HasherType = Self.H](key)
-                var (found, slot, index) = self.src[]._find_index(hash, key)
-                debug_assert(found, "entry should exist")
+            if _is_occupied(self.src[]._ctrl[slot]):
+                var entry = (self.src[]._slots + slot).take_pointee()
+                self.src[]._set_ctrl(slot, _CTRL_DELETED)
+                self.src[]._len -= 1
+                return entry^
 
-                # Safety: We just checked the validity of the entry with the
-                # given key/hash.
-                return self.src[]._unsafe_take_entry(slot, index)
+        debug_assert(
+            len(self.src[]) == 0,
+            "_order exhausted but _len > 0: ctrl bytes and _len out of sync",
+        )
+        raise StopIteration()
 
 
 @fieldwise_init
@@ -289,7 +443,7 @@ struct _DictValueIter[
         var src = self.iter.src
         return _DictValueIter(
             _DictEntryIter[Self.K, Self.V, Self.H, Self.origin, False](
-                src[]._reserved() - 1, 0, src
+                len(src[]._order) - 1, 0, src
             )
         )
 
@@ -306,6 +460,11 @@ struct _DictValueIter[
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self.iter.bounds()
+
+
+# ===-----------------------------------------------------------------------===#
+# DictEntry
+# ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
@@ -348,97 +507,9 @@ struct DictEntry[
         return self.value^
 
 
-comptime _EMPTY = -1
-comptime _REMOVED = -2
-
-
-struct _DictIndex(Movable):
-    """A compact dict-index type. Small dict indices are compressed
-    to smaller integer types to use less memory.
-
-    _DictIndex doesn't store its own size, so the size must be passed in to
-    its indexing methods.
-
-    Ideally this could be type-parameterized so that the size checks don't
-    need to be performed at runtime, but I couldn't find a way to express
-    this in the current type system.
-    """
-
-    var data: OpaquePointer[MutExternalOrigin]
-
-    @always_inline
-    fn __init__(out self, reserved: Int):
-        if reserved <= 128:
-            var data = alloc[Int8](reserved)
-            for i in range(reserved):
-                data[i] = _EMPTY
-            self.data = data.bitcast[NoneType]()
-        elif reserved <= 2**16 - 2:
-            var data = alloc[Int16](reserved)
-            for i in range(reserved):
-                data[i] = _EMPTY
-            self.data = data.bitcast[NoneType]()
-        elif reserved <= 2**32 - 2:
-            var data = alloc[Int32](reserved)
-            for i in range(reserved):
-                data[i] = _EMPTY
-            self.data = data.bitcast[NoneType]()
-        else:
-            var data = alloc[Int64](reserved)
-            for i in range(reserved):
-                data[i] = _EMPTY
-            self.data = data.bitcast[NoneType]()
-
-    fn copy_reserved(self, reserved: Int) -> Self:
-        var index = Self(reserved)
-        if reserved <= 128:
-            var data = self.data.bitcast[Int8]()
-            var new_data = index.data.bitcast[Int8]()
-            memcpy(dest=new_data, src=data, count=reserved)
-        elif reserved <= 2**16 - 2:
-            var data = self.data.bitcast[Int16]()
-            var new_data = index.data.bitcast[Int16]()
-            memcpy(dest=new_data, src=data, count=reserved)
-        elif reserved <= 2**32 - 2:
-            var data = self.data.bitcast[Int32]()
-            var new_data = index.data.bitcast[Int32]()
-            memcpy(dest=new_data, src=data, count=reserved)
-        else:
-            var data = self.data.bitcast[Int64]()
-            var new_data = index.data.bitcast[Int64]()
-            memcpy(dest=new_data, src=data, count=reserved)
-        return index^
-
-    fn get_index(self, reserved: Int, slot: UInt64) -> Int:
-        if reserved <= 128:
-            var data = self.data.bitcast[Int8]()
-            return Int(data.load(slot & UInt64(reserved - 1)))
-        elif reserved <= 2**16 - 2:
-            var data = self.data.bitcast[Int16]()
-            return Int(data.load(slot & UInt64(reserved - 1)))
-        elif reserved <= 2**32 - 2:
-            var data = self.data.bitcast[Int32]()
-            return Int(data.load(slot & UInt64(reserved - 1)))
-        else:
-            var data = self.data.bitcast[Int64]()
-            return Int(data.load(slot & UInt64(reserved - 1)))
-
-    fn set_index(mut self, reserved: Int, slot: UInt64, value: Int):
-        if reserved <= 128:
-            var data = self.data.bitcast[Int8]()
-            return data.store(slot & UInt64(reserved - 1), Int8(value))
-        elif reserved <= 2**16 - 2:
-            var data = self.data.bitcast[Int16]()
-            return data.store(slot & UInt64(reserved - 1), Int16(value))
-        elif reserved <= 2**32 - 2:
-            var data = self.data.bitcast[Int32]()
-            return data.store(slot & UInt64(reserved - 1), Int32(value))
-        else:
-            var data = self.data.bitcast[Int64]()
-            return data.store(slot & UInt64(reserved - 1), Int64(value))
-
-    fn __del__(deinit self):
-        self.data.free()
+# ===-----------------------------------------------------------------------===#
+# Dict
+# ===-----------------------------------------------------------------------===#
 
 
 struct Dict[
@@ -471,8 +542,8 @@ struct Dict[
     # Dictionary literal syntax
     var scores = {"Alice": 95, "Bob": 87, "Charlie": 92}
 
-    # Pre-allocated capacity (must be power of 2, >= 8)
-    var large_dict = Dict[String, Int](power_of_two_initial_capacity=64)
+    # Pre-allocated capacity
+    var large_dict = Dict[String, Int](capacity=64)
 
     # From separate key and value lists
     var keys = ["red", "green", "blue"]
@@ -498,6 +569,10 @@ struct Dict[
       value type as [`Variant`](/mojo/std/utils/variant/Variant). This is
       a discriminated union type, meaning it can store any number of different
       types that can vary at runtime.
+
+    - **Insertion order**: Iteration over keys, values, and items follows
+      insertion order. Updating an existing key's value does not change its
+      position. This matches the ordering guarantee of Python's `dict`.
 
     - **Value semantics**: A `Dict` is value semantic by default. Copying a
       `Dict` creates a deep copy of all key-value pairs. To avoid accidental
@@ -624,70 +699,20 @@ struct Dict[
 
     # Implementation:
     #
-    # `Dict` provides an efficient, O(1) amortized average-time complexity for
-    # insert, lookup, and removal of dictionary elements.
+    # This Dict uses a Swiss Table design with flat layout + insertion-order
+    # side array. Key features:
     #
-    # Its implementation closely mirrors Python's `dict` implementation:
-    #
-    # - Performance and size are heavily optimized for small dictionaries, but can
-    #     scale to large dictionaries.
-    # - Insertion order is implicitly preserved. Once `__iter__` is implemented
-    #     it will return a deterministic order based on insertion.
-    # - To achieve this, elements are stored in a dense array. Inserting a new
-    #     element will append it to the entry list, and then that index will be stored
-    #     in the dict's index hash map. Removing an element updates that index to
-    #     a special `REMOVED` value for correctness of the probing sequence, and
-    #     the entry in the entry list is marked as removed and the relevant data is freed.
-    #     The entry can be re-used to insert a new element, but it can't be reset to
-    #     `EMPTY` without compacting or resizing the dictionary.
-    # - The index probe sequence is taken directly from Python's dict implementation:
-    #
-    #     ```mojo
-    #     var slot = hash(key) % self._reserved
-    #     var perturb = hash(key)
-    #     while True:
-    #         check_slot(slot)
-    #         alias PERTURB_SHIFT = 5
-    #         perturb >>= PERTURB_SHIFT
-    #         slot = ((5 * slot) + perturb + 1) % self._reserved
-    #     ```
-    #
-    # - Similarly to Python, we aim for a maximum load of 2/3, after which we resize
-    #     to a larger dictionary.
-    # - In the case where many entries are being added and removed, the dictionary
-    #     can fill up with `REMOVED` entries without being resized. In this case
-    #     we will eventually "compact" the dictionary and shift entries towards
-    #     the beginning to free new space while retaining insertion order.
-    #
-    # Key elements must implement the `KeyElement` trait composition, which
-    # includes Copyable, Hashable, and Equatable.
-    # Some of these requirements will be relaxed when we have more robust
-    # support for conditional trait conformance.
-    #
-    # Value elements must be Copyable for a similar reason.
-    #
-    # Invariants:
-    #
-    # - size = 2^k for integer k:
-    #     This allows for faster entry slot lookups, since modulo can be
-    #     optimized to a bit shift for powers of 2.
-    #
-    # - size <= 2/3 * _reserved
-    #     If size exceeds this invariant, we double the size of the dictionary.
-    #     This is the maximal "load factor" for the dict. Higher load factors
-    #     trade off higher memory utilization for more frequent worst-case lookup
-    #     performance. Lookup is O(n) in the worst case and O(1) in average case.
-    #
-    # - _n_entries <= 3/4 * _reserved
-    #     If _n_entries exceeds this invariant, we compact the dictionary, retaining
-    #     the insertion order while resetting _n_entries = size.
-    #     As elements are removed, they retain marker entries for the probe sequence.
-    #     The average case miss lookup (ie. `contains` check on a key not in the dict)
-    #     is O(_reserved  / (1 + _reserved - _n_entries)). At `(k-1)/k` this
-    #     approaches `k` and is therefore O(1) average case. However, we want it to
-    #     be _larger_ than the load factor: since `compact` is O(n), we don't
-    #     don't churn and compact on repeated insert/delete, and instead amortize
-    #     compaction cost to O(1) amortized cost.
+    # - SIMD group probing: 16 control bytes are compared in parallel using
+    #   SIMD operations for fast lookups.
+    # - Control bytes: Each slot has a 1-byte control that is either EMPTY
+    #   (0xFF), DELETED (0x80), or an h2 fingerprint (0x00-0x7F).
+    # - Flat slot array: DictEntry values stored directly in a flat array.
+    #   Only occupied slots are initialized.
+    # - Insertion-order array: A separate List[Int32] tracks the order of
+    #   insertion for deterministic iteration.
+    # - Load factor 7/8: Higher than CPython's 2/3, enabled by SIMD probing.
+    # - Ctrl mirroring: The first GROUP_WIDTH bytes are mirrored after the
+    #   main ctrl array to enable SIMD loads that wrap around.
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -703,28 +728,37 @@ struct Dict[
         iterable_origin: The origin of the iterable.
     """
 
-    comptime EMPTY = _EMPTY
-    """Marker for an empty slot in the hash table."""
-
-    comptime REMOVED = _REMOVED
-    """Marker for a removed slot in the hash table."""
-
-    comptime _initial_reservation = 8
-
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
 
+    var _ctrl: UnsafePointer[UInt8, MutExternalOrigin]
+    """Control byte array. Size is _capacity + _GROUP_WIDTH.
+    Each byte is EMPTY (0xFF), DELETED (0x80), or h2 fingerprint (0x00-0x7F).
+    The last _GROUP_WIDTH bytes mirror the first _GROUP_WIDTH for SIMD wrapping.
+    """
+
+    var _slots: UnsafePointer[
+        DictEntry[Self.K, Self.V, Self.H], MutExternalOrigin
+    ]
+    """Flat slot array. Size is _capacity. Only occupied slots are initialized.
+    """
+
+    var _order: List[Int32]
+    """Insertion-order array of slot indices. Stale entries (from deleted slots)
+    are skipped during iteration by checking the ctrl byte.
+    """
+
     var _len: Int
-    """The number of elements currently stored in the dict."""
-    var _n_entries: Int
-    """The number of entries currently allocated."""
+    """The number of live elements currently stored in the dict."""
 
-    var _index: _DictIndex
+    var _capacity: Int
+    """The number of slots (always a power of 2, >= _INITIAL_CAPACITY)."""
 
-    # We use everything available in the list. Which means that
-    # len(self._entries) == self._entries.capacity == self._reserved()
-    var _entries: List[Optional[DictEntry[Self.K, Self.V, Self.H]]]
+    var _growth_left: Int
+    """Number of EMPTY slots that can still be used before a resize is needed.
+    Decremented on each new insertion into an EMPTY slot. Reset on resize.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -733,34 +767,39 @@ struct Dict[
     @always_inline
     fn __init__(out self):
         """Initialize an empty dictiontary."""
+        self._capacity = _INITIAL_CAPACITY
+        self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
+        memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
+        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
+        self._order = List[Int32](capacity=self._capacity * 7 // 8)
         self._len = 0
-        self._n_entries = 0
-        self._entries = Self._new_entries(Self._initial_reservation)
-        self._index = _DictIndex(len(self._entries))
+        self._growth_left = self._capacity * 7 // 8
 
     @always_inline
-    fn __init__(out self, *, power_of_two_initial_capacity: Int):
-        """Initialize an empty dictiontary with a pre-reserved initial capacity.
+    fn __init__(out self, *, capacity: Int):
+        """Initialize an empty dictionary with a pre-reserved capacity.
+
+        The capacity is rounded up to the next power of two (minimum 16)
+        to satisfy internal layout requirements. The usable capacity
+        before resizing is 7/8 of the rounded value.
 
         Args:
-            power_of_two_initial_capacity: At least 8, has to be a power of two.
+            capacity: The requested minimum number of slots.
 
         Examples:
 
         ```mojo
-        var x = Dict[Int, Int](power_of_two_initial_capacity = 1024)
-        # Insert (2/3 of 1024) entries without reallocation.
+        var x = Dict[Int, Int](capacity=1000)
+        # Actual capacity is 1024; can hold 896 entries without resizing.
         ```
         """
-        debug_assert(
-            power_of_two_initial_capacity.is_power_of_two()
-            and power_of_two_initial_capacity >= 8,
-            "power_of_two_initial_capacity need to be >=8 and a power of two",
-        )
+        self._capacity = max(next_power_of_two(capacity), _INITIAL_CAPACITY)
+        self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
+        memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
+        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
+        self._order = List[Int32](capacity=self._capacity * 7 // 8)
         self._len = 0
-        self._n_entries = 0
-        self._entries = Self._new_entries(power_of_two_initial_capacity)
-        self._index = _DictIndex(len(self._entries))
+        self._growth_left = self._capacity * 7 // 8
 
     @always_inline
     fn __init__(
@@ -776,7 +815,7 @@ struct Dict[
             values: The corresponding values to pair with the keys.
             __dict_literal__: Tell Mojo to use this method for dict literals.
         """
-        # TODO: Use power_of_two_initial_capacity to reserve space.
+        # TODO: Use capacity to reserve space.
         self = Self()
         debug_assert(
             len(keys) == len(values),
@@ -792,7 +831,7 @@ struct Dict[
     # it possible to do `self._reserved`.
     @always_inline
     fn _reserved(self) -> Int:
-        return len(self._entries)
+        return self._capacity
 
     @staticmethod
     fn fromkeys(keys: List[Self.K, ...], value: Self.V) -> Self:
@@ -831,10 +870,38 @@ struct Dict[
         Args:
             existing: The existing dict.
         """
+        self._capacity = existing._capacity
         self._len = existing._len
-        self._n_entries = existing._n_entries
-        self._index = existing._index.copy_reserved(existing._reserved())
-        self._entries = existing._entries.copy()
+        self._growth_left = existing._growth_left
+
+        # Allocate and copy control bytes
+        self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
+        memcpy(
+            dest=self._ctrl,
+            src=existing._ctrl,
+            count=self._capacity + _GROUP_WIDTH,
+        )
+
+        # Allocate slots and deep-copy occupied entries
+        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
+        for i in range(self._capacity):
+            if _is_occupied(self._ctrl[i]):
+                (self._slots + i).init_pointee_copy((existing._slots + i)[])
+
+        # Copy the order array
+        self._order = existing._order.copy()
+
+    fn __del__(deinit self):
+        """Destroy all keys and values in the dictionary and free memory."""
+        # Destroy all occupied slot entries
+        for i in range(self._capacity):
+            if _is_occupied(self._ctrl[i]):
+                (self._slots + i).destroy_pointee()
+
+        # Free allocated memory
+        self._ctrl.free()
+        self._slots.free()
+        # _order is cleaned up by List destructor
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -842,7 +909,7 @@ struct Dict[
 
     fn __getitem__(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K] -> ref[self._entries[0].value().value] Self.V:
+    ) raises DictKeyError[Self.K] -> ref[self] Self.V:
         """Retrieve a value out of the dictionary.
 
         Args:
@@ -874,7 +941,8 @@ struct Dict[
         Returns:
             True if the key exists in the dictionary, False otherwise.
         """
-        return self._find_index(hash[HasherType = Self.H](key), key)[0]
+        var found, _ = self._find_slot(hash[HasherType = Self.H](key), key)
+        return found
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
@@ -893,7 +961,7 @@ struct Dict[
             A reversed iterator of immutable references to the dict keys.
         """
         return _DictKeyIter(
-            _DictEntryIter[forward=False](self._reserved() - 1, 0, self)
+            _DictEntryIter[forward=False](len(self._order) - 1, 0, self)
         )
 
     fn __or__(self, other: Self) -> Self:
@@ -1040,7 +1108,7 @@ struct Dict[
 
     fn _find_ref(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K] -> ref[self._entries[0].value().value] Self.V:
+    ) raises DictKeyError[Self.K] -> ref[self] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
@@ -1051,13 +1119,14 @@ struct Dict[
             present, otherwise an empty Optional.
         """
         var hash = hash[HasherType = Self.H](key)
-        var found, _, index = self._find_index(hash, key)
+        var found, slot_idx = self._find_slot(hash, key)
 
         if found:
-            ref entry = self._entries[index]
-            debug_assert(entry.__bool__(), "entry in index must be full")
-            # SAFETY: We just checked that `entry` is present.
-            return entry.unsafe_value().value
+            debug_assert(
+                _is_occupied(self._ctrl[slot_idx]),
+                "_find_slot returned found=True but ctrl byte is not occupied",
+            )
+            return (self._slots + slot_idx)[].value
 
         raise DictKeyError[Self.K]()
 
@@ -1116,10 +1185,16 @@ struct Dict[
             `DictKeyError` if the key was not present in the dictionary.
         """
         var hash = hash[HasherType = Self.H](key)
-        var found, slot, index = self._find_index(hash, key)
+        var found, slot_idx = self._find_slot(hash, key)
         if found:
-            var entry_value = self._unsafe_take_entry(slot, index)
-            return entry_value^.reap_value()
+            debug_assert(
+                _is_occupied(self._ctrl[slot_idx]),
+                "_find_slot returned found=True but ctrl byte is not occupied",
+            )
+            var entry = (self._slots + slot_idx).take_pointee()
+            self._set_ctrl(slot_idx, _CTRL_DELETED)
+            self._len -= 1
+            return entry^.reap_value()
         raise DictKeyError[Self.K]()
 
     fn popitem(
@@ -1140,12 +1215,15 @@ struct Dict[
             EmptyDictError.
         """
 
-        for ref entry in reversed(self._entries):
-            if entry:
-                var (_, slot, index) = self._find_index(
-                    entry.unsafe_value().hash, entry.unsafe_value().key
-                )
-                return self._unsafe_take_entry(slot, index)
+        var i = len(self._order) - 1
+        while i >= 0:
+            var slot = Int(self._order[i])
+            if _is_occupied(self._ctrl[slot]):
+                var entry = (self._slots + slot).take_pointee()
+                self._set_ctrl(slot, _CTRL_DELETED)
+                self._len -= 1
+                return entry^
+            i -= 1
 
         raise EmptyDictError()
 
@@ -1233,14 +1311,22 @@ struct Dict[
 
     fn clear(mut self):
         """Remove all elements from the dictionary."""
+        # Destroy all occupied entries
+        for i in range(self._capacity):
+            if _is_occupied(self._ctrl[i]):
+                (self._slots + i).destroy_pointee()
+
+        # Reset ctrl to all EMPTY
+        memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
+
+        # Clear state
+        self._order.clear()
         self._len = 0
-        self._n_entries = 0
-        self._entries = Self._new_entries(Self._initial_reservation)
-        self._index = _DictIndex(self._reserved())
+        self._growth_left = self._capacity * 7 // 8
 
     fn setdefault(
         mut self, key: Self.K, var default: Self.V
-    ) -> ref[self._entries[0].value().value] Self.V:
+    ) -> ref[self] Self.V:
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
 
@@ -1253,39 +1339,25 @@ struct Dict[
             present.
         """
         self._maybe_resize()
-        var found, slot, index = self._find_index(
-            hash[HasherType = Self.H](key), key
-        )
-        ref entry = self._entries[index]
+        var h = hash[HasherType = Self.H](key)
+        var found, slot_idx = self._find_slot(h, key)
         if not found:
-            entry = DictEntry[H = Self.H](key.copy(), default^)
-            self._set_index(slot, index)
+            var entry = DictEntry[H = Self.H](key.copy(), default^)
+            self._set_ctrl(slot_idx, _h2(h))
+            (self._slots + slot_idx).init_pointee_move(entry^)
+            self._order.append(Int32(slot_idx))
             self._len += 1
-            self._n_entries += 1
-        return entry.unsafe_value().value
+            self._growth_left -= 1
+        else:
+            debug_assert(
+                _is_occupied(self._ctrl[slot_idx]),
+                "_find_slot returned found=True but ctrl byte is not occupied",
+            )
+        return (self._slots + slot_idx)[].value
 
-    fn _unsafe_take_entry(
-        mut self, slot: UInt64, index: Int
-    ) -> DictEntry[Self.K, Self.V, Self.H]:
-        self._set_index(slot, Self.REMOVED)
-        ref entry = self._entries[index]
-        debug_assert(entry.__bool__(), "entry in index must be full")
-        var entry_value = entry.unsafe_take()
-        self._len -= 1
-        return entry_value^
-
-    @staticmethod
-    @always_inline
-    fn _new_entries(
-        reserve_at_least: Int,
-    ) -> List[Optional[DictEntry[Self.K, Self.V, Self.H]]]:
-        var entries = List[Optional[DictEntry[Self.K, Self.V, Self.H]]](
-            capacity=reserve_at_least
-        )
-        # We have memory available, we'll use everything.
-        for _ in range(entries.capacity):
-            entries.append(None)
-        return entries^
+    # ===-------------------------------------------------------------------===#
+    # Internal methods
+    # ===-------------------------------------------------------------------===#
 
     fn _insert(mut self, var key: Self.K, var value: Self.V):
         self._insert(DictEntry[Self.K, Self.V, Self.H](key^, value^))
@@ -1296,92 +1368,168 @@ struct Dict[
         @parameter
         if not safe_context:
             self._maybe_resize()
-        var found, slot, index = self._find_index(entry.hash, entry.key)
+        var found, slot_idx = self._find_slot(entry.hash, entry.key)
 
-        self._entries[index] = entry^
-        if not found:
-            self._set_index(slot, index)
+        if found:
+            # Update existing entry: destroy old, move new in
+            (self._slots + slot_idx).destroy_pointee()
+            (self._slots + slot_idx).init_pointee_move(entry^)
+        else:
+            # New entry
+            self._set_ctrl(slot_idx, _h2(entry.hash))
+            (self._slots + slot_idx).init_pointee_move(entry^)
+            self._order.append(Int32(slot_idx))
             self._len += 1
-            self._n_entries += 1
+            self._growth_left -= 1
+            debug_assert(
+                self._growth_left >= 0,
+                "_growth_left went negative after insert",
+            )
 
-    fn _get_index(self, slot: UInt64) -> Int:
-        return self._index.get_index(self._reserved(), slot)
+    @always_inline
+    fn _set_ctrl(mut self, index: Int, value: UInt8):
+        """Set a control byte, maintaining the mirror for wrap-around SIMD loads.
 
-    fn _set_index(mut self, slot: UInt64, index: Int):
-        return self._index.set_index(self._reserved(), slot, index)
-
-    fn _next_index_slot(self, mut slot: UInt64, mut perturb: UInt64):
-        comptime PERTURB_SHIFT = 5
-        perturb >>= PERTURB_SHIFT
-        slot = ((5 * slot) + UInt64(Int(perturb + 1))) & UInt64(
-            self._reserved() - 1
+        Args:
+            index: The slot index.
+            value: The control byte value (h2, EMPTY, or DELETED).
+        """
+        debug_assert(
+            0 <= index < self._capacity,
+            "ctrl index out of bounds",
         )
+        self._ctrl[index] = value
+        # Mirror first GROUP_WIDTH bytes at the end of the ctrl array
+        if index < _GROUP_WIDTH:
+            self._ctrl[self._capacity + index] = value
 
-    fn _find_empty_index(self, hash: UInt64) -> UInt64:
-        var slot = hash & UInt64(self._reserved() - 1)
-        var perturb = hash
+    @always_inline
+    fn _find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
+        """Find a slot matching the given key, or an empty slot for insertion.
+
+        This intentionally does NOT return DELETED slots for insertion.
+        Reusing a DELETED slot would place the entry at an arbitrary position
+        in the slot array, but the caller appends to `_order` expecting the
+        slot index to correspond to insertion order. Skipping DELETED slots
+        keeps the mapping between `_order` and `_slots` consistent, and
+        DELETED slots are reclaimed during resize anyway.
+
+        Args:
+            hash: The hash of the key.
+            key: The key to search for.
+
+        Returns:
+            A tuple of (found, slot_index). If found, slot_index is the
+            matching slot. If not found, slot_index is the first EMPTY slot
+            suitable for insertion.
+        """
+        var h2_val = _h2(hash)
+        var pos = Int(hash) & (self._capacity - 1)
+
         while True:
-            var index = self._get_index(slot)
-            if index == Self.EMPTY:
-                return slot
-            self._next_index_slot(slot, perturb)
+            var group = _Group(self._ctrl + pos)
 
-    fn _find_index(self, hash: UInt64, key: Self.K) -> Tuple[Bool, UInt64, Int]:
-        # Return (found, slot, index)
-        var slot = hash & UInt64(self._reserved() - 1)
-        var perturb = hash
+            # Check for h2 fingerprint matches in this group
+            var match_mask = group.match_h2(h2_val)
+            while match_mask != 0:
+                var bit = count_trailing_zeros(Int(match_mask))
+                var slot_idx = (pos + bit) & (self._capacity - 1)
+                if (self._slots + slot_idx)[].hash == hash and likely(
+                    (self._slots + slot_idx)[].key == key
+                ):
+                    return (True, slot_idx)
+                match_mask &= match_mask - 1  # Clear lowest set bit
+
+            # If any EMPTY slot in this group, key is definitely absent
+            var empty_mask = group.match_empty()
+            if empty_mask != 0:
+                var bit = count_trailing_zeros(Int(empty_mask))
+                return (False, (pos + bit) & (self._capacity - 1))
+
+            # No match and no EMPTY in this group, continue probing
+            pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
+
+    @always_inline
+    fn _find_empty_slot(self, hash: UInt64) -> Int:
+        """Find the first EMPTY or DELETED slot for the given hash.
+
+        Used during resize when we know the key is unique.
+
+        Args:
+            hash: The hash to determine the starting probe position.
+
+        Returns:
+            The index of the first available slot.
+        """
+        var pos = Int(hash) & (self._capacity - 1)
+
         while True:
-            var index = self._get_index(slot)
-            if index == Self.EMPTY:
-                return (False, slot, self._n_entries)
-            elif index == Self.REMOVED:
-                pass
-            else:
-                ref entry = self._entries[index]
-                debug_assert(entry.__bool__(), "entry in index must be full")
-                ref val = entry.unsafe_value()
-                if val.hash == hash and likely(val.key == key):
-                    return True, slot, index
-            self._next_index_slot(slot, perturb)
-
-    fn _over_load_factor(self) -> Bool:
-        return 3 * self._len > 2 * self._reserved()
-
-    fn _over_compact_factor(self) -> Bool:
-        return 4 * self._n_entries > 3 * self._reserved()
+            var group = _Group(self._ctrl + pos)
+            var mask = group.match_empty_or_deleted()
+            if mask != 0:
+                var bit = count_trailing_zeros(Int(mask))
+                return (pos + bit) & (self._capacity - 1)
+            pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
 
     fn _maybe_resize(mut self):
-        if not self._over_load_factor():
-            if self._over_compact_factor():
-                self._compact()
+        """Resize the table if growth_left has been exhausted."""
+        if self._growth_left > 0:
+            self._maybe_compact_order()
             return
-        var _reserved = self._reserved() * 2
-        self._len = 0
-        self._n_entries = 0
-        var old_entries = self._entries^
-        self._entries = self._new_entries(_reserved)
-        self._index = _DictIndex(self._reserved())
 
-        for var entry in old_entries:
-            if entry:
-                self._insert[safe_context=True](entry.unsafe_take())
+        # TODO: When most non-EMPTY slots are DELETED (tombstones) rather than
+        # occupied, we could rehash in-place at the same capacity instead of
+        # doubling. This avoids unnecessary memory growth for workloads with
+        # heavy insert/delete churn. The abseil Swiss Table implements this as:
+        # if _len <= capacity * 7 / 16, rehash at same size; else double.
+        # For now we always double, which is correct but uses more memory.
 
-    fn _compact(mut self):
-        self._index = _DictIndex(self._reserved())
-        var right = 0
-        for left in range(self._len):
-            while not self._entries[right]:
-                right += 1
-                debug_assert(right < self._reserved(), "Invalid dict state")
-            var entry = self._entries[right]
-            debug_assert(entry.__bool__(), "Logic error")
-            var slot = self._find_empty_index(entry.value().hash)
-            self._set_index(slot, left)
-            if left != right:
-                self._entries[left] = entry.unsafe_take()
-            right += 1
+        # Double capacity and rehash
+        var new_capacity = self._capacity * 2
+        var old_ctrl = self._ctrl
+        var old_slots = self._slots
+        var old_order = self._order^
 
-        self._n_entries = self._len
+        # Allocate new storage
+        self._ctrl = alloc[UInt8](new_capacity + _GROUP_WIDTH)
+        memset(self._ctrl, _CTRL_EMPTY, new_capacity + _GROUP_WIDTH)
+        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](new_capacity)
+        self._capacity = new_capacity
+        self._growth_left = new_capacity * 7 // 8 - self._len
+
+        # Rebuild order (compacted) by walking old order
+        self._order = List[Int32](capacity=self._len)
+
+        for i in range(len(old_order)):
+            var old_slot = Int(old_order[i])
+            if _is_occupied(old_ctrl[old_slot]):
+                # Move entry from old table to new table
+                var entry = (old_slots + old_slot).take_pointee()
+                var h2_val = _h2(entry.hash)
+                var new_slot = self._find_empty_slot(entry.hash)
+                self._set_ctrl(new_slot, h2_val)
+                (self._slots + new_slot).init_pointee_move(entry^)
+                self._order.append(Int32(new_slot))
+
+        debug_assert(
+            len(self._order) == self._len,
+            "order length doesn't match _len after resize",
+        )
+
+        # Free old storage
+        old_ctrl.free()
+        old_slots.free()
+
+    fn _maybe_compact_order(mut self):
+        """Compact the order array if it has too many stale entries."""
+        if len(self._order) <= 2 * self._len:
+            return
+        var new_order = List[Int32](capacity=self._len)
+        for i in range(len(self._order)):
+            var slot = Int(self._order[i])
+            if _is_occupied(self._ctrl[slot]):
+                new_order.append(self._order[i])
+        self._order = new_order^
 
 
 struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
