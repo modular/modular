@@ -117,12 +117,12 @@ class TestPixelGenerationTokenizer:
         assert (
             tokenizer._num_channels_latents == 32
         )  # Flux2 has in_channels=128, so 128//4=32
-        assert tokenizer._base_image_seq_len == 256
-        assert tokenizer._max_image_seq_len == 4096
-        assert tokenizer._base_shift == 0.5
-        assert tokenizer._max_shift == 1.15
+        assert tokenizer._scheduler.base_image_seq_len == 256
+        assert tokenizer._scheduler.max_image_seq_len == 4096
+        assert tokenizer._scheduler.base_shift == 0.5
+        assert tokenizer._scheduler.max_shift == 1.15
         assert (
-            tokenizer._use_guidance_embeds is False
+            tokenizer._scheduler._use_empirical_mu is False
         )  # Flux2 model doesn't have guidance_embeds in transformer config
 
     @pytest.mark.asyncio
@@ -297,20 +297,8 @@ class TestPixelGenerationTokenizer:
         )
 
         # Test with different image sequence lengths
-        mu_small = tokenizer._calculate_shift(
-            256,
-            base_seq_len=256,
-            max_seq_len=4096,
-            base_shift=0.5,
-            max_shift=1.15,
-        )
-        mu_large = tokenizer._calculate_shift(
-            4096,
-            base_seq_len=256,
-            max_seq_len=4096,
-            base_shift=0.5,
-            max_shift=1.15,
-        )
+        mu_small = tokenizer._scheduler._calculate_mu(256, 50)
+        mu_large = tokenizer._scheduler._calculate_mu(4096, 50)
 
         # Mu should increase with sequence length
         assert mu_small == 0.5  # At base
