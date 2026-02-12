@@ -15,6 +15,7 @@ from collections.counter import Counter
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
 from testing import TestSuite
+from test_utils import check_write_to
 
 
 def test_and():
@@ -484,6 +485,28 @@ def test_popitem():
 
     with assert_raises():
         _ = counter.popitem()
+
+
+def test_write_to():
+    """Test Writable trait implementation."""
+    check_write_to(
+        Counter[Int](1, 2, 2, 3, 3, 3),
+        expected="{3: 3, 2: 2, 1: 1}",
+        is_repr=False,
+    )
+    check_write_to(Counter[Int](), expected="{}", is_repr=False)
+
+
+def test_write_repr_to():
+    """Test write_repr_to implementation."""
+    check_write_to(
+        Counter[Int](1, 2, 2, 3, 3, 3),
+        expected=(
+            "Counter[Int]({Int(3): 3, Int(2): 2, Int(1): 1})"
+        ),
+        is_repr=True,
+    )
+    check_write_to(Counter[Int](), expected="Counter[Int]({})", is_repr=True)
 
 
 def main():

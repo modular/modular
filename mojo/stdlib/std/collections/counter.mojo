@@ -29,6 +29,7 @@ from builtin.constrained import _constrained_conforms_to
 from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
 from hashlib import Hasher, default_hasher
 
+import format._utils as fmt
 from utils import Variant
 
 
@@ -233,12 +234,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     @no_inline
     fn __repr__(self) -> String:
-        """Returns a string representation of a `Counter`.
+        """Returns the repr representation of a `Counter`.
 
         Returns:
-            A string representation of the Counter.
+            The repr representation of the Counter.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
     fn __str__(self) -> String:
@@ -256,44 +259,68 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         var counter_as_string = String(c)
         print(counter_as_string)
-        # prints "Counter({'a': 3, 'c': 3, 'b': 2, 'd': 1})"
+        # prints "{a: 3, c: 3, b: 2, d: 1}"
         ```
         """
         var output = String()
         self.write_to(output)
         return output^
 
+    fn _write_self_to[
+        write_key: fn(Self.V, mut Some[Writer]),
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
+
+        var items = self.most_common(UInt(len(self)))
+        var index = 0
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            if index >= len(items):
+                raise StopIteration()
+            ref item = items[index]
+            write_key(item._value, w)
+            w.write_string(": ")
+            item._count.write_to(w)
+            index += 1
+
+        fmt.write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
+        _ = items^
+
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Write `my_counter.__str__()` to a `Writer`.
 
         Constraints:
-            `V` must conform to `Representable`.
+            `V` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[
+            write_key = fmt.write_to[Self.V],
+        ](writer)
 
-        writer.write("Counter({")
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of this Counter to a `Writer`.
 
-        var items = self.most_common(UInt(len(self)))
-        for i in range(len(items)):
-            ref item = items[i]
-            # Access the value and count from CountTuple
-            ref value = item._value
-            ref key = trait_downcast[Representable](value)
-            var count = item._count
-            writer.write(repr(key), ": ", repr(count))
-            if i < len(items) - 1:
-                writer.write(", ")
-        writer.write("})")
+        Constraints:
+            `V` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[
+                write_key = fmt.write_repr_to[Self.V],
+            ](w)
+
+        fmt.FormatStruct(writer, "Counter").params(
+            fmt.TypeNames[Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators
