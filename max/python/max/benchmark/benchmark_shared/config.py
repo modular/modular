@@ -359,7 +359,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Top-k for sampling."""
 
     # Traffic control (serving-specific)
-    request_rate: str | None = field(
+    request_rate: str = field(
         default="inf",
         metadata={
             "group": "Traffic Control",

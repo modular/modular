@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import contextlib
 import hashlib
@@ -216,8 +215,6 @@ async def get_request(
     theta = 1.0 / (request_rate * burstiness)
 
     # Initialize timing data collection - always enabled
-    if timing_data is None:
-        timing_data = {}
     timing_data.setdefault("intervals", [])
 
     start_time = time.perf_counter()
@@ -1390,7 +1387,7 @@ async def benchmark(
     return result
 
 
-def main(args: argparse.Namespace) -> None:
+def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -1404,6 +1401,8 @@ def main(args: argparse.Namespace) -> None:
     # so bump the file limit to make room for them
     set_ulimit()
 
+    if args.model is None:
+        raise ValueError("--model is required when running benchmark")
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
 
@@ -1443,17 +1442,16 @@ def main(args: argparse.Namespace) -> None:
         )
 
     logger.info("sampling requests")
-    if args.dataset_name is None:
-        raise ValueError(
-            "Please specify '--dataset-name' and the corresponding "
-            "'--dataset-path' if required."
-        )
 
     # Build output_lengths array
     if args.num_prompts is not None:
         num_requests = args.num_prompts
-    else:
+    elif args.num_chat_sessions is not None:
         num_requests = args.num_chat_sessions
+    else:
+        raise ValueError(
+            "Please specify either '--num-prompts' or '--num-chat-sessions'."
+        )
 
     # NOTE: args.output_lengths is a path to a YAML file, while output_lengths
     # is a list of ints.
@@ -1482,6 +1480,7 @@ def main(args: argparse.Namespace) -> None:
                 tokenizer=tokenizer,
             )
         else:
+            assert args.num_prompts is not None
             input_requests = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
@@ -1492,6 +1491,7 @@ def main(args: argparse.Namespace) -> None:
             )
 
     elif isinstance(benchmark_dataset, ShareGPTBenchmarkDataset):
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1503,6 +1503,7 @@ def main(args: argparse.Namespace) -> None:
         # For sonnet, formatting depends on the endpoint
         apply_chat_template = chat
         # Sample sonnet requests with common parameters
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1513,6 +1514,7 @@ def main(args: argparse.Namespace) -> None:
         )
 
     elif isinstance(benchmark_dataset, VisionArenaBenchmarkDataset):
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1524,6 +1526,7 @@ def main(args: argparse.Namespace) -> None:
                 "Arxiv summarization dataset does not support --output-lengths."
                 " Please use --max-output-len"
             )
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1549,6 +1552,7 @@ def main(args: argparse.Namespace) -> None:
                 use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
         else:
+            assert args.num_prompts is not None
             input_requests = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
@@ -1564,6 +1568,7 @@ def main(args: argparse.Namespace) -> None:
                 use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
     elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1585,6 +1590,7 @@ def main(args: argparse.Namespace) -> None:
             output_lengths = [
                 max(output_len, 1) for output_len in output_lengths
             ]
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1593,6 +1599,7 @@ def main(args: argparse.Namespace) -> None:
             seed=args.seed,
         )
     elif isinstance(benchmark_dataset, BatchJobBenchmarkDataset):
+        assert args.num_prompts is not None
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
@@ -1629,20 +1636,20 @@ def main(args: argparse.Namespace) -> None:
         )
         lora_manager.log_traffic_distribution()
 
+    max_concurrency: int | None = None
     if args.max_concurrency is not None:
         try:
-            args.max_concurrency = int(args.max_concurrency)
+            max_concurrency = int(args.max_concurrency)
         except ValueError as e:
             raise ValueError(
                 f"Expected a single integer value for max_concurrency, got {args.max_concurrency}"
             ) from e
-    if args.request_rate is not None:
-        try:
-            args.request_rate = float(args.request_rate)
-        except ValueError as e:
-            raise ValueError(
-                f"Expected a single float value for request_rate, got {args.request_rate}"
-            ) from e
+    try:
+        request_rate = float(args.request_rate)
+    except ValueError as e:
+        raise ValueError(
+            f"Expected a single float value for request_rate, got {args.request_rate}"
+        ) from e
 
     try:
         backend = Backend(args.backend)
@@ -1662,6 +1669,7 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"Tracing enabled, output: {trace_path}")
 
     logger.info("Starting benchmark run")
+    assert args.num_prompts is not None
     benchmark_result: dict[str, Any] = asyncio.run(
         benchmark(
             backend=backend,
@@ -1671,9 +1679,9 @@ def main(args: argparse.Namespace) -> None:
             tokenizer=tokenizer,
             input_requests=input_requests,
             chat_sessions=chat_sessions,
-            request_rate=args.request_rate,
+            request_rate=request_rate,
             burstiness=args.burstiness,
-            max_concurrency=args.max_concurrency,
+            max_concurrency=max_concurrency,
             disable_tqdm=args.disable_tqdm,
             do_test_prompt=not args.skip_test_prompt,
             collect_gpu_stats=args.collect_gpu_stats,
@@ -1742,7 +1750,7 @@ def main(args: argparse.Namespace) -> None:
 
         # Traffic
         result_json["request_rate"] = (
-            args.request_rate if args.request_rate < float("inf") else "inf"
+            request_rate if request_rate < float("inf") else "inf"
         )
         result_json["burstiness"] = args.burstiness
         result_json["max_concurrency"] = args.max_concurrency
@@ -1792,7 +1800,7 @@ def main(args: argparse.Namespace) -> None:
     logger.info("finished benchmark run: Success.")
 
 
-def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
+def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
     """Parse command line arguments using ServingBenchmarkConfig with enhanced cli_parse_args().
 
     This function uses the generalized parse_benchmark_args function to handle
@@ -1801,7 +1809,7 @@ def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
     Args:
         args: Command line arguments to parse. If None, parse from sys.argv.
     """
-    return parse_benchmark_args(
+    parsed_args = parse_benchmark_args(
         config_class=ServingBenchmarkConfig,
         default_config_path=Path(__file__).parent
         / "configs"
@@ -1809,8 +1817,17 @@ def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
         description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
         args=args,
     )
+    slim_parsed_args = dict(vars(parsed_args))
+    # config_file is present in the parsed arguments, but isn't a part of the
+    # config proper, so remove it before constructing the config
+    slim_parsed_args.pop("config_file", None)
+    return ServingBenchmarkConfig(**slim_parsed_args)
+
+
+def main(args: Sequence[str] | None = None) -> None:
+    parsed_args = parse_args(args)
+    main_with_parsed_args(parsed_args)
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+    main()
