@@ -63,6 +63,10 @@ trait TensorLayout(TrivialRegisterPassable):
     fn product(self) -> Int:
         ...
 
+    fn size(self) -> Int:
+        """Returns the total number of elements. Alias for product()."""
+        ...
+
     fn __call__[
         index_type: CoordLike,
         *,
@@ -242,6 +246,16 @@ struct Layout[
             The total number of elements in the layout.
         """
         return self._shape.product()
+
+    fn size(self) -> Int:
+        """Returns the total number of elements in the layout's domain.
+
+        Alias for `product()`. Compatible with the legacy Layout API.
+
+        Returns:
+            The total number of elements in the layout.
+        """
+        return self.product()
 
     fn cosize[
         linear_idx_type: DType = DType.int64

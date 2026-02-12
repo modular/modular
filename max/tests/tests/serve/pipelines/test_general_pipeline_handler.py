@@ -86,7 +86,11 @@ def test_next_single_chunk() -> None:
     assert len(streamed_chunks) == 1
     assert streamed_chunks[0].is_done is True
     assert len(streamed_chunks[0].output) == 1
-    assert streamed_chunks[0].output[0].format == "png"
+
+    # Narrow type for mypy
+    output_content = streamed_chunks[0].output[0]
+    assert isinstance(output_content, OutputImageContent)
+    assert output_content.format == "png"
 
 
 def test_next_multiple_chunks() -> None:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,6 +27,7 @@ from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from PIL import Image
 from tqdm import tqdm
 from typing_extensions import Self
 
@@ -352,6 +353,10 @@ class PixelModelInputs:
     - Commonly used for "same prompt, multiple samples" behavior.
     - Must be > 0.
     - For video generation, the naming may still be used for historical compatibility.
+    """
+    input_image: Image.Image | None = None
+    """
+    Optional input image for image-to-image generation (PIL.Image.Image).
     """
 
     def __post_init__(self) -> None:

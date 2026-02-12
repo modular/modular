@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,10 +22,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.interfaces import PixelGenerationContext, TokenBuffer
-from max.pipelines.lib.interfaces import (
-    DiffusionPipeline,
-    PixelModelInputs,
-)
+from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.tensor import Tensor
 from tqdm import tqdm
 
@@ -70,11 +67,9 @@ class FluxPipelineOutput:
     """Output class for Flux image generation pipelines.
 
     Args:
-        images (`list[PIL.Image.Image]` or `np.ndarray` or `Tensor`)
-            List of denoised PIL images of length `batch_size` or numpy array or Max tensor of shape `(batch_size,
-            height, width, num_channels)`. PIL images or numpy array present the denoised images of the diffusion
-            pipeline. Max tensors can represent either the denoised images or the intermediate latents ready to be
-            passed to the decoder.
+        images (`np.ndarray` or `Tensor`)
+            Numpy array or Max tensor of shape `(batch_size, height, width, num_channels)`.
+            The denoised images of the diffusion pipeline.
     """
 
     images: np.ndarray | Tensor

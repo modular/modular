@@ -156,6 +156,8 @@ class _TPPagedKVCacheManager:
 
         Args:
             params: The KVCacheParams for the given pipeline.
+            total_num_pages: Total number of device pages across all TP shards.
+            total_num_host_pages: Total number of host pages for swapping.
             devices: The devices on which the manager will allocate memory.
                 For tensor parallelism, KV cache data is sharded across these devices.
             session: The inference session to load ops from.
@@ -266,7 +268,7 @@ class _TPPagedKVCacheManager:
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:
-        """Get the percentage of blocks used after allocating for a request."""
+        """Gets the percentage of blocks used after allocating for a request."""
         num_needed_blocks = (
             self.num_used_pages
             + self.block_manager.num_blocks_to_allocate(ctx, num_steps)
@@ -301,16 +303,15 @@ class _TPPagedKVCacheManager:
     def get_runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
-        """Get the graph inputs for a batch of requests.
+        """Gets the graph inputs for a batch of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
         already allocated to it to run for the given number of steps.
 
         Args:
-            batch: Batch of requests
-            num_steps: Number of steps to run for
+            batch: Batch of requests.
+            num_steps: Number of steps to run for.
         """
-
         # Wait for any pending connector operations (H2D loads from host cache).
         self.connector.sync()
 
@@ -415,9 +416,9 @@ class _TPPagedKVCacheManager:
         return ret_list
 
     def release(self, request_id: RequestID) -> None:
-        """Release the sequence associated with :obj:`request_id`, marking this sequence as complete.
-        This returns the sequence ID back to the available pool of cache memory,
-        allowing it to be reused when a new sequence is claimed.
+        """Releases the sequence associated with :obj:`request_id`, marking it complete.
+
+        Returns the sequence ID to the pool of cache memory for reuse.
         """
         if request_id not in self._claimed_requests:
             raise ValueError(

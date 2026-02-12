@@ -34,6 +34,7 @@ from testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from testing.prop.strategy import SIMD, List
+from sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698():
@@ -1063,6 +1064,22 @@ def test_list_comprehension():
 
     var l2 = [x * y for x in range(3) for y in l1]
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
+
+
+def test_list_can_infer_iterable_element_type():
+    var string = "Mojo🔥"
+    var l = List(string.codepoints())
+    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_equal(
+        l,
+        [
+            Codepoint.ord("M"),
+            Codepoint.ord("o"),
+            Codepoint.ord("j"),
+            Codepoint.ord("o"),
+            Codepoint.ord("🔥"),
+        ],
+    )
 
 
 # ===-------------------------------------------------------------------===#
