@@ -125,8 +125,7 @@ class BlockManager:
         self,
         ctx: TextGenerationContext,
     ) -> None:
-        """Compute the block hashes for the request."""
-
+        """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
 
         num_hashed_tokens = len(hashes) * self.block_size
@@ -158,11 +157,10 @@ class BlockManager:
     def reuse_blocks_from_prefix_cache(
         self, ctx: TextGenerationContext
     ) -> None:
-        """Reuse blocks from prefix cache.
+        """Reuses blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
-        Partial blocks can be reused via COW. The blocks/tokens to copy to and
-        from are returned as a tuple.
+        Partial blocks can be reused via COW.
         """
         self.assert_runtime_invariants(ctx)
 
@@ -208,7 +206,6 @@ class BlockManager:
         self, ctx: TextGenerationContext, desired_hashes: list[int]
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
-
         # Count the number of device block hashes that are in the device prefix cache.
         device_prefix_cache = self.device_block_pool.hash_to_committed_block
 
@@ -244,7 +241,6 @@ class BlockManager:
         desired_hashes: list[int],
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes."""
-
         device_prefix_cache = self.device_block_pool.hash_to_committed_block
 
         blocks = []
@@ -312,9 +308,9 @@ class BlockManager:
         self, ctx: TextGenerationContext
     ) -> int:
         """Returns the number of computed (cached) blocks related to this request.
+
         Note that only full blocks are counted.
         """
-
         assert self.enable_prefix_caching
 
         num_committed_blocks = (
@@ -331,10 +327,10 @@ class BlockManager:
     def get_full_blocks_from_prefix_cache(
         self, ctx: TextGenerationContext
     ) -> list[KVCacheBlock]:
-        """Get the computed (cached) blocks for the request.
+        """Gets the computed (cached) blocks for the request.
+
         Note that the computed blocks must be full.
         """
-
         assert self.enable_prefix_caching
 
         req_hashes = self.req_to_hashes[ctx.request_id]
@@ -373,7 +369,6 @@ class BlockManager:
         Args:
             ctx: TextGenerationContext.
         """
-
         req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = (
@@ -410,7 +405,6 @@ class BlockManager:
 
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
-
         blocks = self.req_to_blocks[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
@@ -448,7 +442,6 @@ class BlockManager:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
-
         # It is impossible to schedule this request, even if it was the only req
         # and could use the entire KV cache.
         # This should literally never happen unless the user sets an absurdly
@@ -524,6 +517,7 @@ class BlockManager:
 
     @traced
     def allocate_device_block(self) -> KVCacheBlock:
+        """Allocates a single block from the device block pool."""
         new_block, _ = self.device_block_pool.alloc_block()
         return new_block
 
@@ -554,7 +548,7 @@ class BlockManager:
 
     @traced
     def reset_prefix_cache(self) -> None:
-        """Reset the device prefix cache.
+        """Resets the device prefix cache.
 
         Note: Host prefix cache reset is handled by the connector.
         """
@@ -562,16 +556,16 @@ class BlockManager:
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Returns combined metrics for this manager and its connector."""
         return self._metrics + self.connector.metrics
 
     def reset_metrics(self) -> None:
+        """Resets local metrics to zero."""
         self._metrics = KVCacheMetrics()
 
     @traced
     def assert_runtime_invariants(self, ctx: TextGenerationContext) -> None:
-        """If runtime checks are enabled, assert that the runtime checks are
-        correct.
-        """
+        """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return
 

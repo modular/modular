@@ -306,7 +306,6 @@ class Module(Generic[_P, _R]):
 
                 Returns the new tensor value to replace the parameter.
         """
-
         self.apply_to_local_parameters(f)
         for prefix, child in self.children:
             # Bind an explicit reference to `prefix` into the closure

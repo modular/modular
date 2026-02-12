@@ -247,8 +247,9 @@ class RealizationContext(
         """Realizes all unrealized tensors associated with this context."""
 
     def add_source(self, tensor: Tensor) -> RealizationState:
-        """Adds a realized tensor as a "source" of the realization state,
-        ie. one on whose values unrealized tensors depend.
+        """Adds a realized tensor as a source of the realization state.
+
+        The source is one on whose values unrealized tensors depend.
 
         Args:
             tensor: The realized tensor to add as a source to the computation.
@@ -261,8 +262,9 @@ class RealizationContext(
         """
 
     def create_unrealized(self, value: GraphValue) -> Tensor:
-        """Registers an unrealized graph value with the realization context
-        and returns it as an unrealized tensor.
+        """Registers an unrealized graph value with the realization context.
+
+        Returns it as an unrealized tensor.
 
         Args:
             value: The graph value representing the result of a computation.
@@ -385,7 +387,7 @@ def defaults_like(like: Tensor | TensorType) -> Generator[None]:
             z = tensor.Tensor.zeros((2, 3), dtype=DType.float32)  # float32, cpu
 
     Args:
-        tensor: A tensor to use as the default dtype and device for the context.
+        like: Tensor or tensor type whose dtype and device to use as defaults.
 
     Returns:
         A context manager that sets the default dtype and device.
@@ -921,6 +923,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def real(self) -> bool:
+        """Returns ``True`` if this tensor is realized (has concrete storage)."""
         return self.state is None
 
     @property

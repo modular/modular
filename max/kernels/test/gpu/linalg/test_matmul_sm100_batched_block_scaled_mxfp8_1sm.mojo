@@ -26,6 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -247,12 +248,28 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         scales_dtype, 6, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
-    var c_tensor = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
+    # LayoutTensors for reference matmul
+    var a_lt = from_ndbuffer_row_major(a_device_nd)
+    var b_lt = from_ndbuffer_row_major(b_device_nd)
+    var c_lt = from_ndbuffer_row_major(c_device_nd)
+    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
+
+    # TileTensors for the kernel under test (constructed from NDBuffer directly)
+    var a_tensor = TileTensor(a_device_nd)
+    var b_tensor = TileTensor(b_device_nd)
+    var c_tensor = TileTensor(c_device_nd)
+    # Scale NDBuffers have complex DimList expressions that trigger a compiler
+    # bug with TileTensor(NDBuffer). Create NDBuffers with all-dynamic dims instead.
+    var a_scales_simple_nd = NDBuffer[
+        scales_dtype, 6, _, DimList.create_unknown[6]()
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var b_scales_simple_nd = NDBuffer[
+        scales_dtype, 6, _, DimList.create_unknown[6]()
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+    var a_scales_tensor = TileTensor(a_scales_simple_nd)
+    var b_scales_tensor = TileTensor(b_scales_simple_nd)
 
     # Initialize matmul operands
     if simple_init():
@@ -276,8 +293,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_6d_layout = scales_6d_layout[a_scales_tensor.layout]
-    comptime b_scales_6d_layout = scales_6d_layout[b_scales_tensor.layout]
+    comptime a_scales_6d_layout = scales_6d_layout[a_scales_lt.layout]
+    comptime b_scales_6d_layout = scales_6d_layout[b_scales_lt.layout]
 
     var a_scales_tensor_host = LayoutTensor[
         scales_dtype, a_scales_6d_layout, MutAnyOrigin
@@ -472,20 +489,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     for b in range(batch.value):
         var a_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_2d[a_tensor.layout]()
-        ](a_tensor, b)
+            reshape_layout = _reshape_to_2d[a_lt.layout]()
+        ](a_lt, b)
         var b_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_2d[b_tensor.layout]()
-        ](b_tensor, b)
+            reshape_layout = _reshape_to_2d[b_lt.layout]()
+        ](b_lt, b)
         var c_ref_tensor_2d = _convert_to_none_batched_tensor[
             reshape_layout = _reshape_to_2d[c_ref_tensor.layout]()
         ](c_ref_tensor, b)
         var a_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_5d[a_scales_tensor.layout]()
-        ](a_scales_tensor, b)
+            reshape_layout = _reshape_to_5d[a_scales_lt.layout]()
+        ](a_scales_lt, b)
         var b_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_5d[b_scales_tensor.layout]()
-        ](b_scales_tensor, b)
+            reshape_layout = _reshape_to_5d[b_scales_lt.layout]()
+        ](b_scales_lt, b)
 
         vendor_blas.matmul(
             ctx,

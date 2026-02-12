@@ -40,6 +40,7 @@ from gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from gpu.memory import fence_async_view_proxy
 from layout import Layout, LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier
+from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
@@ -236,9 +237,7 @@ struct GroupedWorkIterator[
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
         grid_size: UInt32,
     ):
@@ -481,17 +480,13 @@ struct GroupedTileScheduler[
 
     var num_groups: Int
     """Number of active groups."""
-    var problem_sizes: LayoutTensor[
-        DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-    ]
+    var problem_sizes: _ProblemSizesTile[Self.max_groups]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
     ):
         """Initialize scheduler with problem sizes.
@@ -651,9 +646,7 @@ struct GroupedCLCWorkIterator[
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -937,9 +930,7 @@ struct GroupedCLCSchedulerIterator[
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],

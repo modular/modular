@@ -18,7 +18,7 @@ responses, including status tracking and pixel data encapsulation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, Protocol, runtime_checkable
 
 import msgspec
@@ -26,10 +26,83 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
-from max.interfaces.request import RequestID
+from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
+
+
+@dataclass(frozen=True)
+class PixelGenerationRequest(Request):
+    model_name: str = field()
+    """
+    The name of the model to be used for generating pixels. This should match
+    the available models on the server and determines the behavior and
+    capabilities of the response generation.
+    """
+    prompt: str
+    """
+    The text prompt to generate pixels for.
+    """
+    secondary_prompt: str | None = None
+    """
+    The second text prompt to generate pixels for.
+    """
+    negative_prompt: str | None = None
+    """
+    The negative prompt to guide what NOT to generate.
+    """
+    secondary_negative_prompt: str | None = None
+    """
+    The second negative prompt to guide what NOT to generate.
+    """
+    guidance_scale: float = 3.5
+    """
+    Guidance scale for classifier-free guidance. Set to 1.0 to disable CFG.
+    """
+    true_cfg_scale: float = 1.0
+    """
+    True classifier-free guidance is enabled when true_cfg_scale > 1.0 and negative_prompt is provided.
+    """
+    height: int | None = None
+    """
+    Height of generated output in pixels. None uses model's native resolution.
+    """
+    width: int | None = None
+    """
+    Width of generated output in pixels. None uses model's native resolution.
+    """
+    num_inference_steps: int = 50
+    """
+    Number of denoising steps. More steps = higher quality but slower.
+    """
+    num_images_per_prompt: int = 1
+    """
+    Number of images/videos to generate per prompt.
+    """
+    seed: int | None = None
+    """
+    Optional random number generator seed for reproducible generation.
+    """
+    input_image: npt.NDArray[np.uint8] | None = None
+    """
+    Optional input image for image-to-image generation (numpy array).
+    """
+
+    def __post_init__(self) -> None:
+        if self.prompt == "":
+            raise ValueError("Prompt must be provided.")
+
+        if (self.height is not None and self.height <= 0) or (
+            self.width is not None and self.width <= 0
+        ):
+            raise ValueError("Height and width must be positive.")
+
+        if self.num_inference_steps <= 0:
+            raise ValueError("Number of inference steps must be positive.")
+
+        if self.num_images_per_prompt <= 0:
+            raise ValueError("Number of images per prompt must be positive.")
 
 
 @runtime_checkable

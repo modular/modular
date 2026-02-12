@@ -515,7 +515,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """Load component configs for a diffusers pipeline.
 
         Args:
-            model_index: The raw model_index.json dict from Hugging Face.
+            model_index: The raw model_index.json dict from HuggingFace.
 
         Returns:
             Enhanced config dict with "components" key containing loaded configs.
@@ -551,26 +551,33 @@ class MAXModelConfig(MAXModelConfigBase):
 
         component_configs = {}
         for file_name in repo_files:
-            if file_name.endswith("config.json") and "/" in file_name:
-                try:
-                    component_name = file_name.split("/")[0]
-                    if repo.repo_type == RepoType.local:
-                        assert repo_root is not None, (
-                            "repo_root must be set for local repo types."
-                        )
-                        cfg_path = repo_root / file_name
-                    else:
-                        cfg_path = Path(
-                            hf_hub_download(
-                                repo_id=repo.repo_id,
-                                filename=file_name,
-                                revision=repo.revision,
+            if "/" in file_name:
+                component_name, target = file_name.split("/")
+                if "_" in component_name:
+                    key = component_name.split("_")[0]
+                else:
+                    key = component_name
+                if target in ["config.json", f"{key}_config.json"]:
+                    try:
+                        if repo.repo_type == RepoType.local:
+                            assert repo_root is not None, (
+                                "repo_root must be set for local repo types."
                             )
+                            cfg_path = repo_root / file_name
+                        else:
+                            cfg_path = Path(
+                                hf_hub_download(
+                                    repo_id=repo.repo_id,
+                                    filename=file_name,
+                                    revision=repo.revision,
+                                )
+                            )
+                        with open(cfg_path) as f:
+                            component_configs[component_name] = json.load(f)
+                    except Exception as e:
+                        logger.debug(
+                            f"Could not load config for {file_name}: {e}"
                         )
-                    with open(cfg_path) as f:
-                        component_configs[component_name] = json.load(f)
-                except Exception as e:
-                    logger.debug(f"Could not load config for {file_name}: {e}")
 
         for component_name, component_info in model_index.items():
             if component_name.startswith("_"):

@@ -57,6 +57,7 @@ from layout.tma_async import (
     TMATensorTileIm2col,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    TMATile,
     TmaOpType,
     TmaOpTypeIm2col,
     static_row_major,
@@ -354,15 +355,18 @@ struct Conv2dFpropKernel[
     comptime ActTmaOp = TmaOpTypeIm2col[
         Self.act_type, Self.ActTileLayout, Self.ActDescLayout
     ]
-    comptime FilterTmaOp = TmaOpType[
+    comptime FilterTmaTile = TMATile[
         Self.filter_type, Self.FilterTileLayout, Self.FilterDescLayout
     ]
-    comptime OutTmaOp = TmaOpType[
+    comptime FilterTmaOp = Self.FilterTmaTile.InnerType
+    comptime OutTmaTile = TMATile[
         Self.out_type, Self.OutTileLayout, Self.OutDescLayout
     ]
-    comptime SrcTmaOp = TmaOpType[
+    comptime OutTmaOp = Self.OutTmaTile.InnerType
+    comptime SrcTmaTile = TMATile[
         Self.out_type, Self.SrcTileLayout, Self.SrcDescLayout
     ]
+    comptime SrcTmaOp = Self.SrcTmaTile.InnerType
 
     # TMA load size constants
     comptime act_tma_load_size = Self.act_tile_dim0 * Self.act_swizzle_elems
