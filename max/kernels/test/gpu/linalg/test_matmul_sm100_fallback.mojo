@@ -29,6 +29,9 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    lt_to_tt,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     matmul_sm100_fallback,
 )
@@ -157,13 +160,16 @@ def test_matmul_sm100_fallback[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var c = from_ndbuffer_row_major(c_device_nd)
+    var a = lt_to_tt(from_ndbuffer_row_major(a_device_nd))
+    var b = lt_to_tt(from_ndbuffer_row_major(b_device_nd))
+    var c = lt_to_tt(from_ndbuffer_row_major(c_device_nd))
 
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
     matmul_sm100_fallback[
+        c_type,
+        a_type,
+        b_type,
         transpose_b=transpose_b,
         umma_shape=umma_shape,
         block_tile_shape=block_tile_shape,

@@ -241,16 +241,12 @@ fn grouped_matmul_1d1d_nvfp4[
     ]()
 
     # Instantiate kernel first -- TMA layouts computed from config
-    from ..structured_kernels.tile_types import GMEMTile
-
-    comptime CDeviceTileType = GMEMTile[c_type, c_layout]
     comptime matmul_kernel = Grouped1D1DMatmulKernel[
         a_type,
         b_type,
         c_type,
         sfa_dtype,
         sfb_dtype,
-        CDeviceTileType.LayoutType,
         transpose_b,
         config=config,
         static_N=expert_n,

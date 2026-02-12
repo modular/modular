@@ -631,6 +631,47 @@ fn grouped_block_scaled_matmul[
     # 1 TMA + 1 MMA + 1 Scheduler + 4 Epilogue warps
     comptime num_threads = 32 * 7
 
+    # ===== Create TileTensor wrappers for kernel args =====
+    from layout._layout import row_major as new_row_major
+    from memory import UnsafePointer as NewPtr
+
+    var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(a_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var b_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(b_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var c_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(c_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var sfa_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(sfa_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var sfb_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(sfb_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var problem_sizes_tt = type_of(matmul_kernel).ProblemSizesTile(
+        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
+            unsafe_from_address=Int(problem_sizes.ptr)
+        ),
+        layout=new_row_major[max_groups, 4](),
+    )
+
     # ===== Kernel Launch =====
     # Dispatch to run_2sm() for 2SM mode (cta_group=2), else run() for 1SM
 
@@ -650,14 +691,14 @@ fn grouped_block_scaled_matmul[
             tma_array_sfa,
             tma_array_sfb,
             tma_array_c,
-            # Per-group pointer tensors
-            a_ptrs,
-            b_ptrs,
-            c_ptrs,
-            sfa_ptrs,
-            sfb_ptrs,
+            # Per-group pointer tensors (TileTensor)
+            a_ptrs_tt,
+            b_ptrs_tt,
+            c_ptrs_tt,
+            sfa_ptrs_tt,
+            sfb_ptrs_tt,
             # Problem sizes and group count
-            problem_sizes,
+            problem_sizes_tt,
             num_groups,
             grid_dim=grid_dim,
             block_dim=num_threads,
@@ -681,14 +722,14 @@ fn grouped_block_scaled_matmul[
             tma_array_sfa,
             tma_array_sfb,
             tma_array_c,
-            # Per-group pointer tensors
-            a_ptrs,
-            b_ptrs,
-            c_ptrs,
-            sfa_ptrs,
-            sfb_ptrs,
+            # Per-group pointer tensors (TileTensor)
+            a_ptrs_tt,
+            b_ptrs_tt,
+            c_ptrs_tt,
+            sfa_ptrs_tt,
+            sfb_ptrs_tt,
             # Problem sizes and group count
-            problem_sizes,
+            problem_sizes_tt,
             num_groups,
             grid_dim=grid_dim,
             block_dim=num_threads,

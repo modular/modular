@@ -24,9 +24,8 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from layout import Layout as LegacyLayout, LayoutTensor
-from ..structured_kernels.tile_types import create_tma_tile
-
-from ..structured_kernels.tile_types import GMEMTile, lt_to_tt
+from layout._tile_tensor import TileTensor
+from ..structured_kernels.tile_types import create_tma_tile, lt_to_tt
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -47,27 +46,22 @@ from ...sm100.warp_specialized_blockwise_fp8 import (
 
 
 fn blockwise_fp8_matmul[
-    c_type: DType,
-    c_layout: LegacyLayout,
-    a_type: DType,
-    a_layout: LegacyLayout,
-    b_type: DType,
-    b_layout: LegacyLayout,
     transpose_b: Bool,
-    a_scales_layout: LegacyLayout,
-    b_scales_layout: LegacyLayout,
     a_scales_type: DType,
     b_scales_type: DType,
     *,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config: MatmulConfig[_, _, _, transpose_b],
 ](
-    c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[a_type, a_layout, ...],
-    b: LayoutTensor[b_type, b_layout, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
     ctx: DeviceContext,
 ) raises:
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime c_type = config.c_type
     """Launch blockwise FP8 matmul kernel.
 
     Args:
@@ -82,24 +76,12 @@ fn blockwise_fp8_matmul[
         USE_LEGACY_BLOCKWISE_FP8: If True, use legacy kernel instead of structured.
     """
 
-    # Flag to use legacy kernel: mojo -D USE_LEGACY_BLOCKWISE_FP8=True
-    @parameter
-    if env_get_bool["USE_LEGACY_BLOCKWISE_FP8", False]():
-        sm100_warp_specialized_blockwise_fp8[
-            c_type,
-            c_layout,
-            a_type,
-            a_layout,
-            b_type,
-            b_layout,
-            transpose_b,
-            a_scales_layout,
-            b_scales_layout,
-            a_scales_type,
-            b_scales_type,
-            config=config,
-        ](c, a, b, a_scales, b_scales, ctx)
-        return
+    # Legacy kernel path disabled -- incompatible with TileTensor API.
+    # To re-enable, update sm100_warp_specialized_blockwise_fp8 to accept TileTensor.
+    constrained[
+        not env_get_bool["USE_LEGACY_BLOCKWISE_FP8", False](),
+        "Legacy blockwise FP8 kernel not supported with TileTensor API",
+    ]()
 
     constrained[transpose_b, "Only support transposed B"]()
     constrained[
@@ -111,7 +93,7 @@ fn blockwise_fp8_matmul[
         "Only support float32 for scales",
     ]()
 
-    if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
+    if (Int(a_scales.dim[1]()) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
             "a_scales should be a multiple of 16 bytes on the M dimension"
         )
@@ -200,9 +182,9 @@ fn blockwise_fp8_matmul[
         k_group_size=config.k_group_size,
     )
 
-    var M = c.dim(0)
-    var N = c.dim(1)
-    var K = a.dim(1)
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
+    var K = Int(a.dim[1]())
 
     # Compute SMEM size - use corrected_config which accounts for a_scales
     comptime SmemType = BlockwiseFP8Smem[
@@ -225,14 +207,13 @@ fn blockwise_fp8_matmul[
     )
 
     # Instantiate kernel type - use corrected_config which has proper num_pipeline_stages
-    comptime BScalesTileType = GMEMTile[b_scales_type, b_scales_layout]
     comptime Kernel = BlackwellBlockwiseFP8MatmulKernel[
         a_type,
         b_type,
         c_type,
         a_scales_type,
         b_scales_type,
-        BScalesTileType.LayoutType,
+        type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
         cluster_shape = StaticTuple[Int32, 3](
@@ -300,7 +281,7 @@ fn blockwise_fp8_matmul[
         a_scales_tma_op,
         cluster_dim,
         UInt(ceildiv(K, BK)),
-        lt_to_tt(b_scales),
+        b_scales,
         problem_shape,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps

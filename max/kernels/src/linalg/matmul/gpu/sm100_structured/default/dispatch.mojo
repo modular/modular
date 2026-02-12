@@ -27,6 +27,9 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    lt_to_tt,
+)
 from logger import Logger
 
 from utils.index import Index, IndexList
@@ -89,9 +92,9 @@ fn matmul_dispatch_sm100[
 
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
-        var c_tensor = from_ndbuffer_row_major(c)
-        var a_tensor = from_ndbuffer_row_major(a)
-        var b_tensor = from_ndbuffer_row_major(b)
+        var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
+        var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
+        var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
         comptime BM = env_get_int["TUNE_BM", 128]()
         comptime BN = env_get_int["TUNE_BN", 64]()
@@ -2091,9 +2094,9 @@ fn _matmul_dispatch_sm100[
     operations if there is any.
     """
 
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
+    var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
+    var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
     constrained[
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,

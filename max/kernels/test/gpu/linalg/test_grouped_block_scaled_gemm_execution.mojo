@@ -35,6 +35,9 @@ from internal_utils import assert_almost_equal
 from random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    lt_to_tt,
+)
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -281,11 +284,11 @@ fn test_existing_kernel_single_group[
         transpose_b=transpose_b,
         config=config,
     ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
+        lt_to_tt(c_tensor),
+        lt_to_tt(a_tensor),
+        lt_to_tt(b_tensor),
+        lt_to_tt(a_scales_tensor),
+        lt_to_tt(b_scales_tensor),
         ctx,
     )
     ctx.synchronize()

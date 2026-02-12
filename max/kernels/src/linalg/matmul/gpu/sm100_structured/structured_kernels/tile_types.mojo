@@ -521,6 +521,46 @@ def create_tma_tile[
     ](ctx, tensor)
 
 
+def create_tma_tile[
+    rank: Int,
+    //,
+    tma_tile_layout: TensorLayout,
+    tma_desc_layout: TensorLayout,
+    tile_shape: IndexList[rank],
+    *,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+](ctx: DeviceContext, tensor: TileTensor[...]) -> TmaOpType[
+    tensor.dtype, tma_tile_layout, tma_desc_layout
+]:
+    """TileTensor overload of create_tma_tile.
+
+    Calls create_tensor_tile directly with TileTensor, bypassing
+    LayoutTensor entirely. The TileTensor just needs ptr and layout
+    shape/stride accessors, which work on any TileTensor including
+    reshaped views.
+
+    Parameters:
+        rank: Rank of the tile shape (inferred from tile_shape).
+        tma_tile_layout: Tile layout as new TensorLayout.
+        tma_desc_layout: Descriptor layout as new TensorLayout.
+        tile_shape: Physical tile dimensions for the TMA descriptor.
+        swizzle_mode: TMA swizzle mode.
+
+    Args:
+        ctx: Device context for TMA descriptor creation.
+        tensor: Source TileTensor in global memory.
+
+    Returns:
+        A TMATensorTile (DevicePassable) for use with enqueue_function.
+    """
+    return create_tensor_tile[
+        tile_shape,
+        swizzle_mode=swizzle_mode,
+        __tile_layout = _to_legacy_layout[tma_tile_layout](),
+        __desc_layout = _to_legacy_layout[tma_desc_layout](),
+    ](ctx, tensor)
+
+
 # ============================================================================
 # GMEMTile -- TileTensor type for global memory kernel parameters
 # ============================================================================
