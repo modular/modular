@@ -57,38 +57,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_mamba_debug",
-    size = "enormous",
-    srcs = [
-        "test_mamba_debug.py",
-    ],
-    env = {
-        "MODULAR_PATH": ".",
-        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "true",
-    },
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    ignore_extra_deps = [
-        requirement("transformers"),
-        requirement("torch"),
-    ],
-    imports = [
-        "../../..",  # For hf_repo_lock
-    ],
-    mojo_deps = MAMBA_MOJOPKGS,
-    tags = [
-        "no-sandbox",
-        "requires-network",
-    ],
-    deps = [
-        "//max/tests/integration:hf_repo_lock",
-        requirement("torch"),
-        requirement("transformers"),
-    ],
-)
-
-modular_py_test(
     name = "test_mamba_activations",
     size = "enormous",
     srcs = [
