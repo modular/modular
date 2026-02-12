@@ -20,7 +20,7 @@ import numpy as np
 from max import functional as F
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.interfaces import TokenBuffer
 from max.pipelines import PixelContext
@@ -134,18 +134,17 @@ class Flux2Pipeline(DiffusionPipeline):
             if getattr(self, "vae", None)
             else 8
         )
-        self._patchify_models: dict[str, Any] = {}
-        self._vae_prep_models: dict[str, Any] = {}
-        self._scheduler_step_model = None
-        self._time_step_models: dict[str, Any] = {}
+        self._patchify_model: Model = self._build_patchify_model()
+        self._scheduler_step_model: Model = self._build_scheduler_step_model()
+        self._time_step_model: Model = self._build_all_time_steps_model()
+        self._vae_prep_models: dict[str, Model] = {}
 
-    def _ensure_patchify_model(self, device, dtype):
+    def _build_patchify_model(self) -> Model:
         """Get or compile a patchify graph for the given shape."""
-        key = f"{device}_{dtype}"
-        if key in self._patchify_models:
-            return self._patchify_models[key]
-        logger.debug(f"Compiling patchify model for {device}_{dtype}")
+        logger.debug("Compiling patchify model")
         channels = self.vae.config.latent_channels
+        device = self.devices[0]
+        dtype = self.vae.config.dtype
 
         input_type = TensorType(
             dtype,
@@ -172,15 +171,22 @@ class Flux2Pipeline(DiffusionPipeline):
 
         session = InferenceSession([Accelerator()])
         model = session.load(graph)
-        self._patchify_models[key] = model
         return model
 
-    def _ensure_vae_prep_model(self, channels, height, width, device, dtype):
+    def _ensure_vae_prep_model(self, height, width) -> Model:
         """Compile fused graph: unpack -> batch norm inverse -> unpatchify."""
-        key = f"{device}_{dtype}_{height}_{width}_{channels}"
+        patch_size_num = (
+            self.vae.config.patch_size[0] * self.vae.config.patch_size[1]
+        )  # 4
+
+        key = f"{height}_{width}"
         if key in self._vae_prep_models:
             return self._vae_prep_models[key]
-        logger.debug(f"Compiling vae prep model for {key}")
+
+        logger.debug(f"Compiling vae prep model for {height}x{width}")
+        device = self.devices[0]
+        dtype = self.vae.config.dtype
+        channels = self.vae.config.latent_channels * patch_size_num
 
         input_types = [
             TensorType(
@@ -223,37 +229,31 @@ class Flux2Pipeline(DiffusionPipeline):
         self._vae_prep_models[key] = model
         return model
 
-    def _ensure_all_time_steps_model(
-        self,
-        device: DeviceRef,
-    ):
-        key = f"{device}"
-        if key in self._time_step_models:
-            return self._time_step_models[key]
+    def _build_all_time_steps_model(self) -> Model:
+        logger.debug("Compiling all time steps model")
 
-        logger.debug(f"Compiling all time steps model for {device}")
+        device = self.devices[0]
+        dtype = self.transformer.config.dtype
         with Graph(
             "time_step_all",
             input_types=[TensorType(DType.float32, ["num_sigmas"], device)],
         ) as graph:
             sigmas = graph.inputs[0]
             sigmas_curr = ops.slice_tensor(sigmas, [slice(0, -1)])
-            all_t = ops.cast(sigmas_curr, DType.bfloat16)
+            all_t = ops.cast(sigmas_curr, dtype)
             sigmas_next = ops.slice_tensor(sigmas, [slice(1, None)])
             dt_f32 = ops.sub(sigmas_next, sigmas_curr)
-            all_dt = ops.cast(dt_f32, DType.bfloat16)
+            all_dt = ops.cast(dt_f32, dtype)
             graph.output(all_t, all_dt)
 
         session = InferenceSession([Accelerator()])
-        model = session.load(graph)
-        self._time_step_models[key] = model
-        return model
+        return session.load(graph)
 
-    def _build_scheduler_step_graph(
-        self,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
+    def _build_scheduler_step_model(self) -> Model:
+        logger.debug("Compiling scheduler step model")
+
+        device = self.devices[0]
+        dtype = self.transformer.config.dtype
         input_types = [
             TensorType(
                 dtype, shape=["batch", "seq", "channels"], device=device
@@ -269,7 +269,7 @@ class Flux2Pipeline(DiffusionPipeline):
             graph.output(result)
 
         session = InferenceSession([Accelerator()])
-        self._scheduler_step_model = session.load(graph)
+        return session.load(graph)
 
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:
         """Convert a PixelContext into Flux2ModelInputs."""
@@ -516,25 +516,9 @@ class Flux2Pipeline(DiffusionPipeline):
         bn_mean = self.vae.bn.running_mean
         bn_var = self.vae.bn.running_var
 
-        patch_size_num = (
-            self.vae.config.patch_size[0] * self.vae.config.patch_size[1]
-        )  # 4
-
-        assert (
-            num_channels == self.vae.config.latent_channels * patch_size_num
-        ), (
-            f"Expected {self.vae.config.latent_channels} * {patch_size_num}, got {num_channels}"
-        )
-        assert h_latent * w_latent == seq_len, (
-            f"Expected {h_latent} * {w_latent}, got {seq_len}"
-        )
-
         model = self._ensure_vae_prep_model(
-            num_channels,
             h_latent,
             w_latent,
-            latents.device,
-            latents.dtype,
         )
         latents_unpacked_drv = model.execute(
             latents.driver_tensor, bn_mean.driver_tensor, bn_var.driver_tensor
@@ -608,15 +592,7 @@ class Flux2Pipeline(DiffusionPipeline):
         return latents, latent_image_ids
 
     def _patchify_latents(self, latents: Tensor) -> Tensor:
-        num_channels_latents = latents.shape[1].dim
-        assert num_channels_latents == self.vae.config.latent_channels, (
-            f"Expected {self.vae.config.latent_channels} channels, got {num_channels_latents}"
-        )
-        device = latents.device
-        dtype = latents.dtype
-
-        model = self._ensure_patchify_model(device, dtype)
-        latents_drv = model.execute(latents.driver_tensor)[0]
+        latents_drv = self._patchify_model.execute(latents.driver_tensor)[0]
         return Tensor.from_dlpack(latents_drv)
 
     def _pil_image_to_tensor(
@@ -704,16 +680,10 @@ class Flux2Pipeline(DiffusionPipeline):
         guidance_drv = guidance.driver_tensor
         txt_ids_drv = text_ids.driver_tensor
         img_ids_drv = latent_image_ids.driver_tensor
-        if self._scheduler_step_model is None:
-            self._build_scheduler_step_graph(dtype, device)
-
-        _all_time_steps_model = self._ensure_all_time_steps_model(
-            device=DeviceRef.from_device(device),
-        )
 
         sigmas_drv = sigmas.driver_tensor
         latents_drv = latents.driver_tensor
-        all_timesteps_drv, all_dts_drv = _all_time_steps_model.execute(
+        all_timesteps_drv, all_dts_drv = self._time_step_model.execute(
             sigmas_drv
         )
 
