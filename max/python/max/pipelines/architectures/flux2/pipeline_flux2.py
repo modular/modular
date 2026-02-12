@@ -147,6 +147,10 @@ class Flux2Pipeline(DiffusionPipeline):
         self._unsqueeze_model: Model = self._build_unsqueeze_model()
         self._latent_prep_models: dict[str, Model] = {}
         self._vae_prep_models: dict[str, Model] = {}
+        self._prompt_embed_models: dict[str, Model] = {}
+        self._text_ids_models: dict[str, Model] = {}
+
+        self._cached_text_ids: dict[str, Tensor] = {}
 
     def _ensure_latent_prep_model(self, height, width, dtype) -> Model:
         key = f"{height}_{width}_{dtype}"
@@ -238,6 +242,61 @@ class Flux2Pipeline(DiffusionPipeline):
         session = InferenceSession([Accelerator()])
         model = session.load(graph)
         self._vae_prep_models[key] = model
+        return model
+
+    def _ensure_prompt_embed_model(
+        self,
+        num_layers: int,
+    )->Model:
+        device = self.devices[0]
+        dtype = self.transformer.config.dtype
+        key = f"{num_layers}"
+        if key in self._prompt_embed_models:
+            return self._prompt_embed_models[key]
+
+        input_types = [
+            TensorType(dtype, shape=["batch_size", "seq_len", "hidden_dim"], device=device)
+            for _ in range(num_layers)
+        ]
+        with Graph("prompt_embed_postproc", input_types=input_types) as graph:
+            layer_inputs = [inp for inp in graph.inputs]
+            batch_size = layer_inputs[0].shape[0]
+            seq_len = layer_inputs[0].shape[1]
+            hidden_dim = layer_inputs[0].shape[2]
+
+            stacked = ops.stack(layer_inputs, axis=1)
+            stacked = ops.permute(stacked, [0, 2, 1, 3])
+            result = ops.reshape(
+                stacked, [batch_size, seq_len, num_layers * hidden_dim]
+            )
+            graph.output(result)
+
+        session = InferenceSession([Accelerator()])
+        model = session.load(graph)
+        self._prompt_embed_models[key] = model
+        return model
+
+    def _ensure_text_ids_model(
+        self,
+        batch_size: int,
+        seq_len: int,
+    )->Model:
+        device = self.devices[0]
+        model_key = f"{batch_size}_{seq_len}"
+        if model_key in self._text_ids_models:
+            return self._text_ids_models[model_key]
+
+        with Graph("text_ids_gen", input_types=[]) as graph:
+            coords = np.zeros((seq_len, 4), dtype=np.int64)
+            coords[:, 3] = np.arange(seq_len, dtype=np.int64)
+            coords_const = ops.constant(coords, dtype=DType.int64, device=device)
+            coords_batch = ops.reshape(coords_const, (1, seq_len, 4))
+            text_ids = ops.tile(coords_batch, [batch_size, 1, 1])
+            graph.output(text_ids)
+
+        session = InferenceSession([Accelerator()])
+        model = session.load(graph)
+        self._text_ids_models[model_key] = model
         return model
 
     def _build_all_time_steps_model(self) -> Model:
@@ -479,25 +538,36 @@ class Flux2Pipeline(DiffusionPipeline):
 
             selected.append(hs)
 
-        # [B, L, S, D] -> [B, S, L, D] -> [B, S, L*D]
-        stacked = F.stack(selected, axis=1)
-        stacked = F.permute(stacked, [0, 2, 1, 3])
-        batch_size, seq_len, num_layers, hidden_dim = map(int, stacked.shape)
-        prompt_embeds = F.reshape(
-            stacked, [batch_size, seq_len, num_layers * hidden_dim]
-        )
+        num_layers = len(selected)
+        prompt_embed_model = self._ensure_prompt_embed_model(num_layers)
+        driver_inputs = [hs.driver_tensor for hs in selected]
+        prompt_embeds = Tensor.from_dlpack(prompt_embed_model.execute(*driver_inputs)[0])
 
-        if num_images_per_prompt != 1:
-            prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
-            prompt_embeds = F.reshape(
-                prompt_embeds, [batch_size * num_images_per_prompt, seq_len, -1]
+        # if num_images_per_prompt != 1:
+        #     prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
+        #     prompt_embeds = F.reshape(
+        #         prompt_embeds, [batch_size * num_images_per_prompt, seq_len, -1]
+        #     )
+
+        # text_ids = self._prepare_text_ids(
+        #     batch_size=batch_size * num_images_per_prompt,
+        #     seq_len=seq_len,
+        #     device=self.text_encoder.devices[0],
+        # )
+        
+        bs_embed = prompt_embeds.shape[0].dim
+        seq_len = prompt_embeds.shape[1].dim
+        batch_size_final = bs_embed * num_images_per_prompt
+        text_ids_key = f"{batch_size_final}"
+        if text_ids_key in self._cached_text_ids:
+            text_ids = self._cached_text_ids[text_ids_key]
+        else:
+            text_ids_model = self._ensure_text_ids_model(
+                batch_size=batch_size_final,
+                seq_len=seq_len,
             )
-
-        text_ids = self._prepare_text_ids(
-            batch_size=batch_size * num_images_per_prompt,
-            seq_len=seq_len,
-            device=self.text_encoder.devices[0],
-        )
+            text_ids = Tensor.from_dlpack(text_ids_model.execute()[0])
+            self._cached_text_ids[text_ids_key] = text_ids
 
         return prompt_embeds, text_ids
 
