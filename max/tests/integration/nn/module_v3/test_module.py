@@ -382,6 +382,60 @@ def test_compile(test_module: TestModule) -> None:
     assert all((result_eager == result_compiled)._values())
 
 
+def test_compile_with_weights_shape_mismatch() -> None:
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    dtype, device = defaults()
+    type = TensorType(dtype, [3, 3], device=device)
+    weights = {
+        "weight": Tensor.zeros([4, 4], dtype=DType.float32),
+    }
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.compile(type, weights=weights)
+
+
+def test_compile_with_weights_dtype_mismatch() -> None:
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    dtype, device = defaults()
+    type = TensorType(dtype, [3, 3], device=device)
+    weights = {
+        "weight": Tensor.zeros([3, 3], dtype=DType.int32),
+    }
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.compile(type, weights=weights)
+
+
+def test_compile_with_weights_missing_parameter_raises() -> None:
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    dtype, device = defaults()
+    type = TensorType(dtype, [3, 3], device=device)
+
+    with pytest.raises(KeyError, match="is missing"):
+        module.compile(type, weights={})
+
+
 def test_compile_with_weights(lazy_test_module: TestModule) -> None:
     test_module = lazy_test_module
     dtype, device = defaults()

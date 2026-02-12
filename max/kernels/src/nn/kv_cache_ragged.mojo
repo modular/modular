@@ -27,6 +27,9 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
@@ -2547,21 +2550,24 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
-    mrope_section: Optional[IntTuple] = None,
+    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
+        CoordLike
+    ],
+    mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
-    q_proj: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection,
-    freqs_cis: LayoutTensor[
+    freqs_cis: TileTensor[
         freq_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    position_ids: LayoutTensor[
+    position_ids: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     layer_idx: UInt32,
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -2584,10 +2590,17 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
                     trace_arg(
-                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "q_proj",
+                        coord_to_index_list(q_proj.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "freqs_cis",
+                        coord_to_index_list(freqs_cis.layout.shape_coord()),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -2617,20 +2630,18 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
                 kv_collection.CacheType,
                 interleaved=interleaved,
                 target=target,
+                PositionIdsLayoutType = position_ids.LayoutType,
+                mrope_types=mrope_types,
                 mrope_section=mrope_section,
             ](
                 q_proj,
                 input_row_offsets,
                 kv_collection,
                 freqs_cis,
-                LayoutTensor[
-                    position_ids.dtype, Layout.row_major[2](), MutAnyOrigin
-                ](
-                    position_ids.ptr,
-                    RuntimeLayout[Layout.row_major[2]()].row_major(
-                        position_ids.runtime_layout.shape.value
-                    ),
-                ),
+                TileTensor(
+                    position_ids.ptr.mut_cast[True]().as_any_origin(),
+                    position_ids.layout,
+                ).as_immut(),
                 layer_idx,
                 output,
                 dev_ctx,

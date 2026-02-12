@@ -261,9 +261,9 @@ fn bench_grouped_block_scaled_gemm[
     # Setup pointer arrays
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = M
-        problem_sizes_host[g * 4 + 1] = n.value
-        problem_sizes_host[g * 4 + 2] = k.value
+        problem_sizes_host[g * 4 + 0] = Int32(M)
+        problem_sizes_host[g * 4 + 1] = Int32(n.value)
+        problem_sizes_host[g * 4 + 2] = Int32(k.value)
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](

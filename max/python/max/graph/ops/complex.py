@@ -22,9 +22,9 @@ def as_interleaved_complex(x: TensorValueLike) -> TensorValue:
     """Reshapes the input symbolic tensor as complex from alternating (real, imag).
 
     Args:
-        interleaved: A symbolic tensor representing complex numbers as
-                     alternating pairs of (real, imag) real-valued numbers. Its last
-                     dimension must have an even size.
+        x: A symbolic tensor representing complex numbers as alternating pairs
+            of (real, imag) real-valued numbers. Its last dimension must have
+            an even size.
 
     Returns:
         A symbolic tensor representing the complex-valued tensor, but with the

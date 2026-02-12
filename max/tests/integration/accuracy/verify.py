@@ -52,7 +52,7 @@ import click
 import numpy as np
 from test_common.custom_args import CommaSeparatedList
 from test_common.distance_metrics import kl_divergence_from_logits
-from test_common.evaluate import (
+from test_common.model_output import (
     ModelOutput,
     ModelOutputView,
     TokenInfo,

@@ -1235,6 +1235,7 @@ class DistributedAllreduceSumOp(max._core.Operation):
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
+        has_device_barrier: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -1246,6 +1247,12 @@ class DistributedAllreduceSumOp(max._core.Operation):
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+    @property
+    def has_device_barrier(self) -> bool: ...
+    @has_device_barrier.setter
+    def has_device_barrier(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
 
 class AndOp(max._core.Operation):
     """

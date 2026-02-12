@@ -209,6 +209,16 @@ def max_tokens_to_generate(
 async def run_with_default_executor(
     fn: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs
 ) -> _R:
+    """Runs a callable in the default thread pool executor.
+
+    Args:
+        fn: Callable to run.
+        *args: Positional arguments for ``fn``.
+        **kwargs: Keyword arguments for ``fn``.
+
+    Returns:
+        The result of ``fn(*args, **kwargs)``.
+    """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
 

@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     api_types: list[APIType] = Field(
         description="List of exposed API types.",
         default=[APIType.OPENAI, APIType.SAGEMAKER],
+        alias="MAX_SERVE_API_TYPES",
     )
     offline_inference: bool = Field(
         description="If True, the server is run in offline inference mode. While it will still spin up workers, it will not spin up the API endpoint or use an HTTP port.",

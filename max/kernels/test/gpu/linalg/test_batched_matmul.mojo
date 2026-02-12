@@ -57,8 +57,8 @@ fn run_bmm_and_check_result[
     ctx: DeviceContext,
     rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
 ) raises:
-    comptime assert c_host.rank == 3, "c_device must have rank 3"
-    comptime assert c_host_ref.rank == 3, "c_device_ref must have rank 3"
+    comptime assert c_host.flat_rank == 3, "c_device must have rank 3"
+    comptime assert c_host_ref.flat_rank == 3, "c_device_ref must have rank 3"
     var a_size = a_host.numel()
     var b_size = b_host.numel()
     var c_size = c_host.numel()

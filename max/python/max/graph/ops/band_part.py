@@ -51,7 +51,7 @@ def band_part(
                         (num_upper is None || (n - m) <= num_upper))
 
     Args:
-        input: The input to mask out.
+        x: The input tensor to mask.
         num_lower: The number of diagonal bands to include below the central
             diagonal. If None, include the entire lower triangle.
         num_upper: The number of diagonal bands to include above the central
