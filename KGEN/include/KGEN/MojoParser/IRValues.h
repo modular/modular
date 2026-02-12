@@ -535,7 +535,7 @@ private:
   }
 };
 
-/// UValue = OverloadSetUValue
+/// UValue = OverloadSetUValue|InitializerUValue
 class UValue : public VariantValueStorage<UValue>,
                public VariantUValue<UValue> {
 public:

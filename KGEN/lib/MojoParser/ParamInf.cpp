@@ -419,6 +419,84 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
 }
 
+/// Attempt to resolve the specified operand to a CValue using the provided
+/// type, checking whether any UValue's are compatible with the type and
+/// inferring any parameters from it.  This emits a diagnostic and returns null
+/// on failure.  On success, this makes an attempt to return a CValue, but won't
+/// do so if that would require generating dynamic logic (e.g. creating an
+/// instance of a value due to an initializer list).
+FailureOr<CValue> ParamInf::inferCValue(ASTExprAnd<AnyValue> operand,
+                                        size_t argIdx, PogListAttr argPogs,
+                                        CallSyntax syntax,
+                                        ASTType expectedType) {
+  // If this is already a CValue then we're done.
+  if (auto cv = operand.ir.getIfCValue())
+    return cv;
+
+  auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
+    auto &diag = getDiag(operand.expr->getLoc());
+    ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
+                        argIdx, argPogs, syntax, getShared());
+    return diag;
+  };
+
+  // Check to see if the expected type has an initializer with the
+  // specified operands.  Remove any parameters from the expected type
+  // since those are what we're inferring from the arguments.  The result
+  // 'actualType' will have those newly inferred parameters.
+  if (auto initValue = operand.ir.getIfInitializer()) {
+    // If we have a type like List[$0] replace it with List[?] so we can
+    // infer the unbound parameter.
+    auto unbound = expectedType.getWithUnknownParametersReplaced(getShared());
+    Type initType =
+        inferInitializerType(getDeclScope(), &(*initValue), operand, unbound);
+    // If the literal cannot bind to the inferred type, try binding it to the
+    // default literal type and matching the inferred type against that.
+    if (!initType)
+      initType = inferInitializerType(getDeclScope(), &(*initValue), operand,
+                                      initValue->getDefaultType(getShared()));
+
+    // If there were declaration errors, assume success to not raise
+    // spurious errors due to not resolving to those erroneous
+    // declarations.
+    if (!initType) { // TODO: Could improve this error to talk about inits.
+      emitWrongTypeDiag(expectedType);
+      return {};
+    }
+    ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
+
+    // If we found one, we resolve our value to the inferred type.
+    if (succeeded(matcher.matchTypes(initType, expectedType)))
+      return CValue();
+
+    // TODO: Could improve this to talk about initializers.
+    auto &diag = emitWrongTypeDiag(expectedType);
+    matcher.failureReason->addExplanation(diag);
+    return failure();
+  }
+
+  auto orValue = operand.ir.getIfOverloadSet();
+  assert(orValue && "Unknown UValue!");
+
+  // Try to refine the OverloadSetUValue into a PValue.
+  PValue argVal = orValue->getDirectSymbol(expectedType, getDeclScope());
+  if (!argVal) { // TODO: Could improve this to talk about overload sets.
+    emitWrongTypeDiag(expectedType);
+    return failure();
+  }
+
+  // If we have a reference to an overloaded method like foo(a.method),
+  // then we can't resolve it.
+  // TODO(partial application => closures): Given we just resolved argVal,
+  // we could form the "a.method" expression with a closure.
+  if (orValue->baseValue) { // Cannot merge base value.
+    emitWrongTypeDiag(expectedType);
+    return failure(); // TODO: Improve this.
+  }
+  // Otherwise, success.
+  return CValue(argVal);
+}
+
 /// Core type matching logic for parameter inference, handling the expected
 /// type without convention-specific processing. This function is called after
 /// the expected type has been adjusted for calling conventions.
@@ -444,75 +522,26 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 
   expectedType = evaluator.getReboundType(expectedType);
 
-  // TODO: Optionally compute fitness metrics (# implicit conversions,
-  // convention mismatches) during inference, so they don't need to be
-  // recomputed by scoreOperandFitness() afterward.
-  ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
-
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can
   // resolve the argument to a CValue.
-  CValue argVal = operand.ir.getIfCValue();
-
-  // Check to see if the expected type has an initializer with the
-  // specified operands.  Remove any parameters from the expected type
-  // since those are what we're inferring from the arguments.  The result
-  // 'actualType' will have those newly inferred parameters.
-  if (!argVal) {
-    if (auto initValue = operand.ir.getIfInitializer()) {
-      // If we have a type like List[$0] replace it with List[?] so we can
-      // infer the unbound parameter.
-      auto unbound = expectedType.getWithUnknownParametersReplaced(getShared());
-      Type initType =
-          inferInitializerType(getDeclScope(), &(*initValue), operand, unbound);
-      // If the literal cannot bind to the inferred type, try binding it to the
-      // default literal type and matching the inferred type against that.
-      if (!initType)
-        initType = inferInitializerType(getDeclScope(), &(*initValue), operand,
-                                        initValue->getDefaultType(getShared()));
-
-      // If there were declaration errors, assume success to not raise
-      // spurious errors due to not resolving to those erroneous
-      // declarations.
-      if (!initType) { // TODO: Could improve this error to talk about inits.
-        emitWrongTypeDiag(expectedType);
-        return failure();
-      }
-      // If we found one, we resolve our value to the inferred type.
-      if (succeeded(matcher.matchTypes(initType, expectedType))) {
-        return success();
-      }
-      // TODO: Could improve this to talk about initializers.
-      auto &diag = emitWrongTypeDiag(expectedType);
-      matcher.failureReason->addExplanation(diag);
-      return failure();
-    }
-
-    auto orValue = operand.ir.getIfOverloadSet();
-    assert(orValue && "Unknown UValue!");
-
-    // Try to refine the OverloadSetUValue into a PValue.
-    argVal = orValue->getDirectSymbol(expectedType, getDeclScope());
-    if (!argVal) { // TODO: Could improve this to talk about overload sets.
-      emitWrongTypeDiag(expectedType);
-      return failure();
-    }
-
-    // If we have a reference to an overloaded method like foo(a.method),
-    // then we can't resolve it.
-    // TODO(partial application => closures): Given we just resolved argVal,
-    // we could form the "a.method" expression with a closure.
-    if (orValue->baseValue) { // Cannot merge base value.
-      emitWrongTypeDiag(expectedType);
-      return failure(); // TODO: Improve this.
-    }
-    // Otherwise, success, fallthrough.
-  }
+  FailureOr<CValue> argValOr =
+      inferCValue(operand, argIdx, argPogs, syntax, expectedType);
+  if (failed(argValOr))
+    return failure();
+  CValue argVal = *argValOr;
+  if (!argVal) // Already checked the type is ok.
+    return success();
 
   // If the argument types exactly match, then they are good.
   ASTType argType = argVal.getRValueType();
   if (argType.isEqualCanon(expectedType))
     return success();
+
+  // TODO: Optionally compute fitness metrics (# implicit conversions,
+  // convention mismatches) during inference, so they don't need to be
+  // recomputed by scoreOperandFitness() afterward.
+  ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
   // We're speculatively trying different options.  If we have errors on one
   // path we need to roll them back.
@@ -768,13 +797,36 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return TypedAttr(); // Deferred.
   }
 
-  // If we have a UValue, convert it to a PValue now that we know the expected
-  // type.
+  // If we have a UValue or something else, convert it to a PValue now that we
+  // know the expected type.
   TypedAttr bindingVal = binding.ir.getIfPValue();
   if (!bindingVal) {
-    bindingVal = emitter.emitPValue(binding, EC_ParameterList, expectedType);
-    if (!bindingVal)
+    FailureOr<CValue> cvOr =
+        inferCValue(binding, paramIdx, declaredParamPogs,
+                    CallSyntax::kParamBindings, expectedType);
+    if (failed(cvOr))
       return failure();
+
+    // If we had an initializer list this will succeed but not actually create
+    // the instance because the logic is shared with the dynamic argument
+    // checking logic that can't create an instance.  We don't have that problem
+    // so just do it.
+    if (!*cvOr ||
+        // FIXME: This is a hack. We don't know whether a DLValue (get a
+        // computed getitem) will correctly result in a PValue, so we force it.
+        cvOr->getIfDLValue()) {
+      *cvOr = emitter.emitPValue(binding, EC_ParameterList, expectedType);
+      assert(*cvOr && "This should always succeed; it was checked");
+    }
+
+    // Finally, check that this CValue is a PValue.
+    bindingVal = (*cvOr).getIfPValue();
+    if (!bindingVal) {
+      getDiag(binding.expr->getLoc())
+          << "cannot use a dynamic value in a parameter list"
+          << binding.expr->getRange();
+      return failure();
+    }
   }
 
   // Check the type matches what is expected, and perform an implicit
@@ -786,10 +838,9 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // If the parameter can be implicitly converted, do so.
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
-    ValueDest tmpDest(EC_CallParamValue);
-    CValue converted = emitter.emitImplicitConversionToType(
-        {bindingVal, binding.expr}, expectedType, tmpDest);
-    return converted.getIfPValue().get();
+    return emitter
+        .emitPValue({bindingVal, binding.expr}, EC_ParameterList, expectedType)
+        .get();
   }
 
   // Otherwise, the parameter is simply the wrong type, emit an error about this

@@ -130,6 +130,9 @@ private:
   // to type `foo[rank = 2, coord = (1, 2)]` here?
   bool hasDeferredGivenParam = false;
 
+  FailureOr<CValue> inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
+                                PogListAttr argPogs, CallSyntax syntax,
+                                ASTType expectedType);
   LogicalResult inferSelfFromInitResult(FnTypeGeneratorType signature);
 
   /// Infer parameters from an operand being passed into this function. This is
