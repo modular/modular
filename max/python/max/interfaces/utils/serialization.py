@@ -22,10 +22,49 @@ from typing import Any
 
 import msgspec
 import numpy as np
+from max.interfaces.generation import GenerationOutput
+from max.interfaces.request.open_responses import (
+    OutputImageContent,
+    OutputTextContent,
+    ReasoningSummaryContent,
+    RefusalContent,
+)
+from pydantic import BaseModel
 
 from .shared_memory import ndarray_to_shared_memory, open_shm_array
 
 logger = logging.getLogger("max.interfaces")
+
+# Type registry for Pydantic models to avoid importlib
+_PYDANTIC_TYPE_REGISTRY: dict[str, type] = {}
+
+
+def _build_type_registry() -> dict[str, type]:
+    """Build the static type registry by importing known Pydantic types.
+
+    This avoids the need for dynamic importlib usage during deserialization.
+
+    Returns:
+        Dictionary mapping full type paths to type objects.
+    """
+    registry: dict[str, type] = {}
+
+    # Register each type with its full module path
+    for cls in [
+        OutputImageContent,
+        OutputTextContent,
+        RefusalContent,
+        ReasoningSummaryContent,
+        GenerationOutput,
+    ]:
+        type_key = f"{cls.__module__}.{cls.__qualname__}"
+        registry[type_key] = cls
+
+    return registry
+
+
+# Initialize registry at module load time
+_PYDANTIC_TYPE_REGISTRY = _build_type_registry()
 
 
 def numpy_encoder_hook(
@@ -50,7 +89,17 @@ def numpy_encoder_hook(
     """
 
     def encode_hook(obj: Any) -> Any:
-        """Custom encoder that handles numpy arrays with optional shared memory conversion."""
+        """Custom encoder that handles numpy arrays and Pydantic models with optional shared memory conversion."""
+        # Handle Pydantic BaseModel instances
+        if isinstance(obj, BaseModel):
+            return {
+                "__pydantic__": True,
+                "type": obj.__class__.__module__
+                + "."
+                + obj.__class__.__qualname__,
+                "data": obj.model_dump(mode="json"),
+            }
+
         if isinstance(obj, np.ndarray):
             # Try shared memory conversion if enabled and array meets threshold
             if (
@@ -244,13 +293,39 @@ def msgpack_numpy_decoder(
 
 
 def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
-    """Custom decoder for numpy arrays from msgspec.
+    """Custom decoder for numpy arrays and Pydantic models from msgspec.
 
     Args:
         type_: The expected type (not used in this implementation)
         obj: The object to decode
         copy: Whether to copy the array data.
+
+    Raises:
+        ValueError: If a Pydantic type is not registered in the type registry.
     """
+    # Handle Pydantic BaseModel instances
+    if isinstance(obj, dict) and obj.get("__pydantic__") is True:
+        type_key = obj["type"]
+
+        # Get the class from the registry
+        pydantic_class = _PYDANTIC_TYPE_REGISTRY.get(type_key)
+
+        if pydantic_class is None:
+            raise ValueError(
+                f"Pydantic type '{type_key}' is not registered in the type registry. "
+                f"Please add it to _build_type_registry() in "
+                f"max/python/max/interfaces/utils/serialization.py. "
+                f"Available types: {list(_PYDANTIC_TYPE_REGISTRY.keys())}"
+            )
+
+        try:
+            # Reconstruct the Pydantic model from the dumped data
+            # Type ignore needed because mypy can't infer that registry contains BaseModel subclasses
+            return pydantic_class.model_validate(obj["data"])  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.error(f"Failed to validate Pydantic model data: {e}")
+            raise
+
     if isinstance(obj, dict) and obj.get("__np__") is True:
         # Wrapping the frombuffer in an array to avoid potential issues with data ownership across process boundaries.
         return np.array(

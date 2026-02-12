@@ -47,7 +47,10 @@ from max.interfaces.provider_options import (
     ProviderOptions,
 )
 from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import OpenResponsesRequestBody
+from max.interfaces.request.open_responses import (
+    OpenResponsesRequestBody,
+    OutputImageContent,
+)
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
@@ -340,6 +343,13 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Save each generated image
     for idx, image_content in enumerate(output.output):
+        # Narrow type for mypy - we expect OutputImageContent for pixel generation
+        if not isinstance(image_content, OutputImageContent):
+            print(
+                f"ERROR: Expected OutputImageContent, got {type(image_content)}"
+            )
+            continue
+
         # Determine output filename
         if len(output.output) > 1:
             # Multiple images: add index to filename
