@@ -26,12 +26,6 @@ from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
-from layout._layout import row_major
-from layout._coord import Coord, RuntimeInt, Idx
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    GMEMLayout1D,
-)
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (
     grouped_matmul_dynamic_scaled_fp8_1d2d,
@@ -275,68 +269,6 @@ def test_blockwise_fp8_1d2d_structured[
         ](),
     )
 
-    # TileTensors for the kernel under test (constructed from raw pointers)
-    var a_tt = TileTensor(
-        a_device_buffer.unsafe_ptr().bitcast[Scalar[a_type]](),
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[K]())
-        ),
-    )
-    var b_tt = TileTensor(
-        b_device_buffer.unsafe_ptr().bitcast[Scalar[b_type]](),
-        row_major[num_experts, N, K](),
-    )
-    var c_tt = TileTensor(
-        c_device_buffer.unsafe_ptr().bitcast[Scalar[c_type]](),
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
-    )
-    var a_scales_tt = TileTensor(
-        a_scales_device_buffer.unsafe_ptr().bitcast[Scalar[DType.float32]](),
-        row_major(
-            Coord(
-                Idx[K // BLOCK_SCALE_K](),
-                RuntimeInt[DType.int64](Int64(total_num_tokens)),
-            )
-        ),
-    )
-    var b_scales_tt = TileTensor(
-        b_scales_device_buffer.unsafe_ptr().bitcast[Scalar[DType.float32]](),
-        row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
-    )
-    from memory import UnsafePointer as NewPtr
-
-    var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
-        ptr=NewPtr[Scalar[DType.uint32], MutAnyOrigin](
-            unsafe_from_address=Int(a_offsets_device_buffer.unsafe_ptr())
-        ),
-        layout=GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts + 1))),
-            Coord(Idx[1]()),
-        ),
-    )
-    var expert_ids_tt = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin](
-        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
-            unsafe_from_address=Int(expert_ids_device_buffer.unsafe_ptr())
-        ),
-        layout=GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts))),
-            Coord(Idx[1]()),
-        ),
-    )
-    var expert_scales_tt = TileTensor[
-        DType.float32, GMEMLayout1D, MutAnyOrigin
-    ](
-        ptr=NewPtr[Scalar[DType.float32], MutAnyOrigin](
-            unsafe_from_address=Int(expert_scales_device_buffer.unsafe_ptr())
-        ),
-        layout=GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_experts))),
-            Coord(Idx[1]()),
-        ),
-    )
-
     # ===== Reference: naive blockwise FP8 grouped matmul =====
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
@@ -358,19 +290,15 @@ def test_blockwise_fp8_1d2d_structured[
     ctx.synchronize()
 
     # ===== Test: structured blockwise FP8 1D2D kernel =====
-    grouped_matmul_dynamic_scaled_fp8_1d2d[
-        a_scales_type = DType.float32,
-        b_scales_type = DType.float32,
-        transpose_b=transpose_b,
-    ](
-        c_tt,
-        a_tt,
-        b_tt,
-        a_scales_tt,
-        b_scales_tt,
-        a_offsets_tt,
-        expert_ids_tt,
-        expert_scales_tt,
+    grouped_matmul_dynamic_scaled_fp8_1d2d[transpose_b=transpose_b](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        a_offsets,
+        expert_ids,
+        expert_scales,
         num_active_experts,
         ctx,
     )

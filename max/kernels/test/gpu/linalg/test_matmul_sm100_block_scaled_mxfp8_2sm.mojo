@@ -26,9 +26,6 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -241,20 +238,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         scales_dtype, 5, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    # LayoutTensors for reference matmul and scale factor reshaping
-    var a_lt = from_ndbuffer_row_major(a_device_nd)
-    var b_lt = from_ndbuffer_row_major(b_device_nd)
-    var c_lt = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_tensor = from_ndbuffer_row_major(a_device_nd)
+    var b_tensor = from_ndbuffer_row_major(b_device_nd)
+    var c_tensor = from_ndbuffer_row_major(c_device_nd)
+    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
-
-    # TileTensors for the kernel under test
-    var a_tensor = lt_to_tt(a_lt)
-    var b_tensor = lt_to_tt(b_lt)
-    var c_tensor = lt_to_tt(c_lt)
-    var a_scales_tensor = lt_to_tt(a_scales_lt)
-    var b_scales_tensor = lt_to_tt(b_scales_lt)
 
     # Initialize matmul operands
     if simple_init():
@@ -275,8 +264,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_5d_layout = scales_5d_layout[a_scales_lt.layout]
-    comptime b_scales_5d_layout = scales_5d_layout[b_scales_lt.layout]
+    comptime a_scales_5d_layout = scales_5d_layout[a_scales_tensor.layout]
+    comptime b_scales_5d_layout = scales_5d_layout[b_scales_tensor.layout]
 
     var a_scales_tensor_host = LayoutTensor[
         scales_dtype, a_scales_5d_layout, MutAnyOrigin
@@ -386,10 +375,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     vendor_blas.matmul(
         ctx,
         c_ref_tensor,
-        a_lt,
-        b_lt,
-        a_scales=a_scales_lt,
-        b_scales=b_scales_lt,
+        a_tensor,
+        b_tensor,
+        a_scales=a_scales_tensor,
+        b_scales=b_scales_tensor,
         transpose_b=transpose_b,
         c_row_major=True,
     )

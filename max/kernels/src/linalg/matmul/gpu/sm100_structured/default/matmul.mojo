@@ -35,9 +35,6 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
 )
-from layout._layout import RowMajorLayout, TensorLayout, row_major
-from layout._coord import ComptimeInt, RuntimeInt, Coord, Idx
-from layout._tile_tensor import TileTensor
 from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index
@@ -63,9 +60,15 @@ from .matmul_kernels import (
 
 
 fn _blackwell_matmul_tma_umma_warp_specialized[
+    c_type: DType,
+    c_layout: LegacyLayout,
+    a_type: DType,
+    a_layout: LegacyLayout,
+    b_type: DType,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
     *,
-    config: MatmulConfig[_, _, _, transpose_b],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -73,14 +76,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_device: TileTensor,
-    a_device: TileTensor,
-    b_device: TileTensor,
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime a_type = config.a_type
-    comptime b_type = config.b_type
-    comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
@@ -124,11 +124,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     comptime cluster_shape = config.cluster_shape
 
-    var M = Int(c_device.dim[0]())
-    var N = Int(c_device.dim[1]())
-    var M_maybe_swapped = Int(a_device.dim[0]())
-    var N_maybe_swapped = Int(b_device.dim[0]())
-    comptime K = type_of(a_device).LayoutType.static_shape[1]
+    var M = c_device.dim[0]()
+    var N = c_device.dim[1]()
+    var M_maybe_swapped = a_device.dim[0]()
+    var N_maybe_swapped = b_device.dim[0]()
+    comptime K = a_layout.shape[1].value()
 
     comptime assert (
         ceildiv(K, BK) % config.k_group_size == 0
@@ -269,9 +269,15 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
 
 fn blackwell_matmul_tma_umma_warp_specialized[
+    c_type: DType,
+    c_layout: LegacyLayout,
+    a_type: DType,
+    a_layout: LegacyLayout,
+    b_type: DType,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
     *,
-    config: MatmulConfig[_, _, _, transpose_b],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -279,9 +285,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_device: TileTensor,
-    a_device: TileTensor,
-    b_device: TileTensor,
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     @parameter
@@ -300,6 +306,12 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         @parameter
         if config.num_split_k > 1:
             _blackwell_matmul_tma_umma_warp_specialized_split_k[
+                c_type,
+                c_layout,
+                b_type,
+                b_layout,
+                a_type,
+                a_layout,
                 transpose_b,
                 config=new_config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -308,6 +320,12 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             ](c_device, b_device, a_device, ctx)
         else:
             _blackwell_matmul_tma_umma_warp_specialized[
+                c_type,
+                c_layout,
+                b_type,
+                b_layout,
+                a_type,
+                a_layout,
                 transpose_b,
                 config=new_config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -320,6 +338,12 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         @parameter
         if config.num_split_k > 1:
             _blackwell_matmul_tma_umma_warp_specialized_split_k[
+                c_type,
+                c_layout,
+                a_type,
+                a_layout,
+                b_type,
+                b_layout,
                 transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -328,6 +352,12 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             ](c_device, a_device, b_device, ctx)
         else:
             _blackwell_matmul_tma_umma_warp_specialized[
+                c_type,
+                c_layout,
+                a_type,
+                a_layout,
+                b_type,
+                b_layout,
                 transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -338,23 +368,26 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 
 
 fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
+    c_type: DType,
+    c_layout: LegacyLayout,
+    a_type: DType,
+    a_layout: LegacyLayout,
+    b_type: DType,
+    b_layout: LegacyLayout,
     transpose_b: Bool,
     *,
-    config: MatmulConfig[_, _, _, transpose_b],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_device: TileTensor,
-    a_device: TileTensor,
-    b_device: TileTensor,
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime a_type = config.a_type
-    comptime b_type = config.b_type
-    comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
@@ -394,11 +427,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
     comptime cluster_shape = config.cluster_shape
 
-    var M = Int(c_device.dim[0]())
-    var N = Int(c_device.dim[1]())
-    var M_maybe_swapped = Int(a_device.dim[0]())
-    var N_maybe_swapped = Int(b_device.dim[0]())
-    comptime K = type_of(a_device).LayoutType.static_shape[1]
+    var M = c_device.dim[0]()
+    var N = c_device.dim[1]()
+    var M_maybe_swapped = a_device.dim[0]()
+    var N_maybe_swapped = b_device.dim[0]()
+    comptime K = a_layout.shape[1].value()
 
     comptime assert (
         ceildiv(K, BK) % config.k_group_size == 0
@@ -578,6 +611,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
 
 fn matmul_sm100_fallback[
+    a_layout: LegacyLayout,
+    b_layout: LegacyLayout,
+    c_layout: LegacyLayout,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -588,7 +624,12 @@ fn matmul_sm100_fallback[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
+](
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    ctx: DeviceContext,
+) raises:
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert a_type == b_type and a_type in (
@@ -607,11 +648,14 @@ fn matmul_sm100_fallback[
     comptime block_dim = 128
 
     # Instantiate fallback kernel first (TMA layouts computed from config)
+    from ..structured_kernels.tile_types import GMEMTile, lt_to_tt
+
+    comptime CDeviceTileType = GMEMTile[c_type, c_layout]
     comptime fallback_kernel = BlackwellMatmulSM100FallbackKernel[
         a_type,
         b_type,
         c_type,
-        type_of(c).LayoutType,
+        CDeviceTileType.LayoutType,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -637,14 +681,14 @@ fn matmul_sm100_fallback[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    var M = Int(c.dim[0]())
-    var N = Int(c.dim[1]())
-    var K = Int(a.dim[1]())
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]()
 
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
-        c,
+        lt_to_tt(c),
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

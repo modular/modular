@@ -47,7 +47,6 @@ from .matmul import matmul
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
-from .matmul.gpu.sm100_structured.structured_kernels.tile_types import lt_to_tt
 from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
@@ -1386,15 +1385,13 @@ fn blockwise_scaled_fp8_with_epilogue[
 
             blockwise_fp8_matmul[
                 transpose_b=transpose_b,
-                a_scales_type=a_scales_type,
-                b_scales_type=b_scales_type,
                 config=matmul_config,
             ](
-                lt_to_tt(c),
-                lt_to_tt(a),
-                lt_to_tt(b),
-                lt_to_tt(a_scales),
-                lt_to_tt(b_scales),
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
                 ctx,
             )
         else:
@@ -1428,15 +1425,13 @@ fn blockwise_scaled_fp8_with_epilogue[
 
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
-                    a_scales_type=a_scales_type,
-                    b_scales_type=b_scales_type,
                     config=matmul_config,
                 ](
-                    lt_to_tt(c),
-                    lt_to_tt(a),
-                    lt_to_tt(b),
-                    lt_to_tt(a_scales),
-                    lt_to_tt(b_scales),
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
                     ctx,
                 )
                 elementwise[epilogue_wrapper, simd_size, target="gpu"](
