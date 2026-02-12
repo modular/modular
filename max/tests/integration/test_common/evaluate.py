@@ -21,6 +21,7 @@ from dataclasses import replace
 from io import BytesIO
 from typing import Any, TypeVar
 
+import numpy as np
 from max import pipelines
 from max.driver import Device
 from max.dtype import DType

@@ -285,6 +285,7 @@ def compare_embeddings(
                 verbose=True,
             )
 
+
 def compare_images(
     actual: Sequence[Mapping[str, Any]],
     expected: Sequence[Mapping[str, Any]],
