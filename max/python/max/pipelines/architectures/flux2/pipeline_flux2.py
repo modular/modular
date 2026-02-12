@@ -144,6 +144,7 @@ class Flux2Pipeline(DiffusionPipeline):
         )
         self._scheduler_step_model: Model = self._build_scheduler_step_model()
         self._time_step_model: Model = self._build_all_time_steps_model()
+        self._unsqueeze_model: Model = self._build_unsqueeze_model()
         self._latent_prep_models: dict[str, Model] = {}
         self._vae_prep_models: dict[str, Model] = {}
 
@@ -280,6 +281,21 @@ class Flux2Pipeline(DiffusionPipeline):
 
         session = InferenceSession([Accelerator()])
         return session.load(graph)
+
+    def _build_unsqueeze_model(self)-> Model:
+        dtype = self.text_encoder.config.dtype
+        device = self.devices[0]
+        input_type = TensorType(dtype, shape=["seq_len", "hidden_dim"], device=device)
+        with Graph("unsqueeze_layer", input_types=[input_type]) as graph:
+            tensor_in = graph.inputs[0]
+            seq_len = tensor_in.shape[0]
+            hidden_dim = tensor_in.shape[1]
+            result = ops.reshape(tensor_in, [1, seq_len, hidden_dim])
+            graph.output(result)
+
+        session = InferenceSession([Accelerator()])
+        model = session.load(graph)
+        return model
 
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:
         """Convert a PixelContext into Flux2ModelInputs."""
@@ -450,7 +466,8 @@ class Flux2Pipeline(DiffusionPipeline):
 
             # Ensure [B, S, D]
             if hs.rank == 2:
-                hs = F.unsqueeze(hs, axis=0)
+                (hs_out,) = self._unsqueeze_model.execute(hs.driver_tensor)
+                hs = Tensor.from_dlpack(hs_out)
 
             _, seq_len, _ = map(int, hs.shape)
             if seq_len < max_seq:
