@@ -109,6 +109,7 @@ ParamInf::ParamInf(
         ArrayRef(getGivenBindings().values).take_front(getNumPreCheckedParam());
     for (auto preCheckedOperand : preChecked) {
       auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
+      assert(preCheckParamVal && "Prechecked parameters are always PValue's");
       if (sugarIsa<UnboundAttr>(preCheckParamVal))
         evaluator.appendIndexBinding(TypedAttr());
       else
@@ -724,8 +725,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 FailureOr<TypedAttr>
 ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
                                ASTType expectedType, size_t paramIdx) {
-  TypedAttr bindingVal = binding.ir.getIfPValue();
-  assert(bindingVal && "Parameters are always PValue's");
+  IREmitter emitter(getDeclScope(), EC_ParameterList);
 
   // We don't typecheck the '_' magic parameter, we propagate it.
   //
@@ -742,7 +742,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   //
   // NOTE: in a non-partial binding context, `_` can be also used as a place
   // holder, in this case we don't infer it to `_`
-  if (isa<UnboundAttr>(bindingVal)) {
+  if (isa_and_nonnull<UnboundAttr>(binding.ir.getIfPValue().get())) {
     if (partial)
       return TypedAttr(UnboundAttr::get(expectedType));
     // TODO: should we even allow using `_` in a concrete binding context? maybe
@@ -768,6 +768,15 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return TypedAttr(); // Deferred.
   }
 
+  // If we have a UValue, convert it to a PValue now that we know the expected
+  // type.
+  TypedAttr bindingVal = binding.ir.getIfPValue();
+  if (!bindingVal) {
+    bindingVal = emitter.emitPValue(binding, EC_ParameterList, expectedType);
+    if (!bindingVal)
+      return failure();
+  }
+
   // Check the type matches what is expected, and perform an implicit
   // conversion if needed.
   if (expectedType.isEqualCanon(bindingVal.getType()))
@@ -775,7 +784,6 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return ParamOperatorAttr::getRebind(bindingVal, expectedType);
 
   // If the parameter can be implicitly converted, do so.
-  IREmitter emitter(getDeclScope(), EC_TypeParamValue);
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     ValueDest tmpDest(EC_CallParamValue);
@@ -846,13 +854,13 @@ LogicalResult ParamInf::inferFromParamList() {
   CallOperands tmpOperands(getGivenBindings().syntax,
                            getGivenBindings().callExpr);
   if (llvm::any_of(getGivenBindings().values, [](const OperandValue &binding) {
-        return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
+        return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
       })) {
     hasEllipsis = true;
     // Rebuild the operands list without it.  We only do this if present as a
     // micro-optimization.
     for (auto binding : getGivenBindings().values) {
-      if (!isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
+      if (!isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get()))
         tmpOperands.values.push_back(binding);
       else if (!partial) {
         getDiag(binding.expr->getLoc())
@@ -951,7 +959,7 @@ LogicalResult ParamInf::inferFromParamList() {
       // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
       // be passed directly as a whole variadic parameter.
       auto expectedVA = sugarCast<VariadicType>(expectedType);
-      if (auto unpacked = dyn_cast<UnpackedAttr>(
+      if (auto unpacked = dyn_cast_or_null<UnpackedAttr>(
               givenBindings[posIdx].ir.getIfPValue().get())) {
         // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
         // varargs.
@@ -978,7 +986,8 @@ LogicalResult ParamInf::inferFromParamList() {
 
         // Passing `_` to a variadic is not allowed. Users should pass `*_` to
         // unbind a variadic parameter.
-        if (isa<UnboundAttr>(givenBindings[posIdx].ir.getIfPValue().get())) {
+        if (isa_and_nonnull<UnboundAttr>(
+                givenBindings[posIdx].ir.getIfPValue().get())) {
           auto &diag = getDiag(givenBindings[posIdx].expr->getLoc());
           diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                   "parameter";

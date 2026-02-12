@@ -382,6 +382,11 @@ struct StructWithTraitParam[T: ASuperTrait]():
 fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
     pass
 
+struct TakeSWIP[XYZ: StructWithIntParam = StructWithIntParam[1]()]:
+    pass
+
+struct TestTakeSWIP[CO: StructWithIntParam]:
+    var c: TakeSWIP[Self.CO]
 
 ##===----------------------------------------------------------------------===##
 # Memory-only parameters

@@ -371,7 +371,7 @@ struct StructWithField:
 
 fn dynamic_used_as_param_2() -> Int:
   var w = StructWithField(3)
-  # expected-error @+1 {{cannot use a dynamic value in call parameter}}
+  # expected-error @+1 {{cannot use a dynamic value in type parameter}}
   return func_with_static_param[w.x]()
 
 fn higher_order_int_func[func: fn (Int) escaping -> Int]() -> Int:
@@ -381,7 +381,7 @@ fn use_non_parameter_func() -> Int:
   var val = 8
   fn my_nested_func(x: Int) -> Int:
     return val + x
-  # expected-error @+1 {{cannot use a dynamic value in call parameter}}
+  # expected-error @+1 {{cannot implicitly convert 'fn(x: Int) escaping -> Int' value to 'fn(Int) escaping -> Int'}}
   var result: Int = higher_order_int_func[my_nested_func]()
 
 fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):

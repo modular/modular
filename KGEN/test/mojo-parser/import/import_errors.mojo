@@ -137,8 +137,8 @@ fn baz():
 
 import test_package
 
-# expected-error @below {{cannot implicitly convert 'test_package' value to 'AnyType' in type parameter}}
+# expected-error @below {{'S' parameter 'a' has 'AnyType' type, but value has type 'test_package'}}
 comptime x = S[test_package]()
 
-struct S[a: AnyType]:
+struct S[a: AnyType]: # expected-note {{'S' declared here}}
     pass

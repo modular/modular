@@ -179,14 +179,6 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
 }
 
 void ParamBindings::addPrechecked(const ExprNode *expr,
-                                  TypedAttr precheckedBinding) {
-  assert(numPreTypeChecked == parameters.size() &&
-         "Cannot add type prechecked after other bindings!");
-  parameters.add({precheckedBinding, expr});
-  ++numPreTypeChecked;
-}
-
-void ParamBindings::addPrechecked(const ExprNode *expr,
                                   TypedAttr precheckedBinding,
                                   StringAttr name) {
   assert(numPreTypeChecked == parameters.size() &&
@@ -195,7 +187,7 @@ void ParamBindings::addPrechecked(const ExprNode *expr,
   ++numPreTypeChecked;
 }
 
-void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
+void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
   parameters.add(name, {value, expr});
 }
 

@@ -36,7 +36,7 @@ fn MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
 
-# expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.5]' value to 'Int'}}
+# expected-error @+1 {{'Thing' parameter 'b' has 'Int' type, but value has type 'FloatLiteral[1.5]'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
     pass
 
@@ -329,7 +329,6 @@ fn test_struct_kw_params():
 
 
 fn test_struct_kw_params2():
-    # expected-error @below {{positional parameter follows keyword parameter}}
     _ = KwParamStruct[b=42, 1]()
 
 
