@@ -54,7 +54,7 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
         self,
         req_id: RequestID,
         data: BaseContextType,
-    ) -> AsyncIterator[PipelineOutputType]:
+    ) -> AsyncIterator[list[PipelineOutputType]]:
         pass
 
     @abstractmethod

@@ -47,6 +47,7 @@ from max.interfaces import (
     RequestID,
     SamplingParams,
     SamplingParamsInput,
+    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.nn.legacy.kv_cache import KVCacheStrategy
@@ -358,7 +359,7 @@ async def run_max_async(
     top_k: int | None,
 ) -> tuple[float, list[int]]:
     model_worker_interface = ZmqModelWorkerInterface[
-        TextAndVisionContext | TextContext, TokenGeneratorOutput
+        TextAndVisionContext | TextContext, TextGenerationOutput
     ](
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(config),

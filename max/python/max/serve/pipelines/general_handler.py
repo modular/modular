@@ -54,10 +54,11 @@ class GeneralPipelineHandler(
             context = await self.tokenizer.new_context(request)
 
             # Stream responses from the engine
-            async for response in self.model_worker.stream(
+            async for responses in self.model_worker.stream(
                 request.request_id, context
             ):
-                yield response
+                for response in responses:
+                    yield response
         finally:
             if self.debug_logging:
                 self.logger.debug(
