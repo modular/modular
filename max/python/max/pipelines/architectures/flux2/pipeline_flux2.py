@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import logging
 from dataclasses import dataclass
 from queue import Queue
 from typing import Any, Literal
 
 import numpy as np
 from max import functional as F
-from max.driver import CPU
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -32,6 +32,8 @@ from tqdm import tqdm
 from ..autoencoders import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
+
+logger = logging.getLogger("max.pipelines")
 
 
 def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
@@ -62,6 +64,7 @@ def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
     mu = a * num_steps + b
 
     return float(mu)
+
 
 @dataclass(kw_only=True)
 class Flux2ModelInputs(PixelModelInputs):
@@ -136,16 +139,28 @@ class Flux2Pipeline(DiffusionPipeline):
         self._scheduler_step_model = None
         self._time_step_models: dict[str, Any] = {}
 
-    def _ensure_patchify_model(self, batch_size, channels, height, width, device, dtype):
+    def _ensure_patchify_model(self, device, dtype):
         """Get or compile a patchify graph for the given shape."""
-        key = f"{batch_size}_{channels}_{height}_{width}_{device}_{dtype}"
+        key = f"{device}_{dtype}"
         if key in self._patchify_models:
             return self._patchify_models[key]
+        logger.debug(f"Compiling patchify model for {device}_{dtype}")
+        channels = self.vae.config.latent_channels
+
         input_type = TensorType(
-            dtype, shape=[batch_size, channels, height, width], device=device
+            dtype,
+            shape=["batch_size", channels, "height", "width"],
+            device=device,
         )
         with Graph("patchify", input_types=[input_type]) as graph:
             latents = graph.inputs[0]
+            batch_size = latents.shape[0]
+            height = latents.shape[2]
+            width = latents.shape[3]
+            latents = ops.rebind(
+                latents,
+                (batch_size, channels, (height // 2) * 2, (width // 2) * 2),
+            )
             latents = ops.reshape(
                 latents, (batch_size, channels, height // 2, 2, width // 2, 2)
             )
@@ -160,24 +175,31 @@ class Flux2Pipeline(DiffusionPipeline):
         self._patchify_models[key] = model
         return model
 
-    def _ensure_vae_prep_model(
-        self, batch_size, seq_len, channels, height, width, device, dtype
-    ):
+    def _ensure_vae_prep_model(self, channels, height, width, device, dtype):
         """Compile fused graph: unpack -> batch norm inverse -> unpatchify."""
-        key = f"{batch_size}_{seq_len}_{channels}_{height}_{width}_{device}_{dtype}"
+        key = f"{device}_{dtype}_{height}_{width}_{channels}"
         if key in self._vae_prep_models:
             return self._vae_prep_models[key]
+        logger.debug(f"Compiling vae prep model for {key}")
 
         input_types = [
-            TensorType(dtype, shape=[batch_size, seq_len, channels], device=device),
+            TensorType(
+                dtype, shape=["batch_size", "seq_len", channels], device=device
+            ),
             TensorType(dtype, shape=[channels], device=device),
             TensorType(dtype, shape=[channels], device=device),
         ]
 
         with Graph("vae_prep", input_types=input_types) as graph:
             latents, bn_mean, bn_var = graph.inputs
+            batch_size = latents.shape[0]
             latents = ops.permute(latents, (0, 2, 1))
-            latents = ops.reshape(latents, (batch_size, channels, height, width))
+            latents = ops.rebind(
+                latents, (batch_size, channels, height * width)
+            )
+            latents = ops.reshape(
+                latents, (batch_size, channels, height, width)
+            )
 
             mean_reshaped = ops.reshape(bn_mean, (1, channels, 1, 1))
             var_reshaped = ops.reshape(bn_var, (1, channels, 1, 1))
@@ -203,13 +225,13 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def _ensure_all_time_steps_model(
         self,
-        num_steps: int,
         device: DeviceRef,
     ):
         key = f"{device}"
         if key in self._time_step_models:
             return self._time_step_models[key]
 
+        logger.debug(f"Compiling all time steps model for {device}")
         with Graph(
             "time_step_all",
             input_types=[TensorType(DType.float32, ["num_sigmas"], device)],
@@ -233,8 +255,12 @@ class Flux2Pipeline(DiffusionPipeline):
         device: DeviceRef,
     ) -> None:
         input_types = [
-            TensorType(dtype, shape=["batch", "seq", "channels"], device=device),
-            TensorType(dtype, shape=["batch", "seq", "channels"], device=device),
+            TensorType(
+                dtype, shape=["batch", "seq", "channels"], device=device
+            ),
+            TensorType(
+                dtype, shape=["batch", "seq", "channels"], device=device
+            ),
             TensorType(dtype, shape=[1], device=device),
         ]
         with Graph("scheduler_step", input_types=input_types) as graph:
@@ -473,7 +499,11 @@ class Flux2Pipeline(DiffusionPipeline):
                 latents, height, width, latents.device, latents.dtype
             )
             # If 'latent', we return the Tensor.
-            return latents_unpacked[0] if latents_unpacked.shape[0].dim > 1 else latents_unpacked
+            return (
+                latents_unpacked[0]
+                if latents_unpacked.shape[0].dim > 1
+                else latents_unpacked
+            )
 
         # Dimensions for Unpack: (H/16, W/16) from original inputs (patchify=2, vae=8)
         h_latent = height // 16
@@ -486,9 +516,20 @@ class Flux2Pipeline(DiffusionPipeline):
         bn_mean = self.vae.bn.running_mean
         bn_var = self.vae.bn.running_var
 
+        patch_size_num = (
+            self.vae.config.patch_size[0] * self.vae.config.patch_size[1]
+        )  # 4
+
+        assert (
+            num_channels == self.vae.config.latent_channels * patch_size_num
+        ), (
+            f"Expected {self.vae.config.latent_channels} * {patch_size_num}, got {num_channels}"
+        )
+        assert h_latent * w_latent == seq_len, (
+            f"Expected {h_latent} * {w_latent}, got {seq_len}"
+        )
+
         model = self._ensure_vae_prep_model(
-            batch_size,
-            seq_len,
             num_channels,
             h_latent,
             w_latent,
@@ -567,16 +608,14 @@ class Flux2Pipeline(DiffusionPipeline):
         return latents, latent_image_ids
 
     def _patchify_latents(self, latents: Tensor) -> Tensor:
-        batch_size = latents.shape[0].dim
         num_channels_latents = latents.shape[1].dim
-        height = latents.shape[2].dim
-        width = latents.shape[3].dim
+        assert num_channels_latents == self.vae.config.latent_channels, (
+            f"Expected {self.vae.config.latent_channels} channels, got {num_channels_latents}"
+        )
         device = latents.device
         dtype = latents.dtype
 
-        model = self._ensure_patchify_model(
-            batch_size, num_channels_latents, height, width, device, dtype
-        )
+        model = self._ensure_patchify_model(device, dtype)
         latents_drv = model.execute(latents.driver_tensor)[0]
         return Tensor.from_dlpack(latents_drv)
 
@@ -657,9 +696,8 @@ class Flux2Pipeline(DiffusionPipeline):
             ),
             np.float32(0.0),
         )
-        sigmas = (
-            Tensor.from_dlpack(np.ascontiguousarray(base_sigmas))
-            .to(device)
+        sigmas = Tensor.from_dlpack(np.ascontiguousarray(base_sigmas)).to(
+            device
         )
 
         encoder_hidden_states_drv = prompt_embeds.driver_tensor
@@ -670,13 +708,14 @@ class Flux2Pipeline(DiffusionPipeline):
             self._build_scheduler_step_graph(dtype, device)
 
         _all_time_steps_model = self._ensure_all_time_steps_model(
-            num_steps=num_inference_steps,
             device=DeviceRef.from_device(device),
         )
 
         sigmas_drv = sigmas.driver_tensor
         latents_drv = latents.driver_tensor
-        all_timesteps_drv, all_dts_drv = _all_time_steps_model.execute(sigmas_drv)
+        all_timesteps_drv, all_dts_drv = _all_time_steps_model.execute(
+            sigmas_drv
+        )
 
         if hasattr(all_timesteps_drv, "driver_tensor"):
             all_timesteps_drv = all_timesteps_drv.driver_tensor
