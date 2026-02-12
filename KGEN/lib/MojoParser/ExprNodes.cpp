@@ -1650,68 +1650,57 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     lookupError();
     return {};
   }
+  // Otherwise we'll be calling the getter and/or setter.
 
-  // Otherwise we'll be calling the getter and/or setter.  Let's emit any index
-  // operands and determine whether they are arguments or parameters (e.g. for
-  // indexing into Tuple with parameter for the index).
-  CallOperands operands(CallSyntax::kMethodCall, node);
-  operands.addSelf(base);
-
-  // We look at one of the sets so we can detect whether we're emitting the
-  // operands as parameters or dynamic values.
-  bool isGetterPresent = (bool)getterSet;
-  OverloadSet *nonemptySet = isGetterPresent ? &getterSet : &setterSet;
-  assert(*nonemptySet && "at least one of the two should be nonempty");
-
-  // The exprOperands provided may be binding either to parameters or to
-  // arguments, and may even be mixed in the theoretical future.  For now, we
-  // keep things simple and just decide to bind all of the expressions to
-  // parameters if no candidates have an argument (other than the set value if
-  // this is a setter list).
-  bool shouldBindParameters = true;
-  for (ASTDecl *elt : nonemptySet->fnDecls) {
-    // TODO: This is really naive: it doesn't account for default arguments,
-    // variadic, byref_result, etc etc etc.
-    if (cast<FnOp>(elt->getIfOperation())
-            .getFuncTypeGenerator()
-            .getArguments()
-            .size() != size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
-      shouldBindParameters = false;
-      break;
+  // Check to see if the subscript operands should be passed as arguments or
+  // parameters of a getitem.  While this support could be expanded in the
+  // future, we just handle the simple case of a getitem that takes parameters.
+  // This is enough to handle VariadicPack and Tuple.
+  if (getterSet && !setterSet) {
+    bool shouldBindParameters = true;
+    // Check for a getitem with no arguments.
+    for (ASTDecl *elt : getterSet.fnDecls) {
+      // TODO: This is really naive: it doesn't account for default arguments,
+      // variadic, byref_result, parameter names, etc etc etc.
+      if (cast<FnOp>(elt->getIfOperation())
+              .getFuncTypeGenerator()
+              .getArguments()
+              .size() != /*self*/ 1) {
+        shouldBindParameters = false;
+        break;
+      }
+    }
+    // If we have this, just emit it syntactically as a call to the getter so
+    // we don't have to duplicate all the param binding logic.
+    if (shouldBindParameters) {
+      // emit base.__getitem__[indices]()
+      SyntheticNode baseNode(node->getLoc(), base.ir);
+      AttributeRefNode getItemNode(
+          &baseNode, node->getLoc(),
+          StringAttr::get(emitter.getContext(),
+                          isSubscript ? "__getitem__" : "__getattr__"));
+      SubscriptNode subscriptNode(&getItemNode, node->getLoc(), exprOperands,
+                                  node->getLoc());
+      CallNode callNode(&subscriptNode, node->getLoc(),
+                        /*no operands*/ ArrayRef<Operand>(),
+                        node->getRangeEnd());
+      return emitter.emitExpr(&callNode, dest);
     }
   }
 
-  // If we're binding these indices to parameters, do so and leave the
-  // arguments lists empty.
-  if (shouldBindParameters) {
-    // Start the parameter set with the parameters from the base type of the
-    // method we're invoking, so we set additional parameters.
-    //
-    // FIXME: This is incorrect!  The overload set can contain members of
-    // types that baseType implicitly converts to, and they will take
-    // different parameters that should be inferred from the actual arguments
-    // passed to the call.  We need ParameterizedType() to represent unbound
-    // self parameters but bound function parameters.
-    //
-    // FIXME2: What about the other set?  This seems like it only handles
-    // getitem.
-    nonemptySet->paramBindings = ParamBindings::getForDeclaredType(
-        emitter.getDeclScope(), baseType, node);
-    if (failed(
-            bindParamValuesToDirectCall(*nonemptySet, exprOperands, emitter)))
+  // Otherwise we're passing these exprOperands as normal dynamic arguments.
+  CallOperands operands(CallSyntax::kMethodCall, node);
+  operands.addSelf(base);
+
+  for (const Operand &operand : exprOperands) {
+    ExprNode *expr = operand.expr;
+    AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
+    if (!exprVal)
       return {};
-  } else {
-    // Otherwise we're passing these exprOperands as normal dynamic arguments.
-    for (const Operand &operand : exprOperands) {
-      ExprNode *expr = operand.expr;
-      AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
-      if (!exprVal)
-        return {};
-      if (operand.isKeywordOrUnpackedKeyword()) {
-        operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
-      } else {
-        operands.add({exprVal, expr});
-      }
+    if (operand.isKeywordOrUnpackedKeyword()) {
+      operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
+    } else {
+      operands.add({exprVal, expr});
     }
   }
 

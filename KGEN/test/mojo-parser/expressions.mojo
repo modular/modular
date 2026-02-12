@@ -1127,7 +1127,7 @@ fn setitemParamToDLValue():
   # The main check is just that it's not erroring.
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-3}>
   # CHECK: lit.call {{.*}}IndexList{{.*}}__setitem__{{.*}}[[VAR]]
-  coords[1] = -x
+  coords[] = -x
 
 # https://github.com/modular/mojo/issues/734
 fn reg_passable_trivial():
