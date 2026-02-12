@@ -2096,8 +2096,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'str_concat' expects two !kgen.string operands";
     break;
   case POC::FunctionGetArgTypes:
-    // TODO(MOCO-1106): Clean these errors up and change all the messages once
-    // we're sure of the types and which invariants we can relax.
     if (operands.size() != 1)
       return emitError() << "'function_get_arg_types' expects one "
                             "!kgen.func operand, but got nothing.";
