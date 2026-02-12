@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test serving a Mamba SSM model on the GPU."""
 
-from __future__ import annotations
-
 import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
