@@ -33,12 +33,6 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-// TODO(MOCO-1106): Use the higher-level emitGetterSetterAccess instead of using
-// this directly.
-extern LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
-                                                 ArrayRef<Operand> operands,
-                                                 IREmitter &emitter);
-
 //===----------------------------------------------------------------------===//
 // Function Conversions
 //===----------------------------------------------------------------------===//
@@ -476,57 +470,22 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       MBValue packRefMBValue =
           MBValue(thunk.getArgument(thunkVariadicArgIndex));
 
+      // Emit: the_pack[index]
       auto indexAttr = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
       CValue indexCValue = emitter.emitInt(
           ASTExprAnd<PValue>{PValue(indexAttr), &node}, EC_ConversionThunk);
-      PValue index = indexCValue.getIfPValue();
-      assert(index && "Int must be PValue when constructed from int attr");
-
-      SyntheticNode indexSynthNode(useLoc, index);
-
-      auto variadicTypeFromFunctionType =
-          functionType.getInputs()[thunkVariadicArgIndex];
-
-      ValueDest eltDest(EC_ConversionThunk);
-
-      // TODO(MOCO-1106): Use the higher-level emitGetterSetterAccess instead of
-      // the below OverloadSet/emitCall directly. It'll require refactoring
-      // emitGetterSetterAccess to avoid some index mismatch bugs.
-
-      // Look up VariadicPack.__getitem__
-      OverloadSet getItemOv = OverloadSet::lookup(
-          emitter.getDeclScope(),
-          ASTType(variadicTypeFromFunctionType).getReferenceElementType(),
-          "__getitem__", node, CallSyntax::kDirectCall);
-      if (failed(bindParamValuesToDirectCall(
-              getItemOv,
-              {Operand(&indexSynthNode, useLoc, Operand::PassKind::kKeyword,
-                       StringAttr::get(ctx, "index"))},
-              emitter))) {
-        // This should theoretically never happen, because we own VariadicPack.
-        emitter.emitError(useLoc,
-                          "Internal error: Couldn't find VariadicPack's "
-                          "__getitem__ method for the "
-                          "generated variadic thunk");
-        return {};
-      }
-
-      // Call the_pack.__getitem__[index]()
-      CallOperands getItemOperands(
-          CallSyntax::kSubscript, &node,
-          {ASTExprAnd<MBValue>{packRefMBValue, &node}});
+      SyntheticNode indexSynthNode(useLoc, indexCValue);
+      SyntheticNode packSynthNode(useLoc, packRefMBValue);
+      Operand subscriptOperand(&indexSynthNode, useLoc,
+                               Operand::PassKind::kKeyword,
+                               StringAttr::get(ctx, "index"));
+      SubscriptNode packSubscriptNode(&packSynthNode, useLoc, subscriptOperand,
+                                      useLoc);
       CValue getItemResult =
-          getItemOv.emitCall(std::move(getItemOperands), eltDest, emitter);
-      if (!getItemResult) {
-        // This should theoretically never happen, because we own VariadicPack.
-        emitter.emitError(useLoc, "Internal error: Couldn't call "
-                                  "VariadicPack.__getitem__[index] in the "
-                                  "generated variadic thunk");
+          emitter.emitExprCValue(&packSubscriptNode, EC_ConversionThunk);
+      if (!getItemResult)
         return {};
-      }
       argForActual = getItemResult.getMlirValue();
-
-      // Thunks can only receive
       convForActual = ArgConvention::ReadMem;
     } else {
       argForActual = thunk.getArgument(actualArgIndex);
