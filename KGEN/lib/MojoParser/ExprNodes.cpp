@@ -1394,24 +1394,22 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   return nextType;
 }
 
-/// Emit the PValue result for a single parameter binding.
-static TypedAttr emitSingleParamBinding(const Operand &operand,
-                                        IREmitter &emitter, ExprContext context,
-                                        ASTType expectedType) {
-  MLIRContext *ctx = emitter.getContext();
+/// Emit an operand as an expression, handling the _ and other cases. This
+/// typically will return a PValue but can also return a UValue when the operand
+/// is (eg) an overload set or init list expression.
+static AnyValue emitSingleParamExpr(const Operand &operand,
+                                    IREmitter &srcEmitter,
+                                    ExprContext context) {
+  // Evaluate foo() as a param call not dynamic call if in a dynamic context.
+  auto emitter = srcEmitter.getParamEmitter(EC_TypeParamValue);
 
   // Handle `_` syntax as an unbound parameter.
   if (operand.expr->kind == ExprNode::kDiscardLiteral) {
     // FIXME: Remove *_ in preference for ... in parameter lists.
     if (operand.isUnpackedKeyword())
       return EllipsisAttr::get(emitter.getContext());
-    return UnboundAttr::get(UnresolvedType::get(ctx));
+    return UnboundAttr::get(UnresolvedType::get(emitter.getContext()));
   }
-
-  // When emitting a "..." into a parameter list, it doesn't fulfill a parameter
-  // so ignore the type.
-  if (operand.expr->kind == ExprNode::kEllipsisLiteral)
-    expectedType = {};
 
   // Handle unpacked variadics in the form of `*x`.
   if (operand.expr->kind == ExprNode::kUnpack) {
@@ -1421,7 +1419,7 @@ static TypedAttr emitSingleParamBinding(const Operand &operand,
     // specially.
     // FIXME: Remove this syntax in favor of ...
     if (unpackExpr->subExpr->kind == ExprNode::kDiscardLiteral)
-      return EllipsisAttr::get(ctx);
+      return EllipsisAttr::get(emitter.getContext());
 
     // Only variadic-typed parameters can be unpacked. Emit the subexpression.
     // `expectedType` isn't needed here, because a variadic value would have
@@ -1438,9 +1436,24 @@ static TypedAttr emitSingleParamBinding(const Operand &operand,
                              value.getType().getVariadicElementType());
   }
 
-  // Emit the expression as a parameter, coercing it to the expected type, if
+  return emitter.emitExpr(operand.expr, context);
+}
+
+/// Emit the PValue result for a single parameter binding.
+static TypedAttr emitSingleParamBinding(const Operand &operand,
+                                        IREmitter &emitter, ExprContext context,
+                                        ASTType expectedType) {
+  AnyValue value = emitSingleParamExpr(operand, emitter, context);
+  if (!value)
+    return {};
+
+  // If this is a special symbol don't emit it and unify the type.
+  if (isa_and_nonnull<EllipsisAttr, UnboundAttr>(value.getIfPValue().get()))
+    return value.getIfPValue();
+
+  // Emit the expression as a  parameter, coercing it to the expected type, if
   // one is provided.
-  return emitter.emitExprPValue(operand.expr, context, expectedType);
+  return emitter.emitPValue({value, operand.expr}, context, expectedType);
 }
 
 /// Given PValue operands and a list of in-progress bindings to parameter lists,
@@ -1484,20 +1497,6 @@ bindParameterOperands(MutableArrayRef<InProgressBindings> bindables,
   return success();
 }
 
-/// Return a ParamBindings set for a list of PValue operands. If any operand
-/// fails be emitted as a PValue, the function returns null.
-static std::optional<ParamBindings> getBindingsForParameterOperands(
-    const ExprNode *expr, ArrayRef<Operand> operands, ArrayRef<Type> paramTypes,
-    PogListAttr paramList, IREmitter &emitter, ExprContext context) {
-  InProgressBindings bindable(paramTypes, paramList);
-  // Start with an empty binding set.
-  ParamBindings paramBindings(emitter.getDeclScope(), expr);
-  if (failed(bindParameterOperands(bindable, operands, paramBindings, emitter,
-                                   context)))
-    return std::nullopt;
-  return std::move(paramBindings);
-}
-
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
@@ -1511,17 +1510,20 @@ static PValue substituteParametersIntoUserDefinedType(
 
   // Build up a ParamBindings set to validate and check the bindings.
   TypeSignatureType sig = metaType.getSignature();
-  std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
-      expr, operands, sig.getParamTypes(), sig.getParamListAttrs(), emitter,
-      EC_TypeParamValue);
-  if (!paramBindings)
-    return {};
+
+  ParamBindings paramBindings(emitter.getDeclScope(), expr);
+  for (auto op : operands) {
+    auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
+    if (!value)
+      return {};
+    paramBindings.add(op.expr, value, op.name);
+  }
 
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings->verifyStructBindings(*typeDecl, sig, /*partial=*/true);
+      paramBindings.verifyStructBindings(*typeDecl, sig, /*partial=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -1538,14 +1540,19 @@ static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
                                    IREmitter &emitter,
                                    const SourceRange &range) {
   // Build up a ParamBindings set to validate and check the bindings.
-  std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
-      expr, operands, sig.getInputParamTypes(), sig.getParamListAttrs(),
-      emitter, EC_CallParamValue);
-  if (!paramBindings)
-    return {};
+  ParamBindings paramBindings(emitter.getDeclScope(), expr);
+  for (auto op : operands) {
+    auto value = emitSingleParamExpr(op, emitter, EC_ParameterList);
+    if (!value)
+      return {};
+    paramBindings.add(op.expr, value, op.name);
+  }
 
+  // Check the bindings.
+  // FIXME: The error messages are bad for partial binding, because the
+  // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr newBindings =
-      paramBindings->verifyBindings(sig, /*declIfKnown=*/nullptr);
+      paramBindings.verifyBindings(sig, /*declIfKnown=*/nullptr);
   if (!newBindings)
     return {};
 

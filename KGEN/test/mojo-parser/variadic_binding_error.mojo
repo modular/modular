@@ -42,6 +42,7 @@ fn foo():
     all_int(SomeVA[Int, SomeNonCopyable]())
 
 
+# expected-note @below {{'ParamSubst' declared here}}
 struct ParamSubst[
     T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.variadic<`, T, `>`],
@@ -51,8 +52,8 @@ struct ParamSubst[
 
 fn main():
     # We do not handle conversion between variadic of values at the moment (maybe we should?).
+    # expected-error @below {{'ParamSubst' parameter 'shape' has 'Variadic[Int]' type, but value has type 'Variadic[__mlir_type.index]'}}
     var _: ParamSubst[
         Int,
-        # @expected-error @below{{can not convert 'Variadic[__mlir_type.index]' to 'Variadic[Int]'}}
         __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`,
     ]

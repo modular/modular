@@ -126,12 +126,12 @@ trait TFoo:
 
 
 @fieldwise_init
-struct Bar[T: TFoo]:
+struct Bar[T: TFoo]: # expected-note {{'Bar' declared here}}
     pass
 
 
 fn bindAnyTraitToTrait():
-    # expected-error @+1 {{cannot implicitly convert 'TFoo' type as a value to an instance of 'TFoo' in type parameter; did you mean to instantiate 'TFoo'?}}
+    # expected-error @+1 {{'Bar' parameter 'T' has 'TFoo' type, but value has type 'AnyTrait[TFoo]'}}
     var _list = Bar[TFoo]()
 
 
