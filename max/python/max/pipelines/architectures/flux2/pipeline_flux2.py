@@ -66,6 +66,14 @@ def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
     return float(mu)
 
 
+def _time_shift_exponential(
+    mu: float, sigma_param: float, t: np.ndarray
+) -> np.ndarray:
+    """Resolution-dependent timestep shift (diffusers FlowMatchEulerDiscreteScheduler)."""
+    out = np.exp(mu) / (np.exp(mu) + (1.0 / t - 1.0) ** sigma_param)
+    return out.astype(np.float32)
+
+
 @dataclass(kw_only=True)
 class Flux2ModelInputs(PixelModelInputs):
     """
@@ -663,15 +671,15 @@ class Flux2Pipeline(DiffusionPipeline):
         image_seq_len = latents.shape[1].dim
         num_inference_steps = model_inputs.num_inference_steps
         mu = compute_empirical_mu(image_seq_len, num_inference_steps)
-        base_sigmas = np.append(
-            np.linspace(
-                1.0,
-                1.0 / num_inference_steps,
-                num_inference_steps,
-                dtype=np.float32,
-            ),
-            np.float32(0.0),
+        # 1.0 down to 0.0 (N+1 points); time-shift excludes 0 to avoid 1/t in formula
+        base_sigmas = np.linspace(
+            1.0,
+            1.0 / num_inference_steps,
+            num_inference_steps,
+            dtype=np.float32,
         )
+        base_sigmas = _time_shift_exponential(mu, 1.0, base_sigmas)
+        base_sigmas = np.append(base_sigmas, np.float32(0.0))
         sigmas = Tensor.from_dlpack(np.ascontiguousarray(base_sigmas)).to(
             device
         )
