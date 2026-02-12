@@ -142,28 +142,30 @@ class Flux2Pipeline(DiffusionPipeline):
             if getattr(self, "vae", None)
             else 8
         )
-        self._patchify_model: Model = self._build_patchify_model()
         self._scheduler_step_model: Model = self._build_scheduler_step_model()
         self._time_step_model: Model = self._build_all_time_steps_model()
+        self._latent_prep_models: dict[str, Model] = {}
         self._vae_prep_models: dict[str, Model] = {}
 
-    def _build_patchify_model(self) -> Model:
-        """Get or compile a patchify graph for the given shape."""
-        logger.debug("Compiling patchify model")
-        channels = self.vae.config.latent_channels
-        device = self.devices[0]
-        dtype = self.vae.config.dtype
+    def _ensure_latent_prep_model(self, height, width, dtype) -> Model:
+        key = f"{height}_{width}_{dtype}"
+        if key in self._latent_prep_models:
+            return self._latent_prep_models[key]
 
-        input_type = TensorType(
-            dtype,
-            shape=["batch_size", channels, "height", "width"],
-            device=device,
-        )
-        with Graph("patchify", input_types=[input_type]) as graph:
+        device = self.devices[0]
+        input_dtype = DType.float32
+        channels = self.vae.config.latent_channels
+
+        input_types = [
+            TensorType(
+                input_dtype, shape=["batch_size", channels, "height", "width"], device=device
+            ),
+        ]
+
+        with Graph("latent_prep", input_types=input_types) as graph:
             latents = graph.inputs[0]
             batch_size = latents.shape[0]
-            height = latents.shape[2]
-            width = latents.shape[3]
+            latents = ops.cast(latents, dtype)
             latents = ops.rebind(
                 latents,
                 (batch_size, channels, (height // 2) * 2, (width // 2) * 2),
@@ -172,13 +174,13 @@ class Flux2Pipeline(DiffusionPipeline):
                 latents, (batch_size, channels, height // 2, 2, width // 2, 2)
             )
             latents = ops.permute(latents, (0, 1, 3, 5, 2, 4))
-            latents = ops.reshape(
-                latents, (batch_size, channels * 4, height // 2, width // 2)
-            )
+            latents = ops.reshape(latents, (batch_size, channels * 4, height // 2 * width // 2))
+            latents = ops.permute(latents, (0, 2, 1))
             graph.output(latents)
 
         session = InferenceSession([Accelerator()])
         model = session.load(graph)
+        self._latent_prep_models[key] = model
         return model
 
     def _ensure_vae_prep_model(self, height, width) -> Model:
@@ -347,69 +349,69 @@ class Flux2Pipeline(DiffusionPipeline):
                 f"got {type(encoder_output)}"
             )
 
-    def _encode_vae_image(
-        self,
-        image: Tensor,
-        generator: Any = None,
-        sample_mode: str = "mode",
-    ) -> Tensor:
-        if len(image.shape) != 4:
-            raise ValueError(f"Expected image dims 4, got {len(image.shape)}.")
+    # def _encode_vae_image(
+    #     self,
+    #     image: Tensor,
+    #     generator: Any = None,
+    #     sample_mode: str = "mode",
+    # ) -> Tensor:
+    #     if len(image.shape) != 4:
+    #         raise ValueError(f"Expected image dims 4, got {len(image.shape)}.")
 
-        encoder_output = self.vae.encode(image, return_dict=True)
+    #     encoder_output = self.vae.encode(image, return_dict=True)
 
-        if isinstance(encoder_output, dict):
-            encoder_output = encoder_output["latent_dist"]
+    #     if isinstance(encoder_output, dict):
+    #         encoder_output = encoder_output["latent_dist"]
 
-        image_latents = self.retrieve_latents(
-            encoder_output, generator=generator, sample_mode=sample_mode
-        )
-        image_latents = self._patchify_latents(image_latents)
+    #     image_latents = self.retrieve_latents(
+    #         encoder_output, generator=generator, sample_mode=sample_mode
+    #     )
+    #     image_latents = self._patchify_latents(image_latents)
 
-        bn_mean = self.vae.bn.running_mean
-        bn_var = self.vae.bn.running_var
+    #     bn_mean = self.vae.bn.running_mean
+    #     bn_var = self.vae.bn.running_var
 
-        num_channels = bn_mean.shape[0].dim
-        bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
-        bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
-        bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
-        image_latents = (image_latents - bn_mean) / bn_std
+    #     num_channels = bn_mean.shape[0].dim
+    #     bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
+    #     bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
+    #     bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
+    #     image_latents = (image_latents - bn_mean) / bn_std
 
-        return image_latents
+    #     return image_latents
 
-    def prepare_image_latents(
-        self,
-        images: list[Tensor],
-        batch_size: int,
-        device: DeviceRef,
-        dtype: DType,
-        generator: Any = None,
-        sample_mode: str = "mode",
-    ) -> tuple[Tensor, Tensor]:
-        image_latents = []
-        for image in images:
-            image = image.to(device).cast(dtype)
-            latent = self._encode_vae_image(
-                image=image, generator=generator, sample_mode=sample_mode
-            )
-            image_latents.append(latent)
+    # def prepare_image_latents(
+    #     self,
+    #     images: list[Tensor],
+    #     batch_size: int,
+    #     device: DeviceRef,
+    #     dtype: DType,
+    #     generator: Any = None,
+    #     sample_mode: str = "mode",
+    # ) -> tuple[Tensor, Tensor]:
+    #     image_latents = []
+    #     for image in images:
+    #         image = image.to(device).cast(dtype)
+    #         latent = self._encode_vae_image(
+    #             image=image, generator=generator, sample_mode=sample_mode
+    #         )
+    #         image_latents.append(latent)
 
-        image_latent_ids = self._prepare_image_ids(image_latents, device=device)
+    #     image_latent_ids = self._prepare_image_ids(image_latents, device=device)
 
-        packed_latents = []
-        for latent in image_latents:
-            packed = self._pack_latents(latent)
-            packed = F.squeeze(packed, axis=0)
-            packed_latents.append(packed)
+    #     packed_latents = []
+    #     for latent in image_latents:
+    #         packed = self._pack_latents(latent)
+    #         packed = F.squeeze(packed, axis=0)
+    #         packed_latents.append(packed)
 
-        image_latents = F.concat(packed_latents, axis=0)
-        image_latents = F.unsqueeze(image_latents, 0)
-        image_latents = F.tile(image_latents, (batch_size, 1, 1))
+    #     image_latents = F.concat(packed_latents, axis=0)
+    #     image_latents = F.unsqueeze(image_latents, 0)
+    #     image_latents = F.tile(image_latents, (batch_size, 1, 1))
 
-        image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
-        image_latent_ids = image_latent_ids.to(device)
+    #     image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
+    #     image_latent_ids = image_latent_ids.to(device)
 
-        return image_latents, image_latent_ids
+    #     return image_latents, image_latent_ids
 
     def _prepare_prompt_embeddings(
         self,
@@ -576,32 +578,18 @@ class Flux2Pipeline(DiffusionPipeline):
         text_ids = np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
         return Tensor.from_dlpack(text_ids).to(device)
 
-    @staticmethod
-    def _pack_latents(latents: Tensor) -> Tensor:
-        """Pack spatial latents (B, C, H, W) into sequence latents (B, H*W, C)."""
-        batch_size, num_channels, height, width = map(int, latents.shape)
-        latents = F.reshape(latents, (batch_size, num_channels, height * width))
-        return F.permute(latents, (0, 2, 1))
-
     def _preprocess_latents(
-        self, latents: Tensor, latent_image_ids: Tensor, dtype: DType
+        self, latents: np.ndarray, latent_image_ids: Tensor, dtype: DType
     ) -> tuple[Tensor, Tensor]:
-        latents: Tensor = (
-            Tensor.from_dlpack(latents)
-            .to(self.transformer.devices[0])
-            .cast(dtype)
-        )
-        latents = self._patchify_latents(latents)
-        latents = self._pack_latents(latents)
+        latents = Tensor.from_dlpack(latents).to(self.transformer.devices[0])
+        latent_prep_model = self._ensure_latent_prep_model(latents.shape[2], latents.shape[3], dtype)
+        latents_drv = latent_prep_model.execute(latents.driver_tensor)[0]
+        latents = Tensor.from_dlpack(latents_drv)
 
         latent_image_ids = Tensor.from_dlpack(
             latent_image_ids.astype(np.int64)
         ).to(self.transformer.devices[0])
         return latents, latent_image_ids
-
-    def _patchify_latents(self, latents: Tensor) -> Tensor:
-        latents_drv = self._patchify_model.execute(latents.driver_tensor)[0]
-        return Tensor.from_dlpack(latents_drv)
 
     def _pil_image_to_tensor(
         self,
@@ -645,14 +633,15 @@ class Flux2Pipeline(DiffusionPipeline):
 
         image_latents = None
         image_latent_ids = None
-        if model_inputs.input_image is not None:
-            image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
-            image_latents, image_latent_ids = self.prepare_image_latents(
-                images=[image_tensor],
-                batch_size=batch_size,
-                device=self.vae.devices[0],
-                dtype=self.vae.config.dtype,
-            )
+        # TODO: implement image latents support
+        # if model_inputs.input_image is not None:
+        #     image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
+        #     image_latents, image_latent_ids = self.prepare_image_latents(
+        #         images=[image_tensor],
+        #         batch_size=batch_size,
+        #         device=self.vae.devices[0],
+        #         dtype=self.vae.config.dtype,
+        #     )
 
         # 2) Prepare latents and conditioning tensors.
         latents, latent_image_ids = self._preprocess_latents(
