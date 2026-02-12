@@ -90,7 +90,9 @@ public:
                      StringAttr name);
 
   /// Add a bound value for a positional parameter binding.
-  void add(const ExprNode *expr, TypedAttr value);
+  void add(const ExprNode *expr, PValue value) {
+    add(expr, value, StringAttr());
+  }
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, PValue value, StringAttr name);
@@ -145,14 +147,6 @@ public:
   bool doNotApplyDefaults = false;
 
 private:
-  /// Check that our set of parameter bindings work with the specified input
-  /// parameters. If so, return a checked ParameterExprArrayAttr, along with
-  /// information on how closely the bindings fit the parameters, or why
-  /// they don't.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
-      const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
-      PogListAttr paramListAttr, ParamInf &inference, bool partial) const;
-
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
 

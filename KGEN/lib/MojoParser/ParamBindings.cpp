@@ -195,10 +195,6 @@ void ParamBindings::addPrechecked(const ExprNode *expr,
   ++numPreTypeChecked;
 }
 
-void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
-  parameters.add({value, expr});
-}
-
 void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
   parameters.add(name, {value, expr});
 }
@@ -233,21 +229,6 @@ emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
     LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
 }
 
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
-                                  ArrayRef<Type> expectedParamTypes,
-                                  PogListAttr paramListAttr,
-                                  ParamInf &inference, bool partial) const {
-
-  if (failed(inference.finalizeWithUnbound()))
-    return {{}, {}};
-
-  // If succeeded, Simply return all the binding from the inference.
-  return {ParameterExprArrayAttr::get(declScope.getContext(),
-                                      inference.evaluator.getIndexBindings()),
-          {}};
-}
-
 ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {
@@ -270,7 +251,7 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
 
   // Check to see if we have ... and remove it from the parameter list.
   bool hasEllipsis = llvm::any_of(parameters.values, [](OperandValue binding) {
-    return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
+    return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
   });
 
   // FIXME: we also allow using `_` (UnboundAttr) in a very unprincipled
@@ -296,9 +277,12 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
   if (!hasEllipsis && failed(inference.inferFromDefaults()))
     return nullptr;
 
-  auto [bindings, _] =
-      verifyBindingsImpl(parameters, paramTypes, paramList, inference, partial);
-  return bindings;
+  if (failed(inference.finalizeWithUnbound()))
+    return {};
+
+  // If succeeded, Simply return all the binding from the inference.
+  return ParameterExprArrayAttr::get(declScope.getContext(),
+                                     inference.evaluator.getIndexBindings());
 }
 
 ParameterExprArrayAttr
@@ -366,7 +350,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
 
   // Check to see if we have ... and remove it from the parameter list.
   bool hasEllipsis = llvm::any_of(parameters.values, [](OperandValue binding) {
-    return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
+    return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
   });
 
   // If we had a variadic parameter that is unspecified, and no arguments to
@@ -379,9 +363,14 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
             std::move(diag)};
   }
 
-  auto [bindings, fitness] = verifyBindingsImpl(
-      parameters, expectedParamTypes, paramListAttr, inference, partial);
-  return {bindings, fitness, std::move(diag)};
+  if (failed(inference.finalizeWithUnbound()))
+    return {ParameterExprArrayAttr(), Fitness(), std::move(diag)};
+
+  // If succeeded, Simply return all the binding from the inference.
+  auto bindings = ParameterExprArrayAttr::get(
+      declScope.getContext(), inference.evaluator.getIndexBindings());
+
+  return {bindings, Fitness(), std::move(diag)};
 }
 
 TypedAttr ParamBindings::getBoundConstAttrForFn(ASTDecl &fnDecl) const {
@@ -410,7 +399,7 @@ TypedAttr ParamBindings::getBoundConstAttrForFn(ASTDecl &fnDecl) const {
   // that conforms to the trait.
   assert(!parameters.values.empty());
   PValue selfExpr = parameters.values.front().ir.getIfPValue();
-  assert(selfExpr && "parameters are always PValues");
+  assert(selfExpr && "type should always be a PValue");
 
   // When referencing a trait function, bind the reference using a parameter
   // expression instead of the direct reference. Also, drop the implicit trait
