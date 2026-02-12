@@ -1484,6 +1484,9 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
 
         return decl->doesNominalTypeConformTo(trait);
       }
+    } else {
+      // This isn't relevant, e.g. in function pointer to closure case.
+      return failure();
     }
     return result;
   }
@@ -1616,6 +1619,16 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
             sugarDynCastIfPresent<StructMetaType>(requiredType.getMetaType())) {
       StructType structTy = structMeta.getType();
       if (isClosureWrapperStruct(shared, value.ir.getIfPValue(), structTy))
+        return cacheAndReturnVal(rvType, requiredType, true);
+    }
+
+    // Conversion to a struct wrapper that implements the target closure trait.
+    // FIXME: this is likely too generous.  This needs to line up with
+    // emitImplicitConversionToType but doesn't.
+    if (auto anyTrait =
+            sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
+      TraitType trait = anyTrait.getTraitType();
+      if (getClosureTraitDecl(shared, trait))
         return cacheAndReturnVal(rvType, requiredType, true);
     }
   }

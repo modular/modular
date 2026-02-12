@@ -60,7 +60,9 @@ static raw_ostream &printStorage(raw_ostream &os,
   } else if (auto val = dyn_cast<OverloadSetUValue>(storage)) {
     if (isDump)
       os << "OverloadSetUValue: ";
-    os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
+    os << '"' << val->baseName << "\" " << val->fnDecls.size()
+       << " candidates.\n";
+    val->dump();
   } else if (isa<InitializerUValue>(storage)) {
     if (isDump)
       os << "InitializerUValue";
