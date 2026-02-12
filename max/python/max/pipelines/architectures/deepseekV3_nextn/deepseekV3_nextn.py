@@ -269,7 +269,7 @@ class DeepseekV3NextN(Module):
             ep_inputs=ep_inputs,
         )
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
@@ -300,10 +300,10 @@ class DeepseekV3NextN(Module):
         if self.return_hidden_states == ReturnHiddenStates.ALL:
             ret_val += tuple(h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.ep_manager is not None:
+            if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
-                # For non-EP case, distribute the single tensor to match interface
+                # For non-data-parallel case, distribute the single tensor to match interface
                 ret_val += tuple(distribute_value(last_token_h, devices))
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)
