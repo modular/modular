@@ -49,6 +49,57 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ParamRefRemapper
+//===----------------------------------------------------------------------===//
+
+// ParamRefRemapper converts parameter references by index (e.g., *(0,1))
+// to references by name (e.g., "b"): The reverse of IndexRefRemapper.
+//
+// Problem:
+// In Mojo parametric functions, parameter types can refer to earlier parameters
+// using indices. For example, in "fn f[T: Baz, b: T]", the type of 'b' refers
+// to 'T' via an index. When creating function types outside this context, we
+// need named references instead.
+//
+// Example:
+// Input
+// Parameter types: [!lit.trait<@Baz>, !kgen.param<*(0,0)>]
+// Parameter names: ["T", "b"]
+//
+// Output (canonical types):
+// {"T": !lit.trait<@Baz>, "b": !kgen.param<"T">}
+//
+// Solution:
+// We recursively traverse attributes, replacing ParamIndexRefAttr with
+// ParamDeclRefAttr using a map from indices to parameter declarations.
+// The recursion terminates because MLIR attributes are directed acyclic graphs.
+struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
+  using Base = IndexParameterReplacer<ParamRefRemapper>;
+  ParamRefRemapper(ArrayRef<StringAttr> declNames) {
+    for (auto [i, n] : llvm::enumerate(declNames))
+      parameters.insert({i, n});
+  }
+  ParamRefRemapper(ArrayRef<ParamDeclAttr> declarations) {
+    for (auto [i, p] : llvm::enumerate(declarations))
+      parameters.insert({i, p.getName()});
+  }
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
+    if (!indexRef || indexRef.getDepth() != depth)
+      return nullptr;
+    auto it = parameters.find(indexRef.getIndex());
+    if (it == parameters.end())
+      return nullptr;
+
+    StringAttr paramName = it->second;
+    Type mappedType = Base::replace(indexRef.getType());
+    return ParamDeclRefAttr::get(paramName.strref(), mappedType);
+  }
+  Type tryReplace(Type t, size_t) { return {}; }
+  DenseMap<unsigned, StringAttr> parameters;
+};
+
+//===----------------------------------------------------------------------===//
 // IndexDepthAdjuster
 //===----------------------------------------------------------------------===//
 

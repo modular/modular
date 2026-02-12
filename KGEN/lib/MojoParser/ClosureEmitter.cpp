@@ -379,56 +379,6 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   IREmitter::emitNormalReturn(b, callIndirect.getResult(0));
 }
 
-namespace {
-// ParamIndexRefReplacer converts parameter references by index (e.g., *(0,1))
-// to references by name (e.g., "b").
-//
-// Problem:
-// In Mojo parametric functions, parameter types can refer to earlier parameters
-// using indices. For example, in "fn f[T: Baz, b: T]", the type of 'b' refers
-// to 'T' via an index. When creating function types outside this context, we
-// need named references instead.
-//
-// Example:
-// Input
-// Parameter types: [!lit.trait<@Baz>, !kgen.param<*(0,0)>]
-// Parameter names: ["T", "b"]
-//
-// Output (canonical types):
-// {"T": !lit.trait<@Baz>, "b": !kgen.param<"T">}
-//
-// Solution:
-// We recursively traverse attributes, replacing ParamIndexRefAttr with
-// ParamDeclRefAttr using a map from indices to parameter declarations.
-// The recursion terminates because MLIR attributes are directed acyclic graphs.
-struct ParamIndexRefReplacer
-    : public IndexParameterReplacer<ParamIndexRefReplacer> {
-  using Base = IndexParameterReplacer<ParamIndexRefReplacer>;
-  ParamIndexRefReplacer(ArrayRef<ParamDeclAttr> declarations) {
-    for (auto [i, p] : llvm::enumerate(declarations))
-      parameters.insert({i, p.getName()});
-  }
-  ParamIndexRefReplacer(ArrayRef<PogMetadataAttr> declarations) {
-    for (auto [i, p] : llvm::enumerate(declarations))
-      parameters.insert({i, p.getName()});
-  }
-  Attribute tryReplace(Attribute attr, size_t depth) {
-    auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
-    if (!indexRef || indexRef.getDepth() != depth)
-      return nullptr;
-    auto it = parameters.find(indexRef.getIndex());
-    if (it == parameters.end())
-      return nullptr;
-
-    StringRef paramName = it->second;
-    Type mappedType = Base::replace(indexRef.getType());
-    return ParamDeclRefAttr::get(paramName, mappedType);
-  }
-  Type tryReplace(Type t, size_t) { return {}; }
-  DenseMap<unsigned, StringRef> parameters;
-};
-} // namespace
-
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
     ASTDecl &moduleDecl, StringAttr name,
     SmallVector<ClosureParent> &closureParents,
@@ -484,7 +434,9 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
 static SmallVector<ParamDeclAttr>
 populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
   auto pogAttrs = sig.getParamListAttrs().getPogs();
-  ParamIndexRefReplacer replacer(pogAttrs);
+  SmallVector<StringAttr> pogNames = llvm::map_to_vector(
+      pogAttrs, [&](PogMetadataAttr pog) { return pog.getName(); });
+  ParamRefRemapper replacer(pogNames);
   SmallVector<ParamDeclAttr> parameters;
   parameters.reserve(pogAttrs.size());
 
@@ -628,7 +580,7 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
       ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
           .take_front(traitFnOp.getInputParams().size() -
                       wrapperSignature.getNumImplicitOriginDecls());
-  ParamIndexRefReplacer replacer(parameters);
+  ParamRefRemapper replacer(parameters);
   SmallVector<Type> argumentTypes;
   llvm::append_range(
       argumentTypes,
@@ -1250,7 +1202,7 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
     auto callName = StringAttr::get(ctx, "__call__");
     // Calculate the argument types and result types in terms of the named
     // parameters.
-    ParamIndexRefReplacer replacer(parameters);
+    ParamRefRemapper replacer(parameters);
     SmallVector<Type> argumentTypes;
     llvm::append_range(argumentTypes,
                        llvm::map_range(sig.getArguments(), [&](Type original) {

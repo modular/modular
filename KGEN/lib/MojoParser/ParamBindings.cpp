@@ -146,17 +146,17 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
       // so we can substitute the value into the signature.
       typeAttr = UpcastAttr::get(simpleTraitType, PValue(type));
     }
-    paramBindings.addPrechecked(expr, typeAttr, traitSelfName);
+    paramBindings.add(expr, typeAttr, traitSelfName);
   } else if (isa<TraitType>(decl->getIfTypeValue())) {
     if (optionalParentTraitType) {
       // If caller provided a parent trait type, we need to upcast the self.
       auto typeAttr = UpcastAttr::get(optionalParentTraitType, PValue(type));
-      paramBindings.addPrechecked(expr, typeAttr, traitSelfName);
+      paramBindings.add(expr, typeAttr, traitSelfName);
     } else {
       // If this is a trait composition, the method signature's self type won't
       // match directly (need to upcast the composition into the trait type that
       // declared the method). Add as _not_ prechecked.
-      paramBindings.add(expr, PValue(type).get(), traitSelfName);
+      paramBindings.add(expr, PValue(type), traitSelfName);
     }
   }
 
@@ -172,18 +172,17 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     // Since we prepend struct parameters as inferred only, specify the name
     // here to make sure we can verify the pog list correctly.
     for (auto [value, pog] : llvm::zip(paramValues, pogs))
-      paramBindings.addPrechecked(expr, value, pog.getName());
+      paramBindings.add(expr, value, pog.getName());
   }
 
   return paramBindings;
 }
 
 void ParamBindings::addPrechecked(const ExprNode *expr,
-                                  TypedAttr precheckedBinding,
-                                  StringAttr name) {
+                                  TypedAttr precheckedBinding) {
   assert(numPreTypeChecked == parameters.size() &&
          "Cannot add type prechecked after other bindings!");
-  parameters.add(name, {precheckedBinding, expr});
+  parameters.add({precheckedBinding, expr});
   ++numPreTypeChecked;
 }
 

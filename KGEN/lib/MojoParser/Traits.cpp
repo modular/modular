@@ -70,10 +70,9 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
   auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                     structSelfType, expr);
   // Leave the rest alone.
-  for (Type type : paramTypes.drop_front()) {
+  for (Type type : paramTypes.drop_front())
     params.push_back(UnboundAttr::get(type));
-    bindings.addPrechecked(expr, params.back());
-  }
+
   bindings.doNotApplyDefaults = true;
 
   FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(

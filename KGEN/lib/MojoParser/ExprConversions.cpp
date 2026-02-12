@@ -23,6 +23,7 @@
 #include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -278,10 +279,21 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
   if (actual.getBody() == expected.getBody())
     return true;
 
+  // We are pulling out the body of the generator to test type convertibility.
+  // To do it correctly, we need to replace index ref to name refs. Otherwise,
+  // it confuses parameter inference (as index refs are to be inferred).
+  SmallVector<StringAttr> boundNames;
+  for (size_t i = 0, e = actual.getInputParamTypes().size(); i != e; ++i) {
+    boundNames.push_back(
+        StringAttr::get(actual.getContext(), "Ctx#" + Twine(i)));
+  }
+  ParamRefRemapper paramRefRemapper(boundNames);
+
   // If the body is a function, we apply custom conversion rules.
   if (auto actualFnType = sugarDynCast<FnType>(actual.getBody())) {
     if (auto expectedFnType = sugarDynCast<FnType>(expected.getBody())) {
-      return canConvertFunctionTypes(actualFnType, expectedFnType,
+      return canConvertFunctionTypes(paramRefRemapper.replace(actualFnType),
+                                     paramRefRemapper.replace(expectedFnType),
                                      valueExpr.expr, declScope);
     }
   }
@@ -294,8 +306,8 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
     return false;
 
   return IREmitter::canImplicitlyConvertToType(
-      {genAttr.getBody(), valueExpr.expr}, ASTType(expected.getBody()),
-      declScope);
+      {paramRefRemapper.replace(genAttr.getBody()), valueExpr.expr},
+      ASTType(paramRefRemapper.replace(expected.getBody())), declScope);
 }
 
 static FnType getReducedFnType(FnType sig) {
