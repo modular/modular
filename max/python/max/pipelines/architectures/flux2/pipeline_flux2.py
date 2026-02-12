@@ -150,7 +150,9 @@ class Flux2Pipeline(DiffusionPipeline):
         self._prompt_embed_models: dict[str, Model] = {}
         self._text_ids_models: dict[str, Model] = {}
 
+        self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
+        self._cached_sigmas: dict[str, Tensor] = {}
 
     def _ensure_latent_prep_model(self, height, width, dtype) -> Model:
         key = f"{height}_{width}_{dtype}"
@@ -737,28 +739,38 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # 3) Prepare scheduler tensors.
         device = self.transformer.devices[0]
-        guidance = Tensor.full(
-            [latents.shape[0]],
-            model_inputs.guidance_scale,
-            device=device,
-            dtype=dtype,
-        )
+        guidance_key = f"{batch_size}_{model_inputs.guidance_scale}_{dtype}_{device}"
+        if guidance_key in self._cached_guidance:
+            guidance = self._cached_guidance[guidance_key]
+        else:
+            guidance = Tensor.full(
+                [latents.shape[0]],
+                model_inputs.guidance_scale,
+                device=device,
+                dtype=dtype,
+            )
+            self._cached_guidance[guidance_key] = guidance
 
         image_seq_len = latents.shape[1].dim
         num_inference_steps = model_inputs.num_inference_steps
-        mu = compute_empirical_mu(image_seq_len, num_inference_steps)
-        # 1.0 down to 0.0 (N+1 points); time-shift excludes 0 to avoid 1/t in formula
-        base_sigmas = np.linspace(
-            1.0,
-            1.0 / num_inference_steps,
-            num_inference_steps,
-            dtype=np.float32,
-        )
-        base_sigmas = _time_shift_exponential(mu, 1.0, base_sigmas)
-        base_sigmas = np.append(base_sigmas, np.float32(0.0))
-        sigmas = Tensor.from_dlpack(np.ascontiguousarray(base_sigmas)).to(
-            device
-        )
+        sigmas_key = f"{num_inference_steps}_{image_seq_len}"
+        if sigmas_key in self._cached_sigmas:
+            sigmas = self._cached_sigmas[sigmas_key]
+        else:
+            mu = compute_empirical_mu(image_seq_len, num_inference_steps)
+            # 1.0 down to 0.0 (N+1 points); time-shift excludes 0 to avoid 1/t in formula
+            base_sigmas = np.linspace(
+                1.0,
+                1.0 / num_inference_steps,
+                num_inference_steps,
+                dtype=np.float32,
+            )
+            base_sigmas = _time_shift_exponential(mu, 1.0, base_sigmas)
+            base_sigmas = np.append(base_sigmas, np.float32(0.0))
+            sigmas = Tensor.from_dlpack(np.ascontiguousarray(base_sigmas)).to(
+                device
+            )
+            self._cached_sigmas[sigmas_key] = sigmas
 
         encoder_hidden_states_drv = prompt_embeds.driver_tensor
         guidance_drv = guidance.driver_tensor
