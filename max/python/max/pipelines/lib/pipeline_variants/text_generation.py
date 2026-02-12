@@ -670,7 +670,9 @@ class TextGenerationPipeline(
                 )
                 assert isinstance(
                     curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-                ), "increment_cache_lengths instantiates and passes this as a list"
+                ), (
+                    "increment_cache_lengths instantiates and passes this as a list"
+                )
                 curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
                     kv_manager.increment_cache_lengths(
                         curr_step_inputs.kv_cache_inputs.kv_cache_inputs,

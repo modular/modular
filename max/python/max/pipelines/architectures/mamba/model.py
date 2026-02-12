@@ -890,11 +890,11 @@ class MambaModelNew(PipelineModel[TextContext]):
 
     @staticmethod
     def _compile_module_with_extensions(
-        module,
-        input_types,
-        weights,
-        custom_extensions,
-    ):
+        module: Any,
+        input_types: list[Any],
+        weights: dict[str, Any],
+        custom_extensions: list[Any],
+    ) -> Any:
         """Compile a Module into a callable, loading custom kernel extensions.
 
         This replicates Module.compile() but creates the Graph with
@@ -922,7 +922,7 @@ class MambaModelNew(PipelineModel[TextContext]):
 
             weight_names_used: list[str] = []
 
-            def as_weight(name: str, tensor: Tensor):
+            def as_weight(name: str, tensor: Tensor) -> Any:
                 weight_names_used.append(name)
                 wtype = TensorType(tensor.dtype, tensor.shape, CPU())
                 return F.constant_external(name, wtype).to(tensor.device)
@@ -956,7 +956,7 @@ class MambaModelNew(PipelineModel[TextContext]):
         return compiled
 
     @traced
-    def _load_models(self):
+    def _load_models(self) -> tuple[Any, Any]:
         from max import functional as F
         from max.dtype import DType
         from max.graph import TensorType
