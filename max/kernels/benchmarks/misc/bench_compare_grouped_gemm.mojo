@@ -371,9 +371,9 @@ fn bench_structured_kernel[
 
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = m.value
-        problem_sizes_host[g * 4 + 1] = n.value
-        problem_sizes_host[g * 4 + 2] = k.value  # Logical K
+        problem_sizes_host[g * 4 + 0] = Int32(m.value)
+        problem_sizes_host[g * 4 + 1] = Int32(n.value)
+        problem_sizes_host[g * 4 + 2] = Int32(k.value)  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
     var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)

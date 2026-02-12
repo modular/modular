@@ -624,7 +624,7 @@ struct SIMD[dtype: DType, size: Int](
         self = value.cast[Self.dtype]()
 
     @always_inline("builtin")
-    @implicit
+    @implicit(deprecated=True)
     fn __init__(out self, value: Int, /):
         """Initializes the SIMD vector with a signed integer.
 

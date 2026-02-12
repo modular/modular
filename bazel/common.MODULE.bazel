@@ -1,6 +1,6 @@
 """Define bazel dependencies common to the internal and external repos."""
 
-bazel_dep(name = "abseil-cpp", version = "20250127.1")
+bazel_dep(name = "abseil-cpp", version = "20250512.1")
 bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
@@ -8,33 +8,31 @@ bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "curl", version = "8.8.0")
 bazel_dep(name = "gazelle", version = "0.47.0")
 bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
-bazel_dep(name = "google_benchmark", version = "1.8.5")
-bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
-bazel_dep(name = "grpc-java", version = "1.67.1")
+bazel_dep(name = "google_benchmark", version = "1.9.4")
+bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "9.1.0")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
-bazel_dep(name = "rules_proto", version = "7.0.2")
+bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pycross", version = "0.8.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
-bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
 bazel_dep(name = "rules_nodejs", version = "6.5.0")
 
 single_version_override(
     module_name = "abseil-cpp",
-    version = "20250127.1",
+    version = "20250512.1",
 )
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
@@ -150,19 +148,9 @@ single_version_override(
     module_name = "protobuf",
     patch_strip = 1,
     patches = [
-        # TODO: Remove when this patch is in a release
-        # https://github.com/protocolbuffers/protobuf/pull/22633
-        "//bazel/public-patches:protobuf-platforms.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/a5220488813040037e59b5625f953f2da7bf73a4
-        "//bazel/public-patches:protobuf-windows.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/27227205a3986987b7495078aaf7377b49dc38aa
-        "//bazel/public-patches:protobuf-debug-context.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/158312dc8c58efc777849dc89734f55c696eae1e remove next bump
-        "//bazel/public-patches:protobuf-loads.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/25d8081ab9991bf56d54ad52f0ce529c4e5aa979 remove next bump
-        "//bazel/public-patches:protobuf-cc-loads.patch",
+        # FIXME: `@system_python` is a dev dep, but used in non-dev code
+        "//bazel/public-patches:protobuf-dev-dep.patch",
     ],
-    version = "31.1",  # TODO: Remove restriction next update
 )
 
 single_version_override(
@@ -177,24 +165,12 @@ single_version_override(
     module_name = "grpc",
     patch_strip = 1,
     patches = [
-        # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
+        # Partial revert of https://github.com/grpc/grpc/commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
         "//bazel/public-patches:grpc-no-macos-x86.patch",
         # TODO: Drop when logspew is fixed
         "//bazel/public-patches:grpc-warnings.patch",
-        # https://github.com/grpc/grpc/pull/40687
-        "//bazel/public-patches:grpc-rules-python.patch",
     ],
-    version = "1.73.1",
-)
-
-single_version_override(
-    module_name = "grpc-java",
-    patch_strip = 1,
-    patches = [
-        # TODO: Drop when this is pulled from bzlmod instead of grpc_deps.bzl
-        "//bazel/public-patches:grpc-java.patch",
-    ],
-    version = "1.67.1",
+    version = "1.76.0.bcr.1",
 )
 
 DEFAULT_PYTHON_VERSION = "3.13"
@@ -291,43 +267,15 @@ filegroup(
 filegroup(
     name = "host",
     srcs = [
-        "bin/mpirun",
-        "bin/prterun",
-        "lib/libmpi.so",
-        "lib/libmpi.so.40.40.7",
         "lib/librocshmem_host.so",
-        "lib/libucp.so.0",
-        "lib/libucs.so.0",
-        "lib/libopen-pal.so.80",
-        "lib/libevent_core-2.1.so.7",
-        "lib/libevent_pthreads-2.1.so.7",
-        "lib/libhwloc.so.15",
-        "lib/libpmix.so.2",
-        "lib/libuct.so.0",
-        "lib/libucm.so.0",
-        "lib/libprrte.so.3",
         "lib/libnl-3.so.200",
-    ] + glob([
-        "share/openmpi/help-*.txt",
-        "share/pmix/help-*.txt",
-        "share/prte/help-*.txt",
-    ]),
+    ]
 )
 
-# Individual targets for MPI tools
-filegroup(
-    name = "mpirun",
-    srcs = ["bin/mpirun"],
-)
-
-filegroup(
-    name = "prterun",
-    srcs = ["bin/prterun"],
-)
 """,
-    # built from commit: https://github.com/modular/rocSHMEM/commit/09569c2c5fa32264f1facbd0357a884089e4c2a4
-    sha256 = "0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423/rocshmem.tar.gz",
+    # built from commit: https://github.com/modularml/rocm-systems/commit/84f4e1e366b66066ba01d0ec64bfeaee0bf6f7b6
+    sha256 = "9e75030c46158d8ff87d305cf39b9953c5a0d780780fcff93ef89c149835c69e",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/9e75030c46158d8ff87d305cf39b9953c5a0d780780fcff93ef89c149835c69e/rocshmem.tar.gz",
 )
 
 http_archive(

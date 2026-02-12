@@ -513,7 +513,7 @@ fn matmul_kernel_naive[
     m: Int,
     n: Int,
     k: Int,
-) where (c.rank == 2 and a.rank == 2 and b.rank == 2):
+) where (c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2):
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -543,7 +543,7 @@ fn outer_product_acc(
     res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,
-) where lhs.rank == 1 and rhs.rank == 1:
+) where lhs.flat_rank == 1 and rhs.flat_rank == 1:
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
@@ -564,7 +564,7 @@ fn outer_product_acc(
 
     comptime assert lhs.element_size == res.element_size
     comptime assert lhs.element_size == rhs.element_size
-    comptime assert res.rank == 2
+    comptime assert res.flat_rank == 2
 
     comptime dtype = res.dtype
     comptime M = res.static_shape[0]

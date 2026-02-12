@@ -1,203 +1,206 @@
 # Remaining LayoutTensor Dependencies in SM100 Structured Kernels
 
-## Status
+## Status (2026-02-11)
 
-As of the TileTensor migration (PR #77201), all SM100 structured kernel
-**entry points** and **primary data paths** use TileTensor. LayoutTensor
-remains only in:
+All 8 SM100 kernel families use new Layout types exclusively.
+`block_scaled_matmul` is fully migrated to TileTensor (zero LayoutTensor
+in the kernel body). The `TMATile` wrapper struct preserves new Layout
+type parameters while delegating to `TMATensorTile` internally.
+`_to_legacy_layout` is fully encapsulated inside `tile_types.mojo`.
 
-1. Internal epilogue component implementations (SMEM epilogue path)
-2. Boundary conversions hidden inside TileTensor overloads (non-transpose
-   store, TMA async_store in transpose store)
-3. The `enqueue_function` kernel parameter signatures (compiler limitation)
+LayoutTensor remains in 3 categories (down from 5):
 
-Note: Transpose paths now use TileTensor natively for reshape/tile operations,
-with LayoutTensor conversion only at the TMA `async_store` boundary.
-
-These remaining usages are fully encapsulated -- no kernel code outside
-`epilogue_components.mojo` and `output_writer.mojo` touches LayoutTensor.
-
----
-
-## Missing TileTensor Functionality
-
-The following LayoutTensor features have no TileTensor equivalent and block
-complete migration.
-
-### 1. ~~`.reshape[layout]()` -- view with different layout~~ DONE
-
-**Status**: Implemented. TileTensor now has a `.reshape(layout_val)` method
-that accepts an explicit layout value and returns a new TileTensor viewing the
-same memory with the target layout. All transpose paths in
-`_write_transpose_tt` and `_store_transpose_tt` use this natively.
-
-### 2. ~~`coalesce()` -- merge compatible dimensions~~ DONE (workaround)
-
-**Status**: Handled via explicit `reshape` calls with manually computed
-coalesced layouts. Since all dimensions are comptime-known, the coalesced
-layout is expressed as an explicit `InternalLayout` with `Coord` shape/stride:
-
-```mojo
-comptime coalesced = InternalLayout(
-    Coord(Idx[stageN](), Idx[tile_width]()),
-    Coord(Idx[2 * tile_width](), Idx[1]()),
-)
-var flat_tile = tiled.reshape(coalesced)
-```
-
-TileTensor's `.coalesce()` still only works for row-major layouts, but
-`reshape` provides a general escape hatch.
-
-### 3. `.tile[]` with positional integer arguments
-
-**Used in**: All transpose and non-transpose paths
-
-**TileTensor status**: TileTensor has `.tile[*sizes](Coord(...))` which works,
-but requires wrapping indices in `Coord(Idx(i), Idx(j), ...)`. The
-LayoutTensor version uses `.tile[dims](i, j, ...)` with bare integer args.
-
-**Status**: Already handled in the TileTensor overloads. Not a blocker.
-
-### 4. `zipped_divide()` and `upcast()` -- layout algebra
-
-**Used in**: `shared_memory_epilogue_transpose`, `shared_memory_epilogue`,
-`_store_with_bounds_check`
-
-**What they do**:
-
-- `zipped_divide(layout, thread_layout)`: Divides a layout into thread-local
-  fragments based on a thread distribution layout
-- `upcast(layout, simd_size)`: Adjusts layout for SIMD vector access by
-  grouping elements
-
-These are complex layout algebra operations from `layout.layout` that compute
-how threads map to memory elements in the SMEM epilogue. They produce new
-layouts used for coordinate-to-index mapping.
-
-**Why TileTensor can't do this**: These operations work on public `Layout`
-(IntTuple-based) and produce new public Layouts. TileTensor uses internal
-`Layout` (Coord-based). There's no equivalent in the internal layout system.
-
-**Recommendation**: These operations would need to be reimplemented for
-internal Layout, or the results pre-computed at compile time and expressed as
-explicit Coord-based layouts. This is significant work and should be done
-when TileTensor's layout algebra is more developed.
-
-### 5. `.vectorize[]` and `.distribute[]` -- thread mapping
-
-**Used in**: `shared_memory_epilogue`
-
-**What they do**:
-
-- `.vectorize[1, simd_size]()`: Groups elements into SIMD vectors
-- `.distribute[thread_layout, swizzle=swizzle](lane_id)`: Maps thread ID to
-  a fragment of the tensor, applying swizzle
-
-These are LayoutTensor methods that compute per-thread fragments for the
-SMEM-based epilogue path (used when `register_based_epilogue=False`).
-
-**Why TileTensor can't do this**: TileTensor has no equivalent methods. These
-would require implementing the same thread-to-element mapping logic.
-
-**Recommendation**: Low priority. The SMEM-based epilogue is only used when
-`elementwise_compute_lambda_fn` is set and `register_based_epilogue=False`,
-which is a minority code path.
-
-### 6. `blocked_product()` -- layout product
-
-**Used in**: `shared_memory_epilogue`
-
-**What it does**: Computes the blocked product of two layouts, producing a
-combined layout for multi-level tiling.
-
-**Same status as item 4** -- complex layout algebra with no TileTensor
-equivalent.
+1. **Host-side function signatures** (~10 refs, down from ~100) --
+   All 8 SM100 kernel families migrated to TileTensor.
+   Remaining: `conv2d` (im2col TMA), naive kernel dispatch path.
+2. **TMATensorTile internals** (~80 refs in `tma_async.mojo`) --
+   uses old IntTuple-based Layout. Requires big-bang refactor
+   (193 change sites, 25+ consumer files) or old Layout trait
+   conformance.
+3. **TMA store boundary** (~15 refs in `epilogue_components.mojo`)
+   -- `rebind` to SMemTile for `async_store`. Blocked on
+   TMATensorTile accepting TileTensor natively.
 
 ---
 
-## Remaining LayoutTensor Code Locations
+## Completed Work
 
-### `epilogue_components.mojo`
+### Infrastructure
 
-| Function | Lines | LayoutTensor Usage | Status |
-|----------|-------|-------------------|--------|
-| `store_fragment_to_smem` (LT version) | 140-214 | `.layout.stride/shape` | Kept for SMemEpilogue callers |
-| `TMAStoreExecutor.execute` (LT version) | 467-501 | Calls `_store_transpose/_non_transpose` | Kept for SMemEpilogue callers |
-| `TMAStoreExecutor._store_transpose` | 505-589 | `.reshape[]`, `.tile[]` | Kept for SMemEpilogue callers |
-| `TMAStoreExecutor._store_transpose_tt` | 685-803 | TileTensor reshape+tile, LT at TMA boundary | ✅ TT natively |
-| `TMAStoreExecutor._store_non_transpose` | 591-631 | `.tile[]` | TT overload delegates here |
-| `TMEMToSMemWriter.write_fragments` (LT) | 1149-1170 | Calls `_write_transpose/_non_transpose` | Kept for SMemEpilogue callers |
-| `TMEMToSMemWriter._write_transpose` | 1172-1254 | `.reshape[]`, `.tile[]`, `coalesce()` | Kept for SMemEpilogue callers |
-| `TMEMToSMemWriter._write_transpose_tt` | 1311-1394 | TileTensor reshape+tile natively | ✅ Fully TileTensor |
-| `TMEMToSMemWriter._write_non_transpose` (LT) | 1256-1286 | `.tile[]` | Kept for SMemEpilogue callers |
-| `SMemEpilogueWriter` (entire struct) | 1442-1733 | `SMemTileArray`, `.tile[]`, `.reshape[]` | Unblocked (reshape available) |
-| `shared_memory_epilogue_transpose` | 1736-1919 | `zipped_divide`, `upcast`, `rt_crd2idx` | Item 4 |
-| `shared_memory_epilogue` | 1922-2085 | `.vectorize[]`, `.distribute[]`, `blocked_product` | Items 4, 5, 6 |
+- ~~Dead code removal~~: Deleted `ScalesTileLoader` (zero callers)
+  and `c_tiles_lt()` / `CTileArrayLT` from 3 pipeline storage
+  structs (never called directly). -130 lines.
+- ~~TileTensor `async_store[rank]`~~: Added TileTensor overload
+  for `TMATensorTile.async_store[rank](StaticTuple)` (rank 2/3).
+- ~~`size()` on new Layout~~: Added to both `Layout` struct and
+  `TensorLayout` trait. Prerequisite for TMATensorTile migration.
+- ~~`TMATile` wrapper~~: New struct parameterized on `TensorLayout`,
+  wraps `TMATensorTile` via `_to_legacy_layout`. All 8 kernel
+  families + conv2d use it.
+- ~~`TMATile` in loaders~~: `TileLoader` and `ScalesLoader` use
+  `TMATile.InnerType` instead of direct `_to_legacy_layout`.
+- ~~Host TMA creation~~: `create_tma_tile` factory takes new
+  Layout types directly. No `LegacyLayout` exposed to callers.
+  Replaces `create_tensor_tile` with explicit legacy layouts.
+- ~~`ViewType` on TileTensor~~: New type alias `ViewType[new_layout]`
+  names the return type of `reshape()`. Enables properly-typed
+  helper functions for batched/5D reshapes (Pattern 12).
+- ~~TileTensor `create_tma_tile` overload~~: Calls
+  `create_tensor_tile` directly, bypassing LayoutTensor. Works
+  with any TileTensor including reshaped views (Pattern 13).
 
-### `output_writer.mojo`
+### Kernel migration (previous PRs)
 
-| Function | Lines | LayoutTensor Usage | Status |
-|----------|-------|-------------------|--------|
-| `_store_with_bounds_check` | 740-854 | `zipped_divide`, `upcast`, `.tile[]` | Item 4 |
-| `write_with_residual` | 856-900 | `CTileArrayTT` for source tiles | ✅ Converted to TileTensor |
-| `_copy_to_gmem_with_residual` | 903-1113 | `CTileArrayTT` for source tiles | ✅ Converted to TileTensor |
+- ~~Remove TMA legacy Layout params~~ Done for all 8 kernels.
+- ~~Migrate fallback kernel C output~~ Done with `stride_layout`.
+- ~~Migrate split-K reduction tensor~~ Done.
+- ~~Migrate `RegTile`/`BlockwiseFP8Accumulator`~~ Done.
+- ~~Implement `upcast`/`zipped_divide` for new Layout~~ Done.
+- ~~Migrate SMEM epilogue (transpose + non-transpose)~~ Done.
+- ~~Migrate `_store_with_bounds_check`~~ Done.
+- ~~Enable parameter inference (`//`)~~ Done across ~20 functions.
+
+### Host signature migration
+
+- ~~`block_scaled_matmul`~~: Pure TileTensor with ViewType reshapes
+  and module-level `_create_tma_and_launch` for TMA scoping.
+- ~~`default/matmul` (3 functions)~~: Pure TileTensor with
+  `create_tma_tile` TileTensor overload.
+- ~~`default/dispatch`~~: `lt_to_tt` at NDBuffer boundary.
+- ~~`blockwise_fp8_matmul`~~: Pure TileTensor.
+- ~~`blockwise_fp8_1d2d_matmul`~~: Kernel computes
+  `BScalesLayout`/`CDeviceLayout` internally (Pattern 15).
+  Host uses `KernelType.BScalesTile(ptr, layout)`.
+- ~~`grouped_1d1d_matmul`~~: Kernel computes `CDeviceLayout`
+  internally (Pattern 15).
+- ~~`grouped_block_scaled_matmul`~~: Module-level `_GroupPtrTile`
+  and `_ProblemSizesTile` aliases provide concrete TileTensor types
+  for pointer arrays and problem sizes. Host constructs via kernel
+  type aliases for enqueue_function type identity.
 
 ---
 
-## Priority Order for Future Migration
+## Remaining Migration (blocked on external changes)
 
-1. ~~**Add `tt_reshape` to TileTensor**~~ ✅ Done. TileTensor now has
-   `.reshape(layout_val)`. All transpose paths converted.
+### TMATensorTile big-bang refactor
 
-2. **Convert `SMemEpilogueWriter` internals** -- now that `reshape` is
-   available, convert the struct to use TileTensor arrays and native tile ops.
+`TMATensorTile` in `tma_async.mojo` uses old `Layout` as its type
+parameter. Old `Layout` does not implement the `TensorLayout` trait,
+so the struct can't accept both old and new Layout. Migration requires
+changing the struct + all ~25 consumer files simultaneously.
 
-3. ~~**Convert residual source C tiles**~~ ✅ Done. `SourceTileStorage`,
-   `write_with_residual`, conv2d kernel all use TileTensor arrays now.
+**Change sites**: 193 mechanical replacements in `tma_async.mojo`:
 
-4. **Implement layout algebra for TileTensor** -- `zipped_divide`, `upcast`,
-   `blocked_product` equivalents. This unlocks `shared_memory_epilogue*` and
-   `_store_with_bounds_check`.
+- `Self.layout.shape[i].value()` → `Self.layout.shape[i]().value()`
+  (124 sites)
+- `Self.desc_layout.size()` → `Self.desc_layout.static_size`
+  (22 sites)
+- `product(Self.layout.shape[i])` →
+  `Self.layout.shape[i]().product()` (8 sites)
+- `Layout.row_major(...)` → `LegacyLayout.row_major(...)` (34 sites)
 
-5. **Fix `_IntTupleToCoordLike` compiler crash** -- enables changing
-   `enqueue_function` kernel signatures to accept TileTensor directly.
+**Options**:
+
+1. Big-bang: change struct + all 25 consumers in one PR
+2. Make old `Layout` conform to `TensorLayout` trait (enables
+   gradual migration)
+3. Keep `TMATile` wrapper indefinitely (current state -- works,
+   just has the bridge internally)
+
+### Host function signatures
+
+All 8 host launch files accept `LayoutTensor` from the graph
+compiler. Changing requires updating the dispatch layer
+(`fp8_quantization.mojo`, `_matmul_dispatch_sm100`, etc.) to
+produce TileTensor instead of LayoutTensor.
+
+---
+
+## Key Lessons Learned
+
+- `_int_to_dim()` is NOT comptime-evaluable. Build Layout types
+  directly with `ComptimeInt` and `RuntimeInt`.
+- `TensorLayout` trait erases concrete type info. Use
+  `tile[stride_layout=...]` for static strides, or pass concrete
+  layout types before `//` for inference.
+- TMA layouts are fully static. Compute inside kernel struct
+  using `static_row_major`.
+- Never use `rebind` for type mismatches. Use `TMATile` to derive
+  `TMATensorTile` types from a single source of truth.
+- `reshape(row_major[...])` is NOT `coalesce` -- preserves
+  contiguous strides, not parent strides. Use explicit strides.
+- New `upcast` keeps element-level strides (no `simd_size *`
+  multiply needed).
+- Old `Layout` does NOT implement `TensorLayout`. Can't use trait
+  bounds to accept both. Use `TMATile` wrapper pattern instead.
+- **Use `L._shape_types[i]` not `ComptimeInt[L.static_shape[i]]`**
+  when computing derived layout types. The former preserves
+  static/dynamic nature; the latter forces all dims to be static,
+  which breaks for dynamic batch or M dims.
+- **Use `tensor.layout.shape[i]()`** (not `Idx[L.static_shape[i]]()`)
+  when constructing reshape layouts at runtime. The former carries
+  actual runtime values; the latter uses compile-time constants that
+  may not match the actual tensor dimensions.
+- **TMA descriptors are scoped references** that can't be copied
+  across `@parameter if` boundaries. Use module-level functions
+  (Pattern 14) to keep TMA creation and kernel launch in one scope.
+- **`lt_to_tt` only supports 2D**. For higher-rank tensors, use
+  `TileTensor(ndbuffer)` directly. Beware: complex DimList
+  expressions (e.g., `ceildiv(...)`) trigger a compiler bug;
+  workaround is `DimList.create_unknown[rank]()`.
+- **Closures can't have parameters in Mojo**. Local functions with
+  `TileTensor[...]` args fail. Use module-level functions instead.
+- **`RowMajorLayout` with conditional types doesn't work** at the
+  type alias level. `ComptimeInt[X] if cond else ComptimeInt[Y]`
+  produces `AnyStruct[...]` not a concrete type. Use separate
+  type aliases for each branch instead.
 
 ---
 
 ## Current Architecture
 
 ```text
-Kernel entry (LayoutTensor args)
-    │
-    ├── lt_to_tt() conversion at entry
-    │
-    ▼
-Kernel internals (ALL TileTensor)
-    │
-    ├── TMA loads: TileTensor directly ✅
-    ├── MMA: TileTensor directly ✅
-    ├── Accumulator: TileTensor ✅
-    │
-    ▼
-Tile Writer (TileTensor interface)
-    │
-    ├── Non-transpose path: TileTensor natively ✅
-    │   ├── write_fragments TT overload → _write_non_transpose_tt ✅
-    │   └── execute TT overload → _store_non_transpose (LT internally) ⚠️
-    │
-    ├── Transpose path: TileTensor natively ✅
-    │   ├── write_fragments TT overload → _write_transpose_tt ✅
-    │   └── execute TT overload → _store_transpose_tt (LT at TMA boundary) ✅
-    │
-    ├── Residual path (write_with_residual): TileTensor natively ✅
-    │   ├── src_tiles: SMemTileArray2DRowMajor (TileTensor) ✅
-    │   └── add_residual: uses TileTensor .ptr for SMEM access ✅
-    │
-    └── SMEM epilogue path: TileTensor → LayoutTensor at SMemEpilogueWriter ⚠️
-        ├── SMemEpilogueWriter.__init__ TT overload converts internally ⚠️
-        ├── shared_memory_epilogue_transpose (LT) ⚠️
-        └── shared_memory_epilogue (LT) ⚠️
+Host side
+    ├── Kernel instantiated FIRST (computes TMA layouts from config)
+    ├── create_tma_tile[Kernel.XTmaTile.tile_layout, ...](ctx, tensor) ✅
+    ├── lt_to_tt / lt_to_tt_1d → TileTensor at enqueue boundary ✅
+    └── enqueue_function passes TMATensorTile + TileTensor to kernel
 
-✅ = fully TileTensor
-⚠️ = LayoutTensor internally (encapsulated, zero-cost conversion)
+Kernel struct
+    ├── TMA layouts from config: static_row_major, tma_desc_layout_* ✅
+    ├── TMATile[dtype, tile_layout, desc_layout] (new Layout types) ✅
+    ├── ATmaOp = Self.ATmaTile.InnerType (for DevicePassable) ✅
+    ├── Zero legacy Layout struct params ✅
+    └── TensorLayout struct params only for dynamic C layouts
+
+Kernel run() params
+    ├── TMA ops: Self.ATmaOp (TMATensorTile via TMATile.InnerType) ✅
+    ├── 1D data: TileTensor with GMEMLayout1D ✅
+    ├── C device: TileTensor with TensorLayout ✅
+    └── Scalars and other non-tensor params unchanged
+
+TileLoader / ScalesLoader
+    ├── Parameterized on new TensorLayout types ✅
+    ├── Derive TMATensorTile via TMATile.InnerType ✅
+    └── No direct _to_legacy_layout calls ✅
+
+_to_legacy_layout (encapsulated in tile_types.mojo)
+    ├── Used by TmaOpType / TmaOpTypeIm2col comptime aliases
+    ├── Used by create_tma_tile factory (internal conversion)
+    └── No external consumers ✅
+
+Host signature migration progress (8 of 8 done)
+    ├── block_scaled_matmul: TileTensor ✅
+    ├── default/matmul (3 functions): TileTensor ✅
+    ├── default/dispatch: lt_to_tt at boundary ✅
+    ├── blockwise_fp8_matmul: TileTensor ✅
+    ├── blockwise_fp8_1d2d_matmul: TileTensor (Pattern 15) ✅
+    ├── grouped_1d1d_matmul: kernel CDeviceLayout (Pattern 15) ✅
+    ├── grouped_block_scaled_matmul: TileTensor (module-level aliases) ✅
+    └── conv2d: LayoutTensor (im2col TMA, separate concern) ⚠️
+
+Remaining LayoutTensor (blocked on external changes)
+    ├── TMATensorTile internals (old Layout in tma_async.mojo) ⚠️
+    ├── TMA async_store boundary (rebind to SMemTile) ⚠️
+    └── TileLoaderTMA (kept for conv2d) ⚠️
 ```

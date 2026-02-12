@@ -36,10 +36,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
-from memory import LegacyUnsafePointer, bitcast, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from memory import bitcast, stack_allocation
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
 
@@ -78,9 +75,9 @@ fn matmul_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: UnsafePointer[Scalar[c_type]],
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    b_ptr: UnsafePointer[Scalar[b_type]],
+    c_ptr: UnsafePointer[mut=True, Scalar[c_type], MutAnyOrigin],
+    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,

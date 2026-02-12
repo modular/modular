@@ -14,10 +14,9 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip, align_up, align_down, gcd, iota
 from math.constants import log2e
-from sys import align_of, simd_width_of, size_of, _RegisterPackType
+from sys import simd_width_of, size_of, _RegisterPackType
 import gpu.primitives.warp as warp
 from bit import prev_power_of_two, pop_count
-from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -58,18 +57,16 @@ from gpu.compute.arch.tcgen05 import (
 )
 from gpu.primitives.warp import _vote_nvidia_helper
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
-from layout.layout import Layout, blocked_product
-from layout.layout_tensor import (
-    LayoutTensor,
-    LayoutTensorIter,
-    copy_local_to_shared,
-    copy_sram_to_dram,
-)
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
+from layout._layout import Layout as InternalLayout, row_major
+from layout._tile_tensor import TileTensor
+from layout._tile_tensor import stack_allocation as tt_stack_allocation
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -86,6 +83,8 @@ from nn.mha_fa3_utils import (
     NullPointer,
     OptionalPointer,
     output_reg_to_smem_st_matrix,
+    _LocalTT,
+    _SharedMemTT,
     Pack,
     PositionSummary,
     produce,
@@ -117,14 +116,37 @@ from utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 from kv_cache.types import swizzle_granularity
 
-from sys import size_of, bit_width_of, env_get_bool
+from sys import env_get_bool
 from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
 
 
 comptime logger = Logger()
 
+# TileTensor-based aliases for storage (native types)
 comptime LocalTensor[
+    dtype: DType,
+    layout: InternalLayout,
+] = TileTensor[
+    dtype,
+    InternalLayout[
+        shape_types = layout.shape_types,
+        stride_types = layout.stride_types,
+    ],
+    MutExternalOrigin,
+    address_space = AddressSpace.LOCAL,
+]
+comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
+    dtype,
+    InternalLayout[
+        shape_types = layout.shape_types,
+        stride_types = layout.stride_types,
+    ],
+    MutExternalOrigin,
+    address_space = AddressSpace.SHARED,
+]
+
+# Legacy LayoutTensor aliases for TMA/MMA API boundaries
+comptime LocalLT[
     dtype: DType, layout: Layout, element_layout: Layout = Layout(1, 1)
 ] = LayoutTensor[
     dtype,
@@ -133,7 +155,7 @@ comptime LocalTensor[
     address_space = AddressSpace.LOCAL,
     element_layout=element_layout,
 ]
-comptime SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
+comptime SharedMemLT[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
     MutAnyOrigin,
@@ -150,6 +172,7 @@ comptime MBarType = SharedMemPointer[SharedMemBarrier]
 comptime EnableForcedOrdering = env_get_bool[
     "FA4ForcedSoftmaxOrdering", False
 ]()
+comptime EnableEarlyAdd = env_get_bool["FA4AddEarly", False]()
 
 
 fn extract_power_of_two(N: Int, i: Int) -> Int:
@@ -242,11 +265,6 @@ struct STMatrixLayout[
 
     comptime frag_size = Self.BN * Self.num_row_blocks_per_mma // Self.thread_cols
 
-    # layout of local memory
-    # alias local_layout: Layout = Layout(
-    #     IntTuple(IntTuple(Self.num_row_blocks_per_mma, Self.num_m_tiles),IntTuple(Self.frag_simdwidth, Self.repeat)),
-    #     IntTuple(IntTuple(Self.frag_simdwidth, Self.frag_size),IntTuple(1, Self.num_row_blocks_per_mma*Self.frag_simdwidth)),
-    # )
     comptime elements_per_repeat = Self.frag_simdwidth * Self.num_row_blocks_per_mma
 
     comptime vec_local_layout: Layout = Layout(
@@ -264,7 +282,7 @@ struct STMatrixLayout[
         ),
     )
     comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
-    comptime TensorType[dtype: DType] = LocalTensor[
+    comptime TensorType[dtype: DType] = LocalLT[
         dtype, Self.vec_local_layout, Self.element_layout
     ]
     comptime row_of_frags_layout: Layout = Layout.row_major(
@@ -332,11 +350,6 @@ struct TMemTile[
 ](TrivialRegisterPassable):
     comptime dtype: DType = Self.dtype_
     comptime dtype_size = size_of[Self.dtype]()
-    # alias layout_t = STMatrixLayout[
-    #     BM, BN, num_threads= num_threads
-    # ]
-    # alias vec_output_layout = Self.layout_t.vec_local_layout
-    # alias element_layout = Self.layout_t.element_layout
     comptime num_m_tiles = Self.BM // 64
 
     var tmem_addr: UInt32
@@ -481,7 +494,6 @@ struct TMemTile[
 
         dst = type_of(dst).stack_allocation()
         comptime load_dtype = DType.uint32
-        # alias load_dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
         var ptr: UnsafePointer[
             Scalar[load_dtype], MutAnyOrigin, address_space = AddressSpace.LOCAL
         ]
@@ -524,9 +536,11 @@ struct TMemTile[
     @always_inline
     fn load_async(
         self,
-        out dst: LocalTensor[Self.dtype, Layout.row_major(Self.BN)],
+        out dst: LocalTensor[Self.dtype, row_major[Self.BN]()],
     ):
-        dst = type_of(dst).stack_allocation()
+        dst = tt_stack_allocation[
+            dtype = Self.dtype, address_space = AddressSpace.LOCAL
+        ](row_major[Self.BN]())
         comptime repeat = Self.dtype_size * Self.BN // 4
         comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
 
@@ -565,7 +579,7 @@ struct TMemTile[
     @always_inline
     fn store_async[
         src_type: DType
-    ](self, src: LocalTensor[src_type, Layout.row_major(Self.BN)]):
+    ](self, src: LocalTensor[src_type, row_major[Self.BN]()]):
         @parameter
         @always_inline
         fn store_fn[pow_two: Int, offset: Int]():
@@ -600,7 +614,7 @@ struct TMemTile[
     @always_inline
     fn store[
         src_type: DType
-    ](self, src: LocalTensor[src_type, Layout.row_major(Self.BN)]):
+    ](self, src: LocalTensor[src_type, row_major[Self.BN]()]):
         self.store_async(src)
         tcgen05_store_wait()
 
@@ -732,7 +746,6 @@ struct SM100TensorAccumulatorTS[
 
     comptime operand_size = size_of[Self.operand_type]()
     comptime swizzle_granularity = Self.swizzle_b.bytes() // Self.operand_size
-    # alias MMA_N_padded = align_up(MMA_N, Self.swizzle_granularity)
     # BN here is depth
     comptime b_layout = tile_layout_k_major[
         Self.operand_t, Self.MMA_N, Self.BK, Self.swizzle_b
@@ -849,7 +862,6 @@ struct FA4Config(TrivialRegisterPassable):
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1
-    # comptime q_smem_offset_bytes = 256
 
     @always_inline
     fn num_qo(self) -> Int:
@@ -1346,11 +1358,6 @@ fn max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
 
 
 @always_inline
-fn max3(a: Float32, b: Float32, c: Float32) -> Float32:
-    return intrin["max"](a, b, c)
-
-
-@always_inline
 fn add_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
@@ -1481,7 +1488,7 @@ fn elect_mma_arrive[
 fn maximum[
     BN: Int, //, *, width: Int = 4
 ](
-    x: LocalTensor[DType.float32, Layout.row_major(BN)],
+    x: LocalTensor[DType.float32, row_major[BN]()],
     out res: StaticTuple[Float32, width],
 ):
     comptime assert BN % (2 * width) == 0
@@ -1509,7 +1516,7 @@ fn maximum[
 fn maximum[
     BN: Int, //, *, width: Int = 4
 ](
-    x: LocalTensor[DType.float32, Layout.row_major(BN)],
+    x: LocalTensor[DType.float32, row_major[BN]()],
     init: StaticTuple[Float32, width],
     out res: StaticTuple[Float32, width],
 ):
@@ -1539,9 +1546,25 @@ fn maximum(x: StaticTuple[Float32, 4], init: Float32) -> Float32:
 
 
 @always_inline
+fn maximum(x: StaticTuple[Float32, 8]) -> Float32:
+    var a = max_ftz(x[0], x[1], x[2])
+    var b = max_ftz(x[3], x[4], x[5])
+    var c = max_ftz(x[6], x[7])
+    return max_ftz(a, b, c)
+
+
+@always_inline
+fn maximum(x: StaticTuple[Float32, 8], init: Float32) -> Float32:
+    var a = max_ftz(init, x[0], x[1])
+    var b = max_ftz(x[2], x[3], x[4])
+    var c = max_ftz(x[5], x[6], x[7])
+    return max_ftz(a, b, c)
+
+
+@always_inline
 fn sum[
     dtype: DType, BN: Int, //, *, width: Int = 8
-](x: LocalTensor[dtype, Layout.row_major(BN)]) -> SIMD[dtype, 2]:
+](x: LocalTensor[dtype, row_major[BN]()]) -> SIMD[dtype, 2]:
     comptime assert BN % width == 0
     vx = x.vectorize[width]()
     acc = vx[0]
@@ -2246,11 +2269,11 @@ comptime KVPipeline = StagedPipeline
 
 struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
     var mbar: MBarType
-    var smem: SharedMemTensor[Self.dtype, Self.layout]
+    var smem: SharedMemLT[Self.dtype, Self.layout]
 
     @always_inline
     fn __init__(
-        out self, mbar: MBarType, smem: SharedMemTensor[Self.dtype, Self.layout]
+        out self, mbar: MBarType, smem: SharedMemLT[Self.dtype, Self.layout]
     ):
         self.mbar = mbar
         self.smem = smem
@@ -2259,12 +2282,12 @@ struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
     fn split_smem[
         first: Layout, second: Layout
     ](self) -> Tuple[
-        SharedMemTensor[Self.dtype, first], SharedMemTensor[Self.dtype, second]
+        SharedMemLT[Self.dtype, first], SharedMemLT[Self.dtype, second]
     ]:
         comptime first_size = first.size()
         return {
-            SharedMemTensor[Self.dtype, first](self.smem.ptr),
-            SharedMemTensor[Self.dtype, second](self.smem.ptr + first_size),
+            SharedMemLT[Self.dtype, first](self.smem.ptr),
+            SharedMemLT[Self.dtype, second](self.smem.ptr + first_size),
         }
 
 
@@ -2290,7 +2313,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         Self.config.swizzle_mode,
     ]()
 
-    comptime TileType = SharedMemTensor[Self.dtype, Self.tile_layout]
+    comptime TileType = SharedMemLT[Self.dtype, Self.tile_layout]
     comptime PairType = TMADestination[Self.dtype, Self.tile_layout]
     comptime elements: Int = Self.tile_layout.size()
     comptime elements_full: Int = Self.elements * Self.config.num_qk_stages if Self.is_k else Self.elements
@@ -2762,7 +2785,7 @@ fn apply_mask[
     mask_strategy: MaskStrategy,
     skip_scale: Bool = False,
 ](
-    srow: LocalTensor[DType.float32, Layout.row_major(BN)],
+    srow: LocalTensor[DType.float32, row_major[BN]()],
     mask: MaskType,
     score_mod: ScoreModType,
     scale_log2e: Float32,
@@ -2849,7 +2872,7 @@ fn apply_mask[
                     s[i] = val if in_bound else MASK_VALUE
 
                 var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
-                vs[frag_col_simd] = rebind[vs.element_type](
+                vs[frag_col_simd] = rebind[vs.ElementType](
                     apply_oob_mask[
                         use_score_mod=use_score_mod,
                         mask_strategy=mask_strategy,
@@ -2896,7 +2919,7 @@ fn apply_mask[
                     s,
                 )
 
-            vs[n] = rebind[vs.element_type](
+            vs[n] = rebind[vs.ElementType](
                 apply_oob_mask[
                     use_score_mod=use_score_mod,
                     mask_strategy=mask_strategy,
@@ -3375,9 +3398,6 @@ struct SM100MHA2Q[
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 88
         comptime num_reg_other = 40
-        # comptime num_reg_softmax = 176
-        # comptime num_reg_correction = 88
-        # comptime num_reg_other = 72
 
         comptime assert not Self.PartitionType.do_partition, (
             "Neither partitioning nor decoding are supported by the 2-q"
@@ -3557,9 +3577,9 @@ struct SM100MHA2Q[
             num_threads=WARPGROUP_SIZE
         ]()
         comptime num_rows = o.layout[0].size()
-        inv_row_sums = LocalTensor[
-            Self.accum_type, Layout.row_major(num_rows)
-        ].stack_allocation()
+        inv_row_sums = tt_stack_allocation[
+            dtype = Self.accum_type, address_space = AddressSpace.LOCAL
+        ](row_major[num_rows]())
         lane = local_row % 32
         lane_row = lane // 4
 
@@ -3616,22 +3636,18 @@ struct SM100MHA2Q[
             @parameter
             for j in range(iters):
                 comptime ofs = i * ST.frag_size + j * (ST.frag_size // iters)
-                var rows_of_o_frags = LocalTensor[
-                    Self.accum_type,
-                    layout = Layout.row_major(1, ST.frag_size // iters),
-                ](
-                    o.ptr + ofs
+                comptime reg_layout = row_major[1, ST.frag_size // iters]()
+                var rows_of_o_frags = _LocalTT[Self.accum_type, reg_layout](
+                    o.ptr + ofs, reg_layout
                 )  # all the repeats across n and m
 
                 comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
                     j * (Self.BM // 2) * swizzle_granularity
                 )
-                accum_smem_warp_tile = LayoutTensor[
-                    Self.output_type,
-                    Layout.row_major(16, swizzle_granularity),
-                    MutAnyOrigin,
-                    address_space = AddressSpace.SHARED,
-                ](o_smem + warp_smem_offset)
+                comptime smem_layout = row_major[16, swizzle_granularity]()
+                var accum_smem_warp_tile = _SharedMemTT[
+                    Self.output_type, smem_layout
+                ](o_smem + warp_smem_offset, smem_layout)
 
                 output_reg_to_smem_st_matrix[
                     BM=16,
@@ -3747,10 +3763,7 @@ struct SM100MHA2Q[
         @always_inline
         fn mask_row[
             BN: Int, //, mask_strategy: MaskStrategy
-        ](
-            s: LocalTensor[Self.accum_type, Layout.row_major(BN)],
-            kv_row: UInt32,
-        ):
+        ](s: LocalTensor[Self.accum_type, row_major[BN]()], kv_row: UInt32,):
             apply_mask[
                 use_score_mod = Self.use_score_mod,
                 mask_strategy=mask_strategy,
@@ -3780,15 +3793,17 @@ struct SM100MHA2Q[
         gmem_row = Self.PositionType.get_q_gmem_row[ragged = Self.ragged](
             seq_info, max_seq_len
         )
-        s = LocalTensor[
-            Self.accum_type, Layout.row_major(Self.config.BN)
-        ].stack_allocation()
+        s = tt_stack_allocation[
+            dtype = Self.accum_type, address_space = AddressSpace.LOCAL
+        ](row_major[Self.config.BN]())
+
+        comptime max_unroll = 8
 
         @parameter
         @always_inline
         fn load_mask_max_impl[
             *, mask_strategy: MaskStrategy
-        ](kv_row: UInt32) -> StaticTuple[Float32, 4]:
+        ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
             @parameter
             if EnableForcedOrdering:
                 order_s_wait[].wait(order_phase)
@@ -3807,7 +3822,7 @@ struct SM100MHA2Q[
                 s_tmem + UInt32(first_cols)
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum(s0)
+            vrow_max = maximum[width=max_unroll](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
             # i = 0
@@ -3933,7 +3948,6 @@ struct SM100MHA2Q[
             comptime exp_simd = 2
             comptime vs_len = Self.config.BN // exp_simd  # 128 // 2 = 64
             comptime assert (vs_len % Self.config.num_pv_stages) == 0
-            # comptime num_per_stage = Self.config.BN // Self.config.num_pv_stages
             comptime use_3_then_1_split = Self.UMMA1Type.use_3_then_1_split
             comptime batch_size = 32 if Self.config.num_pv_stages == 1 else vs_len // (
                 4 if use_3_then_1_split else Self.config.num_pv_stages
@@ -3990,15 +4004,18 @@ struct SM100MHA2Q[
                     return sub_ftz(score, vrow_max)
 
             var acc: f32x2 = exp2(score_to_logit(rebind[f32x2](vs[0])))
-            vs[0] = rebind[vs.element_type](acc)
-            vsi = exp2_emulation(score_to_logit(rebind[f32x2](vs[1])))
-            vs[1] = rebind[vs.element_type](vsi)
-            acc = add_ftz(acc, vsi)
+            vs[0] = rebind[vs.ElementType](acc)
+            vsi = exp2(score_to_logit(rebind[f32x2](vs[1])))
+            vs[1] = rebind[vs.ElementType](vsi)
+
+            @parameter
+            if EnableEarlyAdd:
+                acc = add_ftz(acc, vsi)
             comptime exp2_emulation_freq = 4
 
             @parameter
             for i in range(2, 8):
-                vs[i] = rebind[vs.element_type](
+                vs[i] = rebind[vs.ElementType](
                     score_to_logit(rebind[f32x2](vs[i]))
                 )
 
@@ -4006,24 +4023,30 @@ struct SM100MHA2Q[
             for i in range(2, 8):
 
                 @parameter
-                if i % exp2_emulation_freq == 0:
-                    vsi = exp2_emulation(rebind[f32x2](vs[i]))
-                else:
+                if EnableEarlyAdd or i % exp2_emulation_freq != 0:
                     vsi = exp2(rebind[f32x2](vs[i]))
-                vs[i] = rebind[vs.element_type](vsi)
-                acc = add_ftz(acc, vsi)
+                else:
+                    vsi = exp2_emulation(rebind[f32x2](vs[i]))
+                vs[i] = rebind[vs.ElementType](vsi)
+
+                @parameter
+                if EnableEarlyAdd:
+                    acc = add_ftz(acc, vsi)
 
             @parameter
             for i in range(8, batch_size // 2):
                 diff = score_to_logit(rebind[f32x2](vs[i]))
 
                 @parameter
-                if i % exp2_emulation_freq == 0:
-                    vsi = exp2_emulation(diff)
-                else:
+                if EnableEarlyAdd or i % exp2_emulation_freq != 0:
                     vsi = exp2(diff)
-                vs[i] = rebind[vs.element_type](vsi)
-                acc = add_ftz(acc, vsi)
+                else:
+                    vsi = exp2_emulation(diff)
+                vs[i] = rebind[vs.ElementType](vsi)
+
+                @parameter
+                if EnableEarlyAdd:
+                    acc = add_ftz(acc, vsi)
 
             # at this point, we need 32 fewer fp32 registers but 16 more u32
             @parameter
@@ -4032,14 +4055,14 @@ struct SM100MHA2Q[
 
                 @parameter
                 if i % exp2_emulation_freq == 0:
-                    vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                    vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
                 else:
-                    vs[i] = rebind[vs.element_type](exp2(diff))
+                    vs[i] = rebind[vs.ElementType](exp2(diff))
 
             BatchTileType(p_tmem).store(
                 LocalTensor[
-                    Self.accum_type, Layout.row_major(batch_size * exp_simd)
-                ](s.ptr)
+                    Self.accum_type, row_major[batch_size * exp_simd]()
+                ](s.ptr, row_major[batch_size * exp_simd]())
             )
 
             @parameter
@@ -4068,9 +4091,9 @@ struct SM100MHA2Q[
 
                     @parameter
                     if i % exp2_emulation_freq == 0:
-                        vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                        vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
                     else:
-                        vs[i] = rebind[vs.element_type](exp2(diff))
+                        vs[i] = rebind[vs.ElementType](exp2(diff))
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -4078,8 +4101,8 @@ struct SM100MHA2Q[
                 ) // size_of[Self.accum_type]()
                 BatchTileType(p_tmem + UInt32(tmem_offset)).store(
                     LocalTensor[
-                        Self.accum_type, Layout.row_major(batch_size * exp_simd)
-                    ](s.ptr + el_offset)
+                        Self.accum_type, row_major[batch_size * exp_simd]()
+                    ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
                 )
 
             @parameter
@@ -4092,9 +4115,9 @@ struct SM100MHA2Q[
 
                     @parameter
                     if i % exp2_emulation_freq == 0:
-                        vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                        vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
                     else:
-                        vs[i] = rebind[vs.element_type](exp2(diff))
+                        vs[i] = rebind[vs.ElementType](exp2(diff))
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -4102,8 +4125,8 @@ struct SM100MHA2Q[
                 ) // size_of[Self.accum_type]()
                 RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
                     LocalTensor[
-                        Self.accum_type, Layout.row_major(remainder * exp_simd)
-                    ](s.ptr + el_offset)
+                        Self.accum_type, row_major[remainder * exp_simd]()
+                    ](s.ptr + el_offset, row_major[remainder * exp_simd]())
                 )
 
             tcgen05_store_wait()
@@ -4116,20 +4139,34 @@ struct SM100MHA2Q[
                 order_phase ^= 1
             pipeline_c.acquire()
             # now we can sum the remaining elements of `acc`
-            var acc0: f32x2 = rebind[f32x2](vs[batch_size // 2])
-            var acc1: f32x2 = rebind[f32x2](vs[batch_size // 2 + 1])
-            var acc2: f32x2 = add_ftz(
-                rebind[f32x2](vs[batch_size // 2 + 2]),
-                rebind[f32x2](vs[batch_size // 2 + 3]),
-            )
+            comptime add_offset = batch_size // 2 if EnableEarlyAdd else 0
+            var acc0: f32x2
+            var acc1: f32x2
+            var acc2: f32x2
+            var acc3: f32x2
 
             @parameter
-            for i in range(batch_size // 2 + 4, vs_len, 4):
-                acc = add_ftz(acc, rebind[f32x2](vs[i]))
-                acc0 = add_ftz(acc0, rebind[f32x2](vs[i + 1]))
-                acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 2]))
-                acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 3]))
-            return add_ftz(add_ftz(acc, acc0), add_ftz(acc1, acc2))
+            if EnableEarlyAdd:
+                acc0 = acc
+                acc1 = rebind[f32x2](vs[batch_size // 2])
+                acc2 = rebind[f32x2](vs[batch_size // 2 + 1])
+                acc3 = add_ftz(
+                    rebind[f32x2](vs[batch_size // 2 + 2]),
+                    rebind[f32x2](vs[batch_size // 2 + 3]),
+                )
+            else:
+                acc0 = acc
+                acc1 = rebind[f32x2](vs[1])
+                acc2 = rebind[f32x2](vs[2])
+                acc3 = rebind[f32x2](vs[3])
+
+            @parameter
+            for i in range(add_offset + 4, vs_len, 4):
+                acc0 = add_ftz(acc0, rebind[f32x2](vs[i]))
+                acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 1]))
+                acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 2]))
+                acc3 = add_ftz(acc3, rebind[f32x2](vs[i + 3]))
+            return add_ftz(add_ftz(acc0, acc1), add_ftz(acc2, acc3))
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
@@ -4540,12 +4577,12 @@ struct SM100MHA2Q[
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        comptime SMemTensor[layout: Layout] = SharedMemTensor[
+        comptime SMemTensorLT[layout: Layout] = SharedMemLT[
             Self.KVLUTType.dtype, layout
         ]
-        comptime QType = SMemTensor[type_of(q_tma_op).layout]
-        comptime KType = SMemTensor[type_of(k_tma_op).layout]
-        comptime VType = SMemTensor[type_of(v_tma_op).layout]
+        comptime QType = SMemTensorLT[type_of(q_tma_op).layout]
+        comptime KType = SMemTensorLT[type_of(k_tma_op).layout]
+        comptime VType = SMemTensorLT[type_of(v_tma_op).layout]
 
         var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
 

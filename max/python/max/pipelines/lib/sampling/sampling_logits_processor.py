@@ -52,6 +52,16 @@ class FrequencyData:
 def to_pinned_host_buffer(
     values: Sequence[Any], device: Device, dtype: DType = DType.float32
 ) -> Buffer:
+    """Copies a sequence of values into a buffer, pinned when device is not host.
+
+    Args:
+        values: Values to copy into the buffer.
+        device: Target device (buffer is pinned if this is a non-host device).
+        dtype: Buffer dtype. Defaults to float32.
+
+    Returns:
+        A buffer containing the values, with pinning if applicable.
+    """
     pinned = not device.is_host
 
     buffer = Buffer(

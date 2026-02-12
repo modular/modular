@@ -117,12 +117,12 @@ class TestPixelGenerationTokenizer:
         assert (
             tokenizer._num_channels_latents == 32
         )  # Flux2 has in_channels=128, so 128//4=32
-        assert tokenizer._base_image_seq_len == 256
-        assert tokenizer._max_image_seq_len == 4096
-        assert tokenizer._base_shift == 0.5
-        assert tokenizer._max_shift == 1.15
+        assert tokenizer._scheduler.base_image_seq_len == 256
+        assert tokenizer._scheduler.max_image_seq_len == 4096
+        assert tokenizer._scheduler.base_shift == 0.5
+        assert tokenizer._scheduler.max_shift == 1.15
         assert (
-            tokenizer._use_guidance_embeds is False
+            tokenizer._scheduler._use_empirical_mu is False
         )  # Flux2 model doesn't have guidance_embeds in transformer config
 
     @pytest.mark.asyncio
@@ -297,20 +297,8 @@ class TestPixelGenerationTokenizer:
         )
 
         # Test with different image sequence lengths
-        mu_small = tokenizer._calculate_shift(
-            256,
-            base_seq_len=256,
-            max_seq_len=4096,
-            base_shift=0.5,
-            max_shift=1.15,
-        )
-        mu_large = tokenizer._calculate_shift(
-            4096,
-            base_seq_len=256,
-            max_seq_len=4096,
-            base_shift=0.5,
-            max_shift=1.15,
-        )
+        mu_small = tokenizer._scheduler._calculate_mu(256, 50)
+        mu_large = tokenizer._scheduler._calculate_mu(4096, 50)
 
         # Mu should increase with sequence length
         assert mu_small == 0.5  # At base
@@ -373,39 +361,6 @@ class TestPixelGenerationTokenizer:
 
         # Same seed should produce identical latents
         np.testing.assert_array_equal(latents1, latents2)
-
-    @pytest.mark.asyncio
-    async def test_guidance_embeds_flag(self, flux_model_path: str) -> None:
-        """Test that guidance embeds flag is respected.
-
-        Note: FLUX.2 does not use guidance embeds (use_guidance_embeds=False).
-        The guidance field should be None for this model.
-        """
-        config = PipelineConfig(model_path=flux_model_path, defer_resolve=True)
-        tokenizer = PixelGenerationTokenizer(
-            model_path=flux_model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=2048,
-        )
-
-        body = OpenResponsesRequestBody(
-            model="test",
-            input="test prompt",
-            provider_options=ProviderOptions(
-                image=ImageProviderOptions(
-                    steps=10,
-                    guidance_scale=3.5,
-                )
-            ),
-        )
-        request = OpenResponsesRequest(
-            request_id=RequestID("test-guid-1"), body=body
-        )
-
-        context = await tokenizer.new_context(request)
-        # FLUX.2 doesn't use guidance embeds, so guidance should be None
-        assert context.guidance is None
 
     @pytest.mark.asyncio
     async def test_decode_not_implemented(

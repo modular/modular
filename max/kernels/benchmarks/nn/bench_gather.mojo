@@ -17,7 +17,9 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import rand, randint
 
 from benchmark import *
-from layout import LayoutTensor, RuntimeLayout, Layout, UNKNOWN_VALUE
+from layout._layout import row_major
+from layout._coord import Coord
+from layout._tile_tensor import TileTensor
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index
@@ -44,10 +46,7 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
     var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
-    comptime layout_2d = Layout.row_major[2]()
-    var data_tensor = LayoutTensor[DType.float32, layout_2d](
-        data_ptr, RuntimeLayout[layout_2d].row_major(input_shape)
-    )
+    var data_tensor = TileTensor(data_ptr, row_major(Coord(input_shape)))
 
     var indices_ptr = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
@@ -58,16 +57,14 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = LayoutTensor[DType.int32, layout_2d](
-        indices_ptr, RuntimeLayout[layout_2d].row_major(indices_shape)
+    var indices_tensor = TileTensor(
+        indices_ptr, row_major(Coord(indices_shape))
     )
 
     var output_ptr = UnsafePointer[Float32].alloc(
         indices_shape.flattened_length()
     )
-    var output_tensor = LayoutTensor[DType.float32, layout_2d](
-        output_ptr, RuntimeLayout[layout_2d].row_major(indices_shape)
-    )
+    var output_tensor = TileTensor(output_ptr, row_major(Coord(indices_shape)))
 
     @always_inline
     @parameter

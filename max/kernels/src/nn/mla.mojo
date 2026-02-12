@@ -389,15 +389,12 @@ fn flare_mla_decoding_dispatch[
 
     @parameter
     if ctx.default_device_info == B200:
-        # For now, it is not partitioned for SM100
-        # TODO: add partitioning for SM100
-        var num_partitions_value: Int = 1
-        # convert fp8 KV to bf16 KV
         mla_decode_sm100_dispatch[
             q.dtype,
             q.layout,
             k_t,
             output.dtype,
+            output.layout,
             mask_t,
             score_mod_t,
             valid_length.layout,
@@ -415,7 +412,6 @@ fn flare_mla_decoding_dispatch[
             output,
             scale,
             batch_size,
-            num_partitions_value,
             max_cache_valid_length,
             max_prompt_len,
             valid_length,
@@ -1826,7 +1822,6 @@ fn mla_prefill[
     var num_keys: Int
     var start_pos: UInt32 = 0
     var cache_start_pos: UInt32 = 0
-    var total_seq_len: UInt32 = valid_length[batch_size][0]
 
     # treat valid_lengths as a input_row_offsets
     start_of_seq = Int(valid_length[batch_idx])

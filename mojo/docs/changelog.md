@@ -115,6 +115,66 @@ what we publish.
 
 ### Library changes
 
+- Implicit conversions from `Int` to `SIMD` are now deprecated, and will be
+  removed in a future version of Mojo. This includes deprecating converions from
+  `Int` to specific `SIMD` scalar types like `Int8` or `Float32`.
+
+  > Note: The experimental `mojo build --experimental-fixit` command may be useful
+  in assiting with migrating your code to reflect this change.
+
+  Code currently relying on implicit conversions, e.g.:
+
+  ```mojo
+  fn foo(arg: Int) -> Float32:
+      return arg
+  ```
+
+  should be changed to use an explicit conversion:
+
+  ```mojo
+  fn foo(arg: Int) -> Float32:
+      return Float32(arg)
+  ```
+
+  Occasionally, when an implicit conversion was happening from a
+  scalar `Int` to a wider `SIMD` value, the compiler will suggest a
+  change to make the conversion explicit that is somewhat verbose,
+  performing both the type conversion and the "splat" in a single step:
+
+  ```diff
+  var bits: SIMD[DType.uint8, 16] = ...
+  - var y = bits >> (j * 4)
+  + var y = bits >> SIMD[DType.uint8, 16](j * 4)
+  ```
+
+  a simpler change is to make the type conversion explicit, and
+  let the "splat" continue to happen implicitly (which will remain supported):
+
+  ```diff
+  var bits: SIMD[DType.uint8, 16] = ...
+  - var y = bits >> (j * 4)
+  + var y = bits >> UInt8(j * 4)
+  ```
+
+  A similar overly verbose suggestion can be emitted relating
+  to `LayoutTensor.element_type`, where the compiler may suggest
+  a change of the form:
+
+  ```diff
+  - tensor[i] = i * l
+  + tensor[i] = LayoutTensor[DType.uint32, Layout(IntTuple(-1)), stack].element_type(i * l)
+  ```
+
+  where a simpler change is sufficient:
+
+  ```diff
+  - tensor[i] = i * l
+  + tensor[i] = UInt32(i * l)
+
+  # Note: If the tensors `dtype` is not statically known, this works as well:
+  + tensor[i] = Scalar[tensor.dtype](i * l)
+  ```
+
 - The `builtin.math` module has been merged into `math`. The traits `Absable`,
   `DivModable`, `Powable`, `Roundable` and functions `abs()`, `divmod()`,
   `max()`, `min()`, `pow()`, `round()` are now part of the `math` module and
@@ -158,6 +218,7 @@ what we publish.
   of `write_to` and `write_repr_to`.
   - `Tuple`
   - `Variant`
+  - `Optional`
 
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests

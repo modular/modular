@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -546,6 +546,9 @@ def main():
         @parameter
         if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
             # tests with mask tensor
+            # Test with benchmark parameters: batch_size=1, cache_len=32768, num_heads=128
+            test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768)
+            test_decoding[1, MLAMaskType.CAUSAL](ctx, False, 1, 32768)
             test_decoding[128, MLAMaskType.NO_MASK](ctx, False, 1, 1024)
             test_decoding[128, MLAMaskType.CAUSAL](ctx, False, 2, 1024)
             test_decoding[64, MLAMaskType.NO_MASK](ctx, False, 1, 2048)
@@ -553,6 +556,7 @@ def main():
             test_decoding[64, MLAMaskType.CAUSAL](ctx, False, 3, 50)
             test_decoding[64, MLAMaskType.NO_MASK](ctx, False, 4, 193)
             test_decoding[27, MLAMaskType.MASK_3D](ctx, False, 5, 50)
+            test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768 * 2)
             test_decoding[64, MLAMaskType.MASK_4D](ctx, False, 6, 517)
         else:
             pass

@@ -105,6 +105,15 @@ def get_pipeline_for_task(
     | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
+    """Returns the pipeline class for the given task and config.
+
+    Args:
+        task: The pipeline task (e.g. text generation, embeddings).
+        pipeline_config: Pipeline configuration (may select speculative path).
+
+    Returns:
+        The pipeline class to use for this task and config.
+    """
     if (
         task == PipelineTask.TEXT_GENERATION
         and pipeline_config.speculative is not None

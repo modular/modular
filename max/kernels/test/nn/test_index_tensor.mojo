@@ -13,7 +13,6 @@
 
 from random import random_ui64
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._coord import Coord
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
@@ -236,40 +235,38 @@ fn test_index_tensor_CLIPVIT() raises:
     comptime output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
-    comptime input_shape = IndexList[3](dim_0, dim_1, dim_2)
-    comptime input_layout = Layout.row_major(input_shape)
-    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+    comptime input_layout = row_major[dim_0, dim_1, dim_2]()
+    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
         uninitialized=True
     )
-    var input = LayoutTensor[input_type, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
-        input.ptr[i] = Int32(i)
+        input_stack[i] = Int32(i)
 
     # We have two 2D tensors with 1 element each.
 
     # 1-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = LayoutTensor[DType.uint64, Layout(index_len)](a_stack)
+    var index_a = TileTensor(a_stack, row_major[index_len]())
     # Initialize with [0,1]
-    index_a.ptr[0] = 0
-    index_a.ptr[1] = 1
+    a_stack[0] = 0
+    a_stack[1] = 1
 
     # 1-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = LayoutTensor[DType.uint64, Layout(index_len)](b_stack)
+    var index_b = TileTensor(b_stack, row_major[index_len]())
     # Initialize with [1,0]
-    index_b.ptr[0] = 1
-    index_b.ptr[1] = 0
+    b_stack[0] = 1
+    b_stack[1] = 0
 
     # Reference output of shape dim_0 x dim_2
 
-    comptime ref_shape = IndexList[2](dim_0, dim_2)
-    comptime ref_layout = Layout.row_major(ref_shape)
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
+    comptime ref_layout = row_major[dim_0, dim_2]()
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
         uninitialized=True
     )
-    var ref_output = LayoutTensor[input_type, ref_layout](ref_stack)
+    var ref_output = TileTensor(ref_stack, ref_layout)
 
     for j in range(dim_2):
         ref_output[0, j] = input[Int(index_a[0]), Int(index_a[1]), j]
@@ -278,64 +275,45 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # TODO:
     # See how I need to convert separate indices to
-    # combined indices LayoutTensor
+    # combined indices TileTensor
     # to be as input to gather_nd.
     # See if it works with 2D indices case.
     # See if it works with non-contiguous case.
 
     # Convert index_a, index_b (each of 1D size 2) to a
-    # 2D indices_len x 2 indices LayoutTensor
+    # 2D indices_len x 2 indices TileTensor
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
-        indices_stack
-    )
+    var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     indices[0, 0] = index_a[0]
     indices[0, 1] = index_b[0]
     indices[1, 0] = index_a[1]
     indices[1, 1] = index_b[1]
     # TODO: Or index_a[0], index_a[1] and index_b[0], index_b[1]???
 
-    comptime input_dyn_layout = Layout.row_major[input.rank]()
-    comptime indices_dyn_layout = Layout.row_major[indices.rank]()
+    var input_dyn = input.make_dynamic[DType.int64]()
+    var indices_dyn = indices.make_dynamic[DType.int64]()
     var output_shape = gather_nd_shape[
         output_rank,
         input_type,
         DType.uint64,
         0,
     ](
-        LayoutTensor[input.dtype, input_dyn_layout](
-            input.ptr,
-            RuntimeLayout[input_dyn_layout].row_major(input_shape),
-        ),
-        LayoutTensor[indices.dtype, indices_dyn_layout](
-            indices.ptr,
-            RuntimeLayout[indices_dyn_layout].row_major(
-                IndexList[2](index_len, 2)
-            ),
-        ),
+        input_dyn,
+        indices_dyn,
     )
 
     var output_data_stack = InlineArray[Scalar[input_type], dim_0 * dim_2](
         uninitialized=True
     )
-    comptime output_layout = Layout.row_major[output_rank]()
-    var output_data_buffer = LayoutTensor[input_type, output_layout](
-        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
-    )
+    comptime output_static_layout = row_major[dim_0, dim_2]()
+    var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
+    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
     gather_nd[input_type, DType.uint64, batch_dims, target="cpu"](
-        LayoutTensor[input.dtype, input_dyn_layout](
-            input.ptr,
-            RuntimeLayout[input_dyn_layout].row_major(input_shape),
-        ),
-        LayoutTensor[indices.dtype, indices_dyn_layout](
-            indices.ptr,
-            RuntimeLayout[indices_dyn_layout].row_major(
-                IndexList[2](index_len, 2)
-            ),
-        ),
-        output_data_buffer,
+        input_dyn,
+        indices_dyn,
+        output_dyn,
         DeviceContextPtr(),
     )
 
@@ -362,23 +340,23 @@ fn test_index_tensor_llama2_mistral() raises:
     comptime output_rank = 3
 
     # dim_0 x dim_1 input tensor.
-    comptime input_shape = IndexList[2](dim_0, dim_1)
-    comptime input_layout = Layout.row_major(input_shape)
-    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+    comptime input_layout = row_major[dim_0, dim_1]()
+    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
         uninitialized=True
     )
-    var input = LayoutTensor[input_type, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1):
-        input.ptr[i] = Int32(i)
+        input_stack[i] = Int32(i)
 
     # We have one 2D tensor with index_len elements each.
 
     # index_len-element input tensor.
-    comptime index_shape = IndexList[2](index_dim_0, index_dim_1)
-    comptime index_layout = Layout.row_major(index_shape)
-    var a_stack = InlineArray[UInt64, index_layout.size()](uninitialized=True)
-    var index_a = LayoutTensor[index_type, index_layout](a_stack)
+    comptime index_layout = row_major[index_dim_0, index_dim_1]()
+    var a_stack = InlineArray[UInt64, index_layout.product()](
+        uninitialized=True
+    )
+    var index_a = TileTensor(a_stack, index_layout)
     # Initialize with one.
     for i in range(index_dim_0):
         for j in range(index_dim_1):
@@ -387,49 +365,35 @@ fn test_index_tensor_llama2_mistral() raises:
     # This is effectively a gather operation.
 
     # Reference output of shape index_dim_0 x index_dim_1 x dim_1.
-    comptime ref_shape = IndexList[3](index_dim_0, index_dim_1, dim_1)
-    comptime ref_layout = Layout.row_major(ref_shape)
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
+    comptime ref_layout = row_major[index_dim_0, index_dim_1, dim_1]()
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
         uninitialized=True
     )
-    var ref_output = LayoutTensor[input_type, ref_layout](ref_stack)
+    var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(index_dim_0):
         for j in range(index_dim_1):
             for k in range(dim_1):
                 ref_output[i, j, k] = input[Int(index_a[i, j]), k]
 
-    comptime input_dyn_layout = Layout.row_major[input.rank]()
-    comptime indices_dyn_layout = Layout.row_major[index_a.rank]()
+    var input_dyn = input.make_dynamic[DType.int64]()
+    var index_a_dyn = index_a.make_dynamic[DType.int64]()
     var output_shape = gather_shape[output_rank, input_type, index_type](
-        LayoutTensor[input.dtype, input_dyn_layout](
-            input.ptr,
-            RuntimeLayout[input_dyn_layout].row_major(input_shape),
-        ),
-        LayoutTensor[index_a.dtype, indices_dyn_layout](
-            index_a.ptr,
-            RuntimeLayout[indices_dyn_layout].row_major(index_shape),
-        ),
+        input_dyn,
+        index_a_dyn,
         0,
     )
 
     var output_data_stack = InlineArray[
         Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
     ](uninitialized=True)
-    comptime output_layout = Layout.row_major[output_rank]()
-    var output_data_buffer = LayoutTensor[input_type, output_layout](
-        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
-    )
+    comptime output_static_layout = row_major[index_dim_0, index_dim_1, dim_1]()
+    var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
+    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
 
     gather[axis=0](
-        output_data_buffer,
-        LayoutTensor[input.dtype, input_dyn_layout](
-            input.ptr,
-            RuntimeLayout[input_dyn_layout].row_major(input_shape),
-        ),
-        LayoutTensor[index_a.dtype, indices_dyn_layout](
-            index_a.ptr,
-            RuntimeLayout[indices_dyn_layout].row_major(index_shape),
-        ),
+        output_dyn,
+        input_dyn,
+        index_a_dyn,
     )
 
     for i in range(index_dim_0):

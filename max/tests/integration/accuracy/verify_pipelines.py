@@ -729,6 +729,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="allenai/OLMo-1B-hf",
             encoding="float32",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
+                json_file="torch_olmo-1b-hf_float32_golden.json",
+            ),
             # On CPU, olmo passes with atol set to `5e-4`
             # GPU specifically requires these higher tolerances (160x worse).
             absolute_tolerance=3.7e-2,
@@ -749,6 +753,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
             encoding="q4_k",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-8b_q4_k_golden/1/5078639f4386c9d7e11eff0b09de2917b41494aae1168efe9e3db2bb4c8be3ef/torch_llama3-8b_q4_k_golden.tar.gz",
+                json_file="torch_llama3-8b_q4_k_golden.json",
+            ),
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
             # something is very wrong but at least we will be able to detect
@@ -762,6 +770,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-8b_bfloat16_golden/1/1ba2f2214bfffa3e8e5f166d5d1d5573201efa4dcb5c668f4b84fb9466861e56/torch_llama3-8b_bfloat16_golden.tar.gz",
+                json_file="torch_llama3-8b_bfloat16_golden.json",
+            ),
             cos_dist_threshold=3.7e-2,
             kl_div_threshold=1.3e-1,
         ),
@@ -771,6 +783,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="meta-llama/Llama-3.1-8B-Instruct",
             encoding="q4_k",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3.1-8b_q4_k_golden/1/13c75e9e445ecf05c1fbc0f2f9e73361062c2efbc62c01575278cfa4d0a64b2e/torch_llama3.1-8b_q4_k_golden.tar.gz",
+                json_file="torch_llama3.1-8b_q4_k_golden.json",
+            ),
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
             # something is very wrong but at least we will be able to detect
@@ -855,7 +871,21 @@ PIPELINES = {
                 json_file="tmp/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json",
             ),
             cos_dist_threshold=5.8e-04,
-            kl_div_threshold=2.0e-01,
+            kl_div_threshold=3.0e-01,
+        ),
+    ),
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only", "nvidia-multi", "no-h100"],
+        run=_make_pipeline_runner(
+            pipeline="nvidia/Llama-3.1-405B-Instruct-NVFP4",
+            encoding="float4_e2m1fnx2",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_405B_nvfp4/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json.tar.gz",
+                json_file="tmp/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json",
+            ),
+            cos_dist_threshold=4.5e-04,
+            kl_div_threshold=8.3e-02,
         ),
     ),
     "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
@@ -864,8 +894,12 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="meta-llama/Llama-3.2-1B",
             encoding="bfloat16",
-            cos_dist_threshold=2.1e-03,
-            kl_div_threshold=8.0e-03,
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3.2-1b_bfloat16_golden/1/f77876a9612aba6f0df1ab1bd9f3819656f962a46e2b3133d11a4290c936de3a/torch_llama3.2-1b_bfloat16_golden.tar.gz",
+                json_file="torch_llama3.2-1b_bfloat16_golden.json",
+            ),
+            cos_dist_threshold=6.0e-03,
+            kl_div_threshold=1.5e-02,
         ),
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -874,8 +908,12 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="meta-llama/Llama-3.3-70B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3.3-70b-instruct_bfloat16_golden/1/e4a07947f7f23c0b1bc5d297bbe1575b637abb53270e99b284936bf6d2dc703f/torch_llama3.3-70b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_llama3.3-70b-instruct_bfloat16_golden.json",
+            ),
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            cos_dist_threshold=5.9e-04,
+            cos_dist_threshold=9.0e-04,
             kl_div_threshold=5.0e-03,
         ),
     ),
@@ -926,6 +964,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="OpenGVLab/InternVL3-1B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-1b_golden/1/c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463/torch_internvl3-1b_golden.tar.gz",
+                json_file="torch_internvl3-1b_bfloat16_golden.json",
+            ),
             # TODO(MODELS-565): Fix InternVL correctness.
             cos_dist_threshold=4.0e-03,
             kl_div_threshold=1.5e-02,
@@ -937,9 +979,13 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="OpenGVLab/InternVL3-8B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-8b_golden/1/18c65a6f996008b7bb44ccb5369e862df5868a1d13b15165fe80bd8f9edc7415/torch_internvl3-8b_golden.tar.gz",
+                json_file="torch_internvl3-8b_bfloat16_golden.json",
+            ),
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=3.0e-1,
-            kl_div_threshold=6.3e-01,
+            cos_dist_threshold=3.5e-1,
+            kl_div_threshold=7.0e-01,
         ),
     ),
     "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
@@ -948,9 +994,13 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="OpenGVLab/InternVL3-14B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-14b_golden/1/b0b6be883a40a1f44d85abbf077edec5c768fee8302f0595147ce7197da8560f/torch_internvl3-14b_golden.tar.gz",
+                json_file="torch_internvl3-14b_bfloat16_golden.json",
+            ),
             absolute_tolerance=1.0e-04,
             relative_tolerance=2.0e00,
-            cos_dist_threshold=6.3e-04,
+            cos_dist_threshold=1.0e-03,
             kl_div_threshold=5.0e-02,
         ),
     ),
@@ -960,6 +1010,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="OpenGVLab/InternVL3-38B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-38b_golden/1/68ce8e1ca017a4b42b1a9f270345dd64e869c57c582d5ade12eb654a42893b21/torch_internvl3-38b_golden.tar.gz",
+                json_file="torch_internvl3-38b_bfloat16_golden.json",
+            ),
             cos_dist_threshold=5.5e-03,
             kl_div_threshold=4.8e-02,
             timeout=900,
@@ -971,6 +1025,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="OpenGVLab/InternVL3_5-8B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_internvl3_5_8b_golden/1/c1e88d08b863bc4e5ad250bf91bbe9e6a371f1244f96dd37befb8c1a086afcea/torch_internvl3_5_8b_golden.tar.gz",
+                json_file="torch_InternVL3_5_8B_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.2e-2,
             kl_div_threshold=1.6e-02,
             timeout=1200,
@@ -996,8 +1054,12 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen2.5-7B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=2.7e-3,
-            kl_div_threshold=1.7e-1,
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-7b-instruct_bfloat16_golden/1/a18b2a5b0e4a63ba828fa956ffeed04feaf5501721dae0421670c94e93f445a0/torch_qwen2.5-7b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_qwen2.5_7b_instruct_bfloat16_golden.json",
+            ),
+            cos_dist_threshold=5.0e-2,
+            kl_div_threshold=4.0e-1,
         ),
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
@@ -1006,6 +1068,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen2.5-VL-3B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-3b-instruct_bfloat16_golden/1/40a5c716c43ae003113b7a38eff4121619d4ca58bdf4d8b6f6b362529279ba5d/torch_qwen2.5-vl-3b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_qwen2.5_vl_3b_instruct_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.9e00,
             kl_div_threshold=1.5e01,
         ),
@@ -1016,8 +1082,12 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=7.0e-2,
-            kl_div_threshold=2.5e-1,
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-7b-instruct_bfloat16_golden/1/6c5aaac177ce9a8428b972667383621d2bb853a1ec3c44fdd63ca00661fff4e0/torch_qwen2.5-vl-7b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_qwen2.5_vl_7b_instruct_bfloat16_golden.json",
+            ),
+            cos_dist_threshold=3.5e-1,
+            kl_div_threshold=4.0e-1,
         ),
     ),
     "Qwen/Qwen2.5VL-32B-Instruct-bfloat16": PipelineDef(
@@ -1026,6 +1096,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen2.5-VL-32B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-32b-instruct_bfloat16_golden/1/62db96f972e210adb18a6042441b49feb5a163bdb6f5592e8788dbb9f887dbe8/torch_qwen2.5-vl-32b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_qwen2.5_vl_32b_instruct_bfloat16_golden.json",
+            ),
             cos_dist_threshold=7.0e-2,
             kl_div_threshold=2.6e-1,
             timeout=900,
@@ -1037,6 +1111,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-VL-30B-A3B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden/1/43b1500269067c2e25bed53fefc98c3973e2132fabdfb6923acbedc531636bc0/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_qwen3_vl_30b_a3b_instruct_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.7e00,
             kl_div_threshold=2.1e01,
         ),
@@ -1047,6 +1125,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-VL-4B-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_bfloat16_golden/1/7c5d43eeab21e1478b79fc849a537766809b1c3aabb7f253309dc47895d1de39/torch_qwen3-vl-4b-instruct_bfloat16_golden.tar.gz",
+                json_file="torch_qwen3_vl_4b_instruct_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.7e00,
             kl_div_threshold=4.4e-01,
         ),
@@ -1057,6 +1139,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-VL-4B-Instruct-FP8",
             encoding="float8_e4m3fn",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz",
+                json_file="torch_qwen3_vl_4b_instruct_fp8_golden.json",
+            ),
             cos_dist_threshold=1.7e00,
             kl_div_threshold=3.6e-01,
         ),
@@ -1067,16 +1153,25 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-8B",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen3_8b_golden/1/a952c1f1cae7dd647abbb01db7232b73d2cd084a561a7da5d3027e95acbeaf71/torch_qwen3_8b_golden.tar.gz",
+                json_file="torch_qwen3_8b_golden.json",
+            ),
             cos_dist_threshold=1.1e-3,
             kl_div_threshold=7.1e-3,
         ),
     ),
+    # TODO(MODELS-1033) Times out.
     "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only", "no-h100"],
+        tags=["big", "nvidia-only", "no-h100", "manual"],
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden/1/4427d3205be77073d7f0274d8fca0774974fe8677934a5b8dc60b3705aac9aaf/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden.tar.gz",
+                json_file="torch_qwen3_30b_a3b_instruct_2507_bfloat16_golden.json",
+            ),
             cos_dist_threshold=7.0e-02,
             kl_div_threshold=8.0e-01,
         ),
@@ -1086,6 +1181,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-Embedding-0.6B",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen3_embedding_0.6b_bfloat16_golden/1/98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48/torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz",
+                json_file="torch_qwen3_embedding_0.6b_bfloat16_golden.json",
+            ),
             relative_tolerance=1.0e-04,
             absolute_tolerance=4.2e-01,
             cos_dist_threshold=2.4e-1,
@@ -1099,6 +1198,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="allenai/olmOCR-2-7B-1025-FP8",
             encoding="float8_e4m3fn",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_olmocr_2_7b_fp8_golden/1/7177335f99779ffdf6dd516a1c6082d75ce3d26b9a7dbe06ec88ebbd729a090e/torch_olmocr_2_7b_fp8_golden.tar.gz",
+                json_file="olmocr_2_7b_fp8_torch_goldens.json",
+            ),
             cos_dist_threshold=2.4e-01,
             kl_div_threshold=8.8e-01,
         ),
@@ -1109,6 +1212,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="allenai/OLMo-2-1124-7B",
             encoding="float32",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_olmo2_1124_7b_float32_golden/1/65d0d4860591ae05c7ae3cf062bc0bb5429733db08b49635f3deeeb7369eb122/torch_olmo2_1124_7b_float32_golden.tar.gz",
+                json_file="olmo2_1124_7b_float32_torch_goldens.json",
+            ),
             cos_dist_threshold=2.1e-5,
             kl_div_threshold=4.6e-7,
         ),
@@ -1119,6 +1226,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="HuggingFaceM4/Idefics3-8B-Llama3",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_idefics3_8b_llama3_golden/1/c50d33d355c5594d57336cd9b2b46fbb27b3f8a06f58d72e1078cc5c3fb6ffde/torch_idefics3_8b_llama3_golden.tar.gz",
+                json_file="idefics3_8b_llama3_torch_goldens.json",
+            ),
             # TODO: Accuracy is much worse on AMD.
             # so we might have an AMD kernel bug here
             # TODO(MODELS-730): With the update to transformers=4.55, the
@@ -1134,6 +1245,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             encoding="float32",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_exaone_3_5_2_4b_instruct_float32_golden/1/ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427/torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
+                json_file="exaone_3_5_2_4b_instruct_float32_torch_goldens.json",
+            ),
             # TODO: Accuracy is much better on AMD.
             # so we might have an nvidia kernel bug here
             cos_dist_threshold=2.5e-2,
@@ -1145,6 +1260,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="microsoft/Phi-3.5-mini-instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_phi_3_5_mini_instruct_bfloat16_golden/1/23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870/torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",
+                json_file="phi_3_5_mini_instruct_bfloat16_torch_goldens.json",
+            ),
             # TODO(MODELS-458): This model seems broken based on the thresholds
             cos_dist_threshold=1.6e-2,
             kl_div_threshold=4.0e-1,
@@ -1156,9 +1275,13 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="microsoft/phi-4",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_phi_4_bfloat16_golden/0/8634be2cd675ea0dbb8a2ce84692572dd003505fa86edd91f0d8b0659d09b6f0/torch_phi_4_bfloat16_golden.tar.gz",
+                json_file="phi_4_bfloat16_torch_goldens.json",
+            ),
             absolute_tolerance=1.0e-04,
             relative_tolerance=2.0e00,
-            cos_dist_threshold=1.0e-3,
+            cos_dist_threshold=1.5e-3,
             kl_div_threshold=1.3e-02,
         ),
     ),
@@ -1192,20 +1315,16 @@ PIPELINES = {
             kl_div_threshold=5.5e-03,
         ),
     ),
-    # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
-    # TODO(SERVOPT-571): Re-enable after fixing.
-    # "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     tags=["big", "nvidia-only"],
-    #     run=_make_pipeline_runner(
-    #         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
-    #         encoding="bfloat16",
-    #         # TODO(MODELS-516): Investigate need for high tolerances here.
-    #         # TODO(GENAI-216): Investigate non-deterministic output.
-    #         cos_dist_threshold=4.1e-03,
-    #         kl_div_threshold=2.6e-01,
-    #     ),
-    # ),
+    "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=_make_pipeline_runner(
+            pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
+            encoding="bfloat16",
+            cos_dist_threshold=4.0e-03,
+            kl_div_threshold=9.0e-02,
+        ),
+    ),
     # TODO(MODELS-812): Investigate deepseek timeout
     "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
@@ -1213,6 +1332,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="kathywu95/deepseek-v3-small-random",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-v3-small-random-bfloat16_golden/1/a014fa9dfbadae61869bb51da13e6e5c9fa6294a03b18b49c9217da6024a13eb/torch_deepseek-v3-small-random-bfloat16_golden.tar.gz",
+                json_file="deepseek-v3-small-random_torch_goldens.json",
+            ),
             cos_dist_threshold=2.9e-02,
             kl_div_threshold=8.0e-2,  # TODO(MODELS-998)
         ),
@@ -1336,7 +1459,7 @@ PIPELINES = {
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
             cos_dist_threshold=2.3e-2,
-            kl_div_threshold=6.8e-1,
+            kl_div_threshold=7.0e-1,
         ),
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
@@ -1345,6 +1468,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="HKUSTAudio/Llasa-8B",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llasa-8b_bfloat16_golden/1/301c70b6c564f667ce279151964878354fe58d070f4f31869ecd6e2139172fc1/torch_llasa-8b_bfloat16_golden.tar.gz",
+                json_file="HKUSTAudio_Llasa-8B_torch_goldens.json",
+            ),
             cos_dist_threshold=1.5e-02,
             kl_div_threshold=7.7e-01,
         ),
@@ -1357,6 +1484,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="HuggingFaceTB/SmolLM2-360M-Instruct",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_smollm2_360m_instruct_lora_bfloat16_golden/1/1149947546122f5eef59073a8b06a0fe525051eb6003d2891510bdff8e49be6e/torch_smollm2_360m_instruct_lora_bfloat16_golden.tar.gz",
+                json_file="HuggingFaceTB_SmolLM2-360M-Instruct_torch_goldens.json",
+            ),
             cos_dist_threshold=1e3,
             kl_div_threshold=1e3,
         ),

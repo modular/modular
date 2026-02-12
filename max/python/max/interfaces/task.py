@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""
-Pipeline Tasks Module.
+"""Pipeline Tasks Module.
 
 This module defines the set of supported pipeline tasks for the MAX API, encapsulated
 in the `PipelineTask` enumeration. Pipeline tasks represent the high-level operations
@@ -47,9 +46,7 @@ from .scheduler import SchedulerResult
 
 
 class PipelineTask(str, Enum):
-    """
-    Enum representing the types of pipeline tasks supported.
-    """
+    """Enum representing the types of pipeline tasks supported."""
 
     TEXT_GENERATION = "text_generation"
     """Task for generating text."""
@@ -66,8 +63,7 @@ class PipelineTask(str, Enum):
     def output_type(
         self,
     ) -> type[dict[RequestID, SchedulerResult[Any]]]:
-        """
-        Get the output type for the pipeline task.
+        """Get the output type for the pipeline task.
 
         Returns:
             type: The output type for the pipeline task.

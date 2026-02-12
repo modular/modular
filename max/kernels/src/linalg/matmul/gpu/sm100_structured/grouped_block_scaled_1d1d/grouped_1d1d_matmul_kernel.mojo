@@ -45,8 +45,22 @@ from gpu.primitives.cluster import (
 )
 from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor
-from ..structured_kernels.tile_types import lt_to_tt, lt_to_tt_1d
+from layout import Layout as LegacyLayout, LayoutTensor
+from layout._layout import TensorLayout
+from layout._tile_tensor import TileTensor
+from ..structured_kernels.tile_types import (
+    GMEMLayout1D,
+    GMEMTile,
+    TMATile,
+    TmaOpType,
+    lt_to_tt,
+    lt_to_tt_1d,
+    static_row_major,
+    tma_desc_layout_3d,
+    tma_desc_layout_4d,
+)
+from layout._coord import CoordLike, ComptimeInt, RuntimeInt
+from layout._layout import RowMajorLayout, _IntToComptimeInt
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -149,24 +163,6 @@ struct Grouped1D1DMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
-    # Tensor layouts
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    sfa_desc_layout: Layout,
-    sfb_desc_layout: Layout,
-    # Offset/ID layouts
-    offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
-    a_scale_offsets_layout: Layout,
-    # Full C device tensor layout (for bounds-checked stores)
-    c_device_layout: Layout,
     # Configuration
     transpose_b: Bool,
     config: BlockScaledMatmulConfig[
@@ -267,7 +263,7 @@ struct Grouped1D1DMatmulKernel[
     ]
 
     # ========== Tile Pipeline Types ==========
-    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
+    # TileTensor-native payload - passed directly to TMA/MMA
 
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
@@ -363,9 +359,6 @@ struct Grouped1D1DMatmulKernel[
     # ========== Work Iterator Type ==========
 
     comptime WorkIterator = GroupedWorkIterator1D1D[
-        offsets_layout = Self.offsets_layout,
-        expert_ids_layout = Self.expert_ids_layout,
-        expert_scales_layout = Self.expert_scales_layout,
         static_N = Self.static_N,
         tile_shape = Self.config.block_tile_shape,
         cluster = Self.config.cluster_shape,
@@ -394,10 +387,115 @@ struct Grouped1D1DMatmulKernel[
         + Self.sfb_expected_bytes
     ) * Self.config.k_group_size
 
-    comptime a_tma_load_size = Self.a_desc_layout.size()
-    comptime b_tma_load_size = Self.b_desc_layout.size()
-    comptime a_tma_rows = Self.a_desc_layout.shape[1].value()
-    comptime b_tma_rows = Self.b_desc_layout.shape[1].value()
+    # ========== TMA Layouts (computed from config, new Layout types) ==========
+
+    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
+    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
+        Self.a_type
+    ]()
+    comptime b_swizzle_elems = Self.config.b_swizzle.bytes() // size_of[
+        Self.b_type
+    ]()
+    comptime c_swizzle_elems = Self.config.c_swizzle.bytes() // size_of[
+        Self.c_type
+    ]()
+
+    # C tile shape -- same logic as default/block_scaled kernels
+    comptime c_tile_dim0 = Self.OutputM if (
+        Self.MMA_M == 256 or Self.cta_group == 1 or Self.config.AB_swapped
+    ) else 64
+    comptime c_tile_dim1 = Self.c_swizzle_elems if (
+        Self.config.AB_swapped
+    ) else Self.OutputN
+
+    # A, B, C: 2D TMA layouts
+    comptime ATileLayout = static_row_major[Self.a_tile_dim0, Self.BK]
+    comptime ADescLayout = static_row_major[
+        Self.a_tile_dim0, Self.a_swizzle_elems
+    ]
+    comptime BTileLayout = static_row_major[Self.b_tile_dim0, Self.BK]
+    comptime BDescLayout = static_row_major[
+        Self.b_tile_dim0, Self.b_swizzle_elems
+    ]
+    comptime CTileLayout = static_row_major[Self.c_tile_dim0, Self.c_tile_dim1]
+    comptime CDescLayout = static_row_major[
+        Self.c_tile_dim0, Self.c_swizzle_elems
+    ]
+
+    # SFA, SFB: 4D TMA layouts (no batch dim, unlike block_scaled's 5D)
+    comptime SFATileLayout = RowMajorLayout[
+        *_IntToComptimeInt[
+            Self.BM // SF_MN_GROUP_SIZE,
+            Self.config.num_sf_k_tiles,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ]
+    ]
+    comptime SFADescLayout = tma_desc_layout_4d[
+        Self.sfa_dtype,
+        Self.BM // SF_MN_GROUP_SIZE,
+        Self.config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        TensorMapSwizzle.SWIZZLE_NONE,
+    ]
+    comptime SFBTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[
+            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.config.num_sf_k_tiles,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ]
+    ]
+    comptime SFBDescLayout = tma_desc_layout_4d[
+        Self.sfb_dtype,
+        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        TensorMapSwizzle.SWIZZLE_NONE,
+    ]
+
+    # TMA operation types
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaOp = Self.CTmaTile.InnerType
+    comptime SFATmaTile = TMATile[
+        Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
+    ]
+    comptime SFATmaOp = Self.SFATmaTile.InnerType
+    comptime SFBTmaTile = TMATile[
+        Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
+    ]
+    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
+
+    # 1D data TileTensor types (offsets, expert IDs, scales)
+    comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
+    comptime AScaleOffsetsTile = TileTensor[
+        DType.uint32, GMEMLayout1D, MutAnyOrigin
+    ]
+    comptime ExpertIdsTile = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin]
+    comptime ExpertScalesTile = TileTensor[
+        DType.float32, GMEMLayout1D, MutAnyOrigin
+    ]
+
+    # C device layout: (M_dynamic, N_static) row-major, computed from static_N.
+    comptime CDeviceLayout = RowMajorLayout[
+        RuntimeInt[DType.int64], ComptimeInt[Self.static_N]
+    ]
+
+    # C device tensor type (for bounds-checked stores)
+    comptime CDeviceTile = TileTensor[
+        Self.c_type, Self.CDeviceLayout, MutAnyOrigin
+    ]
+
+    # TMA load size constants (from desc layout dimensions)
+    comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim0 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim0
+    comptime b_tma_rows = Self.b_tile_dim0
 
     # ========== Validation ==========
 
@@ -430,32 +528,18 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
     fn run(
         # Grid-constant TMA descriptors
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
-        sfa_tma_op: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_op: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
-        # Offset tensors for 1D-1D addressing
-        a_offsets_lt: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
-        ],
-        a_scale_offsets_lt: LayoutTensor[
-            DType.uint32, Self.a_scale_offsets_layout, MutAnyOrigin
-        ],
-        expert_ids_lt: LayoutTensor[
-            DType.int32, Self.expert_ids_layout, MutAnyOrigin
-        ],
-        expert_scales_lt: LayoutTensor[
-            DType.float32, Self.expert_scales_layout, MutAnyOrigin
-        ],
-        # C tensor for bounds-checked stores (full tensor layout)
-        c_device_lt: LayoutTensor[
-            Self.c_type, Self.c_device_layout, MutAnyOrigin
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
+        # Offset tensors for 1D-1D addressing (TileTensor)
+        a_offsets: Self.OffsetsTile,
+        a_scale_offsets: Self.AScaleOffsetsTile,
+        expert_ids: Self.ExpertIdsTile,
+        expert_scales: Self.ExpertScalesTile,
+        # C tensor for bounds-checked stores (TileTensor)
+        c_device: Self.CDeviceTile,
         # Number of active experts
         num_active_experts: Int,
         # K dimension for iteration
@@ -466,13 +550,6 @@ struct Grouped1D1DMatmulKernel[
         Uses grid-constant TMAs with offset-based addressing for 1D-1D layout.
         """
         Self.validate_config()
-
-        # Convert kernel args to TileTensor
-        var a_offsets = lt_to_tt_1d(a_offsets_lt)
-        var a_scale_offsets = lt_to_tt_1d(a_scale_offsets_lt)
-        var expert_ids = lt_to_tt_1d(expert_ids_lt)
-        var expert_scales = lt_to_tt_1d(expert_scales_lt)
-        var c_device = lt_to_tt(c_device_lt)
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
@@ -564,7 +641,10 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== Work Iterator Setup =====
         var work_iter = Self.WorkIterator(
-            num_active_experts, a_offsets_lt, expert_ids_lt, expert_scales_lt
+            num_active_experts,
+            a_offsets,
+            expert_ids,
+            expert_scales,
         )
 
         # ===== TMA LOAD WARP =====
@@ -591,7 +671,7 @@ struct Grouped1D1DMatmulKernel[
                                 tiles,
                                 peer_cta_coord,
                                 ctx,
-                                a_scale_offsets_lt,
+                                a_scale_offsets,
                                 UInt32(k_tile),
                                 elect_one_cta,
                             )
@@ -670,7 +750,7 @@ struct Grouped1D1DMatmulKernel[
                         Self.epilogue(
                             c_tiles,
                             c_tma_op,
-                            c_device_lt,
+                            c_device,
                             output_stage,
                             ctx,
                         )
@@ -683,14 +763,10 @@ struct Grouped1D1DMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        sfa_tma_op: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_op: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
         tiles: InputProducerStage[
             tiles_origin,
             Self.TilePayload,
@@ -699,9 +775,7 @@ struct Grouped1D1DMatmulKernel[
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         work_ctx: GroupedWorkContext1D1D,
-        a_scale_offsets: LayoutTensor[
-            DType.uint32, Self.a_scale_offsets_layout, MutAnyOrigin
-        ],
+        a_scale_offsets: Self.AScaleOffsetsTile,
         iter_idx: UInt32,
         elect_one_cta: Bool,
     ):
@@ -864,8 +938,8 @@ struct Grouped1D1DMatmulKernel[
     @always_inline
     fn epilogue(
         c_tiles: Self.SmemType.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
-        c_device: LayoutTensor[Self.c_type, Self.c_device_layout, MutAnyOrigin],
+        c_tma_op: Self.CTmaOp,
+        c_device: Self.CDeviceTile,
         stage: Self.TileWriterType.Stage,
         work_ctx: GroupedWorkContext1D1D,
     ):
@@ -882,12 +956,15 @@ struct Grouped1D1DMatmulKernel[
         var M = work_ctx.m_end
         var N = UInt32(Self.static_N)
 
-        tile_writer.write_absolute_with_bounds_check[Self.c_device_layout](
+        # Convert TileTensor to LayoutTensor at output_writer boundary
+        var c_lt = c_device.to_layout_tensor()
+
+        tile_writer.write_absolute_with_bounds_check[type_of(c_lt).layout](
             c_tiles,
             stage,
             m_abs,
             n_abs,
             M,  # m_end for bounds checking
             work_ctx.expert_scale,
-            c_device,
+            c_lt,
         )

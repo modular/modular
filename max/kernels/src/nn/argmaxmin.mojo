@@ -209,7 +209,7 @@ fn argmax(
     input: TileTensor,
     axis_buf: TileTensor,
     output: TileTensor[mut=True, ...],
-) raises where axis_buf.rank == 1:
+) raises where axis_buf.flat_rank == 1:
     """
     Finds the indices of the maximum element along the specified axis.
 
@@ -248,7 +248,7 @@ fn argmin(
     input: TileTensor,
     axis_buf: TileTensor,
     output: TileTensor[mut=True, ...],
-) raises where axis_buf.rank == 1:
+) raises where axis_buf.flat_rank == 1:
     """
     Finds the indices of the minimum element along the specified axis.
 

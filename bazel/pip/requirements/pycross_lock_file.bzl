@@ -110,7 +110,7 @@ PINS = {
     "plotext": "plotext@5.3.2",
     "plotly": "plotly@6.0.1",
     "prometheus-client": "prometheus-client@0.20.0",
-    "protobuf": "protobuf@6.31.1",
+    "protobuf": "protobuf@6.33.5",
     "psutil": "psutil@7.0.0",
     "py-cpuinfo": "py-cpuinfo@9.0.0",
     "pyarrow": "pyarrow@22.0.0",
@@ -2704,7 +2704,7 @@ def targets():
         ":grpcio-status@1.57.0",
         ":grpcio@1.76.0",
         ":proto-plus@1.26.1",
-        ":protobuf@6.31.1",
+        ":protobuf@6.33.5",
         ":requests@2.32.3",
     ]
 
@@ -2843,7 +2843,7 @@ def targets():
     )
 
     _googleapis_common_protos_1_70_0_deps = [
-        ":protobuf@6.31.1",
+        ":protobuf@6.33.5",
     ]
 
     native.alias(
@@ -2976,23 +2976,23 @@ def targets():
     ] + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":grpcio@1.76.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":grpcio@1.76.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":grpcio@1.76.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":grpcio@1.76.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":grpcio@1.76.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
         ],
         "//conditions:default": [],
     })
@@ -3012,7 +3012,7 @@ def targets():
     _grpcio_status_1_57_0_deps = [
         ":googleapis-common-protos@1.70.0",
         ":grpcio@1.76.0",
-        ":protobuf@6.31.1",
+        ":protobuf@6.33.5",
     ]
 
     native.alias(
@@ -6023,7 +6023,7 @@ def targets():
         ":flatbuffers@25.2.10",
         ":numpy@multiple",
         ":packaging@25.0",
-        ":protobuf@6.31.1",
+        ":protobuf@6.33.5",
         ":sympy@1.13.3",
     ]
 
@@ -6270,7 +6270,7 @@ def targets():
     )
 
     _opentelemetry_proto_1_35_0_deps = [
-        ":protobuf@6.31.1",
+        ":protobuf@6.33.5",
     ]
 
     native.alias(
@@ -6779,7 +6779,7 @@ def targets():
     )
 
     _proto_plus_1_26_1_deps = [
-        ":protobuf@6.31.1",
+        ":protobuf@6.33.5",
     ]
 
     native.alias(
@@ -6795,32 +6795,32 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_protobuf@6.31.1",
+        name = "_wheel_protobuf@6.33.5",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "protobuf@6.31.1",
-        wheel = ":_wheel_protobuf@6.31.1",
+        name = "protobuf@6.33.5",
+        wheel = ":_wheel_protobuf@6.33.5",
         testonly = "protobuf" in _TESTONLY_DEPS,
     )
 
@@ -7634,7 +7634,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":msgpack@1.1.2",
             ":packaging@25.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
@@ -7645,7 +7645,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":msgpack@1.1.2",
             ":packaging@25.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
@@ -7656,7 +7656,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":msgpack@1.1.2",
             ":packaging@25.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
@@ -7667,7 +7667,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":msgpack@1.1.2",
             ":packaging@25.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
@@ -7678,7 +7678,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":msgpack@1.1.2",
             ":packaging@25.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
@@ -11009,7 +11009,7 @@ def targets():
             ":pillow@12.0.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
@@ -11062,7 +11062,7 @@ def targets():
             ":pillow@12.0.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
@@ -11117,7 +11117,7 @@ def targets():
             ":pillow@12.0.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
@@ -11172,7 +11172,7 @@ def targets():
             ":pillow@12.0.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
@@ -11227,7 +11227,7 @@ def targets():
             ":pillow@12.0.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
+            ":protobuf@6.33.5",
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
@@ -21624,32 +21624,32 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2",
+        name = "pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_macosx_10_9_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/6a/c9/b9689a2a250264a84e66c46d8862ba788ee7a641cdca39bccf64f59284b7/protobuf-6.31.1-cp39-abi3-macosx_10_9_universal2.whl",
+            "https://files.pythonhosted.org/packages/a2/6b/e48dfc1191bc5b52950246275bf4089773e91cb5ba3592621723cdddca62/protobuf-6.33.5-cp39-abi3-macosx_10_9_universal2.whl",
         ],
-        sha256 = "6f1227473dc43d44ed644425268eb7c2e488ae245d51c6866d19fe158e207402",
-        downloaded_file_path = "protobuf-6.31.1-cp39-abi3-macosx_10_9_universal2.whl",
+        sha256 = "a5cb85982d95d906df1e2210e58f8e4f1e3cdc088e52c921a041f9c9a0386de5",
+        downloaded_file_path = "protobuf-6.33.5-cp39-abi3-macosx_10_9_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/76/a1/7a5a94032c83375e4fe7e7f56e3976ea6ac90c5e85fac8576409e25c39c3/protobuf-6.31.1-cp39-abi3-manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/4e/b1/c79468184310de09d75095ed1314b839eb2f72df71097db9d1404a1b2717/protobuf-6.33.5-cp39-abi3-manylinux2014_aarch64.whl",
         ],
-        sha256 = "a40fc12b84c154884d7d4c4ebd675d5b3b5283e155f324049ae396b95ddebc39",
-        downloaded_file_path = "protobuf-6.31.1-cp39-abi3-manylinux2014_aarch64.whl",
+        sha256 = "9b71e0281f36f179d00cbcb119cb19dec4d14a81393e5ea220f64b286173e190",
+        downloaded_file_path = "protobuf-6.33.5-cp39-abi3-manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_protobuf_6.33.5_cp39_abi3_manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/fa/b1/b59d405d64d31999244643d88c45c8241c58f17cc887e73bcb90602327f8/protobuf-6.31.1-cp39-abi3-manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/9b/53/a9443aa3ca9ba8724fdfa02dd1887c1bcd8e89556b715cfbacca6b63dbec/protobuf-6.33.5-cp39-abi3-manylinux2014_x86_64.whl",
         ],
-        sha256 = "4ee898bf66f7a8b0bd21bce523814e6fbd8c6add948045ce958b73af7e8878c6",
-        downloaded_file_path = "protobuf-6.31.1-cp39-abi3-manylinux2014_x86_64.whl",
+        sha256 = "cbf16ba3350fb7b889fca858fb215967792dc125b35c7976ca4818bee3521cf0",
+        downloaded_file_path = "protobuf-6.33.5-cp39-abi3-manylinux2014_x86_64.whl",
     )
 
     maybe(

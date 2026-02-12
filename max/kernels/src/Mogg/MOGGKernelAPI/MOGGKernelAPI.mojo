@@ -69,7 +69,14 @@ from kv_cache.types import (
 )
 from layout import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import DynamicCoord, RuntimeInt, Idx, coord_to_index_list
+from layout._coord import (
+    DynamicCoord,
+    RuntimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    coord_to_index_list,
+)
 from layout._layout import Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
@@ -354,7 +361,9 @@ fn reduce_shape[
 
 
 @always_inline
-fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
+fn _unsafe_str_to_coord[
+    str_slice: StaticString
+]() -> DynamicCoord[DType.int64, len(str_slice.split("_"))]:
     """
     Convert a string of integers separated by "_" to an IntTuple.
 
@@ -364,8 +373,8 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
     Returns:
         The IntTuple.
     """
-    var int_tuple = IntTuple()
     comptime size = len(str_slice.split("_"))
+    var coord = DynamicCoord[DType.int64, size]()
 
     @parameter
     for i in range(size):
@@ -376,9 +385,9 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
         @parameter
         for pos in range(str_len):
             result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
-        int_tuple.append(result)
+        coord[i] = rebind[coord.element_types[i]](Int64(result))
 
-    return int_tuple^
+    return coord
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -1094,10 +1103,10 @@ struct ScatterND:
             single_thread_blocking_override=False,
             target=target,
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1109,9 +1118,9 @@ struct ScatterND:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1145,10 +1154,10 @@ struct ScatterNDSkipNegIndices:
             reduce_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1182,10 +1191,10 @@ struct ScatterNDAdd:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1197,9 +1206,9 @@ struct ScatterNDAdd:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1233,10 +1242,10 @@ struct ScatterNDMul:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1248,9 +1257,9 @@ struct ScatterNDMul:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1284,24 +1293,24 @@ struct ScatterNDMin:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
     @staticmethod
-    fn shape[](
+    fn shape(
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1336,10 +1345,10 @@ struct ScatterNDMax:
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
-            updates.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context=ctx,
         )
 
@@ -1351,9 +1360,9 @@ struct ScatterNDMax:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_nd_shape[single_thread_blocking_override=False](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -1373,8 +1382,8 @@ struct ScatterSetConstant:
         ctx: DeviceContextPtr,
     ) raises:
         scatter_set_constant[target, False](
-            data.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             fill_value,
             ctx,
         )
@@ -1424,9 +1433,9 @@ struct Scatter:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1471,9 +1480,9 @@ struct ScatterAdd:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1518,9 +1527,9 @@ struct ScatterMax:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1565,9 +1574,9 @@ struct ScatterMin:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -1612,9 +1621,9 @@ struct ScatterMul:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                updates.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 Int(axis),
             )
         )
@@ -3203,9 +3212,9 @@ struct GatherND:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gather_nd[batch_dims=batchDims, target=target](
-                data.to_layout_tensor(),
-                indices.to_layout_tensor(),
-                output.to_layout_tensor(),
+                data.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
                 ctx,
             )
 
@@ -3223,8 +3232,8 @@ struct GatherND:
             output_rank=output_rank,
             single_thread_blocking_override=False,
         ](
-            data.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
 
 
@@ -3300,8 +3309,8 @@ struct Gather:
             output_rank=output_rank,
             single_thread_blocking_override=True,
         ](
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             Int(axis),
         )
 
@@ -3322,9 +3331,9 @@ struct GatherSum:
             return x + y
 
         gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
-            output.to_layout_tensor(),
-            input.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             0,
         )
 
@@ -5044,8 +5053,6 @@ struct Fold:
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
         var input_tensor = input.to_tile_tensor[DType.int64]()
         var output_tensor = output.to_tile_tensor[DType.int64]()
-        comptime assert input_tensor.rank == 3
-        comptime assert output_tensor.rank == 4
 
         fold[
             stride= (stride_h, stride_w),
@@ -6575,7 +6582,10 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
-    mrope_section: Optional[IntTuple] = None,
+    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
+        CoordLike
+    ],
+    mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6590,15 +6600,16 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         interleaved=interleaved,
         has_position_ids=has_position_ids,
         target=target,
+        mrope_types=mrope_types,
         mrope_section=mrope_section,
     ](
-        q_proj.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
+        q_proj.to_tile_tensor[DType.int64](),
+        input_row_offsets.to_tile_tensor[DType.int64](),
         kv_collection,
-        freqs_cis.to_layout_tensor(),
-        position_ids.to_layout_tensor(),
+        freqs_cis.to_tile_tensor[DType.int64](),
+        position_ids.to_tile_tensor[DType.int64](),
         layer_idx,
-        output.to_layout_tensor(),
+        output.to_tile_tensor[DType.int64](),
         context,
     )
 
@@ -6633,13 +6644,13 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             kv_lookup_table,
             max_lengths,
         )
+        comptime mrope = _unsafe_str_to_coord[mrope_section]()
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved = Self.interleaved,
             has_position_ids=True,
             target=target,
-            mrope_section = Optional[IntTuple](
-                _unsafe_str_to_int_tuple[mrope_section]()
-            ),
+            mrope_types = mrope.element_types,
+            mrope_section=mrope,
         ](
             q_proj,
             input_row_offsets,
@@ -6726,24 +6737,16 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
             kv_lookup_table,
             max_lengths,
         )
-        var valid_lengths_lt = valid_lengths.to_layout_tensor()
         generic_fused_qk_rope_bshd_paged[
             interleaved = Self.interleaved,
             target=target,
         ](
-            q_proj.to_layout_tensor(),
+            q_proj.to_tile_tensor[DType.int64](),
             kv_collection,
-            freqs_cis.to_layout_tensor(),
+            freqs_cis.to_tile_tensor[DType.int64](),
             layer_idx,
-            LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-            ](
-                valid_lengths_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            output.to_layout_tensor(),
+            valid_lengths.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -6818,9 +6821,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             ]()
             var start_tensor = start_pos.to_tile_tensor[DType.int64]()
             var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
-            comptime assert row_offsets_tensor.rank == 1
-            comptime assert start_tensor.rank == 1
-            comptime assert freqs_cis_tensor.rank == 2
+            comptime assert row_offsets_tensor.flat_rank == 1
+            comptime assert start_tensor.flat_rank == 1
+            comptime assert freqs_cis_tensor.flat_rank == 2
 
             rope_ragged[
                 interleaved = Self.interleaved,
@@ -9620,9 +9623,6 @@ struct ArgSort[*, ascending: Bool]:
     ) raises:
         var indices_tensor = indices.to_tile_tensor[DType.int64]()
         var input_tensor = input.to_tile_tensor[DType.int64]()
-        comptime assert indices_tensor.rank == 1
-        comptime assert indices.dtype.is_integral()
-        comptime assert input_tensor.rank == 1
 
         @parameter
         if target == "cpu":

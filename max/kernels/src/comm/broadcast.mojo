@@ -114,20 +114,43 @@ fn broadcast_multimem_kernel[
                 consistency = Consistency.RELAXED,
             ](out_ptr + elem_idx, data)
 
-        # Handle tail elements (when num_elements is not a multiple of simd_width)
-        # Spread across threads instead of just thread 0
+        # Handle tail elements (when num_elements is not a multiple of simd_width).
+        # multimem_st requires >= 32 bits total, so use a minimum vector width
+        # (e.g. 2 for bfloat16/float16, 1 for float32).
+        comptime min_mm_width = max(1, 4 // size_of[dtype]())
         var tail_start = num_simd_vectors * simd_width
-        var tail_idx = tail_start + global_tid
-        if tail_idx < num_elements:
-            var data = input_buffer.load[width=1](
-                input_buffer.get_nd_index(tail_idx)
+        var tail_count = num_elements - tail_start
+        var num_tail_chunks = tail_count // min_mm_width
+
+        # Spread tail chunks across threads
+        if global_tid < num_tail_chunks:
+            var tail_elem_idx = tail_start + global_tid * min_mm_width
+            var data = input_buffer.load[width=min_mm_width](
+                input_buffer.get_nd_index(tail_elem_idx)
             )
             multimem_st[
-                dtype,
-                simd_width=1,
                 scope = Scope.GPU,
                 consistency = Consistency.RELAXED,
-            ](out_ptr + tail_idx, data)
+            ](out_ptr + tail_elem_idx, data)
+
+        # Handle any remaining sub-chunk elements with an overlapping
+        # write that re-stores the last min_mm_width elements of the
+        # buffer.  The overlap is harmless because the data is identical.
+        @parameter
+        if min_mm_width > 1:
+            if (
+                tail_count % min_mm_width != 0
+                and global_tid == 0
+                and num_elements >= min_mm_width
+            ):
+                var overlap_idx = num_elements - min_mm_width
+                var data = input_buffer.load[width=min_mm_width](
+                    input_buffer.get_nd_index(overlap_idx)
+                )
+                multimem_st[
+                    scope = Scope.GPU,
+                    consistency = Consistency.RELAXED,
+                ](out_ptr + overlap_idx, data)
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 

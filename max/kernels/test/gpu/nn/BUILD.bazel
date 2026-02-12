@@ -25,6 +25,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_mla_decode_paged_variable.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -91,6 +95,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3009
+    "test_fused_qk_rope.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3104
     "test_fused_qk_rope_ragged.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -118,6 +126,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_scatter_set_constant.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
 }
 
 _FILECHECK_TESTS = [
@@ -158,7 +170,9 @@ _FILECHECK_TESTS = [
                 "test_layer_norm.mojo",
                 "test_topk_gpu_fi.mojo",  # Extreme register pressure, even simplified assertions cause issues
                 "test_mha_chunked_causal_mask.mojo",  # KERN-2339: bounds check reveals kernel bug
-                "test_mla.mojo",  # KERN-2339: bounds check reveals kernel bug; fails on H100
+                "test_mha_causal_mask.mojo",  # KERN-2339: bounds check reveals kernel bug
+                "test_mla.mojo",  # KERN-2339: bounds check reveals kernel bug
+                "test_mla_decode_paged_variable.mojo",  # KERN-2339: bounds check reveals kernel bug
                 "test_flash_attention.mojo",  # KERN-2339: bounds check reveals kernel bug
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],

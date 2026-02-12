@@ -88,6 +88,7 @@ class DistributedDeepseekV2(DistributedTransformer):
                     qk_rope_head_dim=config.qk_rope_head_dim,
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
+                    buffer_size=config.max_batch_context_length,
                 ),
                 mlp=self._get_mlp(config, idx),
                 attention_norm=distributed_norm(),

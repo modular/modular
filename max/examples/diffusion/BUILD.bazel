@@ -1,12 +1,24 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
 package(default_visibility = ["//visibility:private"])
+
+modular_py_library(
+    name = "profiler",
+    srcs = [
+        "__init__.py",
+        "profiler.py",
+    ],
+    deps = [
+        "//max/python/max:tensor",  # Provides max.functional and max.tensor.Tensor
+    ],
+)
 
 modular_py_binary(
     name = "simple_offline_generation",
     srcs = ["simple_offline_generation.py"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        ":profiler",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
