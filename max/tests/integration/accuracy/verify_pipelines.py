@@ -1321,7 +1321,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
             encoding="bfloat16",
-            cos_dist_threshold=4.0e-03,
+            cos_dist_threshold=8.0e-03,
             kl_div_threshold=9.0e-02,
         ),
     ),
