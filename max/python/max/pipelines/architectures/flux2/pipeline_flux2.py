@@ -571,27 +571,32 @@ class Flux2Pipeline(DiffusionPipeline):
             .to(self.transformer.devices[0])
             .cast(dtype)
         )
+
+        num_noise_tokens = int(latents.shape[1])
+
         # 3) Denoising loop.
         for i in tqdm(range(num_timesteps), desc="Denoising"):
             timestep = timesteps_batched[i]
 
             if image_latents is not None:
-                latents = F.concat([latents, image_latents], axis=1)
-                latent_image_ids = F.concat(
+                latent_model_input = F.concat([latents, image_latents], axis=1)
+                latent_model_ids = F.concat(
                     [latent_image_ids, image_latent_ids], axis=1
                 )
+            else:
+                latent_model_input = latents
+                latent_model_ids = latent_image_ids
 
             noise_pred = self.transformer(
-                latents,
+                latent_model_input,
                 prompt_embeds,
                 timestep,
-                latent_image_ids,
+                latent_model_ids,
                 text_ids,
                 guidance,
             )[0]
             noise_pred = Tensor.from_dlpack(noise_pred)
-
-            noise_pred = noise_pred[:, : int(latents.shape[1]), :]
+            noise_pred = noise_pred[:, :num_noise_tokens, :]
 
             latents = self._scheduler_step(latents, noise_pred, sigmas, i)
 
