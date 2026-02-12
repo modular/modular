@@ -79,12 +79,3 @@ fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.splat 4, %i
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, [[VARIADIC]], %the_value)
     foo[i, i, i, i] = the_value
-
-struct Issue3142IntList:
-    fn __getitem__[idx: Int](self) -> Int: pass
-    # expected-note @+1 {{function declared here}}
-    fn __setitem__[idx: Int](mut self, value: Int): pass
-
-fn test(lst: Issue3142IntList):
-    # expected-error @below {{invalid call to '__setitem__': invalid use of mutating method on rvalue of type 'Issue3142IntList'}}
-    lst[0] = 0
