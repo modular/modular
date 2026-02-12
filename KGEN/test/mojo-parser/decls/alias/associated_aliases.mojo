@@ -950,8 +950,13 @@ fn receiveTraitWithExplicitOverride[T: TraitWithExplicitOverride]():
     comptime cc: CC = T.Type
 
 
+struct StructImplCC(CC):
+    fn __init__(out self):
+        pass
+
+
 struct StructWithExplicitOverride(A, B):
-    comptime Type: CC = CC()
+    comptime Type: CC = StructImplCC
 
 
 fn receiveStructWithExplicitOverride[T: StructWithExplicitOverride]():
