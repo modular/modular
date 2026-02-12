@@ -17,7 +17,7 @@ with `max`:
 
 ```
 ./bazelw run \
-  //max/tests/integration:generate_llm_logits -- \
+  //max/tests/integration/tools:generate_llm_logits -- \
   --device cpu \
   --framework max \
   --pipeline llama \
@@ -31,7 +31,7 @@ logit files.
 Then, run `verify` with the logit files:
 ```
 ./bazelw run \
-  //max/tests/integration:verify -- \
+  //max/tests/integration/accuracy:verify -- \
   --eval-metric cos,kl,tol \
   --relative-tolerance 0 \
   --absolute-tolerance 0 \

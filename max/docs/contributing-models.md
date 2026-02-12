@@ -124,7 +124,7 @@ verification workflow:
 
 ```bash
 # 1. Generate logits with MAX pipeline
-./bazelw run //max/tests/integration:generate_llm_logits -- \
+./bazelw run //max/tests/integration/tools:generate_llm_logits -- \
   --device gpu \
   --framework max \
   --pipeline gemma3-1b \
@@ -132,7 +132,7 @@ verification workflow:
   --output /tmp/max-logits.json
 
 # 2. Generate logits with PyTorch reference
-./bazelw run //max/tests/integration:generate_llm_logits -- \
+./bazelw run //max/tests/integration/tools:generate_llm_logits -- \
   --device gpu \
   --framework torch \
   --pipeline gemma3-1b \
@@ -140,7 +140,7 @@ verification workflow:
   --output /tmp/torch-logits.json
 
 # 3. Compare the logits
-./bazelw run //max/tests/integration:verify -- \
+./bazelw run //max/tests/integration/accuracy:verify -- \
   --eval-metric cos,kl,tol \
   --relative-tolerance 1e-2 \
   --absolute-tolerance 1e-5 \
@@ -149,7 +149,7 @@ verification workflow:
   /tmp/max-logits.json /tmp/torch-logits.json
 
 # Run verification pipeline directly (combines all steps)
-./bazelw run //max/tests/integration:verify_pipelines -- \
+./bazelw run //max/tests/integration/accuracy:verify_pipelines -- \
   --pipeline Gemma-3-1B-bfloat16 \
   --devices='gpu'
 ```
