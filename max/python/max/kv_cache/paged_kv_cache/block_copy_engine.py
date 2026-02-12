@@ -79,9 +79,11 @@ class BlockCopyEngine:
             ]
 
     def supports_multistream(self) -> bool:
+        """Returns whether multistream D2H copy is supported."""
         return self.d2h_auxiliary_streams is not None
 
     def memcpy_h2d(self, dst: int, src: int) -> None:
+        """Copies a block from host to device(s)."""
         if not self.host_tensors:
             raise ValueError(
                 "Attempted to enqueue h2d copy but there is no host tensor"
@@ -98,6 +100,7 @@ class BlockCopyEngine:
             )
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
+        """Copies a block from device(s) to host."""
         if not self.host_tensors:
             raise ValueError(
                 "Attempted to enqueue d2h copy but there is no host tensor"

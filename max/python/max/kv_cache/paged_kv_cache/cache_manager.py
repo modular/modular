@@ -125,10 +125,11 @@ class PagedKVCacheManager:
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
     ) -> float:
-        """Get the percentage of blocks used after allocating for a request.
+        """Gets the percentage of blocks used after allocating for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
+            replica_idx: Index of the replica to query.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Returns:
@@ -152,7 +153,8 @@ class PagedKVCacheManager:
 
         Args:
             data: The text generation context for the request. The request ID
-                must already be assigned to a replica via `claim`.
+                must already be assigned to a replica via ``claim``.
+            replica_idx: Index of the replica to allocate on.
             num_steps: The number of steps to reserve blocks for. Default: 1.
 
         Raises:
@@ -166,7 +168,7 @@ class PagedKVCacheManager:
         batches: Sequence[Sequence[TextGenerationContext]],
         num_steps: int = 1,
     ) -> list[RaggedKVCacheInputs]:
-        """Get the graph inputs for per-replica batches of requests.
+        """Gets the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
         already allocated to it to run for the given number of steps.
@@ -181,21 +183,24 @@ class PagedKVCacheManager:
         return ret_list
 
     def release(self, request_id: RequestID, replica_idx: int) -> None:
+        """Releases blocks for the request on the given replica."""
         self._replica_managers[replica_idx].release(request_id)
 
     def claim(self, request_id: RequestID, replica_idx: int) -> None:
-        """Reserve a sequence ID for the given request ID."""
+        """Reserves a sequence ID for the given request ID."""
         self._replica_managers[replica_idx].claim(request_id)
 
     def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
-        """Commit new tokens into the prefix cache for per-replica batches."""
+        """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica_managers, batches, strict=True):
             replica.step(ctxs)
 
     def contains(self, request_id: RequestID, replica_idx: int) -> bool:
+        """Returns whether the request is present on the given replica."""
         return self._replica_managers[replica_idx].contains(request_id)
 
     def reset_metrics(self) -> None:
+        """Resets metrics for all replica managers."""
         for manager in self._replica_managers:
             manager.reset_metrics()
 
@@ -205,12 +210,14 @@ class PagedKVCacheManager:
         kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Any,
     ) -> Sequence[RaggedKVCacheInputs]:
+        """Increments cache lengths for the given inputs and returns updated inputs."""
         return self.increment_cache_lengths_processor.execute(
             kv_cache_inputs,
             prev_model_inputs,
         )
 
     def reset_prefix_cache(self) -> None:
+        """Resets the prefix cache for all replica managers."""
         for manager in self._replica_managers:
             manager.reset_prefix_cache()
 
@@ -223,6 +230,7 @@ class PagedKVCacheManager:
         devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
+        """Infers a default optimal batch size for paged attention (``512``)."""
         # We just hard-code a default of 512 for paged attention.
         # The worst case scenario if this is too high is that we'll evict
         # requests at an elevated rate. We print warnings in that case so users
@@ -230,26 +238,33 @@ class PagedKVCacheManager:
         return 512
 
     def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
+        """Returns metrics for the given replica."""
         return self._replica_managers[replica_idx].metrics
 
     def get_req_blocks(
         self, request_id: RequestID, replica_idx: int
     ) -> list[int]:
+        """Returns block IDs for the request on the given replica."""
         return self._replica_managers[replica_idx].block_manager.get_req_blocks(
             request_id
         )
 
     def get_num_pages(self, replica_idx: int) -> int:
+        """Returns total number of pages for the replica."""
         return self._replica_managers[replica_idx].num_pages
 
     def get_num_used_pages(self, replica_idx: int) -> int:
+        """Returns number of used pages for the replica."""
         return self._replica_managers[replica_idx].num_used_pages
 
     def get_num_host_pages(self, replica_idx: int) -> int:
+        """Returns number of host pages for the replica."""
         return self._replica_managers[replica_idx].num_host_pages
 
     def get_num_used_host_pages(self, replica_idx: int) -> int:
+        """Returns number of used host pages for the replica."""
         return self._replica_managers[replica_idx].num_used_host_pages
 
     def get_device_tensors(self, replica_idx: int) -> list[Buffer]:
+        """Returns device tensors for the replica."""
         return self._replica_managers[replica_idx].device_tensors

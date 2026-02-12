@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ..graph import Graph
 from ..type import TensorType
 from ..value import BufferValue, BufferValueLike, TensorValue, TensorValueLike
 from .custom import inplace_custom
@@ -78,6 +79,17 @@ def distributed_broadcast(
             "distributed_broadcast requires unique devices across signal "
             f"buffers. Got: {devices=}"
         )
+
+    # TODO(GEX-3209): This is a temporary workaround to avoid a hang
+    # 8xB200 for `nvidia/llama-3.1-405b-instruct-nvfp4`.
+    # Without this, we see a hang in the model execution when allreduce
+    # is followed by broadcast.
+    graph = Graph.current
+    merged_chain = graph._merge_chains(
+        [graph.device_chains[d] for d in devices]
+    )
+    for d in devices:
+        graph.device_chains[d] = merged_chain
 
     # Per-device execution model:
     # Create one broadcast op per target device.

@@ -18,15 +18,14 @@ images and other content types using the OpenResponses API content format.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
 
 from .request import RequestID
-from .request.open_responses import OutputImageContent
+from .request.open_responses import OutputContent
 from .status import GenerationStatus
 
 
-@dataclass(kw_only=True)
-class GenerationOutput:
+class GenerationOutput(BaseModel):
     """Output container for image generation pipeline operations.
 
     This class holds a list of generated images in OpenResponses API format,
@@ -74,14 +73,16 @@ class GenerationOutput:
             print(f"Generated {len(result.output)} images")
     """
 
+    model_config = ConfigDict(frozen=True)
+
     request_id: RequestID
     """The unique identifier for the generation request."""
 
     final_status: GenerationStatus
     """The final status of the generation process."""
 
-    output: list[OutputImageContent]
-    """List of OutputImageContent objects representing generated images."""
+    output: list[OutputContent]
+    """List of OutputContent objects (text, images, etc.) representing generated content."""
 
     @property
     def is_done(self) -> bool:

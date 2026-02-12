@@ -139,6 +139,7 @@ def estimate_kv_cache_size(
     max_seq_len: int,
     available_cache_memory: int,
 ) -> int:
+    """Estimates the KV cache size in bytes for the given params and constraints."""
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
 
     return estimated_memory_size(
@@ -156,6 +157,7 @@ def infer_optimal_batch_size(
     devices: Sequence[Device],
     **kwargs: Any,
 ) -> int:
+    """Infers the optimal batch size for the cache strategy and constraints."""
     return CACHE_MANAGER_REGISTRY[
         params.cache_strategy
     ].infer_optimal_batch_size(
