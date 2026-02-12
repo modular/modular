@@ -86,7 +86,7 @@ fn run_selective_scan_fwd[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan forward kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -336,7 +336,7 @@ fn run_selective_scan_update[
     delta_softplus: Bool = False,
 ](batch: Int, dim: Int, n_groups: Int, rtol: Float64 = 0.01,) raises:
     """Test selective scan update kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups

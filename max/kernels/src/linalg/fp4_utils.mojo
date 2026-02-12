@@ -196,10 +196,9 @@ fn set_scale_factor[
     col_idx: Int,
     scale_value: SIMD[scales_dtype, width],
 ):
-    constrained[
-        scales_tensor.rank == 5,
-        "scales_tensor must be 5D for non-batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
     comptime assert (
         width <= SF_ATOM_K
     ), "width must be less than or equal to SF_ATOM_K"
@@ -227,10 +226,9 @@ fn get_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
-    constrained[
-        scales_tensor.rank == 5,
-        "scales_tensor must be 5D for non-batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[
@@ -255,10 +253,9 @@ fn set_batched_scale_factor[
     col_idx: Int,
     scale_value: Scalar[scales_dtype],
 ):
-    constrained[
-        scales_tensor.rank == 6,
-        "scales_tensor must be 6D for batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
 
     scales_tensor[
         batch_idx,
@@ -281,10 +278,9 @@ fn get_batched_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
-    constrained[
-        scales_tensor.rank == 6,
-        "scales_tensor must be 6D for batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[

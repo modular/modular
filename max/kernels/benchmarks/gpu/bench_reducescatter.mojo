@@ -82,8 +82,8 @@ fn bench_reducescatter[
     max_num_blocks: Optional[Int],
     ragged: Bool,
 ) raises:
-    constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, cache_busting](

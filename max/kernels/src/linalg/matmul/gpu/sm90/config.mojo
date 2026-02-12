@@ -88,9 +88,9 @@ struct MatmulConfig[
             consumer_groups: The number of consumer groups.
             swapAB: Whether to swap A and B.
         """
-        constrained[
-            Self.a_type == Self.b_type, "a_type and b_type must be the same"
-        ]()
+        comptime assert (
+            Self.a_type == Self.b_type
+        ), "a_type and b_type must be the same"
 
         var M = n if swapAB else m
         var N = m if swapAB else n

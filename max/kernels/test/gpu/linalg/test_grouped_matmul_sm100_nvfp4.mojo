@@ -500,13 +500,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
 
     comptime new_c_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[0])
     comptime new_a_layout = Layout.row_major(

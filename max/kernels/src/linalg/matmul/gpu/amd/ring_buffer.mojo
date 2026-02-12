@@ -402,13 +402,10 @@ struct RingBuffer[
 
     @always_inline
     fn __init__(out self):
-        constrained[
-            Self.total_tiles <= 32,
-            (
-                "total_tiles must be less than or equal to 32 for AMD atomic"
-                " limitations"
-            ),
-        ]()
+        comptime assert Self.total_tiles <= 32, (
+            "total_tiles must be less than or equal to 32 for AMD atomic"
+            " limitations"
+        )
 
         var smem_buffer = Self.SmemBufferType()
         self.smem_buffers = StaticTuple[

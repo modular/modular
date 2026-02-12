@@ -57,8 +57,8 @@ fn reducescatter_test[
     Each GPU receives 1/ngpus of the reduced data in its output partition.
     When use_custom_epilogue is True, tests with a negating epilogue.
     """
-    constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     print(
         String(

@@ -151,10 +151,9 @@ fn test_load_scalar_vectorized_element_size_gt_1() raises:
     var vec_tensor = tensor.vectorize[1, 4]()
 
     # Verify element_size > 1
-    constrained[
-        vec_tensor.element_size == 4,
-        "Expected element_size == 4 for vectorized tensor",
-    ]()
+    comptime assert (
+        vec_tensor.element_size == 4
+    ), "Expected element_size == 4 for vectorized tensor"
 
     # __getitem__ returns SIMD[float32, 4], load_scalar returns just the 0th lane
     # For position (0, 0): the element contains [0, 1, 2, 3], load_scalar returns 0

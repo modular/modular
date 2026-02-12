@@ -421,9 +421,9 @@ fn run_allreduce_sweep[
 
         # Some checks for raggedness
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
-        constrained[
-            length % simd_width == 0, "Length must be multiple of simd_width"
-        ]()
+        comptime assert (
+            length % simd_width == 0
+        ), "Length must be multiple of simd_width"
         comptime quickreduce_tile_shape = simd_width * 8 * 256
         if use_quickreduce and (length % quickreduce_tile_shape != 0):
             # Quickreduce requires full tiles (a quickreduce specific concept)

@@ -1259,12 +1259,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @doc_private
@@ -1282,12 +1281,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @doc_private
@@ -1305,12 +1303,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @doc_private
@@ -1328,12 +1325,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @always_inline
