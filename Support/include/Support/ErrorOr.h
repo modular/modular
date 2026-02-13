@@ -187,7 +187,15 @@ public:
 
   /// Given an ErrorOr with a value, take ownership of the underlying value away
   /// from the ErrorOr.
-  value_type takeValue() { return std::move(get()); }
+  value_type takeValue() {
+    if constexpr (std::is_reference_v<T>) {
+      // For reference types, don't apply std::move - it would create an rvalue
+      // reference that can't be used to construct a reference_wrapper.
+      return get();
+    } else {
+      return std::move(get());
+    }
+  }
 
   const char *getError() const {
     assert(storageMode <= StorageMode::kValue && "invalid storage mode");
