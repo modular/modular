@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-
+# expected-note @+1 {{function declared here}}
 fn bind_fat_to_thin_target[g: fn (y: Int) -> Int](x: Int):
     pass
 
@@ -19,7 +19,7 @@ fn bind_fat_to_thin_main():
     fn g(y: Int) -> Int:
         return x
 
-    # expected-error @below {{cannot pass 'fn(y: Int) capturing -> Int' value, expected 'fn(y: Int) -> Int' in call parameter}}
+    # expected-error @below {{'bind_fat_to_thin_target' parameter 'g' has 'fn(y: Int) -> Int' type, but value has type 'fn(y: Int) capturing -> Int'}}
     comptime Bound = bind_fat_to_thin_target[g]
     Bound(3)
 

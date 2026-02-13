@@ -11,6 +11,9 @@ struct Empty(TrivialRegisterPassable):
     fn __init__(out self):
         pass
 
+fn takeAnyType[T: AnyType](a: T):
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Input parameters
 ##===----------------------------------------------------------------------===##
@@ -630,6 +633,13 @@ fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
 
     # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
     comptime bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
+
+# Make sure overload resolution can overload things based on parameter bindings.
+fn paramOverload[*, x: Int](zzz: Int): pass
+fn paramOverload[y: Int](): pass
+fn testParamOverload():
+    takeAnyType(paramOverload[x=4])
+    takeAnyType(paramOverload[y=4])
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

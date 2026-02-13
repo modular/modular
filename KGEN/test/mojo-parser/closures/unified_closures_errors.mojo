@@ -61,6 +61,7 @@ struct Bar(ImplicitlyCopyable, RegisterPassable):
     fn __copyinit__(out self, other: Self):
         pass
 
+# expected-note @+1 {{function declared here}}
 fn takeDevicePassable[T: DevicePassable](impl: T):
     pass
 
@@ -72,7 +73,7 @@ def foo(bar: Bar):
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
-    # expected-error @below {{cannot bind type 'fn(number: Int) -> Int_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>`, {}]' to trait 'DevicePassable'}}
+    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'AnyStruct[fn(number: Int) -> Int_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>`, {}]]'}}
     takeDevicePassable[type_of(closure)](closure)
 
 
@@ -109,12 +110,13 @@ def nestedCaptureAll(mut aString: String):
 fn topLevel(x: String) -> String:
     return x
 
-
+# expected-note @+1 {{function declared here}}
 fn takesClosure[T: fn(Int) unified -> Int](cb: T, x: Int) -> Int:
     return cb(x)
 
 
 fn useTopLevelClosure():
+    # expected-error @below {{value passed to 'cb' cannot be converted from 'fn(x: String) -> String' to 'T'}}
     # expected-error @below {{cannot convert 'fn(x: String) -> String' to trait 'fn(Int) -> Int'}}
     takesClosure[topLevel](topLevel, 1)
 
@@ -150,7 +152,7 @@ fn traitConstraintMismatch[Q: Animal]():
     fn closureWrongConvention(mut x: Dog) unified {var}:
         x.speak()
 
-    # expected-error-re @below {{cannot bind type '{{.*}}' to trait 'fn(x: W) -> None'}}
+    # expected-error-re @below {{'takeClosureMammalParam' parameter 'C' has 'fn(x: W) -> None' type, but value has type 'AnyStruct[fn(mut x: Dog) -> None_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::traitConstraintMismatch[unified_closures_errors::Animal]()", "closureWrongConvention" nonescaping>`, {}]]'}}
     takeClosureMammalParam[Dog, type_of(closureWrongConvention)](closureWrongConvention)
 
 # ===----------------------------------------------------------------------=== #

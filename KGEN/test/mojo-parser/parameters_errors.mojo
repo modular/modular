@@ -123,12 +123,13 @@ fn left_to_right_implicit_conversion(
     infer_then_convert(rhs, lhs)
 
 
+# expected-note @below {{function declared here}}
 fn badReboundType[type: DType, val: __mlir_type[`!pop.scalar<`, type, `>`]]():
     pass
 
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-    # expected-error @+1 {{cannot pass '__mlir_type.`!pop.scalar<f32>`' value, expected '__mlir_type.`!pop.scalar<f64>`' in call parameter}}
+    # expected-error @+1 {{invalid call to 'badReboundType': 'badReboundType' parameter 'val' has '__mlir_type.`!pop.scalar<f64>`' type, but value has type '__mlir_type.`!pop.scalar<f32>`'}}
     badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 
@@ -168,13 +169,13 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 fn variadic_kw_result_binding[**a: Int]():
     pass
 
-
+# expected-note @below {{function declared here}}
 fn variadic_int_params[*a: Int]():
     pass
 
 
 fn callVariadic():
-    # expected-error @below {{cannot implicitly convert 'FloatLiteral[1]' value to 'Int'}}
+    # expected-error @below {{invalid call to 'variadic_int_params': 'variadic_int_params' parameter 'a' has 'Int' type, but value has type 'FloatLiteral[1]'}}
     variadic_int_params[1.0]()
 
 
