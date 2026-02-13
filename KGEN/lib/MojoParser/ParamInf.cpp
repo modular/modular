@@ -852,17 +852,6 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
       assert(argVal && "This should always succeed; it was checked");
     }
 
-    // FIXME: This is a hack. We don't know whether a DLValue (get a
-    // computed getitem) will correctly result in a PValue, so we force it.
-    if (argVal.getIfDLValue()) {
-      argVal = emitter.emitPValue(binding, EC_ParameterList, expectedType);
-      // If this fails, then we will have emitted an error unconditionally, even
-      // though parameter inferrence works on many members of an overload set.
-      // This is a bug!
-      if (!argVal)
-        return failure();
-    }
-
     // Finally, check that this CValue is a PValue.
     bindingVal = argVal.getIfPValue();
     if (!bindingVal) {

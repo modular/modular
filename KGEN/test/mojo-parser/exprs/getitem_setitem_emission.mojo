@@ -194,6 +194,16 @@ fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
   # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
   _ = b[2, 4]
 
+struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
+    fn test1[a: Int](self):
+        var b: TestCompTime[Self.wa]
+
+    fn test2(self):
+        self.test1[Self.wa[1]]()
+        self.test1[Self.value]()
+
+
+
 # ===----------------------------------------------------------------------=== #
 # Keyword arguments in setters
 
