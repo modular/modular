@@ -68,8 +68,9 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
 }
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
-                        CallSyntax syntax) {
+static PValue getCallee(
+    ASTDecl *fnDecl, const ParamBindings &paramBindings, CallSyntax syntax,
+    std::optional<ParameterExprArrayAttr> verifiedBindings = std::nullopt) {
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
   // fixit location as the method identifier, not the full expression.
@@ -79,7 +80,13 @@ static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
   checkDeclUsageWarnings(*fnDecl, paramBindings.getExprLoc(),
                          paramBindings.declScope, paramBindings.shared,
                          paramBindings.getExpr()->getRange(), syntax, fixitLoc);
-  return paramBindings.getBoundConstAttrForFn(*fnDecl);
+
+  // Take the fast path to avoid verify binding again if a verified binding has
+  // been provided.
+  if (verifiedBindings.has_value())
+    return getBoundConstAttrForFn(*fnDecl, paramBindings.shared,
+                                  *verifiedBindings);
+  return getBoundConstAttrForFn(*fnDecl, paramBindings);
 }
 
 /// Return if the given fitness is valid or function constraint inconclusive,
@@ -388,11 +395,10 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     assert(!bestFitness.getArgsNeedingOrigins().any() &&
            "No arguments to require re-emission");
 
-    // On success, wrap things up into one callee.
-    ParamBindings newBindings(paramBindings.declScope, getExpr());
-    for (TypedAttr bind : bestFitness.getParamBindings())
-      newBindings.addPrechecked(getExpr(), bind);
-    return getCallee(selectedDecl, newBindings, syntax);
+    // On success, wrap things up into one callee, we know that the best fitness
+    // has a verified bindings coming out of parameter inference.
+    return getCallee(selectedDecl, paramBindings, syntax,
+                     bestFitness.getParamBindings());
   }
   if (isErroneous())
     return {};
@@ -693,14 +699,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
-    auto newBindings = [&](OverloadFitness &fitness) -> PValue {
-      ParamBindings newBindings(paramBindings.declScope, getExpr());
-      for (TypedAttr bind : fitness.getParamBindings())
-        newBindings.addPrechecked(getExpr(), bind);
-      return getCallee(selectedDecl, newBindings, syntax);
-    };
-
-    PValue boundFunction = newBindings(bestFitness);
+    PValue boundFunction = getCallee(selectedDecl, paramBindings, syntax,
+                                     bestFitness.getParamBindings());
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedFunc.getImplicitConversion() ==
@@ -861,14 +861,10 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   if (validCandidates.size() == 1) {
     ASTDecl *selectedMethod = validCandidates.front();
 
-    ParamBindings newBindings(paramBindings.declScope, getExpr());
-    for (TypedAttr bind : candidateBindings.front())
-      newBindings.addPrechecked(getExpr(), bind);
-    newBindings.doNotApplyDefaults = paramBindings.doNotApplyDefaults;
-
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(declScope, EC_OverloadResolution);
-    PValue callee = getCallee(selectedMethod, newBindings, syntax);
+    PValue callee = getCallee(selectedMethod, paramBindings, syntax,
+                              candidateBindings.front());
     PValue result = emitter.emitPValue({callee, getExpr()},
                                        EC_OverloadResolution, functionType);
     assert(result && "Conversion should always succeed");
@@ -1146,7 +1142,7 @@ PValue OverloadSet::getIfPValue() const {
   if (baseValue || fnDecls.size() != 1)
     return {};
 
-  return paramBindings.getBoundConstAttrForFn(*fnDecls.front());
+  return getBoundConstAttrForFn(*fnDecls.front(), paramBindings);
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity

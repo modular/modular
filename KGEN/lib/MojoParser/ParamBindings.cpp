@@ -51,6 +51,9 @@ using namespace M::KGEN::LIT;
 /// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
 ///
 /// TODO(MOCO-1259): Support static methods with associated aliases
+///
+/// FIXME: why do we need a substitution here? shouldn't we just generate the
+/// right signature during parsing??
 FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue) {
@@ -364,75 +367,64 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   return {bindings, Fitness(), std::move(diag)};
 }
 
-TypedAttr ParamBindings::getBoundConstAttrForFn(ASTDecl &fnDecl) const {
+/// Utility function to perform substitutions of the bindings into the symbol
+/// for the given function declaration. It returns the resultant
+/// SymbolConstantAttr or produces an error message and returns null.
+TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
+                                      ParameterExprArrayAttr verified) {
   auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
-  FnTypeGeneratorType signature = funcOp.getFullSignature();
-
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
-  if (!parentTrait) {
-    // If there are no parameters specified and if we allow unbound symbols,
-    // just return the unbound symbol.
-    if (empty())
-      return funcOp.getBoundReference(shared.getEvaluationContext());
+  if (!parentTrait)
+    return funcOp.getBoundReference(shared.getEvaluationContext(), verified);
 
-    // Check that the signature can be rebound with our set of bindings.
-    ParameterExprArrayAttr newBindings = verifyBindings(signature, &fnDecl);
-    if (!newBindings)
-      return {};
+  // Must at least have one `_Self` parameter.
+  assert(!verified.getValue().empty());
 
-    // Now that we checked the types match, form the binding.
-    return funcOp.getBoundReference(shared.getEvaluationContext(), newBindings);
-  }
+  TypedAttr selfExpr = verified.getValue()[0];
+  ASTDecl *traitDecl = ASTType(selfExpr.getType()).getDecl(shared);
+  FnTypeGeneratorType signature = funcOp.getFullSignature();
 
-  // The first parameter to the fully bound signature will be the type (confined
-  // to the current trait type) that ultimately expands to the concrete type
-  // that conforms to the trait.
-  assert(!parameters.values.empty());
-  PValue selfExpr = parameters.values.front().ir.getIfPValue();
-  assert(selfExpr && "type should always be a PValue");
-
-  // When referencing a trait function, bind the reference using a parameter
-  // expression instead of the direct reference. Also, drop the implicit trait
-  // parameter.
-  ParamBindings bindings = *this;
   SmallVector<TypedAttr> paramValues;
   paramValues.push_back(selfExpr);
+  for (Type t : signature.getInputParamTypes().drop_front())
+    paramValues.push_back(UnboundAttr::get(t));
 
-  auto it = bindings.parameters.values.begin();
-  bindings.parameters.values.erase(it, it + 1);
-  for (Type type : signature.getInputParamTypes().drop_front())
-    paramValues.push_back(UnboundAttr::get(type));
-
-  ASTDecl *traitDecl = selfExpr.getType().getDecl(shared);
   signature = substituteTraitAliasesIntoSignature(
-      *shared.declResolver, *traitDecl, funcOp, signature, selfExpr);
+      *shared.declResolver, *traitDecl, funcOp, funcOp.getFullSignature(),
+      selfExpr);
 
-  signature = signature.getSpecializedGenerator(
-      paramValues, &shared.getEvaluationContext(), [&]() {
-        return mlir::emitError(shared.translateLocation(getExprLoc()))
-               << "internal error: ";
-      });
-  assert(signature && "Error binding trait Self type");
+  // Get the signature with only `_Self` bound.
+  signature = signature.getSpecializedGenerator(paramValues,
+                                                &shared.getEvaluationContext());
 
   auto traitName =
       StringAttr::get(funcOp.getContext(),
                       getFlattenedSymbolName(funcOp.getInheritedFrom().value_or(
                           traitDecl->getSymbolRef())));
+
   TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
       selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 
-  if (bindings.empty())
-    return fnRef;
+  return BindParamsAttr::get(fnRef, verified.getValue().drop_front(),
+                             &shared.getEvaluationContext());
+}
 
-  // Attempt to partially bind the parameters to the signature of the function.
-  ParameterExprArrayAttr newBindings =
-      bindings.verifyBindings(signature, &fnDecl);
-  if (!newBindings)
+TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
+                                      const ParamBindings &unverified) {
+  auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
+  if (unverified.empty())
+    return funcOp.getBoundReference(unverified.shared.getEvaluationContext());
+
+  FnTypeGeneratorType signature = funcOp.getFullSignature();
+  // Check that the signature can be rebound with our set of bindings.
+  ParameterExprArrayAttr verifiedBindings =
+      unverified.verifyBindings(signature, &fnDecl);
+
+  if (!verifiedBindings)
     return {};
 
-  return BindParamsAttr::get(fnRef, newBindings,
-                             &shared.getEvaluationContext());
+  return getBoundConstAttrForFn(fnDecl, unverified.shared, verifiedBindings);
 }
 
 void ParamBindings::dump() const { llvm::errs() << parameters << "\n"; }
