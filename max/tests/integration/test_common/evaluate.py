@@ -344,31 +344,24 @@ def run_pixel_generation(
         # Get the output for our request
         output = outputs[context.request_id]
 
-        # Check if generation completed successfully
-        if not output.is_done:
-            print(f"WARNING: Generation status: {output.final_status}")
-            continue
-
-        # GenerationOutput has output: list[OutputImageContent] (see simple_offline_generation example).
-        # Extract images from OutputImageContent (base64 -> numpy) for evaluation.
-        if not output.output:
-            print("ERROR: No images generated")
-            continue
-
         pixel_data_list: list[np.ndarray] = []
         for image_content in output.output:
+            if image_content.type != "output_image":
+                raise ValueError(
+                    f"Unexpected output content type '{image_content.type}'"
+                )
+
             if image_content.image_data:
                 pixel_data_list.append(
                     _decode_base64_image_to_numpy(image_content.image_data)
                 )
             elif image_content.image_url:
-                print("WARNING: image_url not supported; skipping")
+                raise ValueError("image_url not supported")
             else:
-                print("ERROR: No image data or URL in output")
+                raise ValueError("No image data or URL in output")
 
         if not pixel_data_list:
-            print("ERROR: No pixel data in output")
-            continue
+            raise ValueError("No pixel data in output")
 
         pixel_data = np.stack(pixel_data_list, axis=0)
 
