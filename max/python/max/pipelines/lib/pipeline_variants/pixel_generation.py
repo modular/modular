@@ -115,19 +115,29 @@ class PixelGenerationPipeline(
             )
             raise
 
-        image_list = model_outputs.images
+        images = model_outputs.images
         num_images_per_prompt = model_inputs.num_images_per_prompt
-
-        # Post-process images from NCHW to NHWC format
-        # The VAE decoder returns images in (batch, channels, height, width) format
-        # but OutputImageContent.from_numpy expects (height, width, channels) format
-        if isinstance(image_list, np.ndarray):
-            # Denormalize from [-1, 1] to [0, 1] range
-            image_list = (image_list * 0.5 + 0.5).clip(min=0.0, max=1.0)
-            # Transpose from NCHW to NHWC
-            image_list = image_list.transpose(0, 2, 3, 1)
-
         expected_images = len(flat_batch) * num_images_per_prompt
+
+        # Handle both numpy array (NHWC) and list of images
+        if isinstance(images, np.ndarray):
+            # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
+            # Convert NCHW to NHWC if needed
+            if images.ndim == 4 and images.shape[1] in (1, 3, 4):
+                # Likely NCHW format, convert to NHWC
+                images = np.transpose(images, (0, 2, 3, 1))
+            # Denormalize from [-1, 1] to [0, 1] range
+            images = (images * 0.5 + 0.5).clip(min=0.0, max=1.0)
+            image_list = [images[i] for i in range(images.shape[0])]
+        else:
+            # Denormalize each image from [-1, 1] to [0, 1] range
+            image_list = [
+                (np.asarray(img, dtype=np.float32) * 0.5 + 0.5).clip(
+                    min=0.0, max=1.0
+                )
+                for img in images
+            ]
+
         if len(image_list) != expected_images:
             raise ValueError(
                 "Unexpected number of images returned from pipeline: "
@@ -138,8 +148,9 @@ class PixelGenerationPipeline(
         for index, (request_id, _context) in enumerate(flat_batch):
             offset = index * num_images_per_prompt
             # Select images for this request (already in NHWC format)
-            pixel_data = image_list[offset : offset + num_images_per_prompt]
-            pixel_data = pixel_data.astype(np.float32, copy=False)
+            pixel_data = np.stack(
+                image_list[offset : offset + num_images_per_prompt], axis=0
+            ).astype(np.float32, copy=False)
 
             responses[request_id] = GenerationOutput(
                 request_id=request_id,

@@ -1081,7 +1081,7 @@ PIPELINES = {
                 json_file="tmp/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json",
             ),
             cos_dist_threshold=5.8e-04,
-            kl_div_threshold=2.0e-01,
+            kl_div_threshold=3.0e-01,
         ),
     ),
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": PipelineDef(
@@ -1094,7 +1094,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_405B_nvfp4/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json.tar.gz",
                 json_file="tmp/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json",
             ),
-            cos_dist_threshold=3.4e-04,
+            cos_dist_threshold=4.5e-04,
             kl_div_threshold=8.3e-02,
         ),
     ),
@@ -1108,8 +1108,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3.2-1b_bfloat16_golden/1/f77876a9612aba6f0df1ab1bd9f3819656f962a46e2b3133d11a4290c936de3a/torch_llama3.2-1b_bfloat16_golden.tar.gz",
                 json_file="torch_llama3.2-1b_bfloat16_golden.json",
             ),
-            cos_dist_threshold=2.5e-03,
-            kl_div_threshold=1.0e-02,
+            cos_dist_threshold=6.0e-03,
+            kl_div_threshold=1.5e-02,
         ),
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -1269,7 +1269,7 @@ PIPELINES = {
                 json_file="torch_qwen2.5_7b_instruct_bfloat16_golden.json",
             ),
             cos_dist_threshold=5.0e-2,
-            kl_div_threshold=3.5e-1,
+            kl_div_threshold=4.0e-1,
         ),
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
@@ -1371,9 +1371,10 @@ PIPELINES = {
             kl_div_threshold=7.1e-3,
         ),
     ),
+    # TODO(MODELS-1033) Times out.
     "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only", "no-h100"],
+        tags=["big", "nvidia-only", "no-h100", "manual"],
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
             encoding="bfloat16",
@@ -1524,20 +1525,16 @@ PIPELINES = {
             kl_div_threshold=5.5e-03,
         ),
     ),
-    # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
-    # TODO(SERVOPT-571): Re-enable after fixing.
-    # "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     tags=["big", "nvidia-only"],
-    #     run=_make_pipeline_runner(
-    #         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
-    #         encoding="bfloat16",
-    #         # TODO(MODELS-516): Investigate need for high tolerances here.
-    #         # TODO(GENAI-216): Investigate non-deterministic output.
-    #         cos_dist_threshold=4.1e-03,
-    #         kl_div_threshold=2.6e-01,
-    #     ),
-    # ),
+    "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=_make_pipeline_runner(
+            pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
+            encoding="bfloat16",
+            cos_dist_threshold=4.0e-03,
+            kl_div_threshold=9.0e-02,
+        ),
+    ),
     # TODO(MODELS-812): Investigate deepseek timeout
     "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],

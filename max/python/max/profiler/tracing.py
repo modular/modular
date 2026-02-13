@@ -84,7 +84,6 @@ def traced(
     Returns:
         Callable: The decorated function wrapped in a trace object.
     """
-
     if func is None:
         return lambda f: traced(f, message=message, color=color)
 

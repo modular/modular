@@ -57,7 +57,7 @@ MODELS: dict[str, set[str]] = {
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
     "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
-    "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "max-ci", "vllm@B200"},  # E2EOPT-571
+    "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "vllm@B200"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": XL,

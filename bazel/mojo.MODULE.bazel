@@ -1,6 +1,6 @@
 """Define the Mojo toolchain"""
 
-PACKAGE_VERSION = "26.2.0.dev2026021105"
+PACKAGE_VERSION = "26.2.0.dev2026021205"
 
 BASE_URL = "https://whl.modular.com/nightly"
 

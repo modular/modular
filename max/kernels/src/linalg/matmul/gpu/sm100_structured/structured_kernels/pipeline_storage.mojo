@@ -122,7 +122,7 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from linalg.structuring import SMemArray, SMemPtr
 
 # LayoutTensor-based SMemTileArray for C output tiles (used by epilogue)
-from linalg.structuring import SMemTileArray as LTSMemTileArray
+
 
 # TileTensor-based tile arrays for input tiles (A, B, scales)
 from .tile_types import (
@@ -229,7 +229,7 @@ struct BlockScaledTileStorage[
 
     Single source of truth for block-scaled tile arrays and storage.
 
-    All tiles use TileTensor natively. A LayoutTensor accessor (`c_tiles_lt`)
+    All tiles use TileTensor natively. LayoutTensor conversion
     is kept for SMemEpilogueWriter compatibility.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
@@ -267,10 +267,6 @@ struct BlockScaledTileStorage[
     # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
-    ]
-    # LayoutTensor accessor (for SMemEpilogueWriter compatibility)
-    comptime CTileArrayLT = LTSMemTileArray[
-        Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
     # SF tiles use internal_sf_k_major layout (matches tile_sf_layout_k_major).
     # MMA extracts layout directly from TileTensor type parameters.
@@ -312,11 +308,6 @@ struct BlockScaledTileStorage[
         return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles_lt(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
-        """Get C tile array as LayoutTensor (for SMemEpilogueWriter)."""
-        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
-
-    @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
         """Get SFA tile array accessor."""
         return Self.SFATileArray(self.sfa_tiles_storage.unsafe_ptr())
@@ -353,7 +344,7 @@ struct BlockwiseFP8TileStorage[
     Single source of truth for blockwise FP8 tile arrays and storage.
     B-scales are read directly from global memory during epilogue.
 
-    All tiles use TileTensor natively. A LayoutTensor accessor (`c_tiles_lt`)
+    All tiles use TileTensor natively. LayoutTensor conversion
     is kept for SMemEpilogueWriter compatibility.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
@@ -389,10 +380,6 @@ struct BlockwiseFP8TileStorage[
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor accessor (for SMemEpilogueWriter compatibility)
-    comptime CTileArrayLT = LTSMemTileArray[
-        Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
-    ]
     # A-scales are 1D vectors (1 x BM) - use row_major, NOT swizzled
     # Swizzled layout would corrupt indexing for 1D vectors
     comptime AScalesTileArray = SMemTileArray2DRowMajor[
@@ -424,11 +411,6 @@ struct BlockwiseFP8TileStorage[
         return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles_lt(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
-        """Get C tile array as LayoutTensor (for SMemEpilogueWriter)."""
-        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
-
-    @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
         """Get A-scales tile array accessor."""
         return Self.AScalesTileArray(self.a_scales_tiles_storage.unsafe_ptr())
@@ -445,7 +427,7 @@ struct OutputTileStorage[
     Single source of truth for output tile array and storage.
     Separate from input tiles since output has different stage count.
 
-    All tiles use TileTensor natively. A LayoutTensor accessor (`c_tiles_lt`)
+    All tiles use TileTensor natively. LayoutTensor conversion
     is kept for SMemEpilogueWriter compatibility.
 
     Parameters:
@@ -462,22 +444,12 @@ struct OutputTileStorage[
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor accessor (for SMemEpilogueWriter compatibility)
-    comptime CTileArrayLT = LTSMemTileArray[
-        Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
-    ]
-
     var c_tiles_storage: Self.CTileArray.Storage
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor."""
         return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
-
-    @always_inline
-    fn c_tiles_lt(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
-        """Get C tile array as LayoutTensor (for SMemEpilogueWriter)."""
-        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
 
 
 # =============================================================================

@@ -19,6 +19,9 @@ import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import RequestID
+from max.interfaces.generation import GenerationOutput
+from max.interfaces.request.open_responses import OutputImageContent
+from max.interfaces.status import GenerationStatus
 from max.interfaces.utils.serialization import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
@@ -220,3 +223,85 @@ def test_msgpack_numpy_encoder_pickle_preserves_parameters() -> None:
             unpickled_encoder._shared_memory_threshold
             == shared_memory_threshold
         )
+
+
+def test_generation_output_serialization() -> None:
+    """Test that GenerationOutput can be serialized and deserialized with ZeroMQ."""
+    # Create test GenerationOutput with OutputImageContent containing base64 image data
+    img_array = np.random.rand(64, 64, 3).astype(np.float32)
+    test_output = GenerationOutput(
+        request_id=RequestID(),
+        final_status=GenerationStatus.END_OF_SEQUENCE,
+        output=[
+            OutputImageContent.from_numpy(img_array, format="png"),
+        ],
+    )
+
+    # Encode the GenerationOutput
+    encoder = msgpack_numpy_encoder()
+    encoded_data = encoder(test_output)
+    assert len(encoded_data) > 0
+
+    # Decode the GenerationOutput
+    decoder = msgpack_numpy_decoder(GenerationOutput, copy=True)
+    decoded_output = decoder(encoded_data)
+
+    # Verify the decoded output matches the original
+    assert isinstance(decoded_output, GenerationOutput)
+    assert decoded_output.request_id == test_output.request_id
+    assert decoded_output.final_status == test_output.final_status
+    assert decoded_output.is_done == test_output.is_done
+    assert len(decoded_output.output) == len(test_output.output)
+
+    # Verify the OutputImageContent is correct
+    assert isinstance(decoded_output.output[0], OutputImageContent)
+    assert decoded_output.output[0].type == "output_image"
+
+    # Narrow type for mypy
+    decoded_image = decoded_output.output[0]
+    test_image = test_output.output[0]
+    assert isinstance(decoded_image, OutputImageContent)
+    assert isinstance(test_image, OutputImageContent)
+    assert decoded_image.image_data == test_image.image_data
+    assert decoded_image.format == "png"
+
+
+def test_generation_output_serialization_with_multiple_images() -> None:
+    """Test serialization of GenerationOutput with multiple images."""
+    # Create test GenerationOutput with multiple OutputImageContent objects
+    img_array1 = np.random.rand(32, 32, 3).astype(np.float32)
+    img_array2 = np.random.rand(64, 64, 3).astype(np.float32)
+
+    test_output = GenerationOutput(
+        request_id=RequestID(),
+        final_status=GenerationStatus.END_OF_SEQUENCE,
+        output=[
+            OutputImageContent.from_numpy(img_array1, format="png"),
+            OutputImageContent.from_numpy(img_array2, format="jpeg"),
+        ],
+    )
+
+    # Encode and decode
+    encoder = msgpack_numpy_encoder()
+    encoded_data = encoder(test_output)
+
+    decoder = msgpack_numpy_decoder(GenerationOutput, copy=True)
+    decoded_output = decoder(encoded_data)
+
+    # Verify all images are preserved
+    assert len(decoded_output.output) == 2
+
+    # Narrow types for mypy
+    decoded_image_0 = decoded_output.output[0]
+    decoded_image_1 = decoded_output.output[1]
+    test_image_0 = test_output.output[0]
+    test_image_1 = test_output.output[1]
+    assert isinstance(decoded_image_0, OutputImageContent)
+    assert isinstance(decoded_image_1, OutputImageContent)
+    assert isinstance(test_image_0, OutputImageContent)
+    assert isinstance(test_image_1, OutputImageContent)
+
+    assert decoded_image_0.format == "png"
+    assert decoded_image_1.format == "jpeg"
+    assert decoded_image_0.image_data == test_image_0.image_data
+    assert decoded_image_1.image_data == test_image_1.image_data
