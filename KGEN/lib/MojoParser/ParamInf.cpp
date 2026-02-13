@@ -424,14 +424,15 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
 /// inferring any parameters from it.  This emits a diagnostic and returns null
 /// on failure.  On success, this makes an attempt to return a CValue, but won't
 /// do so if that would require generating dynamic logic (e.g. creating an
-/// instance of a value due to an initializer list).
-FailureOr<CValue> ParamInf::inferCValue(ASTExprAnd<AnyValue> operand,
-                                        size_t argIdx, PogListAttr argPogs,
-                                        CallSyntax syntax,
-                                        ASTType expectedType) {
+/// instance of a value due to an initializer list).  In that case it returns
+/// the inferred type of the result.
+FailureOr<SmartVariant<CValue, ASTType>>
+ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
+                      PogListAttr argPogs, CallSyntax syntax,
+                      ASTType expectedType) {
   // If this is already a CValue then we're done.
   if (auto cv = operand.ir.getIfCValue())
-    return cv;
+    return SmartVariant<CValue, ASTType>(cv);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getDiag(operand.expr->getLoc());
@@ -448,7 +449,7 @@ FailureOr<CValue> ParamInf::inferCValue(ASTExprAnd<AnyValue> operand,
     // If we have a type like List[$0] replace it with List[?] so we can
     // infer the unbound parameter.
     auto unbound = expectedType.getWithUnknownParametersReplaced(getShared());
-    Type initType =
+    ASTType initType =
         inferInitializerType(getDeclScope(), &(*initValue), operand, unbound);
     // If the literal cannot bind to the inferred type, try binding it to the
     // default literal type and matching the inferred type against that.
@@ -461,13 +462,27 @@ FailureOr<CValue> ParamInf::inferCValue(ASTExprAnd<AnyValue> operand,
     // declarations.
     if (!initType) { // TODO: Could improve this error to talk about inits.
       emitWrongTypeDiag(expectedType);
-      return {};
+      return failure();
     }
+
+    // If we're in a parameter binding expression, we can just emit the value as
+    // a PValue and return it.  This is more powerful than the logic below,
+    // because it allows implicit conversions, e.g. when we default a list
+    // literal like [1, 2] to List[Int], it supports implicit conversion to
+    // Span[Int, _].  The logic below does not support this.
+    if (syntax == CallSyntax::kParamBindings) {
+      IREmitter emitter(getDeclScope(), ExprContext::EC_ParameterList);
+      auto value = emitter.emitPValue(operand, EC_ParameterList, initType);
+      if (!value)
+        return failure();
+      return SmartVariant<CValue, ASTType>(value);
+    }
+
     ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
     // If we found one, we resolve our value to the inferred type.
     if (succeeded(matcher.matchTypes(initType, expectedType)))
-      return CValue();
+      return SmartVariant<CValue, ASTType>(initType);
 
     // TODO: Could improve this to talk about initializers.
     auto &diag = emitWrongTypeDiag(expectedType);
@@ -478,13 +493,6 @@ FailureOr<CValue> ParamInf::inferCValue(ASTExprAnd<AnyValue> operand,
   auto orValue = operand.ir.getIfOverloadSet();
   assert(orValue && "Unknown UValue!");
 
-  // Try to refine the OverloadSetUValue into a PValue.
-  PValue argVal = orValue->getDirectSymbol(expectedType, getDeclScope());
-  if (!argVal) { // TODO: Could improve this to talk about overload sets.
-    emitWrongTypeDiag(expectedType);
-    return failure();
-  }
-
   // If we have a reference to an overloaded method like foo(a.method),
   // then we can't resolve it.
   // TODO(partial application => closures): Given we just resolved argVal,
@@ -493,8 +501,28 @@ FailureOr<CValue> ParamInf::inferCValue(ASTExprAnd<AnyValue> operand,
     emitWrongTypeDiag(expectedType);
     return failure(); // TODO: Improve this.
   }
-  // Otherwise, success.
-  return CValue(argVal);
+
+  // If the overload set has a single entry, just get it.
+  if (auto pv = orValue->getIfPValue())
+    return SmartVariant<CValue, ASTType>(CValue(pv));
+
+  // If the expected type is concrete, then we can filter the overload set down
+  // to a single entry and emit errors if not.
+  if (!paramFinder.hasReferences(expectedType)) {
+    auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
+      return getDiag(loc);
+    };
+
+    auto [argVal, _] = orValue->filterOverloadSetForValueType(
+        expectedType, getDeclScope(), emitError);
+    if (!argVal)
+      return failure();
+    return SmartVariant<CValue, ASTType>(CValue(argVal));
+  }
+
+  // Otherwise, we don't have a contextual error.
+  emitWrongTypeDiag(expectedType);
+  return failure(); // TODO: Improve this.
 }
 
 /// Core type matching logic for parameter inference, handling the expected
@@ -525,11 +553,11 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can
   // resolve the argument to a CValue.
-  FailureOr<CValue> argValOr =
+  FailureOr<SmartVariant<CValue, ASTType>> argValOr =
       inferCValue(operand, argIdx, argPogs, syntax, expectedType);
   if (failed(argValOr))
     return failure();
-  CValue argVal = *argValOr;
+  CValue argVal = dyn_cast<CValue>(*argValOr);
   if (!argVal) // Already checked the type is ok.
     return success();
 
@@ -801,26 +829,38 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // know the expected type.
   TypedAttr bindingVal = binding.ir.getIfPValue();
   if (!bindingVal) {
-    FailureOr<CValue> cvOr =
+    FailureOr<SmartVariant<CValue, ASTType>> cvOr =
         inferCValue(binding, paramIdx, declaredParamPogs,
                     CallSyntax::kParamBindings, expectedType);
     if (failed(cvOr))
       return failure();
 
+    CValue argVal = dyn_cast<CValue>(*cvOr);
     // If we had an initializer list this will succeed but not actually create
     // the instance because the logic is shared with the dynamic argument
     // checking logic that can't create an instance.  We don't have that problem
-    // so just do it.
-    if (!*cvOr ||
-        // FIXME: This is a hack. We don't know whether a DLValue (get a
-        // computed getitem) will correctly result in a PValue, so we force it.
-        cvOr->getIfDLValue()) {
-      *cvOr = emitter.emitPValue(binding, EC_ParameterList, expectedType);
-      assert(*cvOr && "This should always succeed; it was checked");
+    // so just do it.  We need to use the returned type as the expected type
+    // because the expected type might be something like Span, and the inferred
+    // type might be List (e.g. as the default type for a list literal).
+    if (!argVal) {
+      argVal =
+          emitter.emitPValue(binding, EC_ParameterList, cast<ASTType>(*cvOr));
+      assert(argVal && "This should always succeed; it was checked");
+    }
+
+    // FIXME: This is a hack. We don't know whether a DLValue (get a
+    // computed getitem) will correctly result in a PValue, so we force it.
+    if (argVal.getIfDLValue()) {
+      argVal = emitter.emitPValue(binding, EC_ParameterList, expectedType);
+      // If this fails, then we will have emitted an error unconditionally, even
+      // though parameter inferrence works on many members of an overload set.
+      // This is a bug!
+      if (!argVal)
+        return failure();
     }
 
     // Finally, check that this CValue is a PValue.
-    bindingVal = (*cvOr).getIfPValue();
+    bindingVal = argVal.getIfPValue();
     if (!bindingVal) {
       getDiag(binding.expr->getLoc())
           << "cannot use a dynamic value in a parameter list"

@@ -254,9 +254,7 @@ fn overloadedFunc(x: Int, y: Int): pass
 fn takeFuncArgument(f: Int): pass
 
 fn callWithOverloadedArg():
-  # expected-error @below {{invalid call to 'takeFuncArgument': value passed to 'f' cannot be converted from unknown overload to}}
   # expected-error @below {{cannot convert function to non-function type 'Int'}}
-  # expected-note @below {{try resolving the overloaded function first}}
   takeFuncArgument(overloadedFunc)
 
 # expected-error @+1 {{unexpected token in expression}}
