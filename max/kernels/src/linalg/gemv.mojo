@@ -31,8 +31,8 @@ from gpu import (
     global_idx,
     lane_id,
     thread_idx,
+    warp_id,
 )
-from gpu import warp_id as get_warp_id
 from gpu.host import (
     DeviceAttribute,
     DeviceBuffer,
@@ -147,9 +147,10 @@ fn gemv_kernel[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var global_warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var lane_id = lane_id()
 
-    if warp_id >= UInt(m):
+    if global_warp_id >= UInt(m):
         return
 
     var accum = Scalar[s_type](0)
@@ -160,26 +161,26 @@ fn gemv_kernel[
 
     # Every warp processes a single row of the resultant vector
     for i in range(ceildiv(k, WARP_SIZE)):
-        var idx = i * WARP_SIZE + Int(lane_id())
+        var idx = i * WARP_SIZE + Int(lane_id)
         if idx < k:
             accum += (
-                a.load(warp_id * UInt(k) + UInt(idx)).cast[s_type]()
+                a.load(global_warp_id * UInt(k) + UInt(idx)).cast[s_type]()
                 * b.load(idx).cast[s_type]()
             )
 
     accum = warp.sum(accum)
 
-    if lane_id() == 0:
+    if lane_id == 0:
 
         @parameter
         if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                reverse_idx[transpose_b](Int(warp_id), 0),
+                reverse_idx[transpose_b](Int(global_warp_id), 0),
                 accum.cast[c_type](),
             )
         else:
-            c[warp_id] = accum.cast[c_type]()
+            c[global_warp_id] = accum.cast[c_type]()
 
     @parameter
     if pdl_level > PDLLevel.OFF:
@@ -209,12 +210,13 @@ fn gemv_kernel_vector[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
+    var global_warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
+    var lane_id = lane_id()
     comptime step = WARP_SIZE * Int(simd_width)
 
-    var idx = lane_id() * simd_width
+    var idx = lane_id * simd_width
 
-    if warp_id >= m:
+    if global_warp_id >= m:
         return
 
     # Every warp processes a single row of the resultant vector
@@ -227,14 +229,14 @@ fn gemv_kernel_vector[
         wait_on_dependent_grids()
 
     for i in range(ceildiv(k // Int(simd_width), WARP_SIZE)):
-        var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](warp_id, i)
+        var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](global_warp_id, i)
         var b_tile = b.tile[1, WARP_SIZE * Int(simd_width)](0, i)
 
         if idx >= UInt(k):
             continue
 
-        var a_vec = a_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id())]
-        var b_vec = b_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id())]
+        var a_vec = a_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id)]
+        var b_vec = b_tile.vectorize[1, Int(simd_width)]()[0, Int(lane_id)]
         local_accum += rebind[local_accum_type](a_vec.cast[s_type]()) * rebind[
             local_accum_type
         ](b_vec.cast[s_type]())
@@ -243,22 +245,22 @@ fn gemv_kernel_vector[
 
     var accum = warp.sum(local_accum)
 
-    if lane_id() == 0:
+    if lane_id == 0:
 
         @parameter
         if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                reverse_idx[transpose_b](warp_id, 0),
+                reverse_idx[transpose_b](global_warp_id, 0),
                 accum.cast[c_type](),
             )
         else:
 
             @parameter
             if transpose_b:
-                c[0, warp_id] = accum.cast[c_type]()
+                c[0, global_warp_id] = accum.cast[c_type]()
             else:
-                c[warp_id, 0] = accum.cast[c_type]()
+                c[global_warp_id, 0] = accum.cast[c_type]()
 
     @parameter
     if pdl_level > PDLLevel.OFF:
@@ -394,7 +396,8 @@ fn gemv_split_k[
 
     # Warps are arranged along K.
     comptime k_warp_num = num_threads // UInt(WARP_SIZE)
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id()
+    var lane_id = lane_id()
     var shmem = LayoutTensor[
         s_type,
         Layout.row_major(1, Int(tile_m * tile_n * k_warp_num)),
@@ -410,7 +413,7 @@ fn gemv_split_k[
         @parameter
         for ni in range(tile_n):
             var val = warp.sum(acc[mi, ni])
-            if lane_id() == 0:
+            if lane_id == 0:
                 shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
     barrier()
     # Sum across warps' results in shared memory then output.
@@ -464,9 +467,10 @@ fn gevm_kernel[
     k: Int,
 ):
     var warps_per_block = block_dim.x // UInt(WARP_SIZE)
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
+    var lane_id = lane_id()
     var accum = Scalar[s_type]()
-    var col = block_idx.x * UInt(WARP_SIZE) + lane_id()
+    var col = block_idx.x * UInt(WARP_SIZE) + lane_id
     var tid = global_idx.x
     var global_warp_id = tid // UInt(WARP_SIZE)
 
@@ -487,13 +491,13 @@ fn gevm_kernel[
         var rhs = b.load(row * UInt(n) + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[lane_id() * UInt(WARP_SIZE) + warp_id] = accum
+    x_shared[lane_id * UInt(WARP_SIZE) + warp_id] = accum
     barrier()
 
     var total = x_shared.load(thread_idx.x).cast[s_type]()
     total = warp.sum(total)
 
-    if lane_id() == 0:
+    if lane_id == 0:
 
         @parameter
         if elementwise_lambda_fn:

@@ -22,7 +22,7 @@ from gpu import (
     thread_idx,
     grid_dim,
 )
-from gpu import warp_id as get_warp_id
+from gpu import warp_id
 from gpu.host import DeviceContext
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import AddressSpace
@@ -1463,7 +1463,7 @@ struct AMDPingPongMatmul[
         # Thread and warp identification
         var thread_id = Int(thread_idx.x)
         var lane_id = Int(lane_id())
-        var warp_id = readfirstlane(Int(get_warp_id()))
+        var warp_id = readfirstlane(Int(warp_id()))
 
         # Block coordinates from block indices
         var n = Int(block_idx.x) * BN

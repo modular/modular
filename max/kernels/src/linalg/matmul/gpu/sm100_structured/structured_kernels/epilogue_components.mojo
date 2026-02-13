@@ -26,8 +26,7 @@ The SM100 epilogue pipeline flows as:
 
 from sys import align_of, simd_width_of
 
-from gpu import WARP_SIZE, lane_id
-from gpu import warp_id as get_warp_id
+from gpu import WARP_SIZE, lane_id, warp_id
 from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
@@ -146,7 +145,6 @@ fn store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix instruction."""
     from gpu.compute.mma import st_matrix
     from memory import bitcast
-    from gpu import lane_id as get_lane_id
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -163,7 +161,7 @@ fn store_fragment_to_smem[
         stride0 if transpose_c else stride1
     ) * stsmx_row_size
 
-    var lane = get_lane_id()
+    var lane_id = lane_id()
     var stsm_lane_offset: UInt32
 
     @parameter
@@ -176,10 +174,10 @@ fn store_fragment_to_smem[
             Coord(Idx[8](), Idx[2](), Idx[2]()),
             Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane))))
+        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane_id))))
     else:
         stsm_lane_offset = (
-            UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
+            UInt32(lane_id & 15) * UInt32(stride0) + UInt32(lane_id >> 4) * 8
         )
 
     @always_inline
@@ -228,7 +226,6 @@ fn store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix."""
     from gpu.compute.mma import st_matrix
     from memory import bitcast
-    from gpu import lane_id as get_lane_id
     from layout._coord import Coord, Idx
 
     comptime c_type = dst.dtype
@@ -246,7 +243,7 @@ fn store_fragment_to_smem[
         stride0 if transpose_c else stride1
     ) * stsmx_row_size
 
-    var lane = get_lane_id()
+    var lane_id = lane_id()
     var stsm_lane_offset: UInt32
 
     @parameter
@@ -255,10 +252,10 @@ fn store_fragment_to_smem[
             Coord(Idx[8](), Idx[2](), Idx[2]()),
             Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane))))
+        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane_id))))
     else:
         stsm_lane_offset = (
-            UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
+            UInt32(lane_id & 15) * UInt32(stride0) + UInt32(lane_id >> 4) * 8
         )
 
     @always_inline
@@ -1942,7 +1939,7 @@ fn shared_memory_epilogue[
     var gmem_col = c_col + stage * stageN
 
     # Each warp owns 32 rows: upper half (0-15) and lower half (16-31)
-    var warp_base_row = get_warp_id() * 32
+    var warp_base_row = warp_id() * 32
     var upper_row = warp_base_row
     var lower_row = warp_base_row + 16
 
