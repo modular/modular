@@ -112,7 +112,9 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self.has_bias = has_bias
         self.hidden_size = hidden_size
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.float8_config = float8_config
 

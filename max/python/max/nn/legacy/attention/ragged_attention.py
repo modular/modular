@@ -91,7 +91,9 @@ class RaggedAttention(Module):
         self.kv_params = kv_params
         self.has_bias = has_bias
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.clip_qkv = clip_qkv
         self.devices = devices or [DeviceRef.CPU()]

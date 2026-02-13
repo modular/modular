@@ -116,7 +116,9 @@ class _Llama4TextAttention(Module):
         self.has_bias = has_bias
         self.devices = devices
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.local_window_size = local_window_size
         # rope unused for dense layers
