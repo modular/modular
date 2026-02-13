@@ -1549,7 +1549,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 distribution_type=args.random_distribution_type,
                 first_turn_ratio=args.random_first_turn_ratio,
                 random_state=random_state,
-                use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
         else:
             assert args.num_prompts is not None
@@ -1565,7 +1564,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 image_size=args.random_image_size,
                 image_count=args.random_image_count,
                 random_state=random_state,
-                use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
     elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
         assert args.num_prompts is not None
