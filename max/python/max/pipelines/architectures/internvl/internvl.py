@@ -42,7 +42,7 @@ from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import LayerNorm, RMSNorm
 from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
-from max.pipelines.architectures.llama3.model_config import (
+from max.pipelines.architectures.llama3_legacy.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config

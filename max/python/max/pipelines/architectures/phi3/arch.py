@@ -22,8 +22,8 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3 import weight_adapters
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy import weight_adapters
+from ..llama3_legacy.model_config import Llama3Config
 from .model import Phi3Model
 
 phi3_arch = SupportedArchitecture(

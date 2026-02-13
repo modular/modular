@@ -55,7 +55,7 @@ from max.nn.legacy.transformer.distributed_transformer import (
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
 
 
 class Qwen25VLDecoderAttentionWithRope(Module, Shardable):

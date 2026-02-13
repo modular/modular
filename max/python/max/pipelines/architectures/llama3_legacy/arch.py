@@ -26,7 +26,7 @@ from . import weight_adapters
 from .model import Llama3Model
 from .model_config import Llama3Config
 
-llama_arch = SupportedArchitecture(
+llama_legacy_arch = SupportedArchitecture(
     name="LlamaForCausalLM_Legacy",
     example_repo_ids=[
         "meta-llama/Llama-3.1-8B-Instruct",

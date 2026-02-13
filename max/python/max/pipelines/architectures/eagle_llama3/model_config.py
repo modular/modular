@@ -14,6 +14,6 @@
 
 from __future__ import annotations
 
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy.model_config import Llama3Config
 
 __all__ = ["Llama3Config"]

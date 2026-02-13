@@ -31,7 +31,7 @@ from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
     VisionConfig,
 )
-from max.pipelines.architectures.llama3.model_config import (
+from max.pipelines.architectures.llama3_legacy.model_config import (
     DistributedGemmConfig,
     Llama3Config,
 )

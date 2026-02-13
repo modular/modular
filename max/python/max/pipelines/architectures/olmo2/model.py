@@ -21,7 +21,7 @@ from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import PagedCacheValues
 
-from ..llama3.model import LlamaModelBase
+from ..llama3_legacy.model import LlamaModelBase
 from .model_config import Olmo2Config
 from .olmo2 import Olmo2
 

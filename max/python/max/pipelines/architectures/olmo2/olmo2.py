@@ -25,8 +25,8 @@ from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.legacy.transformer import Transformer
-from max.pipelines.architectures.llama3.llama3 import StackedMLP
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3_legacy.llama3 import StackedMLP
+from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
 
 from .layers.transformer import Olmo2TransformerBlock

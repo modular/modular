@@ -22,7 +22,7 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy.model_config import Llama3Config
 from . import weight_adapters
 from .model import EagleLlama3Model
 

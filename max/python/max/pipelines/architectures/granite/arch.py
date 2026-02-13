@@ -22,9 +22,9 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3 import weight_adapters
-from ..llama3.model import Llama3Model
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy import weight_adapters
+from ..llama3_legacy.model import Llama3Model
+from ..llama3_legacy.model_config import Llama3Config
 
 granite_arch = SupportedArchitecture(
     name="GraniteForCausalLM_Legacy",

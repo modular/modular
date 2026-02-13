@@ -22,7 +22,7 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3 import weight_adapters
+from ..llama3_legacy import weight_adapters
 from .model import Qwen2Model
 from .model_config import Qwen2Config
 

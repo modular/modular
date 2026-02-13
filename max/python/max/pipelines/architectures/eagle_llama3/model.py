@@ -30,7 +30,7 @@ from max.pipelines.lib import (
 )
 from transformers import AutoConfig
 
-from ..llama3.model import Llama3Inputs, LlamaModelBase
+from ..llama3_legacy.model import Llama3Inputs, LlamaModelBase
 from .eagle_llama3 import EagleLlama3
 from .model_config import Llama3Config
 
