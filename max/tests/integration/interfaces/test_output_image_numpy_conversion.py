@@ -130,8 +130,15 @@ def test_generation_output_with_numpy_images() -> None:
     assert generation_output.request_id.value == "test-request-123"
     assert generation_output.final_status == GenerationStatus.END_OF_SEQUENCE
     assert len(generation_output.output) == 2
-    assert generation_output.output[0].format == "png"
-    assert generation_output.output[1].format == "jpeg"
+
+    # Narrow types for mypy
+    output_0 = generation_output.output[0]
+    output_1 = generation_output.output[1]
+    assert isinstance(output_0, OutputImageContent)
+    assert isinstance(output_1, OutputImageContent)
+
+    assert output_0.format == "png"
+    assert output_1.format == "jpeg"
     assert generation_output.is_done is True
 
 

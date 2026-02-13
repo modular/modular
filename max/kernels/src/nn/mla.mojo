@@ -1822,7 +1822,6 @@ fn mla_prefill[
     var num_keys: Int
     var start_pos: UInt32 = 0
     var cache_start_pos: UInt32 = 0
-    var total_seq_len: UInt32 = valid_length[batch_size][0]
 
     # treat valid_lengths as a input_row_offsets
     start_of_seq = Int(valid_length[batch_idx])

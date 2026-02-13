@@ -38,7 +38,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor
-from layout.tma_async import create_tensor_tile
+from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -183,28 +183,28 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     comptime kernel = KernelType.run
 
     # Create TMA descriptors using kernel's derived legacy layouts
-    var a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tma_tile[
+        KernelType.ATmaTile.tile_layout,
+        KernelType.ATmaTile.desc_layout,
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ATmaOp.layout,
-        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_device)
 
-    var b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tma_tile[
+        KernelType.BTmaTile.tile_layout,
+        KernelType.BTmaTile.desc_layout,
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.BTmaOp.layout,
-        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_2d)
 
-    var a_scales_tma_op = create_tensor_tile[
+    var a_scales_tma_op = create_tma_tile[
+        KernelType.AScalesTmaTile.tile_layout,
+        KernelType.AScalesTmaTile.desc_layout,
         Index(1, BM),
-        __tile_layout = KernelType.AScalesTmaOp.layout,
-        __desc_layout = KernelType.AScalesTmaOp.desc_layout,
     ](ctx, a_scales)
 
     var grid_dim = (

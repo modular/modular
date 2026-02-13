@@ -45,6 +45,7 @@ from layout._tile_tensor import TileTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from ..structured_kernels.tile_types import (
     GMEMTile,
+    TMATile,
     TmaOpType,
     static_row_major,
 )
@@ -284,11 +285,14 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime AScalesLayout = static_row_major[1, Self.BM]
 
     # TMA operation types (derived from new Layout types)
-    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime AScalesTmaOp = TmaOpType[
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime AScalesTmaTile = TMATile[
         Self.a_scales_type, Self.AScalesLayout, Self.AScalesLayout
     ]
+    comptime AScalesTmaOp = Self.AScalesTmaTile.InnerType
 
     # TMA load size constants (from desc layout dimensions)
     comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems

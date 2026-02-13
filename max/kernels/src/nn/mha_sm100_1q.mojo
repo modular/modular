@@ -1348,7 +1348,6 @@ fn mha_sm100_dispatch[
     var batch_size: UInt32 = UInt32(batch_size_arg)
     var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
     var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, UInt32(BM))
-    var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
     comptime num_scheduler_heads = config.num_heads // UInt(
         group
@@ -2530,7 +2529,6 @@ fn _mha_sm100[
         var elect_one_warp = warp_id == 0
 
         var lane = UInt32(lane_id())
-        var elect_one_thread = thread_idx.x == 128
 
         var warp_y: UInt32 = warp_id  # // num_warps_n
 

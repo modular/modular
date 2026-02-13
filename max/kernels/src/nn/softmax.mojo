@@ -24,8 +24,15 @@ from algorithm.reduction import (
     _reduce_generator,
 )
 from bit import log2_floor
-from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
+    warp_id,
+)
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from layout._utils import idx2crd
@@ -948,8 +955,8 @@ fn _online_softmax_kernel[
 
     comptime frag_size = get_fragment_size[mma_shape]()[2]
 
-    var warp_id = get_warp_id()
-    var lane = lane_id()
+    var warp_id = warp_id()
+    var lane_id = lane_id()
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
     # corrected with the right rowmax.
@@ -979,13 +986,13 @@ fn _online_softmax_kernel[
     @parameter
     if is_nvidia_gpu():
         p.vectorize[1, 2]().transpose().copy_from(
-            input_warp_tile0.vectorize[1, 2]().distribute[warp_layout](lane)
+            input_warp_tile0.vectorize[1, 2]().distribute[warp_layout](lane_id)
         )
     else:
         p.vectorize[1, 4]().copy_from(
             input_warp_tile0.vectorize[
                 simdwidth_row, simdwidth_col
-            ]().distribute[warp_layout](lane)
+            ]().distribute[warp_layout](lane_id)
         )
 
     var p_vecs = p.reshape[
@@ -1043,13 +1050,13 @@ fn _online_softmax_kernel[
     @parameter
     if is_nvidia_gpu():
         p.vectorize[1, 2]().transpose().copy_from(
-            input_warp_tile1.vectorize[1, 2]().distribute[warp_layout](lane)
+            input_warp_tile1.vectorize[1, 2]().distribute[warp_layout](lane_id)
         )
     else:
         p.vectorize[1, 4]().copy_from(
             input_warp_tile1.vectorize[
                 simdwidth_row, simdwidth_col
-            ]().distribute[warp_layout](lane)
+            ]().distribute[warp_layout](lane_id)
         )
 
     _online_softmax_iter_for_mma_output[
@@ -1096,18 +1103,18 @@ fn _online_softmax_kernel[
     @parameter
     if is_nvidia_gpu():
         output_warp_tile0.vectorize[1, 2]().distribute[warp_layout](
-            lane
+            lane_id
         ).copy_from(o.vectorize[1, 2]().transpose())
         output_warp_tile1.vectorize[1, 2]().distribute[warp_layout](
-            lane
+            lane_id
         ).copy_from(p.vectorize[1, 2]().transpose())
     else:
         output_warp_tile0.vectorize[simdwidth_row, simdwidth_col]().distribute[
             warp_layout
-        ](lane).copy_from(o.vectorize[1, 4]())
+        ](lane_id).copy_from(o.vectorize[1, 4]())
         output_warp_tile1.vectorize[simdwidth_row, simdwidth_col]().distribute[
             warp_layout
-        ](lane).copy_from(p.vectorize[1, 4]())
+        ](lane_id).copy_from(p.vectorize[1, 4]())
 
 
 @always_inline
@@ -1132,7 +1139,7 @@ fn _online_softmax_iter_for_mma_output[
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
     var tid = thread_idx.x
-    var lane = lane_id()
+    var lane_id = lane_id()
     var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
         num_rowwise_warps
     )
@@ -1242,7 +1249,7 @@ fn _online_softmax_iter_for_mma_output[
                 score_frag_rowmax[col_tile, row]
             )
 
-    var coords = idx2crd[warp_layout](Int(lane))
+    var coords = idx2crd[warp_layout](Int(lane_id))
     var lane_contains_first_column = coords[1] == 0
     var lane_row = coords[0]
 

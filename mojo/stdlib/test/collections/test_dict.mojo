@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import OwnedKwargsDict
+from collections.dict import OwnedKwargsDict, _GROUP_WIDTH
 from hashlib import Hasher, default_comp_time_hasher
 
 from test_utils import CopyCounter
@@ -631,15 +631,23 @@ fn test_clear() raises:
 
 def test_init_initial_capacity():
     var initial_capacity = 16
-    var x = Dict[Int, Int](power_of_two_initial_capacity=initial_capacity)
+    var x = Dict[Int, Int](capacity=initial_capacity)
     assert_equal(x._reserved(), initial_capacity)
     for i in range(initial_capacity):
         x[i] = i
     for i in range(initial_capacity):
         assert_equal(i, x[i])
 
-    var y = Dict[Int, Int](power_of_two_initial_capacity=64)
+    var y = Dict[Int, Int](capacity=64)
     assert_equal(y._reserved(), 64)
+
+    # Non-power-of-two capacity is rounded up
+    var z = Dict[Int, Int](capacity=50)
+    assert_equal(z._reserved(), 64)
+
+    # Small capacity is clamped to minimum (16)
+    var w = Dict[Int, Int](capacity=3)
+    assert_equal(w._reserved(), 16)
 
 
 fn test_dict_setdefault() raises:
@@ -734,6 +742,180 @@ def test_popitem_no_copies():
     assert_equal(len(dict), 0)
     with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
+
+
+def test_high_fill():
+    """Fill a dict near its 7/8 load factor to exercise resize triggers."""
+    var d = Dict[Int, Int]()
+    # Insert enough to trigger multiple resizes (initial capacity is 16,
+    # 7/8 load factor means resize at 14, then at 28, 56, 112, etc.)
+    for i in range(200):
+        d[i] = i * 2
+    assert_equal(len(d), 200)
+    # Verify all entries survived resizes
+    for i in range(200):
+        assert_equal(d[i], i * 2)
+
+
+def test_tombstone_accumulation():
+    """Repeatedly insert and delete to accumulate tombstones without resize."""
+    var d = Dict[Int, Int]()
+    # Pre-fill with 10 entries
+    for i in range(10):
+        d[i] = i
+    # Insert and delete many transient entries to create tombstones
+    for i in range(100, 500):
+        d[i] = i
+        _ = d.pop(i)
+    # Original entries must still be found correctly despite tombstones
+    assert_equal(len(d), 10)
+    for i in range(10):
+        assert_equal(d[i], i)
+
+
+def test_ctrl_mirroring_boundary():
+    """Keys landing near the end of the ctrl array exercise mirror bytes."""
+    var d = Dict[Int, Int](capacity=16)
+    # Insert keys that, when hashed, are likely to probe at positions
+    # near the end of the 16-slot table (positions 14, 15) where SIMD
+    # loads read into the mirror region.
+    for i in range(16):
+        d[i] = i
+    # All entries must be findable
+    for i in range(16):
+        assert_equal(d[i], i)
+    # Delete some near-boundary entries and re-verify
+    _ = d.pop(14)
+    _ = d.pop(15)
+    assert_false(14 in d)
+    assert_false(15 in d)
+    for i in range(14):
+        assert_equal(d[i], i)
+
+
+def test_delete_and_relookup():
+    """Delete entries then look them up to ensure correct miss detection."""
+    var d = Dict[Int, Int]()
+    for i in range(50):
+        d[i] = i
+    # Delete every other entry
+    for i in range(0, 50, 2):
+        _ = d.pop(i)
+    assert_equal(len(d), 25)
+    # Deleted keys must not be found
+    for i in range(0, 50, 2):
+        assert_false(i in d)
+    # Remaining keys must still be found
+    for i in range(1, 50, 2):
+        assert_equal(d[i], i)
+
+
+def test_order_preserved_after_heavy_deletion():
+    """Insertion order is preserved even after many deletions."""
+    var d = Dict[Int, Int]()
+    for i in range(20):
+        d[i] = i
+    # Delete first 10
+    for i in range(10):
+        _ = d.pop(i)
+    # Iteration should yield 10..19 in insertion order
+    var idx = 10
+    for k in d:
+        assert_equal(k, idx)
+        idx += 1
+    assert_equal(idx, 20)
+
+
+def test_order_compaction():
+    """The _order array is compacted when it has too many stale entries."""
+    # Use a large initial capacity so inserts+deletes don't trigger resize,
+    # allowing stale entries to accumulate in _order until compaction fires.
+    var d = Dict[Int, Int](capacity=1024)
+    # Insert 100 entries (well under 7/8 * 1024 = 896)
+    for i in range(100):
+        d[i] = i
+    # Delete 90, leaving 10 live entries but 100 stale _order entries
+    for i in range(90):
+        _ = d.pop(i)
+    assert_equal(len(d), 10)
+    # Now insert new entries. Each insert calls _maybe_resize which checks
+    # compaction (len(_order) > 2 * _len). With 100 order entries and 10
+    # live, compaction should trigger on the next insert.
+    d[1000] = 1000
+    assert_equal(len(d), 11)
+    # Verify all live entries are intact and iteration order is correct
+    for i in range(90, 100):
+        assert_equal(d[i], i)
+    assert_equal(d[1000], 1000)
+    # Verify iteration yields entries in insertion order
+    var keys = List[Int]()
+    for k in d:
+        keys.append(k)
+    # Should be 90..99 (surviving originals) then 1000
+    for i in range(10):
+        assert_equal(keys[i], 90 + i)
+    assert_equal(keys[10], 1000)
+
+
+def test_reversed_items():
+    """Reversed item iteration must use _order, not _capacity."""
+    # Fresh dict: reversed items should be reverse insertion order
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+    var keys = List[String]()
+    var vals = List[Int]()
+    for item in reversed(d.items()):
+        keys.append(item.key)
+        vals.append(item.value)
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "c")
+    assert_equal(keys[1], "b")
+    assert_equal(keys[2], "a")
+    assert_equal(vals[0], 3)
+    assert_equal(vals[1], 2)
+    assert_equal(vals[2], 1)
+
+    # After deletions: stale _order entries skipped in reverse
+    _ = d.pop("b")
+    keys = List[String]()
+    for item in reversed(d.items()):
+        keys.append(item.key)
+    assert_equal(len(keys), 2)
+    assert_equal(keys[0], "c")
+    assert_equal(keys[1], "a")
+
+    # After delete + re-insert: new entries appear at end of _order
+    d["x"] = 10
+    keys = List[String]()
+    vals = List[Int]()
+    for item in reversed(d.items()):
+        keys.append(item.key)
+        vals.append(item.value)
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "x")
+    assert_equal(keys[1], "c")
+    assert_equal(keys[2], "a")
+    assert_equal(vals[0], 10)
+    assert_equal(vals[1], 3)
+    assert_equal(vals[2], 1)
+
+    # Empty dict: reversed items yields nothing
+    var empty = Dict[String, Int]()
+    var count = 0
+    for _ in reversed(empty.items()):
+        count += 1
+    assert_equal(count, 0)
+
+
+def test_minimum_capacity():
+    """The minimum capacity is _GROUP_WIDTH (16) for SIMD correctness."""
+    var d = Dict[Int, Int](capacity=16)
+    assert_true(d._capacity >= _GROUP_WIDTH)
+    # Default constructor also gets at least _GROUP_WIDTH capacity
+    var d2 = Dict[Int, Int]()
+    assert_true(d2._capacity >= _GROUP_WIDTH)
 
 
 def main():

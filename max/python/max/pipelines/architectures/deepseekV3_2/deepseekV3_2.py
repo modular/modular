@@ -580,7 +580,7 @@ class DeepseekV3_2(Module):
                 )
                 assert isinstance(h, list)
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]

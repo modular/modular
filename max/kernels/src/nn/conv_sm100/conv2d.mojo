@@ -48,7 +48,11 @@ from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout.tma_async import create_tensor_tile, create_tensor_tile_im2col
+from layout.tma_async import create_tensor_tile_im2col
+
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    create_tma_tile,
+)
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
 from linalg.utils import elementwise_compute_lambda_type
 from utils.index import Index, IndexList
@@ -265,11 +269,11 @@ fn conv2d_fprop[
         ),
     )
 
-    filter_tma_op = create_tensor_tile[
+    filter_tma_op = create_tma_tile[
+        KernelType.FilterTmaTile.tile_layout,
+        KernelType.FilterTmaTile.desc_layout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.FilterTmaOp.layout,
-        __desc_layout = KernelType.FilterTmaOp.desc_layout,
     ](ctx, filter_tensor)
 
     # Create output 2D view: [M, N] row-major
@@ -287,11 +291,11 @@ fn conv2d_fprop[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tensor_tile[
+    out_tma_op = create_tma_tile[
+        KernelType.OutTmaTile.tile_layout,
+        KernelType.OutTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.OutTmaOp.layout,
-        __desc_layout = KernelType.OutTmaOp.desc_layout,
     ](ctx, out_tensor)
 
     comptime kernel = conv_kernel.run
@@ -516,11 +520,11 @@ fn conv2d_fprop_with_residual[
             Index(K, 1),
         ),
     )
-    filter_tma_op = create_tensor_tile[
+    filter_tma_op = create_tma_tile[
+        KernelType.FilterTmaTile.tile_layout,
+        KernelType.FilterTmaTile.desc_layout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.FilterTmaOp.layout,
-        __desc_layout = KernelType.FilterTmaOp.desc_layout,
     ](ctx, filter_tensor)
 
     # Output TMA (D) - 2D row-major
@@ -537,11 +541,11 @@ fn conv2d_fprop_with_residual[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tensor_tile[
+    out_tma_op = create_tma_tile[
+        KernelType.OutTmaTile.tile_layout,
+        KernelType.OutTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.OutTmaOp.layout,
-        __desc_layout = KernelType.OutTmaOp.desc_layout,
     ](ctx, out_tensor)
 
     # Source TMA (C) - same shape and layout as output
@@ -552,11 +556,11 @@ fn conv2d_fprop_with_residual[
             Index(N, 1),
         ),
     )
-    src_tma_op = create_tensor_tile[
+    src_tma_op = create_tma_tile[
+        KernelType.SrcTmaTile.tile_layout,
+        KernelType.SrcTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.SrcTmaOp.layout,
-        __desc_layout = KernelType.SrcTmaOp.desc_layout,
     ](ctx, src_tensor)
 
     comptime kernel = conv_kernel.run_with_residual

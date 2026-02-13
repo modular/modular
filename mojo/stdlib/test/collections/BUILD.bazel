@@ -2,19 +2,6 @@ load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
-_NO_ASAN = [
-    "test_dict.mojo",  # TODO(MOCO-2852): Compilation timeout on ASAN
-    "test_list.mojo",  # TODO(MOCO-2316): Takes too long to compile
-]
-
-_PLATFORM_CONSTRAINTS = {
-    src: select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    })
-    for src in _NO_ASAN
-}
-
 _FILECHECK_TESTS = [
     "test_index_normalization.mojo",
     "test_list_getitem_invalid_index_int.mojo",
@@ -59,7 +46,6 @@ _EXPECT_CRASH = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         expect_crash = src in _EXPECT_CRASH,
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",
@@ -77,7 +63,6 @@ _EXPECT_CRASH = [
             "full",
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

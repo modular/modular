@@ -510,7 +510,7 @@ fn bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._entries.unsafe_ptr())
+        keep(d._ctrl)
 
     b.iter[call_fn]()
 
@@ -525,7 +525,7 @@ fn bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._entries.unsafe_ptr())
+        keep(d._ctrl)
 
     b.iter[call_fn]()
 

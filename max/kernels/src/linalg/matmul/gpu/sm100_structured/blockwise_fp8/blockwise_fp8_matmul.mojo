@@ -24,7 +24,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from layout import Layout as LegacyLayout, LayoutTensor
-from layout.tma_async import create_tensor_tile
+from ..structured_kernels.tile_types import create_tma_tile
 
 from ..structured_kernels.tile_types import GMEMTile, lt_to_tt
 
@@ -243,28 +243,28 @@ fn blockwise_fp8_matmul[
     ]
 
     # Create TMA descriptors using kernel's derived legacy layouts
-    a_tma_op = create_tensor_tile[
+    a_tma_op = create_tma_tile[
+        Kernel.ATmaTile.tile_layout,
+        Kernel.ATmaTile.desc_layout,
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
-        __tile_layout = Kernel.ATmaOp.layout,
-        __desc_layout = Kernel.ATmaOp.desc_layout,
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    b_tma_op = create_tma_tile[
+        Kernel.BTmaTile.tile_layout,
+        Kernel.BTmaTile.desc_layout,
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
         swizzle_mode = config.b_swizzle,
-        __tile_layout = Kernel.BTmaOp.layout,
-        __desc_layout = Kernel.BTmaOp.desc_layout,
     ](ctx, b)
 
-    a_scales_tma_op = create_tensor_tile[
+    a_scales_tma_op = create_tma_tile[
+        Kernel.AScalesTmaTile.tile_layout,
+        Kernel.AScalesTmaTile.desc_layout,
         Index(1, BM),
-        __tile_layout = Kernel.AScalesTmaOp.layout,
-        __desc_layout = Kernel.AScalesTmaOp.desc_layout,
     ](ctx, a_scales)
 
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
@@ -272,11 +272,11 @@ fn blockwise_fp8_matmul[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    var c_tma_op = create_tensor_tile[
+    var c_tma_op = create_tma_tile[
+        Kernel.CTmaTile.tile_layout,
+        Kernel.CTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = Kernel.CTmaOp.layout,
-        __desc_layout = Kernel.CTmaOp.desc_layout,
     ](ctx, c)
 
     var grid_dim = (

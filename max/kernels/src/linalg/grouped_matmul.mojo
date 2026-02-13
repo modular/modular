@@ -39,7 +39,6 @@ from gpu import (
     warp_id,
     lane_id,
     thread_idx,
-    warp_id as get_warp_id,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import external_memory, fence_mbarrier_init
@@ -500,7 +499,7 @@ fn grouped_matmul_kernel_sm100[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // WARP_SIZE
-    warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     comptime c_gmem_type = LayoutTensor[

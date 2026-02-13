@@ -108,21 +108,44 @@ class ZmqModelWorkerProxy(
 
     async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncIterator[PipelineOutputType]:
+    ) -> AsyncIterator[list[PipelineOutputType]]:
         """
         Asynchronously streams results for a given request ID and input data.
 
-        Opens a channel for the request, yields each result as it becomes available,
+        Opens a channel for the request, drains the queue to build output batches,
         and closes the channel when the stream ends.
+
+        The yielded lists are guaranteed to be non-empty and ordered.
         """
         with self._open_channel(req_id, data) as queue:
             # queue.get() will wait until an item is available.
             # This will exit when no result is passed in the SchedulerResult.
             # or the SchedulerResult states that we should stop the stream.
-            while (item := await queue.get()).result is not None:
-                yield item.result
+            while True:
+                item = await queue.get()
+                if item.result is None:
+                    break
 
-                if item.is_done:
+                outputs = [item.result]
+                should_stop = item.is_done
+                while True:
+                    try:
+                        item = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                    if item.result is None:
+                        should_stop = True
+                        break
+
+                    outputs.append(item.result)
+                    if item.is_done:
+                        should_stop = True
+                        break
+
+                yield outputs
+
+                if should_stop:
                     break
 
     def cancel(self, req_id: RequestID) -> None:

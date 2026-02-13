@@ -382,10 +382,17 @@ struct List[T: Copyable](
             self.append(value.copy())
 
     fn __init__[
-        IterableType: Iterable
-    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        Self.T, IterableType.IteratorType[origin_of(iterable)].Element
-    ]():
+        IterableType: Iterable,
+    ](
+        ref iterable: IterableType,
+        out self: List[
+            downcast[
+                IterableType.IteratorType[origin_of(iterable)].Element, Copyable
+            ]
+        ],
+    ) where conforms_to(
+        IterableType.IteratorType[origin_of(iterable)].Element, Copyable
+    ):
         """Constructs a list from an iterable of values.
 
         Parameters:
@@ -395,9 +402,9 @@ struct List[T: Copyable](
             iterable: The iterable of values to populate the list with.
         """
         var lower, _ = iter(iterable).bounds()
-        self = Self(capacity=lower)
+        self = type_of(self)(capacity=lower)
         for var value in iterable:
-            self.append(rebind_var[Self.T](value^))
+            self.append(rebind_var[type_of(self).T](value^))
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):

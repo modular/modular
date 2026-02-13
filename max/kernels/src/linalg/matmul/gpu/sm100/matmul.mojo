@@ -23,8 +23,7 @@ For new code, use sm100_structured directly:
 
 from sys import simd_width_of, size_of
 
-from gpu import WARP_SIZE, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
+from gpu import WARP_SIZE, lane_id, thread_idx, warp_id
 from gpu.primitives.cluster import elect_one_sync
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma import st_matrix
@@ -86,23 +85,23 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     @staticmethod
     @always_inline
     fn is_main_load() -> Bool:
-        return Self.MainLoad == get_warp_id()
+        return Self.MainLoad == warp_id()
 
     @staticmethod
     @always_inline
     fn is_mma() -> Bool:
-        return Self.Mma == get_warp_id()
+        return Self.Mma == warp_id()
 
     @staticmethod
     @always_inline
     fn is_epilogue() -> Bool:
-        return Self.Epilogue >= get_warp_id()
+        return Self.Epilogue >= warp_id()
 
     @staticmethod
     @always_inline
     fn is_scheduler() -> Bool:
         constrained[Self.has_scheduler, "Scheduler warp is not enabled"]()
-        return Self.Scheduler == get_warp_id()
+        return Self.Scheduler == warp_id()
 
 
 @always_inline
@@ -523,7 +522,7 @@ fn shared_memory_epilogue[
 
     var staged_c_col = c_col + stage * stageN
 
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
     var shared_memory_row = warp_id * 32
 
     var shared_memory_row_upper_half = shared_memory_row
@@ -785,7 +784,7 @@ fn register_epilogue[
 
     comptime load_width = UInt(2)
 
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     # get global memory offset based on tile coordinates
 

@@ -42,7 +42,7 @@ from gpu import (
     barrier,
     block_idx,
     thread_idx,
-    warp_id as get_warp_id,
+    warp_id,
 )
 from gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor
@@ -127,7 +127,7 @@ fn determine_thread_role[
     producer_b_warps: Int,
 ]() -> Tuple[ThreadRole, Int]:
     """Returns (role, consumer_warp_id within role group)."""
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
     comptime producer_thread_count = (
         producer_a_warps + producer_b_warps
     ) * WARP_SIZE
@@ -402,7 +402,7 @@ fn warp_specialized_matmul_kernel[
     var role_info = determine_thread_role[a_producer_warps, b_producer_warps]()
     var role = role_info[0]
     var role_group = role_info[1]
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     comptime swizzle = Swizzle(3, 0, 1)
 
