@@ -912,6 +912,18 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if not draft_arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=self.draft_model.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for draft model '{self.draft_model.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                    )
             raise ValueError(
                 "MAX-Optimized architecture not found for `draft_model`"
             )
@@ -921,6 +933,18 @@ class PipelineConfig(ConfigFileModel):
             use_legacy_module=self.use_legacy_module,
         )
         if not target_arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=self.model.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for target model '{self.model.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                    )
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
@@ -996,6 +1020,20 @@ class PipelineConfig(ConfigFileModel):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=model_config.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for '{model_config.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation.\n"
+                        f"Example: max serve --model-path {model_config.model_path} --no-use-legacy-module"
+                    )
+
             raise ValueError(
                 f"MAX-optimized architecture not available for '{model_config.model_path}'. "
                 "Please file a request at https://modul.ar/request to add this model architecture to MAX."
