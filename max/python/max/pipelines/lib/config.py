@@ -1273,43 +1273,50 @@ class PipelineConfig(ConfigFileModel):
                 "This should not happen after config resolution."
             )
 
-        # Get pipeline task
-        arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
-        )
-        if arch is None:
-            raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
-                "This should not happen after config resolution."
-            )
-
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
         pipeline_class = get_pipeline_for_task(task, self)
 
-        # Get reserved memory info from KVCache config
-        kv_config = self.model.kv_cache
-        if kv_config._available_cache_memory is None:
-            raise ValueError(
-                "KVCache config is not available after config resolution."
+        # Get reserved memory info from KVCache config (only for tasks that use KV cache)
+        from max.interfaces.task import PipelineTask
+
+        kv_cache_tasks = {
+            PipelineTask.TEXT_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
+            PipelineTask.SPEECH_TOKEN_GENERATION,
+        }
+
+        memory_str = None
+        if task in kv_cache_tasks:
+            kv_config = self.model.kv_cache
+            if kv_config._available_cache_memory is None:
+                raise ValueError(
+                    "KVCache config is not available after config resolution."
+                )
+            memory_str = to_human_readable_bytes(
+                kv_config._available_cache_memory
             )
-        memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs
         )
 
         # Log basic configuration
-        config_entries: list[tuple[str, Any]] = [
-            ("model", self.model.model_path),
-            ("architecture", arch.name),
-            ("pipeline", pipeline_class.__name__),
-            ("devices", devices_str),
-            ("max_batch_size", self.max_batch_size),
-            ("max_seq_len", self.max_length),
-            ("cache_memory", memory_str),
-            ("device_graph_capture", self.device_graph_capture),
-        ]
+        config_entries: list[tuple[str, Any]] = (
+            [
+                ("model", self.model.model_path),
+                ("architecture", arch.name),
+                ("pipeline", pipeline_class.__name__),
+                ("devices", devices_str),
+                ("max_batch_size", self.max_batch_size),
+                ("max_seq_len", self.max_length),
+            ]
+            + [("cache_memory", memory_str)]
+            if memory_str
+            else []
+            + [
+                ("device_graph_capture", self.device_graph_capture),
+            ]
+        )
 
         logger.info("")
         logger.info("=" * 60)

@@ -545,20 +545,13 @@ class PixelGenerationTokenizer(
         if not prompt:
             raise ValueError("Prompt must be a non-empty string.")
 
-        # Extract image provider options (required for pixel generation)
-        if not request.body.provider_options:
-            raise ValueError(
-                "Pixel generation requires 'provider_options' to be set. "
-                "Please provide a ProviderOptions object with ImageProviderOptions."
-            )
-
-        if not request.body.provider_options.image:
-            raise ValueError(
-                "Pixel generation requires 'provider_options.image' to be set. "
-                "Please provide ImageProviderOptions for image generation parameters."
-            )
-
+        # Extract image provider options (always available via defaults)
         image_options = request.body.provider_options.image
+        if image_options is None:
+            raise ValueError(
+                "Image provider options are required for pixel generation. "
+                "This should not happen as defaults are applied at request creation."
+            )
 
         if (
             image_options.guidance_scale < 1.0

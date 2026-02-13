@@ -83,7 +83,10 @@ async def test_from_fastapi_request_minimal(
     assert request.body.model == "test-model"
     assert request.body.input == "Generate an image of a cat"
     assert request.body.seed is None
-    assert request.body.provider_options is None
+    # provider_options defaults to ProviderOptions with default ImageProviderOptions
+    assert request.body.provider_options is not None
+    assert request.body.provider_options.image is not None
+    assert request.body.provider_options.image.guidance_scale == 3.5
 
 
 @pytest.mark.asyncio

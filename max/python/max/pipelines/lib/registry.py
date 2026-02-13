@@ -55,6 +55,7 @@ from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
+from .pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
@@ -88,6 +89,8 @@ def _infer_task_from_hf_pipeline_tag(
         "feature-extraction": PipelineTask.EMBEDDINGS_GENERATION,
         "sentence-similarity": PipelineTask.EMBEDDINGS_GENERATION,
         "audio-generation": PipelineTask.AUDIO_GENERATION,
+        "text-to-image": PipelineTask.PIXEL_GENERATION,
+        "image-to-image": PipelineTask.PIXEL_GENERATION,
         # Add more mappings as needed
     }
 
@@ -100,6 +103,7 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
     | type[AudioGeneratorPipeline]
+    | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
@@ -154,7 +158,7 @@ def get_pipeline_for_task(
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
     elif task == PipelineTask.PIXEL_GENERATION:
-        raise NotImplementedError("Pixel generation not yet implemented")
+        return PixelGenerationPipeline
 
 
 @dataclass(frozen=False)
@@ -405,7 +409,9 @@ class PipelineRegistry:
             The matching SupportedArchitecture or None if no match found.
         """
         # Retrieve model architecture names
-        if not is_diffusion_pipeline(huggingface_repo):
+        is_diffusion = is_diffusion_pipeline(huggingface_repo)
+
+        if not is_diffusion:
             hf_config = self.get_active_huggingface_config(
                 huggingface_repo=huggingface_repo
             )
@@ -415,8 +421,10 @@ class PipelineRegistry:
                 huggingface_repo=huggingface_repo
             )
             if diffusers_config is None:
-                logger.debug(
-                    f"No diffusers_config found for {huggingface_repo.repo_id}"
+                logger.warning(
+                    f"Could not load diffusers config (model_index.json) for {huggingface_repo.repo_id}. "
+                    f"This may be a gated model requiring authentication. "
+                    f"Please set HF_TOKEN environment variable or run 'huggingface-cli login'."
                 )
                 return None
             if diffusers_arch := diffusers_config.get("_class_name"):
@@ -712,14 +720,65 @@ class PipelineRegistry:
                 task=task,
             )
 
-        # Load HuggingFace Config
-        huggingface_config = pipeline_config.model.huggingface_config
-
         # Architecture should not be None here, as the engine is MAX.
         if arch is None:
             raise ValueError(
                 f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
             )
+
+        # For pixel generation (diffusion models), we don't need HuggingFace transformers config
+        if task == PipelineTask.PIXEL_GENERATION:
+            # Pixel generation pipelines use a different tokenizer with subfolder parameters
+            # Check if there's a secondary tokenizer (tokenizer_2) in the diffusers config
+            diffusers_config = pipeline_config.model.diffusers_config
+            has_tokenizer_2 = False
+            if diffusers_config and "components" in diffusers_config:
+                has_tokenizer_2 = (
+                    "tokenizer_2" in diffusers_config["components"]
+                )
+
+            # Standard max_length for CLIP tokenizer (primary)
+            # and T5 tokenizer (secondary, if present)
+            tokenizer_kwargs = {
+                "model_path": pipeline_config.model.model_path,
+                "pipeline_config": pipeline_config,
+                "subfolder": "tokenizer",
+                "max_length": 77,  # Standard for CLIP
+                "revision": pipeline_config.model.huggingface_model_revision,
+                "trust_remote_code": pipeline_config.model.trust_remote_code,
+            }
+
+            if has_tokenizer_2:
+                tokenizer_kwargs["subfolder_2"] = "tokenizer_2"
+                tokenizer_kwargs["secondary_max_length"] = (
+                    512  # Standard for T5
+                )
+
+            tokenizer = arch.tokenizer(**tokenizer_kwargs)
+
+            # Pixel generation pipeline only needs pipeline_config and pipeline_model
+            pixel_factory_kwargs: dict[str, Any] = {
+                "pipeline_config": pipeline_config,
+                "pipeline_model": arch.pipeline_model,
+            }
+
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(  # type: ignore
+                    pipeline_class, **pixel_factory_kwargs
+                ),
+            )
+
+            # Cast tokenizer for return (pixel generation tokenizer doesn't have eos)
+            typed_tokenizer = cast(
+                PipelineTokenizer[Any, Any, Any],
+                tokenizer,
+            )
+
+            return typed_tokenizer, pipeline_factory
+
+        # Load HuggingFace Config for text generation and other tasks
+        huggingface_config = pipeline_config.model.huggingface_config
 
         if huggingface_config is None:
             raise ValueError(
