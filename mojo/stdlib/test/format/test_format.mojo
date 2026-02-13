@@ -190,5 +190,80 @@ def test_format_comptime_does_not_allocate():
     assert_false(ALLOC_FUNC in info)
 
 
+def test_format_long_strings_simd_boundaries():
+    """Test format strings with braces at SIMD vector boundaries.
+
+    SIMD widths are typically 16 (SSE), 32 (AVX2), or 64 (AVX512) bytes.
+    These tests place braces and escaped braces at and around those boundaries
+    to exercise the vectorized scan and scalar tail fallback.
+    """
+
+    # Helper: build a string of 'x' repeated `n` times.
+    fn pad(n: Int) -> String:
+        return String("x") * n
+
+    # --- Braces at boundary positions (15, 16, 31, 32, 63, 64) ---
+
+    # Brace at position 15 (last byte of first 16-byte SIMD chunk).
+    assert_equal((pad(15) + "{}").format("A"), pad(15) + "A")
+
+    # Brace at position 16 (first byte of second 16-byte chunk).
+    assert_equal((pad(16) + "{}").format("B"), pad(16) + "B")
+
+    # Brace at position 31 (last byte of second 16-byte chunk / first 32-byte
+    # AVX2 chunk).
+    assert_equal((pad(31) + "{}").format("C"), pad(31) + "C")
+
+    # Brace at position 32.
+    assert_equal((pad(32) + "{}").format("D"), pad(32) + "D")
+
+    # Brace at position 63 (last byte of first 64-byte AVX512 chunk).
+    assert_equal((pad(63) + "{}").format("E"), pad(63) + "E")
+
+    # Brace at position 64.
+    assert_equal((pad(64) + "{}").format("F"), pad(64) + "F")
+
+    # --- Escaped braces {{/}} straddling boundaries ---
+
+    # Escaped {{ with first { at position 15, second { at position 16.
+    assert_equal((pad(15) + "{{}}").format(), pad(15) + "{}")
+
+    # Escaped {{ at position 31-32.
+    assert_equal((pad(31) + "{{}}").format(), pad(31) + "{}")
+
+    # Escaped }} at position 15-16.
+    assert_equal((pad(14) + "{}{{}}").format("V"), pad(14) + "V{}")
+
+    # --- Multiple fields across chunks ---
+
+    # Fields at positions 14, 30 (spanning two 16-byte chunks).
+    assert_equal(
+        (pad(14) + "{}" + pad(14) + "{}").format("X", "Y"),
+        pad(14) + "X" + pad(14) + "Y",
+    )
+
+    # Fields spanning three 16-byte chunks.
+    assert_equal(
+        (pad(14) + "{}" + pad(14) + "{}" + pad(14) + "{}").format(
+            "A", "B", "C"
+        ),
+        pad(14) + "A" + pad(14) + "B" + pad(14) + "C",
+    )
+
+    # --- Brace in scalar tail (string length not aligned to SIMD width) ---
+
+    # 17 bytes total: 16-byte vectorized chunk + 1 byte scalar tail with {}.
+    assert_equal((pad(15) + "{}" + "z").format("T"), pad(15) + "T" + "z")
+
+    # 33 bytes: two 16-byte chunks + 1 byte tail.
+    assert_equal((pad(31) + "{}" + "z").format("T"), pad(31) + "T" + "z")
+
+    # --- Long string with many fields ---
+    assert_equal(
+        (pad(100) + "{}" + pad(100) + "{}" + pad(100)).format("M", "N"),
+        pad(100) + "M" + pad(100) + "N" + pad(100),
+    )
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
