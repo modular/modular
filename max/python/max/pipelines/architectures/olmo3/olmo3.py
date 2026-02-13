@@ -30,13 +30,13 @@ from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
+from ..common_layers.mlp import MLP
 from ..common_layers.rotary_embedding import (
     RotaryEmbedding,
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
 from .layers.attention import Olmo3Attention
-from .layers.mlp import MLP
 from .layers.rms_norm import Olmo3RMSNorm
 from .layers.transformer_block import Olmo3TransformerBlock
 from .model_config import Olmo3Config

@@ -27,8 +27,8 @@ from max.nn.module import Module
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
+from ...common_layers.mlp import MLP
 from .functional_kernels import grouped_matmul_ragged, moe_create_indices
-from .mlp import MLP
 
 
 class MoEGate(Module[[Tensor], tuple[Tensor, Tensor]]):
