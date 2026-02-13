@@ -49,13 +49,6 @@ from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    """Distribute a tensor to multiple devices."""
-    return [v.to(device) for device in devices]
-
-
 class Qwen3TransformerBlock(Module):
     """Qwen3 transformer block that supports both single and multi-GPU.
 
@@ -345,9 +338,9 @@ class Qwen3(Module):
             h = [hi * self.embedding_multiplier for hi in h]
 
         # Distribute RoPE frequencies and row offsets to all devices
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
-        input_row_offsets_list = distribute_value(
-            input_row_offsets, self.devices
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
+        input_row_offsets_list = ops.distributed_broadcast(
+            input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
         # Process through transformer layers
@@ -366,7 +359,9 @@ class Qwen3(Module):
         h0 = h[0]  # Use first device's output for indexing
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
+        last_token_distributed = ops.distributed_broadcast(
+            last_token_h, signal_buffers
+        )
 
         # Apply final norm
         norm_last_token = forward_sharded_layers(

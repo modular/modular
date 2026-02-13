@@ -28,7 +28,6 @@ from max.graph import (
     ops,
 )
 from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.attention.attention_with_rope import distribute_value
 from max.nn.legacy.comm import Allreduce
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
@@ -347,7 +346,13 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         signal_buffers: list[BufferValue] = kwargs["signal_buffers"]
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
-        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+        if not input_row_offsets.device == self.devices[0]:
+            raise ValueError(
+                f"input_row_offsets must be located on {self.devices[0]}"
+            )
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets, signal_buffers
+        )
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](

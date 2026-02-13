@@ -64,21 +64,6 @@ class DeviceAttentionParams:
     head_dim: int
 
 
-def distribute_value(
-    v: TensorValue, devices: Sequence[DeviceRef]
-) -> list[TensorValue]:
-    """Distributes a tensor value across multiple devices.
-
-    Args:
-        v: The tensor value to distribute.
-        devices: The list of devices to distribute the tensor across.
-
-    Returns:
-        A list of tensor values, one per device.
-    """
-    return [v.to(device) for device in devices]
-
-
 class InternVLDecoderLayer(Module):
     """Represents a single decoder layer in the InternVL language model.
 
@@ -371,7 +356,7 @@ class InternVLLanguageModel(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         # Run through decoder layers.
         for idx, layer in enumerate(self.layers):

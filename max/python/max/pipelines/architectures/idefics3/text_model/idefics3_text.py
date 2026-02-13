@@ -92,7 +92,6 @@ class Idefics3LanguageModel(Llama3):
             multimodal_embeddings=image_embeddings,
             image_token_indices=image_token_indices,
         )
-        # h = distribute_value(h0_merged, self.config.text_config.devices)
 
         # Run through decoder layers using inherited layers
         for idx, layer in enumerate(self.layers):

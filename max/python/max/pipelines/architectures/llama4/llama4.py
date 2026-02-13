@@ -41,12 +41,6 @@ from .layers.moe import DistributedLlama4MoE, Llama4MoEGate
 from .model_config import Llama4Config
 
 
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
-
-
 class Llama4DecoderLayer(Module):
     """Llama4 decoder attention block."""
 
@@ -244,9 +238,10 @@ class Llama4TextModel(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         input_row_offsets = kwargs["input_row_offsets"]
-        distributed_cache_positions = distribute_value(
-            TensorValue(cache_positions), self.devices
-        )
+        cache_positions = TensorValue(cache_positions)
+        distributed_cache_positions = [
+            cache_positions.to(device) for device in self.devices
+        ]
         for _, layer in enumerate(self.layers):
             h = layer(
                 h,
@@ -259,7 +254,9 @@ class Llama4TextModel(Module):
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
+        last_token_distributed = ops.distributed_broadcast(
+            last_token_h, signal_buffers
+        )
         # Apply norm to each shard
         norm_last_token = [
             self.norm_shards[i](last_token_distributed[i])

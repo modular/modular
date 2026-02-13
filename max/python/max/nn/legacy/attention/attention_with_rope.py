@@ -1101,12 +1101,6 @@ class GPTQAttentionWithRope(AttentionWithRope):
         return self.o_proj(attn_out)
 
 
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
-
-
 class TensorParallelAttentionWithRope(
     AttentionWithRope, DistributedAttentionImpl
 ):
