@@ -59,7 +59,7 @@ from ..structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout._coord import CoordLike
+from layout._coord import CoordLike, ComptimeInt, RuntimeInt
 from layout._layout import RowMajorLayout, _IntToComptimeInt
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (
@@ -163,7 +163,7 @@ struct Grouped1D1DMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
-    # Full C device tensor layout (TensorLayout for bounds-checked stores)
+    # C device layout (TensorLayout from caller's TileTensor)
     c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,

@@ -240,17 +240,16 @@ fn grouped_matmul_1d1d_nvfp4[
         "K iterations must be a multiple of k_group_size",
     ]()
 
-    # Instantiate kernel first -- TMA layouts computed from config
-    from ..structured_kernels.tile_types import GMEMTile
-
-    comptime CDeviceTileType = GMEMTile[c_type, c_layout]
+    # Instantiate kernel -- c_device_layout derived from caller's TileTensor
+    # so types match by construction in enqueue_function.
+    comptime c_device_tt_layout = type_of(lt_to_tt(c_device)).LayoutType
     comptime matmul_kernel = Grouped1D1DMatmulKernel[
         a_type,
         b_type,
         c_type,
         sfa_dtype,
         sfb_dtype,
-        CDeviceTileType.LayoutType,
+        c_device_tt_layout,
         transpose_b,
         config=config,
         static_N=expert_n,
@@ -394,7 +393,9 @@ fn grouped_matmul_1d1d_nvfp4[
         lt_to_tt_1d(a_scale_offsets),
         lt_to_tt_1d(expert_ids),
         lt_to_tt_1d(expert_scales),
-        lt_to_tt(c_device),  # For bounds-checked stores
+        lt_to_tt(
+            c_device
+        ),  # Types match: kernel param derived from same layout
         num_active_experts,
         UInt32(K),
         grid_dim=grid_dim,
