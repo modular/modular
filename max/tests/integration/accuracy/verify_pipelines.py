@@ -466,12 +466,7 @@ def run_llm_verification(
     kl_div_threshold: float | None = None,
     timeout: int | None = None,
 ) -> VerificationVerdict:
-    """Run a Llama3 verification with the given model and weights encoding.
-
-    extra_verify_flags are passed to
-    max/tests/integration/architectures/llama3/verify.py -- check that script
-    for details on acceptable flags.
-    """
+    """Run verification with the given model and weights encoding."""
 
     fssafe_pipeline = pipeline.replace("/", "_")
 
