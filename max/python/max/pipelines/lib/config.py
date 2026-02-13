@@ -278,9 +278,9 @@ class PipelineConfig(ConfigFileModel):
     use_legacy_module: bool = Field(
         default=True,
         description=(
-            "Whether to use the legacy Module architecture (default=True for backward "
-            "compatibility). Set to False to use the new Module-based architecture when "
-            "available."
+            "Whether to prefer the legacy ModuleV2 architecture (default=True for backward "
+            "compatibility). When True, tries the ModuleV2 architecture first and falls back "
+            "to ModuleV3. When False, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 

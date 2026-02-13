@@ -442,8 +442,11 @@ class PipelineRegistry:
             return None
 
         for architecture_name in architecture_names:
-            if use_legacy_module:
-                architecture_name += "_Legacy"
+            lookup_name = (
+                architecture_name + "_Legacy"
+                if use_legacy_module
+                else architecture_name
+            )
 
             # If task not provided, check if we need to infer it
             inferred_task = task
@@ -452,7 +455,7 @@ class PipelineRegistry:
                 matching_tasks = [
                     arch_task
                     for arch_name, arch_task in self._architectures_by_task
-                    if arch_name == architecture_name
+                    if arch_name == lookup_name
                 ]
 
                 # If multiple architectures share the name, infer task from pipeline_tag
@@ -476,9 +479,20 @@ class PipelineRegistry:
                             f"Using first registered architecture."
                         )
 
-            if arch := self._resolve_architecture(
-                architecture_name, inferred_task
-            ):
+            if arch := self._resolve_architecture(lookup_name, inferred_task):
+                return arch
+
+            # Fallback: if only one variant exists, use it
+            fallback_name = (
+                architecture_name
+                if use_legacy_module
+                else architecture_name + "_Legacy"
+            )
+            if arch := self._resolve_architecture(fallback_name, inferred_task):
+                logger.debug(
+                    f"Falling back from '{lookup_name}' to"
+                    f" '{fallback_name}' (only one variant registered)"
+                )
                 return arch
 
         logger.debug(
