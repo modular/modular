@@ -68,11 +68,6 @@ public:
                                           const ExprNode *expr,
                                           Type optionalParentTraitType = {});
 
-  /// Utility function to perform substitutions of the bindings into the symbol
-  /// for the given function declaration. It returns the resultant
-  /// SymbolConstantAttr or produces an error message and returns null.
-  TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl) const;
-
   /// The overall expression this was formed for.
   const ExprNode *getExpr() const { return parameters.callExpr; }
   SMLoc getExprLoc() const;
@@ -164,7 +159,16 @@ private:
   size_t numPreTypeChecked = 0;
 
   friend class ParamInf;
+  friend TypedAttr getBoundConstAttrForFn(ASTDecl &, const ParamBindings &);
 };
+
+/// Utility function to perform substitutions of the bindings into the symbol
+/// for the given function declaration. It returns the resultant
+/// SymbolConstantAttr or produces an error message and returns null.
+TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl,
+                                 const ParamBindings &unverifiedBindings);
+TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
+                                 ParameterExprArrayAttr verifiedBindings);
 
 FnTypeGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
