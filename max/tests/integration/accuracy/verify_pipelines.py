@@ -1552,6 +1552,13 @@ PIPELINES = {
         " frontier of passing absolute and relative tolerance combinations."
     ),
 )
+@click.option(
+    "--filter",
+    "name_filter",
+    type=str,
+    default=None,
+    help="Only run pipelines whose name matches the filter.",
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
@@ -1561,6 +1568,7 @@ def main(
     tag_filter: TagFilter,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    name_filter: str | None,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -1580,6 +1588,11 @@ def main(
                 continue
             if not tag_filter.satisfied_by(pipeline_def.tags):
                 continue
+            if (
+                name_filter
+                and name_filter.casefold() not in pipeline_name.casefold()
+            ):
+                continue
             start_time = time.time()
             print(f"\n===== Running {pipeline_name} =====", flush=True)
             verdicts[pipeline_name] = pipeline_def.run_protected(
@@ -1594,14 +1607,6 @@ def main(
                 flush=True,
             )
     else:
-        # TODO: Temporarily allow to not specify the org name when running a
-        # pipeline by name. This is because the bisection script does not
-        # currently have access to the org name. Fix this by making the
-        # bisection use the existing json status report.
-        for pipeline_name, pipeline_def in PIPELINES.items():  # noqa: B007
-            if display_name(pipeline_name) == pipeline:
-                pipeline = pipeline_name
-                break
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
         pipeline_def = PIPELINES[pipeline]
