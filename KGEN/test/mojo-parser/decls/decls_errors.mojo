@@ -987,11 +987,12 @@ struct CFMStructFail(TrivialRegisterPassable, CFMTrait): # expected-error {{'CFM
 struct NoTraits(TrivialRegisterPassable):
     pass
 
+# expected-note @+1 {{function declared here}}
 fn trait_fn[T: CFMTrait]():
     pass
 
 fn invalid_trait_bind():
-    trait_fn[NoTraits]() # expected-error {{cannot bind type 'NoTraits' to trait 'CFMTrait'}}
+    trait_fn[NoTraits]() # expected-error {{invalid call to 'trait_fn': 'trait_fn' parameter 'T' has 'CFMTrait' type, but value has type 'AnyStruct[NoTraits]'}}
 
 fn non_copyable_trait[T: CFMTrait](value: T):
     var copy = value # expected-error {{value of type 'T' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}

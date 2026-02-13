@@ -57,6 +57,7 @@ struct TraitStruct(MyMovable, SimpleTrait):
         pass
 
 
+# expected-note @+1 {{function declared here}}
 fn test_many_things_of_specified_trait[
     element_type: type_of(AnyType), *element_types: element_type
 ]():
@@ -79,7 +80,7 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     # This is ok!
     test_many_things_of_specified_trait[AnyType, TraitStruct, Int]()
 
-    # expected-error @+1 {{cannot bind type 'TraitStruct' to trait 'Movable'}}
+    # expected-error @+1 {{'test_many_things_of_specified_trait' parameter 'element_types' has 'Movable' type, but value has type 'AnyStruct[TraitStruct]'}}
     test_many_things_of_specified_trait[Movable, TraitStruct, TraitStruct]()
 
     test_many_things_of_specified_trait[

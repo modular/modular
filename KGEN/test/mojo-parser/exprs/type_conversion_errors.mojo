@@ -15,7 +15,7 @@ struct Foo:
     fn __init__(out self):
         pass
 
-
+# expected-note @+1 {{function declared here}}
 fn take_instance_param[a: Foo]():
     pass
 
@@ -28,7 +28,7 @@ fn takes_instance_arg(a: Foo):
 # COM: Issue #27654: Parser crash: Assertion failed: Types should match
 # COM: https://github.com/modular/mojo/issues/1607 Improved error message for this common error
 fn test_type_instead_of_instance() -> Foo:
-    # expected-error @+1 {{cannot implicitly convert 'Foo' type as a value to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
+    # expected-error @+1 {{'take_instance_param' parameter 'a' has 'Foo' type, but value has type 'AnyStruct[Foo]'}}
     take_instance_param[Foo]
     # expected-error @+1 {{invalid call to 'takes_instance_arg': value passed to 'a' cannot be converted from type value 'Foo' to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
     takes_instance_arg(Foo)

@@ -1271,129 +1271,6 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   return emitter.emitCResult(result, expr, dest);
 }
 
-namespace {
-class InProgressBindings {
-public:
-  InProgressBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
-                     unsigned numPosBindings = 0)
-      : paramTypes(paramTypes), paramList(paramList), posIdx(numPosBindings),
-        seenKeyword(false) {}
-
-  /// Given the current set of bindings and the next operand to bind,
-  /// determine the next expected parameter type according to the current
-  /// in-progress bindings.
-  ASTType getNextParamType(const Operand &operand,
-                           const ParamBindings &bindings, IREmitter &emitter);
-
-private:
-  /// The types of the parameters in the list.
-  ArrayRef<Type> paramTypes;
-  /// The passing kinds of the parameters in the list.
-  PogListAttr paramList;
-  /// The number of positionally-bound parameters processed so far.
-  unsigned posIdx;
-  /// If any non-inferred keyword parameters have been processed so far.
-  bool seenKeyword;
-};
-} // namespace
-
-ASTType InProgressBindings::getNextParamType(const Operand &operand,
-                                             const ParamBindings &paramBindings,
-                                             IREmitter &emitter) {
-  // Unpacked operands don't have expected types.
-  if (operand.isUnpacked())
-    return {};
-  // ... doesn't have an expected type.
-  if (operand.expr->kind == ExprNode::kEllipsisLiteral)
-    return {};
-
-  // Identify which parameter type corresponds to this operand.
-  // FIXME: This function doesn't emit any diagnostics, and simply fails to
-  // determine the next type if verification fails. If the user passes a context
-  // sensitive expression to an invalid parameter, they get an ambiguity error
-  // instead of an incorrect parameter error.
-  ASTType nextType;
-  size_t paramIdx;
-  if (operand.isPositional()) {
-    if (seenKeyword) {
-      emitter.emitError(operand.getLoc(),
-                        "positional parameter follows keyword parameter");
-      return {};
-    }
-
-    // Skip over any inferred parameters.
-    while (posIdx < paramList.size() &&
-           paramList.getPassingKind(posIdx) == PassingKind::Inferred)
-      ++posIdx;
-
-    if (posIdx >= paramTypes.size())
-      return {}; // out-of-bounds
-    nextType = paramTypes[posIdx];
-
-    // Remember that another parameter was passed positionally, if the current
-    // parameter isn't variadic.
-    paramIdx = posIdx;
-    posIdx += !paramList.isPosVarArg(posIdx);
-  } else {
-    // This parameter is passed with a keyword. Find a matching keyword
-    // parameter on the parameter list.
-    assert(operand.isKeyword() && "expected a keyword operand");
-    for (auto [i, type] : llvm::enumerate(paramTypes)) {
-      if (paramList.getName(i) == operand.name) {
-        paramIdx = i;
-        nextType = type;
-        break;
-      }
-    }
-    // Failed to find a matching keyword parameter.
-    if (!nextType)
-      return {};
-    // Remember that we've seen a non-inferred keyword operand for error
-    // checking.
-    if (paramList.getPassingKind(paramIdx) != PassingKind::Inferred)
-      seenKeyword = true;
-  }
-
-  // Attempt to apply the current binding set to the parameter list.
-  ParameterExprArrayAttr bindings =
-      paramBindings.tryVerifyBindings(paramTypes, paramList, /*partial=*/true);
-  // If that failed, return
-  if (!bindings)
-    return {};
-
-  // Use the bindings determined so far to specialize the type.
-  ParserParameterEvaluator evaluator(emitter.shared, bindings);
-  nextType = evaluator.getReboundType(nextType);
-
-  // If we need to perform parameter inference to find the concrete parameters
-  // of this type, give up.  TODO: This should really be integrated with param
-  // inference completely.
-  for (auto param : nextType.getParamBindings())
-    if (isa<UnboundAttr>(param))
-      return {};
-
-  // Unwrap the variadic element type.
-  if (paramList.isPosVarArg(paramIdx))
-    nextType = nextType.getVariadicElementType();
-
-  // HACK: The type could depend on an infer-only parameter for which a value
-  // has not yet been determined. If that's the case, the parameter is left
-  // unbound and parameter binding cannot resolve the co-dependency between the
-  // infer-only parameter and the incoming expression.
-  if (paramList.hasInferredParams() || operand.isKeyword()) {
-    mlir::AttrTypeWalker walker;
-    walker.addWalk([](TypedAttr attr) {
-      if (isa<UnboundAttr, EllipsisAttr>(attr))
-        return WalkResult::interrupt();
-      return WalkResult::advance();
-    });
-    if (walker.walk(nextType).wasInterrupted())
-      return {};
-  }
-
-  return nextType;
-}
-
 /// Emit an operand as an expression, handling the _ and other cases. This
 /// typically will return a PValue but can also return a UValue when the operand
 /// is (eg) an overload set or init list expression.
@@ -1437,64 +1314,6 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
   }
 
   return emitter.emitExpr(operand.expr, context);
-}
-
-/// Emit the PValue result for a single parameter binding.
-static TypedAttr emitSingleParamBinding(const Operand &operand,
-                                        IREmitter &emitter, ExprContext context,
-                                        ASTType expectedType) {
-  AnyValue value = emitSingleParamExpr(operand, emitter, context);
-  if (!value)
-    return {};
-
-  // If this is a special symbol don't emit it and unify the type.
-  if (isa_and_nonnull<EllipsisAttr, UnboundAttr>(value.getIfPValue().get()))
-    return value.getIfPValue();
-
-  // Emit the expression as a  parameter, coercing it to the expected type, if
-  // one is provided.
-  return emitter.emitPValue({value, operand.expr}, context, expectedType);
-}
-
-/// Given PValue operands and a list of in-progress bindings to parameter lists,
-/// emit the operands and add them to a binding set. If any operand fails be
-/// emitted as a PValue, the function fails.
-static LogicalResult
-bindParameterOperands(MutableArrayRef<InProgressBindings> bindables,
-                      ArrayRef<Operand> operands, ParamBindings &paramBindings,
-                      IREmitter &emitter, ExprContext context) {
-  assert(!bindables.empty() && "expected something to bind");
-
-  // Process each operand.
-  for (const Operand &operand : operands) {
-    // Query each bindable for the type of the next parameter. If there are
-    // multiple bindables, they all have to agree.
-    SmallVector<ASTType> expectedTypes;
-    for (InProgressBindings &bindable : bindables) {
-      expectedTypes.push_back(
-          bindable.getNextParamType(operand, paramBindings, emitter));
-    }
-    ASTType expectedType;
-    if (!expectedTypes.empty()) {
-      expectedType = expectedTypes.front();
-      // If any of the other types disagree, give up.
-      if (llvm::any_of(llvm::drop_begin(expectedTypes), [&](ASTType type) {
-            return !type.isEqualCanon(expectedType);
-          }))
-        expectedType = ASTType();
-    }
-
-    TypedAttr value =
-        emitSingleParamBinding(operand, emitter, context, expectedType);
-    if (!value)
-      return failure(); // error already emitted
-    if (operand.isKeywordOrUnpackedKeyword())
-      paramBindings.add(operand.expr, value, operand.name);
-    else
-      paramBindings.add(operand.expr, value);
-  }
-
-  return success();
 }
 
 /// Given a value of type type, substitute parameters into the type, producing
@@ -1558,30 +1377,6 @@ static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
 
   return BindParamsAttr::get(callable.get(), newBindings,
                              &emitter.shared.getEvaluationContext());
-}
-
-/// When subscripting a callable with a bound symbol (i.e. a direct method call
-/// or call to a method), apply parameter bindings to it.
-static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
-                                                 ArrayRef<Operand> operands,
-                                                 IREmitter &emitter) {
-  // Build a list of all the things we can bind. Remember the number of
-  // positional parameters that have already been bound.
-  SmallVector<InProgressBindings> bindables;
-  unsigned numPosBindings =
-      overloadSet.paramBindings.getParameters().getNumPositional();
-  for (ASTDecl *fnDecl : overloadSet.fnDecls) {
-    if (fnDecl->isDisabled())
-      continue;
-    FnTypeGeneratorType sig =
-        cast<FnOp>(fnDecl->getIfOperation()).getFullSignature();
-    bindables.emplace_back(sig.getInputParamTypes(), sig.getParamListAttrs(),
-                           numPosBindings);
-  }
-
-  // Now attempt to bind the new operands.
-  return bindParameterOperands(bindables, operands, overloadSet.paramBindings,
-                               emitter, EC_CallParamValue);
 }
 
 /// Given a base value, emit access to a base value element using either a
@@ -2744,10 +2539,15 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (overloads) {
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
                                                     rsquareLoc, operands);
-    // Mutate the overloadset directly.  This is a bit gross, but we know we're
+    // Mutate the OverloadSet directly.  This is a bit gross, but we know we're
     // the only user of it.
-    if (failed(bindParamValuesToDirectCall(*overloads, operands, emitter)))
-      return {};
+    for (auto op : operands) {
+      auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
+      if (!value)
+        return {};
+      overloads->paramBindings.add(op.expr, value, op.name);
+    }
+
     return emitter.emitResult(overloads, this, dest);
   }
 

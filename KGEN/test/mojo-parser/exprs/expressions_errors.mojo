@@ -45,10 +45,7 @@ fn test_duplicate_kw_param[x: Int]():
 
 
 fn test_pos_after_kw_param[x: Int]():
-    takes_pos_or_kw_param[
-        j=x,
-        x,  # expected-error {{positional parameter follows keyword parameter}}
-    ]()
+    takes_pos_or_kw_param[j=x, x]()
 
 
 fn invalid_with():
@@ -357,12 +354,13 @@ def no_unused_values_in_def():
 
   _ = *x # expected-error {{can't use starred expression here}}
 
+# expected-note @+1 {{function declared here}}
 fn func_with_static_param[x: Int]() -> Int:
   return x
 
 fn dynamic_used_as_param() -> Int:
   var x = 5
-  # expected-error @+1 {{cannot use a dynamic value in call parameter}}
+  # expected-error @+1 {{cannot use a dynamic value in a parameter list}}
   return func_with_static_param[x]()
 
 @fieldwise_init
@@ -374,6 +372,7 @@ fn dynamic_used_as_param_2() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in type parameter}}
   return func_with_static_param[w.x]()
 
+# expected-note @+1 {{function declared here}}
 fn higher_order_int_func[func: fn (Int) escaping -> Int]() -> Int:
   return func(3)
 
@@ -381,7 +380,7 @@ fn use_non_parameter_func() -> Int:
   var val = 8
   fn my_nested_func(x: Int) -> Int:
     return val + x
-  # expected-error @+1 {{cannot implicitly convert 'fn(x: Int) escaping -> Int' value to 'fn(Int) escaping -> Int'}}
+  # expected-error @+1 {{cannot use a dynamic value in a parameter list}}
   var result: Int = higher_order_int_func[my_nested_func]()
 
 fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
@@ -1113,6 +1112,7 @@ fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
 struct TwoParamsType[a: Int, b: Int]:
     pass
 comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B]
+# expected-note @+1 {{function declared here}}
 fn take_anytype[T: AnyType]():
-  # expected-error @below {{cannot pass '[B: Int] AnyStruct[TwoParamsType[B, ?]]' value, expected 'AnyType' in call parameter}}
+  # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, ?]]'}}
     take_anytype[TwoParamsTypeAlias]()

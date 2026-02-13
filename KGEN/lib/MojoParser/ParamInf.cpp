@@ -520,6 +520,10 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     return SmartVariant<CValue, ASTType>(CValue(argVal));
   }
 
+  // FIXME: This emits an error unconditionally (not to getDiags) on failure.
+  if (PValue result = orValue->filterOverloadSetForParamBindings())
+    return SmartVariant<CValue, ASTType>(CValue(result));
+
   // Otherwise, we don't have a contextual error.
   emitWrongTypeDiag(expectedType);
   return failure(); // TODO: Improve this.
