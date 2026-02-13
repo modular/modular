@@ -1500,8 +1500,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   }
 
   // If we /just/ have a getter, emit this as a call to the getter, allowing
-  // us to get nice tuned diagnostics.
-  if (!setterSet)
+  // us to get nice tuned diagnostics.  We also do this in a comptime context,
+  // because the setter will never be called, and we want PValues here, not
+  // DLValues.
+  if (!setterSet || !emitter.builder)
     return getterSet.emitCall(std::move(operands), dest, emitter);
 
   // Okay, we definitely have a setter, and we might have a getter.  The problem
