@@ -51,7 +51,9 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
 )
-from layout.tma_async import create_tensor_tile, TMATensorTileArray
+from layout.tma_async import TMATensorTileArray
+
+from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -459,33 +461,33 @@ fn grouped_block_scaled_matmul[
 
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    var a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tma_tile[
+        KernelType.ATmaTile.tile_layout,
+        KernelType.ATmaTile.desc_layout,
         a_tma_tile_shape,
         swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ATmaOp.layout,
-        __desc_layout = KernelType.ATmaOp.desc_layout,
     ](ctx, a_tensor_batched)
 
     # B matrix TMA
     comptime b_tma_tile_shape = Index(
         1, BN // (cluster_shape[0] // config.cta_group), BK
     )
-    var b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tma_tile[
+        KernelType.BTmaTile.tile_layout,
+        KernelType.BTmaTile.desc_layout,
         b_tma_tile_shape,
         swizzle_mode = config.b_swizzle,
-        __tile_layout = KernelType.BTmaOp.layout,
-        __desc_layout = KernelType.BTmaOp.desc_layout,
     ](ctx, b_tensor_batched)
 
     # C matrix TMA
     comptime c_tma_tile_shape = Index(
         1, config.output_tile_shape[0], config.output_tile_shape[1]
     )
-    var c_tma_op = create_tensor_tile[
+    var c_tma_op = create_tma_tile[
+        KernelType.CTmaTile.tile_layout,
+        KernelType.CTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
-        __tile_layout = KernelType.CTmaOp.layout,
-        __desc_layout = KernelType.CTmaOp.desc_layout,
     ](ctx, c_tensor_batched)
 
     # Scaling factors TMA - 5D tensors (using converted batched tensors)
@@ -496,11 +498,10 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfa_tma_op = create_tensor_tile[
+    var sfa_tma_op = create_tma_tile[
+        KernelType.SFATmaTile.tile_layout,
+        KernelType.SFATmaTile.desc_layout,
         sfa_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = KernelType.SFATmaOp.layout,
-        __desc_layout = KernelType.SFATmaOp.desc_layout,
     ](ctx, sfa_5d_tensor)
 
     comptime sfb_tma_tile_shape = Index(
@@ -510,11 +511,10 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfb_tma_op = create_tensor_tile[
+    var sfb_tma_op = create_tma_tile[
+        KernelType.SFBTmaTile.tile_layout,
+        KernelType.SFBTmaTile.desc_layout,
         sfb_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = KernelType.SFBTmaOp.layout,
-        __desc_layout = KernelType.SFBTmaOp.desc_layout,
     ](ctx, sfb_5d_tensor)
 
     # ===== Create TMATensorTileArray for per-block tensormaps =====
@@ -631,6 +631,47 @@ fn grouped_block_scaled_matmul[
     # 1 TMA + 1 MMA + 1 Scheduler + 4 Epilogue warps
     comptime num_threads = 32 * 7
 
+    # ===== Create TileTensor wrappers for kernel args =====
+    from layout._layout import row_major as new_row_major
+    from memory import UnsafePointer as NewPtr
+
+    var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(a_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var b_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(b_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var c_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(c_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var sfa_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(sfa_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var sfb_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
+        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
+            unsafe_from_address=Int(sfb_ptrs.ptr)
+        ),
+        layout=new_row_major[max_groups, 1](),
+    )
+    var problem_sizes_tt = type_of(matmul_kernel).ProblemSizesTile(
+        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
+            unsafe_from_address=Int(problem_sizes.ptr)
+        ),
+        layout=new_row_major[max_groups, 4](),
+    )
+
     # ===== Kernel Launch =====
     # Dispatch to run_2sm() for 2SM mode (cta_group=2), else run() for 1SM
 
@@ -650,14 +691,14 @@ fn grouped_block_scaled_matmul[
             tma_array_sfa,
             tma_array_sfb,
             tma_array_c,
-            # Per-group pointer tensors
-            a_ptrs,
-            b_ptrs,
-            c_ptrs,
-            sfa_ptrs,
-            sfb_ptrs,
+            # Per-group pointer tensors (TileTensor)
+            a_ptrs_tt,
+            b_ptrs_tt,
+            c_ptrs_tt,
+            sfa_ptrs_tt,
+            sfb_ptrs_tt,
             # Problem sizes and group count
-            problem_sizes,
+            problem_sizes_tt,
             num_groups,
             grid_dim=grid_dim,
             block_dim=num_threads,
@@ -681,14 +722,14 @@ fn grouped_block_scaled_matmul[
             tma_array_sfa,
             tma_array_sfb,
             tma_array_c,
-            # Per-group pointer tensors
-            a_ptrs,
-            b_ptrs,
-            c_ptrs,
-            sfa_ptrs,
-            sfb_ptrs,
+            # Per-group pointer tensors (TileTensor)
+            a_ptrs_tt,
+            b_ptrs_tt,
+            c_ptrs_tt,
+            sfa_ptrs_tt,
+            sfb_ptrs_tt,
             # Problem sizes and group count
-            problem_sizes,
+            problem_sizes_tt,
             num_groups,
             grid_dim=grid_dim,
             block_dim=num_threads,

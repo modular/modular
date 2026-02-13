@@ -24,7 +24,6 @@ from .generate import GenerateMixin
 from .kv_cache import KVCacheMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
-    InputKey,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
@@ -39,7 +38,6 @@ __all__ = [
     "ComponentModel",
     "DiffusionPipeline",
     "GenerateMixin",
-    "InputKey",
     "KVCacheMixin",
     "ModelInputs",
     "ModelOutputs",

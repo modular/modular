@@ -761,8 +761,6 @@ fn quantize_and_bmm_fp8_helper[
         ),
     )
 
-    var a_ndbuffer = a._to_ndbuffer()
-
     @parameter
     @__copy_capture(a)
     @always_inline

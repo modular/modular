@@ -1662,7 +1662,6 @@ fn _conv_transposed_cudnn[
     var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
 
     # For now, use no workspace since UnsafePointer.alloc() only allocates host memory,
-    var workspace_bytes = Int(0)
     var workspace_ptr = UnsafePointer[Int8, MutExternalOrigin]()
 
     var alpha = Float32(1.0)

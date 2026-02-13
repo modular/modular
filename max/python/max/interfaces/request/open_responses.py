@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
 import numpy as np
 import numpy.typing as npt
@@ -413,13 +413,14 @@ InputContent = (
     InputTextContent | InputImageContent | InputFileContent | InputVideoContent
 )
 
-# Type alias for output content
-OutputContent = (
+# Type alias for output content - using discriminated union for efficient deserialization
+OutputContent = Annotated[
     OutputTextContent
     | RefusalContent
     | ReasoningSummaryContent
-    | OutputImageContent
-)
+    | OutputImageContent,
+    Field(discriminator="type"),
+]
 
 
 # ============================================================================

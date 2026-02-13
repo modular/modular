@@ -14,6 +14,10 @@ modular_py_library(
         # Diffusers config files are loaded, but the package itself is not imported
         requirement("diffusers"),
     ],
+    ignore_unresolved_imports = [
+        # Conditional import at runtime in pixel_tokenizer, architectures already depends on lib
+        "max.pipelines.architectures.flux2.system_messages.format_input",
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/config",

@@ -91,14 +91,22 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"] # Ignore unused imports being re-exported
-# Slow rollout of pydocstyle lint:
-# Enable docstring checks only for SDK modules in SDK/lib/API/python/ that currently pass all D rules.
-# To add more modules to this list, test them with:
-#   ./bazelw run //oss/modular/bazel/lint:ruff.check -- --no-cache <file>
-# and verify no errors are reported for that specific file.
-"!max/python/max/{driver/**/*.py,dtype/**/*.py,engine/**/*.py,graph/**/*.py,interfaces/**/*.py,nn/embedding.py,nn/float8_config.py,nn/linear.py,torch/torch.py,pipelines/**/*.py}" = ["D"]
-# Don't enforce docstrings for architectures.
-"max/python/max/pipelines/architectures/**/*.py" = ["D"]
+# Enforce pydocstyle only for MAX API:
+"!max/python/max/**/*.py" = ["D"]
+# With exceptions for these packages:
+"max/python/max/benchmark/**/*" = ["D"]
+"max/python/max/config/**/*" = ["D"]
+"max/python/max/entrypoints/**/*" = ["D"]
+"max/python/max/kv_cache/connectors/**/*" = ["D"]
+"max/python/max/mlir/**/*" = ["D"]
+"max/python/max/nn/legacy/**/*" = ["D"]
+"max/python/max/pipelines/architectures/**/*" = ["D"]
+"max/python/max/pipelines/pipelines.py" = ["D"]
+"max/python/max/serve/**/*" = ["D"]
+"max/python/max/support/**/*" = ["D"]
+# And any private packages and modules:
+"max/python/max/_*/**" = ["D"]
+"max/python/max/**/_*.py" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated
 # stubfiles
 "*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206"]

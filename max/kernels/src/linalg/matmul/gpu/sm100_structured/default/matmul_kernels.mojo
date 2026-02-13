@@ -71,6 +71,7 @@ from layout._coord import Coord, Idx, coord
 from layout._tile_tensor import TileTensor
 from ..structured_kernels.tile_types import (
     GMEMTile,
+    TMATile,
     TmaOpType,
     static_row_major,
 )
@@ -524,9 +525,13 @@ struct BlackwellMatmulSM100Kernel[
         Self.c_tile_dim0, Self.c_swizzle_elems
     ]
 
-    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    # Inner TMATensorTile types for kernel run() (DevicePassable)
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaOp = Self.CTmaTile.InnerType
 
     # TMA load size constants (from desc layout dimensions)
     comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
@@ -1382,8 +1387,10 @@ struct BlackwellMatmulSM100FallbackKernel[
     comptime BTileLayout = static_row_major[Self.BN, Self.BK]
     comptime BDescLayout = static_row_major[Self.BN, Self.b_swizzle_elems]
 
-    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaOp = Self.BTmaTile.InnerType
 
     # Static N dimension (columns) from C layout stride -- used for output tiling
     comptime static_N = Self.c_layout.static_stride[0]

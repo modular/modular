@@ -193,7 +193,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
     def _execution_trace_inputs(
         self, model_inputs: ModelInputs
-    ) -> Sequence[Buffer]:
+    ) -> list[Buffer]:
         assert isinstance(model_inputs, Llama3Inputs)
         inputs: list[Buffer] = [
             model_inputs.tokens,
