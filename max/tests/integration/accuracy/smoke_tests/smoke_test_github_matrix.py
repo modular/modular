@@ -54,6 +54,7 @@ NON_XL = set(RUNNERS) - XL
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 # fmt: off
 MODELS: dict[str, set[str]] = {
+    "allenai/olmo-3-7b-instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
     "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
