@@ -28,7 +28,7 @@ from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
+from memory import Pointer, memcpy, memmove
 from builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -983,8 +983,18 @@ struct List[T: Copyable](
         debug_assert(Int(normalized_idx) < self._len, "pop index out of range")
 
         var ret_val = (self._data + normalized_idx).take_pointee()
-        for j in range(normalized_idx + 1, self._len):
-            (self._data + j - 1).init_pointee_move_from(self._data + j)
+        var trailing = self._len - Int(normalized_idx) - 1
+
+        @parameter
+        if Self.T.__moveinit__is_trivial:
+            memmove(
+                dest=self._data + normalized_idx,
+                src=self._data + normalized_idx + 1,
+                count=trailing,
+            )
+        else:
+            for j in range(normalized_idx + 1, self._len):
+                (self._data + j - 1).init_pointee_move_from(self._data + j)
         self._len -= 1
         self._annotate_shrink(self._len + 1)
         return ret_val^
