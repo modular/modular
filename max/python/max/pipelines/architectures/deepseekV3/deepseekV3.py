@@ -586,7 +586,7 @@ class DeepseekV3(Module):
                 )
                 assert isinstance(h, list)
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
@@ -615,8 +615,8 @@ class DeepseekV3(Module):
         offsets = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
-            if self.ep_manager is not None:
-                # EP case: gather variable tokens per device, then allgather
+            if self.config.data_parallel_degree > 1:
+                # Data-parallel case: gather variable tokens per device, then allgather
                 # Create the range once on device 0 (range inputs must be on CPU)
                 return_n_logits_range = ops.range(
                     start=return_n_logits[0],
@@ -718,10 +718,10 @@ class DeepseekV3(Module):
         if self.return_hidden_states == ReturnHiddenStates.ALL:
             ret_val += tuple(h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.ep_manager is not None:
+            if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
-                # For non-EP case, distribute the single tensor to match interface
+                # For non-data-parallel case, distribute the single tensor to match interface
                 ret_val += tuple(distribute_value(last_token_h, devices))
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)

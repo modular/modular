@@ -40,8 +40,7 @@ from gpu.primitives.cluster import (
 )
 from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout._layout import RowMajorLayout, TensorLayout
-from layout._coord import ComptimeInt, RuntimeInt
+from layout._layout import TensorLayout
 from layout._tile_tensor import TileTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from ..structured_kernels.tile_types import (
@@ -101,12 +100,15 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
+    # B-scales layout (new Layout type for TileTensor)
+    b_scales_layout: TensorLayout,
+    # C device layout (for bounds-check global memory stores)
+    c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    # Static dimensions (used to compute tile types internally)
+    # Static N dimension (expert output size)
     static_N: Int,
-    static_K: Int,
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
 ]:
@@ -361,27 +363,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         ]()
         constrained[Self.BK == 128, "Only support BK = 128"]()
 
-    # ========== Computed Layouts (single source of truth) ==========
-
-    # B-scales: (merged_rows_dynamic, K//128) row-major.
-    # The merged first dim (num_experts * N//128) is always runtime.
-    comptime BScalesLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_K // 128]
-    ]
-
-    # C device: (M_dynamic, N_static) row-major.
-    comptime CDeviceLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_N]
-    ]
-
     # ========== Kernel Parameter TileTensor Types ==========
 
     comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.BScalesLayout, MutAnyOrigin
-    ]
-
-    comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.CDeviceLayout, MutAnyOrigin
+        Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
     ]
 
     # ========== Kernel Entry Point ==========
@@ -404,7 +389,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         expert_ids: Self.WorkIterator.ExpertIdsTile,
         expert_scales: Self.WorkIterator.ExpertScalesTile,
         # C tensor for bounds-checked stores
-        c_device: Self.CDeviceTile,
+        c_device: TileTensor[Self.c_type, Self.c_device_layout, MutAnyOrigin],
         # Number of active experts
         num_active_experts: Int,
         # K dimension for iteration
@@ -600,9 +585,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                     # Offset b_scales to current expert's section.
                     # b_scales is (num_experts * N//128, K//128), we need
                     # to index with local tile index within the expert.
-                    comptime b_scales_k = Self.static_K // 128
+                    comptime b_scales_n = Self.b_scales_layout.static_shape[0]
+                    comptime b_scales_k = Self.b_scales_layout.static_shape[1]
                     # b_scales shape is (num_experts * N//128, K//128).
                     # expert_id * (N//128) gives the row offset.
+                    comptime expert_b_scales_n = b_scales_n // Self.static_N
                     comptime n_scale_blocks = Self.static_N // Self.BK
                     var expert_b_scale_offset = (
                         Int(ctx.expert_id()) * n_scale_blocks
@@ -637,7 +624,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
                     # Write with bounds checking and expert scale
                     Self.TileWriterType.write_absolute_with_bounds_check[
-                        Self.CDeviceLayout,
+                        Self.c_device_layout,
                         Self.CLUSTER_SIZE,
                     ](
                         accum,

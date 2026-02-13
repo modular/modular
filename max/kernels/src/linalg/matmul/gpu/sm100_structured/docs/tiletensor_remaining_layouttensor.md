@@ -3,16 +3,15 @@
 ## Status (2026-02-11)
 
 All 8 SM100 kernel families use new Layout types exclusively.
-`block_scaled_matmul` is fully migrated to TileTensor (zero LayoutTensor
-in the kernel body). The `TMATile` wrapper struct preserves new Layout
-type parameters while delegating to `TMATensorTile` internally.
-`_to_legacy_layout` is fully encapsulated inside `tile_types.mojo`.
+The `TMATile` wrapper struct preserves new Layout type parameters
+while delegating to `TMATensorTile` internally. `_to_legacy_layout`
+is fully encapsulated inside `tile_types.mojo` -- no external
+consumers remain.
 
 LayoutTensor remains in 3 categories (down from 5):
 
-1. **Host-side function signatures** (~10 refs, down from ~100) --
-   All 8 SM100 kernel families migrated to TileTensor.
-   Remaining: `conv2d` (im2col TMA), naive kernel dispatch path.
+1. **Host-side function signatures** (~100 refs) -- accept
+   LayoutTensor from graph compiler callers. Blocked on upstream.
 2. **TMATensorTile internals** (~80 refs in `tma_async.mojo`) --
    uses old IntTuple-based Layout. Requires big-bang refactor
    (193 change sites, 25+ consumer files) or old Layout trait
@@ -42,12 +41,6 @@ LayoutTensor remains in 3 categories (down from 5):
 - ~~Host TMA creation~~: `create_tma_tile` factory takes new
   Layout types directly. No `LegacyLayout` exposed to callers.
   Replaces `create_tensor_tile` with explicit legacy layouts.
-- ~~`ViewType` on TileTensor~~: New type alias `ViewType[new_layout]`
-  names the return type of `reshape()`. Enables properly-typed
-  helper functions for batched/5D reshapes (Pattern 12).
-- ~~TileTensor `create_tma_tile` overload~~: Calls
-  `create_tensor_tile` directly, bypassing LayoutTensor. Works
-  with any TileTensor including reshaped views (Pattern 13).
 
 ### Kernel migration (previous PRs)
 
@@ -59,24 +52,6 @@ LayoutTensor remains in 3 categories (down from 5):
 - ~~Migrate SMEM epilogue (transpose + non-transpose)~~ Done.
 - ~~Migrate `_store_with_bounds_check`~~ Done.
 - ~~Enable parameter inference (`//`)~~ Done across ~20 functions.
-
-### Host signature migration
-
-- ~~`block_scaled_matmul`~~: Pure TileTensor with ViewType reshapes
-  and module-level `_create_tma_and_launch` for TMA scoping.
-- ~~`default/matmul` (3 functions)~~: Pure TileTensor with
-  `create_tma_tile` TileTensor overload.
-- ~~`default/dispatch`~~: `lt_to_tt` at NDBuffer boundary.
-- ~~`blockwise_fp8_matmul`~~: Pure TileTensor.
-- ~~`blockwise_fp8_1d2d_matmul`~~: Kernel computes
-  `BScalesLayout`/`CDeviceLayout` internally (Pattern 15).
-  Host uses `KernelType.BScalesTile(ptr, layout)`.
-- ~~`grouped_1d1d_matmul`~~: Kernel computes `CDeviceLayout`
-  internally (Pattern 15).
-- ~~`grouped_block_scaled_matmul`~~: Module-level `_GroupPtrTile`
-  and `_ProblemSizesTile` aliases provide concrete TileTensor types
-  for pointer arrays and problem sizes. Host constructs via kernel
-  type aliases for enqueue_function type identity.
 
 ---
 
@@ -133,27 +108,6 @@ produce TileTensor instead of LayoutTensor.
   multiply needed).
 - Old `Layout` does NOT implement `TensorLayout`. Can't use trait
   bounds to accept both. Use `TMATile` wrapper pattern instead.
-- **Use `L._shape_types[i]` not `ComptimeInt[L.static_shape[i]]`**
-  when computing derived layout types. The former preserves
-  static/dynamic nature; the latter forces all dims to be static,
-  which breaks for dynamic batch or M dims.
-- **Use `tensor.layout.shape[i]()`** (not `Idx[L.static_shape[i]]()`)
-  when constructing reshape layouts at runtime. The former carries
-  actual runtime values; the latter uses compile-time constants that
-  may not match the actual tensor dimensions.
-- **TMA descriptors are scoped references** that can't be copied
-  across `@parameter if` boundaries. Use module-level functions
-  (Pattern 14) to keep TMA creation and kernel launch in one scope.
-- **`lt_to_tt` only supports 2D**. For higher-rank tensors, use
-  `TileTensor(ndbuffer)` directly. Beware: complex DimList
-  expressions (e.g., `ceildiv(...)`) trigger a compiler bug;
-  workaround is `DimList.create_unknown[rank]()`.
-- **Closures can't have parameters in Mojo**. Local functions with
-  `TileTensor[...]` args fail. Use module-level functions instead.
-- **`RowMajorLayout` with conditional types doesn't work** at the
-  type alias level. `ComptimeInt[X] if cond else ComptimeInt[Y]`
-  produces `AnyStruct[...]` not a concrete type. Use separate
-  type aliases for each branch instead.
 
 ---
 
@@ -189,18 +143,9 @@ _to_legacy_layout (encapsulated in tile_types.mojo)
     ├── Used by create_tma_tile factory (internal conversion)
     └── No external consumers ✅
 
-Host signature migration progress (8 of 8 done)
-    ├── block_scaled_matmul: TileTensor ✅
-    ├── default/matmul (3 functions): TileTensor ✅
-    ├── default/dispatch: lt_to_tt at boundary ✅
-    ├── blockwise_fp8_matmul: TileTensor ✅
-    ├── blockwise_fp8_1d2d_matmul: TileTensor (Pattern 15) ✅
-    ├── grouped_1d1d_matmul: kernel CDeviceLayout (Pattern 15) ✅
-    ├── grouped_block_scaled_matmul: TileTensor (module-level aliases) ✅
-    └── conv2d: LayoutTensor (im2col TMA, separate concern) ⚠️
-
 Remaining LayoutTensor (blocked on external changes)
     ├── TMATensorTile internals (old Layout in tma_async.mojo) ⚠️
     ├── TMA async_store boundary (rebind to SMemTile) ⚠️
+    ├── Host function signatures (LayoutTensor from callers) ⚠️
     └── TileLoaderTMA (kept for conv2d) ⚠️
 ```

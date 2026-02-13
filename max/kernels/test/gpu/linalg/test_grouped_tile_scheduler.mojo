@@ -25,12 +25,6 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from memory import stack_allocation
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul_kernel import (
-    _ProblemSizesTile,
-)
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_scheduler import (
     GroupedTileScheduler,
     GroupedWorkInfo,
@@ -74,18 +68,8 @@ fn test_scheduler_kernel[
     tile_count: LayoutTensor[DType.int32, Layout.row_major(1, 1), MutAnyOrigin],
 ):
     """Kernel that iterates over all tiles and records their coordinates."""
-    # Convert LayoutTensor to TileTensor for the scheduler
-    from memory import UnsafePointer as NewPtr
-    from layout._layout import row_major as new_row_major
-
-    var problem_sizes_tt = _ProblemSizesTile[max_groups](
-        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
-            unsafe_from_address=Int(problem_sizes.ptr)
-        ),
-        layout=new_row_major[max_groups, 4](),
-    )
     var scheduler = GroupedTileScheduler[tile_m, tile_n, tile_k, max_groups, 0](
-        problem_sizes_tt, Int(num_groups)
+        problem_sizes, Int(num_groups)
     )
 
     var work_iter = scheduler.work_iterator()

@@ -32,9 +32,6 @@ from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
@@ -228,16 +225,11 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a_lt = from_ndbuffer_row_major(a_device_nd)
-    var b_lt = from_ndbuffer_row_major(b_device_nd)
-    var c_lt = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
-    var a = lt_to_tt(a_lt)
-    var b = lt_to_tt(b_lt)
-    var c = lt_to_tt(c_lt)
-    var a_scales = lt_to_tt(a_scales_lt)
-    var b_scales = lt_to_tt(b_scales_lt)
+    var a = from_ndbuffer_row_major(a_device_nd)
+    var b = from_ndbuffer_row_major(b_device_nd)
+    var c = from_ndbuffer_row_major(c_device_nd)
+    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
@@ -250,8 +242,6 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
     blockwise_fp8_matmul[
         transpose_b=transpose_b,
-        a_scales_type=scales_type,
-        b_scales_type=scales_type,
         config=matmul_config,
     ](
         c,

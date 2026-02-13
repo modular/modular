@@ -59,7 +59,7 @@ from ..structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout._coord import CoordLike, ComptimeInt, RuntimeInt
+from layout._coord import CoordLike
 from layout._layout import RowMajorLayout, _IntToComptimeInt
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (
@@ -163,6 +163,8 @@ struct Grouped1D1DMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
+    # Full C device tensor layout (TensorLayout for bounds-checked stores)
+    c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,
     config: BlockScaledMatmulConfig[
@@ -481,14 +483,9 @@ struct Grouped1D1DMatmulKernel[
         DType.float32, GMEMLayout1D, MutAnyOrigin
     ]
 
-    # C device layout: (M_dynamic, N_static) row-major, computed from static_N.
-    comptime CDeviceLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_N]
-    ]
-
     # C device tensor type (for bounds-checked stores)
     comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.CDeviceLayout, MutAnyOrigin
+        Self.c_type, Self.c_device_layout, MutAnyOrigin
     ]
 
     # TMA load size constants (from desc layout dimensions)

@@ -20,8 +20,8 @@ from gpu import (
     barrier,
     block_idx,
     lane_id,
+    warp_id,
 )
-from gpu import warp_id as get_warp_id
 from gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
@@ -354,7 +354,7 @@ fn gemm_kernel_amd[
     ]()
 
     # Thread and warp indices
-    var warp_id = Int(get_warp_id())
+    var warp_id = Int(warp_id())
     var warp_km, warp_n = divmod(warp_id, num_warps_n)
     var warp_k, warp_m = divmod(warp_km, num_warps_m)
 

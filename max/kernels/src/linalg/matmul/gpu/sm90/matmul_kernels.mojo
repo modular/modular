@@ -34,7 +34,7 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu import warp_id as get_warp_id
+from gpu import warp_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
@@ -459,7 +459,7 @@ struct HopperMatmulSM90Kernel[
         var rank_m = block_id_in_cluster.y
         var rank_n = block_id_in_cluster.x
 
-        var warp_id = get_warp_id()
+        var warp_id = warp_id()
         var lane_predicate = elect_one_sync()
 
         return (

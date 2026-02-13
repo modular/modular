@@ -35,7 +35,6 @@ from .swizzle import Swizzle, make_ldmatrix_swizzle
 
 from ._layout import (
     Layout,
-    RowMajorLayout,
     TensorLayout,
     ZippedDivideLayout,
     _RowMajor,
@@ -640,28 +639,17 @@ struct TileTensor[
             self, coord[*tile_sizes](), coordinates
         )
 
-    comptime ViewType[new_layout: TensorLayout] = TileTensor[
+    @always_inline("nodebug")
+    fn reshape[
+        new_layout: TensorLayout,
+    ](self, layout_val: new_layout) -> TileTensor[
         dtype = Self.dtype,
         LayoutType=new_layout,
         origin = Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
         element_shape_types = Self.element_shape_types,
-    ]
-    """A TileTensor type with the same data properties but a different layout.
-
-    Preserves dtype, origin, address_space, and other properties while
-    replacing LayoutType. Use this to name the return type of reshape()
-    and other layout-changing operations in helper functions.
-
-    Parameters:
-        new_layout: The new TensorLayout type for the view.
-    """
-
-    @always_inline("nodebug")
-    fn reshape[
-        new_layout: TensorLayout,
-    ](self, layout_val: new_layout) -> Self.ViewType[new_layout]:
+    ]:
         """Create a view of the tensor with a different layout.
 
         Returns a new TileTensor sharing the same pointer but with
@@ -678,11 +666,6 @@ struct TileTensor[
             A TileTensor with the new layout viewing the same memory.
         """
         return {self.ptr, layout_val}
-
-    # flatten_leading is defined as a standalone function below the
-    # struct. As a method, Self.LayoutType._shape_types[i] in the return
-    # type is symbolic and can't match value-level types. As a standalone
-    # function, type_of(tensor).LayoutType resolves correctly.
 
     @always_inline("nodebug")
     fn tile[
@@ -2236,61 +2219,3 @@ comptime _IsRowMajor[
 Returns True if all strides match the expected row-major pattern,
 False otherwise. For row-major, stride[i] = product(shape[i+1:]).
 """
-
-
-# =============================================================================
-# Standalone reshape helpers
-# =============================================================================
-
-
-comptime _FlatLeadingLayout[L: TensorLayout] = RowMajorLayout[
-    RuntimeInt[DType.int64], L._shape_types[L.rank - 1]
-]
-"""Layout type after merging leading two dims: (A, B, C) -> (A*B, C).
-
-The merged dimension is always RuntimeInt. The last dimension preserves
-its original static/dynamic type.
-"""
-
-
-@always_inline("nodebug")
-fn flatten_leading[
-    dtype: DType,
-    layout: TensorLayout,
-    //,
-](
-    tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
-) -> tensor.ViewType[
-    RowMajorLayout[
-        RuntimeInt[DType.int64], layout._shape_types[layout.rank - 1]
-    ]
-]:
-    """Merge the first two dimensions of a rank-3 TileTensor: (A, B, C) -> (A*B, C).
-
-    Returns a new TileTensor sharing the same pointer with row-major
-    strides computed from the merged shape. Zero-cost operation.
-
-    Common use case: converting 3D batched tensors (num_experts, N, K)
-    to 2D (num_experts*N, K) for TMA descriptor creation in MoE kernels.
-
-    Parameters:
-        dtype: Element type (inferred from tensor).
-        layout: Layout type (inferred from tensor).
-
-    Args:
-        tensor: A rank-3 TileTensor.
-
-    Returns:
-        A rank-2 TileTensor where dim[0] = old dim[0] * dim[1].
-    """
-    constrained[type_of(tensor).rank == 3, "flatten_leading requires rank 3"]()
-    var merged = RuntimeInt[DType.int64](
-        Int64(tensor.layout.shape[0]().value())
-        * Int64(tensor.layout.shape[1]().value())
-    )
-    comptime ResultLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], layout._shape_types[layout.rank - 1]
-    ]
-    return rebind[tensor.ViewType[ResultLayout]](
-        tensor.reshape(row_major(Coord(merged, tensor.layout.shape[2]())))
-    )

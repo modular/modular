@@ -89,7 +89,7 @@ class TokenGeneratorPipeline(
     BasePipeline[
         TextAndVisionContext | TextContext,
         TextGenerationRequest,
-        TokenGeneratorOutput,
+        TextGenerationOutput,
     ]
 ):
     """Base class for LLM text generation pipelines."""
@@ -151,10 +151,13 @@ class TokenGeneratorPipeline(
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
                 has_stop_sequences = len(stop_detector.stop) > 0
 
-                async for response in self.model_worker.stream(
+                async for responses in self.model_worker.stream(
                     context.request_id, context
                 ):
-                    assert isinstance(response, TextGenerationOutput)
+                    assert isinstance(responses, list)
+                    assert len(responses) > 0
+                    assert isinstance(responses[0], TextGenerationOutput)
+                    response = TextGenerationOutput.merge(responses)
 
                     if len(response.tokens) == 0:
                         yield TokenGeneratorOutput(
@@ -164,7 +167,9 @@ class TokenGeneratorPipeline(
                         continue
 
                     # Decode all tokens in chunk at once - single decode call
-                    with Tracer("tokenizer.decode_chunk"):
+                    with Tracer(
+                        f"tokenizer.decode_chunk({len(response.tokens)} toks)"
+                    ):
                         decoded_tokens = await self.tokenizer.decode(
                             np.array(response.tokens),
                             skip_special_tokens=skip_special_tokens,
@@ -250,22 +255,23 @@ class TokenGeneratorPipeline(
                 # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
                 # returns EmbeddingsGenerationOutput. The EngineQueue correctly deserializes
                 # this based on the model_worker_interface pipeline_task.
-                async for response in self.model_worker.stream(
+                async for responses in self.model_worker.stream(
                     request.request_id, context
                 ):
-                    # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
-                    # Cast to handle the generic type parameter mismatch
-                    if isinstance(response, EmbeddingsGenerationOutput):
-                        return response
-                    self.logger.error(
-                        f"Unexpected response type for embeddings task: {type(response).__name__}, "
-                        f"expected EmbeddingsGenerationOutput. Response: {response}"
-                    )
-                    raise RuntimeError(
-                        f"Expected EmbeddingsGenerationOutput for embeddings task but got "
-                        f"{type(response).__name__}. This may indicate a mismatch between "
-                        f"the API server pipeline task and the model worker pipeline."
-                    )
+                    for response in responses:
+                        # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
+                        # Cast to handle the generic type parameter mismatch
+                        if isinstance(response, EmbeddingsGenerationOutput):
+                            return response
+                        self.logger.error(
+                            f"Unexpected response type for embeddings task: {type(response).__name__}, "
+                            f"expected EmbeddingsGenerationOutput. Response: {response}"
+                        )
+                        raise RuntimeError(
+                            f"Expected EmbeddingsGenerationOutput for embeddings task but got "
+                            f"{type(response).__name__}. This may indicate a mismatch between "
+                            f"the API server pipeline task and the model worker pipeline."
+                        )
 
                 raise RuntimeError(
                     f"No embeddings were generated for request {request.request_id}"
@@ -300,10 +306,11 @@ class AudioGeneratorPipeline(
                 context = await self.tokenizer.new_context(request)
 
             with record_ms(METRICS.output_time):
-                async for response in self.model_worker.stream(
+                async for responses in self.model_worker.stream(
                     request.request_id, context
                 ):
-                    yield response
+                    for response in responses:
+                        yield response
         finally:
             if self.debug_logging:
                 self.logger.debug(
