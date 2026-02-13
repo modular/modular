@@ -72,6 +72,11 @@ from max.benchmark.benchmark_shared.datasets import (
     SonnetBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatSamples,
+    RequestSamples,
+    Samples,
+)
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
@@ -277,18 +282,15 @@ def elide_data_uris_in_string(data_uri: str) -> str:
     )
 
 
-def print_input_prompts(
-    input_requests: Sequence[SampledRequest],
-    num_chat_sessions: int | None,
-) -> None:
+def print_input_prompts(samples: Samples) -> None:
     """Helper function to print input prompts."""
-    if num_chat_sessions:
+    if isinstance(samples, ChatSamples):
         raise NotImplementedError(
             "Printing out multi-turn chats is not supported."
         )
 
     print("Input prompts:")
-    for req_id, request in enumerate(input_requests):
+    for req_id, request in enumerate(samples.requests):
         prompt_info = {
             "req_id": req_id,
             "output_len": request.output_len,
@@ -736,19 +738,12 @@ async def run_multiturn_benchmark(
     return [output for sublist in session_outputs for output in sublist]
 
 
-def create_benchmark_pbar(
-    disable_tqdm: bool,
-    num_chat_sessions: int | None,
-    input_requests: Sequence[SampledRequest],
-    chat_sessions: Sequence[ChatSession],
-) -> tqdm | None:
+def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
     """Create a progress bar for benchmark runs.
 
     Args:
         disable_tqdm: Whether to disable the progress bar.
-        num_chat_sessions: Number of chat sessions (None for single-turn).
-        input_requests: Input requests for single-turn benchmarks.
-        chat_sessions: Chat sessions for multi-turn benchmarks.
+        samples: Samples that will be benchmarked with.
 
     Returns:
         A tqdm progress bar instance or None if disabled.
@@ -756,13 +751,13 @@ def create_benchmark_pbar(
     if disable_tqdm:
         return None
 
-    if not num_chat_sessions:
+    if isinstance(samples, RequestSamples):
         # single-turn chat scenario
-        return tqdm(total=len(input_requests))
+        return tqdm(total=len(samples.requests))
     else:
         # multi-turn chat scenario
         num_qa_turns = [
-            (len(session.messages) // 2) for session in chat_sessions
+            (len(session.messages) // 2) for session in samples.chat_sessions
         ]
         return tqdm(total=sum(num_qa_turns))
 
@@ -770,10 +765,8 @@ def create_benchmark_pbar(
 async def run_single_test_prompt(
     model_id: str,
     api_url: str,
-    input_requests: Sequence[SampledRequest],
+    samples: Samples,
     request_driver: RequestDriver,
-    num_chat_sessions: int | None,
-    chat_sessions: Sequence[ChatSession],
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
@@ -782,10 +775,10 @@ async def run_single_test_prompt(
     logger.info("Starting initial single prompt test run...")
     test_prompt: str | list[dict[str, Any]]
 
-    if num_chat_sessions:
+    if isinstance(samples, ChatSamples):
         # multi-turn chat scenario
-        test_question = chat_sessions[0].messages[0]
-        test_answer = chat_sessions[0].messages[1]
+        test_question = samples.chat_sessions[0].messages[0]
+        test_answer = samples.chat_sessions[0].messages[1]
         test_prompt = [
             {
                 "role": "user",
@@ -798,7 +791,7 @@ async def run_single_test_prompt(
         test_images = []
     else:
         # single-turn chat scenario
-        test_request = input_requests[0]
+        test_request = samples.requests[0]
         test_prompt = test_request.prompt_formatted
         test_prompt_len = test_request.prompt_len
         test_max_tokens = min(
@@ -840,8 +833,7 @@ async def benchmark(
     base_url: str,
     model_id: str,
     tokenizer: PreTrainedTokenizerBase,
-    input_requests: Sequence[SampledRequest],
-    chat_sessions: Sequence[ChatSession],
+    samples: Samples,
     request_rate: float,
     burstiness: float,
     max_concurrency: int | None,
@@ -852,7 +844,6 @@ async def benchmark(
     collect_server_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
-    num_chat_sessions: int | None,
     delay_between_chat_turns: int | None,
     skip_first_n_requests: int,
     max_output_len: int | None,
@@ -893,9 +884,7 @@ async def benchmark(
         await run_single_test_prompt(
             model_id=model_id,
             api_url=api_url,
-            input_requests=input_requests,
-            num_chat_sessions=num_chat_sessions,
-            chat_sessions=chat_sessions,
+            samples=samples,
             request_driver=test_request_driver,
             temperature=temperature,
             top_p=top_p,
@@ -978,12 +967,7 @@ async def benchmark(
                 )
 
         # Create pbar for actual benchmark runs
-        pbar = create_benchmark_pbar(
-            disable_tqdm=disable_tqdm,
-            num_chat_sessions=num_chat_sessions,
-            input_requests=input_requests,
-            chat_sessions=chat_sessions,
-        )
+        pbar = create_benchmark_pbar(disable_tqdm=disable_tqdm, samples=samples)
 
         # Create base driver and wrap with ProgressBarRequestDriver if pbar is provided
         base_driver: RequestDriver = request_driver_class()
@@ -994,10 +978,10 @@ async def benchmark(
         )
 
         try:
-            if not num_chat_sessions:
+            if isinstance(samples, RequestSamples):
                 # single-turn chat scenario
                 outputs = await run_single_turn_benchmark(
-                    input_requests=input_requests,
+                    input_requests=samples.requests,
                     request_rate=request_rate,
                     burstiness=burstiness,
                     timing_data=timing_data,
@@ -1015,7 +999,7 @@ async def benchmark(
             else:
                 # multi-turn chat scenario
                 outputs = await run_multiturn_benchmark(
-                    chat_sessions=chat_sessions,
+                    chat_sessions=samples.chat_sessions,
                     max_requests=max_requests,
                     semaphore=semaphore,
                     benchmark_should_end_time=benchmark_should_end_time,
@@ -1465,8 +1449,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     # We should not be using / accessing args.output_lengths from here on out.
 
-    input_requests: Sequence[SampledRequest] = []
-    chat_sessions: Sequence[ChatSession] = []
+    samples: Samples
     if isinstance(benchmark_dataset, CodeDebugBenchmarkDataset):
         # code_debug is a long-context dataset based on InfiniteBench
         if args.num_chat_sessions:
@@ -1475,13 +1458,13 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     "TODO: Add support for fixed output lengths with multi-turn"
                     " code-debug"
                 )
-            chat_sessions = benchmark_dataset.gen_twoturn_longcontext_requests(
+            samples = benchmark_dataset.gen_twoturn_longcontext_requests(
                 num_chat_sessions=args.num_chat_sessions,
                 tokenizer=tokenizer,
             )
         else:
             assert args.num_prompts is not None
-            input_requests = benchmark_dataset.sample_requests(
+            samples = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
                 output_lengths=output_lengths,
@@ -1492,7 +1475,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     elif isinstance(benchmark_dataset, ShareGPTBenchmarkDataset):
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
@@ -1504,7 +1487,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         apply_chat_template = chat
         # Sample sonnet requests with common parameters
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
@@ -1515,7 +1498,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     elif isinstance(benchmark_dataset, VisionArenaBenchmarkDataset):
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
@@ -1527,7 +1510,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 " Please use --max-output-len"
             )
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             shuffle=not args.record_output_lengths,
@@ -1537,7 +1520,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
         random_state = np.random.default_rng(args.seed)
         if args.num_chat_sessions:
-            chat_sessions = benchmark_dataset.gen_multiturn_random_requests(
+            samples = benchmark_dataset.gen_multiturn_random_requests(
                 input_len=args.random_input_len,
                 output_len=args.random_output_len,
                 num_chat_sessions=args.num_chat_sessions,
@@ -1552,7 +1535,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             )
         else:
             assert args.num_prompts is not None
-            input_requests = benchmark_dataset.sample_requests(
+            samples = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
                 input_len=args.random_input_len,
@@ -1567,7 +1550,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             )
     elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
@@ -1589,7 +1572,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 max(output_len, 1) for output_len in output_lengths
             ]
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
@@ -1598,7 +1581,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
     elif isinstance(benchmark_dataset, BatchJobBenchmarkDataset):
         assert args.num_prompts is not None
-        input_requests = benchmark_dataset.sample_requests(
+        samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
@@ -1609,17 +1592,14 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
 
     if args.print_inputs_and_outputs:
-        print_input_prompts(
-            input_requests=input_requests,
-            num_chat_sessions=args.num_chat_sessions,
-        )
+        print_input_prompts(samples)
 
     lora_manager = None
     if args.lora_paths:
         num_requests = (
-            len(input_requests)
-            if not args.num_chat_sessions
-            else len(chat_sessions)
+            len(samples.requests)
+            if isinstance(samples, RequestSamples)
+            else len(samples.chat_sessions)
         )
 
         lora_manager = LoRABenchmarkManager(
@@ -1675,8 +1655,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             base_url=base_url,
             model_id=model_id,
             tokenizer=tokenizer,
-            input_requests=input_requests,
-            chat_sessions=chat_sessions,
+            samples=samples,
             request_rate=request_rate,
             burstiness=args.burstiness,
             max_concurrency=max_concurrency,
@@ -1687,7 +1666,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             collect_server_stats=args.collect_server_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
-            num_chat_sessions=args.num_chat_sessions,
             delay_between_chat_turns=args.delay_between_chat_turns,
             skip_first_n_requests=args.skip_first_n_requests,
             max_output_len=args.max_output_len,

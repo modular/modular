@@ -72,6 +72,19 @@ class ChatSession:
     messages: Sequence[ChatMessage]
 
 
+@dataclass
+class RequestSamples:
+    requests: Sequence[SampledRequest]
+
+
+@dataclass
+class ChatSamples:
+    chat_sessions: Sequence[ChatSession]
+
+
+Samples = RequestSamples | ChatSamples
+
+
 def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
     return len(tokenizer(text, add_special_tokens=False).input_ids)
 

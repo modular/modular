@@ -28,7 +28,14 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
 from .local import LocalBenchmarkDataset
-from .types import ChatSession, SampledRequest, build_chat_message, encode_image
+from .types import (
+    ChatSamples,
+    ChatSession,
+    RequestSamples,
+    SampledRequest,
+    build_chat_message,
+    encode_image,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -248,8 +255,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         min_input_len: int = 4,
         min_output_len: int = 1,
         first_turn_ratio: float = 1.0,
-    ) -> Sequence[ChatSession]:
-        first_turns = self.sample_requests(
+    ) -> ChatSamples:
+        first_turn_samples = self.sample_requests(
             num_requests=num_chat_sessions,
             tokenizer=tokenizer,
             input_len=int(input_len * first_turn_ratio),
@@ -262,8 +269,9 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             min_output_len=min_output_len,
             random_state=random_state,
         )
+        first_turns = first_turn_samples.requests
 
-        follow_up_turns = self.sample_requests(
+        follow_up_turn_samples = self.sample_requests(
             num_requests=num_chat_sessions * (num_turns - 1),
             tokenizer=tokenizer,
             input_len=input_len,
@@ -276,6 +284,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             min_output_len=min_output_len,
             random_state=random_state,
         )
+        follow_up_turns = follow_up_turn_samples.requests
 
         sessions: list[ChatSession] = []
         for session_id, first_turn in enumerate(first_turns):
@@ -311,7 +320,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             sessions.append(ChatSession(session_id, messages))
 
-        return sessions
+        return ChatSamples(chat_sessions=sessions)
 
     def _load_sharegpt_prompts_limited(
         self,
@@ -427,7 +436,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         # Extract required parameters from kwargs
         input_len = kwargs.get("input_len")
         output_len = kwargs.get("output_len")
@@ -669,7 +678,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         log_request_actual_length_percentiles(input_requests)
 
-        return input_requests
+        return RequestSamples(requests=input_requests)
 
     def _generate_random_image(self, height: int, width: int) -> Image.Image:
         # Truly random images end up being too large and incompressible.

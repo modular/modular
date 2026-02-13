@@ -502,19 +502,19 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
             )
 
             # code_debug is a long-context dataset based on InfiniteBench
-            def sample_requests_func(  # noqa: ANN202
+            def sample_requests_func(
                 dataset_path: str,
                 num_requests: int,
                 tokenizer: PreTrainedTokenizerBase,
                 **kwargs,
-            ):
+            ) -> list[RequestPayload]:
                 # CodeDebugBenchmarkDataset.sample_requests doesn't take dataset_path
                 # because it already knows its dataset path
                 sampled = benchmark_dataset.sample_requests(
                     num_requests=num_requests, tokenizer=tokenizer, **kwargs
                 )
                 converted = []
-                for request in sampled:
+                for request in sampled.requests:
                     # keep mypy happy
                     assert request.output_len is not None, (
                         "output_len is required for CodeDebugBenchmarkDataset"
@@ -562,21 +562,20 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
         )
         print(f"INFO: MODEL config = {pipeline_config}")
 
-        run_kwargs = dict(
-            model_name=pipeline_config.model.model_name,
-            requests=requests,
-            config=pipeline_config,
-            model_factory=model_factory,
-            tokenizer=model_tokenizer,
-            show_text=benchmark_config.show_text,
-            pipeline_task=benchmark_config.pipeline_task,
-            top_k=benchmark_config.sampling.top_k,
-        )
-
+        assert isinstance(model_tokenizer, TextTokenizer)
         print("\nExecuting...")
         if benchmark_config.async_engine:
             elapsed_time, generated_tokens_len = asyncio.run(
-                run_max_async(**run_kwargs)
+                run_max_async(
+                    model_name=pipeline_config.model.model_name,
+                    requests=requests,
+                    config=pipeline_config,
+                    model_factory=model_factory,
+                    tokenizer=model_tokenizer,
+                    show_text=benchmark_config.show_text,
+                    pipeline_task=benchmark_config.pipeline_task,
+                    top_k=benchmark_config.sampling.top_k,
+                )
             )
         else:
             raise ValueError("Non-async LLM Engine not supported yet")

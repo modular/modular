@@ -27,7 +27,7 @@ from typing import Any, cast
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
-from .types import SampledRequest, encode_image_from_file_path
+from .types import RequestSamples, SampledRequest, encode_image_from_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = False,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         """Sample requests from batch job dataset.
 
         Args:
@@ -251,4 +251,4 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
         logger.info(
             f"Sampled {len(sampled_requests)} requests from batch job dataset"
         )
-        return sampled_requests
+        return RequestSamples(requests=sampled_requests)

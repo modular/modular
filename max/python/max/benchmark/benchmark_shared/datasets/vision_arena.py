@@ -19,7 +19,7 @@ from datasets import load_dataset
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
-from .types import SampledRequest, encode_image
+from .types import RequestSamples, SampledRequest, encode_image
 
 
 class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
@@ -37,7 +37,7 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         dataset = load_dataset(
             "lmarena-ai/vision-arena-bench-v0.1", split="train"
         )
@@ -61,4 +61,4 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
                     ignore_eos=(output_len is not None),
                 )
             )
-        return sampled_requests
+        return RequestSamples(requests=sampled_requests)
