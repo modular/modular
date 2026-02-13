@@ -456,6 +456,7 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
+
     @always_inline
     fn __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
@@ -828,6 +829,31 @@ struct LayoutTensor[
             runtime_layout,
             element_runtime_layout,
         )
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: LayoutTensor,
+        out self: LayoutTensor[
+            other.dtype,
+            other.layout,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+            element_layout = other.element_layout,
+            layout_int_type = other.layout_int_type,
+            linear_idx_type = other.linear_idx_type,
+            masked = other.masked,
+            alignment = other.alignment,
+        ],
+    ):
+        """Implicitly cast a mutable LayoutTensor to immutable.
+
+        Args:
+            other: The mutable LayoutTensor to cast from.
+        """
+        self.ptr = other.ptr
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
 
     @always_inline("nodebug")
     fn __merge_with__[

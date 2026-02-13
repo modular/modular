@@ -125,6 +125,7 @@ from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
     __TypeOfAllTypes,
+    AnyOrigin,
     ImmutAnyOrigin,
     ImmutOrigin,
     MutAnyOrigin,

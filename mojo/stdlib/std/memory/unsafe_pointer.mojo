@@ -1543,52 +1543,23 @@ struct UnsafePointer[
         self,
     ) -> UnsafePointer[
         Self.type,
-        ImmutAnyOrigin,
+        AnyOrigin[mut = Self.mut],
         address_space = Self.address_space,
-    ] where not type_of(self).mut:
-        """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
+    ]:
+        """Casts the origin of a pointer to `AnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `ImmutAnyOrigin`.
+            A pointer with the origin set to `AnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `AnyOrigin`. However, if it is needed, keep in mind that
+        `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
                 Self.type,
-                ImmutAnyOrigin,
-                address_space = Self.address_space,
-            ]._mlir_type,
-        ](self.address)
-
-    @always_inline("builtin")
-    fn as_any_origin(
-        self,
-    ) -> UnsafePointer[
-        Self.type,
-        MutAnyOrigin,
-        address_space = Self.address_space,
-    ] where type_of(self).mut:
-        """Casts the origin of a mutable pointer to `MutAnyOrigin`.
-
-        Returns:
-            A pointer with the origin set to `MutAnyOrigin`.
-
-        This requires the pointer to already be mutable as casting mutability
-        is inherently very unsafe.
-
-        It is usually preferred to maintain concrete origin values instead of
-        using `MutAnyOrigin`. However, if it is needed, keep in mind that
-        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the pointer.
-        """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointer[
-                Self.type,
-                MutAnyOrigin,
+                AnyOrigin[mut = Self.mut],
                 address_space = Self.address_space,
             ]._mlir_type,
         ](self.address)
