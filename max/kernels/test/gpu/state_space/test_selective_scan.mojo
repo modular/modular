@@ -58,7 +58,7 @@ fn run_selective_scan_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -500,7 +500,7 @@ fn run_selective_scan_update_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan update GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups

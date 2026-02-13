@@ -541,10 +541,9 @@ struct ContinuousBatchingKVCache[
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache."""
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
         var total_blocks = self.blocks.dim[0]()
@@ -587,10 +586,9 @@ struct ContinuousBatchingKVCache[
             BN=BK,
         ],
     ) raises:
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         var total_blocks = self.blocks.dim[0]()
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             self.blocks.dim[1]()
@@ -826,10 +824,9 @@ struct PagedKVCache[
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache."""
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         # Paged cache collection is (where `$idx` means subsetting that idx):
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
         #
@@ -874,10 +871,9 @@ struct PagedKVCache[
             BN=BK,
         ],
     ) raises:
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         var total_blocks = self.blocks.dim[0]()
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             Self.page_size

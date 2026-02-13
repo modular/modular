@@ -111,10 +111,7 @@ fn grouped_matmul_1d1d_nvfp4[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
         sfa_dtype == sfb_dtype
@@ -124,7 +121,7 @@ fn grouped_matmul_1d1d_nvfp4[
         NVFP4_SF_DTYPE,
     ), "Only support MXFP8_SF_DTYPE or NVFP4_SF_DTYPE for scales"
 
-    constrained[not config.AB_swapped, "swap AB is not supported"]()
+    comptime assert not config.AB_swapped, "swap AB is not supported"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -134,33 +131,20 @@ fn grouped_matmul_1d1d_nvfp4[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
+    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
 
-    constrained[
-        config.k_group_size == 1,
-        "Only support k_group_size == 1",
-    ]()
+    comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
-    constrained[
-        config.num_split_k == 1,
-        "Only support split_k == 1",
-    ]()
+    comptime assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
-
-    constrained[
-        a_scales.rank == 5,
-        "a_scales must be 5D tensors",
-    ]()
-    constrained[
-        _b_scales.rank == 6,
-        "b_scales must be 6D tensors",
-    ]()
+    comptime assert a_scales.rank == 5, "a_scales must be 5D tensors"
+    comptime assert _b_scales.rank == 6, "b_scales must be 6D tensors"
 
     # Reshape b_scales from 6D to 5D
     comptime sfb_layout = LegacyLayout.row_major(
@@ -177,45 +161,38 @@ fn grouped_matmul_1d1d_nvfp4[
         address_space = _b_scales.address_space,
     ](_b_scales.ptr)
 
-    constrained[
+    comptime assert (
         sfa_layout.shape[2].value()
         == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0],
-        "",
-    ]()
-    constrained[
+        == SF_ATOM_M[0]
+    )
+    comptime assert (
         sfa_layout.shape[3].value()
         == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1],
-        "",
-    ]()
-    constrained[
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K,
-        "",
-    ]()
+        == SF_ATOM_M[1]
+    )
+    comptime assert (
+        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+    )
 
     @parameter
     if config.cta_group == 2:
-        constrained[
-            MMA_M == 256 and MMA_N in (128, 256),
-            "Only support cta_group == 2 with MMA_M == 256",
-        ]()
+        comptime assert MMA_M == 256 and MMA_N in (
+            128,
+            256,
+        ), "Only support cta_group == 2 with MMA_M == 256"
     else:
-        constrained[
-            MMA_M == 128 and MMA_N in (128, 256),
-            (
-                "Only support MMA_M == 128 and MMA_N in (128, 256) when"
-                " cta_group == 1"
-            ),
-        ]()
+        comptime assert MMA_M == 128 and MMA_N in (128, 256), (
+            "Only support MMA_M == 128 and MMA_N in (128, 256) when"
+            " cta_group == 1"
+        )
 
     comptime cluster_shape = config.cluster_shape
 
     comptime num_experts = b_layout.shape[0].value()
-    constrained[
-        _sfb_layout.shape[0].value() == num_experts,
-        "num_experts must be equal to _sfb_layout.shape[0]",
-    ]()
+    comptime assert (
+        _sfb_layout.shape[0].value() == num_experts
+    ), "num_experts must be equal to _sfb_layout.shape[0]"
     comptime N = c_layout.shape[1].value()
     comptime expert_n = N
     comptime K = a_layout.shape[1].value()
@@ -235,10 +212,9 @@ fn grouped_matmul_1d1d_nvfp4[
 
     var M = c_device.dim[0]()
 
-    constrained[
-        ceildiv(K, BK) % config.k_group_size == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    comptime assert (
+        ceildiv(K, BK) % config.k_group_size == 0
+    ), "K iterations must be a multiple of k_group_size"
 
     # Instantiate kernel first -- TMA layouts computed from config
     from ..structured_kernels.tile_types import GMEMTile
@@ -295,10 +271,7 @@ fn grouped_matmul_1d1d_nvfp4[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    constrained[
-        (not config.AB_swapped) or config.c_swizzle.bytes() == 128,
-        "Only support 128B swizzle mode when AB_swapped is True",
-    ]()
+    comptime assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     var c_tma_op = create_tma_tile[
         KernelType.CTmaTile.tile_layout,

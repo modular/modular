@@ -235,9 +235,9 @@ __extension HopperMatmulSM90Kernel:
             )
         else:
             # Consumer warp groups
-            constrained[
-                Self.num_consumer <= 2, "Only support 1 or 2 consumer"
-            ]()
+            comptime assert (
+                Self.num_consumer <= 2
+            ), "Only support 1 or 2 consumer"
             warpgroup_reg_alloc[232]()
 
             var local_warp_group_idx = warp_group_idx - 1

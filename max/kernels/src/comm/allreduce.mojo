@@ -838,10 +838,9 @@ fn allreduce[
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
 
-    constrained[
-        not (use_multimem and use_quickreduce),
-        "Quickreduce is incompatible with multimem.",
-    ]()
+    comptime assert not (
+        use_multimem and use_quickreduce
+    ), "Quickreduce is incompatible with multimem."
     # Return early, if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()
     if num_elements == 0:
