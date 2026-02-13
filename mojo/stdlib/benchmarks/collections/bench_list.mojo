@@ -30,70 +30,66 @@ fn make_int_list[size: Int]() -> List[Int]:
 # Benchmark List.pop (from end)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_list_pop_last[size: Int](mut b: Bencher) raises:
+fn bench_list_pop_last[size: Int](mut b: Bencher):
     """Benchmark popping the last element repeatedly."""
 
     @always_inline
-    @parameter
-    fn call_fn():
+    fn call_fn() unified {}:
         var l = make_int_list[size]()
         for _ in range(size):
-            keep(l.pop())
+            keep(black_box(l).pop())
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark List.pop (from front)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_list_pop_front[size: Int](mut b: Bencher) raises:
+fn bench_list_pop_front[size: Int](mut b: Bencher):
     """Benchmark popping the first element repeatedly (worst case shift)."""
 
     @always_inline
-    @parameter
-    fn call_fn():
+    fn call_fn() unified {}:
         var l = make_int_list[size]()
         for _ in range(size):
-            keep(l.pop(0))
+            keep(black_box(l).pop(0))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark List.pop (from middle)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_list_pop_middle[size: Int](mut b: Bencher) raises:
+fn bench_list_pop_middle[size: Int](mut b: Bencher):
     """Benchmark popping from the middle of the list."""
 
     @always_inline
-    @parameter
-    fn call_fn():
+    fn call_fn() unified {}:
         var l = make_int_list[size]()
         for _ in range(size):
-            keep(l.pop(len(l) // 2))
+            keep(black_box(l).pop(len(l) // 2))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark List.pop (String - non-trivially movable)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_list_pop_front_string[size: Int](mut b: Bencher) raises:
+fn bench_list_pop_front_string[size: Int](mut b: Bencher):
     """Benchmark popping String elements from front (non-trivial move)."""
 
     @always_inline
-    @parameter
-    fn call_fn():
+    fn call_fn() unified {}:
         var l = List[String](capacity=size)
         for i in range(size):
             l.append(String("item_") + String(i))
         for _ in range(size):
-            keep(l.pop(0))
+            keep(black_box(l).pop(0))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
