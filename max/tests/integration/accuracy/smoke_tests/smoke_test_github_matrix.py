@@ -81,6 +81,7 @@ MODELS: dict[str, set[str]] = {
     "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # max: 26.2, MI355: no FP8, B200: MODELS-1020
     "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
     "redhatai/gemma-3-27b-it-fp8-dynamic": XL,
+    "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
     "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
 }
