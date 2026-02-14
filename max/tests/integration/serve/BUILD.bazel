@@ -176,6 +176,54 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "tests_gpu_mamba",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_mamba_serving_gpu.py",
+    ],
+    exec_properties = {
+        # Mamba 130M is small; 8 GiB is sufficient.
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    mojo_deps = [
+        "//max/kernels/src/state_space:state_space",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/mocks",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+        requirement("fastapi"),
+    ],
+)
+
+modular_py_test(
     name = "test_warm_cache_target",
     size = "large",
     srcs = [

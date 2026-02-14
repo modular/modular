@@ -1,0 +1,91 @@
+# Mamba pipeline tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in the
+# state_space package.
+MAMBA_MOJOPKGS = [
+    "//max/kernels/src/state_space:state_space",
+]
+
+modular_py_test(
+    name = "test_mamba_130m",
+    size = "enormous",
+    srcs = [
+        "test_mamba_130m.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "true",
+    },
+    exec_properties = {
+        # Request 8 GiB of GPU memory (after subtracting 0.6 GiB overhead,
+        # this gives ~7.4 GiB available to the memory manager)
+        "test.resources:gpu-memory": "8",
+    },
+    ignore_extra_deps = [
+        # transformers is needed at runtime by pipelines.main() for loading
+        # HuggingFace models, and directly imported in manual comparison tests
+        requirement("transformers"),
+        # torch is needed at runtime for manual comparison tests
+        requirement("torch"),
+    ],
+    imports = [
+        "../../..",  # For hf_repo_lock
+    ],
+    mojo_deps = MAMBA_MOJOPKGS,
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mamba_activations",
+    size = "enormous",
+    srcs = [
+        "test_mamba_activations.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "true",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    ignore_extra_deps = [
+        requirement("transformers"),
+        requirement("torch"),
+    ],
+    imports = [
+        "../../..",  # For hf_repo_lock
+    ],
+    mojo_deps = MAMBA_MOJOPKGS,
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)

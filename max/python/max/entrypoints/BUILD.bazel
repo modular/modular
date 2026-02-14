@@ -3,6 +3,12 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement"
 
 package(default_visibility = ["//max:consumers"])
 
+# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in the
+# state_space package.
+MAMBA_MOJOPKGS = [
+    "//max/kernels/src/state_space:state_space",
+]
+
 modular_py_library(
     name = "entrypoints",
     srcs = glob(
@@ -76,7 +82,7 @@ modular_py_binary(
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    mojo_deps = PROD_MOJOPKGS,
+    mojo_deps = PROD_MOJOPKGS + MAMBA_MOJOPKGS,
     deps = [
         ":entrypoints",
         "//max/python/max:_core",

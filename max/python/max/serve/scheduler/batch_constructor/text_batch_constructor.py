@@ -400,7 +400,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager | None,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -827,30 +827,31 @@ class TextBatchConstructor:
             if status == BudgetStatus.BUDGET_EXHAUSTED:
                 break
 
-            # At this point, we can assume that the paged cache is active.
-            while True:
-                try:
-                    self.kv_cache.alloc(
-                        candidate_context,
-                        replica_idx=replica_idx,
-                        num_steps=batch.num_steps,
-                    )
-                    break
-                except InsufficientBlocksError:
-                    if len(candidate_ids) == 0:
-                        if len(batch) == 0:
-                            raise
-                        else:
-                            return
+            # Allocate paged cache blocks if available (not used by SSM models).
+            if self.kv_cache is not None:
+                while True:
+                    try:
+                        self.kv_cache.alloc(
+                            candidate_context,
+                            replica_idx=replica_idx,
+                            num_steps=batch.num_steps,
+                        )
+                        break
+                    except InsufficientBlocksError:
+                        if len(candidate_ids) == 0:
+                            if len(batch) == 0:
+                                raise
+                            else:
+                                return
 
-                    # Pop the oldest candidate id
-                    oldest_id = candidate_ids.pop()
-                    oldest_context = replica_requests.tg_reqs.pop(oldest_id)
-                    self._preempt_request(
-                        oldest_context,
-                        replica_idx,
-                        reason=PreemptionReason.KV_CACHE_MEMORY,
-                    )
+                        # Pop the oldest candidate id
+                        oldest_id = candidate_ids.pop()
+                        oldest_context = replica_requests.tg_reqs.pop(oldest_id)
+                        self._preempt_request(
+                            oldest_context,
+                            replica_idx,
+                            reason=PreemptionReason.KV_CACHE_MEMORY,
+                        )
 
             match status:
                 case BudgetStatus.BUDGET_REACHED:
