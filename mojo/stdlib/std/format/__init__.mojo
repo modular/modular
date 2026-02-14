@@ -82,7 +82,7 @@ from reflection import (
     get_type_name,
 )
 from reflection.type_info import _unqualified_type_name
-
+from format._utils import _TotalWritableBytes
 
 # ===-----------------------------------------------------------------------===#
 # Writer
@@ -255,6 +255,24 @@ trait Writable(ImplicitlyDestructible):
             field.write_repr_to(writer)
 
         _reflection_write_to[f=call_write_repr_to](self, writer)
+
+    @always_inline
+    fn estimate_bytes_to_write(self) -> Int:
+        """Estimate the total bytes to write the type into a writer.
+
+        Returns:
+            The estimated bytes needed to write the type into a writer.
+
+        Notes:
+            By default this function runs the type's `write_to` function. If
+            doing that is not cheap for a given type, consider writing a faster
+            size estimation function instead.
+            The estimates should be as conservative as possible to avoid
+            over-allocation.
+        """
+        var total_bytes = _TotalWritableBytes()
+        self.write_to(total_bytes)
+        return total_bytes.size
 
 
 @always_inline

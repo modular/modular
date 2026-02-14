@@ -548,6 +548,7 @@ struct _TotalWritableBytes(Writer):
             for i in range(1, length):
                 self.write(sep, values[i])
 
+    @always_inline
     fn write_string(mut self, string: StringSlice):
         self.size += string.byte_length()
 
