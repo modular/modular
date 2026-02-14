@@ -23,6 +23,7 @@ deepseek-v2-commons: &deepseek-v2-commons
   $engine: ["flashinfer", "modular_max"]
   model: "deepseek-v2"
 
+# latency sensitive configuration
 params:
 - <<: *deepseek-v2-commons
   $batch_size: 1
@@ -39,3 +40,128 @@ params:
 - <<: *deepseek-v2-commons
   $batch_size: 2
   $cache_len: 65536
+
+- <<: *deepseek-v2-commons
+  $batch_size: 4
+  $cache_len: 32768
+
+- <<: *deepseek-v2-commons
+  $batch_size: 4
+  $cache_len: 65536
+
+- <<: *deepseek-v2-commons
+  $batch_size: 8
+  $cache_len: 32768
+
+- <<: *deepseek-v2-commons
+  $batch_size: 8
+  $cache_len: 65536
+
+# Production-representative configs (per-GPU with 8-GPU EP/TP deployment)
+# SGLang/Ant Group: 12-48 per GPU, vLLM TP8: up to 128 per GPU
+# KV cache 4K-8K is the common production range for DeepSeek R1 decode
+- <<: *deepseek-v2-commons
+  $batch_size: 16
+  $cache_len: 4096
+
+- <<: *deepseek-v2-commons
+  $batch_size: 16
+  $cache_len: 8192
+
+- <<: *deepseek-v2-commons
+  $batch_size: 32
+  $cache_len: 4096
+
+- <<: *deepseek-v2-commons
+  $batch_size: 32
+  $cache_len: 8192
+
+- <<: *deepseek-v2-commons
+  $batch_size: 64
+  $cache_len: 2048
+
+- <<: *deepseek-v2-commons
+  $batch_size: 128
+  $cache_len: 1024
+
+# Extra-large batch stress test configs
+- <<: *deepseek-v2-commons
+  $batch_size: 256
+  $cache_len: 2048
+
+- <<: *deepseek-v2-commons
+  $batch_size: 256
+  $cache_len: 4096
+
+- <<: *deepseek-v2-commons
+  $batch_size: 512
+  $cache_len: 2048
+
+- <<: *deepseek-v2-commons
+  $batch_size: 512
+  $cache_len: 4096
+
+# Gap 1: Very small cache_len (<1K)
+# Tests the kernel with very few KV pages -- potential underutilization.
+# Covers prefill-like decode scenarios with tiny cache and high batch.
+- <<: *deepseek-v2-commons
+  $batch_size: 128
+  $cache_len: 64
+
+- <<: *deepseek-v2-commons
+  $batch_size: 128
+  $cache_len: 128
+
+- <<: *deepseek-v2-commons
+  $batch_size: 64
+  $cache_len: 256
+
+- <<: *deepseek-v2-commons
+  $batch_size: 64
+  $cache_len: 512
+
+# Gap 2: Mid-range (fills the 8K->32K jump with 16K)
+- <<: *deepseek-v2-commons
+  $batch_size: 8
+  $cache_len: 16384
+
+- <<: *deepseek-v2-commons
+  $batch_size: 4
+  $cache_len: 16384
+
+# Gap 3: Large cache_len (>64K up to 163K max context)
+# Tests deep into long-context territory for DeepSeek models.
+- <<: *deepseek-v2-commons
+  $batch_size: 1
+  $cache_len: 98304
+
+- <<: *deepseek-v2-commons
+  $batch_size: 1
+  $cache_len: 131072
+
+- <<: *deepseek-v2-commons
+  $batch_size: 1
+  $cache_len: 163840
+
+# Non-power-of-2 cache_len configs for dispatch robustness testing
+# Validates that kernel dispatch, page-level partitioning, and split-k
+# reduction handle arbitrary cache lengths correctly.
+- <<: *deepseek-v2-commons
+  $batch_size: 32
+  $cache_len: 3000
+
+- <<: *deepseek-v2-commons
+  $batch_size: 16
+  $cache_len: 5000
+
+- <<: *deepseek-v2-commons
+  $batch_size: 16
+  $cache_len: 7777
+
+- <<: *deepseek-v2-commons
+  $batch_size: 8
+  $cache_len: 10000
+
+- <<: *deepseek-v2-commons
+  $batch_size: 2
+  $cache_len: 50000

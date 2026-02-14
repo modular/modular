@@ -35,14 +35,8 @@ from gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
     tcgen05_release_allocation_lock,
 )
-from layout.layout import (
-    Layout,
-)
-from logger import Logger
-
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
-    PipelineState,
     SharedMemBarrier,
 )
 from memory import bitcast
@@ -52,20 +46,17 @@ from nn.mha_fa3_utils import (
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from nn.mha_sm100_2q import (
     elect,
-    TMemTile,
-    LocalTensor,
     elect_mma_arrive,
 )
 from layout._layout import row_major
 from layout._tile_tensor import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 
-comptime logger = Logger()
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
@@ -84,7 +75,6 @@ from nn.mla_decode_sm100_utils import (
     KVCvt2MmaConsumer,
     DecodeSM100MiscMBars,
     DecodeSProducer,
-    DecodeSConsumer,
     DecodePConsumer,
     DecodeOProducer,
     OutPipeline,
@@ -128,15 +118,6 @@ struct MLA_SM100_Decode_KV_FP8[
     comptime output_tile_width = (Self.config.BN // 2) * (
         4 // size_of[Self.output_type]()
     )
-    # O: 128 x 256
-    comptime O_M = Self.config.BM * 2  # 128
-    comptime O_N = Self.config.padded_depth // 2  # 256
-
-    # S: 128 x 32
-    comptime S_M = Self.config.BM * 2  # 128
-    comptime S_N = Self.config.BN // 2  # 32
-    comptime OTMemTile = TMemTile[Self.AccumType, Self.O_M, Self.O_N]
-    comptime STMemTile = TMemTile[Self.AccumType, Self.S_M, Self.S_N]
     comptime UMMAQKTSS = DecodeSM100QKTSS[
         operand_type = Self.q_type,
         accum_type = Self.AccumType,
@@ -163,43 +144,78 @@ struct MLA_SM100_Decode_KV_FP8[
     ]
 
     # --------------------------------------------------------------------------
-    # MLA decoding main kernel function
+    # MLA decoding main kernel function (FP8 variant — 4 warpgroups)
     # --------------------------------------------------------------------------
-    #    KSlot0 (tile 0)        KSlot1 (tile 1)
-    #          |                    |
-    #          V                    V
-    #    UMMA WS → S0         UMMA WS → S1
-    #          |                    |
-    #   arrive mbar_s0        arrive mbar_s1
-    #          |                    |
-    #          |---- Softmax Warpgroup ----|
-    #          |                           |
-    #          V                           V
-    #       wait_s0                      wait_s1
-    #       S0 → P0                      S1 → P1
-    #           |                          |
-    #        UMMA WS → O                   |
-    #           |                          |
-    #           |                          |
-    #       arrive mbar_0                  |
-    #           |                          |
-    #           |                          |
-    #           V---- Coorection WG  ------|
-    #           |                          |
-    #       UMMA WP → O                UMMA WP → 1
-    #    arrive mbar_0              arrive mbar_1
-    #           |                          |
-    #    Coorection WG1 → O           Coorection WG1 → 1
-    #         |                            |
-    #       wait_O_filled                wait_O_filled
-    #        C_WG                         C_WG
-    #          |                            |
-    #        wair_out                     wair_out
-    #          |                            |
-    #       Write WG                     Write WG
-    #         |                            |
-    #        W_WG                         W_WG
     #
+    # This kernel has 4 warpgroups + 4 individual warps, unlike the BF16
+    # kernel which has 3 warpgroups. The extra warpgroup (Convert WG)
+    # handles the FP8→BF16 conversion in SMEM before MMA can consume the data.
+    #
+    # There are TWO KV SMEM regions:
+    #   - kv_smem_fp8:  TMA target (FP8 data from HBM lands here)
+    #   - kv_smem_bf16: Converted data (BF16, consumed by UMMA)
+    #
+    # There are TWO KV pipelines:
+    #   - kv_load2cvt_pipe: Load Warp → Convert WG (and MMA warps for release)
+    #   - kv_cvt2mma_pipe:  Convert WG → MMA Warps (QK and PV)
+    #
+    #  Warp assignments:
+    #    Warps  0-3  : Softmax WG    (warpgroup 0)
+    #    Warps  4-7  : Correction WG (warpgroup 1)
+    #    Warp   8    : Load warp     (TMA loads FP8 KV from HBM → kv_smem_fp8)
+    #    Warp   9    : MMA QK warp   (UMMA QK on kv_smem_bf16)
+    #    Warp  10    : MMA PV warp   (UMMA PV on kv_smem_bf16)
+    #    Warp  11    : Store warp    (TMA store output)
+    #    Warps 12-15 : Convert WG    (warpgroup 3: FP8→BF16 in SMEM)
+    #
+    #                     Pipeline Diagram (Double-Buffered)
+    #                     ====================================
+    #
+    #  Both kv_load2cvt_pipe and kv_cvt2mma_pipe have 2 stages (Slot 0/1).
+    #  FP8 slots overlay the upper half of the BF16 slots in SMEM.
+    #
+    #    HBM (FP8 KV)                HBM (FP8 KV)
+    #         |                           |
+    #         | TMA Load (warp 8)         | TMA Load (warp 8)
+    #         V                           V
+    #    FP8 Slot 0 (SMEM)          FP8 Slot 1 (SMEM)
+    #         |                           |
+    #         |  kv_load2cvt_pipe (2 stages, 1 prod → 130 cons)
+    #         V                           V
+    #    Convert WG (12-15)         Convert WG (12-15)
+    #    FP8 → BF16                 FP8 → BF16
+    #         |                           |
+    #         |  kv_cvt2mma_pipe (2 stages, 128 prod → 2 cons)
+    #         V                           V
+    #    BF16 Slot 0 (SMEM)         BF16 Slot 1 (SMEM)
+    #         |                           |
+    #         V                           V
+    #    UMMA QK → S0 (warp 9)     UMMA QK → S1 (warp 9)
+    #         |                           |
+    #   arrive mbar_s0             arrive mbar_s1
+    #         |                           |
+    #         |---- Softmax WG (warps 0-3) ----|
+    #         |                                |
+    #         V                                V
+    #       wait_s0                          wait_s1
+    #       S0 → P0                          S1 → P1
+    #         |                                |
+    #         |---- Correction WG (warps 4-7) ----|
+    #         |   (scale O by correction factor    |
+    #         |    before new P*V accumulation)    |
+    #         V                                    V
+    #    UMMA PV → O (warp 10)          UMMA PV → O (warp 10)
+    #    (P0 * V → O accumulate)        (P1 * V → O accumulate)
+    #         |                                    |
+    #       arrive mbar_o                    arrive mbar_o
+    #         |                                    |
+    #       corr_done_bars signal -----------------|
+    #         |                                    |
+    #       wait_O_filled                    wait_O_filled
+    #         |                                    |
+    #       wait_out                           wait_out
+    #         |                                    |
+    #       Store warp (warp 11)             Store warp
     #
 
     # --------------------------------------------------------------------------
@@ -322,17 +338,11 @@ struct MLA_SM100_Decode_KV_FP8[
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
-        # var kv_smem = q_smem + Self.BlockElems * Self.NumQKBlocks
         var kv_smem_bf16 = q_smem + Self.BlockElems * Self.NumQKBlocks
         var kv_smem_fp8_upper0 = (
             kv_smem_bf16.bitcast[Scalar[Self.KVLUTType.dtype]]()
             + Self.BlockElems * Self.NumQKBlocks
         )
-        # This moves the memory to the second half of the KV SMEM give a space for
-        # safe FP8/FP16 conversion
-        # var kv_smem_fp8 = (q_smem + Self.BlockElems * Self.NumQKBlocks).bitcast[
-        #     Scalar[Self.KVLUTType.dtype]
-        # ]() + Self.BlockElems * Self.NumQKBlocks
 
         comptime kv_total_stages = Self.config.num_kv_stages
         # to reuse the K for V as well, we break KV as 9 stages of 64x64 to cover 64x576
@@ -340,13 +350,13 @@ struct MLA_SM100_Decode_KV_FP8[
 
         # we need to use the KSmem for out pointer
         # We move P to the last slot of KV pipeline SO now we have tile of 64x
-        # 32 of flot or 64x64 of FP16 to save output into
+        # 32 of float or 64x64 of FP16 to save output into
         # tiles in SMEM and smooth the pipeline for the next batch if we use splitk
         var out_smem_start = kv_smem_bf16.bitcast[Scalar[Self.output_type]]()
         # there is potential to have two Tmem for S, because we have two K so we can
-        # unblock the MMA while loading S to reg for softrmax
+        # unblock the MMA while loading S to reg for softmax
         # if it was splitk we need to use the extra P slot. If not we need
-        # to clear the KV slot before statting the max because KV slot is used by
+        # to clear the KV slot before starting the max because KV slot is used by
         # MMA/load when max is valid.
         var out_smem_total = kv_smem_total
 
@@ -426,8 +436,8 @@ struct MLA_SM100_Decode_KV_FP8[
             mbar_base
         )  # kv_load2cvt_pipe uses 23..26
         mbar_base += kv_load2cvt_pipe.num_mbars()  # barrier total [27]
-        # we need to add ((Depth/BN) -1) x2 = 8x2 =16 +27 =43
-        # more barriers. for the splitk the two added is enough for now.
+        # We need (num_out_stages * 2) more barriers for the out pipeline.
+        # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
             num_out_stages = OutPipeType.num_out_stages,
@@ -609,7 +619,6 @@ struct MLA_SM100_Decode_KV_FP8[
         var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: UInt = UInt(offset_position.q_row_offset)
-        var pipe_qk = PipelineState[num_stages=1]()
         # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(
@@ -831,7 +840,7 @@ struct MLA_SM100_Decode_KV_FP8[
     #     - PV(tile_idx-1) with prev_stage_idx  (then release its KV stage)
     #     - QK(tile_idx) with the next KV stage
     # -------------------------------------------------
-    # QK process the Numkey veritcally, meaning the C Scale for the first
+    # QK process the Numkey vertically, meaning the C Scale for the first
     # block of all tiles is going to be zero the PV multiply the P horizontally
     # to V meaning only the C scale for prev tile for is going to be Zero for all
     # 9 block and after that it is going to be 1
@@ -851,8 +860,8 @@ struct MLA_SM100_Decode_KV_FP8[
 
     # We move it to It might be possible to create two P slot and put it at the
     # last slot of KV pipeline, Need to verify if that gives better performance.
-    # QK process the Numkey veritcally, meaning the C Scale for the first block
-    # of all tiles is going to be zero the PV multiply the P horisontally to V
+    # QK process the Numkey vertically, meaning the C Scale for the first block
+    # of all tiles is going to be zero the PV multiply the P horizontally to V
     # meaning only the C scale for prev tile for is going to be Zero for all 9 block
     # and after that it is going to be 1
     #                Q                                              KV0/1
@@ -901,11 +910,7 @@ struct MLA_SM100_Decode_KV_FP8[
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
-        var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        # c_scale = 0 for the very first MMA (overwrite),
-        #           1 afterwards (accumulate)
-        # Number of K-tiles we have in this row
         # Use num_keys_this_split for loop bounds (each split processes its portion)
         num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN

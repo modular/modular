@@ -32,10 +32,7 @@ from gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
     tcgen05_release_allocation_lock,
 )
-from logger import Logger
-
 from layout.tma_async import (
-    PipelineState,
     SharedMemBarrier,
 )
 from memory import bitcast
@@ -45,17 +42,13 @@ from nn.mha_fa3_utils import (
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from nn.mha_sm100_2q import (
     elect,
-    TMemTile,
-    elect_mma_arrive,
 )
 from nn.mha_fa3_utils import KVTMATile
-
-comptime logger = Logger()
 
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
@@ -113,15 +106,6 @@ struct MLA_SM100_Decode_KV_BF16[
     comptime output_tile_width = (Self.config.BN // 2) * (
         4 // size_of[Self.output_type]()
     )
-    # O: 128 x 256
-    comptime O_M = Self.config.BM * 2  # 128
-    comptime O_N = Self.config.padded_depth // 2  # 256
-
-    # S: 128 x 32
-    comptime S_M = Self.config.BM * 2  # 128
-    comptime S_N = Self.config.BN // 2  # 32
-    comptime OTMemTile = TMemTile[Self.AccumType, Self.O_M, Self.O_N]
-    comptime STMemTile = TMemTile[Self.AccumType, Self.S_M, Self.S_N]
     comptime UMMAQKTSS = DecodeSM100QKTSS[
         operand_type = Self.q_type,
         accum_type = Self.AccumType,
@@ -150,41 +134,40 @@ struct MLA_SM100_Decode_KV_BF16[
     # --------------------------------------------------------------------------
     # MLA decoding main kernel function
     # --------------------------------------------------------------------------
-    #    KSlot0 (tile 0)        KSlot1 (tile 1)
-    #          |                    |
-    #          V                    V
-    #    UMMA WS → S0         UMMA WS → S1
-    #          |                    |
-    #   arrive mbar_s0        arrive mbar_s1
-    #          |                    |
-    #          |---- Softmax Warpgroup ----|
-    #          |                           |
-    #          V                           V
-    #       wait_s0                      wait_s1
-    #       S0 → P0                      S1 → P1
-    #           |                          |
-    #        UMMA WS → O                   |
-    #           |                          |
-    #           |                          |
-    #       arrive mbar_0                  |
-    #           |                          |
-    #           |                          |
-    #           V---- Coorection WG  ------|
-    #           |                          |
-    #       UMMA WP → O                UMMA WP → 1
-    #    arrive mbar_0              arrive mbar_1
-    #           |                          |
-    #    Coorection WG1 → O           Coorection WG1 → 1
-    #         |                            |
-    #       wait_O_filled                wait_O_filled
-    #        C_WG                         C_WG
-    #          |                            |
-    #        wair_out                     wair_out
-    #          |                            |
-    #       Write WG                     Write WG
-    #         |                            |
-    #        W_WG                         W_WG
+    #    3 Warpgroups: Softmax WG (warps 0-3), Correction WG (warps 4-7),
+    #                  MMA+Load+Store WG (warps 8-11)
+    #    Warp assignments within WG2: warp 8 = Load, warp 9 = MMA QK,
+    #                                 warp 10 = MMA PV, warp 11 = Store
     #
+    #    KSlot0 (tile 0)                KSlot1 (tile 1)
+    #         |                              |
+    #         V                              V
+    #    UMMA QK → S0 (warp 9)         UMMA QK → S1 (warp 9)
+    #         |                              |
+    #   arrive mbar_s0                arrive mbar_s1
+    #         |                              |
+    #         |---- Softmax WG (warps 0-3) ----|
+    #         |                                |
+    #         V                                V
+    #       wait_s0                          wait_s1
+    #       S0 → P0                          S1 → P1
+    #         |                                |
+    #         |---- Correction WG (warps 4-7) ----|
+    #         |   (scale O by correction factor    |
+    #         |    before new P*V accumulation)    |
+    #         V                                    V
+    #    UMMA PV → O (warp 10)          UMMA PV → O (warp 10)
+    #    (P0 * V → O accumulate)        (P1 * V → O accumulate)
+    #         |                                    |
+    #       arrive mbar_o                    arrive mbar_o
+    #         |                                    |
+    #       corr_done_bars signal -----------------|
+    #         |                                    |
+    #       wait_O_filled                    wait_O_filled
+    #         |                                    |
+    #       wait_out                           wait_out
+    #         |                                    |
+    #       Store warp (warp 11)             Store warp
     #
 
     # --------------------------------------------------------------------------
@@ -313,13 +296,13 @@ struct MLA_SM100_Decode_KV_BF16[
 
         # we need to use the KSmem for out pointer
         # We move P to the last slot of KV pipeline SO now we have tile of 64x
-        # 32 of flot or 64x64 of FP16 to save output into
+        # 32 of float or 64x64 of FP16 to save output into
         # tiles in SMEM and smooth the pipeline for the next batch if we use splitk
         var out_smem_start = kv_smem
         # there is potential to have two Tmem for S, because we have two K so we can
-        # unblock the MMA while loading S to reg for softrmax
+        # unblock the MMA while loading S to reg for softmax
         # if it was splitk we need to use the extra P slot. If not we need
-        # to clear the KV slot before statting the max because KV slot is used by
+        # to clear the KV slot before starting the max because KV slot is used by
         # MMA/load when max is valid.
         var out_smem_total = kv_smem_total
 
@@ -388,8 +371,8 @@ struct MLA_SM100_Decode_KV_BF16[
             mbar_base
         )  # corr_done uses 19..22
         mbar_base = corr_done_bars.end()  # barrier total [23]
-        # we need to add ((Depth/BN) -1) x2
-        # more barriers. for the splitk the two added is enough for now.
+        # We need (num_out_stages * 2) more barriers for the out pipeline.
+        # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
             num_out_stages = OutPipeType.num_out_stages,
@@ -556,7 +539,6 @@ struct MLA_SM100_Decode_KV_BF16[
         var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: UInt = UInt(offset_position.q_row_offset)
-        var pipe_qk = PipelineState[num_stages=1]()
         # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(
@@ -628,7 +610,7 @@ struct MLA_SM100_Decode_KV_BF16[
     #     - PV(tile_idx-1) with prev_stage_idx  (then release its KV stage)
     #     - QK(tile_idx) with the next KV stage
     # -------------------------------------------------
-    # QK process the Numkey veritcally, meaning the C Scale for the first
+    # QK process the Numkey vertically, meaning the C Scale for the first
     # block of all tiles is going to be zero the PV multiply the P horizontally
     # to V meaning only the C scale for prev tile for is going to be Zero for all
     # 9 block and after that it is going to be 1
@@ -648,8 +630,8 @@ struct MLA_SM100_Decode_KV_BF16[
 
     # We move it to It might be possible to create two P slot and put it at the
     # last slot of KV pipeline, Need to verify if that gives better performance.
-    # QK process the Numkey veritcally, meaning the C Scale for the first block
-    # of all tiles is going to be zero the PV multiply the P horisontally to V
+    # QK process the Numkey vertically, meaning the C Scale for the first block
+    # of all tiles is going to be zero the PV multiply the P horizontally to V
     # meaning only the C scale for prev tile for is going to be Zero for all 9 block
     # and after that it is going to be 1
     #                Q                                              KV0/1
@@ -692,7 +674,6 @@ struct MLA_SM100_Decode_KV_BF16[
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
-        var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
 
         num_k_tiles = ceildiv(
