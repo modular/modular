@@ -194,6 +194,34 @@ what we publish.
   functionality. Update your imports from `from sys.ffi import ...` to
   `from ffi import ...`.
 
+- Added `UnsafeUnion[*Ts]`, a C-style untagged union type for FFI
+  interoperability. Unlike `Variant`, `UnsafeUnion` does not track which type
+  is stored (no discriminant), making it suitable for interfacing with C unions
+  and low-level type punning. The memory layout exactly matches C unions (size
+  is max of elements, alignment is max of elements).
+
+  All element types must have trivial copy, move, and destroy operations,
+  matching C union semantics where types don't have constructors or destructors.
+
+  Construction is explicit (no implicit conversion) to emphasize the unsafe
+  nature of this type. All accessor methods are prefixed with `unsafe_` to make
+  it clear that these operations are unsafe.
+
+  ```mojo
+  from ffi import UnsafeUnion
+
+  # Define a union that can hold Int32 or Float32
+  comptime IntOrFloat = UnsafeUnion[Int32, Float32]
+
+  var u = IntOrFloat(Int32(42))
+  print(u.unsafe_get[Int32]())  # => 42
+  print(u)  # => UnsafeUnion[Int32, Float32](size=4, align=4)
+
+  # Type punning (reinterpreting bits)
+  var u2 = IntOrFloat(Float32(1.0))
+  print(u2.unsafe_get[Int32]())  # => 1065353216 (IEEE 754 bits)
+  ```
+
 - The `itertools` module now includes three new iterator combinators:
   - `cycle(iterable)`: Creates an iterator that cycles through elements
     indefinitely
