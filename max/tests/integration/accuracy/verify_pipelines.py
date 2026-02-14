@@ -1552,7 +1552,7 @@ PIPELINES = {
     "name_filter",
     type=str,
     default=None,
-    help="Only run pipelines whose name matches the filter.",
+    help="Only run pipelines whose name matches the filter. Comma-separated for multiple filters (OR logic).",
 )
 def main(
     report: TextIO | None,
@@ -1583,9 +1583,10 @@ def main(
                 continue
             if not tag_filter.satisfied_by(pipeline_def.tags):
                 continue
-            if (
-                name_filter
-                and name_filter.casefold() not in pipeline_name.casefold()
+            if name_filter and not any(
+                f.strip().casefold() in pipeline_name.casefold()
+                for f in name_filter.split(",")
+                if f.strip()
             ):
                 continue
             start_time = time.time()
