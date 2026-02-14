@@ -3615,7 +3615,8 @@ fn generic_kv_cache_radd_dispatch[
 
     @parameter
     if is_gpu[target]():
-        debug_assert(ctx is not None, "ctx is None")
+        if ctx is None:
+            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
@@ -3652,10 +3653,12 @@ fn kv_cache_store_ragged[
     )
 
     @parameter
-    @__copy_capture(cache)
+    @__copy_capture(cache, input_row_offsets)
     fn write_to_cache[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+        width: Int,
+        rank: Int,
+        alignment: Int = 1,
+    ](idx: IndexList[rank]) capturing:
         var loaded_val = input_fn[width=width, alignment=alignment](
             rebind[IndexList[3]](idx)
         )
@@ -3675,7 +3678,74 @@ fn kv_cache_store_ragged[
 
     @parameter
     if is_gpu[target]():
-        debug_assert(context is not None, "ctx is None")
+        if context is None:
+            raise Error("ctx is None")
+        comptime compile_target = get_gpu_target()
+        comptime simd_width = simd_width_of[
+            cache_t.dtype, target=compile_target
+        ]()
+
+        elementwise[write_to_cache, simd_width, target=target](
+            input_shape, context.value()
+        )
+    else:
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[
+            cache_t.dtype, target=compile_target
+        ]()
+
+        elementwise[write_to_cache, simd_width, target=target](input_shape)
+
+
+fn kv_cache_store_padded[
+    cache_t: KVCacheT,
+    //,
+    target: StaticString,
+    input_fn: fn[width: Int, alignment: Int](
+        idx: IndexList[4]
+    ) capturing -> SIMD[cache_t.dtype, width],
+](
+    cache: cache_t,
+    input_shape: IndexList[4],
+    valid_lengths: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
+    ],
+    context: Optional[DeviceContext],
+) raises:
+    comptime assert (
+        valid_lengths.layout.rank() == 1
+    ), "Expected valid_lengths to be a 1D tensor of shape `(batch_size,)`"
+
+    @parameter
+    @__copy_capture(cache, valid_lengths)
+    @always_inline
+    fn write_to_cache[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) capturing:
+        var batch_idx = idx[0]
+        var token_idx = idx[1]
+        var valid_len = Int(valid_lengths[batch_idx])
+        if token_idx >= valid_len:
+            return
+        var loaded_val = input_fn[width=width, alignment=alignment](
+            rebind[IndexList[4]](idx)
+        )
+        var h_idx = idx[2]
+        var hd_idx = idx[3]
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+        cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            loaded_val,
+        )
+
+    @parameter
+    if is_gpu[target]():
+        if context is None:
+            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[
             cache_t.dtype, target=compile_target
@@ -3795,11 +3865,12 @@ fn kv_cache_2m_iadd_dispatch[
 
     @parameter
     if is_gpu[target]():
+        if ctx is None:
+            raise Error("ctx is None")
         with Trace[TraceLevel.OP, target=target](
             "kv-cache-2m-iadd",
             task_id=Int(ctx.value().id()),
         ):
-            debug_assert(ctx is not None, "ctx is None")
             comptime compile_target = get_gpu_target()
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 

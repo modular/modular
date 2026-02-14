@@ -199,6 +199,7 @@ from nn.kv_cache_ragged import (
     k_matmul_ragged_paged_scale,
     kv_cache_2m_iadd_dispatch,
     kv_cache_store_ragged,
+    kv_cache_store_padded,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
@@ -6775,7 +6776,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         start_pos: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         ctx: DeviceContextPtr,
-    ) raises:
+    ) capturing raises:
         @always_inline
         @parameter
         fn description_fn() -> String:
@@ -8024,7 +8025,7 @@ struct Struct_kv_cache_store_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr,
-    ) raises:
+    ) capturing raises:
         var paged_kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -8047,6 +8048,7 @@ struct Struct_kv_cache_store_paged:
             cuda_ctx = context.get_device_context()
 
         @parameter
+        @always_inline
         fn input_fn[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[dtype, width]:
@@ -8056,12 +8058,66 @@ struct Struct_kv_cache_store_paged:
                 idx,
             )
 
-        kv_cache_store_ragged[
-            cache_t=KVCacheT, input_fn=input_fn, target=target
-        ](
+        kv_cache_store_ragged[input_fn=input_fn, target=target](
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.kv_cache.store.paged.padded")
+struct Struct_kv_cache_store_padded:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, target: StaticString, key_or_value: Int
+    ](
+        inputs: FusedInputTensor[dtype=dtype, rank=4],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) capturing raises:
+        var paged_kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
+
+        @parameter
+        if key_or_value == 0:
+            cache = paged_kv_collection.get_key_cache(Int(layer_idx))
+        else:
+            cache = paged_kv_collection.get_value_cache(Int(layer_idx))
+
+        var cuda_ctx: Optional[DeviceContext] = None
+
+        @parameter
+        if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[4]) capturing -> SIMD[dtype, width]:
+            return inputs._lambda_load[
+                width=width, element_alignment=alignment
+            ](
+                idx,
+            )
+
+        kv_cache_store_padded[input_fn=input_fn, target=target](
+            cache,
+            inputs.shape(),
+            valid_lengths.to_layout_tensor(),
             cuda_ctx,
         )
 
