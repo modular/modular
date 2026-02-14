@@ -104,7 +104,7 @@ PINS = {
     "packaging": "packaging@25.0",
     "pandas": "pandas@2.3.3",
     "pathspec": "pathspec@0.12.1",
-    "peft": "peft@0.13.2",
+    "peft": "peft@0.18.1",
     "pillow": "pillow@12.0.0",
     "platformdirs": "platformdirs@4.2.2",
     "plotext": "plotext@5.3.2",
@@ -4265,7 +4265,7 @@ def targets():
         ":more-itertools@10.5.0",
         ":nltk@3.9.1",
         ":numexpr@2.14.1",
-        ":peft@0.13.2",
+        ":peft@0.18.1",
         ":pybind11@2.10.3",
         ":pytablewriter@1.2.0",
         ":requests@2.32.3",
@@ -6504,7 +6504,7 @@ def targets():
         testonly = "pathvalidate" in _TESTONLY_DEPS,
     )
 
-    _peft_0_13_2_deps = [
+    _peft_0_18_1_deps = [
         ":accelerate@1.0.1",
         ":huggingface-hub@0.34.3",
         ":numpy@multiple",
@@ -6518,14 +6518,14 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_peft@0.13.2",
-        actual = "@pycross_lock_file_wheel_peft_0.13.2_py3_none_any//file",
+        name = "_wheel_peft@0.18.1",
+        actual = "@pycross_lock_file_wheel_peft_0.18.1_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "peft@0.13.2",
-        deps = _peft_0_13_2_deps,
-        wheel = ":_wheel_peft@0.13.2",
+        name = "peft@0.18.1",
+        deps = _peft_0_18_1_deps,
+        wheel = ":_wheel_peft@0.18.1",
         testonly = "peft" in _TESTONLY_DEPS,
     )
 
@@ -21114,12 +21114,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_peft_0.13.2_py3_none_any",
+        name = "pycross_lock_file_wheel_peft_0.18.1_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/78/9d/5f95bfb298c8d3b4e3a107701f9a4e7774a0d4d1f8eb0c9d5420b80f7c9d/peft-0.13.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/b3/14/b4e3f574acf349ae6f61f9c000a77f97a3b315b4bb6ad03791e79ae4a568/peft-0.18.1-py3-none-any.whl",
         ],
-        sha256 = "d4e0951ec78eac11c45a051801c569913436888c578d48e5ce86996b715bc6ef",
-        downloaded_file_path = "peft-0.13.2-py3-none-any.whl",
+        sha256 = "0bf06847a3551e3019fc58c440cffc9a6b73e6e2962c95b52e224f77bbdb50f1",
+        downloaded_file_path = "peft-0.18.1-py3-none-any.whl",
     )
 
     maybe(

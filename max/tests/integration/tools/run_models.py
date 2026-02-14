@@ -24,6 +24,7 @@ import huggingface_hub
 import requests
 import torch
 from create_pipelines import (
+    ImageGenerationOracle,
     MaxPipelineAndTokenizer,
     PipelineOracle,
     TorchModelAndDataProcessor,
@@ -32,6 +33,9 @@ from create_pipelines import (
 from max import driver, pipelines
 from max.interfaces import PipelineTask
 from max.pipelines.lib.hf_utils import HuggingFaceRepo
+from max.pipelines.lib.pipeline_variants.pixel_generation import (
+    PixelGenerationPipeline,
+)
 from test_common import evaluate, evaluate_embeddings, torch_utils, vllm_utils
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
@@ -230,6 +234,18 @@ def run_max_model(
             prompts=(inp.prompt for inp in inputs),
             batch_size=evaluation_batch_size,
         )
+    elif task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(
+            max_pipeline_and_tokenizer.pipeline,
+            PixelGenerationPipeline,
+        )
+        results = evaluate.run_pixel_generation(
+            max_pipeline_and_tokenizer.pipeline,
+            max_pipeline_and_tokenizer.tokenizer,
+            requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
+        )
     else:
         raise ValueError(f"Evaluating task {task} is not supported.")
     return results
@@ -278,6 +294,14 @@ def run_torch_model(
             device=device,
             prompts=(inp.prompt for inp in inputs),
             pool_embeddings=pool_embeddings,
+        )
+    elif pipeline_oracle.task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(pipeline_oracle, ImageGenerationOracle)
+        results = pipeline_oracle.run_torch_image_generation(
+            torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
+            device=device,
+            num_steps=num_steps,
+            inputs=inputs,
         )
     else:
         raise ValueError(

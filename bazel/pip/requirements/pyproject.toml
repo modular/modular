@@ -208,7 +208,7 @@ nvidia = [
   "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
-  "peft", # For LoRA adapter support
+  "peft>=0.17.0", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",

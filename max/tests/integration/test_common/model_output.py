@@ -51,6 +51,8 @@ class ModelOutput(TypedDict):
     """Outputs from a text generation model."""
     embeddings: NotRequired[np.ndarray]
     """Outputs from a text embedding model."""
+    images: NotRequired[np.ndarray]
+    """Outputs from an image generation model. Shape: (H, W, C) or (B, H, W, C)"""
 
 
 def _log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
@@ -131,6 +133,10 @@ def compare_values(
         )
     elif keys == {"prompt", "embeddings"}:
         compare_embeddings(
+            actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
+        )
+    elif keys == {"prompt", "images"}:
+        compare_images(
             actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
         )
     else:
@@ -273,6 +279,60 @@ def compare_embeddings(
             np.testing.assert_allclose(
                 embeddings,
                 expected_embeddings,
+                rtol=rtol,
+                atol=atol,
+                err_msg=f"Got different {description}.",
+                verbose=True,
+            )
+
+
+def compare_images(
+    actual: Sequence[Mapping[str, Any]],
+    expected: Sequence[Mapping[str, Any]],
+    *,
+    rtol: float = 1e-2,
+    atol: float = 1e-5,
+    compare_fn: Callable[[Any, Any, str], None] | None = None,
+) -> None:
+    """Compares generated images between two runs.
+
+    The data structure of the actual/expected dictionaries should be:
+    [
+        {"prompt": "prompt 1", "images": images,
+        {"prompt": "prompt 2", "images": images,
+        ...
+    ]
+
+    Args:
+        actual: Data structure containing computed images.
+        expected: Data structure containing reference images.
+        rtol: The relative tolerance (used if `compare_fn` is not provided).
+        atol: The absolute tolerance (used if `compare_fn` is not provided).
+        compare_fn: A callable that takes the arguments
+            (actual, expected, description) and raises an assertion error
+            if the check fails.
+    """
+    expected_prompts = {x["prompt"]: x["images"] for x in expected}
+    actual_prompts = {x["prompt"]: x["images"] for x in actual}
+
+    if expected_prompts.keys() < actual_prompts.keys():
+        diff = actual_prompts.keys() - expected_prompts.keys()
+        raise ValueError(
+            f"Golden values for prompts {diff} not found. Please re-run"
+            " `gen_golden_values`."
+        )
+
+    for prompt, images in actual_prompts.items():
+        expected_images = expected_prompts[prompt]
+        short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
+        description = f"images for prompt '{short}'"
+
+        if compare_fn:
+            compare_fn(images, expected_images, description)
+        else:
+            np.testing.assert_allclose(
+                images,
+                expected_images,
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"Got different {description}.",
