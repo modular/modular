@@ -347,15 +347,15 @@ fn matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c: NDBuffer[_, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, _, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -411,10 +411,10 @@ fn matmul[
     b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -460,10 +460,10 @@ fn matmul[
     b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -875,10 +875,10 @@ fn _cublasLt_matmul[
     b: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = True,
     transpose_a: Bool = False,

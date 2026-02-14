@@ -5324,7 +5324,7 @@ struct PaddedFlashAttentionGPU:
         var v_buffer = v.to_layout_tensor()
 
         comptime valid_length_t = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
         _valid_length = rebind[valid_length_t](valid_length.to_layout_tensor())
 
@@ -5399,7 +5399,7 @@ struct RaggedFlashAttentionGPU:
         var v_buffer = v.to_layout_tensor()
 
         comptime input_row_offsets_t = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
         _input_row_offsets = rebind[input_row_offsets_t](
             input_row_offsets.to_layout_tensor()
@@ -6053,7 +6053,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                         perm_idx_lt.runtime_layout.shape.value.canonicalize()
                     ),
-                ),
+                ).get_immutable(),
                 ctx=ctx,
             )
 
@@ -6153,7 +6153,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     ctx: DeviceContextPtr,
@@ -6203,7 +6203,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
             kv_collection,
             layer_idx,
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
                 valid_lengths_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -6887,7 +6887,7 @@ struct Struct_mha_padded_paged:
             kv_collection,
             layer_idx,
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
                 valid_lengths_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -6938,7 +6938,9 @@ struct Struct_mha_ragged_paged:
             q.to_layout_tensor(),
             rebind[
                 LayoutTensor[
-                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                    DType.uint32,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    ImmutAnyOrigin,
                 ]
             ](input_row_offsets.to_layout_tensor()),
             kv_collection,
@@ -6989,7 +6991,9 @@ struct Struct_mha_ragged_paged_sink_weights:
             q.to_layout_tensor(),
             rebind[
                 LayoutTensor[
-                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                    DType.uint32,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    ImmutAnyOrigin,
                 ]
             ](input_row_offsets.to_layout_tensor()),
             kv_collection,

@@ -2127,7 +2127,9 @@ fn gpu_qint4_repack_GPTQ[
     b: LayoutTensor[DType.uint8, ...],
     b_packed: LayoutTensor[DType.uint8, ...],
     perm_idx: OptionalReg[
-        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[
+            DType.int32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:

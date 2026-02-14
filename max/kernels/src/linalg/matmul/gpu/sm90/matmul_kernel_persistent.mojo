@@ -176,8 +176,8 @@ __extension HopperMatmulSM90Kernel:
         c_tma_layout: Layout,
     ](
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+        a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.

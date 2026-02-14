@@ -270,7 +270,7 @@ def execute_fused_qkv_matmul[
     ctx.enqueue_copy(valid_lengths_device, valid_lengths_host_ptr)
 
     var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         valid_lengths_device.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

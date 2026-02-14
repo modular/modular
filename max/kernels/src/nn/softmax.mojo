@@ -674,7 +674,7 @@ fn softmax_kernel[
     shape: IndexList[rank],
     output: LayoutTensor[dtype, layout, MutAnyOrigin],
     sink_weights: LayoutTensor[
-        sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        sink_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
 ):
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
@@ -811,7 +811,7 @@ fn _softmax_gpu[
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[sink_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     if axis != rank - 1:
@@ -1827,7 +1827,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             @parameter
             if warp_n > 0:
                 # we want `output_reg_tile[0,:,:]` to be the real output reg tile.
-                out_reg_tile.copy_from(reg_tile)
+                out_reg_tile.copy_from(
+                    reg_tile.as_any_origin()
+                )  # hack aliasing.
         else:
             # copy output reg tile to smem
             # Example smem row, col when `num_warps_n = 4`:

@@ -65,7 +65,7 @@ fn fp8_index_kernel[
     k_s: LayoutTensor[DType.float32, ks_layout, MutAnyOrigin],
     k_lut: k_type,
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
 ):
     comptime BM = block_tile_shape[0]
@@ -385,7 +385,7 @@ fn _index_matmul_max[
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
     k: LayoutTensor[dtype, k_layout, MutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
     max_seq_len: Int,
@@ -453,7 +453,7 @@ fn _reduce_logits[
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
     k_s: LayoutTensor[DType.float32, ks_layout, MutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
 ):

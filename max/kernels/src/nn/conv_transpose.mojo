@@ -83,8 +83,8 @@ fn conv_transpose_naive[
     dtype: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, dtype, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
     pad_d: IndexList[2],
@@ -186,12 +186,12 @@ fn conv_transpose_shape[
     output_pads_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: TileTensor[dtype, ...],
-    kernel: TileTensor[dtype, ...],
-    strides: TileTensor[strides_type, ...],
-    dilations: TileTensor[dilations_type, ...],
-    pads: TileTensor[pads_type, ...],
-    output_pads: TileTensor[output_pads_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    kernel: TileTensor[mut=False, dtype, ...],
+    strides: TileTensor[mut=False, strides_type, ...],
+    dilations: TileTensor[mut=False, dilations_type, ...],
+    pads: TileTensor[mut=False, pads_type, ...],
+    output_pads: TileTensor[mut=False, output_pads_type, ...],
 ) raises -> IndexList[input.rank]:
     """
     Compute the output shape of a `conv-transpose` operation, and assert the
@@ -377,10 +377,8 @@ fn get_partition(
 
 @fieldwise_init
 struct ConvTransposedPacked[
-    input_mut: Bool,
     input_element_shape_types: Variadic.TypesOfTrait[CoordLike],
     input_linear_idx_type: DType,
-    filter_mut: Bool,
     filter_element_shape_types: Variadic.TypesOfTrait[CoordLike],
     filter_linear_idx_type: DType,
     output_element_shape_types: Variadic.TypesOfTrait[CoordLike],
@@ -390,8 +388,8 @@ struct ConvTransposedPacked[
     OutputLayoutType: TensorLayout,
     conv_attr_rank: Int,
     //,
-    input_origin: Origin[mut=input_mut],
-    filter_origin: Origin[mut=filter_mut],
+    input_origin: ImmutOrigin,
+    filter_origin: ImmutOrigin,
     output_origin: MutOrigin,
     input_type: DType,
     filter_type: DType,
@@ -740,7 +738,7 @@ struct ConvTransposedPacked[
                 has_residual,
                 last_c_tile,
             ](
-                output_ptr,
+                output_ptr.as_any_origin(),  # FIXME: Why is this needed?
                 input_ptr,
                 filter_ptr,
                 n,
@@ -759,7 +757,7 @@ struct ConvTransposedPacked[
                 has_residual,
                 last_c_tile,
             ](
-                output_ptr,
+                output_ptr.as_any_origin(),  # FIXME: Why is this needed?
                 input_ptr,
                 filter_ptr,
                 n,
@@ -774,18 +772,19 @@ struct ConvTransposedPacked[
 
     @always_inline
     fn input_space_loop_2d[
+        output_dt: DType,
+        input_dt: DType,
+        filter_dt: DType,
+        //,
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
-        output_dt: DType,
-        input_dt: DType,
-        filter_dt: DType,
     ](
         self,
-        output: UnsafePointer[mut=True, Scalar[output_dt]],
-        input: UnsafePointer[Scalar[input_dt]],
-        filter: UnsafePointer[Scalar[filter_dt]],
+        output: MutUnsafePointer[Scalar[output_dt]],
+        input: ImmutUnsafePointer[Scalar[input_dt]],
+        filter: ImmutUnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -864,9 +863,9 @@ struct ConvTransposedPacked[
         filter_dt: DType,
     ](
         self,
-        output: UnsafePointer[Scalar[output_dt]],
-        input: UnsafePointer[Scalar[input_dt]],
-        filter: UnsafePointer[Scalar[filter_dt]],
+        output: MutUnsafePointer[Scalar[output_dt]],
+        input: ImmutUnsafePointer[Scalar[input_dt]],
+        filter: ImmutUnsafePointer[Scalar[filter_dt]],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1085,9 +1084,9 @@ fn update_w_tile_3d[
     input_dt: DType,
     filter_dt: DType,
 ](
-    output: UnsafePointer[Scalar[output_dt]],
-    input: UnsafePointer[Scalar[input_dt]],
-    filter: UnsafePointer[Scalar[filter_dt]],
+    output: MutUnsafePointer[Scalar[output_dt]],
+    input: ImmutUnsafePointer[Scalar[input_dt]],
+    filter: ImmutUnsafePointer[Scalar[filter_dt]],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -1233,7 +1232,7 @@ fn _get_group_filter_base(
 
 @always_inline
 fn pack_filter_shape(
-    filter: TileTensor, num_groups: Int
+    filter: TileTensor[mut=False, ...], num_groups: Int
 ) -> IndexList[filter.rank + 1]:
     """
     Compute the output shape of transposed convolution filter packing.
@@ -1275,7 +1274,7 @@ fn pack_filter_shape(
 
 @always_inline
 fn pack_filter(
-    filter: TileTensor,
+    filter: TileTensor[mut=False, ...],
     packed_filter: TileTensor[mut=True, ...],
     num_groups: Int,
 ):
@@ -1396,7 +1395,7 @@ fn conv_transposed_cpu[
     ) capturing -> None,
 ](
     output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    input: TileTensor[address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     filter: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],

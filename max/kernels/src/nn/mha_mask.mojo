@@ -1091,11 +1091,11 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     comptime mask_safe_out_of_bounds: Bool = False
     comptime check_mask_during_decoding: Bool = True
 
-    comptime MaskType = LayoutTensor[Self.dtype_, Self.layout_, MutAnyOrigin]
+    comptime MaskType = LayoutTensor[Self.dtype_, Self.layout_, ImmutAnyOrigin]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ]
     var is_multiple_of_2: Bool
@@ -1118,7 +1118,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         mask_tensor: Self.MaskType,
         start_pos: OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ] = None,
     ):

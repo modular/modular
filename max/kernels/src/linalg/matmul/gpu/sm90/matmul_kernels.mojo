@@ -682,8 +682,8 @@ struct HopperMatmulSM90Kernel[
             WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
         ),
     ](
-        a: LayoutTensor[Self.a_type, Self.a_layout, MutAnyOrigin],
-        b: LayoutTensor[Self.b_type, Self.b_layout, MutAnyOrigin],
+        a: LayoutTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin],
+        b: LayoutTensor[Self.b_type, Self.b_layout, ImmutAnyOrigin],
     ) -> Tuple[
         TileLoaderCPAsync[
             Self.a_type,
@@ -849,8 +849,8 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[Self.c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[Self.a_type, Self.a_layout, MutAnyOrigin],
-        b: LayoutTensor[Self.b_type, Self.b_layout, MutAnyOrigin],
+        a: LayoutTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin],
+        b: LayoutTensor[Self.b_type, Self.b_layout, ImmutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
         lut_ptr: UnsafePointer[UInt32],
     ):

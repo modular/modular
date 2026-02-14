@@ -198,8 +198,8 @@ fn matmul_kernel_naive[
     s_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -398,8 +398,8 @@ fn _matmul_gpu[
     register_based_epilogue: Bool = True,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime a_shape = a.shape
@@ -958,8 +958,8 @@ fn multistage_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    a: NDBuffer[mut=False, a_type, 2, _, a_shape],
+    b: NDBuffer[mut=False, b_type, 2, _, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
 ) raises:

@@ -66,8 +66,8 @@ fn gemm_kernel[
     TN: Int where TN > -1,
 ](
     mat_c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
-    mat_a: TileTensor[a_dtype, ALayoutType, MutExternalOrigin],
-    mat_b: TileTensor[b_dtype, BLayoutType, MutExternalOrigin],
+    mat_a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
+    mat_b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
 ) where (
     mat_a.rank == 2
     and mat_b.rank == 2
@@ -215,8 +215,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[kernel](
         mat_c,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -239,8 +239,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         M,
         N,
         K,
@@ -268,8 +268,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         fn run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
-                mat_a,
-                mat_b,
+                mat_a.as_immut(),
+                mat_b.as_immut(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -278,8 +278,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         for i in range(nwarmup):
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
-                mat_a,
-                mat_b,
+                mat_a.as_immut(),
+                mat_b.as_immut(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -362,8 +362,8 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[kernel](
         mat_c,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -386,8 +386,8 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         M,
         N,
         K,
@@ -508,8 +508,8 @@ fn matmul_kernel_naive[
     s_type: DType = get_accum_type[c_dtype](),
 ](
     c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
-    a: TileTensor[a_dtype, ALayoutType, MutExternalOrigin],
-    b: TileTensor[b_dtype, BLayoutType, MutExternalOrigin],
+    a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
+    b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
     m: Int,
     n: Int,
     k: Int,

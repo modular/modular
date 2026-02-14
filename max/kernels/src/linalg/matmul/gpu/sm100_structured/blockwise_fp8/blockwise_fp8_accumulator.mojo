@@ -195,7 +195,7 @@ struct BlockwiseFP8Accumulator[
         a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: TileTensor[b_scales_dtype, _, MutAnyOrigin],
+        b_scales: TileTensor[b_scales_dtype, _, ImmutAnyOrigin],
         a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,

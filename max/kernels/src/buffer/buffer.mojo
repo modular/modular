@@ -324,6 +324,30 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
+        other: NDBuffer,
+        out self: NDBuffer[
+            other.dtype,
+            other.rank,
+            ImmutOrigin(other.origin),
+            other.shape,
+            other.strides,
+            alignment2 = other.alignment2,
+            address_space = other.address_space,
+            exclusive = other.exclusive,
+        ],
+    ):
+        """Implicitly cast a mutable NDBuffer to immutable.
+
+        Args:
+            other: The mutable NDBuffer to cast from.
+        """
+        self.data = other.data
+        self.dynamic_shape = other.dynamic_shape
+        self.dynamic_stride = other.dynamic_stride
+
+    @always_inline
+    @implicit
+    fn __init__(
         out self,
         # For functions
         other: NDBuffer[Self.dtype, Self.rank, ...],

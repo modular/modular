@@ -906,7 +906,7 @@ def test_flash_attention_with_sinks[dtype: DType]():
         sink_weights=LayoutTensor[
             sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE)
         ](
-            sink_weights.ptr,
+            sink_weights.ptr.as_immutable(),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 sink_weights.runtime_layout.shape.value
             ),

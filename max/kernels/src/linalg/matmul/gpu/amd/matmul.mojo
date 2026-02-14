@@ -254,14 +254,14 @@ fn gemm_kernel_amd[
     a: LayoutTensor[
         a_type,
         a_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         layout_int_type=a_layout_int_type,
         linear_idx_type=a_linear_idx_type,
     ],
     b: LayoutTensor[
         b_type,
         b_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         layout_int_type=b_layout_int_type,
         linear_idx_type=b_linear_idx_type,
     ],

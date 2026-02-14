@@ -53,10 +53,10 @@ fn blockwise_fp8_matmul[
     config: MatmulConfig[_, _, _, transpose_b],
 ](
     c: TileTensor,
-    a: TileTensor,
-    b: TileTensor,
-    a_scales: TileTensor,
-    b_scales: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    a_scales: TileTensor[mut=False, ...],
+    b_scales: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime a_type = config.a_type

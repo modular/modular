@@ -204,8 +204,8 @@ fn bench_cublas_per_group[
                     c_tensor,
                     a_tensor,
                     b_tensor,
-                    a_scales=sfa_tensor,
-                    b_scales=sfb_tensor,
+                    a_scales=sfa_tensor.get_immutable(),
+                    b_scales=sfb_tensor.get_immutable(),
                     transpose_b=transpose_b,
                     c_row_major=True,
                 )

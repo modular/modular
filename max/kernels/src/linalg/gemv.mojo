@@ -203,8 +203,8 @@ fn gemv_kernel_vector[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],  # m * k
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],  # 1 * k
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],  # m * k
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -287,8 +287,8 @@ fn gemv_split_k[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     output: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    act: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    act: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    weight: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,

@@ -1277,37 +1277,22 @@ struct LegacyUnsafePointer[
         """
         return self.unsafe_mut_cast[False]()
 
-    @doc_private
-    fn as_any_origin(
-        self: LegacyUnsafePointer[Self.type, ...]
-    ) -> Self._OriginCastType[ImmutAnyOrigin]:
-        constrained[
-            False,
-            (
-                "An LegacyUnsafePointer with unbound mutability cannot be cast"
-                " to 'AnyOrigin'. Consider using `as_immutable` first, or"
-                " binding the mutability explicitly before calling this"
-                " function."
-            ),
-        ]()
-        abort()
-
     @always_inline("builtin")
     fn as_any_origin(
-        self: LegacyUnsafePointer[mut=False, Self.type, ...],
+        self,
     ) -> LegacyUnsafePointer[
         Self.type,
         address_space = Self.address_space,
-        origin=ImmutAnyOrigin,
+        origin = AnyOrigin[mut = Self.mut],
     ]:
-        """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
+        """Casts the origin of a pointer to `AnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `ImmutAnyOrigin`.
+            A pointer with the origin set to `AnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `AnyOrigin`. However, if it is needed, keep in mind that
+        `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         # TODO: compiler error if using self.unsafe_origin_cast
@@ -1315,37 +1300,7 @@ struct LegacyUnsafePointer[
             _type = LegacyUnsafePointer[
                 Self.type,
                 address_space = Self.address_space,
-                origin=ImmutAnyOrigin,
-            ]._mlir_type,
-        ](self.address)
-
-    @always_inline("builtin")
-    fn as_any_origin(
-        self: LegacyUnsafePointer[mut=True, Self.type, ...],
-    ) -> LegacyUnsafePointer[
-        Self.type,
-        address_space = Self.address_space,
-        origin=MutAnyOrigin,
-    ]:
-        """Casts the origin of a mutable pointer to `MutAnyOrigin`.
-
-        Returns:
-            A pointer with the origin set to `MutAnyOrigin`.
-
-        This requires the pointer to already be mutable as casting mutability
-        is inherently very unsafe.
-
-        It is usually preferred to maintain concrete origin values instead of
-        using `MutAnyOrigin`. However, if it is needed, keep in mind that
-        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the pointer.
-        """
-        # TODO: compiler error if using self.unsafe_origin_cast
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type = LegacyUnsafePointer[
-                Self.type,
-                address_space = Self.address_space,
-                origin=MutAnyOrigin,
+                origin = AnyOrigin[mut = Self.mut],
             ]._mlir_type,
         ](self.address)
 

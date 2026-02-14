@@ -278,7 +278,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # B-scales TileTensor type
     comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
+        Self.b_scales_type, Self.b_scales_layout, ImmutAnyOrigin
     ]
 
     # ========== Shared Memory Type ==========

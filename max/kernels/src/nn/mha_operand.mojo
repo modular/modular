@@ -43,7 +43,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
 
     @always_inline
@@ -331,9 +331,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
-    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, Self.cache_layout, MutAnyOrigin
+        DType.uint32, Self.cache_layout, ImmutAnyOrigin
     ]
 
     comptime device_type: AnyType = Self
@@ -347,9 +347,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, Self.cache_layout, MutAnyOrigin
+            DType.uint32, Self.cache_layout, ImmutAnyOrigin
         ],
     ):
         comptime assert (
@@ -370,7 +370,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )

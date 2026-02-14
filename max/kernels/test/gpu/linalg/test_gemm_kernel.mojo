@@ -65,8 +65,8 @@ fn gemm_kernel[
     TN: Int,
 ](
     mat_c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    mat_a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    mat_b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    mat_a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    mat_b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
 ):
     var M = mat_c.dim(0)
     var N = mat_c.dim(1)

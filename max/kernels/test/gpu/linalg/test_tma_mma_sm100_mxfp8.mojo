@@ -945,8 +945,8 @@ def test_block_scaled_mxfp8[
         c_ref,
         a,
         b,
-        a_scales=a_scales,
-        b_scales=b_scales,
+        a_scales=a_scales.get_immutable(),
+        b_scales=b_scales.get_immutable(),
         transpose_b=True,
         c_row_major=True,
     )

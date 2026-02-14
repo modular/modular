@@ -242,8 +242,8 @@ fn test_grouped_kernel_nvfp4_single_group[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor,
-        b_scales=b_scales_tensor,
+        a_scales=a_scales_tensor.get_immutable(),
+        b_scales=b_scales_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -657,8 +657,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
         c0_ref_tensor,
         a0_tensor,
         b0_tensor,
-        a_scales=sfa0_tensor,
-        b_scales=sfb0_tensor,
+        a_scales=sfa0_tensor.get_immutable(),
+        b_scales=sfb0_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -669,8 +669,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
         c1_ref_tensor,
         a1_tensor,
         b1_tensor,
-        a_scales=sfa1_tensor,
-        b_scales=sfb1_tensor,
+        a_scales=sfa1_tensor.get_immutable(),
+        b_scales=sfb1_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
