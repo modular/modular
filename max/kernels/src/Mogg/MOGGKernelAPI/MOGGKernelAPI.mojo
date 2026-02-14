@@ -7766,27 +7766,18 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         if num_active_experts == 0:
             return
         cuda_ctx = context.get_device_context()
-        var c_layout_tensor = c.to_layout_tensor()
-        var a_layout_tensor = a.to_layout_tensor()
-        var b_layout_tensor = b.to_layout_tensor()
-        var a_scales_layout_tensor = a_scales.to_layout_tensor()
-        var b_scales_layout_tensor = b_scales.to_layout_tensor()
-        var expert_start_indices_layout_tensor = (
-            expert_start_indices.to_layout_tensor()
-        )
-        var a_scale_offsets_layout_tensor = a_scale_offsets.to_layout_tensor()
-        var expert_ids_layout_tensor = expert_ids.to_layout_tensor()
-        var expert_scales_layout_tensor = expert_scales.to_layout_tensor()
+        # Convert ManagedTensorSlice directly to TileTensor, bypassing
+        # LayoutTensor entirely.
         grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target](
-            c_layout_tensor,
-            a_layout_tensor,
-            b_layout_tensor,
-            a_scales_layout_tensor,
-            b_scales_layout_tensor,
-            expert_start_indices_layout_tensor,
-            a_scale_offsets_layout_tensor,
-            expert_ids_layout_tensor,
-            expert_scales_layout_tensor,
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            a_scale_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
             cuda_ctx,
         )

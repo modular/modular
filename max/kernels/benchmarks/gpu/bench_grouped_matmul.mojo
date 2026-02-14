@@ -50,7 +50,13 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
+from layout._coord import Coord, Idx, RuntimeInt
+from layout._layout import row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._tile_tensor import TileTensor
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    GMEMLayout1D,
+)
 from linalg.utils import elementwise_epilogue_type
 
 from utils import Index, IndexList
@@ -285,21 +291,6 @@ fn bench_grouped_matmul[
         var a_scale_offsets = from_ndbuffer_row_major(a_scale_offsets_dev)
 
         # Calculate scales dimensions
-        comptime static_a_scales_shape = DimList(
-            Dim(),
-            ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-            Dim(SF_ATOM_M[0]),
-            Dim(SF_ATOM_M[1]),
-            Dim(SF_ATOM_K),
-        )
-        comptime static_b_scales_shape = DimList(
-            num_experts,
-            ceildiv(N, SF_MN_GROUP_SIZE),
-            ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-            Dim(SF_ATOM_M[0]),
-            Dim(SF_ATOM_M[1]),
-            Dim(SF_ATOM_K),
-        )
         var a_scales_size = (
             a_scale_dim0
             * ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
@@ -324,25 +315,6 @@ fn bench_grouped_matmul[
             b_scales_size
         )
 
-        var a_scales_dev = NDBuffer[
-            NVFP4_SF_DTYPE, 5, _, static_a_scales_shape
-        ](
-            a_scales_dev_buffer.unsafe_ptr(),
-            DimList(
-                a_scale_dim0,
-                ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-                SF_ATOM_M[0],
-                SF_ATOM_M[1],
-                SF_ATOM_K,
-            ),
-        )
-        var b_scales_dev = NDBuffer[
-            NVFP4_SF_DTYPE, 6, _, static_b_scales_shape
-        ](
-            b_scales_dev_buffer.unsafe_ptr(),
-            static_b_scales_shape,
-        )
-
         init_vector_launch[NVFP4_SF_DTYPE](
             a_scales_dev_buffer,
             a_scales_size,
@@ -356,14 +328,39 @@ fn bench_grouped_matmul[
             ctx,
         )
 
-        var a_scales = from_ndbuffer_row_major(a_scales_dev)
-        var b_scales = from_ndbuffer_row_major(b_scales_dev)
+        # Build TileTensors for scale factors directly from device buffer
+        # pointers + row_major layouts, bypassing NDBuffer entirely.
+        # This avoids the compiler bug with ceildiv(...) in DimList.
+        comptime k_groups = ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+        comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
+        var a_scales_tt = TileTensor(
+            a_scales_dev_buffer.unsafe_ptr().bitcast[Scalar[NVFP4_SF_DTYPE]](),
+            row_major(
+                Coord(
+                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
+            ),
+        ).as_any_origin()
+        var b_scales_tt = TileTensor(
+            b_scales_dev_buffer.unsafe_ptr().bitcast[Scalar[NVFP4_SF_DTYPE]](),
+            row_major(
+                Coord(
+                    Idx[num_experts](),
+                    Idx[n_groups](),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
+            ),
+        ).as_any_origin()
 
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
-        )
-        var expert_scales_dev = NDBuffer[DType.float32, 1](
-            expert_scales_dev_buffer.unsafe_ptr(), num_experts
         )
         var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
             num_experts
@@ -373,7 +370,16 @@ fn bench_grouped_matmul[
                 num_experts
             )
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
-        var expert_scales = from_ndbuffer_row_major(expert_scales_dev)
+        var expert_scales_tt = TileTensor(
+            expert_scales_dev_buffer.unsafe_ptr().bitcast[
+                Scalar[DType.float32]
+            ](),
+            row_major(
+                Coord(
+                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
+                )
+            ),
+        ).as_any_origin()
 
         @parameter
         @__copy_capture(
@@ -383,15 +389,9 @@ fn bench_grouped_matmul[
             a_offsets_dev,
             expert_ids_dev,
             a_scale_offsets_dev,
-            a,
-            b,
-            c,
-            a_scales,
-            b_scales,
-            a_offsets,
-            expert_ids,
-            a_scale_offsets,
-            expert_scales,
+            a_scales_tt,
+            b_scales_tt,
+            expert_scales_tt,
         )
         @always_inline
         fn bench_func_nvfp4(mut bench: Bencher):
@@ -427,15 +427,15 @@ fn bench_grouped_matmul[
                         transpose_b=transpose_b,
                         config=config,
                     ](
-                        c,
-                        a,
-                        a_offsets,
-                        a_scale_offsets,
-                        b,
-                        expert_ids,
-                        a_scales,
-                        b_scales,
-                        expert_scales,
+                        TileTensor(c_dev),
+                        TileTensor(a_dev),
+                        TileTensor(a_offsets_dev),
+                        TileTensor(a_scale_offsets_dev),
+                        TileTensor(b_dev),
+                        TileTensor(expert_ids_dev),
+                        a_scales_tt,
+                        b_scales_tt,
+                        expert_scales_tt,
                         num_active_experts,
                         ctx,
                     )
