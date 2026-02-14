@@ -29,7 +29,7 @@ def test_interval():
 
     # Test string representations
     assert_equal(String(interval), "(1, 10)")
-    assert_equal(repr(interval), "Interval(1, 10)")
+    assert_equal(repr(interval), "Interval[Int](1, 10)")
 
     # Test equality comparisons
     assert_equal(interval, Interval(1, 10))
@@ -183,6 +183,32 @@ def test_interval_tree():
     assert_equal(Float64(elems[0]), 34.0)
     assert_equal(Float64(elems[1]), 37.0)
     assert_equal(Float64(elems[2]), 36.0)
+
+# ---------------------------------------------------------------------------
+# Explicit write_repr_to tests
+# ---------------------------------------------------------------------------
+
+def test_interval_write_repr():
+    var interval = Interval(1, 10)
+
+    # write_to (str form)
+    assert_equal(String(interval), "(1, 10)")
+
+    # write_repr_to (debug form) — should include type parameter
+    assert_equal(repr(interval), "Interval[Int](1, 10)")
+
+
+def test_interval_tree_write_repr():
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((1, 5), MyType(1.0))
+
+    var r = repr(tree)
+
+    # Should include typename with parameters
+    assert_true("IntervalTree[Int, MyType]" in r)
+
+    # Should include length information
+    assert_true("len=1" in r)
 
 
 def main():
