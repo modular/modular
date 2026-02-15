@@ -274,6 +274,7 @@ fn multistage_mma_q[
     # Register tiles.
     var a_reg_tiles = (
         LayoutTensor[
+            mut=True,
             a_type,
             a_reg_layout,
             MutAnyOrigin,
@@ -285,6 +286,7 @@ fn multistage_mma_q[
     comptime b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
     var b_reg_tiles = (
         LayoutTensor[
+            mut=True,
             a_type,
             b_reg_layout,
             MutAnyOrigin,
@@ -297,6 +299,7 @@ fn multistage_mma_q[
 
     var scales_reg_tiles = (
         LayoutTensor[
+            mut=True,
             scales_type,
             Layout.row_major(num_n_mmas, 1),
             MutAnyOrigin,
@@ -499,9 +502,9 @@ fn multistage_qgemm_kernel[
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b_packed: LayoutTensor[b_packed_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
+    b_packed: LayoutTensor[mut=False, b_packed_type, b_layout, ImmutAnyOrigin],
 ):
     comptime assert (
         is_nvidia_gpu()
@@ -661,6 +664,7 @@ fn multistage_qgemm_kernel[
     )
     var c_reg_tile = (
         LayoutTensor[
+            mut=True,
             accum_type,
             c_reg_layout,
             MutAnyOrigin,
@@ -780,6 +784,7 @@ fn multistage_qgemm_kernel[
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
+            mut=True,
             c_type,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
@@ -867,6 +872,7 @@ fn multistage_qgemm_kernel[
 
         else:
             var c_reg_tile_out = LayoutTensor[
+                mut=True,
                 c_type,
                 c_reg_tile.layout,
                 MutAnyOrigin,
@@ -984,8 +990,10 @@ fn repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[DType.uint8, q_layout, MutAnyOrigin],
-    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutAnyOrigin],
+    q_weight: LayoutTensor[mut=False, DType.uint8, q_layout, ImmutAnyOrigin],
+    q_packed_weight: LayoutTensor[
+        mut=True, DType.uint8, repack_layout, MutAnyOrigin
+    ],
 ):
     comptime group_size = 32
     comptime group_bytes = size_of[DType.float16]() + (group_size // 2)
@@ -1176,9 +1184,9 @@ fn repack_GPTQ_for_sm8x[
     *,
     perm_layout: Layout = Layout(),
 ](
-    in_tensor: LayoutTensor[DType.uint8, in_layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[DType.uint8, out_layout, MutAnyOrigin],
-    perm_idx: LayoutTensor[DType.int32, perm_layout, MutAnyOrigin],
+    in_tensor: LayoutTensor[mut=False, DType.uint8, in_layout, ImmutAnyOrigin],
+    out_tensor: LayoutTensor[mut=True, DType.uint8, out_layout, MutAnyOrigin],
+    perm_idx: LayoutTensor[mut=False, DType.int32, perm_layout, ImmutAnyOrigin],
 ):
     comptime raw_scales_type = DType.float16
     comptime weights_bytes_per_group = group_size // 2
@@ -2081,9 +2089,11 @@ fn gpu_qint4_repack_Q4_0[
     //,
     target: StaticString,
 ](
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[
+        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+    ],
     b_packed: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -2124,11 +2134,14 @@ fn gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b: LayoutTensor[DType.uint8, ...],
-    b_packed: LayoutTensor[DType.uint8, ...],
+    b: LayoutTensor[mut=False, DType.uint8, ...],
+    b_packed: LayoutTensor[mut=True, DType.uint8, ...],
     perm_idx: OptionalReg[
         LayoutTensor[
-            DType.int32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False,
+            DType.int32,
+            Layout.row_major(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
         ]
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
