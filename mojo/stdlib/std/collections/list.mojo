@@ -379,7 +379,8 @@ struct List[T: Copyable](
         """
         var length = len(span)
         self = Self(capacity=length)
-        self._len = length
+
+        self._annotate_increase(length)
 
         @parameter
         if Self.T.__copyinit__is_trivial:
@@ -391,6 +392,8 @@ struct List[T: Copyable](
         else:
             for i in range(length):
                 (self._data + i).init_pointee_copy(span[i])
+
+        self._len = length
 
     fn __init__[
         IterableType: Iterable,
@@ -817,6 +820,8 @@ struct List[T: Copyable](
 
         var tail_count = self._len - normalized_idx
 
+        self._annotate_increase()
+
         @parameter
         if Self.T.__moveinit__is_trivial:
             # Shift trailing elements right by one using memmove (overlapping).
@@ -830,7 +835,6 @@ struct List[T: Copyable](
             for j in range(self._len, normalized_idx, -1):
                 (self._data + j).init_pointee_move_from(self._data + j - 1)
 
-        self._annotate_increase()
         (self._data + normalized_idx).init_pointee_move(value^)
         self._len += 1
 
@@ -1301,6 +1305,7 @@ struct List[T: Copyable](
         @parameter
         if Self.T.__copyinit__is_trivial:
             if step == 1:
+                res._annotate_increase(count)
                 memcpy(
                     dest=res.unsafe_ptr(),
                     src=self.unsafe_ptr() + start,
