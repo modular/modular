@@ -1429,17 +1429,17 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   if (hasCTADParams && failed(inferCTADParams(signature, operands)))
     return failure();
 
-  if (hasDeferredGivenParam) {
-    // Simply try it again now that more parameter has been inferred.
-    if (failed(inferFromParamList()))
-      return failure();
-  }
-
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
   if (failed(inferFromDefaults()))
     return failure();
+
+  if (hasDeferredGivenParam) {
+    // Simply try it again now that more parameter has been inferred.
+    if (failed(inferFromParamList()))
+      return failure();
+  }
 
   // See if we still have any unbound attr, if so, report error. (This must be a
   // full binding context).
@@ -1567,6 +1567,10 @@ LogicalResult ParamInf::inferFromDefaults() {
         }
       }
     }
+
+    // The rest of this is only applies to complete parameter bindings.
+    if (partial)
+      continue;
 
     // If not specified/inferrable, variadic always have a default empty
     // value.
