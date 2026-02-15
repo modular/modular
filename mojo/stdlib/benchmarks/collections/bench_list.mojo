@@ -14,7 +14,7 @@
 from collections import List
 from memory import Span
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -127,7 +127,8 @@ fn bench_list_slice_int[size: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        keep(l[1:])
+        var result = black_box(l)[1:]
+        keep(result)
 
     b.iter[call_fn]()
 
@@ -141,7 +142,8 @@ fn bench_list_slice_half_int[size: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        keep(l[quarter : quarter * 3])
+        var result = black_box(l)[quarter : quarter * 3]
+        keep(result)
 
     b.iter[call_fn]()
 
@@ -157,7 +159,8 @@ fn bench_list_slice_string[size: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        keep(l[1:])
+        var result = black_box(l)[1:]
+        keep(result)
 
     b.iter[call_fn]()
 
@@ -173,7 +176,8 @@ fn bench_list_slice_stride_int[size: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        keep(l[::2])
+        var result = black_box(l)[::2]
+        keep(result)
 
     b.iter[call_fn]()
 
@@ -183,7 +187,7 @@ fn bench_list_slice_stride_int[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 def main():
     var m = Bench(BenchConfig(num_repetitions=10))
-    comptime sizes = (10, 100, 1000, 10_000)
+    comptime sizes = (100, 1_000, 10_000, 100_000)
 
     @parameter
     for i in range(len(sizes)):
