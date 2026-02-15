@@ -1189,7 +1189,7 @@ struct LegacyUnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        unsafe_origin_mutcast[Self.origin, target_mut]
+        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1213,7 +1213,7 @@ struct LegacyUnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        unsafe_origin_mutcast[Self.origin, target_mut]
+        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1238,7 +1238,7 @@ struct LegacyUnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                unsafe_origin_mutcast[Self.origin, target_mut]
+                Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
             ]._mlir_type,
         ](self.address)
 

@@ -226,8 +226,6 @@ struct Pointer[
     ]
     comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    comptime Mutable = Self._with_origin[unsafe_origin_mutcast[Self.origin]]
-    """The mutable version of the `Pointer`."""
     comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
     """The immutable version of the `Pointer`."""
     # Fields

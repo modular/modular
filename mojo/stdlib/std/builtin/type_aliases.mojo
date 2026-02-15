@@ -129,23 +129,22 @@ struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
         """
         return {}
 
+    @always_inline("builtin")
+    fn __init__(
+        *, unsafe_mut_cast: Origin
+    ) -> Origin[
+        __mlir_attr[
+            `#lit.origin.mutcast<`,
+            unsafe_mut_cast._mlir_origin,
+            `> : !lit.origin<`,
+            Self.mut._mlir_value,
+            `>`,
+        ]
+    ]:
+        """Cast an origin to a different mutability, potentially introducing more
+        mutability, which is an unsafe operation.
 
-comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin[
-    __mlir_attr[
-        `#lit.origin.mutcast<`,
-        o._mlir_origin,
-        `> : !lit.origin<`,
-        mut._mlir_value,
-        `>`,
-    ]
-]()
-"""Cast an origin to a different mutability, potentially introducing more
-mutability, which is an unsafe operation.
-
-Parameters:
-    o: The origin to cast.
-    mut: The mutability of the resulting origin.
-
-Returns:
-    A new origin with the specified mutability.
-"""
+        Args:
+            unsafe_mut_cast: The origin to cast.
+        """
+        return {}

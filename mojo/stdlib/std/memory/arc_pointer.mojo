@@ -187,12 +187,12 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
 
     # FIXME: The origin returned for this is currently self origin, which
     # keeps the ArcPointer object alive as long as there are references into it.  That
-    # said, this isn't really the right modeling, we need hierarchical origins
+    # said, this isn't really the right modeling, we need indirect origins
     # to model the mutability and invalidation of the returned reference
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref[self_life] self) -> ref[unsafe_origin_mutcast[self_life]] Self.T:
+    ](ref[self_life] self) -> ref[MutOrigin(unsafe_mut_cast=self_life)] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
