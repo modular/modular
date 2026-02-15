@@ -620,7 +620,7 @@ fn function[type: __TypeOfAllTypes](arg: type):
       (await doc.hover(doc.findFirstPosition("print(")))!.contents,
       {
         kind: "markdown",
-        value: "```mojo\n(function) fn print(x: StringLiteral[value])\n```",
+        value: "```mojo\n(function) fn print(x: StringLiteral[x.value])\n```",
       }
     );
 
@@ -629,7 +629,7 @@ fn function[type: __TypeOfAllTypes](arg: type):
       {
         kind: "markdown",
         value: `\`\`\`mojo
-(function) fn print(x: StringLiteral[value])
+(function) fn print(x: StringLiteral[x.value])
 \`\`\`
 ---
 

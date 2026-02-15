@@ -248,6 +248,10 @@ public:
   /// in an `origin_of(x)` body.
   static void printOriginParam(raw_ostream &os, TypedAttr param,
                                SharedState *diagShared);
+  /// Print the specified parameter like we would in a 'ref [x]' argument or
+  /// result type, e.g. expanding origin sets.
+  static void printRefOriginParam(raw_ostream &os, TypedAttr param,
+                                  SharedState *diagShared);
 
   /// This is the same as printParam, but is only used user pretty printing
   /// circumstances (not mangling) after emitting a type annotation.  This

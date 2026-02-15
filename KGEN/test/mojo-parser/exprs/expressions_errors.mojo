@@ -663,7 +663,6 @@ fn compare_mem_result():
   x <= x <= x
 
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
-
   var bref = Pointer(to=b) # ok
 
   # expected-error @+1 {{invalid call to '__le__': value passed to 'other' cannot be converted from 'Pointer[CopyAndInitMemType, b]' to 'CopyAndInitMemType'}}

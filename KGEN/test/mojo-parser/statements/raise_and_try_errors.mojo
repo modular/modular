@@ -53,13 +53,13 @@ fn origin_scope_example():
 
     try:
         var str = String() # expected-note {{origin declared here}}
-        # expected-error @+1 {{inferred error type 'Pointer[String, origin_of((muttoimm str))]' captures origin 'str' from within try body; it is not in scope in except body}}
+        # expected-error @+1 {{inferred error type 'Pointer[String, origin_of(str)]' captures origin 'str' from within try body; it is not in scope in except body}}
         raises_arg(str)
     except e2:
         _ = e2[]  # isn't valid.
 
     try:
-        # expected-error @below {{inferred error type 'Pointer[String, origin_of((muttoimm __call_result_tmp__))]' captures origin of temporary from within try body; it is not in scope in except body}}
+        # expected-error @below {{inferred error type 'Pointer[String, origin_of(__call_result_tmp__)]' captures origin of temporary from within try body; it is not in scope in except body}}
         # expected-note @below {{origin declared here}}
         raises_arg(String())
     except e3:
