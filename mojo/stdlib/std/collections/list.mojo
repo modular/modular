@@ -377,9 +377,20 @@ struct List[T: Copyable](
         Args:
             span: The span of values to populate the list with.
         """
-        self = Self(capacity=len(span))
-        for value in span:
-            self.append(value.copy())
+        var length = len(span)
+        self = Self(capacity=length)
+        self._len = length
+
+        @parameter
+        if Self.T.__copyinit__is_trivial:
+            memcpy(
+                dest=self.unsafe_ptr(),
+                src=span.unsafe_ptr(),
+                count=length,
+            )
+        else:
+            for i in range(length):
+                (self._data + i).init_pointee_copy(span[i])
 
     fn __init__[
         IterableType: Iterable,
