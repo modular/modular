@@ -371,16 +371,6 @@ struct List[T: Copyable](
         # Remember how many elements we have.
         self._len = length
 
-    fn __init__(out self, span: Span[Self.T]):
-        """Constructs a list from the a Span of values.
-
-        Args:
-            span: The span of values to populate the list with.
-        """
-        self = Self(capacity=len(span))
-        for value in span:
-            self.append(value.copy())
-
     fn __init__[
         IterableType: Iterable,
     ](

@@ -721,7 +721,11 @@ fn take_while[
         print(num)  # Prints: 1, 2, 3, 4
     ```
     """
-    return _TakeWhileIterator[predicate=predicate](iter(iterable))
+    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # substituted through associated types right.
+    return _TakeWhileIterator[predicate=predicate](
+        rebind_var[IterableType.IteratorType[origin]](iter(iterable))
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -839,7 +843,11 @@ fn drop_while[
         print(num)  # Prints: 5, 6, 1, 2
     ```
     """
-    return _DropWhileIterator[predicate=predicate](iter(iterable))
+    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # substituted through associated types right.
+    return _DropWhileIterator[predicate=predicate](
+        rebind_var[IterableType.IteratorType[origin]](iter(iterable))
+    )
 
 
 # ===-----------------------------------------------------------------------===#

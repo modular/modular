@@ -268,6 +268,10 @@ what we publish.
   and `codepoint_slices()` methods. The deprecated `__reversed__()` methods
   will continue to work but will emit deprecation warnings.
 
+- The `Origin` struct now takes the underlying MLIR origin as a parameter
+  instead of storing it. This follows the design of `IntLiteral` and related
+  types, and fixes some memory safety problems.
+
 - The `StringSlice` constructor from `String` now propagates mutability. If you
   have a mutable reference to a `String`, `StringSlice(str)` returns a mutable
   `StringSlice`. The `String.as_string_slice()` method is now deprecated in

@@ -836,15 +836,15 @@ def test_reflection_on_origin():
     Origin is a struct with one field (_mlir_origin). Previously this would
     crash the compiler when passed through generic parameters.
     """
-    assert_equal(_count_fields_generic[Origin[mut=True]](), 1)
-    assert_equal(_count_fields_generic[Origin[mut=False]](), 1)
-
-    assert_equal(_get_field_names_generic[Origin[mut=True]](), "_mlir_origin")
+    var int = 0
+    assert_equal(_count_fields_generic[type_of(origin_of(int))](), 0)
 
     assert_equal(
-        _get_type_name_generic[Origin[mut=True]](),
-        "std.builtin.type_aliases.Origin[True]",
+        _get_type_name_generic[type_of(origin_of(int))](),
+        "std.builtin.type_aliases.Origin[True, {}]",
     )
+
+    _ = int  # silence unused warning.
 
 
 def test_reflection_on_nonetype():

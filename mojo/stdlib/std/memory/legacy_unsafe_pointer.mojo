@@ -18,6 +18,7 @@ These APIs are imported automatically, just like builtins.
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
+from builtin.type_aliases import _lit_origin_type_of_mut
 from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
@@ -52,7 +53,10 @@ struct LegacyUnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[mut=mut] = unsafe_origin_mutcast[MutAnyOrigin, mut],
+    _mlir_origin: _lit_origin_type_of_mut[mut] = AnyOrigin[
+        mut=mut
+    ]._mlir_origin,
+    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[_mlir_origin](),
 ](
     Boolable,
     Comparable,
@@ -76,6 +80,7 @@ struct LegacyUnsafePointer[
         mut: Whether the origin is mutable.
         type: The type the pointer points to.
         address_space: The address space associated with the pointer's allocated memory.
+        _mlir_origin: The raw MLIR origin value.
         origin: The origin of the memory being addressed.
     """
 

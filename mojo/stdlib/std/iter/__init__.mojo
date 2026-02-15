@@ -716,9 +716,7 @@ fn map[
     ResultType: Copyable,
     //,
     function: fn(var IterableType.IteratorType[origin].Element) -> ResultType,
-](ref[origin] iterable: IterableType) -> _MapIterator[
-    OutputType=ResultType, function=function
-]:
+](ref[origin] iterable: IterableType) -> _MapIterator[function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.
 
@@ -751,7 +749,11 @@ fn map[
         print(elem)
     ```
     """
-    return {iter(iterable)}
+    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # substituted through associated types right.
+    return {
+        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable))
+    }
 
 
 # ===-----------------------------------------------------------------------===#

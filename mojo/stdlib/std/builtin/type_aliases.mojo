@@ -24,9 +24,10 @@ comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
-comptime AnyOrigin[*, mut: Bool] = Origin(
-    __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
-)
+comptime AnyOrigin[*, mut: Bool] = Origin[
+    mut=mut,
+    __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`],
+]()
 """An origin that might access any memory value.
 
 Parameters:
@@ -39,13 +40,14 @@ comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
 """The mutable origin that might access any memory value."""
 
-comptime ExternalOrigin[*, mut: Bool] = Origin[mut=mut](
+comptime ExternalOrigin[*, mut: Bool] = Origin[
+    mut=mut,
     __mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         +mut._mlir_value,
         `>`,
-    ]
-)
+    ],
+]()
 """A parameterized external origin guaranteed not to alias any existing origins.
 
 Parameters:
@@ -73,13 +75,13 @@ Useful when interfacing with memory from outside the current Mojo program.
 """
 
 # Static constants are a named subset of the global origin.
-comptime StaticConstantOrigin = Origin(
+comptime StaticConstantOrigin = Origin[
     __mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<0>`,
         `, "__constants__"> : !lit.origin<0>`,
     ]
-)
+]()
 """An origin for strings and other always-immutable static constants."""
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
@@ -93,52 +95,42 @@ comptime EllipsisType = __mlir_type.`!lit.ellipsis`
 """The type of the `...` literal."""
 
 
-struct Origin[*, mut: Bool](TrivialRegisterPassable):
+comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
+    `!lit.origin<`, mut._mlir_value, `>`
+]
+
+
+struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
+    TrivialRegisterPassable
+):
     """This represents a origin reference for a memory value.
 
     Parameters:
         mut: Whether the origin is mutable.
+        _mlir_origin: The raw MLIR origin value.
     """
-
-    comptime _mlir_type = __mlir_type[
-        `!lit.origin<`,
-        Self.mut._mlir_value,
-        `>`,
-    ]
-
-    # ===-------------------------------------------------------------------===#
-    # Fields
-    # ===-------------------------------------------------------------------===#
-
-    var _mlir_origin: Self._mlir_type
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
-    @implicit
     @always_inline("builtin")
-    fn __init__(out self, mlir_origin: Self._mlir_type):
-        """Initialize an Origin from a raw MLIR `!lit.origin` value.
+    fn __init__(out self):
+        """Construct an Origin."""
+        pass
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(v: Origin[_]) -> ImmutOrigin[v._mlir_origin]:
+        """Implicitly convert an origin to an immutable one.
 
         Args:
-            mlir_origin: The raw MLIR origin value.
+            v: The origin to convert.
         """
-        self._mlir_origin = mlir_origin
-
-    @implicit
-    @always_inline("builtin")
-    fn __init__(out self: ImmutOrigin, other: Origin):
-        """Allow converting an mutable origin to an immutable one.
-
-        Args:
-            other: The mutable origin to convert.
-        """
-        self._mlir_origin = other._mlir_origin
+        return {}
 
 
-comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
+comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin[
     __mlir_attr[
         `#lit.origin.mutcast<`,
         o._mlir_origin,
@@ -146,7 +138,7 @@ comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
         mut._mlir_value,
         `>`,
     ]
-)
+]()
 """Cast an origin to a different mutability, potentially introducing more
 mutability, which is an unsafe operation.
 
