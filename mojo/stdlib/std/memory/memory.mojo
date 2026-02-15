@@ -284,6 +284,39 @@ fn memcpy[
 
 
 # ===-----------------------------------------------------------------------===#
+# memmove
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn memmove[
+    T: AnyType
+](
+    *,
+    dest: UnsafePointer[mut=True, T],
+    src: UnsafePointer[mut=False, T],
+    count: Int,
+):
+    """Moves a memory area, handling overlapping regions correctly.
+
+    Unlike `memcpy`, `memmove` is safe to use when the source and destination
+    memory regions overlap (e.g. shifting elements within a buffer).
+
+    Parameters:
+        T: The element type.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to move.
+    """
+    var n = count * size_of[dest.type]()
+    llvm_intrinsic["llvm.memmove", NoneType](
+        dest.bitcast[Byte](), src.bitcast[Byte](), n, False
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # memset
 # ===-----------------------------------------------------------------------===#
 

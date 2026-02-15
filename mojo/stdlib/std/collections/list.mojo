@@ -25,10 +25,10 @@ from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
 from os import abort
-from sys import llvm_intrinsic, size_of
+from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
+from memory import Pointer, memcpy, memmove
 from builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -820,14 +820,10 @@ struct List[T: Copyable](
         @parameter
         if Self.T.__moveinit__is_trivial:
             # Shift trailing elements right by one using memmove (overlapping).
-            var src = self._data + normalized_idx
-            var dest = src + 1
-            var n = tail_count * size_of[Self.T]()
-            llvm_intrinsic["llvm.memmove", NoneType](
-                dest.bitcast[Byte](),
-                src.bitcast[Byte](),
-                n,
-                False,
+            memmove(
+                dest=self._data + normalized_idx + 1,
+                src=self._data + normalized_idx,
+                count=tail_count,
             )
         else:
             # Move elements one-by-one from back to front.
