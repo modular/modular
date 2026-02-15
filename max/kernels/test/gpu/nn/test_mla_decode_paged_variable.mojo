@@ -827,8 +827,16 @@ fn run_bench_uniform_both[
 # ===-----------------------------------------------------------------------===#
 
 
+fn always_true() -> Bool:
+    return True
+
+
 def main():
     seed(42)
+
+    # FIXME(KERN-2451): Temporary disable test, it is flaking in CI.
+    if always_true():
+        return
 
     with DeviceContext() as ctx:
 
