@@ -243,24 +243,31 @@ static BodyT printGeneratorInterface(raw_ostream &os,
                                      PogListAttr paramInfo,
                                      SharedState *diagShared, BodyT body) {
   os << '[';
+  // FIXME: This is printing in MLIR style, not like Mojo source code.
   if (paramInfo && diagShared) {
     ParameterEvaluator evaluator;
     PassingKindPrinter passingKindPrinter(os, paramInfo);
     auto printFn = [&](auto p) {
       auto [i, type] = p;
       passingKindPrinter.printOptionalStarSlash(i);
-
       Type reboundType = evaluator.getReboundType(type);
 
       StringRef name = paramInfo.getName(i).strref();
-      if (!name.empty()) {
-        os << name << ": ";
+      if (!name.empty())
         evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, reboundType));
-      } else {
-        // If no name exists, keep as is.
+      else
         evaluator.appendIndexBinding(ParamIndexRefAttr::get(i, reboundType));
+
+      // Don't print this if it is an autoparam.
+      if (paramInfo.getPassingKind(i) == PassingKind::Inferred &&
+          name.contains('.')) {
+        // Ideally we'd just drop it, but then we'll get extra commas.
+        os << "_";
+        return;
       }
 
+      if (!name.empty())
+        os << name << ": ";
       ASTType(reboundType).print(os, diagShared);
 
       if (TypedAttr defaultOr = paramInfo.getDefault(i)) {
@@ -317,16 +324,6 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
     return;
   }
 
-  // Handle implicit origins.
-  if (isa<OriginType>(paramDecls[paramIdx].getType())) {
-    if (!elideOriginOf)
-      os << "origin_of(";
-    os << demangledName;
-    if (!elideOriginOf)
-      os << ")";
-    return;
-  }
-
   // If the name wasn't mangled, then it is a normal user parameter, just
   // print it.
   if (demangledName == declRef.getName()) {
@@ -375,9 +372,11 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
       if (auto refType = dyn_cast<RefType>(argType))
         if (auto refOrigin = dyn_cast<ParamDeclRefAttr>(refType.getOrigin())) {
           if (refOrigin.getName() == declRef.getName()) {
-            os << "origin_of(";
+            if (!elideOriginOf)
+              os << "origin_of(";
             printArgName();
-            os << ")";
+            if (!elideOriginOf)
+              os << ")";
             return;
           }
         }
@@ -389,12 +388,13 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
 
 /// Attempt to pretty print the specified ParamIndexRefAttr, returning failure
 /// if it didn't work out.
-static LogicalResult prettyPrintParamName(ParamIndexRefAttr idxRef,
-                                          SharedState &shared,
-                                          raw_ostream &os) {
-  ASTDecl *ctxDecl = shared.declResolver->getDeclCurrentlyProcessing();
+static ParamDeclRefAttr findDeclRefForIndexRef(ParamIndexRefAttr idxRef,
+                                               SharedState *shared) {
+  if (!shared)
+    return {};
+  ASTDecl *ctxDecl = shared->declResolver->getDeclCurrentlyProcessing();
   if (!ctxDecl)
-    return failure();
+    return {};
 
   // FIXME: The ASTPrinter needs a notion of current de Bruijn depth. For now we
   // just allow anything, assuming it lines up with the decl we're working on.
@@ -406,28 +406,20 @@ static LogicalResult prettyPrintParamName(ParamIndexRefAttr idxRef,
     if (auto op = ctxDecl->getIfOperation()) {
       if (auto fn = dyn_cast<LIT::FnOp>(op)) {
         auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
-        if (idxRef.getIndex() < paramDecls.size()) {
-          prettyPrintParamName(
-              ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]),
-              /*elideOriginOf=*/false, shared, os);
-          return success();
-        }
+        if (idxRef.getIndex() < paramDecls.size())
+          return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
 
         if (auto declIntf = dyn_cast<DeclInterface>(op)) {
           ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
-          if (idxRef.getIndex() < paramDecls.size()) {
-            prettyPrintParamName(
-                ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]),
-                /*elideOriginOf=*/false, shared, os);
-            return success();
-          }
+          if (idxRef.getIndex() < paramDecls.size())
+            return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
         }
       }
     }
   }
 
   // Couldn't find it.
-  return failure();
+  return {};
 }
 
 /// Pretty print a parameter value.
@@ -873,10 +865,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     // been introduced with backticks.
     return printAsMojoStringLiteral(declRef.getName(), os);
   }
+  // Try to resolve an indexRef to a ParamDeclRefAttr for better printing.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
-    if (diagShared &&
-        succeeded(prettyPrintParamName(indexRef, *diagShared, os)))
-      return;
+    if (auto declRef = findDeclRefForIndexRef(indexRef, diagShared))
+      return printParam(os, declRef, diagShared);
 
     os << '$';
     if (size_t depth = indexRef.getDepth())
@@ -968,6 +960,24 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   os << KGEN::getParamAsString(param);
 }
 
+/// Print the specified parameter like we would in a 'ref [x]' argument or
+/// result type, e.g. expanding origin sets.
+void ASTType::printRefOriginParam(raw_ostream &os, TypedAttr param,
+                                  SharedState *diagShared) {
+  param = OriginType::stripMutCastAndFieldExtract(param);
+
+  // Combine unions into comma separated string.
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(param)) {
+    llvm::interleave(
+        unionAttr.getOperands(),
+        [&](TypedAttr elt) { printOriginParam(os, elt, diagShared); },
+        [&]() { os << ", "; });
+    return;
+  }
+
+  printOriginParam(os, param, diagShared);
+}
+
 /// Print the specified parameter like we would in an origin expression, works
 /// in an `origin_of(x)` body.
 void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
@@ -1004,6 +1014,9 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto mutcast = dyn_cast<OriginMutCastAttr>(param)) {
+    if (diagShared)
+      return printOriginParam(os, mutcast.getOperand(), diagShared);
+
     if (mutcast.getType().isMutableKnown(false))
       os << "(muttoimm ";
     else
@@ -1046,6 +1059,12 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
 
     return prettyPrintParamName(declRef, /*elideOriginOf=*/true, *diagShared,
                                 os);
+  }
+
+  // If this is a ParamIndexRefAttr, try to resolve it and pretty print it.
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
+    if (auto declRef = findDeclRefForIndexRef(indexRef, diagShared))
+      return printOriginParam(os, declRef, diagShared);
   }
 
   if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr, UnknownAttr>(
@@ -1104,6 +1123,10 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
           os << (value.getValue() ? "MutOrigin" : "ImmutOrigin");
           return;
         }
+        os << "Origin[mut=";
+        printParam(os, params[0], diagShared);
+        os << "]";
+        return;
       }
 
       // Handle SIMD[dt, 1] with various aliases. Note that the dtype and size
@@ -1186,9 +1209,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
 
   auto printRef = [&](RefType refType) {
     os << "ref[";
-    printOriginParam(
-        os, OriginType::stripMutCastAndFieldExtract(refType.getOrigin()),
-        diagShared);
+    printRefOriginParam(os, refType.getOrigin(), diagShared);
     if (!refType.isDefaultAddrSpace()) {
       os << ", ";
       printParam(os, refType.getAddressSpace(), diagShared);

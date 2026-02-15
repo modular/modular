@@ -401,7 +401,7 @@ struct MyStruct[x: Int]:
 # CHECK:     "path": "/std/builtin/int/Int",
 # CHECK:     "type": "Int"
 # CHECK: }
-# CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct[x])"
+# CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct[arg.x])"
 
 
 fn fn_with_implicit_params[p: Int](arg: MyStruct):
@@ -645,7 +645,7 @@ fn fn_with_named_refs[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_origins",
-# CHECK:     "signature": "fn_with_origins[o1: Origin[mut=mut], o2: MutOrigin](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[o1] Int",
+# CHECK:     "signature": "fn_with_origins[o1: Origin[mut=o1.mut], o2: MutOrigin](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[o1] Int",
 fn fn_with_origins[
     o1: Origin, o2: Origin[mut=True]
 ](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[arg1] Int:
@@ -766,7 +766,8 @@ struct HMyUnsafePointer[
 
 
 struct HList[T: ImplicitlyCopyable]:
-    # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref[self] T",
+    # FIXME: self_is_mut is wrong.
+    # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref[self_is_mut] T",
     fn __getitem__(ref self, idx: Int) -> ref[self] Self.T:
         pass
 

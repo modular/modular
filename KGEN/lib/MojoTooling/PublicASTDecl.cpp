@@ -13,6 +13,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/TypeExtractionUtils.h"
@@ -139,47 +140,23 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
                                       bool isRefResult) {
   // Strip out extra stuff.
   origin = OriginType::stripMutCastAndFieldExtract(origin);
-  origin = SugarAttr::strip(origin);
 
-  // Check to see if the origin is a parameter on this signature.  If so, it
-  // will have a depth of zero.
+  // If this is a "ref [_]" argument, don't print the []'s at all.
   if (auto indexRef = sugarDynCast<ParamIndexRefAttr>(origin);
-      indexRef && indexRef.getDepth() == 0 && signature) {
-    PogListAttr paramListMetadata = signature.getParamListAttrs();
-
-    // Handle uses of implicit origins.
-    if (paramListMetadata.getPassingKind(indexRef.getIndex()) ==
-        PassingKind::Implicit) {
-      // If this is a "ref [_]" argument, don't print the []'s.
-      if (!isRefResult)
-        return "";
-      // If this is a result, figure out which argument infers this and use its
-      // name.
-      for (auto [idx, type] : llvm::enumerate(signature.getArguments())) {
-        if (auto refType = dyn_cast<RefType>(type)) {
-          if (refType.getOrigin() == origin)
-            return signature.getArgName(idx).str();
-        }
-      }
-    }
-
-    return paramListMetadata.getName(indexRef.getIndex()).str();
+      indexRef && indexRef.getDepth() == 0 && signature &&
+      // Ref results always print their origin, it can refer to args.
+      !isRefResult) {
+    // Assume implicit origins are the current argument.  This isn't correct
+    // because one arg can refer to another arg's origin theoretically.
+    if (signature.getParamListAttrs().getPassingKind(indexRef.getIndex()) ==
+        PassingKind::Implicit)
+      return "";
   }
 
-  // Combine unions into comma separated string.
-  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(origin)) {
-    std::string result;
-    llvm::interleave(
-        unionAttr.getOperands(),
-        [&](TypedAttr elt) {
-          result += getSignatureOrigin(shared, elt, signature, isRefResult);
-        },
-        [&]() { result += ", "; });
-    return result;
-  }
-
-  // Otherwise, just print as normal.
-  return generatePValueString(shared, origin);
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  ASTType::printRefOriginParam(os, origin, &shared);
+  return result;
 }
 
 /// Unpack a "ref" argument or result type into a string that can be shown to
@@ -1296,6 +1273,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
                                            FnTypeGeneratorType signature,
                                            ArrayRef<Type> userArgTypes,
                                            Type userResultType) {
+  DeclResolver::DeclScopeChanger declScopeChanger(&*declRef);
   auto &shared = *declRef.getShared();
   raisesFlag = signature.isThrows();
   isAsyncFlag = signature.isAsync();
