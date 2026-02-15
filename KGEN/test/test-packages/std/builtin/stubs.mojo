@@ -48,8 +48,6 @@ comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
 struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
     TrivialRegisterPassable
 ):
-    comptime external = Origin[mut = Self.mut](unsafe_cast=origin_of())
-
     @always_inline("builtin")
     fn __init__(out self):
         pass
@@ -59,16 +57,19 @@ struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
     fn __init__(v: Origin[_]) -> ImmutOrigin[v._mlir_origin]:
         return {}
 
-
-comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin[
-    __mlir_attr[
-        `#lit.origin.mutcast<`,
-        o._mlir_origin,
-        `> : !lit.origin<`,
-        mut._mlir_value,
-        `>`,
-    ]
-]()
+    @always_inline("builtin")
+    fn __init__(
+        *, unsafe_mut_cast: Origin
+    ) -> Origin[
+        __mlir_attr[
+            `#lit.origin.mutcast<`,
+            unsafe_mut_cast._mlir_origin,
+            `> : !lit.origin<`,
+            Self.mut._mlir_value,
+            `>`,
+        ]
+    ]:
+        return {}
 
 
 comptime _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
@@ -958,7 +959,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        unsafe_origin_mutcast[origin_of(Self.origin, self), Self.elt_is_mutable]
+        Origin[mut = Self.elt_is_mutable](
+            unsafe_mut_cast=origin_of(Self.origin, self)
+        )
     ] Self.element_type:
         while True:
             pass
@@ -1207,7 +1210,7 @@ struct UnsafePointer[
     fn get_unique_item_ref[
         self_origin: ImmutOrigin
     ](ref[self_origin] self, offset: Int = 0) -> ref[
-        unsafe_origin_mutcast[_lit_indirect_origin[self_origin]],
+        MutOrigin(unsafe_mut_cast=_lit_indirect_origin[self_origin]),
         Self.address_space,
     ] Self.type:
         while __mlir_attr.true:
