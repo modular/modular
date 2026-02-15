@@ -415,6 +415,22 @@ def test_list_insert():
     for i, value in enumerate(v4):
         assert_equal(value, i + 1)
 
+    #
+    # Test insert with non-trivial type (exercises element-by-element path).
+    #
+
+    v5 = List[String]()
+    v5.insert(0, String("c"))
+    v5.insert(0, String("a"))
+    v5.insert(1, String("b"))
+    v5.insert(len(v5), String("d"))
+
+    assert_equal(len(v5), 4)
+    assert_equal(v5[0], "a")
+    assert_equal(v5[1], "b")
+    assert_equal(v5[2], "c")
+    assert_equal(v5[3], "d")
+
 
 def test_list_index():
     var test_list_a = [10, 20, 30, 40, 50]
@@ -767,6 +783,24 @@ def test_list_span():
     assert_equal(1, len(es))
     assert_equal(es[0], 1)
 
+    # Test slicing with non-trivial type (exercises element-by-element path).
+    var strs = [String("a"), "b", "c", "d"]
+
+    var s1 = strs[1:]
+    assert_equal(len(s1), 3)
+    assert_equal(s1[0], "b")
+    assert_equal(s1[2], "d")
+
+    var s2 = strs[::-1]
+    assert_equal(len(s2), 4)
+    assert_equal(s2[0], "d")
+    assert_equal(s2[3], "a")
+
+    var s3 = strs[1:3]
+    assert_equal(len(s3), 2)
+    assert_equal(s3[0], "b")
+    assert_equal(s3[1], "c")
+
 
 def test_list_realloc_trivial_types():
     a = List[Int]()
@@ -929,6 +963,18 @@ def test_list_init_span():
     var l2 = List[String](sp)
     for val1, val2 in zip(l, l2):
         assert_equal(val1, val2)
+
+    # Test with trivially copyable type (exercises memcpy fast path).
+    var ints = [10, 20, 30, 40, 50]
+    var l3 = List[Int](Span(ints))
+    assert_equal(len(l3), 5)
+    for v1, v2 in zip(ints, l3):
+        assert_equal(v1, v2)
+
+    # Test empty span.
+    var empty = List[Int]()
+    var l4 = List[Int](Span(empty))
+    assert_equal(len(l4), 0)
 
 
 def test_list_init_iter():

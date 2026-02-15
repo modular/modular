@@ -28,7 +28,7 @@ from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
+from memory import Pointer, memcpy, memmove
 from builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -377,9 +377,23 @@ struct List[T: Copyable](
         Args:
             span: The span of values to populate the list with.
         """
-        self = Self(capacity=len(span))
-        for value in span:
-            self.append(value.copy())
+        var length = len(span)
+        self = Self(capacity=length)
+
+        self._annotate_increase(length)
+
+        @parameter
+        if Self.T.__copyinit__is_trivial:
+            memcpy(
+                dest=self.unsafe_ptr(),
+                src=span.unsafe_ptr(),
+                count=length,
+            )
+        else:
+            for i in range(length):
+                (self._data + i).init_pointee_copy(span[i])
+
+        self._len = length
 
     fn __init__[
         IterableType: Iterable,
@@ -800,20 +814,29 @@ struct List[T: Copyable](
         if i < 0:
             normalized_idx = max(len(self) + i, 0)
 
-        var earlier_idx = len(self)
-        var later_idx = len(self) - 1
-        self.append(value^)
+        # Ensure capacity for one more element.
+        if self._len >= self.capacity:
+            self._realloc(self.capacity * 2 | Int(self.capacity == 0))
 
-        for _ in range(normalized_idx, len(self) - 1):
-            var earlier_ptr = self._data + earlier_idx
-            var later_ptr = self._data + later_idx
+        var tail_count = self._len - normalized_idx
 
-            var tmp = earlier_ptr.take_pointee()
-            earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+        self._annotate_increase()
 
-            earlier_idx -= 1
-            later_idx -= 1
+        @parameter
+        if Self.T.__moveinit__is_trivial:
+            # Shift trailing elements right by one using memmove (overlapping).
+            memmove(
+                dest=self._data + normalized_idx + 1,
+                src=self._data + normalized_idx,
+                count=tail_count,
+            )
+        else:
+            # Move elements one-by-one from back to front.
+            for j in range(self._len, normalized_idx, -1):
+                (self._data + j).init_pointee_move_from(self._data + j - 1)
+
+        (self._data + normalized_idx).init_pointee_move(value^)
+        self._len += 1
 
     fn extend(mut self, var other: List[Self.T, ...]):
         """Extends this list by consuming the elements of `other`.
@@ -1272,11 +1295,25 @@ struct List[T: Copyable](
         """
         var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
+        var count = len(r)
 
-        if not len(r):
+        if not count:
             return Self()
 
-        var res = Self(capacity=len(r))
+        var res = Self(capacity=count)
+
+        @parameter
+        if Self.T.__copyinit__is_trivial:
+            if step == 1:
+                res._annotate_increase(count)
+                memcpy(
+                    dest=res.unsafe_ptr(),
+                    src=self.unsafe_ptr() + start,
+                    count=count,
+                )
+                res._len = count
+                return res^
+
         for i in r:
             res.append(self[i].copy())
 

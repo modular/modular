@@ -30,7 +30,7 @@ from .legacy_unsafe_pointer import (
     LegacyOpaquePointer,
     LegacyUnsafePointer,
 )
-from .memory import memcmp, memcpy, memset, memset_zero, stack_allocation
+from .memory import memcmp, memcpy, memmove, memset, memset_zero, stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
