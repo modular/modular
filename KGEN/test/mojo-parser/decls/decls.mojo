@@ -72,7 +72,9 @@ fn variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 
 # CHECK-LABEL: lit.fn @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>>, imm *"rest`2"> read_mem|pack_vararg)
+
+# CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, :origin<0> *"rest`1",
+# CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>>, imm *"rest`2"> read_mem|pack_vararg)
 fn trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
@@ -1117,13 +1119,13 @@ struct HasLifetimeParam[p: MutOrigin](TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"explicitLifetime
-# CHECK-SAME: #Origin <:!Bool {:i1 1}>> lt>
+# CHECK-SAME: #Origin <:!Bool {:i1 1}{{.*}}>> lt>
 fn explicitLifetime[lt: MutOrigin, //, arg: HasLifetimeParam[lt]]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inaccessibleImplicitLifetimeParam
-# CHECK-SAME: "<?, *"arg.p`": !lit.struct<#Origin <:!Bool {:i1 1}>>>(%arg:
+# CHECK-SAME: <?, *"arg.p._mlir_origin``": origin<1>,
 fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
@@ -1173,21 +1175,21 @@ fn inferCaptureOrigins[
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {}),
     # CHECK-SAME: !lit.generator<() capturing -> !kgen.none>
     closureParameterCaptures[bareFunc]()
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {mut *"x`"}),
-    # CHECK-SAME: !lit.generator<:{mut *"x`"}:() capturing -> !kgen.none>
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {mut *"x`1"}),
+    # CHECK-SAME: !lit.generator<:{mut *"x`1"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
     # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"arg.p`{{.*}}",
-    # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`"}:{{.*}} *"captureSomething
+    # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`1"}:{{.*}} *"captureSomething
     closureParameterInference[captureSomething](arg)
 
     # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.generator<<{{.*}}>:*(0,0):
     comptime unboundSet = closureParameterCaptures
-    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:rebind(:origin.set {mut *"x`"}):
+    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:rebind(:origin.set {mut *"x`1"}):
     comptime boundSet = closureParameterCaptures[captureSomething]
 
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}#Origin <:!Bool {:i1 1}>> *(0,0)>
+    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}:origin<1> *(0,0)>
     comptime unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}#Origin <:!Bool {:i1 1}>> lt>> param>
+    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}:origin<1> *"lt._mlir_origin`"
     comptime boundSingleParam = explicitLifetime[param]
 
     # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.generator<<{{.*}}>:*(0,1):
@@ -1201,7 +1203,7 @@ fn inferCaptureOrigins[
     ]():
         _ = y
 
-    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"y`1", mut |rebind(:origin.set {mut *"x`"})|}:
+    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"y`2", mut |rebind(:origin.set {mut *"x`1"})|}:
     comptime boundClosure = captureWithClosure[captureSomething]
 
 

@@ -641,6 +641,10 @@ public:
   /// emit an error and return null.
   TypedAttr extractOriginOf(const ExprNode *expr, CValue value);
 
+  /// Given a value of !lit.origin type, return an instance of
+  /// Origin[mut, lit.origin]().
+  PValue getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc);
+
   //===--------------------------------------------------------------------===//
   // Statement emission helpers.
 

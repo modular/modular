@@ -437,9 +437,6 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
         return SugarKind::Alias;
     }
 
-    if (typeName == "Origin")
-      return SugarKind::Alias;
-
     // Aggressively desugar address spaces with known values.
     if (typeName == "AddressSpace") {
       // We never need to sugar AddressSpace.GENERIC since AstPrinter knows
@@ -457,7 +454,7 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   if (isa<UnknownAttr>(attr)) {
     auto typeName = getTypeName();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
-        typeName == "StringLiteral")
+        typeName == "StringLiteral" || typeName == "Origin")
       return SugarKind::AlwaysInlineBuiltin;
   }
 
@@ -972,22 +969,17 @@ bool OriginType::isMutableKnown(TypedAttr originValue, bool value) {
   return sugarCast<OriginType>(originValue.getType()).isMutableKnown(value);
 }
 
-/// Remove any OriginMutCast and ._mlir_origin if present.
-TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
+/// Remove any OriginMutCast and Rebind if present.
+TypedAttr OriginType::stripMutCastAndRebind(TypedAttr origin) {
   if (auto rebind = sugarDynCast<ParamOperatorAttr>(origin);
       rebind && rebind.getOpcode() == POC::Rebind)
-    return stripMutCastAndFieldExtract(rebind.getOperand(0));
-
-  // Handle an extract out of an Origin type.
-  if (auto extract = sugarDynCast<StructExtractAttr>(origin)) {
-    if (extract.getField() == ORIGIN_FIELD_NAME)
-      return stripMutCastAndFieldExtract(extract.getStructValue());
-  }
+    return stripMutCastAndRebind(rebind.getOperand(0));
 
   // Ignore MutCasts.
   if (auto mutCast = sugarDynCast<OriginMutCastAttr>(origin))
-    return stripMutCastAndFieldExtract(mutCast.getOperand());
+    return stripMutCastAndRebind(mutCast.getOperand());
 
+  assert(isa<OriginType>(origin.getType()));
   return origin;
 }
 

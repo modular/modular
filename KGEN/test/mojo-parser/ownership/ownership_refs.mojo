@@ -24,11 +24,11 @@ struct MemExample(ImplicitlyCopyable):
   fn noop(self): pass
   fn mutate(mut self): pass
 
-# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: {{.*}}#Origin <:!Bool {:i1 0}>>>(%a: !lit.ref<!MemExample, imm #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 0}>> lt, "_mlir_origin">>
+# CHECK-LABEL: lit.fn @"borrow{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, imm *"lt._mlir_origin`">
 fn borrow[lt: ImmutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
-# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: {{.*}}#Origin <:!Bool {:i1 1}>>>(%a: !lit.ref<!MemExample, mut #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 1}>> lt, "_mlir_origin">>
+# CHECK-LABEL: lit.fn @"mutate{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, mut *"lt._mlir_origin`">
 fn mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
@@ -46,11 +46,10 @@ fn implicit_owned(var a: MemExample):
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.fn @"parametricMut
-# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>) ->
-# CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>
-fn parametricMut[isMut: Bool,
-                 life: Origin[mut=isMut]._mlir_type](a: Pointer[MemExample, life]._mlir_type)
-   -> Pointer[MemExample, life]._mlir_type:
+# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool *"o.mut`", "_mlir_value">, *"o._mlir_origin`1">) ->
+# CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool *"o.mut`", "_mlir_value">, *"o._mlir_origin`1">
+fn parametricMut[o: Origin](a: Pointer[MemExample, o]._mlir_type)
+   -> Pointer[MemExample, o]._mlir_type:
   return a
 
 # CHECK-LABEL: lit.fn @"testParametricMut
@@ -82,7 +81,8 @@ fn testUseConditional(cond: __mlir_type.i1):
 
   # This uses both A and B, so it needs to extend both of their origins.
   cptr[].noop()
-  # CHECK: [[CV:%.*]] = lit.ref.load %cptr
+  # CHECK: [[TMP:%.*]] = kgen.rebind %cptr
+  # CHECK: [[CV:%.*]] = lit.ref.load [[TMP]]
   # CHECK-NEXT: lit.var.lifetime.end %cptr
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CV]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
@@ -106,14 +106,16 @@ fn testDefConditional(cond: __mlir_type.i1):
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
   cptr[].mutate()
-  # CHECK: [[CP:%.*]] = lit.ref.load %cptr
+  # CHECK: [[TMP:%.*]] = kgen.rebind %cptr
+  # CHECK: [[CP:%.*]] = lit.ref.load [[TMP]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
   cptr[] = MemExample()
-  # CHECK: [[CP:%.*]] = lit.ref.load %cptr
+  # CHECK: [[TMP:%.*]] = kgen.rebind %cptr
+  # CHECK-NEXT: [[CP:%.*]] = lit.ref.load [[TMP]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[MREF]])
@@ -122,7 +124,8 @@ fn testDefConditional(cond: __mlir_type.i1):
   var shouldBeMovedFrom = MemExample()
   # CHECK: lit.call {{.*}}__init__{{.*}}(%shouldBeMovedFrom)
   cptr[] = shouldBeMovedFrom
-  # CHECK: [[CP:%.*]] = lit.ref.load %cptr
+  # CHECK: [[TMP:%.*]] = kgen.rebind %cptr
+  # CHECK-NEXT: [[CP:%.*]] = lit.ref.load [[TMP]]
   # CHECK-NEXT: lit.var.lifetime.end %cptr
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.ref.immut
@@ -212,17 +215,17 @@ struct SelfRefTest(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"testSelfRef
 fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType !SelfRefTest, {{.*}}origin<0> = *"a`"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 0, :origin<0> *"a`">(%a)
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType !SelfRefTest, {{.*}}origin<1> = *"b`1"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 1, :origin<1> *"b`1">(%b)
   _ = b.method()
 
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: !lit.struct<#Pointer <{{.*}}origin<0> = *"a`"}, :!AddressSpace {_value: !Int = {0}}>>
+# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<0> *"a`">> *?, :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
@@ -239,11 +242,11 @@ fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
   # CHECK: lit.var.decl "l1" var : !lit.ref<{{.*}}(mutcast mut *"x`")
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<{{.*}}#TwoLifetimes <{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"y`1")}>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"y`1"),
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<{{.*}}#TwoLifetimes <{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"x`")}>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"x`"),
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<{{.*}}#TwoLifetimes <{{.*}}origin<0> = *"z`2"}, {{.*}}origin<0> = *"z`2"}
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<0> *"z`2", :origin<0> *"z`2",
   var l4 = returnTwoArgLifetimes(z, z)
 
   use_any(l1, l2, l3, l4)
@@ -290,7 +293,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
-  # CHECK-NEXT: [[RES:%.*]] = lit.call @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[REF]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Pointer::@"__init__{{.*}}([[REF]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])
 
@@ -317,11 +320,7 @@ struct ThingWithFields:
   var field: Int
 
 # CHECK-LABEL: lit.fn @"parametric_mut_mbvalue
-fn parametric_mut_mbvalue[
-    mut: __mlir_type.i1,
-    origin: Origin[mut=mut]._mlir_type,
- ](a: Pointer[ThingWithFields, origin])
-   -> Pointer[Int, origin_of(a[].field)]:
+fn parametric_mut_mbvalue[origin: Origin](a: Pointer[ThingWithFields, origin]) -> Pointer[Int, origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
   return Pointer(to=a[].field)
 
@@ -391,7 +390,7 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest,
   var r = a.method()
   # The result reference should have inferred the origin of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}!SelfRefTest, {{.*}}origin<0> = (mutcast mut *"anonymous*`
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}!SelfRefTest, {{.*}}origin<0> (mutcast mut *"anonymous*`
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r
@@ -458,7 +457,7 @@ fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):
     _ = x^
     _ = y^
 
-  # CHECK: lit.call tail[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
+  # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()
@@ -480,7 +479,7 @@ fn test_higher_order_capture(var x: MemExample, var y: MemExample):
   higher_order_function[capture]()
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
-# CHECK-SAME: !lit.ref<!Int, mut #lit.struct.extract<{{.*}}#Origin <:!Bool {:i1 1}>> our_origin, "_mlir_origin">> mutref)
+# CHECK-SAME: !lit.ref<!Int, mut *"our_origin._mlir_origin`"> mutref)
 fn test_origin_ref_spec[our_origin: MutOrigin](ref[our_origin] a: Int):
     pass
 

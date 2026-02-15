@@ -244,15 +244,15 @@ fn typeof_dynval_in_param(x: _index):
 
 # CHECK-LABEL: lit.fn @"lifetime_of
 fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
-    # CHECK-NEXT: = <{_mlir_origin: origin<0> = {}}>
+    # CHECK-NEXT: lit.alias.decl *"lt0{{.*}}:origin<0> {}
     comptime lt0 = origin_of()
-    # CHECK-NEXT: = <{_mlir_origin: origin<0> = *"x`"}>
+    # CHECK-NEXT: lit.alias.decl *"lt1{{.*}}:origin<0> *"x`">>
     comptime lt1 = origin_of(x)
-    # CHECK-NEXT: = <{_mlir_origin: origin<0> = {*"x`", *"y`1"}}>
+    # CHECK-NEXT: lit.alias.decl *"lt2{{.*}}:origin<0> {*"x`", *"y`1"}>>
     comptime lt2 = origin_of(x, y)
-    # CHECK-NEXT: = <{_mlir_origin: origin<1> = *"z`2"}>
+    # CHECK-NEXT: lit.alias.decl *"lt3{{.*}}:origin<1> *"z`2">>
     comptime lt3 = origin_of(z)
-    # CHECK-NEXT: = <{_mlir_origin: origin<0> = {*"x`", (mutcast mut *"z`2")}}>
+    # CHECK-NEXT: lit.alias.decl *"lt4{{.*}}:origin<0> {*"x`", (mutcast mut *"z`2")}>>
     comptime lt4 = origin_of(x, z)
 
 def take_string_var(var x: String, y: String):

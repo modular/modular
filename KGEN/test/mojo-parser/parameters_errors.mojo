@@ -613,7 +613,7 @@ fn auto_param_of_autoparam[a: SomeParamStruct]():
 # expected-note @below {{function declared here}}
 fn take_a_4(a: TakeAnything[4]): pass
 fn pass_it(x: String):
-  # expected-error @+1 {{cannot be converted from 'TakeAnything[x]' to 'TakeAnything[4]'}}
+  # expected-error @+1 {{cannot be converted from 'TakeAnything[origin_of(x)]' to 'TakeAnything[4]'}}
   take_a_4(TakeAnything[origin_of(x)]())
 
 fn test_unbound_pack_arg():

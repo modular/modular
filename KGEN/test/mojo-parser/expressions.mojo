@@ -1002,7 +1002,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *[0,0]>> *?, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
@@ -1189,7 +1189,7 @@ fn test_thing_taking_reference(mut x: String):
   thing_taking_ref(x)
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
   thing_taking_ref2(x)
-  # CHECK-NEXT: lit.call {{.*}}@Pointer::@"__init__($1%)"{{.*}}
+  # CHECK-NEXT: lit.call {{.*}}@Pointer::@"__init__
   thing_taking_pointer2(Pointer(to=x))
 
 struct StructWithStaticMethods:
@@ -1207,12 +1207,13 @@ fn infer_through_alias():
 # CHECK-LABEL: lit.fn @"infer_address_space
 fn infer_address_space[
     mut: __mlir_type.i1,
-    origin: Origin[mut=mut]._mlir_type
+    //,
+    origin: Origin[mut=mut]
 ](a: Pointer[Int, origin, AddressSpace(4)]._mlir_type):
   # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.
 
-  # CHECK: lit.call {{.*}}@Pointer::@"__init__($1%)"{{.*}}(%a)
+  # CHECK: lit.call {{.*}}@Pointer::@"__init__{{.*}}(%a)
   var x = Pointer(to=__get_litref_as_mvalue(a))
 
 

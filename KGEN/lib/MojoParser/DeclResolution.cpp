@@ -1917,12 +1917,11 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 
   // Bind the "is_owned" parameter, start by filling the parameter list with ?.
   if (refType) {
-    assert(varListStruct.getSignature().getParamTypes().size() == 4);
-    SmallVector<TypedAttr> typeParams(4);
-    ParserParameterEvaluator evaluator(emitter.shared);
+    assert(varListStruct.getSignature().getParamTypes().size() == 5);
+    SmallVector<TypedAttr> typeParams(5);
     Type boolType = varListStruct.getSignature().getParamTypes()[0];
-    Type originType = varListStruct.getSignature().getParamTypes()[1];
-    Type eltType = varListStruct.getSignature().getParamTypes()[2];
+    Type eltType = varListStruct.getSignature().getParamTypes()[3];
+
     SyntheticNode expr(loc);
 
     // The first parameter is the "elt_is_mutable" parameter.
@@ -1932,21 +1931,19 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
       return emitter.emitPValue({boolAttr, &expr}, EC_Type, boolType);
     };
 
-    auto isMut = makeBoolAttr(convention == ArgConvention::OwnedMem ||
-                              convention == ArgConvention::DeinitMem ||
-                              convention == ArgConvention::Mut);
-    evaluator.appendIndexBinding(isMut);
-    typeParams[0] = isMut.get();
-
-    // origin.
-    auto reboundOriginType = evaluator.getReboundType(originType);
-    typeParams[1] = emitter.emitPValue({refType.getOrigin(), &expr}, EC_Type,
-                                       reboundOriginType);
-    // element_type.
-    typeParams[2] =
+    // isMut
+    typeParams[0] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                                 convention == ArgConvention::DeinitMem ||
+                                 convention == ArgConvention::Mut);
+    // mlir_origin
+    typeParams[1] = refType.getOrigin();
+    // origin
+    typeParams[2] = emitter.getStdlibOriginOf(refType.getOrigin(), loc);
+    // element_type
+    typeParams[3] =
         emitter.emitPValue({refType.getElementType(), &expr}, EC_Type, eltType);
     // is_owned.
-    typeParams[3] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+    typeParams[4] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
                                  convention == ArgConvention::DeinitMem);
     // Check for any emitted errors.
     for (auto param : typeParams)

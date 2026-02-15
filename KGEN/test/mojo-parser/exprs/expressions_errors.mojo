@@ -665,7 +665,7 @@ fn compare_mem_result():
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   var bref = Pointer(to=b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': value passed to 'other' cannot be converted from 'Pointer[CopyAndInitMemType, b]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': value passed to 'other' cannot be converted from 'Pointer[CopyAndInitMemType, origin_of(b)]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -858,7 +858,7 @@ fn test_signature():
 
 fn bad_union[ao: MutOrigin](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String
-    # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{b, ao._mlir_origin}'}}
+    # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao, b}'}}
     return c
 
 # https://github.com/modular/mojo/issues/3829

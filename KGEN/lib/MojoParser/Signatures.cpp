@@ -61,15 +61,18 @@ TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
 /// underlying !lit.origin.  This returns null on failure.
 TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
                                    SharedState &shared) {
-  // If this is a value of Origin struct type, process it.
-  // This is generating a StructExtractAttr the hard way.  It would be way nicer
-  // to form a call to `o.__mlir_origin__()` or something like we do for bools,
-  // but unfortunately that won't get inlined and simplified by the call
-  // emission because Origin is parametric.  Therefore it will break parameter
-  // inference.
-  if (auto extractVal =
-          extractStructField(value, ORIGIN_FIELD_NAME, loc, shared))
-    value = extractVal;
+  // If this is the Origin[mut, litorigin] type, take the origin from the 2nd
+  // parameter.
+  if (auto structType = sugarDynCast<LIT::StructType>(value.getType())) {
+    if (structType.getSymbol().getLeafReference().strref() == "Origin" &&
+        structType.getParamValues().size() == 2) {
+      auto result = structType.getParamValues()[1];
+      if (sugarIsa<TypeCheckErrorType>(result.getType()))
+        return {};
+      assert(sugarIsa<OriginType>(result.getType()));
+      return result;
+    }
+  }
 
   // A raw !lit.origin always works.
   if (isa<OriginType>(value.getType()))
@@ -1468,15 +1471,15 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   // We expect:
   // VariadicPack[
-  //   mut: Bool, origin: Origin[mut], //, is_owned: Bool,
-  //   element_trait: _AnyTypeMetaType, *element_types: element_trait]
+  //   mut: Bool, _mlir_origin: !lit.origin, origin: Origin[mut], //,
+  //   element_type: AnyType,is_owned: Bool]
   if (!packDecl) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
   auto packStruct =
       dyn_cast_if_present<StructDeclOp>(*packDecl->getIfOperation());
-  if (!packStruct || packStruct.getParams().size() != 5) {
+  if (!packStruct || packStruct.getParams().size() != 6) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
@@ -1500,31 +1503,22 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 #endif
 
   auto isMutType = typeSig.getParamTypes()[0];
-  auto originType = typeSig.getParamTypes()[1];
-  auto isVarType = typeSig.getParamTypes()[2];
-  auto traitMetaType = typeSig.getParamTypes()[3];
+  auto isVarType = typeSig.getParamTypes()[3];
+  auto traitMetaType = typeSig.getParamTypes()[4];
   if (!sugarIsa<LIT::StructType>(isMutType) ||
-      !sugarIsa<LIT::StructType>(originType) ||
+      !sugarIsa<OriginType>(typeSig.getParamTypes()[1]) ||
+      !sugarIsa<LIT::StructType>(typeSig.getParamTypes()[2]) ||
       !sugarIsa<LIT::StructType>(isVarType) ||
       !sugarIsa<AnyTraitType>(traitMetaType) ||
-      !sugarIsa<VariadicType>(typeSig.getParamTypes()[4])) {
+      !sugarIsa<VariadicType>(typeSig.getParamTypes()[5])) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
 
-  // Use a ParserParameterEvaluator to figure out which (rebound) types are
-  // needed, so we get the Bool type, the Origin type etc.
-  ParserParameterEvaluator evaluator(emitter.shared);
   PValue isMut = emitter.emitPValue({refType.isMutable(), arg.typeExpr},
                                     EC_Type, isMutType);
-  if (!isMut)
-    return {};
-  evaluator.appendIndexBinding(isMut);
-
   PValue origin =
-      emitter.emitPValue({refType.getOrigin(), arg.typeExpr}, EC_Type,
-                         evaluator.getReboundType(originType));
-
+      emitter.getStdlibOriginOf(refType.getOrigin(), arg.typeExpr->getLoc());
   auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
   PValue isVarVal =
       emitter.emitPValue({isVarAttr, arg.typeExpr}, EC_Type, isVarType);
@@ -1537,13 +1531,15 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // !lit.anytrait<AnyType> type.
   PValue traitMT = emitter.emitPValue({PValue(elementType), arg.typeExpr},
                                       EC_Type, traitMetaType);
-  if (!isVarVal || !origin || !traitMT)
+
+  if (!isMut || !origin || !isVarVal || !traitMT)
     return {};
 
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
-  return packStruct.bindReference(
-      {isMut.get(), origin.get(), isVarVal.get(), traitMT.get(), param.get()});
+  return packStruct.bindReference({isMut.get(), refType.getOrigin(),
+                                   origin.get(), isVarVal.get(), traitMT.get(),
+                                   param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default

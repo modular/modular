@@ -768,7 +768,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   for (TypedAttr origin :
        finder.findOriginsIn(argTypes, calleeSig.getCaptureOrigins())) {
     // Look through any immcasts.
-    origin = OriginMutCastAttr::strip(origin);
+    origin = OriginType::stripMutCastAndRebind(origin);
 
     // If this is accessing any container origins directly, then we have a store
     // to "x.y" and another use of "x" which can't be allowed.
@@ -1351,16 +1351,19 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
     // included.
     if (isa<StaticOriginAttr, OriginFieldAttr, ComptimeOriginAttr,
             // TODO: Figure out IndirectOriginAttr semantics for this.
-            IndirectOriginAttr>(origin))
+            IndirectOriginAttr,
+            // FIXME: Why is this coming through here??
+            UnboundAttr>(origin))
       continue;
+
+    // Any uses of an param.index.ref are outside the current function.
+    if (isa<ParamIndexRefAttr>(origin))
+      return true;
 
     // If this is reading out of an Origin, be conservative, we have no idea
     // what it could be.
-    // TODO: Fix Origin struct to use use dependent types instead of containing
-    // the origin.
-    if (isa<LIT::StructExtractAttr,
-            // TODO: This seems overly conservative, only used in capture lists?
-            OriginSetUnionAttr>(origin))
+    // TODO: This seems overly conservative, only used in capture lists?
+    if (isa<OriginSetUnionAttr>(origin))
       return true;
 
     // Scan up our decl hierarchy to see if this parameter is defined on a
@@ -1401,6 +1404,13 @@ void ExclusivityChecker::checkOriginAccess(
     return;
   }
 
+  // FIXME(MOCO-3241): Closures are capturing things too aggressively causing
+  // false exclusivity errors.
+  if (!argIdx) {
+    hasAnyOriginAccess = true;
+    return;
+  }
+
   // Determine whether the access was immutable.
   bool isImmut = OriginType::isMutableKnown(rawOrigin, false);
 
@@ -1408,7 +1418,12 @@ void ExclusivityChecker::checkOriginAccess(
   TypedAttr origin = OriginMutCastAttr::strip(rawOrigin);
 
   // Accesses to the global origin never conflict.
-  if (sugarIsa<AnyOriginAttr>(origin)) {
+  if (sugarIsa<AnyOriginAttr>(origin) ||
+      // FIXME(MOCO-3238): We're getting incorrectly substituted
+      // ParamIndexRefAttr in the result of function call emission. This is a
+      // serious bug, but we ignore them so they don't create incorrect
+      // exclusivity error messages.
+      sugarIsa<ParamIndexRefAttr>(origin)) {
     hasAnyOriginAccess = true;
     return;
   }

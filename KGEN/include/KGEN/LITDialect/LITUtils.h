@@ -55,10 +55,6 @@ bool isVariadicOfTypeExpr(TypedAttr attr);
 /// trait type).
 bool isFirstLevelTypeExpr(TypedAttr attr);
 
-// This is the name of the field of the standard library Origin type.  This
-// needs to be kept in sync with the standard library.
-#define ORIGIN_FIELD_NAME "_mlir_origin"
-
 //===----------------------------------------------------------------------===//
 // Parameter Mangling
 //===----------------------------------------------------------------------===//

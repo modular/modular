@@ -4078,17 +4078,9 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
   }
 
   // Form the final value of !lit.origin type.
-  auto result = OriginUnionAttr::get(emitter.getContext(), origins);
-
-  // Convert to Origin type.
-  // TODO: Use handleIntFPStringLiteral when Origin has dep type.
-  ASTType type =
-      emitter.shared.getBuiltinOriginType(emitter.declScope, getLoc());
-  if (sugarIsa<TypeCheckErrorType>(type))
-    return {}; // Sanity check the returned declaration.
-  return emitter.emitConstructorCall(
-      type, CallOperands(CallSyntax::kTypeCall, this, {{PValue(result), this}}),
-      dest);
+  auto resultLitOrigin = OriginUnionAttr::get(emitter.getContext(), origins);
+  return emitter.emitResult(
+      emitter.getStdlibOriginOf(resultLitOrigin, getLoc()), this, dest);
 }
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,

@@ -13,63 +13,54 @@ comptime float = __mlir_type.`!pop.scalar<f64>`
 comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
-comptime AnyOrigin[*, mut: Bool] = Origin(
+comptime AnyOrigin[*, mut: Bool] = Origin[
     __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
-)
+]()
 comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
-comptime ExternalOrigin[*, mut: Bool] = Origin[mut=mut](
+comptime ExternalOrigin[*, mut: Bool] = Origin[
+    mut=mut,
     __mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
         `>`,
-    ]
-)
+    ],
+]()
 comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
 comptime MutExternalOrigin = ExternalOrigin[mut=True]
-comptime StaticConstantOrigin = Origin(
+comptime StaticConstantOrigin = Origin[
     __mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<0>`,
         `, "__constants__"> : !lit.origin<0>`,
     ]
-)
+]()
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 comptime Never = __mlir_type.`!kgen.never`
 comptime EllipsisType = __mlir_type.`!lit.ellipsis`
 
+comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
+    `!lit.origin<`, mut._mlir_value, `>`
+]
 
-struct Origin[*, mut: Bool](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[
-        `!lit.origin<`,
-        Self.mut._mlir_value,
-        `>`,
-    ]
 
-    var _mlir_origin: Self._mlir_type
+struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
+    TrivialRegisterPassable
+):
+    comptime external = Origin[mut = Self.mut](unsafe_cast=origin_of())
+
+    @always_inline("builtin")
+    fn __init__(out self):
+        pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, mlir_origin: Self._mlir_type):
-        """Initialize an Origin from a raw MLIR `!lit.origin` value.
-
-        Args:
-            mlir_origin: The raw MLIR origin value."""
-        self._mlir_origin = mlir_origin
-
-    @implicit
-    @always_inline("builtin")
-    fn __init__(out self: ImmutOrigin, other: Origin):
-        """Allow converting an mutable origin to an immutable one.
-
-        Args:
-            other: The mutable origin to convert.
-        """
-        self._mlir_origin = other._mlir_origin
+    fn __init__(v: Origin[_]) -> ImmutOrigin[v._mlir_origin]:
+        return {}
 
 
-comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
+comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin[
     __mlir_attr[
         `#lit.origin.mutcast<`,
         o._mlir_origin,
@@ -77,17 +68,17 @@ comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
         mut._mlir_value,
         `>`,
     ]
-)
+]()
 
 
-comptime _lit_indirect_origin[
-    mut: Bool, //, base: Origin[mut=mut]
-] = __mlir_attr[
-    `#lit.indirect.origin<`,
-    base._mlir_origin,
-    `> : `,
-    type_of(base._mlir_origin),
-]
+comptime _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
+    __mlir_attr[
+        `#lit.indirect.origin<`,
+        base._mlir_origin,
+        `> : `,
+        type_of(base._mlir_origin),
+    ]
+]()
 
 
 trait Iterable:
@@ -98,6 +89,10 @@ trait Iterable:
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         ...
 
+
+# Implement the 'Some' helper.
+comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
+comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait]
 
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
@@ -922,7 +917,6 @@ struct _VariadicListMemIter[
     """
 
     comptime variadic_list_type = VariadicListMem[
-        elt_is_mutable = Self.elt_is_mutable,
         origin = Self.elt_origin,
         Self.elt_type,
         Self.is_owned,
@@ -939,6 +933,7 @@ struct _VariadicListMemIter[
 
 struct VariadicListMem[
     elt_is_mutable: Bool,
+    # NOTE: origin._mlir_origin is here in the param list.
     origin: Origin[mut=elt_is_mutable],
     //,
     element_type: AnyType,

@@ -46,7 +46,7 @@ fn raises_arg(x: String) raises Pointer[String, origin_of(x)]:
 fn origin_scope_example():
     try:
         var key = 42 # expected-note {{origin declared here}}
-        # expected-error @+1 {{inferred error type 'Pointer[Int, key]' captures origin 'key' from within try body; it is not in scope in except body}}
+        # expected-error @+1 {{inferred error type 'Pointer[Int, origin_of(key)]' captures origin 'key' from within try body; it is not in scope in except body}}
         raise Pointer(to=key)
     except e:
         _ = e[]  # isn't valid.

@@ -1035,7 +1035,8 @@ struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
 fn infer_implicit_params(var p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<{{.*}}Origin <:!Bool {:i1 1}>> *"p.lt`", :!lit.generator<:{mut #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 1}>> *"p.lt`", "_mlir_origin">}:() capturing -> !kgen.none> *"p.f`1">
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"p.lt._mlir_origin``",
+    # CHECK-SAME: :!lit.generator<:{mut *"p.lt._mlir_origin``"}:() capturing -> !kgen.none> *"p.f`2">
     var tmp = p^
     _ = tmp^
 
@@ -1102,15 +1103,15 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
-   # CHECK-SAME: {_mlir_origin: {{.*}}origin<0>{{.*}}(mutcast mut *"data`"){{.*}}>(%0, %immTest)
+   # CHECK-SAME: :origin<0> (mutcast mut *"data`"){{.*}}>(%0, %immTest)
    immTest = OriginStructInferenceImm(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%data, %parTest)
+   # CHECK-SAME: :origin<1> *"data`">> *?>(%data, %parTest)
    parTest = OriginStructInferencePar(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%data, %parWrappedTest)
+   # CHECK-SAME: :origin<1> *"data`">> *?>(%data, %parWrappedTest)
    parWrappedTest = OriginStructInferenceParWrapped(data)
 
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
@@ -1318,7 +1319,7 @@ fn default_inferring_param[O: ImmutOrigin](str: StringSlice[O] = StaticString(""
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
 fn test_default_inferring_param(b: String):
     # Infers O to default value.
-    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:i1 0}, :!lit.struct<#Origin <:!Bool {:i1 0}>> {_mlir_origin: origin<0> = #lit.origin.field<#lit.static.origin : !lit.origin<0>, "__constants__">}>>
+    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:i1 0}, :origin<0> #lit.origin.field<#lit.static.origin : !lit.origin<0>, "__constants__">,
     # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
     default_inferring_param()
     default_inferring_param(StaticString("a"))
@@ -1641,7 +1642,7 @@ fn call_variadic_pack_with_function():
 struct MOCO1065[
     mut: Bool, //,
     T: ImplicitlyCopyable,
-    o: Origin[mut=mut]._mlir_type,
+    o: Origin[mut=mut],
 ]:
     fn __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):
         pass

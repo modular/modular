@@ -311,6 +311,13 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
   auto demangledName =
       demangleParameterName(declRef.getName(), /*forUser*/ true);
 
+  // If the name wasn't mangled, then it is a normal user parameter, just
+  // print it.
+  if (demangledName == declRef.getName()) {
+    os << demangledName;
+    return;
+  }
+
   ASTDecl *ctxDecl = shared.declResolver->getDeclCurrentlyProcessing();
   if (!ctxDecl) {
     os << demangledName;
@@ -320,13 +327,6 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
   // Walk up the decl hierarchy to find the one that contains the parameter.
   auto [curDecl, paramDecls, paramIdx] = ctxDecl->lookupParamReference(declRef);
   if (!curDecl) {
-    os << demangledName;
-    return;
-  }
-
-  // If the name wasn't mangled, then it is a normal user parameter, just
-  // print it.
-  if (demangledName == declRef.getName()) {
     os << demangledName;
     return;
   }
@@ -730,9 +730,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (auto structType = sugarDynCast<StructType>(structAttr.getType()))
         typeName = structType.getSymbol().getLeafReference().strref();
 
-      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
-          // TODO(OriginDepTypes): Remove this hack.
-          typeName == "Origin") {
+      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
         printParam(os, elt, diagShared);
@@ -854,6 +852,58 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       printParam(os, structType.getParamValues()[0], diagShared);
       return;
     }
+    if (typeName == "Origin") {
+      auto structType = cast<LIT::StructType>(param.getType());
+      assert(structType.getParamValues().size() == 2 &&
+             isa<OriginType>(structType.getParamValues()[1].getType()) &&
+             "Origin type should have two parameters");
+      auto origin = structType.getParamValues()[1];
+      if (auto comptimeOrig = sugarDynCast<ComptimeOriginAttr>(origin)) {
+        os << "ComptimeOrigin";
+        return;
+      }
+      if (auto originField = sugarDynCast<OriginFieldAttr>(origin)) {
+        if (isa<StaticOriginAttr>(originField.getBase())) {
+          if (originField.getField().str() == "__constants__" &&
+              originField.getType().isMutableKnown(false)) {
+            os << "StaticConstantOrigin";
+            return;
+          }
+        }
+      }
+      if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
+        if (unionAttr.getNumOperands() == 0) {
+          if (unionAttr.getType().isMutableKnown(true))
+            os << "MutExternalOrigin";
+          else if (unionAttr.getType().isMutableKnown(false))
+            os << "ImmutExternalOrigin";
+          else {
+            os << "ExternalOrigin[";
+            printParam(os, unionAttr.getType().getIsMutable(), diagShared);
+            os << "]";
+          }
+          return;
+        }
+      }
+      // These are AnyOrigin attributes but don't need `origin_of(...)`.
+      if (auto anyOrig = sugarDynCast<AnyOriginAttr>(origin)) {
+        if (anyOrig.getType().isMutableKnown(true))
+          os << "MutAnyOrigin";
+        else if (anyOrig.getType().isMutableKnown(false))
+          os << "ImmutAnyOrigin";
+        else {
+          os << "AnyOrigin[mut=";
+          printParam(os, anyOrig.getType().getIsMutable(), diagShared);
+          os << "]";
+        }
+        return;
+      }
+
+      os << "origin_of(";
+      printRefOriginParam(os, origin, diagShared);
+      os << ")";
+      return;
+    }
   }
 
   // Print ParamDeclRefAttr as the name of the parameter.
@@ -877,67 +927,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  // These are origins but don't need `origin_of(...)` around them.
-  if (auto anyOrig = sugarDynCast<AnyOriginAttr>(param)) {
-    // TODO(OriginDepTypes): Remove these.
-    if (anyOrig.getType().isMutableKnown(true))
-      os << "MutAnyOrigin";
-    else if (anyOrig.getType().isMutableKnown(false))
-      os << "ImmutAnyOrigin";
-    else {
-      os << "AnyOrigin[";
-      printParam(os, anyOrig.getType().getIsMutable(), diagShared);
-      os << "]";
-    }
-    return;
-  }
-  if (auto comptimeOrig = sugarDynCast<ComptimeOriginAttr>(param)) {
-    // TODO(OriginDepTypes): Remove these.
-    os << "ComptimeOrigin";
-    return;
-  }
-  if (auto originField = sugarDynCast<OriginFieldAttr>(param)) {
-    if (isa<StaticOriginAttr>(originField.getBase())) {
-      if (originField.getField().str() == "__constants__" &&
-          originField.getType().isMutableKnown(false)) {
-        // TODO(OriginDepTypes): Remove these.
-        os << "StaticConstantOrigin";
-        return;
-      }
-    }
-  }
-
-  if (auto unionAttr = dyn_cast<OriginUnionAttr>(param)) {
-    if (unionAttr.getNumOperands() == 0) {
-      // TODO(OriginDepTypes): Remove these.
-      if (unionAttr.getType().isMutableKnown(true))
-        os << "MutExternalOrigin";
-      else if (unionAttr.getType().isMutableKnown(false))
-        os << "ImmutExternalOrigin";
-      else {
-        os << "ExternalOrigin[";
-        printParam(os, unionAttr.getType().getIsMutable(), diagShared);
-        os << "]";
-      }
-      return;
-    }
-  }
-
   // Origins are handled with their own grammar that has `origin_of(x)` on the
   // outside.
-  if (isa<OriginType>(param.getType())) {
-    os << "origin_of(";
-    // Flatten unions into a comma separated list.
-    if (auto unionAttr = dyn_cast<OriginUnionAttr>(param)) {
-      llvm::interleaveComma(unionAttr.getOperands(), os, [&](TypedAttr param) {
-        printOriginParam(os, param, diagShared);
-      });
-    } else {
-      printOriginParam(os, param, diagShared);
-    }
-    os << ")";
-    return;
-  }
+  if (isa<OriginType>(param.getType()))
+    return printOriginParam(os, param, diagShared);
 
   if (auto sugar = dyn_cast<SugarAttr>(param)) {
     // Sugared parameters print as their sugar when always_inline("builtin")
@@ -964,7 +957,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 /// result type, e.g. expanding origin sets.
 void ASTType::printRefOriginParam(raw_ostream &os, TypedAttr param,
                                   SharedState *diagShared) {
-  param = OriginType::stripMutCastAndFieldExtract(param);
+  param = OriginType::stripMutCastAndRebind(param);
 
   // Combine unions into comma separated string.
   if (auto unionAttr = sugarDynCast<OriginUnionAttr>(param)) {
@@ -1057,6 +1050,34 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
       return;
     }
 
+    // If this is a !lit.origin parameter we are complaining about, see if we
+    // can find the corresponding Origin parameter.  This reduces us complaining
+    // about x._mlir_origin.
+    if (ASTDecl *ctxDecl =
+            diagShared->declResolver->getDeclCurrentlyProcessing()) {
+      auto [curDecl, paramDecls, paramIdx] =
+          ctxDecl->lookupParamReference(declRef);
+      if (curDecl) {
+        // The Origin may be any later parameter in the list, it just refers to
+        // this mlir_origin parameter.
+        for (size_t i = paramIdx + 1, e = paramDecls.size(); i < e; ++i) {
+          auto paramType =
+              sugarDynCast<LIT::StructType>(paramDecls[i].getType());
+          ParamDeclRefAttr paramDeclRef;
+          if (paramType &&
+              paramType.getSymbol().getLeafReference().strref() == "Origin" &&
+              paramType.getParamValues().size() == 2) {
+            if ((paramDeclRef = dyn_cast<ParamDeclRefAttr>(
+                     paramType.getParamValues()[1])) &&
+                paramDeclRef.getName() == declRef.getName()) {
+              declRef = ParamDeclRefAttr::get(paramDecls[i]);
+              break;
+            }
+          }
+        }
+      }
+    }
+
     return prettyPrintParamName(declRef, /*elideOriginOf=*/true, *diagShared,
                                 os);
   }
@@ -1067,8 +1088,7 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
       return printOriginParam(os, declRef, diagShared);
   }
 
-  if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr, UnknownAttr>(
-          param))
+  if (isa<StructExtractAttr, ParamIndexRefAttr, UnknownAttr>(param))
     return printParam(os, param, diagShared);
 
   if (auto sugar = dyn_cast<SugarAttr>(param)) {
@@ -1116,11 +1136,14 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     if (typeDecl &&
         isa_and_nonnull<LIT::StructDeclOp>(typeDecl->getIfOperation())) {
       auto structDecl = cast<LIT::StructDeclOp>(typeDecl->getIfOperation());
-      if (params.size() == 1 && structDecl.getDeclName().strref() == "Origin") {
+      if (params.size() == 2 && structDecl.getDeclName().strref() == "Origin") {
         // Check to see if we have a Bool with a known constant parameter.
         //   #lit.struct<{value: i1 = 1}>
         if (auto value = getSingleElementStructAttr<BoolAttr>(params[0])) {
           os << (value.getValue() ? "MutOrigin" : "ImmutOrigin");
+          // TODO: While the mlir_origin is almost always infer-only, it can
+          // technically be written.  We should print it here if it isn't an
+          // infer-only arg value.
           return;
         }
         os << "Origin[mut=";

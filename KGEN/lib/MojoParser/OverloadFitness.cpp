@@ -197,8 +197,8 @@ static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
     auto argO = argType.getOrigin();
     // Strip off mutcasts etc - if the origins still differ we can complain
     // about the simpler thing.
-    auto operandOS = OriginType::stripMutCastAndFieldExtract(operandO);
-    auto argOS = OriginType::stripMutCastAndFieldExtract(argO);
+    auto operandOS = OriginType::stripMutCastAndRebind(operandO);
+    auto argOS = OriginType::stripMutCastAndRebind(argO);
     if (operandOS != argOS) {
       argO = argOS;
       operandO = operandOS;

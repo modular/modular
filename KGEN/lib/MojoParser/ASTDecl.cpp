@@ -56,7 +56,8 @@ ASTDecl::lookupParamReference(ParamDeclRefAttr paramRef) const {
     if (auto op = current->getIfOperation()) {
       if (auto declIntf = dyn_cast<DeclInterface>(op)) {
         for (auto [idx, param] : llvm::enumerate(declIntf.getInputParams())) {
-          if (param == paramDecl && param.getType() == paramDecl.getType())
+          if (param.getName() == paramDecl.getName() &&
+              param.getType() == paramDecl.getType())
             return {current, declIntf.getInputParams(), idx};
         }
       }

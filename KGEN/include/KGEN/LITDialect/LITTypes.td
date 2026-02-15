@@ -477,8 +477,8 @@ def LIT_OriginType : LITType<"Origin", "origin",
     /// the specified mutability.
     static bool isMutableKnown(TypedAttr originValue, bool value);
 
-    /// Remove any OriginMutCast and ._mlir_origin if present.
-    static TypedAttr stripMutCastAndFieldExtract(TypedAttr origin);
+    /// Remove any OriginMutCast and Rebind if present.
+    static TypedAttr stripMutCastAndRebind(TypedAttr origin);
   }];
 }
 

@@ -79,7 +79,7 @@ comptime deprecated_alias = 1
 # Issue #5361: mojo doc crashes on alias of parametrized function with origin
 
 # CHECK-LABEL: "name": "parametric_ref_origin_alias",
-# CHECK: "value": "parametric_ref_origin[2, ?, origin_of(_)]"
+# CHECK: "value": "parametric_ref_origin[2, ?, _]"
 comptime parametric_ref_origin_alias = parametric_ref_origin[2]
 
 

@@ -836,22 +836,19 @@ ASTType ASTType::getVariadicElementType() const {
 RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  // NOTE: `bindings[0]` and `bindings[2]` are expected to be the Mojo `Bool`
+  // NOTE: `bindings[0]` and `bindings[3]` are expected to be the Mojo `Bool`
   // type, and `bindings[1]` is an Origin.
-  assert(bindings.size() == 5 &&
+  assert(bindings.size() == 6 &&
          sugarIsa<LIT::StructType>(bindings[0].getType()) &&
-         sugarIsa<LIT::StructType>(bindings[1].getType()) &&
+         sugarIsa<OriginType>(bindings[1].getType()) &&
          sugarIsa<LIT::StructType>(bindings[2].getType()) &&
-         sugarIsa<AnyTraitType>(bindings[3].getType()) &&
-         sugarIsa<VariadicType>(bindings[4].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[3].getType()) &&
+         sugarIsa<AnyTraitType>(bindings[4].getType()) &&
+         sugarIsa<VariadicType>(bindings[5].getType()) &&
          "Not a VariadicPack struct?");
-
-  TypedAttr origin = ASTType::extractOriginOf(SMLoc(), bindings[1], shared);
-  assert(origin && "Origin is null");
   return RefPackType::get(
-      /*variadicList*/ bindings[4], origin,
-      /*addrSpace*/
-      IntegerAttr::get(IndexType::get(shared.getContext()), 0));
+      /*variadicList*/ bindings[5], /*mlirOrigin*/ bindings[1],
+      /*addrSpace*/ IntegerAttr::get(IndexType::get(shared.getContext()), 0));
 }
 
 /// Return the type list for the variadic argument in a VariadicPack.  This
@@ -860,16 +857,17 @@ RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
 TypedAttr ASTType::getVariadicPackTypeList() const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  // NOTE: `bindings[0]` and `bindings[2]` are expected to be the Mojo `Bool`
+  // NOTE: `bindings[0]` and `bindings[3]` are expected to be the Mojo `Bool`
   // type, and `bindings[1]` is an Origin.
-  assert(bindings.size() == 5 &&
+  assert(bindings.size() == 6 &&
          sugarIsa<LIT::StructType>(bindings[0].getType()) &&
-         sugarIsa<LIT::StructType>(bindings[1].getType()) &&
+         sugarIsa<OriginType>(bindings[1].getType()) &&
          sugarIsa<LIT::StructType>(bindings[2].getType()) &&
-         sugarIsa<AnyTraitType>(bindings[3].getType()) &&
-         sugarIsa<VariadicType>(bindings[4].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[3].getType()) &&
+         sugarIsa<AnyTraitType>(bindings[4].getType()) &&
+         sugarIsa<VariadicType>(bindings[5].getType()) &&
          "Not a VariadicPack struct?");
-  return bindings[4];
+  return bindings[5];
 }
 
 ASTType ASTType::getKwargsDictValueType() const {
@@ -958,6 +956,9 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
 bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
   for (auto o :
        shared.cachedOriginFinder.findOriginsIn(getCanonicalType(mlirType))) {
+
+    o = OriginType::stripMutCastAndRebind(o);
+
     // Ignore field sensitivity.
     while (auto field = dyn_cast<OriginFieldAttr>(o))
       o = field.getBase();
@@ -968,6 +969,16 @@ bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
     // arguments of null UnsafePointer.
     if (sugarIsa<StaticOriginAttr, AnyOriginAttr>(o))
       continue;
+
+    // We can materialize parametric origins from a caller.
+    if (sugarIsa<ParamDeclRefAttr, ImplicitOriginRefAttr>(o))
+      continue;
+
+    // Ignore indirect origins.
+    // FIXME: figure out their semantics.
+    if (sugarIsa<IndirectOriginAttr>(o))
+      continue;
+
     // Otherwise, it is something we can't track.
     return true;
   }
