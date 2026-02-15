@@ -3,70 +3,865 @@ title: Errors, error handling, and context managers
 sidebar_label: Errors and context managers
 ---
 
-This page discusses how to raise errors in Mojo programs and how to detect and
-handle error conditions. It also discusses how you can use context managers to
-correctly allocate and release resources such as files, even when error
-conditions occur. Finally, it shows you how to implement context managers for
-your own custom resources.
+Mojo represents errors as values—specifically, as alternate return values from
+functions. Unlike stack-unwinding exceptions in languages like C++ or Java, Mojo
+errors don't require expensive call stack unwinding, so their runtime overhead is as
+low as returning and checking an extra `Bool`. This design also enables error
+handling in contexts where traditional exceptions aren't available, like GPU
+kernels.
+
+This page covers:
+
+- [**Raise an error**](#raise-an-error) — Use the built-in `Error` type to
+  raise errors with string messages.
+- [**Handle an error**](#handle-an-error) — Use `try`/`except`/`else`/`finally`
+  to detect and recover from errors.
+- [**Typed errors**](#typed-errors) — Define custom error types as structs for
+  structured error data and compile-time type checking.
+- [**Representing multiple error conditions**](#representing-multiple-error-conditions) — Use
+  enumerated error types or the `Variant` type for pattern matching.
+- [**The `Never` type**](#the-never-type) — Mark functions that always raise
+  or never raise.
+- [**Parametric raises**](#parametric-raises) — Write generic functions that
+  propagate error types from their arguments.
+- [**`fn` vs `def` for error handling**](#fn-vs-def-for-error-handling) — How
+  the two function forms differ in their error handling capabilities.
+- [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
+  Work with code that uses both error styles.
+- [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
+  trace collection for debugging.
+- [**Context managers**](#use-a-context-manager) — Manage resources safely
+  with the `with` statement.
+
+An error interrupts the normal execution flow of your program. If you provide an
+error handler (using [`try`/`except`](#handle-an-error)) in the current
+function, execution resumes with that handler. If the error isn't handled in the
+current function, it propagates to the calling function, and so on. If an error
+isn't caught by any handler, your program terminates with a non-zero exit code
+and prints the error message:
+
+```output
+Unhandled exception caught during execution: record not found
+```
 
 ## Raise an error
 
-The `raise` statement raises an error condition in your program. You provide the
-`raise` statement with an [`Error`](/mojo/std/builtin/error/Error) instance
-to indicate the type of error that occurred. For example:
+The built-in [`Error`](/mojo/std/builtin/error/Error) type is the default error
+type for most Mojo code. It carries a text message describing what went wrong,
+and it's the right choice for application-level error handling—simple,
+well-supported, and sufficient for the majority of use cases.
+
+You can raise an `Error` with the constructor or a string literal shorthand:
 
 ```mojo
-raise Error("integer overflow")
+# These are equivalent
+raise Error("file not found")
+raise "file not found"
 ```
 
-As a convenience, you can instead provide an error message in the form of a
-[`String`](/mojo/std/collections/string/string/String) or
-[`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral) value, and
-`raise` automatically uses that to create an `Error` instance. So you can raise
-the same error condition as shown above by executing:
+The string literal form is a convenience—the compiler automatically wraps it in
+an `Error`.
+
+A `def` function is raising by default and always uses the built-in `Error` type.
+You **don't** include `raises` in the signature (doing so results in a
+compiler error):
 
 ```mojo
-raise "integer overflow"
+def read_file(path: String) -> String:
+    if not path:
+        raise "path cannot be empty"
+    return "contents of " + path
+```
+
+An `fn` function can also raise `Error` by using bare `raises` without
+a type:
+
+```mojo
+fn read_file_fn(path: String) raises -> String:
+    if not path:
+        raise "path cannot be empty"
+    return "contents of " + path
+```
+
+:::tip
+
+If you need structured error data—like separate fields for an error code and
+description—or allocation-free errors for GPU kernels, see
+[Typed errors](#typed-errors) later on this page. For most application code,
+`Error` with a descriptive string message is all you need.
+
+:::
+
+## Handle an error
+
+Mojo uses `try`/`except` to detect and handle errors. The full syntax is:
+
+```mojo
+try:
+    # Code that might raise an error
+except e:
+    # Runs if an error occurs
+else:
+    # Runs if no error occurs
+finally:
+    # Always runs, regardless of outcome
+```
+
+You must include one or both of `except` and `finally`. The `else` clause is
+optional.
+
+### How each clause works
+
+- `try` — Contains code that might raise an error. If no error occurs, the
+  entire block executes. If an error occurs, execution stops at the `raise`
+  point and continues with the `except` clause (if present) or the `finally`
+  clause.
+
+- `except` — Runs only when an error occurs in the `try` block. If you
+  provide a variable name (`except e:`), the error is bound to that variable.
+  A `try` block can have only one `except` clause.
+
+- `else` — Runs only when no error occurs in the `try` block. The `else`
+  clause is *skipped* if the `try` clause exits via `continue`, `break`, or
+  `return`.
+
+- `finally` — Runs after the `try` and any `except` or `else` clause,
+  regardless of outcome. It executes even if another clause exits via
+  `continue`, `break`, `return`, or by raising a new error. Use `finally` to
+  release resources (such as file handles) that must be cleaned up regardless
+  of whether an error occurred.
+
+### Example
+
+The following example demonstrates all four clauses. The `process_record()`
+function raises `Error` for different conditions, and the caller loops over
+a list of IDs to exercise each clause:
+
+```mojo title="handle_error.mojo"
+fn process_record(id: Int) raises -> String:
+    if id < 0:
+        raise Error("invalid record ID: must be non-negative")
+    if id > 999:
+        raise Error("record not found")
+    return String("record_", id)
+
+
+def main():
+    try:
+        for id in [5, 0, 1001, -3, 42]:
+            var result: String
+            try:
+                print()
+                print("try     => id:", id)
+                if id == 0:
+                    continue
+                result = process_record(id)
+            except e:
+                if "invalid" in String(e):
+                    print("except  => fatal:", e)
+                    raise e^
+                print("except  => handled:", e)
+            else:
+                print("else    => success:", result)
+            finally:
+                print("finally => done with id:", id)
+    except e:
+        print("\nre-raised error:", e)
+```
+
+```output
+
+try     => id: 5
+else    => success: record_5
+finally => done with id: 5
+
+try     => id: 0
+finally => done with id: 0
+
+try     => id: 1001
+except  => handled: record not found
+finally => done with id: 1001
+
+try     => id: -3
+except  => fatal: invalid record ID: must be non-negative
+finally => done with id: -3
+
+re-raised error: invalid record ID: must be non-negative
+```
+
+Notice:
+- When `id` is 5: `process_record()` succeeds, so `else` runs, then `finally`.
+- When `id` is 0: `continue` exits the `try` block, skipping both `except`
+  and `else`. Only `finally` runs.
+- When `id` is 1001: `process_record()` raises an error. The `except` clause
+  handles it and execution continues with the next iteration.
+- When `id` is -3: `process_record()` raises an "invalid" error. The `except`
+  clause re-raises it with `raise e^`, which transfers ownership of the error
+  to the outer `try`/`except`. The `finally` clause still runs before the error
+  propagates. Because the re-raise exits the loop, `id` 42 is never processed.
+
+### Re-raise an error
+
+To re-raise a caught error, use `raise` with the
+[transfer sigil](/mojo/manual/values/ownership/#transfer-arguments-var-and-)
+(`^`) to transfer ownership of the error value:
+
+```mojo
+try:
+    result = process_record(-1)
+except e:
+    print("Logging error:", e)
+    raise e^  # re-raise with ownership transfer
+```
+
+You can also raise a different error from within an `except` clause.
+
+## Typed errors
+
+For code that needs more than a string message—like standard library APIs,
+GPU abstractions, or situations where callers need structured error data—Mojo
+lets you define custom error types as [structs](/mojo/manual/structs).
+
+### Define a custom error type
+
+In Mojo, any struct can serve as an error type—no special base class or trait
+is required. However, implementing the
+[`Writable`](/mojo/std/format/Writable) trait is recommended so the error
+produces a readable message when printed or when the program terminates with an
+unhandled error:
+
+```mojo
+@fieldwise_init
+struct ValidationError(Copyable, Writable):
+    var field: String
+    var reason: String
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("ValidationError(", self.field, "): ", self.reason)
+```
+
+The [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator
+generates an `__init__()` method with an argument for each field, so you
+can construct errors like `ValidationError("username", "too short")` or with
+keyword arguments like `ValidationError(field="username", reason="too short")`.
+
+:::note
+
+Typed errors work on GPUs and embedded targets as long as you avoid
+heap-allocated types like `String`. For more on GPU programming, see
+[GPU fundamentals](/mojo/manual/gpu/fundamentals).
+
+:::
+
+### Raise a typed error
+
+To declare that a function can raise a typed error, add `raises YourErrorType`
+to its signature:
+
+```mojo
+fn validate_username(username: String) raises ValidationError -> String:
+    if len(username) == 0:
+        raise ValidationError(field="username", reason="cannot be empty")
+    if len(username) < 3:
+        raise ValidationError(
+            field="username", reason="must be at least 3 characters"
+        )
+    return username
+```
+
+A function defined with `fn` is non-raising by default. Including `raises`
+(with or without a type) makes it a raising function. Each `fn` function can
+declare at most one error type. The compiler enforces this—if any `raise`
+statement in the function body doesn't match the declared type, the program
+won't compile.
+
+:::note
+
+A `def` function is raising by default, but it can raise only the built-in
+[`Error`](/mojo/std/builtin/error/Error) type. To raise a typed error, use
+`fn`. See [`fn` vs `def` for error handling](#fn-vs-def-for-error-handling) for
+details.
+
+:::
+
+If a non-raising `fn` calls a raising function, it must handle the error
+locally:
+
+```mojo
+# This doesn't compile — validate_username() can raise
+fn process_name(name: String):
+    print(validate_username(name))
+
+# This compiles — the error is handled
+fn process_name_safe(name: String):
+    try:
+        print(validate_username(name))
+    except e:
+        print("Invalid:", e)
+```
+
+### Catch a typed error
+
+Use `try`/`except` to catch a typed error. The compiler automatically infers the
+error type from the function being called, so `except e:` gives you a fully
+typed error value—no casting required:
+
+```mojo
+try:
+    var name = validate_username("")
+except e:
+    # e is a ValidationError — access fields directly
+    print("Error in field '" + e.field + "': " + e.reason)
+```
+
+Which produces this output:
+
+```output
+Error in field 'username': cannot be empty
+```
+
+A `try` block can include only one `except` clause. Mojo doesn't support
+`except ErrorType as e:` syntax—the type is always inferred from the
+function being called.
+
+If you need to handle calls that raise different error types, use separate
+`try` blocks:
+
+```mojo
+# Each try block handles one error type
+try:
+    var name = validate_username(input)
+except e:
+    # e is a ValidationError — access fields directly
+    print("Validation failed:", e.field, e.reason)
+
+try:
+    var file = open_file(path)
+except e:
+    # e is a FileError — match on variant
+    if e == FileError.not_found:
+        print("Missing:", path)
 ```
 
 :::note
 
-Currently, Mojo does not support typed error conditions. All errors are
-instances of `Error`, and the only thing that distinguishes different error
-conditions is the error message that you provide.
+If your error type implements the [`Writable`](/mojo/std/format/Writable) trait,
+you can also pass `e` directly to `print()`:
+
+```mojo
+except e:
+    print(e)  # calls ValidationError.write_to()
+```
+
+Which produces this output:
+
+```output
+ValidationError(username): cannot be empty
+```
 
 :::
 
-An error interrupts the execution flow of your program. If you provide an error
-handler (as described in [Handle an error](#handle-an-error)) in the current
-function, execution resumes with that handler. If the error isn't handled in the
-current function, it propagates to the calling function and so on. If an error
-isn't caught by any error handler, your program terminates with a non-zero exit
-code and prints a stack trace, if enabled, followed by the error message. For
-example:
+## Representing multiple error conditions
+
+Each `fn` function can declare only one error type in its `raises` clause. When
+a function can fail in multiple distinct ways, you need to represent those
+conditions within a single type. Mojo offers two approaches:
+
+- **Enumerated error types** — A single struct with `comptime` variant aliases.
+  Simpler and more efficient when you only need to distinguish between
+  conditions.
+- **The `Variant` type** — The standard library
+  [`Variant`](/mojo/std/utils/variant/Variant) type with separate structs per
+  condition. More flexible when each condition needs to carry different data.
+
+### Enumerated error types
+
+A single struct can represent all error conditions using an integer `_variant`
+field and
+[`comptime` values](/mojo/manual/parameters/#comptime-named-parameter-expressions)
+as named constants. The `write_to` method generates human-readable strings from
+the variant code:
+
+```mojo
+@fieldwise_init
+struct FileError(Equatable, ImplicitlyCopyable, Writable):
+    var _variant: Int
+
+    # Compile-time constant variants
+    comptime not_found = FileError(_variant=1)
+    comptime permission_denied = FileError(_variant=2)
+    comptime already_exists = FileError(_variant=3)
+
+    fn variant_name(self) -> String:
+        if self._variant == 1:
+            return "not_found"
+        elif self._variant == 2:
+            return "permission_denied"
+        elif self._variant == 3:
+            return "already_exists"
+        return "unknown"
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("FileError.", self.variant_name())
+```
+
+Because `FileError` has a single `Int` field and conforms to
+[`Equatable`](/mojo/std/builtin/comparable/Equatable/), the compiler
+auto-synthesizes `__eq__()`, so you can compare variants directly:
+
+```mojo
+fn open_file(path: String) raises FileError -> String:
+    if not path:
+        raise FileError.not_found
+    if path == "/secret":
+        raise FileError.permission_denied
+    return "Contents of " + path
+```
+
+You can then match on specific variants in the handler:
+
+```mojo
+try:
+    print(open_file("/secret"))
+except e:
+    if e == FileError.not_found:
+        print("Not found:", e)
+    elif e == FileError.permission_denied:
+        print("Permission denied:", e)
+```
+
+Which produces this output:
 
 ```output
-Unhandled exception caught during execution: integer overflow
+Permission denied: FileError.permission_denied
 ```
+
+### The `Variant` type
+
+When each error condition needs to carry different data, you can use the
+standard library [`Variant`](/mojo/std/utils/variant/Variant) type instead of
+an integer-based enumeration. Define a separate struct for each condition, then
+combine them into a single error type with a `comptime` alias:
+
+```mojo title="variant_errors.mojo"
+from utils import Variant
+
+
+@fieldwise_init
+struct NotFoundError(Copyable, Writable):
+    var path: String
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("file not found: ", self.path)
+
+
+@fieldwise_init
+struct PermissionError(Copyable, Writable):
+    var path: String
+    var required_role: String
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write(
+            "permission denied on ",
+            self.path,
+            " (requires ",
+            self.required_role,
+            ")",
+        )
+
+
+comptime FileError = Variant[NotFoundError, PermissionError]
+```
+
+Construct a `Variant` by wrapping the inner error in the `Variant` type:
+
+```mojo
+fn open_file(path: String) raises FileError -> String:
+    if not path:
+        raise FileError(NotFoundError(""))
+    if path == "/secret":
+        raise FileError(PermissionError("/secret", "admin"))
+    return "Contents of " + path
+```
+
+In the handler, use `.isa[T]()` to test which condition occurred and `e[T]` to
+access the inner error with its full type:
+
+```mojo
+try:
+    print(open_file("/secret"))
+except e:
+    if e.isa[NotFoundError]():
+        print("Not found:", e[NotFoundError])
+    elif e.isa[PermissionError]():
+        print("Access denied:", e[PermissionError])
+```
+
+```output
+Access denied: permission denied on /secret (requires admin)
+```
+
+Use the `Variant` approach when each condition carries different fields (like
+`path` vs `path` + `required_role` above). Use the
+[enumerated error type](#enumerated-error-types) pattern when you only need to
+distinguish between conditions without carrying different data per condition.
+
+## The `Never` type
+
+`Never` is a type with no constructors—it can't be instantiated. This makes
+it useful in error-handling signatures to express two opposite guarantees:
+
+- `raises YourErrorType -> Never` — The function *always* raises and never returns a
+  value. This is useful for functions like `panic()` that unconditionally signal
+  an error.
+- `raises Never -> ReturnType` — The function *never* raises and always returns
+  a value. This is equivalent to omitting `raises` entirely.
+
+### Functions that always raise
+
+A function with `-> Never` as its return type must never terminate with a
+`return` statement—it must raise on every code path (or loop infinitely).
+Because `Never` can substitute for any type, the compiler allows using such a
+function in place of a return value:
+
+```mojo
+# Always raises, never returns
+fn panic(msg: String) raises -> Never:
+    raise Error(msg)
+
+fn get_value_or_panic(maybe: Optional[Int]) raises -> Int:
+    if maybe:
+        return maybe.value()
+    # Never substitutes for Int in this branch
+    panic("value is missing")
+```
+
+### Functions that never raise
+
+A function with `raises Never` guarantees at compile time that it never raises.
+This is equivalent to writing a plain non-raising function:
+
+```mojo
+# These two signatures are equivalent:
+fn safe_add(a: Int, b: Int) raises Never -> Int:
+    return a + b
+
+fn safe_add(a: Int, b: Int) -> Int:
+    return a + b
+```
+
+This equivalency is especially useful in combination with
+[parametric raises](#parametric-raises), where the compiler infers
+`raises Never` when a function argument doesn't raise.
+
+## Parametric raises
+
+You can write
+[generic functions](/mojo/manual/parameters/#parameters-and-generics) that
+propagate the error type from a function argument to the caller. This uses a
+compile-time parameter for the error type:
+
+```mojo
+fn run_action[
+    ErrorType: AnyType
+](action: fn() raises ErrorType -> Int) raises ErrorType -> Int:
+    return action()
+```
+
+The `ErrorType` parameter is inferred from the function you pass in. If the
+function raises `NetworkError`, then `run_action` raises `NetworkError`. If the
+function raises `ParseError`, then `run_action` raises `ParseError`:
+
+```mojo
+fn fetch_data() raises NetworkError -> Int:
+    raise NetworkError(code=404)
+
+fn parse_config() raises ParseError -> Int:
+    raise ParseError(position=42)
+
+# ...
+
+# ErrorType inferred as NetworkError
+try:
+    _ = run_action(fetch_data)
+except e:
+    print("Network failure:", e)
+
+# ErrorType inferred as ParseError
+try:
+    _ = run_action(parse_config)
+except e:
+    print("Parse failure:", e)
+```
+
+If the function argument doesn't raise at all, the compiler infers `Never` as
+the error type. This means `run_action` itself becomes non-raising, and no `try`
+block is needed:
+
+```mojo
+fn get_value() -> Int:
+    return 99
+
+# ...
+
+# ErrorType inferred as Never — no try block needed
+var result = run_action(get_value)
+print("Got value:", result)
+```
+
+Which produces this output:
+
+```output
+Got value: 99
+```
+
+## `fn` vs `def` for error handling
+
+Mojo has two function forms — `def` and `fn` — that differ in how they handle
+errors:
+
+- `def` — Implicitly raising. Always uses the built-in `Error` type. You can't
+  specify a typed error.
+- `fn` with bare `raises` — Explicitly raising. Uses the built-in `Error` type,
+  same as `def`.
+- `fn` with `raises YourErrorType` — Explicitly raising with a typed error. This is
+  the only way to raise typed errors.
+
+### `def` functions
+
+A `def` function can raise the built-in `Error` type without declaring it in the
+signature:
+
+```mojo
+def validate_def(value: Int) -> Int:
+    if value < 0:
+        raise "value cannot be negative"
+    return value
+```
+
+Because `def` already implies `raises`, you can't add a typed error annotation.
+The following produces a compiler error:
+
+```mojo
+# Compiler error: function effect 'raises' was already specified
+def validate_def(value: Int) raises ValidationError -> Int:
+    ...
+```
+
+### `fn` functions
+
+An `fn` function is non-raising by default. To make it raise, add `raises`
+(for `Error`) or `raises YourErrorType` (for a typed error):
+
+```mojo
+# fn with typed error — caller gets full access to error fields
+fn validate_fn(value: Int) raises ValidationError -> Int:
+    if value < 0:
+        raise ValidationError(field="value", reason="cannot be negative")
+    return value
+```
+
+### Wrapping `def` in `fn` for typed errors
+
+If you have existing `def` functions that you want to expose with typed
+errors, write an `fn` wrapper that catches the `Error` and converts it:
+
+```mojo
+fn validated_operation(value: Int) raises ValidationError -> Int:
+    try:
+        return validate_def(value)
+    except e:
+        raise ValidationError(field="value", reason=String(e))
+```
+
+The wrapper calls the `def` function inside a `try` block, catches any
+`Error`, and re-raises it as a typed error. This pattern lets you add type
+safety at API boundaries without rewriting internal code:
+
+```mojo
+try:
+    _ = validated_operation(-1)
+except e:
+    print(e.field)   # prints: value
+    print(e.reason)  # prints: value cannot be negative
+```
+
+:::note
+
+For a complete working example of all three function forms, see
+[`fn_vs_def_errors.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/fn_vs_def_errors.mojo).
+
+:::
+
+## Typed errors and `Error` interaction
+
+Most codebases contain a mix of `def` functions (which use `Error`) and
+`fn` functions with typed errors. This section covers how the two styles
+interact and how to work with them effectively.
+
+### Wrap `Error` at API boundaries
+
+When calling `def` functions or other `Error`-raising code from a function that
+uses typed errors, catch the `Error` and convert it:
+
+```mojo
+def validate_with_error(value: Int) -> Int:
+    if value < 0:
+        raise "value cannot be negative"
+    return value
+
+fn wrapped_validate(value: Int) raises ValidationError -> Int:
+    try:
+        return validate_with_error(value)
+    except e:
+        raise ValidationError(field="value", reason=String(e))
+```
+
+This is the same wrapping pattern described in
+[`fn` vs `def` for error handling](#fn-vs-def-for-error-handling), and it's
+the recommended way to integrate `Error`-based code into typed error APIs.
+
+### Avoid bare `raises` with typed errors
+
+Using bare `raises` (without a type) on an `fn` that calls typed-error
+functions causes *type erasure*—the compiler forgets the specific error type,
+even though the runtime preserves the error's identity:
+
+```mojo
+# Anti-pattern: bare raises erases type info at compile time
+fn validate_bare_raises(value: Int) raises -> Int:
+    return validate_typed(value)
+```
+
+The caller of `validate_bare_raises()` receives an `Error`, not a
+`ValidationError`:
+
+```mojo
+try:
+    _ = validate_bare_raises(-5)
+except e:
+    # e is typed as Error — no field access available
+    # e.field would not compile here
+    print(e)
+```
+
+```output
+ValidationError(value): cannot be negative
+```
+
+The error message still shows `ValidationError` because the runtime preserves
+the original error's [`Writable`](/mojo/std/format/Writable) output. But the
+compiler sees only `Error`, so you lose access to structured fields. Always use
+`raises YourErrorType` to maintain type safety.
+
+### `def` functions can catch typed errors
+
+A `def` function can call a function that raises a typed error and catch it
+with full field access:
+
+```mojo
+def error_caller():
+    try:
+        _ = validate_typed(-5)
+    except e:
+        # e is a ValidationError — field access works
+        print("Field:", e.field, "Reason:", e.reason)
+```
+
+Executing this function produces this output:
+
+```output
+Field: value Reason: cannot be negative
+```
+
+However, if a `def` function calls code that raises a typed error without
+catching it, the typed error is subject to type erasure as described in
+[Avoid bare `raises` with typed errors](#avoid-bare-raises-with-typed-errors).
+
+### Don't mix error types in a single `try` block
+
+You can't call functions that raise different error types in the same `try`
+block. The compiler rejects the mismatch:
+
+```mojo
+def error_func() -> Int:
+    raise "something went wrong"
+
+fn typed_func() raises ValidationError -> Int:
+    raise ValidationError(field="x", reason="invalid")
+
+# This doesn't compile
+fn mixed() raises ValidationError:
+    try:
+        _ = error_func()   # raises Error
+        _ = typed_func()    # raises ValidationError
+    except e:
+        print(e)
+```
+
+The compiler reports:
+
+```output
+error: cannot call function that may raise 'Error' in a context that
+supports an error type of 'ValidationError'
+```
+
+To call both functions, use separate `try` blocks or wrap the `Error`-raising
+function as shown in
+[Wrap `Error` at API boundaries](#wrap-error-at-api-boundaries).
+
+### Recommendations for mixed codebases
+
+When working with both `Error` and typed errors:
+
+- **Wrap at boundaries** — Use `fn` wrappers to convert `Error` to typed
+  errors at module boundaries, rather than rewriting all internal code at once.
+- **Use `raises YourErrorType`** — Always specify the error type in `fn`
+  signatures. Bare `raises` discards type information.
+- **Keep `def` for prototyping** — `def` is convenient for quick prototyping,
+  but convert to `fn` with typed errors for production APIs.
+- **Use separate `try` blocks** — When calling functions with different error
+  types, use nested or sequential `try` blocks to handle each type
+  independently.
+
+:::note
+
+For a complete working example of these interaction patterns, see
+[`error_interaction.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/error_interaction.mojo).
+
+:::
 
 ## Enable stack trace generation for errors
 
+Because Mojo represents errors as alternate return values rather than
+stack-unwinding exceptions, stack trace collection isn't automatic. Collecting
+a stack trace requires heap allocation and adds runtime overhead, so it's
+disabled by default to keep error handling lightweight.
+
+:::important
+
+Stack traces are a feature of the built-in `Error` type only. Typed errors
+currently don't capture stack traces because the trace is collected inside
+`Error.__init__()`, and custom error structs have no equivalent hook. The
+examples in this section all use `Error` intentionally.
+
+:::
+
 By default, Mojo generates a stack trace when your program hits a segmentation
-fault. If you don't want this behavior, you can disable it by setting the
+fault. You can disable this by setting the
 `MOJO_ENABLE_STACK_TRACE_ON_CRASH` environment variable to `0` or `false`
 (case-insensitive).
 
 However, Mojo *doesn't* generate a stack trace when your program raises an
-error—we skip this to avoid the additional run-time overhead. If you want stack
-traces for raised errors, you can enable them by setting the
-`MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable to any value other than
-`0` or `false` (case-insensitive).
+error—this avoids the additional runtime overhead. To enable stack traces for
+raised errors, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable
+to any value other than `0` or `false` (case-insensitive).
 
-Keep in mind that when you compile your program with [`mojo
-build`](/mojo/cli/build/), the compiler optimizes and strips symbols by default,
-so often your stack trace won't be very useful.
+Keep in mind that when you compile your program with
+[`mojo build`](/mojo/cli/build/), the compiler optimizes and strips symbols by
+default, so often your stack trace won't be very useful.
 
-Let's look at this program:
+Consider this program:
 
 ```mojo title="stacktrace_error.mojo"
 def func2() -> None:
@@ -81,7 +876,7 @@ def main():
     func1()
 ```
 
-If you compile the program with the default settings and run it with the
+If you compile the program with default settings and run it with the
 environment variable set, you'll see a stack trace without symbols:
 
 ```sh
@@ -89,18 +884,18 @@ mojo build stacktrace_error.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 stacktrace_error
+MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
 ```
 
 ```output
-#0 0x0000000104ef8ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
-#1 0x0000000104e379e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x000000010478868c main (/Users/ken/tmp/stack/stacktrace_error+0x10000068c)
+#0 0x... llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+#1 0x... KGEN_CompilerRT_GetStackTrace
+#2 0x... main (./stacktrace_error+...)
 
 Unhandled exception caught during execution: Intentional error
 ```
 
-To generate a more useful stack trace, you need to compile the program with
+To generate a more useful stack trace, compile the program with
 `--debug-level full` (or `-g`) to include debug symbols:
 
 ```sh
@@ -112,51 +907,39 @@ MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
 ```
 
 ```output
-#0 0x0000000102bf4ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
-#1 0x0000000102b339e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x000000010266468c std::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG oss/modular/mojo/stdlib/std/builtin/error.mojo:159:38
-#3 0x000000010266468c stacktrace_error::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error.mojo:14:16
-#4 0x000000010266468c stacktrace_error::func1() /Users/ken/tmp/stack/stacktrace_error.mojo:18:10
-#5 0x000000010266468c stacktrace_error::main() /Users/ken/tmp/stack/stacktrace_error.mojo:22:10
-#6 0x000000010266468c std::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error::main()" oss/modular/mojo/stdlib/std/builtin/_startup.mojo:88:18
-#7 0x000000010266468c main oss/modular/mojo/stdlib/std/builtin/_startup.mojo:103:4
+#0 0x... llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+#1 0x... KGEN_CompilerRT_GetStackTrace
+#2 0x... Error.__init__[...](...) .../builtin/error.mojo:159:38
+#3 0x... stacktrace_error::func2() stacktrace_error.mojo:14:16
+#4 0x... stacktrace_error::func1() stacktrace_error.mojo:18:10
+#5 0x... stacktrace_error::main() stacktrace_error.mojo:22:10
+#6 0x... __wrap_and_execute_raising_main[...](...) .../builtin/_startup.mojo:88:18
+#7 0x... main .../builtin/_startup.mojo:103:4
 
 Unhandled exception caught during execution: Intentional error
 ```
+
+With debug symbols, the trace shows the function call chain and source
+locations: `main()` → `func1()` → `func2()` → `Error.__init__()`.
 
 :::note
 
-At this time, running your program directly with [`mojo run`](/mojo/cli/run) or
-`mojo` doesn't include debug symbols in the stack trace even with `--debug-level
-full`. For example:
-
-```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 mojo --debug-level full stacktrace_error.mojo
-```
-
-```output
-#0 0x000000013a9c4ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
-#1 0x000000013a9039e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x000000032002807c
-#3 0x000000010488a0f4 M::KGEN::ExecutionEngine::runProgram(llvm::StringRef, llvm::StringRef, llvm::function_ref<M::ErrorOrSuccess (void*)>) (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x10039e0f4)
-#4 0x0000000104512000 executeMain(M::KGEN::ExecutionEngine&, M::AsyncRT::Runtime&, llvm::ArrayRef<char const*>) (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x100026000)
-#5 0x00000001045118e8 run(M::State const&) (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x1000258e8)
-#6 0x000000010451a240 main (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x10002e240)
-#7 0x0000000186d7ab98
-
-Unhandled exception caught during execution: Intentional error
-mojo: error: execution exited with a non-zero result: 1
-```
+Running your program directly with [`mojo run`](/mojo/cli/run) or
+`mojo` doesn't include debug symbols in the stack trace, even with
+`--debug-level full`. Use `mojo build` with `-g` and run the compiled binary
+for symbolicated stack traces.
 
 :::
 
-As described in [Handle an error](#handle-an-error), you can bind the `Error`
-instance to a variable in the `except` clause. If you do, you can invoke its
+### Capture a stack trace programmatically
+
+You can bind the `Error` instance to a variable in the `except` clause and
+call its
 [`get_stack_trace()`](/mojo/std/builtin/error/Error#get_stack_trace) method
 to get the stack trace as an `Optional[String]`. The method returns `None` if
-stack trace collection was disabled or unavailable. For example:
+stack trace collection was disabled or unavailable:
 
-```mojo
+```mojo title="stacktrace_error_capture.mojo"
 def func2() -> None:
     raise Error("Intentional error")
 
@@ -178,8 +961,7 @@ def main():
             print("No stack trace available")
 ```
 
-When you compile this program with symbols and run it with stack trace
-generation enabled, you'll see the following output:
+When you compile with debug symbols and run with stack trace generation enabled:
 
 ```sh
 mojo build --debug-level full stacktrace_error_capture.mojo
@@ -192,14 +974,14 @@ MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error_capture
 ```output
 Intentional error
 --------------------
-#0 0x0000000102d24ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
-#1 0x0000000102c639e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
-#2 0x00000001026d4694 std::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG oss/modular/mojo/stdlib/std/builtin/error.mojo:159:38
-#3 0x00000001026d4694 stacktrace_error_capture::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error_capture.mojo:14:16
-#4 0x00000001026d4694 stacktrace_error_capture::func1() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:18:10
-#5 0x00000001026d4694 stacktrace_error_capture::main() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:23:14
-#6 0x00000001026d4694 std::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error_capture::main()" oss/modular/mojo/stdlib/std/builtin/_startup.mojo:88:18
-#7 0x00000001026d4694 main oss/modular/mojo/stdlib/std/builtin/_startup.mojo:103:4
+#0 0x... llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+#1 0x... KGEN_CompilerRT_GetStackTrace
+#2 0x... Error.__init__[...](...) .../builtin/error.mojo:159:38
+#3 0x... stacktrace_error_capture::func2() stacktrace_error_capture.mojo:14:16
+#4 0x... stacktrace_error_capture::func1() stacktrace_error_capture.mojo:18:10
+#5 0x... stacktrace_error_capture::main() stacktrace_error_capture.mojo:23:14
+#6 0x... __wrap_and_execute_raising_main[...](...) .../builtin/_startup.mojo:88:18
+#7 0x... main .../builtin/_startup.mojo:103:4
 ```
 
 Without enabling stack trace generation, the output is:
@@ -210,159 +992,19 @@ Intentional error
 No stack trace available
 ```
 
-## Declare a raising function
-
-A function defined using the `fn` keyword is *non-raising* by default. So if it
-can raise an error, you must include the `raises` keyword in the function
-definition. For example:
-
-```mojo
-fn incr(n: Int) raises -> Int:
-    if n == Int.MAX:
-        raise "inc: integer overflow"
-    else:
-        return n + 1
-```
-
-If you don't include the `raises` keyword on an `fn` function,
-then the function must explicitly handle any errors that might occur in the code
-it executes. For example:
-
-```mojo
-# This function doesn't compile because of the unhandled error
-fn unhandled_error(n: Int):
-    print(n, "+ 1 =", incr(n))
-
-# This function compiles because it handles the possible error
-fn handled_error(n: Int):
-    try:
-        print(n, "+ 1 =", incr(n))
-    except e:
-        print("Handled an error:", e)
-```
-
-In contrast, a `def` function is *raising* by default. So the following
-`incr()` function is equivalent to the `incr()` function defined above with
-`fn`:
-
-```mojo
-def incr(n: Int) -> Int:
-    if n == Int.MAX:
-        raise "inc: integer overflow"
-    else:
-        return n + 1
-```
-
-## Handle an error
-
-Mojo allows you to detect and handle error conditions using the `try-except`
-control flow structure. The full syntax is:
-
-```mojo
-try:
-    # Code block to execute that might raise an error
-except <optional_variable_name>:
-    # Code block to execute if an error occurs
-else:
-    # Code block to execute if no error occurs
-finally:
-    # Final code block to execute in all circumstances
-```
-
-You must include one or both of the `except` and `finally` clauses. The `else`
-clause is optional.
-
-The `try` clause contains a code block to execute that might raise an error. If
-no error occurs, the entire code block executes. If an error occurs, execution
-of the code block stops at the point that the error is raised. Your program then
-continues with the execution of the `except` clause, if provided, or the
-`finally` clause.
-
-If the `except` clause is present, its code block executes only if an error
-occurred in the `try` clause. The `except` clause "consumes" the error that
-occurred in the `try` clause. You can then implement any error handling or
-recovery that's appropriate for your application.
-
-If you provide the name of a variable after the `except` keyword, then the
-`Error` instance is bound to the variable if an error occurs. The `Error` type
-implements the [`Writable`](/mojo/std/format/Writable) trait, so you can
-pass it as an argument to the [`print()`](/mojo/std/builtin/io/print)
-function if you'd like to print its error message to the console. It also
-implements the [`Stringable`](/mojo/std/builtin/str/Stringable) trait, so you
-can construct a `String` with `String(error)` if you want to extract the error
-message as a `String` for further processing.
-
-If desired, you can re-raise an error condition from your `except` clause simply
-by executing a `raise` statement from within its code block. This can be either
-a new `Error` instance or, if you provided a variable name to capture the
-`Error` that occurred originally, you can re-raise that error.
-
-:::note
-
-Because Mojo does not currently support typed errors, a `try-except` control
-structure can include at most one `except` clause, which catches any `Error`
-raised.
-
-:::
-
-If the `else` clause is present, its code block executes only if an error does
-not occur in the `try` clause. Note that the `else` clause is *skipped* if the
-`try` clause executes a `continue`, `break`, or `return` that exits from the
-`try` block.
-
-If the `finally` clause is present, its code block executes after the `try`
-clause and the `except` or `else` clause, if applicable. The `finally` clause
-executes even if one of the other code blocks exits by executing a `continue`,
-`break`, or `return` statement or by raising an error. The `finally` clause is
-often used to release resources used by the `try` clause (such as a file handle)
-regardless of whether an error occurred.
-
-As an example, consider the following program:
-
-```mojo title="handle_error.mojo"
-def incr(n: Int) -> Int:
-    if n == Int.MAX:
-        raise "inc: integer overflow"
-    else:
-        return n + 1
-
-def main():
-    for value in [0, 1, Int.MAX]:
-        try:
-            print()
-            print("try     =>", value)
-            if value == 1:
-                continue
-            result = "{} incremented is {}".format(value, incr(value))
-        except e:
-            print("except  =>", e)
-        else:
-            print("else    =>", result)
-        finally:
-            print("finally => ====================")
-```
-
-Running this program generates the following output:
-
-```output
-try     => 0
-else    => 0 incremented is 1
-finally => ====================
-
-try     => 1
-finally => ====================
-
-try     => 9223372036854775807
-except  => inc: integer overflow
-finally => ====================
-```
-
 ## Use a context manager
 
 A *context manager* is an object that manages resources such as files, network
 connections, and database connections. It provides a way to allocate resources
 and release them automatically when they are no longer needed, ensuring proper
-cleanup and preventing resource leaks even in the case of error conditions.
+cleanup and preventing resource leaks even when errors occur.
+
+:::note
+
+Context managers work with both typed errors and the built-in `Error` type. The
+`with` statement handles either error style transparently.
+
+:::
 
 As an example, consider reading data from a file. A naive approach might look
 like this:
@@ -385,7 +1027,7 @@ system might buffer the output in memory until the file is closed. If your
 program were to crash instead of exiting normally, that buffered data could be
 lost instead of being written to storage.
 
-The example above actually includes the call to `close()`, but it ignores the
+The example above includes the call to `close()`, but it ignores the
 possibility that [`read()`](/mojo/std/builtin/file/FileHandle#read) could
 raise an error, which would prevent the `close()` from executing.
 To handle this scenario, you could rewrite the code to use `try` like this:
@@ -456,11 +1098,14 @@ Writing a custom context manager is a matter of defining a
 
   If the `with` code block raises an error, then the `__exit__()` method runs
   before any error processing occurs (that is, before it is caught by a
-  `try-except` structure or your program terminates). If you'd like to define
+  `try`/`except` structure or your program terminates). If you'd like to define
   conditional processing for error conditions in a `with` code block, you can
-  implement an overloaded version of `__exit__()` that takes an `Error`
-  argument. For more information, see [Define a conditional `__exit__()`
-  method](#define-a-conditional-__exit__-method) below.
+  implement an overloaded version of `__exit__()` that takes an error
+  argument. For more information, see
+  [Define a conditional `__exit__()` method](#define-a-conditional-__exit__-method)
+  and
+  [Handle typed errors in `__exit__()`](#handle-typed-errors-in-__exit__)
+  below.
 
   For context managers that don't need to release resources or perform other
   actions on termination, you are not required to implement an `__exit__()`
@@ -529,22 +1174,22 @@ Unhandled exception caught during execution: simulated error
 When creating a context manager, you can implement the `__exit__(self)` form of
 the `__exit__()` method to handle completion of the `with` statement under all
 circumstances including errors. However, you have the option of additionally
-implementing an overloaded version that is invoked instead when an error occurs
-in the `with` code block:
+implementing an overloaded version that is invoked instead when an `Error`
+occurs in the `with` code block:
 
 ```mojo
 fn __exit__(self, error: Error) raises -> Bool
 ```
 
 Given the `Error` that occurred as an argument, the method can do any of the
-following actions:
+following:
 
-- Return `True` to suppress the error
-- Return `False` to re-raise the error
-- Raise a new error
+- Return `True` to suppress the error.
+- Return `False` to re-raise the error.
+- Raise a new error.
 
 The following is an example of a context manager that suppresses only a certain
-type of error condition and propagates all others:
+error condition and propagates all others:
 
 ```mojo title="conditional_context_mgr.mojo"
 import time
@@ -606,6 +1251,7 @@ def main():
 Running this example produces this output:
 
 ```output
+
 Beginning execution
 i = 1
 j = 1
@@ -628,3 +1274,98 @@ Propagating error
 Elapsed time: 106.0 milliseconds
 Unhandled exception caught during execution: really bad
 ```
+
+### Handle typed errors in `__exit__()`
+
+The `__exit__(self, error: Error)` overload handles only `Error` values.
+To handle typed errors, implement a generic `__exit__()` method with a
+compile-time error type parameter:
+
+```mojo
+fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
+```
+
+This method receives the typed error directly, preserving its full type
+information. You can use
+[reflection](/mojo/manual/metaprogramming/reflection) to inspect the error
+type at compile time. For example, you can:
+
+- `get_type_name[ErrType]()` — Get the error type's name as a string.
+- `@parameter if conforms_to(ErrType, Writable)` — Check if the error
+  implements `Writable`.
+- `trait_downcast[Writable](err)` — Access the error through its `Writable`
+  interface.
+
+The following `ResourceGuard` example demonstrates this pattern:
+
+```mojo
+from reflection import *
+
+@fieldwise_init
+struct ConnectionError(Copyable, Writable):
+    var message: String
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("ConnectionError: ", self.message)
+
+
+struct ResourceGuard(ImplicitlyCopyable):
+    var name: String
+    var suppress_errors: Bool
+
+    fn __init__(out self, name: String, suppress_errors: Bool = False):
+        self.name = name
+        self.suppress_errors = suppress_errors
+
+    fn __enter__(self) -> Self:
+        print("Acquiring:", self.name)
+        return self
+
+    fn __exit__(self):
+        print("Releasing:", self.name, "(no error)")
+
+    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
+        comptime type_name = get_type_name[ErrType]()
+        print("Releasing:", self.name)
+        print("  Error type:", type_name)
+
+        @parameter
+        if conforms_to(ErrType, Writable):
+            print("  Message:", trait_downcast[Writable](err))
+
+        return self.suppress_errors
+```
+
+When no error occurs, `__exit__(self)` runs as usual. When a typed error occurs,
+`__exit__[ErrType]()` runs instead, giving you access to the error type and
+its data:
+
+```mojo
+# No error — calls __exit__(self)
+with ResourceGuard("database"):
+    print("Working...")
+
+# Typed error, suppressed — __exit__[ErrType] returns True
+with ResourceGuard("cache", suppress_errors=True):
+    use_connection()  # raises ConnectionError
+print("Continued after suppressed error")
+```
+
+```output
+Acquiring: database
+Working...
+Releasing: database (no error)
+
+Acquiring: cache
+Releasing: cache
+  Error type: ConnectionError
+  Message: ConnectionError: connection timed out
+Continued after suppressed error
+```
+
+:::note
+
+For a complete working example including error suppression and propagation, see
+[`resource_guard.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/resource_guard.mojo).
+
+:::
