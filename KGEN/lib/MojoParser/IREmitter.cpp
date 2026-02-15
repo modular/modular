@@ -1926,7 +1926,7 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
   // the only thing that can declare an origin?
   SmallPtrSet<Attribute, 8> originSet;
   for (auto o : origins)
-    originSet.insert(OriginType::stripMutCastAndFieldExtract(o));
+    originSet.insert(OriginType::stripMutCastAndRebind(o));
   tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
     if (originSet.contains(varDecl.getType().getOrigin())) {
       auto diag = emitError(loc);
@@ -2054,4 +2054,45 @@ VarDeclOp IREmitter::emitVarDecl(const Twine &name, Type type, Location loc,
 VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,
                                  VarDeclKind kind) {
   return emitVarDecl(name.strref(), type, loc, kind);
+}
+
+//===--------------------------------------------------------------------===//
+// Origin helpers.
+//===--------------------------------------------------------------------===//
+
+/// Given a value of !lit.origin type, return an instance of
+/// Origin[mut, lit.origin]().
+PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
+  assert(sugarIsa<OriginType>(litOrigin.getType()));
+  SyntheticNode expr(loc);
+
+  // Convert to Origin type, start by looking it up.
+  ASTType originType = shared.getBuiltinOriginType(declScope, loc);
+  if (sugarIsa<TypeCheckErrorType>(originType))
+    return {}; // Sanity check the returned declaration.
+  auto originStructType = sugarCast<LIT::StructType>(originType);
+
+  // Get the mutability as a Bool.
+  auto resultMutability =
+      sugarCast<OriginType>(litOrigin.getType()).getIsMutable();
+  std::tuple<StringAttr, TypedAttr> field = {
+      StringAttr::get(getContext(), "_mlir_value"), resultMutability};
+  auto boolStructType =
+      cast<LIT::StructType>(originStructType.getSignature().getParamTypes()[0]);
+  PValue mutBool = LITStructAttr::get({field}, boolStructType);
+
+  ASTDecl *decl = originType.getDecl(shared);
+  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  if (!litStruct || litStruct.getParams().size() != 2 ||
+      !sugarIsa<OriginType>(litStruct.getParams()[1].getType())) {
+    emitError(loc, "malformed Origin type");
+    return {};
+  }
+
+  // Bind the Origin parameters.
+  originType = litStruct.bindReference({mutBool, litOrigin});
+
+  // There is no actual reason to construct the stateless Origin type here, just
+  // directly make the same attribute the ctor will fold to.
+  return UnknownAttr::get(originType);
 }

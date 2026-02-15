@@ -41,13 +41,13 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
 # CHECK-SAME: <Ts: variadic<!AnyType> pos_vararg>[mut *"rest`"
 
 # Check the argument pack.
-# CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> = *"rest`"}
+# CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest`"
 # CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, mut *"rest`1"> owned_in_mem|pack_vararg)
 
 
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
-# CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> = *"rest`"}
+# CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest`"
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>>, mut *"rest`1"> owned_in_mem|pack_vararg)
 fn takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
@@ -105,7 +105,7 @@ fn test_owned_trait():
 
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
-# CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> = *"rest`"}
+# CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest`"
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>>, imm *"rest`1"> mut|pack_vararg)
 fn takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
     pass
@@ -160,7 +160,7 @@ struct not_nested_struct[*Ts: AnyType]:
 # CHECK-LABEL: lit.fn @"test_empty_pack
 fn test_empty_pack():
     # Make sure we pass an immortal origin for the pack.
-    # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}origin<1> = {}},
+    # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}origin<1> {}
     var s1 = not_nested_struct()
 
 
@@ -179,14 +179,14 @@ struct MyTuple[*Ts: AnyType]:
 
 # CHECK-LABEL: lit.fn @"pack
 # CHECK-SAME: Ts: variadic<!AnyType> pos_vararg>
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = *"args`"}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`1"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *"args`", {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`1"> read_mem|pack_vararg)
 fn pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
 # CHECK-SAME: Ts: variadic<!AnyType> pos_vararg>
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = *"args`"}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`1"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *"args`", {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`1"> read_mem|pack_vararg)
 fn packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -230,6 +230,6 @@ fn usePacks(x: FloatDyn, y: Int):
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[2](
-    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = #lit.comptime.origin}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
+    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> #lit.comptime.origin, {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)

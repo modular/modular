@@ -1589,6 +1589,53 @@ LogicalResult ParamInf::inferFromDefaults() {
         return failure();
       continue;
     }
+
+    // Otherwise, check to see if this is an singleton parameter like Origin. So
+    // long as its type is fully resolved, we can go ahead and instantiate it.
+    if (auto paramType =
+            sugarDynCast<LIT::StructType>(declaredParamTypes[idx])) {
+      if (paramType.getSymbol().getLeafReference().strref() == "Origin" &&
+          paramType.getParamValues().size() == 2 &&
+          isa<OriginType>(paramType.getParamValues()[1].getType())) {
+        IREmitter emitter(getDeclScope(), EC_TypeParamValue);
+
+        paramType = cast<LIT::StructType>(evaluator.getReboundType(paramType));
+        auto origin = // Get the Origin value.
+            evaluator.getReboundAttribute(paramType.getParamValues()[1]);
+
+        // If we are referencing an origin parameter, we need to find the
+        // Origin it corresponds to and use that. Consider:
+        //   fn test[X: Origin[mut=False]](ref [X] a: Int):
+        // turns into:
+        //   fn test[X._mlir_origin, //, X: Origin](ref [X._mlir_origin] a: Int)
+        // as such, we'll see references to the mlir_origin, but we want to find
+        // X. Scrub around to try to figure this out.
+        TypedAttr paramVal;
+        if (auto paramRef = sugarDynCast<ParamDeclRefAttr>(
+                OriginType::stripMutCastAndRebind(origin))) {
+          auto [curDecl, paramDecls, paramIdx] =
+              getDeclScope().lookupParamReference(paramRef);
+          // We found the MLIR origin, but it is an autoparam at the start of
+          // the list.  Find the Origin which can be explicitly declared
+          // anywhere later.
+          if (curDecl) {
+            for (size_t i = paramIdx + 1, e = paramDecls.size(); i < e; ++i) {
+              if (isEqualCanon(paramDecls[i].getType(), paramType)) {
+                paramVal = ParamDeclRefAttr::get(paramDecls[i]);
+                break;
+              }
+            }
+          }
+        }
+
+        if (!paramVal)
+          paramVal = emitter.getStdlibOriginOf(origin, getDeclScope().getLoc());
+
+        if (failed(setInferredValue(idx, paramVal)))
+          return failure();
+        continue;
+      }
+    }
   }
 
   return success();

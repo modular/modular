@@ -722,7 +722,7 @@ fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <{{.*}}origin<0> = *"mems`"}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
+  # CHECK-SAME: <{{.*}}origin<0> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
   pass
 
 # CHECK-LABEL: lit.fn @"call_variadic_mems
@@ -783,7 +783,7 @@ fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:!Bool {:i1 1}, {{.*}}origin<1> = *"mems`"}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
+  # CHECK-SAME: <:!Bool {:i1 1}, {{.*}}origin<1> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[IMMREF]], [[ZERO]])
@@ -1198,15 +1198,15 @@ fn handleAnyLifetime5():
 
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
 fn test_origin_ctor_folding[orig1: Origin](abcdef: A):
-    # CHECK-NEXT: lit.alias.decl *"x{{.*}} = <{{.*}}{_mlir_origin: origin<0> = *"abcdef`1"}
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}}:origin<0> *"abcdef`2">>
     comptime x = origin_of(abcdef)
 
     # MOCO-1467: Origin type equality problem.
-    # CHECK-NEXT: lit.alias.decl *"y{{.*}} = <{{.*}}orig1
-    comptime y = Origin(orig1._mlir_origin)
+    # CHECK-NEXT: lit.alias.decl *"y{{.*}}:origin<#lit.struct.extract<:!Bool *"orig1.mut`", "_mlir_value">> *"orig1._mlir_origin`1">>
+    comptime y = Origin[orig1._mlir_origin]()
 
     # Check that origin_of works on origins as well as MValues.
-    # CHECK-NEXT: lit.alias.decl *"o2{{.*}} = <{{{.*}}abcdef{{.*}}orig1
+    # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<0> {*"abcdef`2", (mutcast mut={{.*}}, *"orig1._mlir_origin`1")}>>
     comptime o2 = origin_of(orig1, abcdef)
 
 fn useMemory(a: MemExample): pass

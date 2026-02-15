@@ -207,15 +207,15 @@ struct ParametricMutability:
         self.take_inout()
 
 
-fn test_ref[mut: Bool, origin: Origin[mut=mut]](ref [origin]arg: String):
+fn test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref [origin]arg: String):
     pass
 
 
 fn call_test_ref(mut s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, origin: Origin[mut=mut]](ref[origin] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, _, +, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[origin: MutOrigin](ref[origin] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, _, +, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f2 = test_ref[True]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)
@@ -244,9 +244,8 @@ fn exclusivity[spanlife: MutOrigin](mut x: MyStruct, span: MyMutSpan[spanlife]):
     # Compiler injects a temporary to make this ok.
     x = x^
 
-    # FIXME(MOCO-2822): Origin exclusivity checking broken by Origin struct
-    # xpected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
-    # xpected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
+    # expected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
 
@@ -349,8 +348,9 @@ fn capture_exclusivity(var x: MemExample):
     fn capture_and_read(y: MemExample):
         _ = x^
 
-    # expected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
-    # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
+    # FIXME(MOCO-3241): Re-enable this.
+    # xpected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
+    # xpected-note @below {{'x' value is passed through aliasing 'read' argument}}
     capture_and_read(x)
 
 

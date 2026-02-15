@@ -102,7 +102,7 @@ fn useToType(s: ToTypeMut): pass
 # second call to useToType will emit an error.
 fn test[O: MutOrigin, O2: ImmutOrigin](ref [O]fImm: FromType, ref [O2]fMut: FromType):
     # CHECK: lit.call {{.*}}@ToTypeMut::@"__init__
-    useToType(fImm)
+    useToType(ToTypeMut(fImm))
     # CHECK: lit.call {{.*}}@ToTypeImm::@"__init__
     useToType(fMut)
 

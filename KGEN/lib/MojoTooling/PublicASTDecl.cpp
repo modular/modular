@@ -139,7 +139,7 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
                                       FnTypeGeneratorType signature,
                                       bool isRefResult) {
   // Strip out extra stuff.
-  origin = OriginType::stripMutCastAndFieldExtract(origin);
+  origin = OriginType::stripMutCastAndRebind(origin);
 
   // If this is a "ref [_]" argument, don't print the []'s at all.
   if (auto indexRef = sugarDynCast<ParamIndexRefAttr>(origin);
