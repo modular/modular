@@ -1295,11 +1295,24 @@ struct List[T: Copyable](
         """
         var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
+        var count = len(r)
 
-        if not len(r):
+        if not count:
             return Self()
 
-        var res = Self(capacity=len(r))
+        var res = Self(capacity=count)
+
+        @parameter
+        if Self.T.__copyinit__is_trivial:
+            if step == 1:
+                memcpy(
+                    dest=res.unsafe_ptr(),
+                    src=self.unsafe_ptr() + start,
+                    count=count,
+                )
+                res._len = count
+                return res^
+
         for i in r:
             res.append(self[i].copy())
 
