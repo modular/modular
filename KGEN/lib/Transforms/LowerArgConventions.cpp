@@ -36,10 +36,13 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 /// If the specified value has uses, replace them with a dummy value.
-static void replaceAnyUses(Value v, ImplicitLocOpBuilder &b) {
+static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
+                                 TypedAttr value = {}) {
   if (v.use_empty())
     return;
-  auto dummy = ParamConstantOp::create(b, b.getAttr<UnknownAttr>(v.getType()));
+  if (!value) // Default to UnknownAttr.
+    value = b.getAttr<UnknownAttr>(v.getType());
+  auto dummy = ParamConstantOp::create(b, value);
   v.replaceAllUsesWith(dummy);
 }
 
@@ -308,7 +311,7 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
 }
 
 void FuncTransform::performThrowNeverElimination(unsigned operandIndex) {
-  replaceAnyUses(block.getArgument(operandIndex), b);
+  replaceUsesWithDummy(block.getArgument(operandIndex), b);
   block.eraseArgument(operandIndex);
 }
 
@@ -602,9 +605,19 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
   switch (abiLowering) {
   case DontPromote:
     break;
-  case RemoveError:
-    replaceAnyUses(res, b);
+  case RemoveError: {
+    // Never throwed.
+    replaceUsesWithDummy(res, b, b.getBoolAttr(false));
+    // We can't just drop the result of an MLIR op, removing the i1 result
+    // requires replacing the call.
+    OperationState state(op->getLoc(), op->getName(), op->getOperands(),
+                         /*resultTypes=*/{});
+    state.attributes = op->getAttrDictionary();
+    auto newOp = b.create(state);
+    op->erase();
+    op = newOp;
     break;
+  }
   case PromoteBoth: {
     // If the callee throws and both error and result were rewritten into a
     // variant, then we have to extract the relevant values from the variant.
@@ -631,7 +644,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
     // If we are ending up with a single function result, do it.
     if (!oldSig.isThrows() || abiLowering == PromoteResultRemoveError) {
       // If the callee doesn't throw, then we can directly return the result.
-      replaceAnyUses(res, b);
+      replaceUsesWithDummy(res, b, b.getBoolAttr(false));
 
       // Then just store the new callee result into the old memory result.
       res.setType(result.newResultTypes[0]);
@@ -749,7 +762,12 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
     body.walk([&](ReturnOp returnOp) {
       b.setInsertionPoint(returnOp);
 
-      // If the function doesn't throw, we must have promoted a byref_result.
+      // Remove the error result entirely if asked for.
+      if (result.abiLowering == RemoveError) {
+        returnOp->eraseOperand(0);
+        return;
+      }
+      // Promoting the result means we load the result and then return it.
       if (!newSig.isThrows() ||
           result.abiLowering == PromoteResultRemoveError) {
         auto newRes =
