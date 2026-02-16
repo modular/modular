@@ -13,7 +13,7 @@
 
 from time import sleep, time_function
 
-from benchmark import Report, clobber_memory, keep, run
+from benchmark import Bencher, Report, clobber_memory, keep, run
 from testing import TestSuite, assert_true
 
 
@@ -151,6 +151,32 @@ def test_report():
     assert_true("Warmup Total: " in report_string)
     assert_true("Fastest Mean: " in report_string)
     assert_true("Slowest Mean: " in report_string)
+
+
+def test_iter_with_setup():
+    var b = Bencher(10)
+
+    @parameter
+    fn setup() -> List[Int]:
+        sleep(0.01)  # 10ms setup - should NOT be measured
+        var l = List[Int]()
+        l.append(1)
+        l.append(2)
+        l.append(3)
+        return l^
+
+    @parameter
+    fn bench(mut l: List[Int]):
+        keep(l.pop())
+
+    b.iter_with_setup[List[Int], setup, bench]()
+
+    # elapsed should be small (just 10 trivial pops), not ~100ms (10 * 10ms)
+    assert_true(b.elapsed > 0, "elapsed must be positive")
+    assert_true(
+        b.elapsed < 50_000_000,  # less than 50ms total
+        "setup time should not be included in elapsed",
+    )
 
 
 def main():
