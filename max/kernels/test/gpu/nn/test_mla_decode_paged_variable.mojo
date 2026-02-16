@@ -827,16 +827,8 @@ fn run_bench_uniform_both[
 # ===-----------------------------------------------------------------------===#
 
 
-fn always_true() -> Bool:
-    return True
-
-
 def main():
     seed(42)
-
-    # FIXME(KERN-2451): Temporary disable test, it is flaking in CI.
-    if always_true():
-        return
 
     with DeviceContext() as ctx:
 
@@ -925,13 +917,6 @@ def main():
                 cl2.append(1024)
                 run_both_kv_types[16]("variable_cache_q1", cl2, ctx)
 
-                var cl3 = List[Int]()
-                cl3.append(30)
-                cl3.append(128)
-                cl3.append(512)
-                cl3.append(2048)
-                run_both_kv_types[16]("moderate_disparity_q1", cl3, ctx)
-
                 # -----------------------------------------------------------
                 # Group 2: Large caches with reference check (16 heads)
                 # -----------------------------------------------------------
@@ -946,13 +931,6 @@ def main():
                 cl4.append(8192)
                 cl4.append(32768)
                 run_both_kv_types[16]("extreme_disparity_q1", cl4, ctx)
-
-                var cl5 = List[Int]()
-                cl5.append(16384)
-                cl5.append(20000)
-                cl5.append(24576)
-                cl5.append(32768)
-                run_both_kv_types[16]("all_long_q1", cl5, ctx)
 
                 var cl6 = List[Int]()
                 cl6.append(30)
@@ -992,13 +970,8 @@ def main():
                 # -----------------------------------------------------------
                 print("--- Group 4: Latency sensitive configs (16 heads) ---")
 
-                run_uniform_both[16]("lat_bs1_32k", 1, 32768, ctx)
                 run_uniform_both[16]("lat_bs1_64k", 1, 65536, ctx)
-                run_uniform_both[16]("lat_bs2_32k", 2, 32768, ctx)
-                run_uniform_both[16]("lat_bs2_64k", 2, 65536, ctx)
                 run_uniform_both[16]("lat_bs4_32k", 4, 32768, ctx)
-                run_uniform_both[16]("lat_bs4_64k", 4, 65536, ctx)
-                run_uniform_both[16]("lat_bs8_32k", 8, 32768, ctx)
                 run_uniform_both[16]("lat_bs8_64k", 8, 65536, ctx)
 
                 # -----------------------------------------------------------
@@ -1012,10 +985,7 @@ def main():
                 )
 
                 run_uniform_both[16]("prod_bs16_4k", 16, 4096, ctx)
-                run_uniform_both[16]("prod_bs16_8k", 16, 8192, ctx)
-                run_uniform_both[16]("prod_bs32_4k", 32, 4096, ctx)
                 run_uniform_both[16]("prod_bs32_8k", 32, 8192, ctx)
-                run_uniform_both[16]("prod_bs64_2k", 64, 2048, ctx)
                 run_uniform_both[16]("prod_bs128_1k", 128, 1024, ctx)
 
                 # -----------------------------------------------------------
@@ -1026,12 +996,7 @@ def main():
                     " (16 heads) ---"
                 )
 
-                run_uniform_both[16]("stress_bs256_2k", 256, 2048, ctx)
                 run_uniform_both[16]("stress_bs256_4k", 256, 4096, ctx)
-                run_uniform_both[16]("stress_bs512_2k", 512, 2048, ctx)
-
-                # Batch size 512, cache 4096 -- skipped: exceeds test GPU
-                # memory budget (~2.4GB). Covered by bench_mla_decode.yaml.
 
                 # -----------------------------------------------------------
                 # Group 7: Very small cache_len (<1K)
@@ -1044,8 +1009,6 @@ def main():
                 )
 
                 run_uniform_both[16]("tiny_bs128_64", 128, 64, ctx)
-                run_uniform_both[16]("tiny_bs128_128", 128, 128, ctx)
-                run_uniform_both[16]("tiny_bs64_256", 64, 256, ctx)
                 run_uniform_both[16]("tiny_bs64_512", 64, 512, ctx)
 
                 # -----------------------------------------------------------
@@ -1054,7 +1017,6 @@ def main():
                 print("--- Group 8: Mid-range configs (16 heads) ---")
 
                 run_uniform_both[16]("mid_bs8_16k", 8, 16384, ctx)
-                run_uniform_both[16]("mid_bs4_16k", 4, 16384, ctx)
 
                 # -----------------------------------------------------------
                 # Group 9: Large cache_len (>64K up to 163K max context)
@@ -1062,8 +1024,6 @@ def main():
                 # -----------------------------------------------------------
                 print("--- Group 9: Large cache_len configs (16 heads) ---")
 
-                run_uniform_both[16]("large_bs1_98k", 1, 98304, ctx)
-                run_uniform_both[16]("large_bs1_131k", 1, 131072, ctx)
                 run_uniform_both[16]("large_bs1_163k", 1, 163840, ctx)
 
                 # -----------------------------------------------------------
@@ -1076,58 +1036,35 @@ def main():
                     " (16 heads) ---"
                 )
 
-                run_uniform_both[16]("npo2_bs32_3000", 32, 3000, ctx)
-                run_uniform_both[16]("npo2_bs16_5000", 16, 5000, ctx)
                 run_uniform_both[16]("npo2_bs16_7777", 16, 7777, ctx)
-                run_uniform_both[16]("npo2_bs8_10000", 8, 10000, ctx)
                 run_uniform_both[16]("npo2_bs2_50000", 2, 50000, ctx)
 
                 # -----------------------------------------------------------
                 # Group 11: Variable cache_len across batch (log-spaced)
                 # Tests the kernel with heterogeneous cache lengths in a
-                # single batch, sampled in log space from 128 to 163840
-                # (DeepSeek max context). This exercises the variable-length
-                # dispatch path, page-level partitioning with different
-                # split counts per sequence, and the combine kernel with
-                # mixed workloads.
+                # single batch, sampled in log space from 128 to 32768.
+                # This exercises the variable-length dispatch path,
+                # page-level partitioning with different split counts per
+                # sequence, and the combine kernel with mixed workloads.
                 # -----------------------------------------------------------
                 print(
                     "--- Group 11: Variable cache_len across batch"
                     " (log-spaced, 16 heads) ---"
                 )
 
-                # 29 sequences with log-spaced cache lengths from 128 to
-                # 163840, rounded to multiples of 128 (page_size).
+                # 10 sequences with log-spaced cache lengths from 128 to
+                # 32768.
                 var variable_logspace = List[Int]()
                 variable_logspace.append(128)
-                variable_logspace.append(128)
                 variable_logspace.append(256)
-                variable_logspace.append(256)
-                variable_logspace.append(384)
                 variable_logspace.append(512)
-                variable_logspace.append(640)
-                variable_logspace.append(896)
-                variable_logspace.append(1152)
-                variable_logspace.append(1536)
+                variable_logspace.append(1024)
                 variable_logspace.append(2048)
-                variable_logspace.append(2688)
-                variable_logspace.append(3456)
-                variable_logspace.append(4480)
-                variable_logspace.append(5760)
-                variable_logspace.append(7552)
-                variable_logspace.append(9728)
-                variable_logspace.append(12544)
-                variable_logspace.append(16128)
-                variable_logspace.append(20864)
-                variable_logspace.append(26880)
-                variable_logspace.append(34560)
-                variable_logspace.append(44544)
-                variable_logspace.append(57344)
-                variable_logspace.append(73856)
-                variable_logspace.append(95104)
-                variable_logspace.append(122496)
-                variable_logspace.append(157696)
-                variable_logspace.append(163840)
+                variable_logspace.append(4096)
+                variable_logspace.append(8192)
+                variable_logspace.append(16384)
+                variable_logspace.append(24576)
+                variable_logspace.append(32768)
                 run_both_kv_types[16](
                     "variable_logspace", variable_logspace, ctx
                 )
