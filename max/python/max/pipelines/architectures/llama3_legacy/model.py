@@ -88,6 +88,38 @@ class Llama3Inputs(ModelInputs):
     data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None
     """Tensor containing the data parallel splits."""
 
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        if self.data_parallel_splits is not None:
+            if isinstance(self.data_parallel_splits, Buffer):
+                splits_tensor = self.data_parallel_splits
+            else:
+                splits_array = np.concatenate(
+                    [
+                        np.array(split, dtype=np.int64)
+                        for split in self.data_parallel_splits
+                    ]
+                )
+                splits_tensor = Buffer.from_numpy(splits_array).to(
+                    self.tokens.device
+                )
+            return (
+                self.tokens,
+                self.input_row_offsets,
+                self.return_n_logits,
+                splits_tensor,
+                *kv_cache_inputs,
+            )
+
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.return_n_logits,
+            *self.signal_buffers,
+            *kv_cache_inputs,
+        )
+
 
 class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     """Base Llama pipeline model implementation."""
@@ -213,37 +245,12 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         return inputs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         assert isinstance(model_inputs, Llama3Inputs)
 
         if self.pipeline_config.model.data_parallel_degree > 1:
-            assert model_inputs.data_parallel_splits is not None
-            # Convert data_parallel_splits to Buffer if needed
-            if isinstance(model_inputs.data_parallel_splits, Buffer):
-                splits_tensor = model_inputs.data_parallel_splits
-            else:
-                # Convert Sequence[Sequence[int]] to flat array
-                splits_array = np.concatenate(
-                    [
-                        np.array(s, dtype=np.int64)
-                        for s in model_inputs.data_parallel_splits
-                    ]
-                )
-                splits_tensor = Buffer.from_numpy(splits_array).to(
-                    self.devices[0]
-                )
-
-                splits_tensor = Buffer.from_numpy(splits_array).to(
-                    self.devices[0]
-                )
-            model_outputs = self.model.execute(
-                model_inputs.tokens,
-                model_inputs.input_row_offsets,
-                model_inputs.return_n_logits,
-                splits_tensor,
-                *curr_kv_cache_inputs,
-            )
+            model_outputs = self.model.execute(*model_inputs.buffers)
         elif self._lora_manager:
+            curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
             model_outputs = self.model.execute(
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
@@ -260,13 +267,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                 *curr_kv_cache_inputs,
             )
         else:
-            model_outputs = self.model.execute(
-                model_inputs.tokens,
-                model_inputs.input_row_offsets,
-                model_inputs.return_n_logits,
-                *model_inputs.signal_buffers,
-                *curr_kv_cache_inputs,
-            )
+            model_outputs = self.model.execute(*model_inputs.buffers)
 
         has_offsets = self.return_logits in (
             ReturnLogits.VARIABLE,

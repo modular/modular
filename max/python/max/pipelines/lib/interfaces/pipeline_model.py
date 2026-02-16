@@ -161,6 +161,13 @@ class ModelInputs:
             if hasattr(self, key) and value is not None:
                 setattr(self, key, value)
 
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns positional Buffer inputs for model ABI calls."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not define model ABI buffers."
+        )
+
 
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""

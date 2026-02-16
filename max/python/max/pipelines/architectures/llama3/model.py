@@ -64,6 +64,22 @@ class Llama3Inputs(ModelInputs):
     input_row_offsets: Buffer
     return_n_logits: Buffer
 
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        if isinstance(self.input_row_offsets, np.ndarray):
+            input_row_offsets = Buffer.from_numpy(self.input_row_offsets).to(
+                self.tokens.device
+            )
+        else:
+            input_row_offsets = self.input_row_offsets
+        return (
+            self.tokens,
+            self.return_n_logits,
+            input_row_offsets,
+            *kv_cache_inputs,
+        )
+
 
 class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
     """Llama3 pipeline model using the ModuleV3 API."""
@@ -198,20 +214,7 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-
-        if isinstance(model_inputs.input_row_offsets, np.ndarray):
-            tensor = Buffer.from_numpy(model_inputs.input_row_offsets)
-            input_row_offsets = tensor.to(self.devices[0])
-        else:
-            input_row_offsets = model_inputs.input_row_offsets
-
-        model_outputs = self.model(
-            model_inputs.tokens,
-            model_inputs.return_n_logits,
-            input_row_offsets,
-            *curr_kv_cache_inputs,
-        )
+        model_outputs = self.model(*model_inputs.buffers)
 
         has_offsets = self.return_logits in (
             ReturnLogits.VARIABLE,
