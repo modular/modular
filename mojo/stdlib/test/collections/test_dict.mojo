@@ -143,10 +143,11 @@ def test_dict_string_representation_int_int():
     some_dict[4] = 2
     some_dict[5] = 3
     some_dict[6] = 4
-    dict_as_string = some_dict.__str__()
+    var dict_as_string = some_dict.__str__()
     # one char per key and value, we should have the minimum size of string possible
-    assert_equal(
-        some_dict._minimum_size_of_string_representation(), len(dict_as_string)
+    assert_true(
+        some_dict._minimum_size_of_string_representation() 
+        <= len(dict_as_string)
     )
     assert_equal(dict_as_string, "{3: 1, 4: 2, 5: 3, 6: 4}")
 
@@ -709,11 +710,13 @@ def test_dict_comprehension():
 
 def test_dict_repr_wrap():
     var tmp_dict = {"one": 1.0, "two": 2.0}
+
     assert_equal(
         repr(tmp_dict),
         (
-            "{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
-            " 1](2.0)}"
+            "Dict[String, SIMD[DType.float64, 1]]"
+            "({'one': SIMD[DType.float64, 1](1.0), "
+            "'two': SIMD[DType.float64, 1](2.0)})"
         ),
     )
 

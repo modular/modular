@@ -42,6 +42,7 @@ from compile import get_type_name
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
 import format._utils as fmt
+from sys.intrinsics import _type_is_eq_parse_time
 
 from memory import bitcast, memcpy
 
@@ -971,57 +972,23 @@ struct Dict[
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_list.__str__()` to a `Writer`.
-
-        Constraints:
-            `K` must conform to `Representable`.
-            `V` must conform to `Representable`.
-
-        Args:
-            writer: The object to write to.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.K, Representable),
-            Parent=Self,
-            Element = Self.K,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-
-        writer.write("{")
-
-        var i = 0
-        for key_entry in self.items():
-            ref key = trait_downcast[Representable](key_entry.key)
-            ref val = trait_downcast[Representable](key_entry.value)
-            writer.write(repr(key), ": ", repr(val))
-            if i < len(self) - 1:
-                writer.write(", ")
-            i += 1
-        writer.write("}")
-
-       
-    @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the repr representation of this Dict to a Writer.
-
-        Uses repr formatting for both keys and values.
-        """
+        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
 
         writer.write("{")
 
         var i = 0
         for entry in self.items():
-            fmt.write_repr_to[Self.K](entry.key, writer)
+
+            @parameter
+            if _type_is_eq_parse_time[Self.K, String]():
+                fmt.write_repr_to[Self.K](entry.key, writer)
+            else:
+                fmt.write_to[Self.K](entry.key, writer)
+
             writer.write(": ")
-            fmt.write_repr_to[Self.V](entry.value, writer)
+
+            fmt.write_to[Self.V](entry.value, writer)
 
             if i < len(self) - 1:
                 writer.write(", ")
@@ -1029,6 +996,28 @@ struct Dict[
 
         writer.write("}")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            w.write("{")
+
+            var i = 0
+            for entry in self.items():
+                fmt.write_repr_to[Self.K](entry.key, w)
+                w.write(": ")
+                fmt.write_repr_to[Self.V](entry.value, w)
+
+                if i < len(self) - 1:
+                    w.write(", ")
+                i += 1
+
+            w.write("}")
+
+        fmt.FormatStruct(writer, "Dict")
+            .params(fmt.TypeNames[Self.K](), fmt.TypeNames[Self.V]())
+            .fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
