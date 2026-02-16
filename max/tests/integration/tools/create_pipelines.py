@@ -1194,6 +1194,16 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
+    "allenai/Olmo-3-7B-Instruct": GenericOracle(
+        model_path="allenai/Olmo-3-7B-Instruct",
+        config_params={
+            "max_length": 32768,
+            "use_legacy_module": False,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+        },
+    ),
     "mistralai/Mistral-Nemo-Instruct-2407": GenericOracle(
         model_path="mistralai/Mistral-Nemo-Instruct-2407",
         config_params={"max_length": 512},

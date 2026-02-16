@@ -1215,6 +1215,16 @@ PIPELINES = {
             kl_div_threshold=4.6e-7,
         ),
     ),
+    "allenai/Olmo-3-7B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=[],
+        run=_make_pipeline_runner(
+            pipeline="allenai/Olmo-3-7B-Instruct",
+            encoding="bfloat16",
+            cos_dist_threshold=7e-1,
+            kl_div_threshold=6e-02,
+        ),
+    ),
     "HuggingFaceM4/Idefics3-8B-Llama3": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],
