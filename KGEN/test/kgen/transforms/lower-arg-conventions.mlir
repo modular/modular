@@ -456,3 +456,26 @@ kgen.func @external_call_nested_pack(
     : (!kgen.pack<[!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>, !pop.scalar<f64>]>) -> ()
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// 'Never' handling
+//===----------------------------------------------------------------------===//
+
+// MOCO-3267: Compiler crash with parametric raise.
+// CHECK-LABEL: kgen.func @remove_never_error_slot(%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result) throws
+kgen.func @remove_never_error_slot(%err: !kgen.pointer<!kgen.never> byref_error,
+                                   %arg0: !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> i1 {
+  %1 = kgen.param.constant: i1 = <0>
+  // CHECK: kgen.return{{$}}
+  kgen.return %1 : i1
+}
+
+// CHECK: @call_remove_never_error_slot
+kgen.func @call_remove_never_error_slot(%err: !kgen.pointer<!kgen.never>,
+                                        %arg0: !kgen.pointer<struct<() memoryOnly>>) throws -> i1 {
+  // CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
+  // CHECK-NEXT: kgen.call @remove_never_error_slot(%arg1)
+  %0 = kgen.call @remove_never_error_slot(%err, %arg0) : (!kgen.pointer<!kgen.never> byref_error, !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> i1
+  // CHECK-NEXT: kgen.return %0 : i1
+  kgen.return %0 : i1
+}
