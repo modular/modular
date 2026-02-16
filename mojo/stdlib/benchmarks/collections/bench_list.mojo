@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -40,7 +40,7 @@ fn bench_list_pop_last[size: Int](mut b: Bencher) raises:
     @parameter
     fn bench(mut l: List[Int]):
         for _ in range(size):
-            keep(l.pop())
+            keep(black_box(l).pop())
 
     b.iter_with_setup[List[Int], setup, bench]()
 
@@ -61,7 +61,7 @@ fn bench_list_pop_front[size: Int](mut b: Bencher) raises:
     @parameter
     fn bench(mut l: List[Int]):
         for _ in range(size):
-            keep(l.pop(0))
+            keep(black_box(l).pop(0))
 
     b.iter_with_setup[List[Int], setup, bench]()
 
@@ -82,7 +82,7 @@ fn bench_list_pop_middle[size: Int](mut b: Bencher) raises:
     @parameter
     fn bench(mut l: List[Int]):
         for _ in range(size):
-            keep(l.pop(len(l) // 2))
+            keep(black_box(l).pop(len(black_box(l)) // 2))
 
     b.iter_with_setup[List[Int], setup, bench]()
 
