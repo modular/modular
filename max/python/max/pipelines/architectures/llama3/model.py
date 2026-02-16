@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -55,24 +56,13 @@ from .model_config import Llama3Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Llama3Inputs(ModelInputs):
     """A class representing inputs for the Llama3 model."""
 
     tokens: Buffer
     input_row_offsets: Buffer
     return_n_logits: Buffer
-
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
-        self.kv_cache_inputs = kv_cache_inputs
 
 
 class Llama3Model(PipelineModel[TextContext], KVCacheMixin):

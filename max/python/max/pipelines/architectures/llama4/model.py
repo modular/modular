@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -53,6 +54,7 @@ from .model_config import Llama4Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Llama4Inputs(ModelInputs):
     """A class representing inputs for the Llama4 model.
 
@@ -72,28 +74,6 @@ class Llama4Inputs(ModelInputs):
 
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
-
-    def __init__(
-        self,
-        tokens: npt.NDArray[np.integer[Any]] | Buffer,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer,
-        cache_positions: npt.NDArray[np.integer[Any]] | Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            cache_positions: Positions in the cache of each input token.
-            signal_buffers: Device buffers used for synchronization in
-                communication collectives.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.cache_positions = cache_positions
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
 
 
 class Llama4Model(

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
@@ -58,6 +59,7 @@ from .model_config import Llama3Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Llama3Inputs(ModelInputs):
     """A class representing inputs for the Llama3 model.
 
@@ -77,47 +79,14 @@ class Llama3Inputs(ModelInputs):
 
     return_n_logits: Buffer
 
+    lora_grouped_offsets: Buffer | None = None
+    num_active_loras: Buffer | None = None
+    lora_end_idx: Buffer | None = None
+    batch_seq_len: Buffer | None = None
+    lora_ids_kv: Buffer | None = None
+    lora_grouped_offsets_kv: Buffer | None = None
     data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None
     """Tensor containing the data parallel splits."""
-
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        signal_buffers: list[Buffer],
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-        lora_ids: Buffer | None = None,
-        lora_ranks: Buffer | None = None,
-        lora_grouped_offsets: Buffer | None = None,
-        num_active_loras: Buffer | None = None,
-        lora_end_idx: Buffer | None = None,
-        batch_seq_len: Buffer | None = None,
-        lora_ids_kv: Buffer | None = None,
-        lora_grouped_offsets_kv: Buffer | None = None,
-        data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            signal_buffers: Device buffers used for synchronization in
-                communication collectives.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
-        self.lora_ids = lora_ids
-        self.lora_ranks = lora_ranks
-        self.lora_grouped_offsets = lora_grouped_offsets
-        self.num_active_loras = num_active_loras
-        self.lora_end_idx = lora_end_idx
-        self.batch_seq_len = batch_seq_len
-        self.lora_ids_kv = lora_ids_kv
-        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
-        self.data_parallel_splits = data_parallel_splits
 
 
 class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):

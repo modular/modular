@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from max.driver import Buffer, Device
@@ -36,6 +37,7 @@ from .graph import build_graph
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class WhisperInputs(ModelInputs):
     """A class representing inputs for the Whisper model.
 

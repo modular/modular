@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
@@ -66,7 +66,7 @@ from .util import compute_multimodal_merge_indices
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass(eq=False)
+@dataclass
 class Qwen2_5VLInputs(ModelInputs):
     """A class representing inputs for the Qwen2.5VL model.
 
@@ -89,7 +89,7 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs
+    kv_cache_inputs: KVCacheInputs = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None

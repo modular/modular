@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -130,6 +131,7 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
+@dataclass
 class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
 
@@ -158,32 +160,14 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
+    return_n_logits: Buffer
+    """Number of logits to return, used by speculative decoding for example."""
+
     pixel_values: list[Buffer] | None = None
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
     image_token_indices: list[Buffer] | None = None
     """Pre-computed indices of image tokens in the input sequence."""
-
-    return_n_logits: Buffer
-    """Number of logits to return, used by speculative decoding for example."""
-
-    def __init__(
-        self,
-        tokens: npt.NDArray[np.integer[Any]] | Buffer,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | list[Buffer],
-        return_n_logits: Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        pixel_values: list[Buffer] | None = None,
-        image_token_indices: list[Buffer] | None = None,
-    ) -> None:
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
-        self.pixel_values = pixel_values
-        self.image_token_indices = image_token_indices
 
     @property
     def has_vision_inputs(self) -> bool:

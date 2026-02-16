@@ -92,7 +92,7 @@ class AlwaysSignalBuffersMixin:
         ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ModelOutputs:
     logits: Buffer
     """Logits for a variable number of tokens per sequence."""
@@ -111,6 +111,7 @@ class ModelOutputs:
     """
 
 
+@dataclass(kw_only=True)
 class ModelInputs:
     """Base class for model inputs.
 
@@ -121,13 +122,10 @@ class ModelInputs:
 
     .. code-block:: python
 
+        @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
             input_row_offsets: Buffer
-
-            def __init__(self, tokens: Buffer, input_row_offsets: Buffer):
-                self.tokens = tokens
-                self.input_row_offsets = input_row_offsets
 
         # Create tensors
         tokens = Buffer.zeros((1, 2, 3), DType.int64)

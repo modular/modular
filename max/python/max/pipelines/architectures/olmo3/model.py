@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -49,6 +50,7 @@ from .olmo3 import Olmo3
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Olmo3Inputs(ModelInputs):
     """A class representing inputs for the Olmo3 model.
 
@@ -63,24 +65,8 @@ class Olmo3Inputs(ModelInputs):
     """Tensor containing the offsets for each row in the ragged input sequence.
     """
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+    return_n_logits: Buffer
+    """Number of logits to return."""
 
 
 class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
