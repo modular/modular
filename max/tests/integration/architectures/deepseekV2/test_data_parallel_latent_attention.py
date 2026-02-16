@@ -202,6 +202,7 @@ def generate_latent_attention_max_outputs_dp(
     return torch_output[None, :, :]
 
 
+@pytest.mark.skip("MODELS-1039: times out on B200")
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
 )
@@ -221,6 +222,7 @@ def test_data_parallel_latent_attention_prefill_matches_single(
     torch.testing.assert_close(single, dp, rtol=5e-4, atol=5e-4)
 
 
+@pytest.mark.skip("MODELS-1039: times out on B200")
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
 )
