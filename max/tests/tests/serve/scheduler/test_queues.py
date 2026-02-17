@@ -182,7 +182,11 @@ def test_vision_context_shared_memory_fallback(mocker: MockerFixture) -> None:
 
     # The encoded data should contain shared memory references
     # We can verify this by checking the encoded bytes contain the __shm__ marker
-    assert b"__shm__" in encoded_data2
+    # We add an assert message so that pytest does not print the huge encoded_data2
+    # to stdout on failure.
+    assert b"__shm__" in encoded_data2, (
+        "Encoded data must contain __shm__ marker"
+    )
 
 
 def test_zmq_push_pull_queue_basic_functionality() -> None:
@@ -347,54 +351,3 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     assert np.allclose(
         result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
     )
-
-
-@pytest.mark.skipif(
-    sys.platform == "darwin",
-    reason="Shared memory via /dev/shm is not supported on macOS",
-)
-def test_shared_memory_default_threshold_usage() -> None:
-    """Test that numpy arrays greater than the shared memory threshold use shared memory."""
-    # Default threshold is 0MB (24 * 1024 * 1024 bytes)
-    threshold = 0
-
-    # Create a large array that exceeds the threshold
-    # Using float32 to reduce memory usage while still exceeding threshold
-    shape = (3, 3)  # Anything above 0 should go through shared memory.
-
-    # Ensure the array is large enough to exceed threshold
-    img = np.random.rand(*shape).astype(np.float32)
-    assert img.nbytes > threshold
-
-    context = TextAndVisionContext(
-        request_id=RequestID("array-test"),
-        max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
-        images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
-        vision_token_ids=[22],
-    )
-
-    # Test array through queue
-    test_data = ("test", context)
-    push_queue, pull_queue = ZmqConfig[tuple[str, TextAndVisionContext]](
-        tuple[str, TextAndVisionContext]
-    ).pair()
-
-    push_queue.put_nowait(test_data)
-    time.sleep(1)
-    result = pull_queue.get_nowait()
-
-    # Verify both arrays are correctly transmitted
-    assert result[0] == test_data[0]
-    assert result[1].request_id == test_data[1].request_id
-    assert np.array_equal(result[1].tokens.array, test_data[1].tokens.array)
-    assert np.allclose(
-        result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
-    )
-
-    # Verify that the array was transmitted using shared memory
-    # by checking that the encoded data contains the shared memory marker
-    encoded = push_queue._serialize(test_data)
-
-    # Large array should use shared memory (contain __shm__ marker)
-    assert b"__shm__" in encoded

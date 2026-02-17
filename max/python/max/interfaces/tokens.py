@@ -312,7 +312,9 @@ class TokenBuffer:
 
         self._actively_chunked = False
 
-        # Ensure the array is writeable
+    def __post_init__(self) -> None:
+        # This is called in post_init to ensure that the token array is always
+        # writable even if this token buffer was created via deserialization.
         self._ensure_writeable()
 
     def _ensure_writeable(self) -> None:
