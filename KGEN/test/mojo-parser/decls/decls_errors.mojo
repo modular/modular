@@ -706,7 +706,7 @@ struct TestOwnedDeinitWarnings:
   fn __del__(owned self): pass
 
   # expected-warning @+1 {{'owned' has been deprecated, use 'deinit' instead}}
-  fn __moveinit__(out self, owned x: TestOwnedDeinitWarnings): pass
+  fn __moveinit__(out self, owned take: TestOwnedDeinitWarnings): pass
 
   # expected-warning @+1 {{'owned' has been deprecated, use 'var' instead}}
   fn method(owned x): pass
@@ -716,7 +716,7 @@ struct TestVarDeinitErrors:
   fn __del__(var self): pass
 
   # expected-error @+1 {{the 'existing' argument should be declared 'deinit'}}
-  fn __moveinit__(out self, var x: String): pass
+  fn __moveinit__(out self, var take: String): pass
 
 
 struct WrongType(RegisterPassable):
@@ -784,6 +784,11 @@ struct InRegStruct(RegisterPassable):
 struct OtherInMemStruct:
   var x: Int # ok
   var y: InMemStruct # ok
+
+
+struct MoveInitTakeWrongName:
+  # expected-error @+1 {{take argument of '__moveinit__' must be named 'take'}}
+  fn __moveinit__(out self, deinit existing: Self): pass
 
 
 struct InvalidMember(TrivialRegisterPassable):
