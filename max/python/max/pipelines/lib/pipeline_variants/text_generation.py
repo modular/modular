@@ -28,8 +28,14 @@ import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
 from max.driver import Buffer, Device, load_devices
-from max.engine import Model
-from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef
+from max.graph.weights import (
+    WeightsAdapter,
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.interfaces import (
     BatchLogitsProcessor,
     LogProbabilities,
@@ -167,8 +173,6 @@ class TextGenerationPipeline(
             )
 
         # Initialize Session.
-        from max.engine import InferenceSession  # local import to avoid cycles
-
         session = InferenceSession(devices=self._devices)
         self.session = session
 
@@ -182,10 +186,6 @@ class TextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        # late imports to minimize header deps
-        from max.graph.weights import load_weights as _load_weights
-        from max.graph.weights import weights_format as _weights_format
-
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -193,22 +193,20 @@ class TextGenerationPipeline(
             encoding=model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=model_config.kv_cache,
-            weights=_load_weights(weight_paths),
-            adapter=weight_adapters.get(_weights_format(weight_paths)),
+            weights=load_weights(weight_paths),
+            adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,
         )
 
         # Load sampler.
-        from max.graph import DeviceRef as _DeviceRef
-
         self._sampler_with_bitmask: Model | None = None
         if pipeline_config.sampling.enable_structured_output:
             self._sampler_with_bitmask = session.load(
                 token_sampler(
                     pipeline_config.sampling,
-                    device=_DeviceRef.from_device(self._devices[0]),
+                    device=DeviceRef.from_device(self._devices[0]),
                 )
             )
             cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
@@ -216,14 +214,14 @@ class TextGenerationPipeline(
             self._sampler_without_bitmask = session.load(
                 token_sampler(
                     cfg_without_bitmask,
-                    device=_DeviceRef.from_device(self._devices[0]),
+                    device=DeviceRef.from_device(self._devices[0]),
                 )
             )
         else:
             self._sampler_without_bitmask = session.load(
                 token_sampler(
                     pipeline_config.sampling,
-                    device=_DeviceRef.from_device(self._devices[0]),
+                    device=DeviceRef.from_device(self._devices[0]),
                 )
             )
             self._sampler_with_bitmask = None
