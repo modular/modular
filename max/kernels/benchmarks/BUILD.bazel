@@ -63,6 +63,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: MOCO-3161
     "gpu/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
+    "gpu/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
 }
 
 _CPU_TESTS = glob(
