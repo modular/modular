@@ -12,12 +12,12 @@ expression like `a+b+c+d`, Mojo destroys the intermediate values as soon as
 they're no longer needed.
 
 Mojo uses static analysis at compile-time to determine the last use of a value. At
-that point, it immediately ends the value's lifetime and calls the _implicit_
+that point, it immediately ends the value's lifetime and calls the *implicit*
 `__del__()` destructor. You can override `__del__()` in your structs to perform any
 required cleanup.
 
 :::note
-For types that require stronger guarantees, Mojo also supports _explicit_
+For types that require stronger guarantees, Mojo also supports *explicit*
 compiler-checked destructors, which provide an additional layer of safety for
 managing cleanup. For details, read about [explicit
 destruction](#explicitly-destroyed-types) below.
@@ -198,7 +198,7 @@ grants exclusive ownership of the value and marks it as destroyed at the end of
 the function. (For more information on the `deinit` convention, see
 [Field lifetimes during move and destruction](#field-lifetimes-during-destruct-and-move)).
 
-Note that a pointer doesn't _own_ any values in the memory it points to, so
+Note that a pointer doesn't *own* any values in the memory it points to, so
 when a pointer is destroyed, Mojo doesn't call the destructors on those values.
 
 So in the `HeapArray` example above, calling `free()` on the pointer releases
@@ -258,11 +258,11 @@ system. It guides users toward valid cleanup paths, making programs that
 skip those paths impossible to compile and elevating safe destruction
 to a first-class part of a value's lifecycle.
 
-With _implicit destruction_, the compiler manages cleanup. It automatically
+With *implicit destruction*, the compiler manages cleanup. It automatically
 calls `__del__()` when a value has no further uses, based on lifetime analysis. You
 do not invoke the destructor yourself.
 
-With _explicit destruction_, you take over cleanup responsibilities. You
+With *explicit destruction*, you take over cleanup responsibilities. You
 must define and call a named cleanup method (such as `cleanup()` or `save_and_close()`)
 and you must call that cleanup method before the end of the scope
 in which your value lives. The compiler disables automatic
@@ -530,8 +530,8 @@ look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __moveinit__(out self, deinit existing: Self):
-        # Initializes a new `self` by consuming the contents of `existing`
+    fn __moveinit__(out self, deinit take: Self):
+        # Initializes a new `self` by consuming the contents of `take`
     fn __del__(deinit self):
         # Destroys all resources in `self`
 ```

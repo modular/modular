@@ -278,7 +278,6 @@ def main():
     var c: Counter = 5  # implicitly converts from Int
 ```
 
-
 ## Copy constructor
 
 In Mojo, a value can be copied either *explicitly* or  *implicitly*:
@@ -432,7 +431,6 @@ fn copies():
 
 Two other things to note from the `__copyinit__()` method:
 
-
 - The `existing` argument is type `Self` (capital "S"). `Self` is an alias for
   the current type name (`HeapArray`, in this example). Using this alias is a
   best practice to avoid any mistakes when referring to the current struct name.
@@ -518,7 +516,7 @@ as an optimization.
 
 To make a type *movable*:
 
-- Add the `Movable` trait _or_ conform to `Copyable`.
+- Add the `Movable` trait *or* conform to `Copyable`.
 - (Optionally) implement a custom `__moveinit__()` method.
 
 Note that [register-passable values](/mojo/manual/decorators/register-passable)
@@ -556,8 +554,8 @@ The generated move constructor for `MyPet` would look like this if you wrote
 it yourself:
 
 ```mojo
-fn __moveinit__(out self, deinit existing: Self):
-    self.name = existing.name^
+fn __moveinit__(out self, deinit take: Self):
+    self.name = take.name^
     self.age = existing.age
 ```
 
@@ -599,7 +597,6 @@ then there's generally no reason to disallow moves.
 
 :::
 
-
 ### Custom move constructor
 
 In practice, structs very rarely require a custom `__moveinit__()`. A type might
@@ -622,7 +619,6 @@ method is called without the [`^` transfer
 sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
 That is, Mojo calls this move constructor *only* when the original variable's
 lifetime actually ends at the point of transfer.
-
 
 ## Move-only and immovable types
 

@@ -254,7 +254,6 @@ When looking at the API doc for a standard library trait, you'll see methods
 that you *must* implement listed as *required methods*, and methods that have
 default implementations listed as *provided methods*.
 
-
 The
 [`Equatable`](/mojo/std/builtin/equality_comparable/Equatable/)
 trait is a good example of the use case for default implementations. The trait
@@ -328,7 +327,6 @@ conforms to the `DuckLike` trait composition. But it *doesn't*
 conform to `DuckTrait`, since it doesn't include `DuckTrait` in its list of
 traits.
 
-
 ## Trait inheritance
 
 Traits can inherit from other traits. A trait that inherits from another trait
@@ -397,7 +395,7 @@ the `Defaultable` and `Movable` traits in comments for reference:
 #     fn __init__(out self): ...
 
 # trait Movable
-#     fn __moveinit__(out self, deinit existing: Self): ...
+#     fn __moveinit__(out self, deinit take: Self): ...
 
 comptime MassProducible = Defaultable & Movable
 
@@ -410,8 +408,8 @@ struct Thing(MassProducible):
     fn __init__(out self):
         self.id = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.id = existing.id
+    fn __moveinit__(out self, deinit take: Self):
+        self.id = take.id
 
 var thing = factory[Thing]()
 ```
@@ -456,27 +454,27 @@ The Mojo standard library includes many traits. They're implemented
 by a number of standard library types, and you can also implement these on your
 own types. These standard library traits include:
 
-* [`Absable`](/mojo/std/builtin/math/Absable)
-* [`AnyType`](/mojo/std/builtin/anytype/AnyType)
-* [`Boolable`](/mojo/std/builtin/bool/Boolable)
-* [`Comparable`](/mojo/std/builtin/comparable/Comparable)
-* [`Copyable`](/mojo/std/builtin/value/Copyable)
-* [`Defaultable`](/mojo/std/builtin/value/Defaultable)
-* [`Hashable`](/mojo/std/hashlib/hash/Hashable)
-* [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
-* [`Indexer`](/mojo/std/builtin/int/Indexer)
-* [`Intable`](/mojo/std/builtin/int/Intable)
-* [`IntableRaising`](/mojo/std/builtin/int/IntableRaising)
-* [`KeyElement`](/mojo/std/collections/dict/#keyelement)
-* [`Movable`](/mojo/std/builtin/value/Movable)
-* [`PathLike`](/mojo/std/os/pathlike/PathLike)
-* [`Powable`](/mojo/std/builtin/math/Powable)
-* [`Representable`](/mojo/std/builtin/repr/Representable)
-* [`Sized`](/mojo/std/builtin/len/Sized)
-* [`Stringable`](/mojo/std/builtin/str/Stringable)
-* [`Roundable`](/mojo/std/builtin/math/Roundable)
-* [`Writable`](/mojo/std/format/Writable)
-* [`Writer`](/mojo/std/format/Writer)
+- [`Absable`](/mojo/std/builtin/math/Absable)
+- [`AnyType`](/mojo/std/builtin/anytype/AnyType)
+- [`Boolable`](/mojo/std/builtin/bool/Boolable)
+- [`Comparable`](/mojo/std/builtin/comparable/Comparable)
+- [`Copyable`](/mojo/std/builtin/value/Copyable)
+- [`Defaultable`](/mojo/std/builtin/value/Defaultable)
+- [`Hashable`](/mojo/std/hashlib/hash/Hashable)
+- [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
+- [`Indexer`](/mojo/std/builtin/int/Indexer)
+- [`Intable`](/mojo/std/builtin/int/Intable)
+- [`IntableRaising`](/mojo/std/builtin/int/IntableRaising)
+- [`KeyElement`](/mojo/std/collections/dict/#keyelement)
+- [`Movable`](/mojo/std/builtin/value/Movable)
+- [`PathLike`](/mojo/std/os/pathlike/PathLike)
+- [`Powable`](/mojo/std/builtin/math/Powable)
+- [`Representable`](/mojo/std/builtin/repr/Representable)
+- [`Sized`](/mojo/std/builtin/len/Sized)
+- [`Stringable`](/mojo/std/builtin/str/Stringable)
+- [`Roundable`](/mojo/std/builtin/math/Roundable)
+- [`Writable`](/mojo/std/format/Writable)
+- [`Writer`](/mojo/std/format/Writer)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.

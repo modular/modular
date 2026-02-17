@@ -84,14 +84,14 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         self.value = value
         self.actions.unsafe_mut_cast[True]()[0].append("__init__")
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Moves from an existing instance and records the operation.
 
         Args:
-            existing: The instance being moved from.
+            take: The instance being moved from.
         """
-        self.actions = existing.actions
-        self.value = existing.value
+        self.actions = take.actions
+        self.value = take.value
         self.actions.unsafe_mut_cast[True]()[0].append("__moveinit__")
 
     fn __del__(deinit self):
@@ -244,14 +244,14 @@ struct MoveCounter[T: Copyable & ImplicitlyDestructible](Copyable):
         self.value = value^
         self.move_count = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
-            existing: The instance being moved from.
+            take: The instance being moved from.
         """
-        self.value = existing.value^
-        self.move_count = existing.move_count + 1
+        self.value = take.value^
+        self.move_count = take.move_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -281,14 +281,14 @@ struct MoveCopyCounter(ImplicitlyCopyable):
         self.copied = other.copied + 1
         self.moved = other.moved
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Moves from an existing instance and increments the move count.
 
         Args:
-            other: The instance being moved from.
+            take: The instance being moved from.
         """
-        self.copied = other.copied
-        self.moved = other.moved + 1
+        self.copied = take.copied
+        self.moved = take.moved + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -311,13 +311,13 @@ struct TriviallyCopyableMoveCounter(Copyable):
     # Copying this type is trivial, it doesn't care to track copies.
     comptime __copyinit__is_trivial = True
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
-            existing: The instance being moved from.
+            take: The instance being moved from.
         """
-        self.move_count = existing.move_count + 1
+        self.move_count = take.move_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -544,15 +544,15 @@ struct Observable[
         if self._copies:
             self._copies.value()[] += 1
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move initialize the Observable and increment the move count.
 
         Args:
-            other: The instance being moved from.
+            take: The instance being moved from.
         """
-        self._copies = other._copies^
-        self._moves = other._moves^
-        self._dels = other._dels^
+        self._copies = take._copies^
+        self._moves = take._moves^
+        self._dels = take._dels^
         if self._moves:
             self._moves.value()[] += 1
 

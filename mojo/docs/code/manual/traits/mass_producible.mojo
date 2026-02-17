@@ -16,7 +16,7 @@
 #     fn __init__(out self): ...
 
 # trait Movable
-#     fn __moveinit__(out self, deinit existing: Self):
+#     fn __moveinit__(out self, deinit take: Self):
 
 comptime MassProducible = Defaultable & Movable
 
@@ -31,8 +31,8 @@ struct Thing(MassProducible):
     fn __init__(out self):
         self.id = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.id = existing.id
+    fn __moveinit__(out self, deinit take: Self):
+        self.id = take.id
 
 
 def main():

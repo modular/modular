@@ -664,17 +664,6 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, deinit other: Self):
-        """Move initialize the string from another string.
-
-        Args:
-            other: The string to move.
-        """
-        self._ptr_or_data = other._ptr_or_data
-        self._len_or_data = other._len_or_data
-        self._capacity_or_data = other._capacity_or_data
-
-    @always_inline("nodebug")
     fn __copyinit__(out self, other: Self):
         """Copy initialize the string from another string.
 

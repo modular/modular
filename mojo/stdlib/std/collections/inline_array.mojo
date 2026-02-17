@@ -361,11 +361,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 var ptr = self.unsafe_ptr() + idx
                 ptr.init_pointee_copy(other.unsafe_get(idx))
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
-            other: The array to move from.
+            take: The array to move from.
 
         Notes:
             Moves the elements from the source array into this array.
@@ -373,11 +373,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
         @parameter
         if Self.ElementType.__moveinit__is_trivial:
-            self._array = other._array
+            self._array = take._array
         else:
             self = Self(uninitialized=True)
             for idx in range(Self.size):
-                var other_ptr = other.unsafe_ptr() + idx
+                var other_ptr = take.unsafe_ptr() + idx
                 (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):

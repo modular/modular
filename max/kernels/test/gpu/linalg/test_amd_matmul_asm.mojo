@@ -43,13 +43,6 @@ struct RegisterCounts(Movable):
         self.vgpr_spills = 0
         self.sgpr_spills = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.vgprs = existing.vgprs
-        self.sgprs = existing.sgprs
-        self.agprs = existing.agprs
-        self.vgpr_spills = existing.vgpr_spills
-        self.sgpr_spills = existing.sgpr_spills
-
     fn print_summary(self):
         """Print register usage summary."""
         print("\nRegister usage:")

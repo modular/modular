@@ -29,9 +29,9 @@ struct MyPet(Copyable):
         self.name = existing.name
         self.age = existing.age
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.name = existing.name^
-        self.age = existing.age
+    fn __moveinit__(out self, deinit take: Self):
+        self.name = take.name^
+        self.age = take.age
 
 
 def main():

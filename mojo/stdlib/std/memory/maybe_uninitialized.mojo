@@ -115,7 +115,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
         self.unsafe_ptr().init_pointee_copy(other)
 
     @always_inline
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move another object.
 
         This method should never be called as implicit moves should not
@@ -127,7 +127,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
         `move_from` instead.
 
         Args:
-            other: The object to move.
+            take: The object to move.
         """
         abort("You should never call __moveinit__ on MaybeUninitialized")
 

@@ -14,14 +14,11 @@ For example:
 from pathlib import Path
 
 
-struct MyStruct:
+struct MyStruct(Movable):
     var data: List[UInt8]
 
     fn __init__(out self):
         self.data = List[UInt8]()
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.data = existing.data ^
 
     @staticmethod
     fn load_from_file(file_path: Path) raises -> Self:
