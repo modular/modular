@@ -599,7 +599,10 @@ struct BlockScaledMatmulConfig[
         )
         var b_scales_smem_bytes_per_stage = (
             self.num_sf_k_tiles
-            * (self.mma_shape[1] // SF_MN_GROUP_SIZE)
+            * (
+                align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
+                // SF_MN_GROUP_SIZE
+            )
             * Self.sf_block_atom_size
             * size_of[Self.sfb_dtype]()
         )

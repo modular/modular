@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from sys import size_of
+from math import align_up
 
 from gpu.primitives.cluster import cluster_mask_base
 from gpu.host._tensormap import SwizzleMode
@@ -517,6 +518,7 @@ struct MmaOpSM100_BlockScaled_SS[
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
         init_c: Bool,
+        work_tile_coord: Tuple[UInt, UInt],
     ):
         """MMA input tiles.
 
@@ -553,7 +555,10 @@ struct MmaOpSM100_BlockScaled_SS[
                 Self.sfa_dtype, sfa_smem.layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
             self.copy_sf_to_tmem[
-                Self.sfb_dtype, sfb_smem.layout, Self.mma_shape[1], 0
+                Self.sfb_dtype,
+                sfb_smem.layout,
+                align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                0,
             ](sfb_smem, sfb_tmem)
 
         @parameter
@@ -569,9 +574,25 @@ struct MmaOpSM100_BlockScaled_SS[
                 1
             )
 
+            comptime sf_idx = k // Self.mma_shape[2]
+
+            @always_inline
+            @parameter
+            fn _get_sfb_tmem_offset[
+                mma_n: Int,
+            ](sfb_tmem: UInt32, work_tile_coord: Tuple[UInt, UInt],) -> UInt32:
+                @parameter
+                if mma_n in (64, 192):
+                    return sfb_tmem + UInt32(work_tile_coord[1] % 2) * 2
+                else:
+                    return sfb_tmem
+
+            var sfb_tmem_offset = _get_sfb_tmem_offset[Self.mma_shape[1]](
+                sfb_tmem, work_tile_coord
+            )
+
             @parameter
             if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
-                comptime sf_idx = k // Self.mma_shape[2]
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
                 ].update_desc_with_sf_id[UInt32(sf_idx)](
@@ -583,12 +604,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_tmem,
                     runtime_desc,
                     sfa_tmem,
-                    sfb_tmem,
+                    sfb_tmem_offset,
                     c_scale=c_scale,
                 )
             else:
-                comptime sf_idx = k // Self.mma_shape[2]
-                # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
                 self.copy_sf_to_tmem[
                     Self.sfa_dtype,
                     sfa_smem.layout,
@@ -596,7 +615,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
                 self.copy_sf_to_tmem[
-                    Self.sfb_dtype, sfb_smem.layout, Self.mma_shape[1], sf_idx
+                    Self.sfb_dtype,
+                    sfb_smem.layout,
+                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                    sf_idx,
                 ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
@@ -605,7 +627,7 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_tmem,
                     self.idesc,
                     sfa_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
-                    sfb_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
+                    sfb_tmem_offset + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
                     c_scale=c_scale,
                 )
 
