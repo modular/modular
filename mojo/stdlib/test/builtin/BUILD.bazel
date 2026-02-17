@@ -116,3 +116,19 @@ lit_tests(
         "//conditions:default": [],
     }),
 )
+
+# Minimal explicit test target for the new focused range repr test
+mojo_test(
+    name = "test_range_repr.test",
+    srcs = ["test_range_repr.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    data = _DATA + ["test_range_repr.mojo"],
+    target_compatible_with = _PLATFORM_CONSTRAINTS.get("test_range_repr.mojo", []),
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)

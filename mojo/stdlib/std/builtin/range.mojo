@@ -23,6 +23,7 @@ from sys.intrinsics import unlikely
 from python import PythonObject
 
 from utils._select import _select_register_value as select
+from format._utils import FormatStruct
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -90,7 +91,12 @@ struct _ZeroStartingRange(
 
 
 struct _SequentialRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
+    Iterable,
+    Iterator,
+    ReversibleRange,
+    Sized,
+    TrivialRegisterPassable,
+    Writable,
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -133,6 +139,11 @@ struct _SequentialRange(
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self)
         return (len, {len})
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        # Explicit, non-reflective repr for sequential ranges: `range(start, end)`
+        FormatStruct(writer, "range").fields(self.start, self.end)
 
 
 @fieldwise_init
