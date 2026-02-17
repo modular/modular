@@ -653,7 +653,7 @@ struct String(ImplicitlyCopyable, KeyElement):
     fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(out self, deinit existing: String):
+    fn __moveinit__(out self, deinit take: String):
         pass
 
     fn __del__(deinit self):
@@ -838,13 +838,13 @@ fn materialize[T: AnyType, //, value: T](out result: T):
 
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
-    fn __moveinit__(out self, deinit existing: Self, /):
+    fn __moveinit__(out self, deinit take: Self, /):
         ...
 
 
 @explicit_destroy
 trait Movable:
-    fn __moveinit__(out self, deinit existing: Self, /):
+    fn __moveinit__(out self, deinit take: Self, /):
         ...
 
     comptime __moveinit__is_trivial: Bool
@@ -1144,7 +1144,7 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         pass
 
     fn __getitem__[i: Int](ref self) -> ref[self] Self.element_types[i]:
@@ -1341,7 +1341,7 @@ struct Optional[T: ImplicitlyCopyable]:
     fn __copyinit__(out self, other: Self):
         pass
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         pass
 
     fn value(ref self) -> ref[self] Self.T:

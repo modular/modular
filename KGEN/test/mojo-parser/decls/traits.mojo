@@ -727,7 +727,7 @@ struct HasMyPointerSelf(AnyType):
     var x: MyPointer[Self]
     # CHECK: lit.fn @"__del__
 
-    fn __moveinit__(out self, deinit existing: Self, /):
+    fn __moveinit__(out self, deinit take: Self, /):
         pass
 
 

@@ -28,9 +28,6 @@ struct UnconditionalMovable[T: Movable](Movable):
     fn __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.value = existing.value^
-
 
 # ===========================================================================
 # Test 2: Single conditional conformance - Copyable only when T is Copyable
@@ -44,9 +41,6 @@ struct ConditionalCopyable[T: Movable](Copyable where conforms_to(T, Copyable), 
 
     fn __init__(out self, var value: Self.T):
         self.value = value^
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.value = existing.value^
 
     fn __copyinit__(out self, existing: Self, /) where conforms_to(Self.T, Copyable):
         self.value = rebind_var[Self.T](trait_downcast[Copyable](existing.value).copy())
@@ -70,9 +64,6 @@ struct MultipleConditionalConformances[T: Movable](
 
     fn __init__(out self, var inner: Self.T):
         self.inner = inner^
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.inner = existing.inner^
 
     fn __copyinit__(out self, existing: Self, /) where conforms_to(Self.T, Copyable):
         self.inner = rebind_var[Self.T](trait_downcast[Copyable](existing.inner).copy())

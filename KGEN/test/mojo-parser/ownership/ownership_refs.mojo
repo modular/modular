@@ -18,7 +18,7 @@ fn use_any[*Ts: AnyType](*args: *Ts): pass
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample(ImplicitlyCopyable):
   fn __init__(out self): pass
-  fn __moveinit__(out self, deinit existing: Self): pass
+  fn __moveinit__(out self, deinit take: Self): pass
   fn __copyinit__(out self, existing: Self): pass
   fn __del__(deinit self): pass
   fn noop(self): pass
@@ -417,7 +417,7 @@ struct FieldRefPropagation:
 # https://github.com/modular/mojo/issues/3444
 struct HasRaisingInit:
   fn __init__(out self) raises: pass
-  fn __moveinit__(out self, deinit existing: Self): pass
+  fn __moveinit__(out self, deinit take: Self): pass
   fn __copyinit__(out self, existing: Self): pass
   fn __del__(deinit self): pass
 

@@ -62,12 +62,6 @@ struct MemExample(ImplicitlyCopyable):
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.x = existing.x
-
-    fn __copyinit__(out self, existing: Self):
-        self.x = existing.x
-
     fn __bool__(self) -> Bool:
         return True
 
@@ -262,7 +256,7 @@ struct BigRegExample(RegisterPassable):
         # CHECK-NEXT: kgen.return [[FALSE]]
 
 
-struct MyStringReturningCtx:
+struct MyStringReturningCtx(Movable):
     var s: String
 
     fn __init__(out self):
@@ -270,9 +264,6 @@ struct MyStringReturningCtx:
 
     fn __enter__(var self) -> Self:
         return self^
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.s = existing.s
 
     fn read(self) raises -> String:
         return ""

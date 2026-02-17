@@ -22,9 +22,6 @@ struct CacheAligned(Movable):
     fn __init__(out self, x: Int):
         self.x = x
 
-    fn __moveinit__(out self, owned existing: Self):
-        self.x = existing.x
-
 
 # @align works on single-element trivial register structs. When @align is
 # specified, the struct is NOT flattened to its element type during lowering,

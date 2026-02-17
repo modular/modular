@@ -81,7 +81,7 @@ struct NotTrivial(Copyable):
     fn __copyinit__(out self, other: Self):
         pass
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         pass
 
     fn __del__(deinit self):
