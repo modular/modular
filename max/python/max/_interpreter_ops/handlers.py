@@ -248,7 +248,7 @@ def _handle_transfer(
             dtype=input_buffer.dtype,
             device=target_device,
         )
-        ops.mojo_ops.StaticBroadcastTo(
+        ops.broadcast_ops.StaticBroadcastTo(
             output,
             input_buffer,
             list(input_buffer.shape),
@@ -317,7 +317,7 @@ def _handle_static_broadcast_to(
     )
 
     # Call Mojo kernel
-    ops.mojo_ops.StaticBroadcastTo(
+    ops.broadcast_ops.StaticBroadcastTo(
         output, inputs[0], target_shape, target_device._device_context_ptr()
     )
 
@@ -372,7 +372,7 @@ def _handle_broadcast_to(
     )
 
     # Call Mojo kernel (supports both CPU and GPU)
-    ops.mojo_ops.StaticBroadcastTo(
+    ops.broadcast_ops.StaticBroadcastTo(
         output, inputs[0], target_shape, target_device._device_context_ptr()
     )
 
@@ -561,7 +561,7 @@ def _handle_matmul(
 
     output = Buffer(shape=(m, n), dtype=lhs.dtype, device=target_device)
 
-    ops.mojo_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
+    ops.matmul_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
     return [output]
 
 
@@ -1080,7 +1080,7 @@ def _handle_range(
     )
 
     # Call Mojo kernel
-    ops.mojo_ops.Range(
+    ops.misc_ops.Range(
         output, start_buffer, step_buffer, target_device._device_context_ptr()
     )
 
@@ -1130,7 +1130,7 @@ def _handle_random_normal(
         device=target_device,
     )
 
-    ops.mojo_ops.RandomNormal(
+    ops.misc_ops.RandomNormal(
         output,
         mean_val,
         variance_val,
@@ -1180,7 +1180,7 @@ def _handle_random_uniform(
         device=target_device,
     )
 
-    ops.mojo_ops.RandomUniform(
+    ops.misc_ops.RandomUniform(
         output,
         lower_val,
         upper_val,
@@ -1223,7 +1223,7 @@ def _handle_select(
         device=target_device,
     )
 
-    ops.mojo_ops.Select(
+    ops.elementwise_ops.Select(
         output,
         inputs[0],
         inputs[1],
@@ -1300,7 +1300,7 @@ def _handle_concat(
         inner_count = inp.shape[axis] * suffix_size
         inp_stride = inner_count
         for outer_idx in range(outer_size):
-            ops.mojo_ops.Memcpy(
+            ops.misc_ops.Memcpy(
                 output,
                 inp,
                 outer_idx * out_axis_stride + dst_axis_offset * suffix_size,
