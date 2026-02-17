@@ -27,6 +27,8 @@ from gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
+    cluster_wait,
+    cluster_arrive_relaxed,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -1396,7 +1398,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             clc_empty_mbar[i].init(Int32(clc_consumer_arv_count))
 
     fence_mbarrier_init()
-    cluster_sync()
+
+    @parameter
+    if CLUSTER_SIZE > 1:
+        cluster_arrive_relaxed()
 
     var clc_pipe_producer_state = PipelineState[
         Int(config.num_clc_pipeline_stages)
@@ -1471,6 +1476,12 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
         warp_role, max_profiled_tiles_per_SM
     ]
+
+    @parameter
+    if CLUSTER_SIZE > 1:
+        cluster_wait()
+    else:
+        barrier()
 
     if WarpRole.is_main_load():
         with MatmulProfilerType[0](workspace, 0):
