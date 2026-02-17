@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from typing_extensions import Self
 
@@ -36,9 +36,6 @@ from max.pipelines.lib import (
     upper_bounded_default,
 )
 from transformers import AutoConfig
-
-if TYPE_CHECKING:
-    from .ssm_state_cache import SSMStateCacheParams
 
 
 class MambaConfigBase(MAXModelConfigBase):
@@ -350,17 +347,3 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
     def get_max_seq_len(self) -> int:
         """Get the maximum sequence length (ArchConfig protocol)."""
         return self.max_seq_len
-
-    def get_ssm_cache_params(self) -> SSMStateCacheParams:
-        """SSM cache parameters (ArchConfigWithSSMCache protocol)."""
-        from .ssm_state_cache import SSMStateCacheParams
-
-        return SSMStateCacheParams(
-            dtype=self.dtype,
-            num_layers=self.num_hidden_layers,
-            intermediate_size=self.intermediate_size,
-            d_state=self.d_state,
-            conv_kernel=self.conv_kernel,
-            device=self.devices[0],
-            devices=self.devices,
-        )

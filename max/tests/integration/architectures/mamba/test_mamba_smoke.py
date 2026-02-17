@@ -10,9 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Smoke test for Mamba architecture: verify module and model load."""
 
-from .arch import mamba_arch
+from __future__ import annotations
 
-__all__ = [
-    "mamba_arch",
-]
+
+def test_mamba_arch_imports() -> None:
+    """Mamba architecture and model can be imported."""
+    from max.pipelines.architectures.mamba import mamba_arch
+
+    assert mamba_arch.name == "MambaForCausalLM"
+    assert mamba_arch.pipeline_model is not None

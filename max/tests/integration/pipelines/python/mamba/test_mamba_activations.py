@@ -125,12 +125,20 @@ def test_mamba_first_token_logits_comparison() -> None:
     print(f"MAX full output:\n{max_output}")
     print(f"MAX output length: {len(max_output)}")
 
-    # Extract the generated token from MAX output
-    # The output format is: prompt + generated_text
-    max_output_clean = max_output.strip()
+    # Strip metrics from MAX output (same as test_mamba_130m.py)
+    max_lines = max_output.split("\n")
+    max_text_lines = []
+    for line in max_lines:
+        if (
+            line.startswith("Prompt size:")
+            or line.startswith("Output size:")
+            or line.startswith("Startup time:")
+        ):
+            break
+        max_text_lines.append(line)
+    max_output_clean = "\n".join(max_text_lines).strip()
 
-    # Try to extract just the generated token
-    # MAX output should be: prompt + 1 new token
+    # Extract the generated token: text after the prompt
     max_generated = (
         max_output_clean[len(prompt) :]
         if len(max_output_clean) > len(prompt)

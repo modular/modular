@@ -7,16 +7,10 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-# state_space contains selective_scan kernels that need to be available for tests
-MAMBA_MOJOPKGS = [
-    "//max/kernels/src/state_space:state_space",
-]
-
 modular_py_test(
     name = "nn",
-    timeout = "long",
     srcs = glob(["*.py"]),
-    mojo_deps = ["//max:MOGGKernelAPI"] + MAMBA_MOJOPKGS,
+    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -24,7 +18,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
         requirement("numpy"),
     ],
 )

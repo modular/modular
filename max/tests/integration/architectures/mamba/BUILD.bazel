@@ -1,0 +1,36 @@
+# Mamba architecture tests (selective_scan, causal_conv1d, fused_norm, layer_norm_gated).
+# state_space provides selective_scan, causal_conv1d, rms_norm_fused_residual kernels.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+MAMBA_MOJOPKGS = [
+    "//max/kernels/src/state_space:state_space",
+]
+
+modular_py_test(
+    name = "mamba",
+    timeout = "long",
+    srcs = glob(["test_*.py"]),
+    mojo_deps = ["//max:MOGGKernelAPI"] + MAMBA_MOJOPKGS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+    ],
+)
