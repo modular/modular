@@ -1473,3 +1473,19 @@ struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack):
 # CHECK-SAME: %args: !lit.ref<!lit.struct<#VariadicPack
 # CHECK-NEXT: lit.call {{.*}}@"method_with_pack{{.*}}(%self, %args)
 # CHECK-NEXT: kgen.return %0
+
+# https://github.com/modular/modular/issues/5722
+# `__del__` incorrectly runs when `__init__` raises before all fields are initialized.
+# CHECK-LABEL: lit.struct.decl @TestRaiseFromInit
+struct TestRaiseFromInit:
+    var x: Int
+    var y: String
+
+  # CHECK: lit.fn @"__init__
+    fn __init__(out self) raises Int:
+        # CHECK-NEXT: %0 = lit.ref.struct.ger %self[y]
+        # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}(%0)
+        # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%0)
+        # CHECK-NEXT: kgen.param.constant: !Int = <{42}>
+        self.y = String()
+        raise 42
