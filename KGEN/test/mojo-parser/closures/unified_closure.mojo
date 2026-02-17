@@ -555,6 +555,7 @@ fn makeIt[T: __TypeOfAllTypes](a: T):
 fn conditionallyDevicePassable(x: Int):
     # CHECK: kgen.conformance @"{{.*}}::DevicePassable" {
     # CHECK-NEXT: kgen.witness "device_type" : type =
+    # CHECK-NEXT: kgen.witness "_is_convertible_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
     fn device_passable() unified register_passable {var} -> Int:
