@@ -12,8 +12,8 @@ fn takeIt[T: fn () unified -> None, //](state: T):
 
 struct MoveMe(Movable):
     var x:Int
-    fn __moveinit__(out self, deinit other: Self):
-        self.x = other.x
+    fn __moveinit__(out self, deinit take: Self):
+        self.x = take.x
     fn __del__(deinit self:Self):
         pass
 

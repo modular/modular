@@ -83,8 +83,8 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Stringable, Writable):
         self.state = existing.state
         print("copying", self.state)
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.state = existing.state
+    fn __moveinit__(out self, deinit take: Self):
+        self.state = take.state
         print("moving", self.state)
 
     fn __del__(deinit self):

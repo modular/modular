@@ -1029,7 +1029,7 @@ fn signature_inference[dt: DType, rank: Int]():
 
 
 struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]:
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         pass
 
 

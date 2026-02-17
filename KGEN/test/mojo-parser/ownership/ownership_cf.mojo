@@ -38,8 +38,8 @@ struct MemExample(ImplicitlyCopyable):
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.x = existing.x
+    fn __moveinit__(out self, deinit take: Self):
+        self.x = take.x
 
     fn __copyinit__(out self, existing: Self):
         self.x = existing.x
@@ -460,7 +460,7 @@ struct MyStringReturningCtx:
     fn __enter__(var self) -> Self:
         return self^
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         self.s = ""
 
     fn read(self) raises -> String:

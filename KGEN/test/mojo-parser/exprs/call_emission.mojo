@@ -333,7 +333,7 @@ struct Struct1:
     fn __init__(out self):
         pass
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         pass
 
 

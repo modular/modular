@@ -22,8 +22,8 @@ struct MemExample(ImplicitlyCopyable):
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.x = existing.x
+    fn __moveinit__(out self, deinit take: Self):
+        self.x = take.x
 
     fn __copyinit__(out self, existing: Self):
         self.x = existing.x
@@ -62,17 +62,17 @@ struct MemoryUniqueMovable:
         self.state = MemExample()
 
     # CHECK: lit.fn @"__moveinit__
-    fn __moveinit__(out self, deinit other: Self):
-        # Mercilessly steal 'other's state which could be interesting.
+    fn __moveinit__(out self, deinit take: Self):
+        # Mercilessly steal 'take's state which could be interesting.
 
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[state]
-        # CHECK-NEXT: %1 = lit.ref.struct.ger %other[state]
+        # CHECK-NEXT: %1 = lit.ref.struct.ger %take[state]
         # CHECK-NEXT: lit.ownership.use %1
         # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %0)
-        self.state = other.state^
+        self.state = take.state^
 
         # CHECK-NEXT: kgen.param.constant: none
-        # CHECK-NEXT: lit.ownership.mark_destroyed %other
+        # CHECK-NEXT: lit.ownership.mark_destroyed %take
         # CHECK-NEXT: kgen.return
 
 
@@ -84,9 +84,9 @@ struct MemoryMovableCopyable(ImplicitlyCopyable):
     fn __init__(out self):
         self.state = MemExample()
 
-    fn __moveinit__(out self, deinit existing: Self):
-        # Mercilessly steal 'existing's state which could be interesting.
-        self.state = existing.state^
+    fn __moveinit__(out self, deinit take: Self):
+        # Mercilessly steal 'take's state which could be interesting.
+        self.state = take.state^
 
     fn __copyinit__(out self, existing: Self):
         self.state = existing.state

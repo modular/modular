@@ -734,7 +734,7 @@ struct WrongType(RegisterPassable):
   fn __copyinit__(out self, existing: Int): pass
 
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
-  fn __moveinit__(out self, deinit existing: Self): pass
+  fn __moveinit__(out self, deinit take: Self): pass
 
 
 struct WrongSelfType[a: Int]:
@@ -789,7 +789,7 @@ struct OtherInMemStruct:
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
-  fn __moveinit__(out self, deinit existing: Self): pass
+  fn __moveinit__(out self, deinit take: Self): pass
   # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
   fn __copyinit__(out self, existing: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}

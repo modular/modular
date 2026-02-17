@@ -12,8 +12,6 @@ fn takeIt[T: fn (prefix: String) unified -> String, //](state: T, prefix:String)
 
 struct MoveMe(Movable):
     var x:Int
-    fn __moveinit__(out self, deinit other: Self):
-        self.x = other.x
 
 fn use(a:String, d:MoveMe):
     pass

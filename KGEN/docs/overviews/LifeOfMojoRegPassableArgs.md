@@ -126,7 +126,7 @@ struct MyRPType(Movable, Copyable, RegisterPassable):
 
     # RP Types cannot declare a moveinit, but they always implicitly have one
     # that is defined to transfer ownership.
-    #fn __moveinit__(out self, deinit other: MyRPType): pass
+    #fn __moveinit__(out self, deinit take: MyRPType): pass
 
     fn __del__(deinit self): pass
 
