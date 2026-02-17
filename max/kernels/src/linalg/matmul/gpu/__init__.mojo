@@ -17,6 +17,7 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     simd_width_of,
@@ -440,6 +441,7 @@ fn _matmul_gpu[
         (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
         and c_type in (DType.float32, DType.bfloat16)
+        and not has_amd_rdna_gpu_accelerator()
     )
 
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
@@ -764,6 +766,7 @@ fn _matmul_gpu[
         and b_type in vendor_blas_fallback_dtypes
         and c_type in vendor_blas_fallback_dtypes
         and not has_apple_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
         and not _vendor_blas_fallback_disabled()
     ):
@@ -884,7 +887,11 @@ fn multistage_gemm[
     var tensor_b = from_ndbuffer_row_major(b)
 
     @parameter
-    if has_amd_gpu_accelerator() and transpose_b:
+    if (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
         logger.info("Executing: AMD standard GEMM (no split-K)")
         comptime gemm_kernel_type = gemm_kernel_amd[
             c_type,
@@ -1011,7 +1018,7 @@ fn multistage_gemm[
         ]
 
         @parameter
-        if has_amd_gpu_accelerator():
+        if has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator():
             ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
@@ -1045,7 +1052,11 @@ fn multistage_gemm[
 
     # Dispatch w/o split K
     @parameter
-    if has_amd_gpu_accelerator() and transpose_b:
+    if (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
         logger.info("Executing: AMD standard GEMM (no split-K)")
         comptime gemm_kernel_type = gemm_kernel_amd[
             c_type,

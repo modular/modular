@@ -25,7 +25,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _cdna_4_or_newer
+from sys.info import _cdna_4_or_newer, _is_amd_rdna
 import gpu.primitives.warp as warp
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -73,6 +73,8 @@ from memory import stack_allocation
 
 from .attention.gpu.amd.mha_gfx942 import MHAAttentionConfig
 from .attention.gpu.amd.mha_gfx950 import Attention
+from .attention.gpu.amd.mha_rdna import MHAAttentionConfigRDNA
+from .attention.gpu.amd.attention_rdna import AttentionRDNA
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -1566,6 +1568,27 @@ fn mha[
                 Int(batch_idx),
                 sink_weights,
             )
+    elif _is_amd_rdna():
+        comptime assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
+
+        comptime rdna_config = MHAAttentionConfigRDNA[False, config, group]()
+        var attention = AttentionRDNA[config, group, False, sink](
+            rdna_config,
+            output_ptr + q_batch_offset,
+            q_ptr + q_batch_offset,
+            k,
+            v,
+            mask,
+            sink_weights,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+        )
+        attention.mha_prefill_rdna()
     elif is_amd_gpu():
         comptime assert (
             use_score_mod == False
@@ -3259,6 +3282,62 @@ fn mha_decoding[
                 Int(batch_idx),
                 sink_weights,
             )
+    elif _is_amd_rdna():
+        comptime config = MHAConfig[q_type](
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
+        )
+        comptime assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
+        var sink_weights_lt: OptionalReg[
+            LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ]
+        ] = None
+        if sink_weights:
+            sink_weights_lt = LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ](
+                sink_weights.value().ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](sink_weights.value().size())
+                ),
+            )
+
+        comptime rdna_config = MHAAttentionConfigRDNA[
+            True, config, Int(group)
+        ]()
+        var attention = AttentionRDNA[config, Int(group), True, sink](
+            rdna_config,
+            output_ptr + output_batch_offset,
+            q_ptr + q_batch_offset,
+            k,
+            v,
+            mask,
+            sink_weights_lt,
+            Int(batch_idx),
+            scale,
+            1,
+            num_keys,
+            0,
+        )
+        attention.mha_decoding_rdna(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
+        )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
             num_heads,
