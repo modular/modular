@@ -1,0 +1,39 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# This _smoke file exists because the parameter space of bench_allreduce.yaml is huge
+name: bench_allreduce
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce.mojo
+
+commons: &commons
+  dtype: [DType.bfloat16, DType.float32]
+  num_gpus: [2, 8]
+  rank: [1]
+  $num_bytes: "[2**i for i in range(14, 28, 3)]"
+  TUNE_MAX_NUM_BLOCKS: [0] # To force picking the tuning results
+
+params:
+- <<: *commons
+  use_multimem: [False, True]
+  use_quickreduce: [False]
+  use_vendor_ccl: [False]
+
+# Ragged testing for bandwidth-bound sizes only (2-stage path)
+- dtype: [DType.bfloat16, DType.float32]
+  num_gpus: [2, 8]
+  rank: [1]
+  $num_bytes: "[2**i for i in range(20, 28, 2)]"  # 1MB to 128MB
+  TUNE_MAX_NUM_BLOCKS: [0]
+  use_multimem: [False]
+  use_quickreduce: [False]
+  use_vendor_ccl: [False]
+  ragged: [True]
