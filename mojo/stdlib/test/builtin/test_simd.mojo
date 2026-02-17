@@ -1388,6 +1388,13 @@ def test_abs():
         abs(SIMD[DType.bool, 4](True, False, True, False)),
         SIMD[DType.bool, 4](True, False, True, False),
     )
+    # Test signed minimum representable values
+    assert_equal(abs(Int8.MIN), Int8.MIN)
+    assert_equal(abs(Int16.MIN), Int16.MIN)
+    assert_equal(abs(Int32.MIN), Int32.MIN)
+    assert_equal(abs(Int64.MIN), Int64.MIN)
+    assert_equal(abs(Int128.MIN), Int128.MIN)
+    assert_equal(abs(Int256.MIN), Int256.MIN)
 
 
 def test_clamp():

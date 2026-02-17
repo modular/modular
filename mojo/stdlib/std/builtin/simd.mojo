@@ -1908,6 +1908,9 @@ struct SIMD[dtype: DType, size: Int](
     fn __abs__(self) -> Self:
         """Defines the absolute value operation.
 
+        For signed integral element types, the absolute value of the minimum
+        representable value is the minimum value itself.
+
         Returns:
             The absolute value of this SIMD vector.
         """
