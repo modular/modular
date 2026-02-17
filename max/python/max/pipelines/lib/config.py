@@ -1139,10 +1139,6 @@ class PipelineConfig(ConfigFileModel):
             default_weights_format=arch.default_weights_format,
         )
 
-        # Resolve final pipeline-specific changes to the config before doing
-        # memory estimations.
-        arch.pipeline_model.finalize_pipeline_config(self)
-
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
             # since they don't use KV cache.

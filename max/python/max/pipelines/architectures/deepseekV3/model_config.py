@@ -106,6 +106,17 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         if self.tie_word_embeddings:
             raise ValueError("tie_word_embeddings is not supported yet")
 
+        # Validate data parallel degree for DeepSeekV3.
+        # DP attention requires DP degree to match device count.
+        # TP attention requires DP degree to be 1.
+        num_devices = len(self.devices)
+        if self.data_parallel_degree not in (1, num_devices):
+            raise ValueError(
+                f"data_parallel_degree for DeepSeekV3 ({self.data_parallel_degree}) must be "
+                f"1 (TP attention) or equal to the number of devices ({num_devices}). "
+                "DP attention requires DP degree to match device count."
+            )
+
     def get_kv_params(self) -> KVCacheParams:
         return self.kv_params
 
@@ -121,10 +132,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cache_dtype: DType,
     ) -> KVCacheParams:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree not in (1, len(devices)):
-            raise ValueError(
-                "data_parallel_degree must be 1 or match the number of devices"
-            )
 
         kvcache_quant_config = None
         if kv_cache_config.cache_dtype in (

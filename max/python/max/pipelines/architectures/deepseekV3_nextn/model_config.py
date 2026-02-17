@@ -34,6 +34,18 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
     them, and processes through a single decoder layer to predict the next token.
     """
 
+    def __post_init__(self) -> None:
+        # Call parent validation first
+        super().__post_init__()
+
+        # NextN requires data parallel degree to exactly match device count
+        num_devices = len(self.devices)
+        if self.data_parallel_degree != num_devices:
+            raise ValueError(
+                f"DeepseekV3 NextN requires data_parallel_degree ({self.data_parallel_degree}) "
+                f"to exactly match the number of devices ({num_devices})."
+            )
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
