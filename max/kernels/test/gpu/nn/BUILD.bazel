@@ -167,9 +167,19 @@ _FILECHECK_TESTS = [
         copts = [],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
+            # On B200, the SM100 MLA path OOB was fixed (kv_row clamping),
+            # so test_mla.mojo can run with assertions enabled.
+            "//:b200_gpu": src not in [
+                "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
+                "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
+            ],
+            # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
+            # infrastructure on boundary tiles (num_keys not aligned to BN).
+            # The H100 path uses a different code path (mla.mojo) where the
+            # OOB is in the multistage-MMA / async-copy masked tile handling.
+            # The OOB is functionally benign (masked out by _kernel_mask).
             "//conditions:default": src not in [
-                "test_mla.mojo",  # KERN-2339: bounds check reveals kernel bug
-                "test_mla_decode_paged_variable.mojo",  # KERN-2339: bounds check reveals kernel bug
+                "test_mla.mojo",
                 "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
