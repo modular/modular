@@ -27,11 +27,11 @@ fn foo() raises:
 alias int_alias = 10
 
 trait ATrait:
-  fn foo(owned self, i: Self):
+  fn foo(var self, i: Self):
      ...
 
 struct StructWithTrait(ATrait):
-    fn foo(owned self, i: Self):
+    fn foo(var self, i: Self):
         pass
 )");
 
@@ -73,7 +73,7 @@ struct StructWithTrait(ATrait):
               return token.range == *doc.findFirstRange("ATrait") &&
                      token.kind == SemanticTokenKind::kTrait;
             }));
-            EXPECT_FALSE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
               return token.range == *doc.findFirstRange("Self") &&
                      token.kind == SemanticTokenKind::kTrait;
             }));
