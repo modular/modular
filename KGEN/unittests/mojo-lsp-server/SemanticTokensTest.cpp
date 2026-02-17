@@ -73,7 +73,7 @@ struct StructWithTrait(ATrait):
               return token.range == *doc.findFirstRange("ATrait") &&
                      token.kind == SemanticTokenKind::kTrait;
             }));
-            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+            EXPECT_FALSE(llvm::any_of(tokens, [&](const SemanticToken &token) {
               return token.range == *doc.findFirstRange("Self") &&
                      token.kind == SemanticTokenKind::kTrait;
             }));

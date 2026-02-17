@@ -244,7 +244,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 //===----------------------------------------------------------------------===//
 
 ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                                  ArgListKind kind, bool isMoveInitOrDel) {
+                                  ArgListKind kind) {
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
@@ -262,16 +262,13 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   };
 
   // Any var/read/mut/ref keyword sets convention.
-  // TODO(25.7): Remove support for 'owned' keyword.
   if (p.consumeIf(Token::kw_var)) {
     convention = kConventionVar;
   } else if (p.consumeIf(Token::kw_owned)) {
-    // TODO: Remove 'isMoveInitOrDel' when this logic gets dropped.
-    const char *replacement = isMoveInitOrDel ? "deinit" : "var";
-    auto diag = p.emitWarning(loc, "'owned' has been deprecated")
-                << ", use '" << replacement << "' instead"
-                << FixIt::replaceToken(loc, replacement);
-    convention = isMoveInitOrDel ? kConventionDeinit : kConventionVar;
+    p.emitError(
+        loc, "'owned' has been removed, use 'var' or 'deinit' as appropriate")
+        << FixIt::replaceToken(loc, "var");
+    return failure();
   } else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
@@ -457,8 +454,7 @@ PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
 /// arguments.
 static ParseResult
 parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
-                    ParsedArgument *resultArg, ArgListKind kind,
-                    bool isMoveInitOrDel) {
+                    ParsedArgument *resultArg, ArgListKind kind) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
@@ -583,7 +579,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     auto marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
-    if (arg.parse(p, marker, kind, isMoveInitOrDel))
+    if (arg.parse(p, marker, kind))
       return failure();
 
     // If we have a **arg then it must be the last argument.
@@ -1136,8 +1132,7 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
     return success();
 
   // Parse an actual parameter list.
-  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind,
-                          /*isMoveInitOrDel=*/false))
+  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
@@ -1230,21 +1225,19 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
 
 /// Parse an argument list, including the parentheses around them.  This also
 /// parses 'raises' and other effects.
-ParseResult
-ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
-                                                bool isMoveInitOrDel) {
+ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
+                                                            ArgListKind kind) {
 
   // If this is a bare lambda argument list, it won't be parenthesized and won't
   // have effects.
   if (kind == ArgListKind::kBareLambdaArgList)
-    return parseArgOrParamList(p, parsedArgs, &resultArg, kind,
-                               isMoveInitOrDel);
+    return parseArgOrParamList(p, parsedArgs, &resultArg, kind);
 
   if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
     return failure();
 
   if (!p.consumeIf(Token::r_paren)) {
-    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind, isMoveInitOrDel) ||
+    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind) ||
         p.parseToken(Token::r_paren, "expected ')' in argument list"))
       return failure();
   }

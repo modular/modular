@@ -1557,10 +1557,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     fnSignature.effects.setThrows();
 
   // Parse the argument list next if present.
-  bool isMoveInitOrDel = // TODO(25.7): Remove this, it's a hack for migration.
-      baseName.strref() == "__moveinit__" || baseName.strref() == "__del__";
-  if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList,
-                                              isMoveInitOrDel))
+  if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList))
     return failure();
 
   // TODO: effects parsing must be moved after captures parsing.

@@ -29,10 +29,9 @@ struct Foo[
 # CHECK: called foo
 Foo[Int]().foo()
 
-# Will test a struct with decorator and a multiline declaration
-@register_passable
+# Will test a struct with trait and a multiline declaration
 struct \
-  Bar:
+  Bar(RegisterPassable):
   fn __init__(out self):
     return
   fn bar(self):
