@@ -16,6 +16,7 @@ _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
     "test_grouped_block_scaled_gemm_nvfp4_execution.mojo",
     "test_grouped_block_scaled_gemm_execution.mojo",
     "test_grouped_block_scaled_gemm_epilogue.mojo",
+    "test_grouped_matmul_1d1d_nvfp4_smoke.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {

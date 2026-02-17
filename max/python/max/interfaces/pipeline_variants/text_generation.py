@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
+from itertools import chain
 from typing import (
     Any,
     Generic,
@@ -346,6 +347,36 @@ class TextGenerationOutput:
             bool: True if the generation is done, False otherwise.
         """
         return self.final_status.is_done
+
+    @classmethod
+    def merge(cls, outputs: list[TextGenerationOutput]) -> TextGenerationOutput:
+        """Combine many TextGenerationOutput chunks into a single TextGenerationOutput."""
+        if len(outputs) == 0:
+            raise ValueError("Cannot combine empty list of chunks")
+        if len(outputs) == 1:
+            return outputs[0]
+
+        if all(output.log_probabilities is not None for output in outputs):
+            log_probabilities = list(
+                chain.from_iterable(
+                    output.log_probabilities or [] for output in outputs
+                )
+            )
+        elif all(output.log_probabilities is None for output in outputs):
+            log_probabilities = None
+        else:
+            raise ValueError(
+                "Cannot combine TextGenerationOutput chunks with mixed None and non-None log_probabilities"
+            )
+
+        return cls(
+            request_id=outputs[0].request_id,
+            tokens=list(
+                chain.from_iterable(output.tokens for output in outputs)
+            ),
+            log_probabilities=log_probabilities,
+            final_status=outputs[-1].final_status,
+        )
 
 
 @runtime_checkable

@@ -97,7 +97,7 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 
-from ..interfaces import PipelineModel
+from ..interfaces import ModelOutputs, PipelineModel
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -423,6 +423,109 @@ class OverlapTextGenerationPipeline(
         """
         return self._prev_batch is not None
 
+    def _run_forward(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> ModelOutputs:
+        """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
+        # Prepare the batch.
+        kv_cache_inputs = self._kv_manager.get_runtime_inputs(
+            inputs.batches, num_steps=1
+        )
+
+        with Tracer("prepare_initial_token_inputs"):
+            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+                replica_batches=inputs.batches,
+                kv_cache_inputs=KVCacheInputsSequence(
+                    kv_cache_inputs=kv_cache_inputs
+                ),
+            )
+
+        assert hasattr(model_inputs, "tokens")
+        ragged_input_tokens = model_inputs.tokens
+        if self._prev_batch is not None:
+            with Tracer("scatter_future_tokens"):
+                new_ragged_input_tokens = (
+                    self._scatter_future_tokens.scatter_future_tokens(
+                        prev_batch=self._prev_batch,
+                        inputs=inputs,
+                        ragged_input_tokens=ragged_input_tokens,
+                    )
+                )
+            # Overwrite the ragged input tokens with the new ones.
+            model_inputs.tokens = new_ragged_input_tokens
+
+        # Execute the model and get next tokens.
+        try:
+            with Tracer("pipeline_model.execute"):
+                return self._pipeline_model.execute(model_inputs=model_inputs)
+        except Exception:
+            batch_size = len(inputs.flat_batch)
+            cache_tokens = sum(
+                ctx.tokens.processed_length for ctx in inputs.flat_batch
+            )
+            input_tokens = sum(
+                ctx.tokens.active_length for ctx in inputs.flat_batch
+            )
+            logger.error(
+                "Encountered an exception while executing batch: "
+                f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}"
+            )
+            raise  # re-raise the original exception
+
+    def _run_forward_and_sample_logits(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> AsyncBatch[TextGenerationContextType]:
+        """Runs the forward pass for the provided inputs and returns the AsyncBatch."""
+        device0 = self._devices[0]
+        assert not device0.is_host
+
+        flat_batch = inputs.flat_batch
+        with Tracer("FusedSamplingProcessor"):
+            sampling_processor = FusedSamplingProcessor(
+                sampler=self._sampler,
+                pipeline_config=self._pipeline_config,
+                context_batch=flat_batch,
+                num_steps=1,
+                device=device0,
+            )
+
+        model_outputs = self._run_forward(inputs)
+
+        curr_batch: AsyncBatch[TextGenerationContextType] | None = None
+        with Tracer("apply_logits_processors"):
+            apply_logits_processors(
+                context_batch=flat_batch,
+                batch_logits=model_outputs.logits,
+                batch_logit_offsets=model_outputs.logit_offsets,
+                batch_processors=[sampling_processor],
+            )
+        generated_tokens_device = sampling_processor.generated_tokens
+
+        # Do the copy to host for each token generated.
+        with Tracer("D2H generated_tokens"):
+            # Allocate a pinned tensor on the host for faster async d2h transfer
+            # speeds.
+            generated_tokens_host = Buffer(
+                shape=generated_tokens_device.shape,
+                dtype=generated_tokens_device.dtype,
+                device=device0,
+                pinned=True,
+            )
+            generated_tokens_host.disable_auto_sync()
+            generated_tokens_host.inplace_copy_from(generated_tokens_device)
+            # Record an event associated with the buffer to track the
+            # completion of the d2h copy.
+            # This will ensure that the subsequent call to `to_numpy()` will
+            # block until the d2h copy is complete, and no more.
+            generated_tokens_host.mark_as_ready()
+
+        curr_batch = AsyncBatch(
+            inputs=inputs,
+            generated_tokens_device=generated_tokens_device,
+            generated_tokens_host=generated_tokens_host,
+        )
+        return curr_batch
+
     @traced
     def execute(
         self,
@@ -459,98 +562,18 @@ class OverlapTextGenerationPipeline(
                 "Max num steps > 1 is not supported with the Overlap scheduler."
             )
 
-        device0 = self._devices[0]
-        assert not device0.is_host
-
-        # Prepare the batch.
-        kv_cache_inputs = self._kv_manager.get_runtime_inputs(
-            inputs.batches, num_steps=1
-        )
-
-        with Tracer("prepare_initial_token_inputs"):
-            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=inputs.batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
-            )
-
-        assert hasattr(model_inputs, "tokens")
-        ragged_input_tokens = model_inputs.tokens
-        if self._prev_batch is not None:
-            new_ragged_input_tokens = (
-                self._scatter_future_tokens.scatter_future_tokens(
-                    prev_batch=self._prev_batch,
-                    inputs=inputs,
-                    ragged_input_tokens=ragged_input_tokens,
-                )
-            )
-            # Overwrite the ragged input tokens with the new ones.
-            model_inputs.tokens = new_ragged_input_tokens
-
-        flat_batch = inputs.flat_batch
         if inputs:
-            with Tracer("FusedSamplingProcessor"):
-                sampling_processor = FusedSamplingProcessor(
-                    sampler=self._sampler,
-                    pipeline_config=self._pipeline_config,
-                    context_batch=flat_batch,
-                    num_steps=1,
-                    device=device0,
-                )
-
-        with Tracer("pipeline_model.execute"):
-            # Execute the model and get next tokens.
-            try:
-                model_outputs = self._pipeline_model.execute(
-                    model_inputs=model_inputs
-                )
-            except Exception:
-                batch_size = len(flat_batch)
-                cache_tokens = sum(
-                    ctx.tokens.processed_length for ctx in flat_batch
-                )
-                input_tokens = sum(
-                    ctx.tokens.active_length for ctx in flat_batch
-                )
-                logger.error(
-                    "Encountered an exception while executing batch: "
-                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}"
-                )
-                raise  # re-raise the original exception
-        assert model_outputs.logit_offsets is None
-
-        # Sample next token unless this is an empty batch.
-        # Empty batches still need to be run for deepseek DP / EP barrier.
-        if inputs:
-            with Tracer("sample_next_token"):
-                apply_logits_processors(
-                    context_batch=flat_batch,
-                    batch_logits=model_outputs.logits,
-                    batch_logit_offsets=model_outputs.logit_offsets,
-                    batch_processors=[sampling_processor],
-                )
-                new_tokens = sampling_processor.new_tokens
-                assert new_tokens is not None
-
-            # Do the copy to host for each token generated.
-            with Tracer("D2H generated_tokens"):
-                generated_tokens_device = sampling_processor.generated_tokens
-                # Allocate a pinned tensor on the host for faster async d2h transfer
-                # speeds.
-                generated_tokens_host = Buffer(
-                    shape=generated_tokens_device.shape,
-                    dtype=generated_tokens_device.dtype,
-                    device=device0,
-                    pinned=True,
-                )
-                generated_tokens_host.disable_auto_sync()
-                generated_tokens_host.inplace_copy_from(generated_tokens_device)
-                # Record an event associated with the buffer to track the
-                # completion of the d2h copy.
-                # This will ensure that the subsequent call to `to_numpy()` will
-                # block until the d2h copy is complete, and no more.
-                generated_tokens_host.mark_as_ready()
+            # Run the entire forward pass and output processing if the batch has
+            # at least one request.
+            curr_batch = self._run_forward_and_sample_logits(inputs)
+        elif self.pipeline_config.execute_empty_batches:
+            # If the batch is empty and execute_empty_batches is True, we will
+            # only run the forward pass to ensure that the barrier point is reached
+            # for EP + DP. We skip all output processing.
+            _ = self._run_forward(inputs)
+            curr_batch = None
+        else:
+            curr_batch = None
 
         if self._prev_batch is not None:
             outputs: PipelineOutputsDict[TextGenerationOutput] = (
@@ -569,12 +592,7 @@ class OverlapTextGenerationPipeline(
         # placeholder future token.
         self._kv_manager.step(inputs.batches)
 
-        if inputs:
-            curr_batch = AsyncBatch(
-                inputs=inputs,
-                generated_tokens_device=generated_tokens_device,
-                generated_tokens_host=generated_tokens_host,
-            )
+        if curr_batch is not None:
             self._prev_batch = curr_batch
 
         return outputs

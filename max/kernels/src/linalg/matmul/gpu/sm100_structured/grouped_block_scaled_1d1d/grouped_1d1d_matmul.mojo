@@ -17,15 +17,15 @@ kernel for Mixture of Experts (MoE) layers.
 
 Usage:
     grouped_matmul_1d1d_nvfp4[transpose_b=True, config=config](
-        c_tensor,  # Output: (total_tokens, N)
-        a_tensor,  # Input A: (total_tokens, K)
-        a_offsets,  # Per-expert offsets into A
-        a_scale_offsets,  # Per-expert scale offsets
-        b_tensor,  # Weights B: (num_experts, N, K)
-        expert_ids,  # Active expert IDs
-        a_scales,  # Scale factors for A
-        b_scales,  # Scale factors for B
-        expert_scales,  # Per-expert output scaling
+        c_tensor,  # Output: TileTensor (total_tokens, N)
+        a_tensor,  # Input A: TileTensor (total_tokens, K)
+        a_offsets,  # Per-expert offsets: TileTensor 1D
+        a_scale_offsets,  # Per-expert scale offsets: TileTensor 1D
+        b_tensor,  # Weights B: TileTensor (num_experts, N, K)
+        expert_ids,  # Active expert IDs: TileTensor 1D
+        a_scales,  # Scale factors for A: TileTensor 5D
+        b_scales,  # Scale factors for B: TileTensor 6D
+        expert_scales,  # Per-expert output scaling: TileTensor 1D
         num_active_experts,
         ctx,
     )
@@ -39,8 +39,10 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
+from layout._layout import Layout as TileLayout, row_major
+from layout._coord import Coord, Idx, RuntimeInt
+from layout._tile_tensor import TileTensor
 from ..structured_kernels.tile_types import create_tma_tile
-from ..structured_kernels.tile_types import lt_to_tt, lt_to_tt_1d
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -59,37 +61,26 @@ from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
 
 fn grouped_matmul_1d1d_nvfp4[
-    c_type: DType,
-    c_layout: LegacyLayout,
     a_type: DType,
-    a_layout: LegacyLayout,
-    a_offsets_layout: LegacyLayout,
-    a_scale_offsets_layout: LegacyLayout,
     b_type: DType,
-    b_layout: LegacyLayout,
-    expert_ids_layout: LegacyLayout,
+    c_type: DType,
     sfa_dtype: DType,
-    sfa_layout: LegacyLayout,
     sfb_dtype: DType,
-    _sfb_layout: LegacyLayout,
-    expert_scale_layout: LegacyLayout,
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
 ](
-    c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ...],
-    a_scale_offsets: LayoutTensor[DType.uint32, a_scale_offsets_layout, ...],
-    _b_device: LayoutTensor[b_type, b_layout, ...],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
-    a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
-    _b_scales: LayoutTensor[sfb_dtype, _sfb_layout, MutAnyOrigin],
-    expert_scales: LayoutTensor[
-        DType.float32, expert_scale_layout, MutAnyOrigin
-    ],
+    c_device: TileTensor,
+    a_device: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    _b_device: TileTensor,
+    expert_ids: TileTensor,
+    a_scales: TileTensor,
+    _b_scales: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -153,46 +144,22 @@ fn grouped_matmul_1d1d_nvfp4[
         "num_pipeline_stages must be a multiple of k_group_size",
     ]()
 
-    constrained[
-        a_scales.rank == 5,
-        "a_scales must be 5D tensors",
-    ]()
-    constrained[
-        _b_scales.rank == 6,
-        "b_scales must be 6D tensors",
-    ]()
-
-    # Reshape b_scales from 6D to 5D
-    comptime sfb_layout = LegacyLayout.row_major(
-        _sfb_layout.shape[0].value() * _sfb_layout.shape[1].value(),
-        _sfb_layout.shape[2].value(),
-        _sfb_layout.shape[3].value(),
-        _sfb_layout.shape[4].value(),
-        _sfb_layout.shape[5].value(),
+    # Extract static dimensions from TileTensor types.
+    # B is (num_experts, N, K), C is (M_dynamic, N), A is (M_dynamic, K).
+    comptime num_experts = type_of(_b_device).static_shape[0]
+    comptime N = type_of(c_device).static_shape[1]
+    comptime expert_n = N
+    comptime K = type_of(a_device).static_shape[1]
+    comptime assert K % 16 == 0, (
+        "Due to TMA limitations, K must be a multiple of 16 bytes"
+        + " but got K = "
+        + String(K)
     )
-    var b_scales = LayoutTensor[
-        sfb_dtype,
-        sfb_layout,
-        _b_scales.origin,
-        address_space = _b_scales.address_space,
-    ](_b_scales.ptr)
 
-    constrained[
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0],
-        "",
-    ]()
-    constrained[
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1],
-        "",
-    ]()
-    constrained[
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K,
-        "",
-    ]()
+    # Reshape B from (num_experts, N, K) to (num_experts * N, K)
+    var b_device = _b_device.reshape(
+        row_major(Coord(Idx[num_experts * N](), Idx[K]()))
+    )
 
     @parameter
     if config.cta_group == 2:
@@ -211,42 +178,21 @@ fn grouped_matmul_1d1d_nvfp4[
 
     comptime cluster_shape = config.cluster_shape
 
-    comptime num_experts = b_layout.shape[0].value()
-    constrained[
-        _sfb_layout.shape[0].value() == num_experts,
-        "num_experts must be equal to _sfb_layout.shape[0]",
-    ]()
-    comptime N = c_layout.shape[1].value()
-    comptime expert_n = N
-    comptime K = a_layout.shape[1].value()
-    comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 bytes"
-        + " but got K = "
-        + String(K)
-    )
-
-    # Reshape B from (num_experts, N, K) to (num_experts * N, K)
-    var b_device = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * N, K),
-        _b_device.origin,
-        address_space = _b_device.address_space,
-    ](_b_device.ptr)
-
-    var M = c_device.dim[0]()
-
     constrained[
         ceildiv(K, BK) % config.k_group_size == 0,
         "K iterations must be a multiple of k_group_size",
     ]()
 
-    # Instantiate kernel first -- TMA layouts computed from config
+    # Instantiate kernel -- c_device_layout derived from caller's TileTensor
+    # so types match by construction in enqueue_function.
+    comptime c_device_tt_layout = type_of(c_device).LayoutType
     comptime matmul_kernel = Grouped1D1DMatmulKernel[
         a_type,
         b_type,
         c_type,
         sfa_dtype,
         sfb_dtype,
+        c_device_tt_layout,
         transpose_b,
         config=config,
         static_N=expert_n,
@@ -265,7 +211,8 @@ fn grouped_matmul_1d1d_nvfp4[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    # Create TMA descriptors using kernel-derived layout types
+    # Create TMA descriptors using kernel-derived layout types.
+    # create_tma_tile has a TileTensor overload (Pattern 13).
     var a_tma_op = create_tma_tile[
         KernelType.ATmaTile.tile_layout,
         KernelType.ATmaTile.desc_layout,
@@ -305,37 +252,36 @@ fn grouped_matmul_1d1d_nvfp4[
         swizzle_mode = config.c_swizzle,
     ](ctx, c_device)
 
-    # Reshape scale tensors to 4D for TMA
-    comptime scales_4d_layout[layout: LegacyLayout] = LegacyLayout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
+    # Reshape scale tensors from 5D to 4D for TMA.
+    # a_scales: (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    #        -> (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K)
+    var sfa_4d = a_scales.reshape(
+        row_major(
+            Coord(
+                a_scales.layout.shape[0](),
+                a_scales.layout.shape[1](),
+                a_scales.layout.shape[2](),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            )
+        )
     )
-    comptime sfa_4d_layout = scales_4d_layout[sfa_layout]
-    comptime sfb_4d_layout = scales_4d_layout[sfb_layout]
 
-    var sfa_4d = LayoutTensor[sfa_dtype, sfa_4d_layout, MutAnyOrigin](
-        a_scales.ptr,
-        RuntimeLayout[sfa_4d_layout].row_major(
-            IndexList[4](
-                a_scales.dim(0),
-                a_scales.dim(1),
-                a_scales.dim(2),
-                a_scales.dim(3) * a_scales.dim(4),
-            ),
-        ),
+    # _b_scales is 6D; reshape directly to 4D:
+    # (num_experts, N_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    # -> (num_experts*N_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1]*SF_ATOM_K)
+    var sfb_dim0 = (
+        _b_scales.layout.shape[0]().value()
+        * _b_scales.layout.shape[1]().value()
     )
-    var sfb_4d = LayoutTensor[sfb_dtype, sfb_4d_layout, MutAnyOrigin](
-        b_scales.ptr,
-        RuntimeLayout[sfb_4d_layout].row_major(
-            IndexList[4](
-                b_scales.dim(0),
-                b_scales.dim(1),
-                b_scales.dim(2),
-                b_scales.dim(3) * b_scales.dim(4),
-            ),
-        ),
+    var sfb_4d = _b_scales.reshape(
+        row_major(
+            Coord(
+                RuntimeInt[DType.int64](Scalar[DType.int64](sfb_dim0)),
+                _b_scales.layout.shape[2](),
+                _b_scales.layout.shape[3](),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            )
+        )
     )
 
     comptime sfa_tma_tile_shape = Index(
@@ -380,17 +326,39 @@ fn grouped_matmul_1d1d_nvfp4[
     comptime mma_warps = 1
     comptime epilogue_warps = 4
 
+    # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
+    # expected types. The caller's TileTensors may have a different symbolic
+    # LayoutType (from _DimsToCoordLike) than the kernel's GMEMLayout1D.
+    from memory import UnsafePointer as Ptr
+    from ..structured_kernels.tile_types import GMEMLayout1D
+
+    fn _to_1d[
+        target_type: DType,
+    ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
+        var shape = Coord(
+            RuntimeInt[DType.int64](
+                Scalar[DType.int64](t.layout.shape[0]().value())
+            )
+        )
+        var stride = Coord(Idx[1]())
+        return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
+            ptr=Ptr[Scalar[target_type], MutAnyOrigin](
+                unsafe_from_address=Int(t.ptr)
+            ),
+            layout=GMEMLayout1D(shape, stride),
+        )
+
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         sfa_tma_op,
         sfb_tma_op,
-        lt_to_tt_1d(a_offsets),
-        lt_to_tt_1d(a_scale_offsets),
-        lt_to_tt_1d(expert_ids),
-        lt_to_tt_1d(expert_scales),
-        lt_to_tt(c_device),  # For bounds-checked stores
+        _to_1d[DType.uint32](a_offsets),
+        _to_1d[DType.uint32](a_scale_offsets),
+        _to_1d[DType.int32](expert_ids),
+        _to_1d[DType.float32](expert_scales),
+        c_device,  # Types match: kernel param derived from same layout
         num_active_experts,
         UInt32(K),
         grid_dim=grid_dim,
@@ -403,63 +371,31 @@ fn grouped_matmul_1d1d_nvfp4[
 
 
 fn grouped_matmul_dynamic_scaled_nvfp4[
-    c_type: DType,
-    c_layout: LegacyLayout,
-    a_type: DType,
-    a_layout: LegacyLayout,
-    b_type: DType,
-    b_layout: LegacyLayout,
-    scales_type: DType,
-    a_scales_layout: LegacyLayout,
-    b_scales_layout: LegacyLayout,
-    a_offsets_layout: LegacyLayout,
-    a_scale_offsets_layout: LegacyLayout,
-    expert_ids_layout: LegacyLayout,
-    expert_scales_layout: LegacyLayout,
-    //,
     transpose_b: Bool = True,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
-    a_scale_offsets: LayoutTensor[
-        DType.uint32, a_scale_offsets_layout, MutAnyOrigin
-    ],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
-    expert_scales: LayoutTensor[
-        DType.float32, expert_scales_layout, MutAnyOrigin
-    ],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
     """Performs grouped matrix multiplication with NVFP4 quantization.
 
-    This is a compatibility wrapper that matches the old API from
-    grouped_matmul_sm100_1d1d.mojo. It creates the default config and calls
-    the new structured kernel implementation.
+    This is a compatibility wrapper that creates the default config and calls
+    the structured kernel implementation.
 
     Computes C = A @ B^T for multiple expert groups in a Mixture of Experts
     (MoE) layer. Inputs A and B are NVFP4 quantized (4-bit floating point),
     packed as uint8 (2 values per byte), with float8_e4m3fn scale factors.
 
     Parameters:
-        c_type: Output tensor dtype.
-        c_layout: Output tensor layout.
-        a_type: Input A dtype (must be uint8 for packed NVFP4).
-        a_layout: Input A layout.
-        b_type: Input B dtype (must be uint8 for packed NVFP4).
-        b_layout: Input B layout.
-        scales_type: Scale factor dtype.
-        a_scales_layout: A scales layout.
-        b_scales_layout: B scales layout.
-        a_offsets_layout: A offsets layout.
-        a_scale_offsets_layout: A scale offsets layout.
-        expert_ids_layout: Expert IDs layout.
-        expert_scales_layout: Expert scales layout.
         transpose_b: Whether B is transposed (must be True).
         target: Target device (ignored, always runs on GPU).
 
@@ -476,6 +412,12 @@ fn grouped_matmul_dynamic_scaled_nvfp4[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
+    # Extract dtypes from TileTensor arguments.
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime c_type = c.dtype
+    comptime scales_type = a_scales.dtype
+
     # Create the default config matching the old kernel
     comptime MMA_K = 32
     comptime bm = 128

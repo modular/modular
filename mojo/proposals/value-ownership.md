@@ -438,7 +438,7 @@ formalized as a trait) where types who want it define a `take()` method:
 ```mojo
   struct Vec:
       ...
-      fn __moveinit__(inout self, inout existing):
+      fn __moveinit__(out self, inout existing):
           # Steal the contents of 'existing'
           self.data = existing.data
           self.capacity = existing.capacity

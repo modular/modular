@@ -390,7 +390,7 @@ def test_inline_array_triviality():
 
     assert_false(InlineArray[String, 1].__del__is_trivial)
     assert_false(InlineArray[String, 1].__copyinit__is_trivial)
-    assert_false(InlineArray[String, 1].__moveinit__is_trivial)
+    assert_true(InlineArray[String, 1].__moveinit__is_trivial)
 
 
 fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:

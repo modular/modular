@@ -365,13 +365,13 @@ def execute_flash_attention[
         k_cache_device,
         v_cache_device,
         MaterializedMask(
-            LayoutTensor[DType.float32, mask_static_layout, MutAnyOrigin](
+            LayoutTensor[DType.float32, mask_static_layout, ImmutAnyOrigin](
                 mask_mod_tensor.ptr,
                 RuntimeLayout[mask_static_layout].row_major(
                     mask_mod_tensor.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            start_pos=cache_lengths_lt,
+            start_pos=cache_lengths_lt.get_immutable(),
         ),
         ref_output_tensor,
         valid_length_tensor,

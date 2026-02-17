@@ -45,13 +45,13 @@ modular_run_binary_test(
 )
 
 mojo_test(
-    name = "incr_test",
+    name = "handle_error_unit_test",
     size = "small",
     srcs = [
         "handle_error.mojo",
-        "test_incr.mojo",
+        "test_handle_error.mojo",
     ],
-    main = "test_incr.mojo",
+    main = "test_handle_error.mojo",
     deps = [
         "@mojo//:std",
     ],
@@ -98,6 +98,273 @@ mojo_test(
         "test_conditional_context_mgr.mojo",
     ],
     main = "test_conditional_context_mgr.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "typed_errors",
+    srcs = [
+        "typed_errors.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "typed_errors_test",
+    size = "small",
+    binary = "typed_errors",
+)
+
+mojo_test(
+    name = "typed_errors_doc_test",
+    size = "small",
+    srcs = [
+        "test_typed_errors_doc.mojo",
+        "typed_errors.mojo",
+    ],
+    main = "test_typed_errors_doc.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "enumerated_errors",
+    srcs = [
+        "enumerated_errors.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "enumerated_errors_run_test",
+    size = "small",
+    binary = "enumerated_errors",
+)
+
+mojo_test(
+    name = "enumerated_errors_test",
+    size = "small",
+    srcs = [
+        "enumerated_errors.mojo",
+        "test_enumerated_errors.mojo",
+    ],
+    main = "test_enumerated_errors.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "never_type",
+    srcs = [
+        "never_type.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "never_type_run_test",
+    size = "small",
+    binary = "never_type",
+)
+
+mojo_test(
+    name = "never_type_test",
+    size = "small",
+    srcs = [
+        "never_type.mojo",
+        "test_never_type.mojo",
+    ],
+    main = "test_never_type.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "parametric_raises",
+    srcs = [
+        "parametric_raises.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "parametric_raises_run_test",
+    size = "small",
+    binary = "parametric_raises",
+)
+
+mojo_test(
+    name = "parametric_raises_test",
+    size = "small",
+    srcs = [
+        "parametric_raises.mojo",
+        "test_parametric_raises.mojo",
+    ],
+    main = "test_parametric_raises.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "fn_vs_def_errors",
+    srcs = [
+        "fn_vs_def_errors.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "fn_vs_def_errors_run_test",
+    size = "small",
+    binary = "fn_vs_def_errors",
+)
+
+mojo_test(
+    name = "fn_vs_def_errors_test",
+    size = "small",
+    srcs = [
+        "fn_vs_def_errors.mojo",
+        "test_fn_vs_def_errors.mojo",
+    ],
+    main = "test_fn_vs_def_errors.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "error_interaction",
+    srcs = [
+        "error_interaction.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "error_interaction_run_test",
+    size = "small",
+    binary = "error_interaction",
+)
+
+mojo_test(
+    name = "error_interaction_test",
+    size = "small",
+    srcs = [
+        "error_interaction.mojo",
+        "test_error_interaction.mojo",
+    ],
+    main = "test_error_interaction.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "resource_guard",
+    srcs = [
+        "resource_guard.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "resource_guard_test",
+    size = "small",
+    binary = "resource_guard",
+)
+
+mojo_binary(
+    name = "variant_errors",
+    srcs = [
+        "variant_errors.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "variant_errors_run_test",
+    size = "small",
+    binary = "variant_errors",
+)
+
+mojo_test(
+    name = "variant_errors_test",
+    size = "small",
+    srcs = [
+        "test_variant_errors.mojo",
+        "variant_errors.mojo",
+    ],
+    main = "test_variant_errors.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+# Retained Phase 1 files — unique test coverage not replicated by doc examples
+
+mojo_binary(
+    name = "typed_errors_edge_cases",
+    srcs = [
+        "typed_errors_edge_cases.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "typed_errors_edge_cases_test",
+    size = "small",
+    srcs = [
+        "test_typed_errors_edge_cases.mojo",
+        "typed_errors_edge_cases.mojo",
+    ],
+    main = "test_typed_errors_edge_cases.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_binary(
+    name = "typed_errors_testing",
+    srcs = [
+        "typed_errors_testing.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "typed_errors_testing_test",
+    size = "small",
+    srcs = [
+        "test_typed_errors_testing.mojo",
+        "typed_errors_testing.mojo",
+    ],
+    main = "test_typed_errors_testing.mojo",
     deps = [
         "@mojo//:std",
     ],

@@ -163,6 +163,8 @@ struct Grouped1D1DMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
+    # C device layout (TensorLayout from caller's TileTensor)
+    c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,
     config: BlockScaledMatmulConfig[
@@ -481,14 +483,9 @@ struct Grouped1D1DMatmulKernel[
         DType.float32, GMEMLayout1D, MutAnyOrigin
     ]
 
-    # C device layout: (M_dynamic, N_static) row-major, computed from static_N.
-    comptime CDeviceLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_N]
-    ]
-
     # C device tensor type (for bounds-checked stores)
     comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.CDeviceLayout, MutAnyOrigin
+        Self.c_type, Self.c_device_layout, MutAnyOrigin
     ]
 
     # TMA load size constants (from desc layout dimensions)

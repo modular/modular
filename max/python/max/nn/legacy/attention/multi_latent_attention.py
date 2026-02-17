@@ -146,7 +146,9 @@ class LatentAttentionWithRope(Module, Shardable):
 
         self.BUFFER_TOK_SIZE = buffer_size
 
-        self._scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
+        self._scale = (
+            scale if scale is not None else math.sqrt(1.0 / self.qk_head_dim)
+        )
         self.scale = self.rope.compute_scale(self._scale)
         self.devices = devices or [DeviceRef.CPU()]
 

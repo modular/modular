@@ -14,6 +14,7 @@
 from math import align_up, ceildiv, gcd
 from sys import align_of, size_of
 from sys.info import (
+    _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -713,8 +714,8 @@ fn naive_batched_matmul_kernel[
     accum_type: DType = get_accum_type[c_type](),
 ](
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
-    a_tensor: TileTensor[a_type, ATensorType, MutAnyOrigin],  # m * k
-    b_tensor: TileTensor[b_type, BTensorType, MutAnyOrigin],  # 1 * k
+    a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
+    b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
     comptime assert (
@@ -769,8 +770,8 @@ fn batched_matmul_kernel_gpu[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
-    a_tensor: TileTensor[a_type, ATensorType, MutAnyOrigin],  # m * k
-    b_tensor: TileTensor[b_type, BTensorType, MutAnyOrigin],  # 1 * k
+    a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
+    b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -825,7 +826,7 @@ fn batched_matmul_kernel_gpu[
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
-    elif is_amd_gpu():
+    elif is_amd_gpu() and not _is_amd_rdna():
         gemm_kernel_amd[
             config=config,
             elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
@@ -857,8 +858,8 @@ fn _batched_matmul_gpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
-    a_buf: TileTensor[a_type, ...],
-    b_buf: TileTensor[b_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime rank = c_buf.rank
@@ -1074,8 +1075,8 @@ fn batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[a_type, rank, _, _, _],
-    b_buf: NDBuffer[b_type, rank, _, _, _],
+    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
+    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1195,7 +1196,9 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales_tensor: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    b_scales_tensor: LayoutTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin
+    ],
     num_iters: UInt,
 ):
     comptime c_2d_layout: Layout = _2D_layout[c_layout]
@@ -1294,10 +1297,10 @@ fn bmm_sm100_blockwise_scaled_fp8[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[a_type, a_layout, ...],
-    b: LayoutTensor[b_type, b_layout, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
+    a: LayoutTensor[mut=False, a_type, a_layout, ...],
+    b: LayoutTensor[mut=False, b_type, b_layout, ...],
+    a_scales: LayoutTensor[mut=False, a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -1568,10 +1571,10 @@ fn batched_matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: LayoutTensor[mut=True, c_type, ...],
-    a: LayoutTensor[a_type, ...],
-    b: LayoutTensor[b_type, ...],
-    a_scales: LayoutTensor[a_scales_type, ...],
-    b_scales: LayoutTensor[b_scales_type, ...],
+    a: LayoutTensor[mut=False, a_type, ...],
+    b: LayoutTensor[mut=False, b_type, ...],
+    a_scales: LayoutTensor[mut=False, a_scales_type, ...],
+    b_scales: LayoutTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert (

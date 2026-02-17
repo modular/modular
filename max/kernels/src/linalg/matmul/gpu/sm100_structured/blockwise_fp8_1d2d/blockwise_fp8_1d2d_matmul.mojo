@@ -138,13 +138,16 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    # Instantiate kernel type -- computes all tile types internally
+    # Instantiate kernel type -- layout params derived from caller's TileTensors
+    # so types match by construction in enqueue_function.
     comptime KernelType = BlockwiseFP8_1D2DMatmulKernel[
         a_type,
         b_type,
         c_type,
         a_scales_type,
         b_scales_type,
+        type_of(b_scales_2d).LayoutType,
+        type_of(c_device).LayoutType,
         transpose_b,
         config=config,
         static_N=expert_n,
@@ -193,44 +196,15 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     comptime mma_warps = 1
     comptime epilogue_warps = 4
 
-    # Construct TileTensors using kernel's computed types for exact type match
-    from layout._layout import row_major, RowMajorLayout
-    from layout._coord import Coord, RuntimeInt, ComptimeInt, Idx
-
-    from memory import UnsafePointer as Ptr
-
-    var b_scales_tt = KernelType.BScalesTile(
-        ptr=Ptr[Scalar[b_scales_type], MutAnyOrigin](
-            unsafe_from_address=Int(b_scales_2d.ptr)
-        ),
-        layout=row_major(
-            Coord(
-                RuntimeInt[DType.int64](Int64(b_scales_2d.dim[0]())),
-                Idx[K // 128](),
-            )
-        ),
-    )
-    var c_device_tt = KernelType.CDeviceTile(
-        ptr=Ptr[Scalar[c_type], MutAnyOrigin](
-            unsafe_from_address=Int(c_device.ptr)
-        ),
-        layout=row_major(
-            Coord(
-                RuntimeInt[DType.int64](Int64(c_device.dim[0]())),
-                Idx[N](),
-            )
-        ),
-    )
-
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
-        b_scales_tt,
+        b_scales_2d,
         a_offsets,
         expert_ids,
         expert_scales,
-        c_device_tt,
+        c_device,
         num_active_experts,
         UInt32(K),
         grid_dim=grid_dim,

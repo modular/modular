@@ -38,17 +38,14 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import AddressSpace, external_memory
+from gpu.host import DeviceContext
+from gpu.memory import AddressSpace
 from gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
-from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from layout.runtime_layout import RuntimeLayout
 from memory import bitcast
-from utils.index import Index
 from utils.numerics import min_or_neg_inf, get_accum_type
 from builtin.device_passable import DevicePassable
 
@@ -61,10 +58,11 @@ struct CombineParams[
     accum_type: DType,
     num_splits: Int,
     ragged: Bool = False,
+    warps_per_head: Int = 2,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
-    comptime max_splits = 96
-    comptime heads_per_block = 8
-    comptime num_threads = Self.heads_per_block * WARP_SIZE
+    # Invariant: warps_per_head must divide 8 (checked in mla_combine_kernel).
+    comptime heads_per_block = 8 // Self.warps_per_head
+    comptime num_threads = Self.heads_per_block * Self.warps_per_head * WARP_SIZE
 
     var out_accum_split_ptr: UnsafePointer[
         Scalar[Self.output_type], origin=MutAnyOrigin
@@ -185,15 +183,20 @@ fn mla_combine_kernel[
     head_dim: Int,
     num_splits: Int,
     ragged: Bool = False,
-](params: CombineParams[output_type, accum_type, num_splits, ragged]):
+    warps_per_head: Int = 2,
+](
+    params: CombineParams[
+        output_type, accum_type, num_splits, ragged, warps_per_head
+    ]
+):
     # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
     wait_on_dependent_grids()
 
     comptime ParamsType = CombineParams[
-        output_type, accum_type, num_splits, ragged
+        output_type, accum_type, num_splits, ragged, warps_per_head
     ]
     comptime heads_per_block = ParamsType.heads_per_block
-    comptime max_splits = ParamsType.max_splits
+    comptime assert 8 % warps_per_head == 0, "warps_per_head must divide 8"
 
     var batch_idx = Int(block_idx.x)
     var seq_idx = Int(block_idx.y)
@@ -201,26 +204,38 @@ fn mla_combine_kernel[
     var warp_idx = Int(warp_id())
     var lane_idx = Int(lane_id())
 
-    var head_idx = head_block_idx * heads_per_block + warp_idx
+    var sub_warp_idx = warp_idx % warps_per_head
+    var head_idx = head_block_idx * heads_per_block + warp_idx // warps_per_head
 
     if head_idx >= params.num_heads:
         return
 
-    # smem scale factors: [heads_per_block][max_splits]
-    var smem = external_memory[
-        Float32,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-        name="combine_shared_memory",
-    ]()
-
     # =========================================================================
     # Step 1: Prefetch first split's data (SIMD vector loads)
     # =========================================================================
-    # head_dim=512, 32 threads, 8 elements per load = 512/(32*8) = 2 vectors per thread
-    # For bf16: load 8 elements at a time (128 bits = 16 bytes)
-    comptime vec_size = 8  # 8 bf16 elements per vector load
-    comptime elems_per_thread = head_dim // (WARP_SIZE * vec_size)
+    # vec_size and elems_per_thread are derived from warps_per_head so the
+    # user only needs to change warps_per_head (1, 2, 4, or 8) and the rest
+    # auto-adjusts.
+    #
+    # Constraint: vec_size * elems_per_thread * WARP_SIZE * warps_per_head
+    #             == head_dim
+    # vec_size is capped at 8 (128-bit max load width for bf16).
+    #
+    # warps_per_head=1: max_vec=16, vec_size=8, elems_per_thread=2
+    # warps_per_head=2: max_vec=8,  vec_size=8, elems_per_thread=1
+    # warps_per_head=4: max_vec=4,  vec_size=4, elems_per_thread=1
+    # warps_per_head=8: max_vec=2,  vec_size=2, elems_per_thread=1
+    comptime assert (
+        head_dim % (WARP_SIZE * warps_per_head) == 0
+    ), "head_dim must be divisible by WARP_SIZE * warps_per_head"
+    comptime max_vec = head_dim // (WARP_SIZE * warps_per_head)
+    comptime vec_size = min(max_vec, 8)
+    comptime elems_per_thread = head_dim // (
+        WARP_SIZE * vec_size * warps_per_head
+    )
+
+    # Offset for this sub-warp's portion of head_dim.
+    var head_dim_offset = sub_warp_idx * (head_dim // warps_per_head)
 
     # Base pointer for this head's partial output accumulator
     var out_row = (
@@ -239,29 +254,32 @@ fn mla_combine_kernel[
 
     @parameter
     for i in range(elems_per_thread):
-        var offset = lane_idx * vec_size + i * (WARP_SIZE * vec_size)
+        var offset = (
+            head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
+        )
         datas[i] = oaccum_base.load[width=vec_size](offset)
 
     # =========================================================================
     # Step 2: Load LSE values and compute global LSE
     # =========================================================================
     # For >32 splits, each thread loads multiple LSE values (FlashMLA pattern).
-    # NUM_LSE_PER_THREAD = ceildiv(max_splits, WARP_SIZE): e.g. 3 for max_splits=96
     var lse_base = (
         batch_idx * params.lse_stride_batch
         + seq_idx * params.lse_stride_seq
         + head_idx
     )
 
-    comptime NUM_LSE_PER_THREAD = ceildiv(max_splits, WARP_SIZE)
+    comptime num_lse_per_thread = ceildiv(num_splits, WARP_SIZE)
 
     # Load LSE values into registers (multiple per lane for >32 splits)
-    var local_lse = InlineArray[Float32, NUM_LSE_PER_THREAD](
+    # and track whether any split is empty (LSE=-inf) for the fast-path
+    # check.
+    var local_lse = InlineArray[Float32, num_lse_per_thread](
         fill=min_or_neg_inf[DType.float32]()
     )
 
     @parameter
-    for k in range(NUM_LSE_PER_THREAD):
+    for k in range(num_lse_per_thread):
         comptime split_idx_base = k * WARP_SIZE
         var split_idx = split_idx_base + lane_idx
         if split_idx < num_splits:
@@ -274,7 +292,7 @@ fn mla_combine_kernel[
     var thread_max: Float32 = local_lse[0]
 
     @parameter
-    for k in range(1, NUM_LSE_PER_THREAD):
+    for k in range(1, num_lse_per_thread):
         thread_max = max(thread_max, local_lse[k])
 
     var max_lse = warp_reduce_max(thread_max)
@@ -287,7 +305,7 @@ fn mla_combine_kernel[
     var thread_sum: Float32 = 0.0
 
     @parameter
-    for k in range(NUM_LSE_PER_THREAD):
+    for k in range(num_lse_per_thread):
         comptime split_idx_base = k * WARP_SIZE
         var split_idx = split_idx_base + lane_idx
         if split_idx < num_splits:
@@ -302,16 +320,14 @@ fn mla_combine_kernel[
     else:
         global_lse = log2(sum_exp) + max_lse
 
-    # Compute scale factors and store to shared memory (multiple per lane)
+    # Compute scale factors in-place in local_lse registers (no shared memory).
+    # Each lane already holds its split's LSE value; we overwrite with the
+    # scale factor and broadcast via shuffle_idx in the accumulation loop.
+    # No branch needed: lanes beyond num_splits have local_lse[k] == -inf,
+    # and exp2(-inf - global_lse) = 0.0 naturally.
     @parameter
-    for k in range(NUM_LSE_PER_THREAD):
-        comptime split_idx_base = k * WARP_SIZE
-        var split_idx = split_idx_base + lane_idx
-        if split_idx < num_splits:
-            var scale = exp2(local_lse[k] - global_lse)
-            smem[warp_idx * max_splits + split_idx] = scale
-
-    # Warp-level sync is implicit after shuffle operations
+    for k in range(num_lse_per_thread):
+        local_lse[k] = exp2(local_lse[k] - global_lse)
 
     # =========================================================================
     # Step 3: Weighted accumulation with prefetching (compile-time unrolled)
@@ -320,24 +336,28 @@ fn mla_combine_kernel[
         fill=SIMD[DType.float32, vec_size](0.0)
     )
 
-    # Process splits with prefetching - UNROLLED at compile time
     @parameter
     for split_idx in range(num_splits):
-        # Load scale from shared memory
-        var lse_scale = smem[warp_idx * max_splits + split_idx]
+        # Broadcast scale from the owning lane via register shuffle (no smem).
+        comptime k = split_idx // WARP_SIZE
+        comptime src_lane = split_idx % WARP_SIZE
+        var lse_scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
+        var is_valid = SIMD[DType.bool, vec_size](fill=lse_scale != Float32(0))
 
-        # Accumulate current split's contribution
         @parameter
         for i in range(elems_per_thread):
-            # Convert bf16 to float32 for accumulation
             var data_f32 = datas[i].cast[DType.float32]()
-            result[i] = result[i] + lse_scale * data_f32
+            var clean_data = is_valid.select(
+                data_f32,
+                SIMD[DType.float32, vec_size](0),
+            )
+            result[i] = result[i] + lse_scale * clean_data
 
-            # Prefetch next split's data while we're computing
             @parameter
             if split_idx < num_splits - 1:
                 var next_offset = (
                     (split_idx + 1) * params.out_accum_stride_split
+                    + head_dim_offset
                     + lane_idx * vec_size
                     + i * (WARP_SIZE * vec_size)
                 )
@@ -368,7 +388,9 @@ fn mla_combine_kernel[
 
     @parameter
     for i in range(elems_per_thread):
-        var offset = lane_idx * vec_size + i * (WARP_SIZE * vec_size)
+        var offset = (
+            head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
+        )
         # Convert float32 result back to output_type (bf16) and store
         var out_data = result[i].cast[output_type]()
         out_ptr.store(offset, out_data)
@@ -383,6 +405,7 @@ fn launch_mla_combine_kernel[
     head_dim: Int,
     num_splits: Int,  # Compile-time number of splits for loop unrolling
     ragged: Bool = False,
+    warps_per_head: Int = 2,
 ](
     out_accum_split: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -402,11 +425,10 @@ fn launch_mla_combine_kernel[
     ctx: DeviceContext,
 ) raises:
     comptime ParamsType = CombineParams[
-        output_type, accum_type, num_splits, ragged
+        output_type, accum_type, num_splits, ragged, warps_per_head
     ]
     comptime heads_per_block = ParamsType.heads_per_block
     comptime num_threads = ParamsType.num_threads
-    comptime max_splits = ParamsType.max_splits
 
     var out_accum_ptr = rebind[
         UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]
@@ -434,20 +456,27 @@ fn launch_mla_combine_kernel[
     var grid_dim = (batch_size, seq_len, ceildiv(num_heads, heads_per_block))
     var block_dim = (num_threads, 1, 1)
 
-    var smem_size = heads_per_block * max_splits * size_of[DType.float32]()
-
     ctx.enqueue_function[
         mla_combine_kernel[
-            output_type, accum_type, head_dim, num_splits, ragged
+            output_type,
+            accum_type,
+            head_dim,
+            num_splits,
+            ragged,
+            warps_per_head,
         ],
         mla_combine_kernel[
-            output_type, accum_type, head_dim, num_splits, ragged
+            output_type,
+            accum_type,
+            head_dim,
+            num_splits,
+            ragged,
+            warps_per_head,
         ],
     ](
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        shared_mem_bytes=smem_size,
         attributes=pdl_launch_attributes(),
     )
 
@@ -461,6 +490,7 @@ fn mla_decode_combine_partial_outputs[
     head_dim: Int,
     num_splits: Int,
     ragged: Bool = False,
+    warps_per_head: Int = 2,
 ](
     out_accum_split: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -480,7 +510,12 @@ fn mla_decode_combine_partial_outputs[
     ctx: DeviceContext,
 ) raises:
     launch_mla_combine_kernel[
-        output_type, accum_type, head_dim, num_splits, ragged
+        output_type,
+        accum_type,
+        head_dim,
+        num_splits,
+        ragged,
+        warps_per_head,
     ](
         out_accum_split,
         lse_accum_split,

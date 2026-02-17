@@ -257,7 +257,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn = Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
-    ](c, a, b, a_scales, b_scales, ctx)
+    ](
+        c,
+        a.get_immutable(),
+        b.get_immutable(),
+        a_scales.get_immutable(),
+        b_scales.get_immutable(),
+        ctx,
+    )
 
     ctx.synchronize()
 

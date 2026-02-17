@@ -19,8 +19,8 @@ from max.nn.legacy.kv_cache import PagedCacheValues
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
-from max.pipelines.architectures.llama3.llama3 import Llama3
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3_legacy.llama3 import Llama3
+from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
 
 
 class Idefics3LanguageModel(Llama3):
@@ -92,7 +92,6 @@ class Idefics3LanguageModel(Llama3):
             multimodal_embeddings=image_embeddings,
             image_token_indices=image_token_indices,
         )
-        # h = distribute_value(h0_merged, self.config.text_config.devices)
 
         # Run through decoder layers using inherited layers
         for idx, layer in enumerate(self.layers):

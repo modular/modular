@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -46,18 +47,10 @@ from .model_config import BertModelConfig
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class BertInputs(ModelInputs):
     next_tokens_batch: Buffer
     attention_mask: Buffer
-
-    def __init__(
-        self,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> None:
-        self.next_tokens_batch = next_tokens_batch
-        self.attention_mask = attention_mask
-        self.kv_cache_inputs = None
 
 
 class BertPipelineModel(PipelineModel[TextContext]):

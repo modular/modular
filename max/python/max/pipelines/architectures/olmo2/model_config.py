@@ -27,7 +27,7 @@ from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)

@@ -41,7 +41,6 @@ from max.nn.legacy.transformer.distributed_transformer import (
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
-from max.pipelines.architectures.internvl.internvl import distribute_value
 
 from ..model_config import Qwen3VLConfig
 from .moe import Qwen3VLMoE, Qwen3VLMoEGate
@@ -424,9 +423,8 @@ class Qwen3VLMoEDecoder(Module):
         ]
 
         # Create position embeddings shared across the decoder layers
-        freqs_cis = distribute_value(
-            self.rope.freqs_cis_position_ids(position_ids), self.devices
-        )
+        freqs_cis_value = self.rope.freqs_cis_position_ids(position_ids)
+        freqs_cis = [freqs_cis_value.to(device) for device in self.devices]
 
         # Process through decoder layers
         for layer_idx, layer in enumerate(self.layers):

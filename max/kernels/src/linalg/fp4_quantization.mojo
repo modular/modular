@@ -1279,10 +1279,10 @@ fn block_scaled_matmul_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:

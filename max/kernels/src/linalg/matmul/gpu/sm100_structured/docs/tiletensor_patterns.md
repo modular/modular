@@ -724,71 +724,65 @@ else:
     )
 ```
 
-## Pattern 15: Kernel Struct Computes All Tile Types (NEW)
+## Pattern 15: Layout Params from Caller's TileTensor (NEW)
 
-**Eliminate `GMEMTile` bridge. The kernel struct is the single source of
-truth for all TileTensor types used by both host and GPU code.**
+**Take layout as a parameter to the kernel from the caller's TileTensor.
+Types match by construction -- no fragile manual construction needed.**
 
 Problem: `enqueue_function` requires exact type identity between
-arguments and kernel `run()` parameter types. When the host constructs
-TileTensors independently (via `flatten_leading`, `row_major`, etc.),
-the layout type expressions differ from the kernel struct's type aliases
-even though they encode the same shapes/strides.
+arguments and kernel `run()` parameter types. If the kernel computes
+layouts independently (e.g., `RowMajorLayout[RuntimeInt, ComptimeInt[N]]`),
+the symbolic type expression may differ from the caller's TileTensor
+layout type even when they encode the same shape. This causes runtime
+type validation failures that are hard to reproduce in unit tests.
 
-Solution: Remove layout parameters from the kernel struct. Instead,
-the kernel computes all layouts internally from config + static dims:
+Solution: The kernel struct takes layout as a `TensorLayout` parameter,
+derived from the caller's TileTensor via `type_of(tt).LayoutType`.
+The kernel's tile types are derived from the **same** layout expression
+as the TileTensor being passed, so types match by construction:
 
 ```mojo
-# Kernel struct -- single source of truth
-struct BlockwiseFP8_1D2DMatmulKernel[
-    ..., static_N: Int, static_K: Int, ...
+# Kernel struct -- takes layout from caller
+struct Grouped1D1DMatmulKernel[
+    ...,
+    c_device_layout: TensorLayout,  # from caller's TileTensor
+    ...
 ]:
-    # Computed layouts (no external layout params needed)
-    comptime BScalesLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_K // 128]
-    ]
-    comptime CDeviceLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_N]
-    ]
-
-    # Type aliases for enqueue_function type identity
-    comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.BScalesLayout, MutAnyOrigin
-    ]
     comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.CDeviceLayout, MutAnyOrigin
+        Self.c_type, Self.c_device_layout, MutAnyOrigin
     ]
 
-    fn run(b_scales: Self.BScalesTile, c_device: Self.CDeviceTile, ...):
-        ...
+    fn run(c_device: Self.CDeviceTile, ...): ...
 ```
 
-Host constructs TileTensors using the kernel's type aliases:
+Host passes `type_of(tiletensor).LayoutType` -- types match by
+construction, no `unsafe_from_address` or manual TileTensor construction:
 
 ```mojo
-# Host -- guaranteed type match
-comptime KernelType = BlockwiseFP8_1D2DMatmulKernel[
-    ..., static_N=N, static_K=K,
+# Host -- types match by construction
+var c_tt = lt_to_tt(c_device)
+comptime KernelType = Grouped1D1DMatmulKernel[
+    ...,
+    c_device_layout=type_of(c_tt).LayoutType,
+    ...
 ]
-var b_scales_tt = KernelType.BScalesTile(
-    ptr=Ptr[Scalar[b_scales_type], MutAnyOrigin](
-        unsafe_from_address=Int(b_scales_2d.ptr)
-    ),
-    layout=row_major(Coord(
-        RuntimeInt[DType.int64](Int64(b_scales_2d.dim[0]())),
-        Idx[K // 128](),
-    )),
-)
 ctx.enqueue_function[KernelType.run, KernelType.run](
-    ..., b_scales_tt, ...  # exact type match by construction
+    ..., c_tt, ...  # exact type match -- derived from same layout
 )
 ```
 
-**Key insight**: The kernel already knows all the static dimensions from
-config. It can compute `RowMajorLayout[RuntimeInt, ComptimeInt[K//128]]`
-without being told the layout externally. The first dim is always
-RuntimeInt (dynamic M or merged expert dim), the last dim is always
-static (K//128, N, etc.).
+**Why NOT compute layouts internally**: An earlier approach (the kernel
+computing `CDeviceLayout = RowMajorLayout[RuntimeInt, ComptimeInt[N]]`
+from config) was tried and reverted. It required the host to construct
+TileTensors via `KernelType.CDeviceTile(ptr, layout)` with
+`unsafe_from_address` -- fragile and caused the DeepSeek-R1-NVFP4
+pipeline failure (#77347/#77359) when the independently-computed layout
+type differed symbolically from the caller's layout type.
+
+**Rule of thumb**: If a TileTensor flows from the host to
+`enqueue_function`, take its layout as a kernel struct parameter.
+If a TileTensor is created entirely within the kernel (e.g., SMEM
+tiles), compute the layout internally.
 
 ## Future Work
 

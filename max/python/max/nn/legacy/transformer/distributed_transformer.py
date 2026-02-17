@@ -48,14 +48,6 @@ def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
     return list(islice(it, n))
 
 
-# TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
-# shard_row_value across the codebase into a multi gpu utils file
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
-
-
 # NOTE: This should eventually be deleted once Weight & Linear are refactored to assume
 # distributed by default.
 class ShardableCallable(Shardable, Protocol):

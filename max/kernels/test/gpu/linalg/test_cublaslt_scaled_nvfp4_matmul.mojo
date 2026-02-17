@@ -217,8 +217,8 @@ fn test_block_scaled_nvfp4_cublaslt[
         c,
         a,
         b,
-        a_scales=a_scales,
-        b_scales=b_scales,
+        a_scales=a_scales.get_immutable(),
+        b_scales=b_scales.get_immutable(),
         transpose_b=True,
         c_row_major=True,
     )

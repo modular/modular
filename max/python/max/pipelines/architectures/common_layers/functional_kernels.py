@@ -23,9 +23,11 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
+from max.nn.legacy.kernels import moe_create_indices as _moe_create_indices
 from max.nn.legacy.kernels import rms_norm_key_cache as _rms_norm_key_cache
 
 grouped_matmul_ragged = F.functional(_grouped_matmul_ragged)
+moe_create_indices = F.functional(_moe_create_indices)
 
 inplace_custom = F.functional(ops.inplace_custom)
 flash_attention_ragged = F.functional(_flash_attention_ragged)
@@ -38,5 +40,6 @@ __all__ = [
     "fused_qk_ragged_rope",
     "fused_qkv_ragged_matmul",
     "grouped_matmul_ragged",
+    "moe_create_indices",
     "rms_norm_key_cache",
 ]

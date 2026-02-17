@@ -167,15 +167,15 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         self._get_discr() = UInt8(idx)
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a deep copy of an existing variant.
 
         Args:
-            other: The variant to copy from.
+            copy: The variant to copy from.
         """
 
         self = Self(unsafe_uninitialized=())
-        self._get_discr() = other._get_discr()
+        self._get_discr() = copy._get_discr()
 
         @parameter
         for i in range(Variadic.size(Self.Ts)):
@@ -189,17 +189,17 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
             comptime T = downcast[TUnknown, Copyable]
 
             if self._get_discr() == UInt8(i):
-                self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
+                self._get_ptr[T]().init_pointee_copy(copy._get_ptr[T]()[])
                 return
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move initializer for the variant.
 
         Args:
-            other: The variant to move.
+            take: The variant to move.
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._get_discr() = other._get_discr()
+        self._get_discr() = take._get_discr()
 
         @parameter
         for i in range(Variadic.size(Self.Ts)):
@@ -214,7 +214,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
             if self._get_discr() == UInt8(i):
                 # Calls the correct __moveinit__
-                self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
+                self._get_ptr[T]().init_pointee_move_from(take._get_ptr[T]())
                 return
 
     fn __del__(deinit self):

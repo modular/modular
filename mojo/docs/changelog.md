@@ -52,6 +52,11 @@ what we publish.
 
 ### Language changes
 
+- The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
+  to standardize construction. As such, the argument name for `__moveinit__`
+  must now be named `take` and the argument name for `__copyinit__` must now be
+  named `copy`.
+
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
   keyword argument to disambiguate slices. If you have defined your own range
@@ -114,6 +119,14 @@ what we publish.
   deprecation warning is emitted with a fixit for the old syntax.
 
 ### Library changes
+
+- `Dict` internals have been replaced with a Swiss Table implementation using
+  SIMD group probing for lookups. This improves lookup, insertion, and deletion
+  performance — especially when looking up keys not in the dict — while
+  increasing the load factor from 2/3 to 7/8 for better memory efficiency.
+  The `power_of_two_initial_capacity` keyword argument has been renamed to
+  `capacity` and now accepts any positive integer (it is rounded up to the
+  next power of two internally, minimum 16).
 
 - Implicit conversions from `Int` to `SIMD` are now deprecated, and will be
   removed in a future version of Mojo. This includes deprecating converions from
@@ -186,6 +199,34 @@ what we publish.
   functionality. Update your imports from `from sys.ffi import ...` to
   `from ffi import ...`.
 
+- Added `UnsafeUnion[*Ts]`, a C-style untagged union type for FFI
+  interoperability. Unlike `Variant`, `UnsafeUnion` does not track which type
+  is stored (no discriminant), making it suitable for interfacing with C unions
+  and low-level type punning. The memory layout exactly matches C unions (size
+  is max of elements, alignment is max of elements).
+
+  All element types must have trivial copy, move, and destroy operations,
+  matching C union semantics where types don't have constructors or destructors.
+
+  Construction is explicit (no implicit conversion) to emphasize the unsafe
+  nature of this type. All accessor methods are prefixed with `unsafe_` to make
+  it clear that these operations are unsafe.
+
+  ```mojo
+  from ffi import UnsafeUnion
+
+  # Define a union that can hold Int32 or Float32
+  comptime IntOrFloat = UnsafeUnion[Int32, Float32]
+
+  var u = IntOrFloat(Int32(42))
+  print(u.unsafe_get[Int32]())  # => 42
+  print(u)  # => UnsafeUnion[Int32, Float32](size=4, align=4)
+
+  # Type punning (reinterpreting bits)
+  var u2 = IntOrFloat(Float32(1.0))
+  print(u2.unsafe_get[Int32]())  # => 1065353216 (IEEE 754 bits)
+  ```
+
 - The `itertools` module now includes three new iterator combinators:
   - `cycle(iterable)`: Creates an iterator that cycles through elements
     indefinitely
@@ -231,6 +272,10 @@ what we publish.
   in reverse order, maintaining consistency with the existing `codepoints()`
   and `codepoint_slices()` methods. The deprecated `__reversed__()` methods
   will continue to work but will emit deprecation warnings.
+
+- The `Origin` struct now takes the underlying MLIR origin as a parameter
+  instead of storing it. This follows the design of `IntLiteral` and related
+  types, and fixes some memory safety problems.
 
 - The `StringSlice` constructor from `String` now propagates mutability. If you
   have a mutable reference to a `String`, `StringSlice(str)` returns a mutable
@@ -300,10 +345,16 @@ what we publish.
 
 ### ❌ Removed
 
+- `Dict.EMPTY` and `Dict.REMOVED` comptime aliases have been removed. These
+  were internal implementation details of the old hash table design.
+
 ### 🛠️ Fixed
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice
+
+- [Issue #5722](https://github.com/modular/modular/issues/5722): `__del__`
+  incorrectly runs when `__init__` raises before all fields are initialized.
 
 - [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
   `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back

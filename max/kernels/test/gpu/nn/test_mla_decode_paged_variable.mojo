@@ -772,6 +772,57 @@ fn run_bench_paged_variable[
 
 
 # ===-----------------------------------------------------------------------===#
+# Helper functions to reduce duplication in main()
+# ===-----------------------------------------------------------------------===#
+
+
+fn make_uniform(count: Int, value: Int) -> List[Int]:
+    """Create a list of `count` identical cache lengths."""
+    var result = List[Int]()
+    for _ in range(count):
+        result.append(value)
+    return result^
+
+
+fn run_both_kv_types[
+    num_heads: Int
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+    """Run correctness test for both bf16 and fp8 KV types."""
+    run_test_paged_variable[DType.bfloat16, DType.bfloat16, num_heads](
+        name + "_bf16", cache_lengths, ctx
+    )
+    run_test_paged_variable[DType.bfloat16, DType.float8_e4m3fn, num_heads](
+        name + "_fp8", cache_lengths, ctx
+    )
+
+
+fn run_uniform_both[
+    num_heads: Int
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+    """Run correctness test with uniform cache lengths for both KV types."""
+    run_both_kv_types[num_heads](name, make_uniform(count, value), ctx)
+
+
+fn run_bench_both_kv_types[
+    num_heads: Int
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+    """Run benchmark for both bf16 and fp8 KV types."""
+    run_bench_paged_variable[DType.bfloat16, DType.bfloat16, num_heads](
+        name + "_bf16", cache_lengths, ctx
+    )
+    run_bench_paged_variable[DType.bfloat16, DType.float8_e4m3fn, num_heads](
+        name + "_fp8", cache_lengths, ctx
+    )
+
+
+fn run_bench_uniform_both[
+    num_heads: Int
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+    """Run benchmark with uniform cache lengths for both KV types."""
+    run_bench_both_kv_types[num_heads](name, make_uniform(count, value), ctx)
+
+
+# ===-----------------------------------------------------------------------===#
 # Entry point
 # ===-----------------------------------------------------------------------===#
 
@@ -794,35 +845,16 @@ def main():
                 print()
 
                 # Batch size 1: single long context
-                var b1 = List[Int]()
-                b1.append(32768)
-                run_bench_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "bs1_32k_bf16", b1, ctx
-                )
-                run_bench_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ]("bs1_32k_fp8", b1, ctx)
+                run_bench_uniform_both[128]("bs1_32k", 1, 32768, ctx)
 
                 # Batch size 1: medium context
-                var b1m = List[Int]()
-                b1m.append(4096)
-                run_bench_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "bs1_4k_bf16", b1m, ctx
-                )
-                run_bench_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ]("bs1_4k_fp8", b1m, ctx)
+                run_bench_uniform_both[128]("bs1_4k", 1, 4096, ctx)
 
                 # Batch size 2: variable lengths
                 var b2 = List[Int]()
                 b2.append(4096)
                 b2.append(32768)
-                run_bench_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "bs2_4k_32k_bf16", b2, ctx
-                )
-                run_bench_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ]("bs2_4k_32k_fp8", b2, ctx)
+                run_bench_both_kv_types[128]("bs2_4k_32k", b2, ctx)
 
                 # Batch size 4: mixed lengths
                 var b4 = List[Int]()
@@ -830,12 +862,7 @@ def main():
                 b4.append(4096)
                 b4.append(16384)
                 b4.append(32768)
-                run_bench_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "bs4_mixed_bf16", b4, ctx
-                )
-                run_bench_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ]("bs4_mixed_fp8", b4, ctx)
+                run_bench_both_kv_types[128]("bs4_mixed", b4, ctx)
 
                 # Batch size 8: mixed lengths (production-like)
                 var b8 = List[Int]()
@@ -847,29 +874,10 @@ def main():
                 b8.append(16384)
                 b8.append(24576)
                 b8.append(32768)
-                run_bench_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "bs8_mixed_bf16", b8, ctx
-                )
-                run_bench_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ]("bs8_mixed_fp8", b8, ctx)
+                run_bench_both_kv_types[128]("bs8_mixed", b8, ctx)
 
                 # Batch size 8: all long (worst case)
-                var b8l = List[Int]()
-                b8l.append(32768)
-                b8l.append(32768)
-                b8l.append(32768)
-                b8l.append(32768)
-                b8l.append(32768)
-                b8l.append(32768)
-                b8l.append(32768)
-                b8l.append(32768)
-                run_bench_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "bs8_all32k_bf16", b8l, ctx
-                )
-                run_bench_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ]("bs8_all32k_fp8", b8l, ctx)
+                run_bench_uniform_both[128]("bs8_all32k", 8, 32768, ctx)
 
                 print("=" * 72)
                 print("BENCHMARK COMPLETE")
@@ -895,62 +903,19 @@ def main():
                     " (16 heads) ---"
                 )
 
-                # All short, single page each
                 var cl1 = List[Int]()
                 cl1.append(30)
                 cl1.append(50)
                 cl1.append(80)
                 cl1.append(100)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 16](
-                    "short_uniform_q1_bf16",
-                    cl1,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 16
-                ](
-                    "short_uniform_q1_fp8",
-                    cl1,
-                    ctx,
-                )
+                run_both_kv_types[16]("short_uniform_q1", cl1, ctx)
 
-                # Variable cache lengths
                 var cl2 = List[Int]()
                 cl2.append(30)
                 cl2.append(256)
                 cl2.append(640)
                 cl2.append(1024)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 16](
-                    "variable_cache_q1_bf16",
-                    cl2,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 16
-                ](
-                    "variable_cache_q1_fp8",
-                    cl2,
-                    ctx,
-                )
-
-                # Moderate disparity
-                var cl3 = List[Int]()
-                cl3.append(30)
-                cl3.append(128)
-                cl3.append(512)
-                cl3.append(2048)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 16](
-                    "moderate_disparity_q1_bf16",
-                    cl3,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 16
-                ](
-                    "moderate_disparity_q1_fp8",
-                    cl3,
-                    ctx,
-                )
+                run_both_kv_types[16]("variable_cache_q1", cl2, ctx)
 
                 # -----------------------------------------------------------
                 # Group 2: Large caches with reference check (16 heads)
@@ -960,45 +925,13 @@ def main():
                     " (16 heads) ---"
                 )
 
-                # Extreme disparity: 30 vs 32768
                 var cl4 = List[Int]()
                 cl4.append(30)
                 cl4.append(1024)
                 cl4.append(8192)
                 cl4.append(32768)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 16](
-                    "extreme_disparity_q1_bf16",
-                    cl4,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 16
-                ](
-                    "extreme_disparity_q1_fp8",
-                    cl4,
-                    ctx,
-                )
+                run_both_kv_types[16]("extreme_disparity_q1", cl4, ctx)
 
-                # All long
-                var cl5 = List[Int]()
-                cl5.append(16384)
-                cl5.append(20000)
-                cl5.append(24576)
-                cl5.append(32768)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 16](
-                    "all_long_q1_bf16",
-                    cl5,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 16
-                ](
-                    "all_long_q1_fp8",
-                    cl5,
-                    ctx,
-                )
-
-                # Mixed 8 batch
                 var cl6 = List[Int]()
                 cl6.append(30)
                 cl6.append(128)
@@ -1008,18 +941,7 @@ def main():
                 cl6.append(4096)
                 cl6.append(16384)
                 cl6.append(32768)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 16](
-                    "mixed_8batch_q1_bf16",
-                    cl6,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 16
-                ](
-                    "mixed_8batch_q1_fp8",
-                    cl6,
-                    ctx,
-                )
+                run_both_kv_types[16]("mixed_8batch_q1", cl6, ctx)
 
                 # -----------------------------------------------------------
                 # Group 3: Higher head counts (64, 128) with verification
@@ -1028,42 +950,123 @@ def main():
                     "--- Group 3: Higher head counts with reference check ---"
                 )
 
-                # 64 heads with disparity
                 var cl7 = List[Int]()
                 cl7.append(30)
                 cl7.append(512)
                 cl7.append(4096)
                 cl7.append(16384)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 64](
-                    "64heads_disparity_q1_bf16",
-                    cl7,
-                    ctx,
-                )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 64
-                ](
-                    "64heads_disparity_q1_fp8",
-                    cl7,
-                    ctx,
-                )
+                run_both_kv_types[64]("64heads_disparity_q1", cl7, ctx)
 
-                # 128 heads (DeepSeek-V2/R1 full)
                 var cl8 = List[Int]()
                 cl8.append(30)
                 cl8.append(1024)
                 cl8.append(8192)
                 cl8.append(32768)
-                run_test_paged_variable[DType.bfloat16, DType.bfloat16, 128](
-                    "128heads_extreme_q1_bf16",
-                    cl8,
-                    ctx,
+                run_both_kv_types[128]("128heads_extreme_q1", cl8, ctx)
+
+                # -----------------------------------------------------------
+                # Group 4: Latency sensitive configs (uniform cache lengths)
+                # Matches bench_mla_decode.yaml latency sensitive section
+                # -----------------------------------------------------------
+                print("--- Group 4: Latency sensitive configs (16 heads) ---")
+
+                run_uniform_both[16]("lat_bs1_64k", 1, 65536, ctx)
+                run_uniform_both[16]("lat_bs4_32k", 4, 32768, ctx)
+                run_uniform_both[16]("lat_bs8_64k", 8, 65536, ctx)
+
+                # -----------------------------------------------------------
+                # Group 5: Production-representative configs
+                # SGLang/Ant Group: 12-48 per GPU, vLLM TP8: up to 128
+                # KV cache 4K-8K is the common production range
+                # -----------------------------------------------------------
+                print(
+                    "--- Group 5: Production-representative configs"
+                    " (16 heads) ---"
                 )
-                run_test_paged_variable[
-                    DType.bfloat16, DType.float8_e4m3fn, 128
-                ](
-                    "128heads_extreme_q1_fp8",
-                    cl8,
-                    ctx,
+
+                run_uniform_both[16]("prod_bs16_4k", 16, 4096, ctx)
+                run_uniform_both[16]("prod_bs32_8k", 32, 8192, ctx)
+                run_uniform_both[16]("prod_bs128_1k", 128, 1024, ctx)
+
+                # -----------------------------------------------------------
+                # Group 6: Extra-large batch stress test configs
+                # -----------------------------------------------------------
+                print(
+                    "--- Group 6: Extra-large batch stress test configs"
+                    " (16 heads) ---"
+                )
+
+                run_uniform_both[16]("stress_bs256_4k", 256, 4096, ctx)
+
+                # -----------------------------------------------------------
+                # Group 7: Very small cache_len (<1K)
+                # Tests the kernel with very few KV pages -- potential
+                # underutilization. Covers prefill-like decode scenarios
+                # with tiny cache and high batch.
+                # -----------------------------------------------------------
+                print(
+                    "--- Group 7: Very small cache_len configs (16 heads) ---"
+                )
+
+                run_uniform_both[16]("tiny_bs128_64", 128, 64, ctx)
+                run_uniform_both[16]("tiny_bs64_512", 64, 512, ctx)
+
+                # -----------------------------------------------------------
+                # Group 8: Mid-range configs (fills 8K->32K gap with 16K)
+                # -----------------------------------------------------------
+                print("--- Group 8: Mid-range configs (16 heads) ---")
+
+                run_uniform_both[16]("mid_bs8_16k", 8, 16384, ctx)
+
+                # -----------------------------------------------------------
+                # Group 9: Large cache_len (>64K up to 163K max context)
+                # Tests deep into long-context territory for DeepSeek.
+                # -----------------------------------------------------------
+                print("--- Group 9: Large cache_len configs (16 heads) ---")
+
+                run_uniform_both[16]("large_bs1_163k", 1, 163840, ctx)
+
+                # -----------------------------------------------------------
+                # Group 10: Non-power-of-2 cache_len configs
+                # Validates that kernel dispatch, page-level partitioning,
+                # and split-k reduction handle arbitrary cache lengths.
+                # -----------------------------------------------------------
+                print(
+                    "--- Group 10: Non-power-of-2 cache_len configs"
+                    " (16 heads) ---"
+                )
+
+                run_uniform_both[16]("npo2_bs16_7777", 16, 7777, ctx)
+                run_uniform_both[16]("npo2_bs2_50000", 2, 50000, ctx)
+
+                # -----------------------------------------------------------
+                # Group 11: Variable cache_len across batch (log-spaced)
+                # Tests the kernel with heterogeneous cache lengths in a
+                # single batch, sampled in log space from 128 to 32768.
+                # This exercises the variable-length dispatch path,
+                # page-level partitioning with different split counts per
+                # sequence, and the combine kernel with mixed workloads.
+                # -----------------------------------------------------------
+                print(
+                    "--- Group 11: Variable cache_len across batch"
+                    " (log-spaced, 16 heads) ---"
+                )
+
+                # 10 sequences with log-spaced cache lengths from 128 to
+                # 32768.
+                var variable_logspace = List[Int]()
+                variable_logspace.append(128)
+                variable_logspace.append(256)
+                variable_logspace.append(512)
+                variable_logspace.append(1024)
+                variable_logspace.append(2048)
+                variable_logspace.append(4096)
+                variable_logspace.append(8192)
+                variable_logspace.append(16384)
+                variable_logspace.append(24576)
+                variable_logspace.append(32768)
+                run_both_kv_types[16](
+                    "variable_logspace", variable_logspace, ctx
                 )
 
                 print("=" * 72)

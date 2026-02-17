@@ -19,7 +19,7 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
-from .random import RandomBenchmarkDataset
+from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
 from .sonnet import SonnetBenchmarkDataset
@@ -44,5 +44,6 @@ __all__ = [
     "SampledRequest",
     "ShareGPTBenchmarkDataset",
     "SonnetBenchmarkDataset",
+    "SyntheticBenchmarkDataset",
     "VisionArenaBenchmarkDataset",
 ]

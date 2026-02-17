@@ -371,16 +371,6 @@ struct List[T: Copyable](
         # Remember how many elements we have.
         self._len = length
 
-    fn __init__(out self, span: Span[Self.T]):
-        """Constructs a list from the a Span of values.
-
-        Args:
-            span: The span of values to populate the list with.
-        """
-        self = Self(capacity=len(span))
-        for value in span:
-            self.append(value.copy())
-
     fn __init__[
         IterableType: Iterable,
     ](
@@ -420,14 +410,14 @@ struct List[T: Copyable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a deep copy of the given list.
 
         Args:
-            existing: The list to copy.
+            copy: The list to copy.
         """
-        self = Self(capacity=existing.capacity)
-        self.extend(Span(existing))
+        self = Self(capacity=copy.capacity)
+        self.extend(Span(copy))
 
     fn __del__(deinit self):
         """Destroy all elements in the list and free its memory."""

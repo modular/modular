@@ -55,6 +55,7 @@ from memory import OwnedPointer
 from sys.info import CompilationTarget, is_32bit, is_64bit
 from sys.intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
+from .unsafe_union import UnsafeUnion
 
 # ===-----------------------------------------------------------------------===#
 # Primitive C type aliases

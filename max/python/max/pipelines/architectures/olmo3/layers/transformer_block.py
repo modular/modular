@@ -20,8 +20,8 @@ from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 
+from ...common_layers.mlp import MLP
 from .attention import Olmo3Attention
-from .mlp import MLP
 
 
 class Olmo3TransformerBlock(

@@ -92,7 +92,7 @@ class AlwaysSignalBuffersMixin:
         ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ModelOutputs:
     logits: Buffer
     """Logits for a variable number of tokens per sequence."""
@@ -111,6 +111,7 @@ class ModelOutputs:
     """
 
 
+@dataclass(kw_only=True)
 class ModelInputs:
     """Base class for model inputs.
 
@@ -121,13 +122,10 @@ class ModelInputs:
 
     .. code-block:: python
 
+        @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
             input_row_offsets: Buffer
-
-            def __init__(self, tokens: Buffer, input_row_offsets: Buffer):
-                self.tokens = tokens
-                self.input_row_offsets = input_row_offsets
 
         # Create tensors
         tokens = Buffer.zeros((1, 2, 3), DType.int64)
@@ -162,6 +160,13 @@ class ModelInputs:
         for key, value in kwargs.items():
             if hasattr(self, key) and value is not None:
                 setattr(self, key, value)
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns positional Buffer inputs for model ABI calls."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not define model ABI buffers."
+        )
 
 
 class PipelineModel(ABC, Generic[BaseContextType]):

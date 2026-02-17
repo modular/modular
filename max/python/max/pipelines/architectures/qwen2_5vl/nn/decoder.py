@@ -55,8 +55,7 @@ from max.nn.legacy.transformer.distributed_transformer import (
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
-from max.pipelines.architectures.internvl.internvl import distribute_value
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
 
 
 class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
@@ -113,7 +112,9 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self.has_bias = has_bias
         self.hidden_size = hidden_size
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.float8_config = float8_config
 
@@ -612,7 +613,7 @@ class Qwen25VLDecoder(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(

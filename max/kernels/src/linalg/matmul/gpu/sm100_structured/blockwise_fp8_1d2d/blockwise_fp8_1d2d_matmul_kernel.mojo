@@ -101,10 +101,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
+    # B-scales and C device layouts (TensorLayout from caller's TileTensor)
+    b_scales_layout: TensorLayout,
+    c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    # Static dimensions (used to compute tile types internally)
+    # Static dimensions
     static_N: Int,
     static_K: Int,
     # Cluster shape
@@ -363,25 +366,14 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     # ========== Computed Layouts (single source of truth) ==========
 
-    # B-scales: (merged_rows_dynamic, K//128) row-major.
-    # The merged first dim (num_experts * N//128) is always runtime.
-    comptime BScalesLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_K // 128]
-    ]
-
-    # C device: (M_dynamic, N_static) row-major.
-    comptime CDeviceLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], ComptimeInt[Self.static_N]
-    ]
-
     # ========== Kernel Parameter TileTensor Types ==========
 
     comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.BScalesLayout, MutAnyOrigin
+        Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
     ]
 
     comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.CDeviceLayout, MutAnyOrigin
+        Self.c_type, Self.c_device_layout, MutAnyOrigin
     ]
 
     # ========== Kernel Entry Point ==========
@@ -637,7 +629,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
                     # Write with bounds checking and expert scale
                     Self.TileWriterType.write_absolute_with_bounds_check[
-                        Self.CDeviceLayout,
+                        Self.c_device_layout,
                         Self.CLUSTER_SIZE,
                     ](
                         accum,

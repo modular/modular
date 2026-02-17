@@ -153,33 +153,9 @@ fn rope_ragged[
     and position_ids.T.flat_rank == 2
     and freqs_cis.flat_rank == 2
 ):
-    @parameter
-    for i in range(x.rank):
-        comptime assert x.LayoutType._shape_types[i].is_static_value, (
-            "x.layout.shape["
-            + String(i)
-            + "] must be a scalar, was "
-            # + String(x.layout.shape[i])
-        )
-    # comptime assert (
-    #     x.layout.shape[1].all_known() and x.layout.shape[2].all_known()
-    # ), (
-    #     "x.shape[1] (num_heads) and x.shape[2] (head_dim) must be static, was "
-    #     + String(x.layout.shape)
-    # )
-    comptime assert (
-        input_row_offsets.all_dims_known
-    ), "input_row_offsets shape must be statically shaped"
     comptime assert (
         freqs_cis.all_dims_known
     ), "freqs_cis shape must be statically shaped"
-    debug_assert(
-        input_row_offsets.static_shape[0] - 1 == start_pos.static_shape[0],
-        (
-            "input_row_offsets shape must be batch_size + 1 and start_pos must"
-            " be batch_size"
-        ),
-    )
     comptime head_size = x.static_shape[2]
     comptime rope_dim = freqs_cis.static_shape[1]
     comptime unroped_dim = head_size - rope_dim

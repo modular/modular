@@ -54,6 +54,7 @@ NON_XL = set(RUNNERS) - XL
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 # fmt: off
 MODELS: dict[str, set[str]] = {
+    "allenai/olmo-3-7b-instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
     "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
@@ -72,7 +73,7 @@ MODELS: dict[str, set[str]] = {
     "qwen/qwen2.5-7b-instruct": MULTI,
     "qwen/qwen2.5-vl-3b-instruct": MULTI,
     "qwen/qwen2.5-vl-7b-instruct": MULTI,
-    "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@B200", "max-ci@H100"},  # MODELS-1020
+    "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
     "qwen/qwen3-8b": MULTI,
     "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
     "qwen/qwen3-vl-4b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@H100"},  # max: 26.2, MI355: no FP8
@@ -80,6 +81,7 @@ MODELS: dict[str, set[str]] = {
     "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # max: 26.2, MI355: no FP8, B200: MODELS-1020
     "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
     "redhatai/gemma-3-27b-it-fp8-dynamic": XL,
+    "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
     "state-spaces/mamba-130m-hf": MULTI | {"sglang"},
     "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},

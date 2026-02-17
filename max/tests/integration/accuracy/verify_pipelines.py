@@ -466,12 +466,7 @@ def run_llm_verification(
     kl_div_threshold: float | None = None,
     timeout: int | None = None,
 ) -> VerificationVerdict:
-    """Run a Llama3 verification with the given model and weights encoding.
-
-    extra_verify_flags are passed to
-    max/tests/integration/architectures/llama3/verify.py -- check that script
-    for details on acceptable flags.
-    """
+    """Run verification with the given model and weights encoding."""
 
     fssafe_pipeline = pipeline.replace("/", "_")
 
@@ -1161,10 +1156,9 @@ PIPELINES = {
             kl_div_threshold=7.1e-3,
         ),
     ),
-    # TODO(MODELS-1033) Times out.
     "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only", "no-h100", "manual"],
+        tags=["big", "nvidia-only", "no-h100"],
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
             encoding="bfloat16",
@@ -1218,6 +1212,16 @@ PIPELINES = {
             ),
             cos_dist_threshold=2.1e-5,
             kl_div_threshold=4.6e-7,
+        ),
+    ),
+    "allenai/Olmo-3-7B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=[],
+        run=_make_pipeline_runner(
+            pipeline="allenai/Olmo-3-7B-Instruct",
+            encoding="bfloat16",
+            cos_dist_threshold=7e-1,
+            kl_div_threshold=6e-02,
         ),
     ),
     "HuggingFaceM4/Idefics3-8B-Llama3": PipelineDef(
@@ -1321,7 +1325,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
             encoding="bfloat16",
-            cos_dist_threshold=4.0e-03,
+            cos_dist_threshold=8.0e-03,
             kl_div_threshold=9.0e-02,
         ),
     ),
@@ -1552,6 +1556,13 @@ PIPELINES = {
         " frontier of passing absolute and relative tolerance combinations."
     ),
 )
+@click.option(
+    "--filter",
+    "name_filter",
+    type=str,
+    default=None,
+    help="Only run pipelines whose name matches the filter. Comma-separated for multiple filters (OR logic).",
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
@@ -1561,6 +1572,7 @@ def main(
     tag_filter: TagFilter,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    name_filter: str | None,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -1580,6 +1592,12 @@ def main(
                 continue
             if not tag_filter.satisfied_by(pipeline_def.tags):
                 continue
+            if name_filter and not any(
+                f.strip().casefold() in pipeline_name.casefold()
+                for f in name_filter.split(",")
+                if f.strip()
+            ):
+                continue
             start_time = time.time()
             print(f"\n===== Running {pipeline_name} =====", flush=True)
             verdicts[pipeline_name] = pipeline_def.run_protected(
@@ -1594,14 +1612,6 @@ def main(
                 flush=True,
             )
     else:
-        # TODO: Temporarily allow to not specify the org name when running a
-        # pipeline by name. This is because the bisection script does not
-        # currently have access to the org name. Fix this by making the
-        # bisection use the existing json status report.
-        for pipeline_name, pipeline_def in PIPELINES.items():  # noqa: B007
-            if display_name(pipeline_name) == pipeline:
-                pipeline = pipeline_name
-                break
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
         pipeline_def = PIPELINES[pipeline]

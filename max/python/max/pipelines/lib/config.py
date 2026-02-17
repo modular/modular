@@ -278,9 +278,9 @@ class PipelineConfig(ConfigFileModel):
     use_legacy_module: bool = Field(
         default=True,
         description=(
-            "Whether to use the legacy Module architecture (default=True for backward "
-            "compatibility). Set to False to use the new Module-based architecture when "
-            "available."
+            "Whether to prefer the legacy ModuleV2 architecture (default=True for backward "
+            "compatibility). When True, tries the ModuleV2 architecture first and falls back "
+            "to ModuleV3. When False, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 
@@ -843,7 +843,14 @@ class PipelineConfig(ConfigFileModel):
             )
             if (
                 arch is not None
-                and arch.name == "LlamaForCausalLM_Legacy"
+                and arch.name
+                in (
+                    "LlamaForCausalLM_Legacy",
+                    "DeepseekV2ForCausalLM_Legacy",
+                    "DeepseekV3ForCausalLM_Legacy",
+                    "DeepseekV3_2ForCausalLM_Legacy",
+                    "DeepseekV3ForCausalLMNextN_Legacy",
+                )
                 and self.pipeline_role == PipelineRole.PrefillAndDecode
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
@@ -912,6 +919,18 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if not draft_arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=self.draft_model.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for draft model '{self.draft_model.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                    )
             raise ValueError(
                 "MAX-Optimized architecture not found for `draft_model`"
             )
@@ -921,6 +940,18 @@ class PipelineConfig(ConfigFileModel):
             use_legacy_module=self.use_legacy_module,
         )
         if not target_arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=self.model.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for target model '{self.model.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                    )
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
@@ -996,6 +1027,20 @@ class PipelineConfig(ConfigFileModel):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=model_config.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for '{model_config.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation.\n"
+                        f"Example: max serve --model-path {model_config.model_path} --no-use-legacy-module"
+                    )
+
             raise ValueError(
                 f"MAX-optimized architecture not available for '{model_config.model_path}'. "
                 "Please file a request at https://modul.ar/request to add this model architecture to MAX."
@@ -1273,43 +1318,50 @@ class PipelineConfig(ConfigFileModel):
                 "This should not happen after config resolution."
             )
 
-        # Get pipeline task
-        arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
-        )
-        if arch is None:
-            raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
-                "This should not happen after config resolution."
-            )
-
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
         pipeline_class = get_pipeline_for_task(task, self)
 
-        # Get reserved memory info from KVCache config
-        kv_config = self.model.kv_cache
-        if kv_config._available_cache_memory is None:
-            raise ValueError(
-                "KVCache config is not available after config resolution."
+        # Get reserved memory info from KVCache config (only for tasks that use KV cache)
+        from max.interfaces.task import PipelineTask
+
+        kv_cache_tasks = {
+            PipelineTask.TEXT_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
+            PipelineTask.SPEECH_TOKEN_GENERATION,
+        }
+
+        memory_str = None
+        if task in kv_cache_tasks:
+            kv_config = self.model.kv_cache
+            if kv_config._available_cache_memory is None:
+                raise ValueError(
+                    "KVCache config is not available after config resolution."
+                )
+            memory_str = to_human_readable_bytes(
+                kv_config._available_cache_memory
             )
-        memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs
         )
 
         # Log basic configuration
-        config_entries: list[tuple[str, Any]] = [
-            ("model", self.model.model_path),
-            ("architecture", arch.name),
-            ("pipeline", pipeline_class.__name__),
-            ("devices", devices_str),
-            ("max_batch_size", self.max_batch_size),
-            ("max_seq_len", self.max_length),
-            ("cache_memory", memory_str),
-            ("device_graph_capture", self.device_graph_capture),
-        ]
+        config_entries: list[tuple[str, Any]] = (
+            [
+                ("model", self.model.model_path),
+                ("architecture", arch.name),
+                ("pipeline", pipeline_class.__name__),
+                ("devices", devices_str),
+                ("max_batch_size", self.max_batch_size),
+                ("max_seq_len", self.max_length),
+            ]
+            + [("cache_memory", memory_str)]
+            if memory_str
+            else []
+            + [
+                ("device_graph_capture", self.device_graph_capture),
+            ]
+        )
 
         logger.info("")
         logger.info("=" * 60)

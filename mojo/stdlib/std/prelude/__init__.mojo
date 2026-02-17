@@ -125,6 +125,7 @@ from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
     __TypeOfAllTypes,
+    AnyOrigin,
     ImmutAnyOrigin,
     ImmutOrigin,
     MutAnyOrigin,
@@ -136,7 +137,6 @@ from builtin.type_aliases import (
     ExternalOrigin,
     ImmutExternalOrigin,
     MutExternalOrigin,
-    unsafe_origin_mutcast,
 )
 from builtin.value import (
     Copyable,

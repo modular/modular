@@ -273,6 +273,27 @@ struct TileTensor[
             layout,
         )
 
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: TileTensor,
+        out self: TileTensor[
+            other.dtype,
+            other.LayoutType,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+            linear_idx_type = other.linear_idx_type,
+            element_shape_types = other.element_shape_types,
+        ],
+    ):
+        """Implicitly cast a mutable TileTensor to immutable.
+
+        Args:
+            other: The mutable TileTensor to cast from.
+        """
+        self.ptr = other.ptr
+        self.layout = other.layout
+
     @always_inline("nodebug")
     fn __getitem__(
         self, coord: Coord
@@ -1479,12 +1500,8 @@ struct TileTensor[
         origin: The origin for the result tensor.
     """
 
-    comptime _AsMut = Self.OriginCastType[mut=True, _]
-
     @always_inline("nodebug")
-    fn as_any_origin(
-        self: Self._AsMut,
-    ) -> type_of(self).OriginCastType[MutAnyOrigin]:
+    fn as_any_origin(self) -> Self.OriginCastType[AnyOrigin[mut = Self.mut]]:
         """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
 
         Returns:

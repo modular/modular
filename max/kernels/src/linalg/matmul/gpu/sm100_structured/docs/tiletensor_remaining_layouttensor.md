@@ -68,11 +68,11 @@ LayoutTensor remains in 3 categories (down from 5):
   `create_tma_tile` TileTensor overload.
 - ~~`default/dispatch`~~: `lt_to_tt` at NDBuffer boundary.
 - ~~`blockwise_fp8_matmul`~~: Pure TileTensor.
-- ~~`blockwise_fp8_1d2d_matmul`~~: Kernel computes
-  `BScalesLayout`/`CDeviceLayout` internally (Pattern 15).
-  Host uses `KernelType.BScalesTile(ptr, layout)`.
-- ~~`grouped_1d1d_matmul`~~: Kernel computes `CDeviceLayout`
-  internally (Pattern 15).
+- ~~`blockwise_fp8_1d2d_matmul`~~: Kernel takes `b_scales_layout`
+  and `c_device_layout` as TensorLayout params from caller's
+  TileTensor type. Types match by construction (Pattern 15).
+- ~~`grouped_1d1d_matmul`~~: Kernel takes `c_device_layout` as
+  TensorLayout param from caller's TileTensor type (Pattern 15).
 - ~~`grouped_block_scaled_matmul`~~: Module-level `_GroupPtrTile`
   and `_ProblemSizesTile` aliases provide concrete TileTensor types
   for pointer arrays and problem sizes. Host constructs via kernel
@@ -154,6 +154,13 @@ produce TileTensor instead of LayoutTensor.
   type alias level. `ComptimeInt[X] if cond else ComptimeInt[Y]`
   produces `AnyStruct[...]` not a concrete type. Use separate
   type aliases for each branch instead.
+- **Take layout as a kernel param, don't compute it internally**.
+  If a TileTensor flows from the host to `enqueue_function`, the
+  kernel struct should take its layout as a `TensorLayout` parameter
+  (derived from `type_of(tt).LayoutType`). Computing the layout
+  independently inside the kernel (e.g., from `static_N`) creates
+  a different symbolic type that may not match -- this caused the
+  DeepSeek-R1-NVFP4 pipeline failure (#77347/#77359).
 
 ---
 

@@ -1608,14 +1608,14 @@ fn mha_sm100_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ) raises:
     comptime assert (
@@ -1816,7 +1816,7 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     sink_weights: SinkType,

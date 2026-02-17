@@ -25,7 +25,7 @@ from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.primitives.grid_controls import launch_dependent_grids
 from gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
@@ -47,8 +47,6 @@ from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import (
     Layout,
 )
-from logger import Logger
-
 from layout.layout_tensor import (
     LayoutTensor,
 )
@@ -68,12 +66,10 @@ from layout.runtime_layout import RuntimeLayout
 from memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
-    Pack,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from gpu.host.nvidia.tma import TensorMapSwizzle
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
@@ -81,8 +77,6 @@ from linalg.arch.sm100.mma import smem_descriptor
 
 from nn.mha_sm100_2q import (
     elect,
-    KVPipeline,
-    TMemTile,
     LocalTensor,
     elect_mma_arrive,
     ProducerPipeline,
@@ -96,7 +90,6 @@ from nn.mha_fa3_utils import KVTMATile
 from builtin.device_passable import DevicePassable
 from sys._assembly import inlined_assembly
 
-comptime logger = Logger()
 
 # ------------------------------------------------------------------------------
 # Helper functions for MLA decoding TMA tiles
@@ -249,7 +242,7 @@ struct MLA_SM100_Decode_Config:
     var num_kv_stages: Int
     var smem_used: Int
     var dtype_size: Int
-    var num_threads: Int  # 1x softmax, 1x correction, 1x other
+    var num_threads: Int  # bf16: 3 WGs (MMA, softmax, correction); fp8: 4 WGs (+convert)
     var swizzle_mode: TensorMapSwizzle
     var kv_mma_swizzle_mode: TensorMapSwizzle
     var kv_tma_swizzle_mode: TensorMapSwizzle
@@ -260,6 +253,8 @@ struct MLA_SM100_Decode_Config:
     comptime cta_group = 1  # TODO: support 2
     var decoding_warp_split_k: Bool
     var out_rows: Int
+    var page_size: Int  # KV cache physical page size (e.g., 128)
+    var split_page_size: Int  # Page size for split-K work partitioning (must be <= page_size)
 
     fn __init__(
         out self,
@@ -274,6 +269,7 @@ struct MLA_SM100_Decode_Config:
         kv_mma_swizzle_mode: TensorMapSwizzle,
         page_size: Int,
         decoding_warp_split_k: Bool,
+        split_page_size: Int = 128,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
@@ -305,22 +301,19 @@ struct MLA_SM100_Decode_Config:
         var smem_use = 4
         self.tmem_used = self.TMEM_S0 + 32
         self.decoding_warp_split_k = decoding_warp_split_k
+        self.page_size = page_size
+        self.split_page_size = split_page_size
         self.BK0 = self.padded_q_depth
         self.BK1 = self.BN
-        #  Here we can replace the GCD with MIN as the num_q_heads is always power of two.
-        # self.out_rows = gcd(self.BM, self.num_q_heads)
         self.out_rows = min(self.BM, self.num_q_heads)
         # to store Q we need(64x576x2)  = 73728 bytes
         smem_use += self.BM * self.padded_q_depth * dtype_size
-        # we have two scratch buffer float 32 for max and li
-        # 128 is the warpgroup size and 4 bytes for float 32
-        #  (128 * 1 * 4 * 2) =1024 bytes
-        # Since I have 102k extra slot here for correction I will create another slot to let
-        # softmax smoothly use its internal state max and li
+        # Two scratch buffers (float32) for softmax running max and li:
+        # 128 threads x 1 element x 4 bytes x 2 buffers = 1024 bytes
         comptime smem_for_max_and_li = 128 * 1 * 4 * 2
         # 4 + (64x576x2) + (128 * 1 * 4 * 2) = 74756 bytes
         smem_use += smem_for_max_and_li
-        # we need BMxBN x dtype bites for storing the P matrix in smem
+        # we need BMxBN x dtype bytes for storing the P matrix in smem
         # (64x64x2) = 8192 bytes
         var smem_for_out = self.BM * self.BN * dtype_size
         # 4 + (64x576x2) + (64x64x2) + (128 * 1 * 4 * 2) = 82948 bytes
@@ -330,10 +323,10 @@ struct MLA_SM100_Decode_Config:
         var smem_per_kv = (
             self.BN * self.padded_q_depth * dtype_size
         )  # (two slot buffer for k/v)
-        # now we need to calcuate howmany slot per K /V we can fit in the remaining memory
+        # now we need to calculate how many slots per K/V we can fit in the remaining memory
         # so far we have
         # 4 + (64x576x2) + (64x64x2) + (128 * 1 * 4 * 2) = 82948 bytes
-        # the curveout require 1k for l1 cache so
+        # the carveout reserves 1K for L1 cache so
         # for b200 we have sm100_smem_carveout 233472 - 1024 =  232448 bytes
         # remaining smem  = 232448 - 82948 = 149500 bytes
         # so we can fit 149500 // 73728 = 2 slots per K/V and still have 2044
@@ -345,12 +338,12 @@ struct MLA_SM100_Decode_Config:
         # We have the following resources that need smem barriers:
         # num_kv_stages = 2, so:
 
-        # bar_write_done[1] → 8  producer pipeline- softmax
-        # bar_write_ready[1] → 8  consumer pipeline - write
+        # bar_write_prod[depth/BN] → 8  producer pipeline - softmax epilogue
+        # bar_write_cons[depth/BN] → 8  consumer pipeline - TMA store
         var num_out_barrier = (self.depth // self.BN) * 2
         # total number of barriers is fixed_transaction_barriers + num_out_barrier
         # bar_q → 1           producer pipeline - load consumer - mma
-        # bar_kv_reay[2] → 2  consumer pipeline - mma
+        # bar_kv_ready[2] → 2  consumer pipeline - mma
         # bar_kv_free[2] → 2   producer pipeline - load
         # bar_s_done[2] → 2  producer pipeline - mma
         # bar_s_ready[2] → 2  consumer pipeline - softmax
@@ -358,34 +351,27 @@ struct MLA_SM100_Decode_Config:
         # bar_p_ready[2] → 2  consumer pipeline - mma
         # bar_correction_done[1] → 1  producer pipeline- softmax
         # bar_correction_ready[1] → 1  consumer pipeline - correction
-        # bar_o_done[1] → 2  producer pipeline- MMA PV
-        # bar_o_ready[1] → 2  consumer pipeline - Correction
-        # corr_done_bars[2] → 2  producer pipeline- correction consumer softmax
+        # bar_o_done[2] → 2  producer pipeline- MMA PV
+        # bar_o_ready[2] → 2  consumer pipeline - Correction
+        # corr_done_prod[2] → 2  producer pipeline - correction
+        # corr_done_cons[2] → 2  consumer pipeline - softmax
 
-        # Hence fixed_transaction_barriers: 1 + 2 + 2 + 2 + 2  +2 + 2  + 2 + 2 + 2 + 2 + 2 + 1 = 23.
+        # Hence fixed_transaction_barriers = 23 (bf16 path).
         # If fp8, then add 4 more barriers for the convert fp8 to bf16 pipeline
         # bar_convert_done[2] → 2  producer pipeline- Convert fp8 to bf16
         # bar_convert_ready[2] → 2  consumer pipeline - mma
-        # Hence fixed_transaction_barriers +2 + 2 = 27.
+        # Hence fixed_transaction_barriers = 23 + 4 = 27 (fp8 path).
         smem_use += (
             (27 if kv_type_size == 1 else 23) + num_out_barrier
         ) * Self.mbar_size + (
             ((self.depth // self.BN) - 1) * 2 * Self.mbar_size
         )
 
-        # for convinence we will add the smem for max and li to the smem_used for
-        # correction separately (128 * 1 * 4 * 2) =1024 bytes
-        # comptime smem_for_max_and_li_correction = 128 * 1 * 4 * 2
-        # 4 + (64x576x2) + (128 * 1 * 4 * 2) = 74756 bytes
-        # smem_use += smem_for_max_and_li_correction
-
-        # 4 + (64x576x2) + (64x576x2x2) + (64x64x2) + (128 * 1 * 4 * 2) + (19x8)  = 230556 bytes
-        # we need to add ((Depth/BN) -1) x2
-        # more barriers. for the splitk the two added is enough for now.
-        # 230556 + ((512/64) -1) x2 x8 = 230556 + 15 x16 = 230556 + 240 = 230796 bytes
-        # hence the remaining memory is 232448 - 230796 = 1652 bytes
-        # in split K the barrier number reduced to 22
-        # hence the remaining memory is 232448 - 230556 = 1892 bytes
+        # Summary of smem layout (bf16 path, kv_type_size=2):
+        # 4 (TMEM base) + Q tile + KV stages + P tile + max/li scratch + barriers
+        # For fp8 (kv_type_size=1): 27 fixed barriers; for bf16: 23 fixed barriers.
+        # Plus num_out_barrier = (depth/BN)*2 output barriers,
+        # plus ((depth/BN)-1)*2 additional barriers.
         self.smem_used = smem_use
 
     fn supported(self) -> Bool:
@@ -526,9 +512,9 @@ struct OffsetPosition[
         # Each split handles a portion of the KV cache: [kv_start_row, kv_start_row + num_keys_this_split)
         @parameter
         if Self.decoding_warp_split_k:
-            # Page-aligned split strategy: only last CTA handles ragged remainder
-            # All other CTAs process complete 128-element pages
-            comptime page_size = 128
+            # Split-page-aligned strategy: only last CTA handles ragged remainder.
+            # All other CTAs process complete split_page_size-element chunks.
+            comptime page_size = Self.config.split_page_size
             var total_pages = (self.num_keys + page_size - 1) // page_size
             var pages_per_split = (
                 total_pages + num_partitions - 1
@@ -948,7 +934,7 @@ struct DecodeSM100MiscMBars[
 ](TrivialRegisterPassable):
     var mbar_base: MBarType
 
-    # 2 S slots (S0, S1)
+    # Generic barrier pair (producer + consumer) with num_stages slots.
 
     @always_inline
     fn __init__(out self, mbar_base: MBarType):
@@ -956,10 +942,10 @@ struct DecodeSM100MiscMBars[
 
     @always_inline
     fn init(self):
-        # Layout: [S_prod[0..1], S_cons[0..1]]
+        # Layout: [prod[0..num_stages-1], cons[0..num_stages-1]]
         var s_pipe = MBarPipeline[Self.num_stages](self.mbar_base)
-        # for S 1 producer thread (elect in MMA warpgroup), 128 consumer threads (softmax warpgroup)
-        # for P 128 producer threads (softmax warpgroup), 1 consumer thread (elect in MMA warpgroup)
+        # e.g. for S: 1 producer thread (elect in MMA warpgroup), 128 consumer threads (softmax warpgroup)
+        # e.g. for P: 128 producer threads (softmax warpgroup), 1 consumer thread (elect in MMA warpgroup)
         s_pipe.init[
             num_producer = UInt32(Self.num_producer),
             num_consumer = UInt32(Self.num_consumer),
@@ -980,7 +966,7 @@ struct DecodeSM100MiscMBars[
 
 
 # ------------------------------------------------------------------------------
-# MLA decoding S pipeline betweeen MMA and Softmax
+# MLA decoding S pipeline between MMA and Softmax
 # ------------------------------------------------------------------------------
 ########## Producer of the S slot ##########
 struct DecodeSProducer(TrivialRegisterPassable):
@@ -1031,7 +1017,7 @@ struct DecodeSConsumer(TrivialRegisterPassable):
 
 
 # ------------------------------------------------------------------------------
-# MLA decoding P Pipeline betweeen Softmax and MMA
+# MLA decoding P Pipeline between Softmax and MMA
 # ------------------------------------------------------------------------------
 ########## Producer of the P slot ##########
 struct DecodePProducer(TrivialRegisterPassable):
@@ -1089,7 +1075,7 @@ struct DecodePConsumer(TrivialRegisterPassable):
 
 
 # ------------------------------------------------------------------------------
-# MLA decoding Opipeline betweeen MMA and Correction
+# MLA decoding O pipeline between MMA and Correction
 # ------------------------------------------------------------------------------
 ########## Producer of the O slot ##########
 struct DecodeOProducer(TrivialRegisterPassable):
@@ -1103,7 +1089,7 @@ struct DecodeOProducer(TrivialRegisterPassable):
 
     @always_inline
     fn acquire(self):
-        # Wait for softmax to mark this S slot "free"
+        # Wait for correction to mark this O slot "free"
         self.pipe.acquire()
 
     @always_inline
@@ -1112,7 +1098,7 @@ struct DecodeOProducer(TrivialRegisterPassable):
 
     @always_inline
     fn commit_mma(mut self, elect: Int32):
-        # Signal "S slot is filled" to softmax
+        # Signal "O slot is filled" to correction
         self.pipe.commit_mma(elect)
         # Advance producer's stage/phase bookkeeping
         self.pipe.step()
@@ -1129,13 +1115,13 @@ struct DecodeOConsumer(TrivialRegisterPassable):
 
     @always_inline
     fn wait(self):
-        # Block until MMA has filled the current S slot
+        # Block until MMA has filled the current O slot
         self.pipe.wait()
         _ = self.pipe.state.index()
 
     @always_inline
     fn release(mut self):
-        # Mark this S slot as "consumed" so MMA can reuse it
+        # Mark this O slot as "consumed" so MMA can reuse it
         self.pipe.release()
 
 
@@ -1832,8 +1818,6 @@ struct MLA_SM100_Decode_Common[
     # S: 128 x 32
     comptime S_M = Self.config.BM * 2  # 128
     comptime S_N = Self.config.BN // 2  # 32
-    comptime OTMemTile = TMemTile[Self.AccumType, Self.O_M, Self.O_N]
-    comptime STMemTile = TMemTile[Self.AccumType, Self.S_M, Self.S_N]
     comptime UMMAQKTSS = DecodeSM100QKTSS[
         operand_type = Self.q_type,
         accum_type = Self.AccumType,
@@ -1847,8 +1831,12 @@ struct MLA_SM100_Decode_Common[
 
     # --------------------------------------------------------------------------
     # PDL early exit cleanup for split-K CTAs with no work.
-    # Writes -inf to LSE, zeros o_accum_split via shared-memory + TMA store,
+    # Writes -inf to LSE so the combine kernel gives this split zero weight,
     # then calls barrier() + launch_dependent_grids().
+    #
+    # Note: We no longer TMA-zero o_accum_split here.  The combine kernel
+    # uses a `select` guard (scale != 0) so that uninitialised memory
+    # is never multiplied into the result when scale == 0 (i.e. LSE == -inf).
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
@@ -1897,44 +1885,7 @@ struct MLA_SM100_Decode_Common[
                 ](lse_accum_split_ptr.value())
                 lse_ptr[lse_offset] = neg_inf_val
 
-        # -- 2. Zero o_accum_split via shared-memory + TMA store --
-        # Get shared memory (always allocated at kernel launch)
-        var smem_ptr = external_memory[
-            Scalar[Self.output_type],
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
-        # TMA output tile: (out_rows, BN) elements
-        comptime tile_elems = Self.config.out_rows * Self.config.BN
-        # Zero shared memory cooperatively with all threads
-        var idx = tid
-        while idx < tile_elems:
-            smem_ptr[idx] = Scalar[Self.output_type](0)
-            idx += Self.config.num_threads
-        barrier()
-
-        # Thread 0 issues TMA stores to write zeros to the
-        # o_accum_split region for every column tile
-        if tid == 0:
-            var smem_tensor = SharedMemTensor[
-                Self.output_type,
-                type_of(o_tma).layout,
-            ](smem_ptr)
-            var row = UInt(out_row_offset)
-            comptime num_col_tiles = Self.config.depth // Self.config.BN
-
-            @parameter
-            for c in range(num_col_tiles):
-                fence_async_view_proxy()
-                o_tma.async_store(
-                    smem_tensor,
-                    (UInt(c * Self.config.BN), row),
-                )
-            o_tma.commit_group()
-        o_tma.wait_group[0]()
-
-        # -- 3. Barrier + PDL signal, then return --
+        # -- 2. Barrier + PDL signal, then return --
         barrier()
         launch_dependent_grids()
 
@@ -2411,12 +2362,11 @@ struct MLA_SM100_Decode_Common[
 
         # By the time we reach to epilogue the KV is free.
         # So we can safely use the KV buffer for writing the output and have more async write.
-        # howere the write function massively change based on the mma_n size
-        # so when mma_n is 256 we have the first 128 columns with waro0/1 and the
+        # however the write function massively changes based on the mma_n size
+        # so when mma_n is 256 we have the first 128 columns with warp0/1 and the
         # next 128 column with warp2/3 tiles and so on for the next 256 columns
         # it is 256/32 which is equivalent of 512/64
 
-        comptime num_store_tiles = Self.config.depth // Self.config.BN
         comptime epi_half_load: UInt32 = UInt32(Self.config.BN >> 1)
         comptime chunk_size: Int = 16
         comptime total_elems: Int = Int(epi_half_load) * blocks_per_stage
@@ -2556,7 +2506,7 @@ struct MLA_SM100_Decode_Common[
                     Self.output_tile_width * 2
                 )
                 comptime o_range = Self.config.depth // Self.config.MMA_PV_N
-                # the MNNA.ws split the output accross two warps
+                # the MMA.ws split the output across two warps
                 comptime o_stride = Self.config.MMA_PV_N // 2
 
                 @parameter
@@ -2662,7 +2612,6 @@ struct MLA_SM100_Decode_Common[
         comptime blocks_per_stage = DecodeOutConsumerType.blocks_per_stage
         comptime num_out_stages = DecodeOutConsumerType.num_out_stages
         comptime num_out_stages_per_mma = num_out_stages // num_mma_pv
-        comptime num_store_tiles = Self.config.depth // Self.output_tile_width
         comptime num_mma_pv = Self.config.padded_depth // Self.config.MMA_PV_N
         var out_cons = DecodeOutConsumer[Self.output_type, Self.config](
             out_pipeline, out_smem
@@ -2670,8 +2619,6 @@ struct MLA_SM100_Decode_Common[
         elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: UInt = UInt(offset_position.out_row_offset)
-        # The code work with the assumption that the num_q_heads is power of two.
-        var tma_phase: UInt32 = 0
 
         #   0       64     128     192      256      320      384     448     512
         #   |-------|-------|-------|--------|--------|--------|-------|-------|

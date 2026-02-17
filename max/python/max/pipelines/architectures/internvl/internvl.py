@@ -42,7 +42,7 @@ from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import LayerNorm, RMSNorm
 from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
-from max.pipelines.architectures.llama3.model_config import (
+from max.pipelines.architectures.llama3_legacy.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
@@ -62,21 +62,6 @@ class DeviceAttentionParams:
     device_heads: int
     head_start: int
     head_dim: int
-
-
-def distribute_value(
-    v: TensorValue, devices: Sequence[DeviceRef]
-) -> list[TensorValue]:
-    """Distributes a tensor value across multiple devices.
-
-    Args:
-        v: The tensor value to distribute.
-        devices: The list of devices to distribute the tensor across.
-
-    Returns:
-        A list of tensor values, one per device.
-    """
-    return [v.to(device) for device in devices]
 
 
 class InternVLDecoderLayer(Module):
@@ -371,7 +356,7 @@ class InternVLLanguageModel(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         # Run through decoder layers.
         for idx, layer in enumerate(self.layers):

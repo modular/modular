@@ -11,17 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo %s 2>&1 | FileCheck %s
+from .arch import llama_legacy_arch
 
-
-fn test_as_any_origin_fails_if_mutability_is_unbound[
-    T: AnyType
-](p: UnsafePointer[T, ...]):
-    # CHECK: ambiguous call to 'as_any_origin'
-    var _p = p.as_any_origin()
-
-
-def main():
-    var x = 42
-    var p = UnsafePointer(to=x)
-    test_as_any_origin_fails_if_mutability_is_unbound(p)
+__all__ = ["llama_legacy_arch"]

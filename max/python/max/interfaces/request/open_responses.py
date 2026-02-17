@@ -33,7 +33,10 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces.provider_options import ProviderOptions
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -1172,13 +1175,14 @@ class OpenResponsesRequestBody(BaseModel):
         None,
         description="The verbosity level for responses.",
     )
-    provider_options: ProviderOptions | None = Field(
-        None,
+    provider_options: ProviderOptions = Field(
+        default_factory=lambda: ProviderOptions(image=ImageProviderOptions()),
         description=(
             "Provider-specific options for MAX platform and modalities. "
             "Structure: 'max' for universal MAX options (target_endpoint, etc.), "
             "and modality-specific fields like 'image' for image generation or 'video' for video generation. "
-            "Example: {'max': {'target_endpoint': 'instance-123'}, 'image': {'width': 1024, 'height': 768}}"
+            "Example: {'max': {'target_endpoint': 'instance-123'}, 'image': {'width': 1024, 'height': 768}}. "
+            "Defaults to empty ProviderOptions with default ImageProviderOptions."
         ),
     )
 

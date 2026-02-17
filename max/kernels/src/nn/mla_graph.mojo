@@ -443,7 +443,7 @@ fn mla_prefill_branch_fp8[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     kv_b_proj: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
@@ -560,7 +560,7 @@ fn mla_prefill_branch_fp8[
 
     mla_fused_rope_rmsnorm(
         q_rope_mut,
-        q_rope,
+        q_rope.as_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -1087,7 +1087,7 @@ fn mla_prefill_decode_graph_fp8[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
@@ -1202,7 +1202,7 @@ fn mla_prefill_branch_bf16[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     kv_b_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
@@ -1264,7 +1264,7 @@ fn mla_prefill_branch_bf16[
 
     mla_fused_rope_rmsnorm(
         q_rope_mut,
-        q_rope,
+        q_rope.as_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -1568,10 +1568,10 @@ fn mla_prefill_decode_graph_bf16[
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,

@@ -71,7 +71,7 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
 
 @prepare_registry
 def test_registry__retrieve_architecture_without_legacy_module() -> None:
-    """Test that retrieve_architecture returns None when new Module arch not registered."""
+    """Test that retrieve_architecture falls back to legacy when new arch not registered."""
     # Only register the legacy architecture (with _Legacy suffix)
     legacy_arch = SupportedArchitecture(
         name="LlamaForCausalLM_Legacy",
@@ -97,13 +97,13 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
         max_length=128,
     )
 
-    # When use_legacy_module=False, it should look for "LlamaForCausalLM" (no suffix)
+    # When use_legacy_module=False but only legacy exists, should fall back
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         huggingface_repo=config.model.huggingface_model_repo,
         use_legacy_module=False,
     )
 
-    assert arch is None
+    assert arch is legacy_arch
 
 
 @prepare_registry
@@ -234,10 +234,8 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
 
 
 @prepare_registry
-def test_config__use_legacy_module_false_fails_gracefully_without_new_arch() -> (
-    None
-):
-    """Test that using use_legacy_module=False without registered new arch produces appropriate error."""
+def test_config__use_legacy_module_false_falls_back_to_legacy_arch() -> None:
+    """Test that use_legacy_module=False falls back to legacy when no new arch registered."""
     # Only register the legacy architecture (with _Legacy suffix)
     legacy_arch = SupportedArchitecture(
         name="LlamaForCausalLM_Legacy",
@@ -255,16 +253,52 @@ def test_config__use_legacy_module_false_fails_gracefully_without_new_arch() -> 
     )
     PIPELINE_REGISTRY.register(legacy_arch)
 
-    with pytest.raises(
-        ValueError, match="MAX-optimized architecture not available"
-    ):
-        PipelineConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
-            max_batch_size=1,
-            max_length=128,
-            use_legacy_module=False,
-        )
+    # Should succeed by falling back to legacy arch
+    config = PipelineConfig(
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.float32,
+        max_batch_size=1,
+        max_length=128,
+        use_legacy_module=False,
+    )
+    assert config.use_legacy_module is False
+
+
+@prepare_registry
+def test_registry__retrieve_architecture_falls_back_to_non_legacy() -> None:
+    """Test that use_legacy_module=True falls back to non-legacy when only it exists."""
+    # Only register non-legacy architecture (standard HF name, no suffix)
+    new_arch = SupportedArchitecture(
+        name="LlamaForCausalLM",
+        task=PipelineTask.TEXT_GENERATION,
+        example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
+        default_encoding=SupportedEncoding.float32,
+        supported_encodings={
+            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        },
+        pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
+        tokenizer=TextTokenizer,
+        context_type=TextContext,
+        default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
+    )
+    PIPELINE_REGISTRY.register(new_arch)
+
+    config = PipelineConfig(
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.float32,
+        max_batch_size=1,
+        max_length=128,
+    )
+
+    # Default use_legacy_module=True, but only non-legacy exists — should fall back
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        huggingface_repo=config.model.huggingface_model_repo,
+        use_legacy_module=True,
+    )
+
+    assert arch is new_arch
 
 
 @prepare_registry

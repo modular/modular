@@ -27,7 +27,7 @@ from .model import Llama3Model
 from .model_config import Llama3Config
 
 llama_arch = SupportedArchitecture(
-    name="LlamaForCausalLM_Legacy",
+    name="LlamaForCausalLM",
     example_repo_ids=[
         "meta-llama/Llama-3.1-8B-Instruct",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
@@ -37,23 +37,17 @@ llama_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=SupportedEncoding.q4_k,
+    default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float4_e2m1fnx2: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     rope_type=RopeType.normal,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=True,
+    multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

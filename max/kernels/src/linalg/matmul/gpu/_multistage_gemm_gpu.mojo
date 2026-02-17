@@ -15,6 +15,7 @@ from math import ceildiv
 from sys import (
     align_of,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     is_nvidia_gpu,
     simd_width_of,
     size_of,
@@ -233,7 +234,7 @@ fn multistage_mma[
     next_op_b_iter: LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         alignment=next_op_b_iter_alignment,
         layout_int_type=next_op_b_layout_int_type,
         linear_idx_type=next_op_b_linear_idx_type,
@@ -241,7 +242,7 @@ fn multistage_mma[
     ] = LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         alignment=next_op_b_iter_alignment,
         layout_int_type=next_op_b_layout_int_type,
         linear_idx_type=next_op_b_linear_idx_type,
@@ -751,14 +752,14 @@ fn multistage_gemm_kernel[
     a: LayoutTensor[
         a_type,
         a_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         layout_int_type=a_layout_int_type,
         linear_idx_type=a_linear_idx_type,
     ],
     b: LayoutTensor[
         b_type,
         b_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         layout_int_type=b_layout_int_type,
         linear_idx_type=b_linear_idx_type,
     ],
@@ -1150,8 +1151,8 @@ fn multistage_gemm_split_k_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
     work_space: LayoutTensor[work_space_type, workspace_layout, MutAnyOrigin],
     num_partitions: Int,
 ):
@@ -1197,7 +1198,11 @@ fn multistage_gemm_split_k_kernel[
     )
 
     @parameter
-    if has_amd_gpu_accelerator() and transpose_b:
+    if (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
         gemm_kernel_amd[
             work_space_type,
             work_space_part.layout,

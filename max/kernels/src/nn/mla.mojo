@@ -148,7 +148,7 @@ fn flare_mla_decoding[
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
@@ -343,7 +343,7 @@ fn flare_mla_decoding_dispatch[
     ctx: DeviceContext,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
@@ -1321,17 +1321,19 @@ fn flare_mla_prefill[
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1489,17 +1491,21 @@ fn flare_mla_prefill[
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
-    k_rope: LayoutTensor[_, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[
+        mut=False, _, address_space = AddressSpace.GENERIC, ...
+    ],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1642,16 +1648,18 @@ fn flare_mla_prefill_dispatch[
     use_fa4: Bool = False,
 ](
     output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     max_prompt_len: Int,
     scale: Float32,
@@ -1803,7 +1811,7 @@ fn mla_prefill[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[

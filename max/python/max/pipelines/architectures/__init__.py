@@ -50,6 +50,7 @@ def register_all_models() -> None:
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
     from .llama3 import llama_arch
+    from .llama3_legacy import llama_legacy_arch
     from .llama4 import llama4_arch
     from .mamba import mamba_arch, mamba_arch_new
     from .mistral import mistral_arch
@@ -83,6 +84,7 @@ def register_all_models() -> None:
         internvl_arch,
         idefics3_arch,
         llama_arch,
+        llama_legacy_arch,
         llama4_arch,
         mamba_arch,
         mamba_arch_new,

@@ -731,14 +731,14 @@ struct TMATensorTile[
         self.descriptor = descriptor
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """
         Copy initializes this `TMATensorTile` from another instance.
 
         Args:
-            other: The other `TMATensorTile` instance to copy from.
+            copy: The other `TMATensorTile` instance to copy from.
         """
-        self.descriptor = other.descriptor
+        self.descriptor = copy.descriptor
 
     @always_inline
     fn prefetch_descriptor(self):
@@ -3569,7 +3569,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -3876,14 +3876,14 @@ struct RaggedTMA3DTile[
         )
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """
         Copy initializes this `RaggedTMA3DTile` from another instance.
 
         Args:
-            other: The other `RaggedTMA3DTile` instance to copy from.
+            copy: The other `RaggedTMA3DTile` instance to copy from.
         """
-        self.descriptor = other.descriptor
+        self.descriptor = copy.descriptor
 
     @always_inline("nodebug")
     fn async_copy_to[
@@ -4507,20 +4507,20 @@ struct TMATensorTileIm2col[
         self.lower_corner_w = lower_corner_w
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy initializes from another instance.
 
         Args:
-            other: The other instance to copy from.
+            copy: The other instance to copy from.
         """
-        self.descriptor = other.descriptor
-        self.out_height = other.out_height
-        self.out_width = other.out_width
-        self.filter_h = other.filter_h
-        self.filter_w = other.filter_w
-        self.in_channels = other.in_channels
-        self.lower_corner_h = other.lower_corner_h
-        self.lower_corner_w = other.lower_corner_w
+        self.descriptor = copy.descriptor
+        self.out_height = copy.out_height
+        self.out_width = copy.out_width
+        self.filter_h = copy.filter_h
+        self.filter_w = copy.filter_w
+        self.in_channels = copy.in_channels
+        self.lower_corner_h = copy.lower_corner_h
+        self.lower_corner_w = copy.lower_corner_w
 
     @always_inline
     fn prefetch_descriptor(self):

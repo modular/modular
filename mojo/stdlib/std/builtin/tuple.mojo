@@ -113,11 +113,11 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             ).destroy_pointee()
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy construct the tuple.
 
         Args:
-            existing: The value to copy from.
+            copy: The value to copy from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -138,14 +138,14 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             # uninitialized memory.
             UnsafePointer(
                 to=trait_downcast[Copyable](self[i])
-            ).init_pointee_copy(trait_downcast[Copyable](existing[i]))
+            ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move construct the tuple.
 
         Args:
-            existing: The value to move from.
+            take: The value to move from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -157,9 +157,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
             UnsafePointer(to=self[i]).init_pointee_move_from(
-                UnsafePointer(to=existing[i])
+                UnsafePointer(to=take[i])
             )
-        # Note: The destructor on `existing` is auto-disabled in a moveinit.
+        # Note: The destructor on `take` is auto-disabled in a moveinit.
 
     @always_inline("builtin")
     @staticmethod

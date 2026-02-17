@@ -1209,16 +1209,23 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             )
             yield
 
-    # Override enable_overlap_scheduler to True for Llama
-    with patch_retrieve_architecture("LlamaForCausalLM_Legacy"):
-        config = PipelineConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
-            max_num_steps=42,
-        )
-        config._validate_and_resolve_overlap_scheduler()
-        assert config.enable_overlap_scheduler is True
-        assert config.max_num_steps == 1
+    # Override enable_overlap_scheduler to True for Llama or Deepseek models
+    for arch_name in (
+        "LlamaForCausalLM_Legacy",
+        "DeepseekV2ForCausalLM_Legacy",
+        "DeepseekV3ForCausalLM_Legacy",
+        "DeepseekV3_2ForCausalLM_Legacy",
+        "DeepseekV3ForCausalLMNextN_Legacy",
+    ):
+        with patch_retrieve_architecture(arch_name):
+            config = PipelineConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()],
+                max_num_steps=42,
+            )
+            config._validate_and_resolve_overlap_scheduler()
+            assert config.enable_overlap_scheduler is True
+            assert config.max_num_steps == 1
 
     # Don't override if the device is CPU
     with patch_retrieve_architecture("LlamaForCausalLM_Legacy"):

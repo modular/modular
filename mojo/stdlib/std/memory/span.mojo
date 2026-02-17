@@ -137,8 +137,6 @@ struct Span[
     """
 
     # Aliases
-    comptime Mutable = Span[Self.T, unsafe_origin_mutcast[Self.origin]]
-    """The mutable version of the `Span`."""
     comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
     comptime UnsafePointerType = UnsafePointer[

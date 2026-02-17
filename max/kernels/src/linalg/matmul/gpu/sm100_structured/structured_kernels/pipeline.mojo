@@ -501,13 +501,6 @@ struct ProducerStage[
         self._mbar = mbar
 
     @always_inline
-    fn __moveinit__(out self, deinit other: Self):
-        """Move constructor for Optional support."""
-        self.pipeline = other.pipeline
-        self._index = other._index
-        self._mbar = other._mbar
-
-    @always_inline
     fn index(self) -> UInt32:
         """Get the current stage index."""
         return self._index
@@ -621,13 +614,6 @@ struct ConsumerStage[
         self.pipeline = pipeline
         self._index = index
         self._mbar = mbar
-
-    @always_inline
-    fn __moveinit__(out self, deinit other: Self):
-        """Move constructor for Optional support."""
-        self.pipeline = other.pipeline
-        self._index = other._index
-        self._mbar = other._mbar
 
     @always_inline
     fn index(self) -> UInt32:
