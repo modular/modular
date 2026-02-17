@@ -60,6 +60,7 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_split_k_kernel,
 )
 from .amd import gemm_kernel_amd
+from .amd_rdna import gemm_kernel_rdna
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100_structured.default.dispatch import matmul_dispatch_sm100
@@ -780,6 +781,42 @@ fn _matmul_gpu[
         except:
             # Fallback to the naive kernel.
             logger.warning("Vendor BLAS failed")
+
+    @parameter
+    if has_amd_rdna_gpu_accelerator() and not a_type.is_float8():
+        if m > 1 and n > 1 and k >= 16 and k % 16 == 0:
+            logger.info("Executing: RDNA WMMA MATMUL kernel")
+            comptime _BLOCK_M = 64
+            comptime _BLOCK_N = 64
+            comptime _NUM_WARPS = 4
+            comptime _WARP_SIZE = 32
+
+            var c_lt = from_ndbuffer_row_major(c)
+            var a_lt = from_ndbuffer_row_major(a)
+            var b_lt = from_ndbuffer_row_major(b)
+
+            comptime rdna_kernel = gemm_kernel_rdna[
+                c_type,
+                a_type,
+                b_type,
+                c_lt.layout,
+                a_lt.layout,
+                b_lt.layout,
+                transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ]
+
+            ctx.enqueue_function[rdna_kernel, rdna_kernel](
+                c_lt,
+                a_lt,
+                b_lt,
+                m,
+                n,
+                k,
+                grid_dim=(ceildiv(n, _BLOCK_N), ceildiv(m, _BLOCK_M)),
+                block_dim=(_NUM_WARPS * _WARP_SIZE,),
+            )
+            return
 
     logger.info("Executing: Naive MATMUL kernel")
     comptime BLOCK_DIM = 16
