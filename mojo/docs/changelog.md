@@ -52,6 +52,11 @@ what we publish.
 
 ### Language changes
 
+- The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
+  to standardize construction. As such, the argument name for `__moveinit__`
+  must now be named `take` and the argument name for `__copyinit__` must now be
+  named `copy`.
+
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
   keyword argument to disambiguate slices. If you have defined your own range
