@@ -971,20 +971,11 @@ struct SIMD[dtype: DType, size: Int](
                 # this should raise an exception.
                 return Self()
 
-        var div = self / rhs
-
-        @parameter
-        if Self.dtype.is_floating_point():
-            return div.__floor__()
-        elif Self.dtype.is_unsigned():
-            return div
-        else:
-            if all(self.gt(0) & rhs.gt(0)):
-                return div
-
-            var mod = self - div * rhs
-            var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
-            return div - mask.cast[Self.dtype]()
+        return Self(
+            mlir_value=__mlir_op.`pop.floordiv`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
 
     @always_inline("nodebug")
     fn __mod__(self, rhs: Self) -> Self:
