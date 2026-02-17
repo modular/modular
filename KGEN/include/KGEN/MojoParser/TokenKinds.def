@@ -135,7 +135,6 @@ TOK_KEYWORD(None)
 TOK_KEYWORD(nonlocal)
 TOK_KEYWORD(not )
 TOK_KEYWORD(or)
-TOK_KEYWORD(owned) // NOTE: Could be turned into soft keyword
 TOK_KEYWORD(pass)
 TOK_KEYWORD(raise)
 TOK_KEYWORD(ref) // Mojo extension.

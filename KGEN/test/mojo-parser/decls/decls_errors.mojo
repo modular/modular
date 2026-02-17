@@ -702,13 +702,14 @@ struct SpecialFunctions:
      pass
 
 struct TestOwnedDeinitErrors:
-  # expected-error @+1 {{'owned' has been removed, use 'var' or 'deinit' as appropriate}}
+  # 'owned' is no longer a keyword; it is parsed as parameter name, then 'self' is unexpected
+  # expected-error @+1 {{expected ')' in argument list}}
   fn __del__(owned self): pass
 
-  # expected-error @+1 {{'owned' has been removed, use 'var' or 'deinit' as appropriate}}
+  # expected-error @+1 {{expected ')' in argument list}}
   fn __moveinit__(out self, owned x: TestOwnedDeinitErrors): pass
 
-  # expected-error @+1 {{'owned' has been removed, use 'var' or 'deinit' as appropriate}}
+  # expected-error @+1 {{expected ')' in argument list}}
   fn method(owned x): pass
 
 struct TestVarDeinitErrors:

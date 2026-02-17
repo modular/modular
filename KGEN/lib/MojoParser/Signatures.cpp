@@ -264,11 +264,6 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   // Any var/read/mut/ref keyword sets convention.
   if (p.consumeIf(Token::kw_var)) {
     convention = kConventionVar;
-  } else if (p.consumeIf(Token::kw_owned)) {
-    p.emitError(
-        loc, "'owned' has been removed, use 'var' or 'deinit' as appropriate")
-        << FixIt::replaceToken(loc, "var");
-    return failure();
   } else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
@@ -288,7 +283,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   }
 
-  while (p.getToken().isAny(Token::kw_owned, Token::kw_var, Token::kw_ref)) {
+  while (p.getToken().isAny(Token::kw_var, Token::kw_ref)) {
     p.emitTokenError("argument already has a convention specified");
     p.consumeToken();
   }
