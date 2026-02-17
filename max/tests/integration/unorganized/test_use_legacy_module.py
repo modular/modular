@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import pytest
-from max.driver import accelerator_count
+from max.driver import DeviceSpec, accelerator_count
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.legacy.kv_cache import KVCacheStrategy
@@ -256,6 +256,8 @@ def test_config__use_legacy_module_false_falls_back_to_legacy_arch() -> None:
     # Should succeed by falling back to legacy arch
     config = PipelineConfig(
         model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        # Use only one GPU since this model does not support multi-GPU inference.
+        device_specs=[DeviceSpec.accelerator()],
         quantization_encoding=SupportedEncoding.float32,
         max_batch_size=1,
         max_length=128,
