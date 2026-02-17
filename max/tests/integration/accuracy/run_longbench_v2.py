@@ -174,6 +174,7 @@ def get_pred(
     max_len: int,
     cot: bool = False,
     no_context: bool = False,
+    max_new_tokens: int = 128,
     cot_max_new_tokens: int = 1024,
 ) -> dict[str, Any]:
     """Get prediction for a single item.
@@ -186,6 +187,7 @@ def get_pred(
         max_len: Maximum tokens allowed for prompt content.
         cot: Enable chain-of-thought.
         no_context: Omit context.
+        max_new_tokens: Maximum new tokens to generate for non-CoT responses.
         cot_max_new_tokens: Maximum new tokens for CoT reasoning.
 
     Returns:
@@ -222,7 +224,7 @@ def get_pred(
             client,
             max_len,
             temperature=0.1,
-            max_new_tokens=128,
+            max_new_tokens=max_new_tokens,
         )
     if output == "":
         return item
@@ -354,6 +356,7 @@ def _worker_process(
     max_len: int,
     cot: bool,
     no_context: bool,
+    max_new_tokens: int,
     cot_max_new_tokens: int,
     output_file: Path,
 ) -> None:
@@ -368,6 +371,7 @@ def _worker_process(
         max_len: Maximum tokens allowed for prompt content.
         cot: Enable chain-of-thought.
         no_context: Omit context.
+        max_new_tokens: Maximum new tokens to generate for non-CoT responses.
         cot_max_new_tokens: Maximum new tokens for CoT reasoning.
         output_file: Path to output file for writing results.
     """
@@ -391,6 +395,7 @@ def _worker_process(
                     max_len,
                     cot=cot,
                     no_context=no_context,
+                    max_new_tokens=max_new_tokens,
                     cot_max_new_tokens=cot_max_new_tokens,
                 )
             except Exception as e:
@@ -468,6 +473,12 @@ def _worker_process(
     help="Number of parallel processes for evaluation",
 )
 @click.option(
+    "--max_new_tokens",
+    type=int,
+    default=128,
+    help="Maximum new tokens to generate for non-CoT responses",
+)
+@click.option(
     "--cot_max_new_tokens",
     type=int,
     default=1024,
@@ -483,6 +494,7 @@ def main(
     max_context_length: int | None,
     client_timeout: int,
     n_proc: int,
+    max_new_tokens: int,
     cot_max_new_tokens: int,
 ) -> None:
     """Run LongBench v2 evaluation.
@@ -542,6 +554,7 @@ def main(
                 context_length,
                 cot,
                 no_context,
+                max_new_tokens,
                 cot_max_new_tokens,
                 temp_results_file,
             ),

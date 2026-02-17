@@ -1166,6 +1166,19 @@ fn has_amd_gpu_accelerator() -> Bool:
 
 
 @always_inline("nodebug")
+fn has_amd_rdna_gpu_accelerator() -> Bool:
+    """Returns True if the host system has an AMD RDNA GPU and False otherwise.
+
+    Returns:
+        True if the host system has an AMD RDNA GPU.
+    """
+    var arch = _accelerator_arch()
+    return (
+        _is_amd_rdna() or "gfx10" in arch or "gfx11" in arch or "gfx12" in arch
+    )
+
+
+@always_inline("nodebug")
 fn has_nvidia_gpu_accelerator() -> Bool:
     """Returns True if the host system has an NVIDIA GPU and False otherwise.
 

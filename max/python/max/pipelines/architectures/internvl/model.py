@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -133,6 +134,7 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
+@dataclass
 class InternVLInputs(ModelInputs):
     """A class representing inputs for the InternVL model."""
 
@@ -147,33 +149,15 @@ class InternVLInputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
+    return_n_logits: Buffer
+    """Number of logits to return, used by speculative decoding for example."""
+
     # Vision inputs.
     pixel_values: list[Buffer] | None = None
     """Pixel values for vision inputs."""
 
     image_token_indices: list[Buffer] | None = None
     """Per-device pre-computed indices of image tokens in the input sequence."""
-
-    return_n_logits: Buffer
-    """Number of logits to return, used by speculative decoding for example."""
-
-    def __init__(
-        self,
-        input_ids: Buffer,
-        input_row_offsets: list[Buffer],
-        signal_buffers: list[Buffer],
-        return_n_logits: Buffer,
-        pixel_values: list[Buffer] | None = None,
-        kv_cache_inputs: KVCacheInputs | None = None,
-        image_token_indices: list[Buffer] | None = None,
-    ) -> None:
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.return_n_logits = return_n_logits
-        self.pixel_values = pixel_values
-        self.kv_cache_inputs = kv_cache_inputs
-        self.image_token_indices = image_token_indices
 
     @property
     def has_vision_inputs(self) -> bool:

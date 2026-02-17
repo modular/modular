@@ -14,7 +14,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 from max.driver import Buffer, Device
@@ -189,6 +190,40 @@ class PagedKVCacheManager:
     def claim(self, request_id: RequestID, replica_idx: int) -> None:
         """Reserves a sequence ID for the given request ID."""
         self._replica_managers[replica_idx].claim(request_id)
+
+    @contextmanager
+    def reserve(
+        self,
+        contexts: Sequence[TextGenerationContext],
+        *,
+        replica_idx: int,
+        num_steps: int = 1,
+    ) -> Iterator[None]:
+        """Claims, allocates, and releases contexts within a scope.
+
+        This helper is for ephemeral flows (for example, warmup capture) where
+        request IDs should be released when leaving the scope.
+        """
+        claimed_request_ids: list[RequestID] = []
+        try:
+            for context in contexts:
+                if self.contains(context.request_id, replica_idx=replica_idx):
+                    raise ValueError(
+                        "reserve() requires unclaimed request IDs, but "
+                        f"{context.request_id!r} is already claimed on "
+                        f"replica {replica_idx}."
+                    )
+                self.claim(context.request_id, replica_idx=replica_idx)
+                claimed_request_ids.append(context.request_id)
+                self.alloc(
+                    context,
+                    replica_idx=replica_idx,
+                    num_steps=num_steps,
+                )
+            yield
+        finally:
+            for request_id in claimed_request_ids:
+                self.release(request_id, replica_idx=replica_idx)
 
     def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
         """Commits new tokens into the prefix cache for per-replica batches."""

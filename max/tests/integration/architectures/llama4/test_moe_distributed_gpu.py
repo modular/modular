@@ -18,9 +18,11 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.graph.weight import ShardingStrategy
 from max.nn.legacy import Signals
+from max.nn.legacy.comm import Allreduce
 from max.pipelines.architectures.llama4.layers.moe import (
-    DistributedLlama4MoE,
+    Llama4MoE,
     Llama4MoEGate,
 )
 from transformers.models.llama4.configuration_llama4 import (
@@ -89,7 +91,7 @@ def generate_max_outputs(
         "up_proj.weight"
     ].cpu()
 
-    moe = DistributedLlama4MoE(
+    moe = Llama4MoE(
         dtype=dtype,
         devices=devices_ref,
         hidden_dim=text_config.hidden_size,
@@ -102,6 +104,9 @@ def generate_max_outputs(
         apply_router_weight_first=True,
     )
     moe.load_state_dict(state_dict)
+    moe.sharding_strategy = ShardingStrategy.tensor_parallel(n_devices)
+    moe_shards = moe.shard(devices_ref)
+    allreduce = Allreduce(num_accelerators=n_devices)
 
     session = InferenceSession(devices=devices)
     session.set_debug_print_options(style=PrintStyle.COMPACT)
@@ -135,10 +140,11 @@ def generate_max_outputs(
 
         inputs_per_device = [inputs_tensor.to(device) for device in devices_ref]
 
-        outputs = moe(
-            inputs_per_device,
-            graph_signal_buffers,
-        )
+        moe_outs = [
+            shard(x)
+            for shard, x in zip(moe_shards, inputs_per_device, strict=True)
+        ]
+        outputs = allreduce(moe_outs, graph_signal_buffers)
 
         graph.output(outputs[0])
 

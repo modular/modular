@@ -73,7 +73,7 @@ MODELS: dict[str, set[str]] = {
     "qwen/qwen2.5-7b-instruct": MULTI,
     "qwen/qwen2.5-vl-3b-instruct": MULTI,
     "qwen/qwen2.5-vl-7b-instruct": MULTI,
-    "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@B200", "max-ci@H100"},  # MODELS-1020
+    "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
     "qwen/qwen3-8b": MULTI,
     "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
     "qwen/qwen3-vl-4b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@H100"},  # max: 26.2, MI355: no FP8

@@ -162,8 +162,8 @@ struct ROCSHMEMUniqueID(ImplicitlyCopyable):
     fn __init__(out self):
         self.data = InlineArray[Byte, 128](fill=0)
 
-    fn __copyinit__(out self, existing: Self):
-        self.data = existing.data.copy()
+    fn __copyinit__(out self, copy: Self):
+        self.data = copy.data.copy()
 
 
 struct ROCSHMEMInitAttr(ImplicitlyCopyable):
@@ -198,12 +198,6 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
         self.uid = uid
         # Null pointer, we're not using MPI
         self.mpi_comm = UnsafePointer[NoneType, ImmutAnyOrigin]()
-
-    fn __copyinit__(out self, existing: Self):
-        self.rank = existing.rank
-        self.nranks = existing.nranks
-        self.uid = existing.uid
-        self.mpi_comm = existing.mpi_comm
 
 
 fn _dtype_to_rocshmem_type[

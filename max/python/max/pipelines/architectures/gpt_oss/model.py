@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -49,6 +50,7 @@ from .model_config import GptOssConfig
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class GptOssInputs(ModelInputs):
     """A class representing inputs for the GPT OSS model.
 
@@ -63,25 +65,8 @@ class GptOssInputs(ModelInputs):
     """Buffer containing the offsets for each row in the ragged input sequence.
     """
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+    return_n_logits: Buffer
+    """Number of logits to return."""
 
 
 class GptOssModel(PipelineModel[TextContext], KVCacheMixin):

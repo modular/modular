@@ -13,7 +13,7 @@
 from collections import Optional
 from math import ceildiv
 from sys import align_of, simd_width_of, size_of
-from sys.info import has_amd_gpu_accelerator
+from sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -1069,7 +1069,7 @@ fn grouped_matmul[
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
     comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
     comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
-    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
+    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
 
     @parameter
     if is_sm90_kernel_applicable:

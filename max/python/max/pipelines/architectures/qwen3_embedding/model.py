@@ -18,6 +18,7 @@ import functools
 import logging
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
@@ -54,6 +55,7 @@ from .layers import (
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Qwen3EmbeddingInputs(ModelInputs):
     """Input structure for Qwen3 embedding models."""
 
@@ -65,17 +67,6 @@ class Qwen3EmbeddingInputs(ModelInputs):
 
     return_n_logits: Buffer
     """Number of logits to return (kept for interface compatibility)"""
-
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-    ) -> None:
-        super().__init__()
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
 
 
 class Qwen3EmbeddingModel(PipelineModel[TextContext]):

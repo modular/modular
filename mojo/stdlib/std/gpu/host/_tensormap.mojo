@@ -242,13 +242,13 @@ struct TensorMap(ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructor for TensorMap.
 
         Args:
-            other: The TensorMap instance to copy from.
+            copy: The TensorMap instance to copy from.
         """
-        self.data = other.data
+        self.data = copy.data
 
 
 @always_inline

@@ -25,13 +25,13 @@ from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.tensor import Tensor
 
-from ...common_layers.rotary_embedding import RotaryEmbedding
-from .functional_kernels import (
+from ...common_layers.functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
+from ...common_layers.rotary_embedding import RotaryEmbedding
 from .rms_norm import Olmo3RMSNorm
 
 
