@@ -95,29 +95,9 @@ ParamInf::ParamInf(
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
       allowImplicitConversions(allowImplicitConversions), partial(partial) {
-  size_t finalSize = declaredParamTypes.size();
 
-  // Pre-install any "prechecked" bindings.  These come from self arguments like
-  // `x: T[1, 2]; x.foo()`: we'll have 1,2 as prechecked bindings due to 'x' as
-  // the self argument of the call.  This is pretty gross, but we need to do
-  // something like this because we have variadics, specified values for
-  // infer-only parameters etc.  We are also dealing with two concatenated
-  // parameter lists: the Self parameters have keywords before the method
-  // parameters etc.
-  if (getNumPreCheckedParam()) {
-    ArrayRef preChecked =
-        ArrayRef(getGivenBindings().values).take_front(getNumPreCheckedParam());
-    for (auto preCheckedOperand : preChecked) {
-      auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
-      assert(preCheckParamVal && "Prechecked parameters are always PValue's");
-      if (sugarIsa<UnboundAttr>(preCheckParamVal))
-        evaluator.appendIndexBinding(TypedAttr());
-      else
-        evaluator.appendIndexBinding(preCheckParamVal);
-    }
-  }
   // Fills in with nullptr.
-  while (evaluator.getNumIndexBindings() < finalSize)
+  for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i)
     evaluator.appendIndexBinding(TypedAttr());
 }
 
@@ -1017,11 +997,6 @@ LogicalResult ParamInf::inferFromParamList() {
 
   size_t posIdx = 0, numParams = givenBindings.size();
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
-    if (idx < getNumPreCheckedParam()) {
-      ++posIdx; // Prechecked, already installed (or not, if _).
-      continue;
-    }
-
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
     Type expectedType = evaluator.getReboundType(declaredParamTypes[idx]);

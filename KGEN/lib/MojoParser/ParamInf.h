@@ -100,9 +100,6 @@ private:
   const CallOperands &getGivenBindings() const {
     return paramBindings.getParameters();
   }
-  size_t getNumPreCheckedParam() const {
-    return paramBindings.getNumPreCheckedParams();
-  }
 
   // A simple wrapper around `overwriteIndexBinding` to ensure sugar is aligned
   // before overwriting parameter value.
@@ -181,6 +178,7 @@ private:
   const bool partial;
 
   friend class ParamMatcher;
+  friend class ParamBindings;
 };
 
 } // namespace M::KGEN::LIT
