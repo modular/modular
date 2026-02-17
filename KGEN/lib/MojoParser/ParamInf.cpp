@@ -1168,6 +1168,33 @@ LogicalResult ParamInf::inferFromParamList() {
   return success();
 }
 
+LogicalResult ParamInf::inferForStruct() {
+  if (failed(inferFromParamList()))
+    return failure();
+
+  // Check to see if we have ... and remove it from the parameter list.
+  bool hasEllipsis =
+      llvm::any_of(getGivenBindings().values, [](OperandValue binding) {
+        return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
+      });
+
+  // FIXME: we also allow using `_` (UnboundAttr) in a very unprincipled
+  // way: it can either be used to unbound a particular positional parameter or
+  // as a placeholder (unknown value to be inferred). This creates a lot of
+  // subtlety in the compiler, we should probably only allow `_` in partial
+  // binding context too?
+  //
+  // ParamInf should have already complained and returned.
+  //
+  // FIXME: according to the specification, we should only do this when all
+  // other parameter is bound.
+  if (!hasEllipsis && failed(inferFromDefaults())) {
+    return failure();
+  }
+
+  return finalizeWithUnbound();
+}
+
 LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const CallOperands &operands,
                                      const OperandValueList &variadicKwOperands,

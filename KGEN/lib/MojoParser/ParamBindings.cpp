@@ -240,43 +240,12 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                      getDiag,
                      /*declIfDirect=*/nullptr);
 
-  if (failed(inference.inferFromParamList()))
+  if (failed(inference.inferForStruct()))
     return nullptr;
-
-  // Check to see if we have ... and remove it from the parameter list.
-  bool hasEllipsis = llvm::any_of(parameters.values, [](OperandValue binding) {
-    return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
-  });
-
-  // FIXME: we also allow using `_` (UnboundAttr) in a very unprincipled
-  // way: it can either be used to unbound a particular positional parameter or
-  // as a placeholder (unknown value to be inferred). This creates a lot of
-  // subtlety in the compiler, we should probably only allow `_` in partial
-  // binding context too.
-  // For the second use case (placeholder for unknown), we can, e.g., allow
-  // users to type
-  //
-  // var c : ParamType[ , p1, , p2]
-  // # instead of
-  // var c : ParamType[_, p1, _, p2]
-
-  // ParamInf should have already complained and returned.
-  assert(!hasEllipsis || partial && "`...` used in full binding context");
-
-  // If we had a variadic parameter that is unspecified, and no arguments to
-  // infer it from, it must be because of an empty variadic list.
-  //
-  // FIXME: according to the specification, we should only do this when all
-  // other parameter is bound.
-  if (!hasEllipsis && failed(inference.inferFromDefaults()))
-    return nullptr;
-
-  if (failed(inference.finalizeWithUnbound()))
-    return {};
 
   // If succeeded, Simply return all the binding from the inference.
   return ParameterExprArrayAttr::get(declScope.getContext(),
-                                     inference.evaluator.getIndexBindings());
+                                     inference.getInferredValues());
 }
 
 ParameterExprArrayAttr
@@ -337,32 +306,14 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                      /*allowImplicitConversions=*/true, /*partial=*/partial,
                      getDiags, declIfKnown);
 
-  if (failed(inference.inferFromParamList())) {
+  if (failed(inference.inferForStruct())) {
     return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
             std::move(diag)};
   }
-
-  // Check to see if we have ... and remove it from the parameter list.
-  bool hasEllipsis = llvm::any_of(parameters.values, [](OperandValue binding) {
-    return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
-  });
-
-  // If we had a variadic parameter that is unspecified, and no arguments to
-  // infer it from, it must be because of an empty variadic list.
-  //
-  // FIXME: according to the specification, we should only do this when all
-  // other parameter is bound.
-  if (!hasEllipsis && failed(inference.inferFromDefaults())) {
-    return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
-            std::move(diag)};
-  }
-
-  if (failed(inference.finalizeWithUnbound()))
-    return {ParameterExprArrayAttr(), Fitness(), std::move(diag)};
 
   // If succeeded, Simply return all the binding from the inference.
-  auto bindings = ParameterExprArrayAttr::get(
-      declScope.getContext(), inference.evaluator.getIndexBindings());
+  auto bindings = ParameterExprArrayAttr::get(declScope.getContext(),
+                                              inference.getInferredValues());
 
   return {bindings, Fitness(), std::move(diag)};
 }

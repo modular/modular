@@ -39,16 +39,6 @@ public:
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       ASTDecl *declIfDirect);
 
-  /// Infer all of the parameters we can from 'givenBindings'.
-  ///
-  /// The 'partial' field specifies this is
-  /// performing a partial binding - e.g. because this is not a full type
-  /// binding, or because more params can be inferred from arguments to the
-  /// call.
-  ///
-  /// On failure, this will emit a diagnostic through the 'getDiag' callback.
-  LogicalResult inferFromParamList();
-
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
   /// parameter. This should always return failure /without/ an error if it
@@ -60,6 +50,36 @@ public:
                              const CallOperands &callOperands,
                              const OperandValueList &variadicKwOperands,
                              bool returnsSelf, bool hasCTADParams);
+
+  // Infer the parameter binding for a struct given a (potentially incomplete)
+  // parameter binding.
+  LogicalResult inferForStruct();
+
+  /// After inferring parameter values, this allows access to the results.
+  TypedAttr getInferredValue(size_t idx) const {
+    return evaluator.getIndexBindings()[idx];
+  }
+
+  ArrayRef<TypedAttr> getInferredValues() const {
+    return evaluator.getIndexBindings();
+  }
+
+  // Debug util.
+  void dump() const;
+
+  // The list of constraints that were not able to be satisfied.
+  SmallVector<ConstraintAttr> unprovableConstraints;
+
+private:
+  /// Infer all of the parameters we can from 'givenBindings'.
+  ///
+  /// The 'partial' field specifies this is
+  /// performing a partial binding - e.g. because this is not a full type
+  /// binding, or because more params can be inferred from arguments to the
+  /// call.
+  ///
+  /// On failure, this will emit a diagnostic through the 'getDiag' callback.
+  LogicalResult inferFromParamList();
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
@@ -74,11 +94,6 @@ public:
   // UnboundAttr.
   LogicalResult finalizeWithUnbound();
 
-  /// After inferring parameter values, this allows access to the results.
-  TypedAttr getInferredValue(size_t idx) const {
-    return evaluator.getIndexBindings()[idx];
-  }
-
   /// Convenience getters for fields from paramBindings.
   ASTDecl &getDeclScope() const { return paramBindings.declScope; }
   SharedState &getShared() const { return paramBindings.shared; }
@@ -89,12 +104,6 @@ public:
     return paramBindings.getNumPreCheckedParams();
   }
 
-  void dump() const;
-
-  /// This is the evaluator instance parameter inference uses to progressively
-  /// refine dependent types as we infer parameters.
-  ParserParameterEvaluator evaluator;
-
   // A simple wrapper around `overwriteIndexBinding` to ensure sugar is aligned
   // before overwriting parameter value.
   // Notable, this method does not check there is no existing parameter inferred
@@ -102,33 +111,7 @@ public:
   //
   // Return failure when the constraint attached to the parameter can not be
   // satisfied, it populates unprovableConstraints too.
-  SmallVector<ConstraintAttr> unprovableConstraints;
   LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal);
-
-  /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
-  ParamIndexRefAttrFinder paramFinder;
-
-private:
-  // This says that a parameter with an unresolved dependent type was seen
-  // during initial parameter binding application, so resolution of it was
-  // deferred.
-  //
-  // This is to handle cases like:
-  //
-  // fn foo[rank : Int, coord : IndexList[rank, Int]](i : SomeThing[rank]):
-  //    pass
-  //
-  // fn foo_user():
-  //    var i = SomeThing[2]
-  //    foo[coord = Tuple(1, 2)](i)
-  //
-  // When binding `coord` with `coord: Tuple[Int, Int]`, we do not know that
-  // `rank=2` nor `Tuple[Int, Int]` is convertible to `IndexList[2, Int]`, we
-  // have to postpone the binding till `rank` is resolved.
-  //
-  // Do we need to support this? I don't think this is too crazy to require user
-  // to type `foo[rank = 2, coord = (1, 2)]` here?
-  bool hasDeferredGivenParam = false;
 
   FailureOr<SmartVariant<CValue, ASTType>>
   inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
@@ -157,6 +140,34 @@ private:
                                             ASTType expectedType,
                                             size_t paramIdx);
 
+  /// This is the evaluator instance parameter inference uses to progressively
+  /// refine dependent types as we infer parameters.
+  ParserParameterEvaluator evaluator;
+
+  /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
+  ParamIndexRefAttrFinder paramFinder;
+
+  // This says that a parameter with an unresolved dependent type was seen
+  // during initial parameter binding application, so resolution of it was
+  // deferred.
+  //
+  // This is to handle cases like:
+  //
+  // fn foo[rank : Int, coord : IndexList[rank, Int]](i : SomeThing[rank]):
+  //    pass
+  //
+  // fn foo_user():
+  //    var i = SomeThing[2]
+  //    foo[coord = Tuple(1, 2)](i)
+  //
+  // When binding `coord` with `coord: Tuple[Int, Int]`, we do not know that
+  // `rank=2` nor `Tuple[Int, Int]` is convertible to `IndexList[2, Int]`, we
+  // have to postpone the binding till `rank` is resolved.
+  //
+  // Do we need to support this? I don't think this is too crazy to require user
+  // to type `foo[rank = 2, coord = (1, 2)]` here?
+  bool hasDeferredGivenParam = false;
+
   /// This describes the number of type of all of the parameters we're trying to
   /// resolve for this entire declaration.
   ArrayRef<Type> declaredParamTypes;
@@ -168,6 +179,8 @@ private:
   const bool allowImplicitConversions;
   /// True if the inference can lead to unbound attribute.
   const bool partial;
+
+  friend class ParamMatcher;
 };
 
 } // namespace M::KGEN::LIT
