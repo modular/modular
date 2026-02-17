@@ -48,6 +48,7 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
         kv_params,
         total_num_pages=16,
         session=session,
+        max_batch_size=128,
     )
     return device, kv_manager
 

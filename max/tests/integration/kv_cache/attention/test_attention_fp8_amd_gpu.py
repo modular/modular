@@ -100,6 +100,7 @@ def _create_kv_manager(
         params=kv_params,
         total_num_pages=8,
         session=gpu_session,
+        max_batch_size=128,
     )
 
     return manager, kv_params

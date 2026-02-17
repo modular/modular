@@ -746,9 +746,6 @@ def test_inplace_copy_from_raises() -> None:
     tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
     assert tensor_3_3_noncontig.shape == (3, 3)
     assert not tensor_3_3_noncontig.is_contiguous
-    with pytest.raises(ValueError) as e:
-        tensor_3_3_noncontig.inplace_copy_from(tensor_3_3_noncontig)
-        assert "Cannot copy from non-contiguous tensor" in str(e.value)
 
     with pytest.raises(ValueError) as e:
         tensor_3_3.inplace_copy_from(tensor_3_3_noncontig)
@@ -764,6 +761,14 @@ def test_inplace_copy_from_raises() -> None:
     with pytest.raises(ValueError) as e:
         tensor_i32.inplace_copy_from(tensor_i16)
         assert "Cannot copy tensors of different dtypes" in str(e.value)
+
+
+def test_inplace_copy_from_self_copy_noncontiguous_noop() -> None:
+    tensor_3_10_3 = Buffer(DType.int32, (3, 10, 3))
+    tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
+    assert not tensor_3_3_noncontig.is_contiguous
+
+    tensor_3_3_noncontig.inplace_copy_from(tensor_3_3_noncontig)
 
 
 def test_inplace_copy_from_tensor_view() -> None:

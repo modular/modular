@@ -108,6 +108,7 @@ def _single_gpu_baseline(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     hidden_state_type = TensorType(
@@ -365,6 +366,7 @@ def _run_distributed_dp(
         params=_build_kv_params(config, dp_degree),
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     compiled, _ = _build_graph_and_compile(

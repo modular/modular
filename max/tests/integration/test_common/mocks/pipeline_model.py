@@ -48,12 +48,35 @@ class MockModelInputs(ModelInputs):
         active_batch_size: int,
         eos_prob: float,
         kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
+        return_n_logits: int | Buffer = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
         self.eos_prob = eos_prob
+        self.tokens = Buffer.from_numpy(
+            np.zeros((max(active_batch_size, 1),), dtype=np.int64)
+        )
+        self.input_row_offsets = Buffer.from_numpy(
+            np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
+        )
+        self.signal_buffers: list[Buffer] = []
         self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+        if isinstance(return_n_logits, Buffer):
+            self.return_n_logits = return_n_logits
+        else:
+            self.return_n_logits = Buffer.from_numpy(
+                np.array([return_n_logits], dtype=np.uint32)
+            )
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.return_n_logits,
+            *self.signal_buffers,
+            *kv_cache_inputs,
+        )
 
 
 class MockPipelineModel(PipelineModel):

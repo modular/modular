@@ -179,6 +179,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_params,
         total_num_pages=32,
         session=session,
+        max_batch_size=128,
     )
 
     # Create contexts and claim seq_ids in cache.

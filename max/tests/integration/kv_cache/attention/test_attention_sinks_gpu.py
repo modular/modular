@@ -87,6 +87,7 @@ def max_flash_attention_with_sinks(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Create contexts for KV cache

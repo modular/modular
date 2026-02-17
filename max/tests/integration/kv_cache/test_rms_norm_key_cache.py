@@ -102,6 +102,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -178,6 +179,7 @@ def test_partial_rms_norm_key_cache(
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -268,6 +270,7 @@ def test_rms_norm_new_key_cache(
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -410,6 +413,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # For per token normalization, gamma has shape [n_kv_heads * head_dim]

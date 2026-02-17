@@ -43,6 +43,17 @@ def get_blocks_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[list[int]]:
     return kv_tuple[2].to_numpy().tolist()
 
 
+# Runtime lookup tables are preallocated to `total_num_pages` columns.
+# Unused columns are padded with sentinel `total_num_pages`, so tests should
+# compare only assigned block ids.
+def assigned_blocks(kv_tuple: RaggedKVCacheInputs) -> list[list[int]]:
+    total_num_pages = kv_tuple.lookup_table.shape[1]
+    return [
+        [block for block in row if block != total_num_pages]
+        for row in get_blocks_from_kv_tuple(kv_tuple)
+    ]
+
+
 def get_uncommitted_and_committed_block_counts(
     kv_tuple: RaggedKVCacheInputs,
 ) -> list[list[int]]:
@@ -53,7 +64,11 @@ def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
     return kv_tuple[1].to_numpy().tolist()
 
 
-def create_kv_cache(num_blocks: int, page_size: int = 1) -> PagedKVCacheManager:
+def create_kv_cache(
+    num_blocks: int,
+    page_size: int = 1,
+    max_batch_size: int = 128,
+) -> PagedKVCacheManager:
     kv_params = KVCacheParams(
         dtype=DType.float32,
         num_layers=1,
@@ -72,6 +87,7 @@ def create_kv_cache(num_blocks: int, page_size: int = 1) -> PagedKVCacheManager:
         total_num_pages=num_blocks,
         session=session,
         enable_runtime_checks=True,
+        max_batch_size=max_batch_size,
     )
 
     return kv_manager
@@ -89,8 +105,8 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 1: Prefill 10 - 14
     batch = [context_1]
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs)[0] == [
         len(initial_prompt_1),
         len(initial_prompt_1),
     ]
@@ -98,15 +114,22 @@ async def test_prefix_caching_basic() -> None:
     kv_manager.step([batch])
 
     # Check that we got new blocks
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
+    assert assigned_blocks(kv_inputs)[0] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]
 
     # Seq 1: Token gen 15 - 18
     toks = [15, 16, 17, 18, 19]
     for i in range(len(toks) - 1):
-        kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-        assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
-            0
-        ] == [1, 5 + i + 1]
+        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+        assert get_uncommitted_and_committed_block_counts(kv_inputs)[0] == [
+            1,
+            5 + i + 1,
+        ]
         batch[0].update(toks[i + 1])
         kv_manager.step([batch])
 
@@ -118,8 +141,8 @@ async def test_prefix_caching_basic() -> None:
     kv_manager.alloc(context_2, replica_idx=0, num_steps=5)
 
     # Seq 2: Prefill 10 - 13
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs)[0] == [
         1,
         len(initial_prompt_2),
     ]
@@ -127,17 +150,20 @@ async def test_prefix_caching_basic() -> None:
     kv_manager.step([batch])
 
     # Check that we got cached blocks, except for last token in prompt
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:3] == [0, 1, 2]
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][3] != [3]
+    assigned = assigned_blocks(kv_inputs)[0]
+    assert assigned[:3] == [0, 1, 2]
+    assert assigned[3] != 3
 
     # Seq 2: Token gen 14 - 17
     toks = [14, 15, 99, 100, 101]
     for i in range(len(toks) - 1):
-        kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-        assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
-            0
-        ] == [1, len(initial_prompt_2) + i + 1]
-        assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
+        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+        assert get_uncommitted_and_committed_block_counts(kv_inputs)[0] == [
+            1,
+            len(initial_prompt_2) + i + 1,
+        ]
+        assigned = assigned_blocks(kv_inputs)[0]
+        assert assigned[:4] == [0, 1, 2, 3]
         batch[0].update(toks[i + 1])
         kv_manager.step([batch])
 
@@ -369,9 +395,9 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=5)
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    assert assigned_blocks(kv_inputs)[0] == [0, 1, 2]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [5, 5],
     ]
 
@@ -379,9 +405,9 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     kv_manager.step([batch])
 
     # Seq 1: Token gen 15
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    assert assigned_blocks(kv_inputs)[0] == [0, 1, 2]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [1, 6],
     ]
 
@@ -389,9 +415,14 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     kv_manager.step([batch])
 
     # Seq 1: Token gen 16
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch])
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    assert assigned_blocks(kv_inputs)[0] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [1, 7],
     ]
 
@@ -409,9 +440,14 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=5)
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch], num_steps=3)
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch], num_steps=3)[0]
+    assert assigned_blocks(kv_inputs)[0] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [5, 5],
         [1, 6],
         [1, 7],
@@ -424,9 +460,15 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     # Seq 1: Token gen 18 - 19 in one pass
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=2)
-    kv_tuple_list = kv_manager.get_runtime_inputs([batch], num_steps=2)
-    assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
-    assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
+    kv_inputs = kv_manager.get_runtime_inputs([batch], num_steps=2)[0]
+    assert assigned_blocks(kv_inputs)[0] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]
+    assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [1, 8],
         [1, 9],
     ]
@@ -552,8 +594,13 @@ async def test_prefix_caching_grouped_prefixes(
     """
     np.random.seed(12345)
 
+    num_batches = 15
     # evictions will not happen since we allocate so many blocks
-    kv_manager = create_kv_cache(num_blocks=10000, page_size=page_size)
+    kv_manager = create_kv_cache(
+        num_blocks=10000,
+        page_size=page_size,
+        max_batch_size=batch_size * num_batches,
+    )
     model = FakeModel(kv_manager)
 
     # generate a number of grouped prefixes:
@@ -566,7 +613,6 @@ async def test_prefix_caching_grouped_prefixes(
         group_prefixes.append(group_prefix)
 
     # run CE on 15 batches of batch_size requests each
-    num_batches = 15
     batch: dict[RequestID, TextContext] = {}
     for b in range(num_batches):
         for r in range(batch_size):
