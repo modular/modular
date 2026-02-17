@@ -171,7 +171,15 @@ fn rope_ragged[
 
         @parameter
         if width == 1:
-            # constrained[False, "ROPE SIMD_WIDTH=1, We should never be here"]()
+            debug_assert(
+                False,
+                (
+                    "RoPE kernel called with simd width = 1, We should never be"
+                    " here. This is indicative of an uneven last dimension of"
+                    " the rope tensor. Ensure the model's head_size is"
+                    " divisible by the simd width of your target hardware."
+                ),
+            )
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -259,7 +267,13 @@ fn rope_ragged[
                 mrope_section.value()[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert (
+        kernel_simd_width >= 2 and rope_dim % kernel_simd_width == 0
+    ), (
+        "Rope kernel simd width must be between 2 and rope_dim and divisible by"
+        " rope_dim. Ensure the model's head_size is divisible by the simd width"
+        " of your target hardware."
+    )
 
     @parameter
     if is_cpu[target]():
