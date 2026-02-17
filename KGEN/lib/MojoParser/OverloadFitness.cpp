@@ -734,8 +734,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return std::move(inference.unprovableConstraints);
   }
 
-  auto newBindings = ParameterExprArrayAttr::get(
-      signature.getContext(), inference.evaluator.getIndexBindings());
+  auto newBindings = ParameterExprArrayAttr::get(signature.getContext(),
+                                                 inference.getInferredValues());
   assert(inference.unprovableConstraints.empty() &&
          "expect no unprovable constraints on a successful inference.");
   assert(newBindings && "expected new bindings when no diagnostic was emitted");
