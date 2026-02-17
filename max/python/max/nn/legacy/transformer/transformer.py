@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
 from typing import TypeVar
 
@@ -88,10 +89,123 @@ class ReturnHiddenStates(str, Enum):
     ALL_NORMALIZED = "all_normalized"
 
 
+def logits_postprocess(
+    h: TensorValue,
+    input_row_offsets: TensorValue,
+    return_n_logits: TensorValue,
+    norm: Callable[[TensorValue], TensorValue],
+    lm_head: Callable[[TensorValue], TensorValue],
+    return_logits: ReturnLogits,
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+    logits_scaling: float = 1.0,
+) -> tuple[TensorValue, ...]:
+    """Common logits postprocessing for single-device models.
+
+    Handles last-token gathering, logits computation (VARIABLE/ALL/LAST_TOKEN),
+    logits scaling, and hidden states return.
+
+    Args:
+        h: Hidden states from the final transformer layer.
+        input_row_offsets: Row offsets for ragged batching.
+        return_n_logits: Number of logits to return per sequence.
+        norm: Normalization function (e.g. RMSNorm).
+        lm_head: Language model head projection.
+        return_logits: Which logits to return.
+        return_hidden_states: Which hidden states to return.
+        logits_scaling: Scaling factor for logits.
+
+    Returns:
+        Tuple of (last_logits, [logits, offsets], [hidden_states]).
+    """
+    last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
+    last_logits = ops.cast(lm_head(norm(last_h)), DType.float32)
+    logits = None
+    offsets = None
+
+    if return_logits == ReturnLogits.VARIABLE:
+        return_n_logits_range = ops.range(
+            return_n_logits[0],
+            0,
+            -1,
+            out_dim="return_n_logits_range",
+            device=h.device,
+            dtype=DType.int64,
+        )
+        offsets = (
+            ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+        )
+        last_indices = ops.reshape(offsets, shape=(-1,))
+        last_tokens = ops.gather(h, last_indices, axis=0)
+        logits = ops.cast(lm_head(norm(last_tokens)), DType.float32)
+        offsets = ops.range(
+            0,
+            TensorValue(last_indices.shape[0]) + return_n_logits[0],
+            return_n_logits[0],
+            out_dim="logit_offsets",
+            device=h.device,
+            dtype=DType.int64,
+        )
+    elif return_logits == ReturnLogits.ALL:
+        logits = ops.cast(lm_head(norm(h)), DType.float32)
+        offsets = input_row_offsets
+
+    if logits_scaling != 1.0:
+        last_logits = last_logits / logits_scaling
+        if logits is not None:
+            logits = logits / logits_scaling
+
+    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    if offsets is not None:
+        assert logits is not None
+        ret_val += (logits, offsets)
+
+    if return_hidden_states == ReturnHiddenStates.ALL:
+        ret_val += (h,)
+    elif return_hidden_states == ReturnHiddenStates.LAST:
+        ret_val += (last_h,)
+    elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+        ret_val += (norm(h),)
+    elif return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
+        ret_val += (norm(last_h),)
+
+    return ret_val
+
+
+class LogitsPostprocessMixin:
+    """Mixin providing logits postprocessing for single-device models.
+
+    Requires: self.norm, self.lm_head, self.return_logits.
+    Optional: self.return_hidden_states, self.logits_scaling.
+    """
+
+    norm: Callable[[TensorValue], TensorValue]
+    lm_head: Callable[[TensorValue], TensorValue]
+    return_logits: ReturnLogits
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    logits_scaling: float = 1.0
+
+    def _postprocess_logits(
+        self,
+        h: TensorValue,
+        input_row_offsets: TensorValue,
+        return_n_logits: TensorValue,
+    ) -> tuple[TensorValue, ...]:
+        return logits_postprocess(
+            h,
+            input_row_offsets,
+            return_n_logits,
+            norm=self.norm,
+            lm_head=self.lm_head,
+            return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
+            logits_scaling=self.logits_scaling,
+        )
+
+
 Block = TypeVar("Block", bound=Module, covariant=True)
 
 
-class Transformer(Module):
+class Transformer(LogitsPostprocessMixin, Module):
     """Transformer model consisting for TransformerBlock layers."""
 
     def __init__(
@@ -140,61 +254,7 @@ class Transformer(Module):
                 input_row_offsets=input_row_offsets,
             )
 
-        # Retrieve a variable number of tokens
-        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                return_n_logits[0],
-                0,
-                -1,
-                out_dim="return_n_logits_range",
-                device=h.device,
-                dtype=DType.int64,
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            last_tokens = ops.gather(h, last_indices, axis=0)
-            logits = ops.cast(
-                self.lm_head(self.norm(last_tokens)), DType.float32
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                device=h.device,
-                dtype=DType.int64,
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
-            offsets = input_row_offsets
-
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-            if logits is not None:
-                logits = logits / self.logits_scaling
-
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += (h,)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_h,)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            ret_val += (self.norm(h),)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += (self.norm(last_h),)
-
-        return ret_val
+        return self._postprocess_logits(h, input_row_offsets, return_n_logits)
 
     def __call__(
         self,

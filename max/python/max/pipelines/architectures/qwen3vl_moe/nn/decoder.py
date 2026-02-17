@@ -34,8 +34,8 @@ from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
@@ -226,7 +226,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
             return mlp
 
 
-class Qwen3VLMoEDecoder(Module):
+class Qwen3VLMoEDecoder(DistributedLogitsPostprocessMixin, Module):
     """Qwen3VL MoE decoder model with support for vision-language tasks.
 
     This decoder implements the Qwen3VL MoE architecture with:
@@ -461,75 +461,6 @@ class Qwen3VLMoEDecoder(Module):
                     )
                 ]
 
-        # Retrieve a variable number of tokens
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        assert h is not None and len(h) == len(last_token_indices)
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64, device=self.devices[0]),
-                ops.constant(-1, DType.int64, device=self.devices[0]),
-                out_dim="return_n_logits_range",
-                device=self.devices[0],
-                dtype=DType.int64,
-            )
-
-            last_indices = [
-                ops.reshape(
-                    ops.unsqueeze(row_offset[1:], -1) - return_range,
-                    shape=(-1,),
-                )
-                for row_offset in input_row_offsets
-            ]
-
-            # Gather, normalize, and get logits
-            variable_tokens = [
-                self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(
-                    zip(h, last_indices, strict=True)
-                )
-            ]
-            logits = ops.cast(
-                self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
-            )
-            offsets = ops.range(
-                0,
-                last_indices[0].shape[0] + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = [
-                self.norm_shards[i](h_device) for i, h_device in enumerate(h)
-            ]
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0], DType.float32
-            )
-            offsets = input_row_offsets[0]
-
-        if offsets is not None:
-            assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)

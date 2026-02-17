@@ -13,21 +13,29 @@
 """The transformer mechanism used within the model."""
 
 from .distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
     DistributedTransformer,
     DistributedTransformerBlock,
+    distributed_logits_postprocess,
 )
 from .transformer import (
+    LogitsPostprocessMixin,
     ReturnHiddenStates,
     ReturnLogits,
     Transformer,
     TransformerBlock,
+    logits_postprocess,
 )
 
 __all__ = [
+    "DistributedLogitsPostprocessMixin",
     "DistributedTransformer",
     "DistributedTransformerBlock",
+    "LogitsPostprocessMixin",
     "ReturnHiddenStates",
     "ReturnLogits",
     "Transformer",
     "TransformerBlock",
+    "distributed_logits_postprocess",
+    "logits_postprocess",
 ]
