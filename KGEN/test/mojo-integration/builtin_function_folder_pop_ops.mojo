@@ -912,6 +912,34 @@ fn fold_pop_simd_div() -> POPF32x4T[POP_F32x4_Div]:
 
 
 ##===----------------------------------------------------------------------===##
+# Fold pop.simd_floordiv
+##===----------------------------------------------------------------------===##
+
+
+comptime POP_F32x4_FloorDiv = __mlir_attr.`#pop.simd<"2.0", "-3.0", "0.0", "2.0"> : !pop.simd<4, f32>`
+
+
+@always_inline("builtin")
+fn pop_simd_floordiv(
+    x: __mlir_type.`!pop.simd<4, f32>`,
+    y: __mlir_type.`!pop.simd<4, f32>`,
+) -> __mlir_type.`!pop.simd<4, f32>`:
+    return __mlir_op.`pop.floordiv`(x, y)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_floordiv
+fn fold_pop_simd_floordiv() -> POPF32x4T[POP_F32x4_FloorDiv]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"2", "-3", "0", "2">)>>
+    var a = POPF32x4T[
+        pop_simd_floordiv(
+            __mlir_attr.`#pop.simd<"7.0", "7.0", "0.0", "4.0"> : !pop.simd<4, f32>`,
+            __mlir_attr.`#pop.simd<"3.0", "-3.0", "1.0", "2.0"> : !pop.simd<4, f32>`,
+        )
+    ]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
 # Fold pop.simd_shl
 ##===----------------------------------------------------------------------===##
 

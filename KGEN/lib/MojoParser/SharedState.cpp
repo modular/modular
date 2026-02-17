@@ -2833,6 +2833,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldSIMDBinOp<POP::SIMDMulAttr>(op, *this);
   if (isa<POP::DivOp>(op))
     return foldSIMDBinOp<POP::SIMDDivAttr>(op, *this);
+  if (isa<POP::FloorDivOp>(op))
+    return foldSIMDBinOp<POP::SIMDFloorDivAttr>(op, *this);
   if (isa<POP::SIMDAndOp>(op))
     return foldSIMDBinOp<POP::SIMDAndAttr>(op, *this);
   if (isa<POP::SIMDXOrOp>(op))
