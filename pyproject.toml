@@ -49,7 +49,6 @@ ignore = [
   "B028", # No explicit `stacklevel` keyword argument found
   "D100", # TODO: Enable missing docstrings in public modules
   "D101", # TODO: Enable missing docstrings in public classes
-  "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "D107", # Missing docstring in __init__ (constructor args go in class docstring)
   "E402", # TODO: import top of file
