@@ -15,6 +15,7 @@ from math import ceildiv
 from sys import (
     align_of,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     is_nvidia_gpu,
     simd_width_of,
     size_of,
@@ -1197,7 +1198,11 @@ fn multistage_gemm_split_k_kernel[
     )
 
     @parameter
-    if has_amd_gpu_accelerator() and transpose_b:
+    if (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
         gemm_kernel_amd[
             work_space_type,
             work_space_part.layout,

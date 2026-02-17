@@ -69,7 +69,6 @@ var x = 10
 When declaring a variable with `var`, you can also declare a variable type, with
 or without an assignment:
 
-
 ```mojo
 def main():
     var x: Int = 10
@@ -202,9 +201,9 @@ struct MyPair(Copyable):
         self.first = first
         self.second = second
 
-    fn __copyinit__(out self, existing: Self):
-        self.first = existing.first
-        self.second = existing.second
+    fn __copyinit__(out self, copy: Self):
+        self.first = copy.first
+        self.second = copy.second
 
     def dump(self):
         print(self.first, self.second)
@@ -299,7 +298,7 @@ my_list = List[Float64]()
 :::note
 
 You're probably wondering about the square brackets on `fun_with_traits()`.
-These aren't function *arguments* (which go in parentheses); these are function
+These aren't function _arguments_ (which go in parentheses); these are function
 *parameters*, which we'll explain next.
 
 :::
@@ -309,7 +308,7 @@ specific type that implements `required_method()`, such as `SomeStruct`
 (but then the function would accept only that type). With traits, the function
 can accept any type for `x` as long as it conforms to (it "implements")
 `SomeTrait`. Thus, `fun_with_traits()` is known as a "generic function" because
-it accepts a *generalized* type instead of a specific type.
+it accepts a _generalized_ type instead of a specific type.
 
 For more details, see the page about [traits](/mojo/manual/traits).
 
@@ -365,7 +364,8 @@ For more detail on parameters, see the section on
 
 ## Python integration
 
-Mojo supports the ability to import Python modules as-is, so you can leverage existing Python code right away.
+Mojo supports the ability to import Python modules as-is, so you can leverage
+existing Python code right away.
 
 For example, here's how you can import and use NumPy:
 
@@ -395,10 +395,10 @@ Mojo Manual—the next page from here is [Functions](/mojo/manual/functions).
 
 Otherwise, here are some other resources to check out:
 
-* See [Get started with Mojo](/mojo/manual/get-started) for a hands-on
+- See [Get started with Mojo](/mojo/manual/get-started) for a hands-on
   tutorial that will get you up and running with Mojo.
 
-* If you want to experiment with some code, clone [our GitHub
+- If you want to experiment with some code, clone [our GitHub
   repo](https://github.com/modular/modular/) to try our code examples:
 
   ```sh
@@ -409,5 +409,5 @@ Otherwise, here are some other resources to check out:
   cd max/examples/mojo
   ```
 
-* To see all the available Mojo APIs, check out the [Mojo standard library
+- To see all the available Mojo APIs, check out the [Mojo standard library
   reference](/mojo/lib).

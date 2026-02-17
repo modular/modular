@@ -24,5 +24,5 @@ def main():
     var x = 42
 
     var p = UnsafePointer(to=x).as_immutable().as_any_origin()
-    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, ImmutAnyOrigin]' to 'UnsafePointer[Int, origin_of((muttoimm x))]'
+    # CHECK: value passed to 'p' cannot be converted
     test_cannot_cast_from_immutable_any_to_named[ImmutOrigin(origin_of(x))](p)

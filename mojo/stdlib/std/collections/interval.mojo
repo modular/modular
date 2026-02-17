@@ -117,15 +117,15 @@ struct Interval[T: IntervalElement](
         self.start = interval[0].copy()
         self.end = interval[1].copy()
 
-    fn __copyinit__(out self, existing: Self, /):
+    fn __copyinit__(out self, copy: Self, /):
         """Create a new instance of the interval by copying the values
         from an existing one.
 
         Args:
-            existing: The interval to copy values from.
+            copy: The interval to copy values from.
         """
-        self.start = existing.start.copy()
-        self.end = existing.end.copy()
+        self.start = copy.start.copy()
+        self.end = copy.end.copy()
 
     fn overlaps(self, other: Self) -> Bool:
         """Returns whether this interval overlaps with another interval.
@@ -393,20 +393,20 @@ struct _IntervalNode[
         self.parent = parent.or_else({})
         self._is_red = is_red
 
-    fn __copyinit__(out self, existing: Self, /):
+    fn __copyinit__(out self, copy: Self, /):
         """Create a new instance of the interval node by copying the values
         from an existing one.
 
         Args:
-            existing: The interval node to copy values from.
+            copy: The interval node to copy values from.
         """
-        self.interval = existing.interval
-        self.data = existing.data.copy()
-        self.max_end = existing.max_end.copy()
-        self.left = existing.left
-        self.right = existing.right
-        self.parent = existing.parent
-        self._is_red = existing._is_red
+        self.interval = copy.interval
+        self.data = copy.data.copy()
+        self.max_end = copy.max_end.copy()
+        self.left = copy.left
+        self.right = copy.right
+        self.parent = copy.parent
+        self._is_red = copy._is_red
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

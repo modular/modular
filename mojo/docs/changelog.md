@@ -52,6 +52,11 @@ what we publish.
 
 ### Language changes
 
+- The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
+  to standardize construction. As such, the argument name for `__moveinit__`
+  must now be named `take` and the argument name for `__copyinit__` must now be
+  named `copy`.
+
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
   keyword argument to disambiguate slices. If you have defined your own range
@@ -268,6 +273,10 @@ what we publish.
   and `codepoint_slices()` methods. The deprecated `__reversed__()` methods
   will continue to work but will emit deprecation warnings.
 
+- The `Origin` struct now takes the underlying MLIR origin as a parameter
+  instead of storing it. This follows the design of `IntLiteral` and related
+  types, and fixes some memory safety problems.
+
 - The `StringSlice` constructor from `String` now propagates mutability. If you
   have a mutable reference to a `String`, `StringSlice(str)` returns a mutable
   `StringSlice`. The `String.as_string_slice()` method is now deprecated in
@@ -343,6 +352,9 @@ what we publish.
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice
+
+- [Issue #5722](https://github.com/modular/modular/issues/5722): `__del__`
+  incorrectly runs when `__init__` raises before all fields are initialized.
 
 - [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
   `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back

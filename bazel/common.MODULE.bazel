@@ -345,6 +345,7 @@ mojo.gpu_toolchains(
         "AMD Radeon RX 6900 XT": "rx6900xt",
         "AMD Radeon PRO W7900": "W7900",
         "AMD Radeon Pro W7900": "W7900",
+        "Phoenix3": "780M",
         "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 3": "metal3",  # macOS 15

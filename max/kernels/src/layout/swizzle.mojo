@@ -611,14 +611,14 @@ struct ComposedLayout[
         self.layout_b = layout_b^
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructor for ComposedLayout.
 
         Args:
-            other: The ComposedLayout to copy from.
+            copy: The ComposedLayout to copy from.
         """
-        self.layout_a = other.layout_a.copy()
-        self.layout_b = other.layout_b.copy()
+        self.layout_a = copy.layout_a.copy()
+        self.layout_b = copy.layout_b.copy()
 
     @always_inline
     fn __call__(self, idx: IntTuple) -> Int:

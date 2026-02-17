@@ -14,6 +14,7 @@
 from math import align_up, ceildiv, gcd
 from sys import align_of, size_of
 from sys.info import (
+    _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -825,7 +826,7 @@ fn batched_matmul_kernel_gpu[
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
-    elif is_amd_gpu():
+    elif is_amd_gpu() and not _is_amd_rdna():
         gemm_kernel_amd[
             config=config,
             elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](

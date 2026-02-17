@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import fields
+from dataclasses import dataclass, field, fields
 
 import numpy as np
 from max.driver import Buffer
@@ -54,6 +54,7 @@ from .model_config import DeepseekV3NextNConfig
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class DeepseekV3NextNInputs(DeepseekV3Inputs):
     """A class representing inputs for the DeepseekV3 NextN model.
 
@@ -61,37 +62,7 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
     passes during EAGLE verification (when draft_inputs is passed to the target).
     """
 
-    hidden_states: Buffer | None
-    """Hidden states from the base model (can be None initially, set by EAGLE afterward)."""
-
-    def __init__(
-        self,
-        tokens: Buffer,
-        hidden_states: Buffer | None,
-        input_row_offsets: Buffer,
-        host_input_row_offsets: Buffer,
-        signal_buffers: list[Buffer],
-        batch_context_lengths: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: Buffer | None = None,
-        data_parallel_splits: Buffer | None = None,
-    ) -> None:
-        if return_n_logits is None:
-            raise ValueError("return_n_logits must be provided")
-
-        # Call parent constructor (DeepseekV3Inputs)
-        super().__init__(
-            tokens=tokens,
-            input_row_offsets=input_row_offsets,
-            host_input_row_offsets=host_input_row_offsets,
-            batch_context_lengths=batch_context_lengths,
-            signal_buffers=signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-            data_parallel_splits=data_parallel_splits,
-        )
-        # Set hidden_states (NextN-specific field)
-        self.hidden_states = hidden_states
+    hidden_states: Buffer | None = field(default=None, kw_only=True)
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):

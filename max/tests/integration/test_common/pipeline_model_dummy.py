@@ -52,25 +52,12 @@ from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
 
+@dataclass
 class DummyModelInputs(ModelInputs):
     input1: Buffer | None = None
     input2: Buffer | None = None
     input3: Buffer | None = None
     input4: Buffer | None = None
-
-    def __init__(
-        self,
-        input1: Buffer | None = None,
-        input2: Buffer | None = None,
-        input3: Buffer | None = None,
-        input4: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        self.input1 = input1
-        self.input2 = input2
-        self.input3 = input3
-        self.input4 = input4
-        self.kv_cache_inputs = kv_cache_inputs
 
 
 class DummyPipelineModel(PipelineModel, KVCacheMixin):

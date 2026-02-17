@@ -77,6 +77,7 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: PRDT-506
     "test_flash_attention.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: MSTDL-2240
         "//conditions:default": [],
     }),  # FIXME: MOCO-3049
     "test_padding_gpu.mojo": select({
@@ -167,13 +168,9 @@ _FILECHECK_TESTS = [
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
             "//conditions:default": src not in [
-                "test_layer_norm.mojo",
-                "test_topk_gpu_fi.mojo",  # Extreme register pressure, even simplified assertions cause issues
-                "test_mha_chunked_causal_mask.mojo",  # KERN-2339: bounds check reveals kernel bug
-                "test_mha_causal_mask.mojo",  # KERN-2339: bounds check reveals kernel bug
                 "test_mla.mojo",  # KERN-2339: bounds check reveals kernel bug
                 "test_mla_decode_paged_variable.mojo",  # KERN-2339: bounds check reveals kernel bug
-                "test_flash_attention.mojo",  # KERN-2339: bounds check reveals kernel bug
+                "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
         }),

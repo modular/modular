@@ -7702,7 +7702,7 @@ fn copy_dram_to_local[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor[mut=True, ...],
-    src_iter: LayoutTensorIter,
+    src_iter: LayoutTensorIter[mut=False, ...],
     bounds: UInt32,
 ):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.

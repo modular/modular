@@ -137,7 +137,6 @@ from builtin.type_aliases import (
     ExternalOrigin,
     ImmutExternalOrigin,
     MutExternalOrigin,
-    unsafe_origin_mutcast,
 )
 from builtin.value import (
     Copyable,

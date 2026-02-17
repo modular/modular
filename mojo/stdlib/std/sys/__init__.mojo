@@ -33,6 +33,7 @@ from .info import (
     bit_width_of,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,

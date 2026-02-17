@@ -1454,7 +1454,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        unsafe_origin_mutcast[Self.origin, target_mut]
+        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1475,7 +1475,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        unsafe_origin_mutcast[Self.origin, target_mut]
+        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 

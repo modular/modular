@@ -28,7 +28,7 @@ trait Movable:
         fn __init__(out self):
             pass
 
-        fn __moveinit__(out self, deinit existing: Self):
+        fn __moveinit__(out self, deinit take: Self):
             print("moving")
     ```
 
@@ -48,11 +48,11 @@ trait Movable:
     ```
     """
 
-    fn __moveinit__(out self, deinit existing: Self, /):
+    fn __moveinit__(out self, deinit take: Self, /):
         """Create a new instance of the value by moving the value of another.
 
         Args:
-            existing: The value to move.
+            take: The value to move.
         """
         ...
 
@@ -83,7 +83,7 @@ trait Copyable(Movable):
         fn __init__(out self, s: String):
             self.s = s
 
-        fn __copyinit__(out self, other: Self):
+        fn __copyinit__(out self, copy: Self):
             print("copying value")
             self.s = other.s
     ```
@@ -104,11 +104,11 @@ trait Copyable(Movable):
     ```
     """
 
-    fn __copyinit__(out self, existing: Self, /):
+    fn __copyinit__(out self, copy: Self, /):
         """Create a new instance of the value by copying an existing one.
 
         Args:
-            existing: The value to copy.
+            copy: The value to copy.
         """
         ...
 

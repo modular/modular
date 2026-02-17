@@ -10,19 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from handle_error import incr
 from testing import assert_equal, assert_raises, TestSuite
 
-
-def test_incr_no_error():
-    assert_equal(incr(0), 1)
-    assert_equal(incr(1), 2)
-    assert_equal(incr(Int.MAX - 1), Int.MAX)
+from never_type import panic, get_value_or_panic, safe_add
 
 
-def test_incr_error():
-    with assert_raises(contains="integer overflow"):
-        _ = incr(Int.MAX)
+def test_panic_always_raises():
+    with assert_raises(contains="boom"):
+        panic("boom")
+
+
+def test_get_value_with_some():
+    assert_equal(get_value_or_panic(Optional(42)), 42)
+
+
+def test_get_value_with_none():
+    with assert_raises(contains="value is missing"):
+        _ = get_value_or_panic(Optional[Int]())
+
+
+def test_safe_add():
+    assert_equal(safe_add(3, 4), 7)
+    assert_equal(safe_add(0, 0), 0)
 
 
 def main():

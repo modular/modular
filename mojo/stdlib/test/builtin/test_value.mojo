@@ -46,8 +46,8 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_DEL)
 
-    fn __copyinit__(out self, other: Self):
-        self.events = other.events
+    fn __copyinit__(out self, copy: Self):
+        self.events = copy.events
 
         @parameter
         if Self.T.__copyinit__is_trivial:
@@ -55,8 +55,8 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_COPY)
 
-    fn __moveinit__(out self, deinit other: Self):
-        self.events = other.events
+    fn __moveinit__(out self, deinit take: Self):
+        self.events = take.events
 
         @parameter
         if Self.T.__moveinit__is_trivial:
@@ -103,7 +103,14 @@ def _test_type_not_trivial[T: Copyable & ImplicitlyDestructible]():
     var value_copy = value.copy()
     var _value_move = value_copy^
     assert_equal(
-        events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
+        events,
+        [
+            EVENT_INIT,
+            EVENT_COPY,
+            EVENT_DEL,
+            EVENT_MOVE | EVENT_TRIVIAL,
+            EVENT_DEL,
+        ],
     )
 
 
@@ -139,7 +146,14 @@ def _test_type_inherit_non_triviality[T: Copyable & ImplicitlyDestructible]():
     var value_copy = value.copy()
     var _value_move = value_copy^
     assert_equal(
-        events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
+        events,
+        [
+            EVENT_INIT,
+            EVENT_COPY,
+            EVENT_DEL,
+            EVENT_MOVE | EVENT_TRIVIAL,
+            EVENT_DEL,
+        ],
     )
 
 

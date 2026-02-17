@@ -843,7 +843,14 @@ class PipelineConfig(ConfigFileModel):
             )
             if (
                 arch is not None
-                and arch.name == "LlamaForCausalLM_Legacy"
+                and arch.name
+                in (
+                    "LlamaForCausalLM_Legacy",
+                    "DeepseekV2ForCausalLM_Legacy",
+                    "DeepseekV3ForCausalLM_Legacy",
+                    "DeepseekV3_2ForCausalLM_Legacy",
+                    "DeepseekV3ForCausalLMNextN_Legacy",
+                )
                 and self.pipeline_role == PipelineRole.PrefillAndDecode
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
