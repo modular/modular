@@ -701,14 +701,14 @@ struct SpecialFunctions:
   fn __del__(deinit self) raises:
      pass
 
-struct TestOwnedDeinitWarnings:
-  # expected-warning @+1 {{'owned' has been deprecated, use 'deinit' instead}}
+struct TestOwnedDeinitErrors:
+  # expected-error @+1 {{'owned' has been removed, use 'var' or 'deinit' as appropriate}}
   fn __del__(owned self): pass
 
-  # expected-warning @+1 {{'owned' has been deprecated, use 'deinit' instead}}
-  fn __moveinit__(out self, owned take: TestOwnedDeinitWarnings): pass
+  # expected-error @+1 {{'owned' has been removed, use 'var' or 'deinit' as appropriate}}
+  fn __moveinit__(out self, owned x: TestOwnedDeinitErrors): pass
 
-  # expected-warning @+1 {{'owned' has been deprecated, use 'var' instead}}
+  # expected-error @+1 {{'owned' has been removed, use 'var' or 'deinit' as appropriate}}
   fn method(owned x): pass
 
 struct TestVarDeinitErrors:
