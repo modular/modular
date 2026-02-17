@@ -13,7 +13,7 @@ trait TraitForReg:
     fn __init__(out self, x: Int):
         ...
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         ...
 
     @staticmethod

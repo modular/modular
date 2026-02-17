@@ -29,7 +29,7 @@ def elif_parse_error(a: Bool):
     pass
 
 struct NotBoolConvertible:
-  fn __copyinit__(out self, existing: Self):
+  fn __copyinit__(out self, copy: Self):
     pass
 
 def test_bool_context(a: NotBoolConvertible):

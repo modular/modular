@@ -7,15 +7,12 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct BoxedInt(RegisterPassable):
+struct BoxedInt(RegisterPassable, Copyable):
     var value: Int
 
     @implicit
     fn __init__(out self, value: Int):
         self.value = value
-
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value
 
     fn boxedAdd(self, rhs: Int) -> Int:
         return self.value+rhs

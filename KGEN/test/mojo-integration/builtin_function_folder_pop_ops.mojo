@@ -16,7 +16,7 @@ struct BoolT[x: Bool](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -24,7 +24,7 @@ struct BuiltinBoolT[x: __mlir_type.`!pop.scalar<bool>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -32,7 +32,7 @@ struct DTypeT[x: DType](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -40,7 +40,7 @@ struct BuiltinSI32T[x: __mlir_type.`!pop.scalar<si32>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -88,7 +88,7 @@ struct UInt8T[x: __mlir_type.ui8](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -162,7 +162,7 @@ struct POPUInt8T[x: __mlir_type.`!pop.scalar<ui8>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -186,7 +186,7 @@ struct POPUInt8x4T[x: __mlir_type.`!pop.simd<4, ui8>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -309,7 +309,7 @@ struct POPBoolx4T[x: __mlir_type.`!pop.simd<4, bool>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -623,7 +623,7 @@ struct POPSInt8x4T[x: __mlir_type.`!pop.simd<4, si8>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -657,7 +657,7 @@ struct POPF32x4T[x: __mlir_type.`!pop.simd<4, f32>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -712,7 +712,7 @@ struct POPBool2T[x: __mlir_type.`!pop.simd<2, bool>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -987,7 +987,7 @@ struct POPF32x8T[x: __mlir_type.`!pop.simd<8, f32>`](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 

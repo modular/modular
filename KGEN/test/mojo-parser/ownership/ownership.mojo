@@ -46,7 +46,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
   fn __init__(out self, value: Int):
     pass
 
-  fn __copyinit__(out self, existing: Self): # CHECK: lit.fn @"__copyinit__
+  fn __copyinit__(out self, copy: Self): # CHECK: lit.fn @"__copyinit__
     return
 
   fn noop(self): pass
@@ -275,8 +275,8 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
     self.f1 = a
     self.f2 = b
 
-  fn __copyinit__(out self, existing: Self):
-    self = Self(existing.f1, existing.f2)
+  fn __copyinit__(out self, copy: Self):
+    self = Self(copy.f1, copy.f2)
 
   # CHECK-LABEL: lit.fn @"mutate
   fn mutate(mut self):
@@ -505,21 +505,21 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     self.b = RegExample()
 
   # CHECK-LABEL: lit.fn @"__copyinit__
-  fn __copyinit__(out self, existing: Self):
+  fn __copyinit__(out self, copy: Self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
-    # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %existing[a]
+    # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %copy[a]
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[EA]])
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SA]]
     # CHECK-NEXT: [[SB:%.*]] = lit.ref.struct.ger %self[b]
-    # CHECK-NEXT: [[EB:%.*]] = lit.ref.struct.ger %existing[b]
+    # CHECK-NEXT: [[EB:%.*]] = lit.ref.struct.ger %copy[b]
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[EB]])
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SB]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
     # CHECK-NEXT: kgen.return [[TMP]]
-    self.a = existing.a
-    self.b = existing.b
+    self.a = copy.a
+    self.b = copy.b
 
   # CHECK-LABEL: lit.fn @"__del__
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.struct.ger %self[a]

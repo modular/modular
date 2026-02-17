@@ -78,7 +78,7 @@ struct StructMLIRTypeOnly(ImplicitlyCopyable):
 # MOCO-2396:
 # CHECK-LABEL: lit.struct.decl @NotTrivial
 struct NotTrivial(Copyable):
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __moveinit__(out self, deinit take: Self):

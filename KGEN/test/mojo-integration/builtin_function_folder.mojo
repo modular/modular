@@ -18,7 +18,7 @@ struct IntT[x: Int](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -26,7 +26,7 @@ struct BoolT[x: Bool](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -71,7 +71,7 @@ struct UInt8T[x: UInt8._mlir_type](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -90,7 +90,7 @@ struct DTypeT[x: DType](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 

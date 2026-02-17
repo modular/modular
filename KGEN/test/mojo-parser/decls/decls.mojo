@@ -796,7 +796,7 @@ struct StructWithInit:
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 struct StructExample(ImplicitlyCopyable, RegisterPassable):
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __init__(out self):
@@ -1386,8 +1386,8 @@ struct RegPassableInitSelfInit(ImplicitlyCopyable, RegisterPassable):
 
     # CHECK: lit.fn @"__copyinit__
     # CHECK-SAME: -> !RegPassableInitSelfInit
-    fn __copyinit__(out self, existing: Self):
-        self.a = existing.a
+    fn __copyinit__(out self, copy: Self):
+        self.a = copy.a
 
 
 # CHECK-LABEL: testRegPassableInitSelf

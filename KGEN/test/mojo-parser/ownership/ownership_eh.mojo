@@ -30,7 +30,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
         return
 
     fn __copyinit__(
-        out self, existing: Self
+        out self, copy: Self
     ):  # CHECK: lit.fn @"__copyinit__
         return
 
@@ -61,6 +61,12 @@ struct MemExample(ImplicitlyCopyable):
 
     fn noop(self):
         pass
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.x = take.x
+
+    fn __copyinit__(out self, copy: Self):
+        self.x = copy.x
 
     fn __bool__(self) -> Bool:
         return True
@@ -283,7 +289,7 @@ fn testErrorReturn() raises:
 
 # COM: Test partial destruction of initialized fields upon an error return.
 struct Field(ImplicitlyCopyable):
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
     fn __del__(deinit self):
         pass

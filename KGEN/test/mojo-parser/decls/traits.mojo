@@ -230,7 +230,7 @@ struct StaticMethodStruct(StaticMethodTrait, ImplicitlyCopyable):
     fn foobar():
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
 
@@ -245,7 +245,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %value: !lit.ref<:!ImplicitlyCopyable T, imm {{.*}}> read_mem, ?,
 # CHECK-SAME: %__result__: !lit.ref<:!ImplicitlyCopyable T, mut {{.*}}> byref_result
 fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
-    # CHECK-NEXT: lit.call tail[!lit.generator<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
+    # CHECK-NEXT: lit.call tail[!lit.generator<[2]("copy": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
     # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "std::builtin::stubs::Copyable", "__copyinit__{{.*}}">]{{.*}}(%value, %__result__)
     return value
 
@@ -266,7 +266,7 @@ trait TraitForReg:
     fn __init__(out self, x: Int):
         ...
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         ...
 
     @staticmethod
@@ -290,7 +290,7 @@ struct RegTraitType(RegisterPassable, TraitForReg):
     fn __init__(out self, x: Int):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     @staticmethod
@@ -509,7 +509,7 @@ struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     # CHECK: lit.fn @"__del__

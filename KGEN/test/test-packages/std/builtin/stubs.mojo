@@ -114,7 +114,7 @@ struct Error(Copyable):
     fn __del__(deinit self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     # A method for testing.
@@ -650,7 +650,7 @@ struct String(ImplicitlyCopyable, KeyElement):
     fn __init__[T: Stringable](out self, value: T):
         self = value.__str__()
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __moveinit__(out self, deinit take: String):
@@ -806,7 +806,7 @@ trait AnyType:
 
 @explicit_destroy
 trait Copyable(Movable):
-    fn __copyinit__(out self, existing: Self, /):
+    fn __copyinit__(out self, copy: Self, /):
         ...
 
     fn copy(self) -> Self:
@@ -1030,9 +1030,9 @@ struct __ParameterClosureCaptureList[
         self.value = __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
 
     @always_inline
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         self.value = __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
-            existing.value
+            copy.value
         )
 
     @always_inline
@@ -1141,7 +1141,7 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __init__(out self, *args: * Self.element_types):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __moveinit__(out self, deinit take: Self):
@@ -1338,7 +1338,7 @@ struct Optional[T: ImplicitlyCopyable]:
     fn __init__(out self, x: __mlir_type.`!kgen.none`):
         pass
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __moveinit__(out self, deinit take: Self):

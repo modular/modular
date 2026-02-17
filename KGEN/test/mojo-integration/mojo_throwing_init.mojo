@@ -15,8 +15,8 @@ struct MemType1(ImplicitlyCopyable):
     fn __init__(out self, v: Int):
         self.value = v
 
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value + 1
+    fn __copyinit__(out self, copy: Self):
+        self.value = copy.value + 1
         print("Copy to", self.value)
 
     fn __del__(deinit self):

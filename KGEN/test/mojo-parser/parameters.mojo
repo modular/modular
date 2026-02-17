@@ -154,7 +154,7 @@ struct Pair[dt: DType](RegisterPassable):
     self.b = 4
   # CHECK: }
 
-  fn __copyinit__(out self, existing: Self): pass
+  fn __copyinit__(out self, copy: Self): pass
 
 # CHECK: }
 
@@ -666,7 +666,7 @@ fn testUseOfAliases():
 struct MyDType(RegisterPassable):
   var state : Int
 
-  fn __copyinit__(out self, existing: Self):
+  fn __copyinit__(out self, copy: Self):
     self.state = self.state
 
   @implicit
@@ -916,8 +916,8 @@ struct AnotherAbstraction[a: Int](RegisterPassable):
     fn __init__(out self):
         self.value = Abstraction[Self.a + 1]()
 
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value
+    fn __copyinit__(out self, copy: Self):
+        self.value = copy.value
 
 # CHECK-LABEL: lit.fn @"testDependentField()"
 fn testDependentField():

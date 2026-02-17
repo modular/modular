@@ -25,8 +25,8 @@ struct MemExample(ImplicitlyCopyable):
     fn __moveinit__(out self, deinit take: Self):
         self.x = take.x
 
-    fn __copyinit__(out self, existing: Self):
-        self.x = existing.x
+    fn __copyinit__(out self, copy: Self):
+        self.x = copy.x
 
     fn __bool__(self) -> Bool:
         return True
@@ -40,7 +40,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         return
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         return
 
     fn noop(self):
@@ -88,8 +88,8 @@ struct MemoryMovableCopyable(ImplicitlyCopyable):
         # Mercilessly steal 'take's state which could be interesting.
         self.state = take.state^
 
-    fn __copyinit__(out self, existing: Self):
-        self.state = existing.state
+    fn __copyinit__(out self, copy: Self):
+        self.state = copy.state
 
     fn __del__(deinit self):
         pass
@@ -134,7 +134,7 @@ struct RegMovableCopyable(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         return
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         return
 
     fn __del__(deinit self):

@@ -28,8 +28,8 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Stringable, Writable):
         self.elts = take.elts^
 
     @always_inline
-    fn __copyinit__(out self, existing: Self):
-        self.elts = existing.elts.copy()
+    fn __copyinit__(out self, copy: Self):
+        self.elts = copy.elts.copy()
 
     @always_inline
     fn cons(self, var other: Self) -> Self:

@@ -42,11 +42,11 @@ struct Data(ImplicitlyCopyable, Stringable):
         for i in range(num_elems):
             self._data[i] = data[i]
 
-    fn __copyinit__(out self, existing: Self):
-        self._size = existing._size
+    fn __copyinit__(out self, copy: Self):
+        self._size = copy._size
         self._data = alloc[Int](self._size)
         for i in range(self._size):
-            self._data[i] = existing._data[i]
+            self._data[i] = copy._data[i]
 
     fn __str__(self) -> String:
         var str: String = ""

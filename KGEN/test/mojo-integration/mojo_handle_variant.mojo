@@ -20,8 +20,8 @@ struct S:
     fn __del__(deinit self):
         print("destroy", self.v)
 
-    fn __copyinit__(out self, existing: Self):
-        self.v = existing.v
+    fn __copyinit__(out self, copy: Self):
+        self.v = copy.v
 
 
 fn mightThrow() raises:
