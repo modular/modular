@@ -24,24 +24,23 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
-if TYPE_CHECKING:
-    from ..config import PipelineConfig
-
-logger = logging.getLogger("max.pipelines")
-
-from max.graph import DeviceRef
-
 from ..config_enums import SupportedEncoding
 from ..graph_capture import DeviceGraphExecutor
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
+
+if TYPE_CHECKING:
+    from ..config import PipelineConfig
+
+logger = logging.getLogger("max.pipelines")
 
 
 class AlwaysSignalBuffersMixin:

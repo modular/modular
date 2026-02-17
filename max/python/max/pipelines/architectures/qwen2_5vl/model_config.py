@@ -24,11 +24,7 @@ from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    parse_float8_config,
-)
+from max.pipelines.lib import KVCacheConfig, PipelineConfig, parse_float8_config
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
