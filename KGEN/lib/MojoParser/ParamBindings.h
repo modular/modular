@@ -68,6 +68,12 @@ public:
                                           const ExprNode *expr,
                                           Type optionalParentTraitType = {});
 
+  // Given a struct type, concretize it by using the existing bindings and
+  // applying the defaults for missing parameters.
+  static ParameterExprArrayAttr
+  concretizeStructTypeFromDefaults(ASTDecl &declScope, ASTType type,
+                                   const ExprNode *expr);
+
   /// The overall expression this was formed for.
   const ExprNode *getExpr() const { return parameters.callExpr; }
   SMLoc getExprLoc() const;
@@ -77,10 +83,6 @@ public:
 
   // Provide access to the parameter list this represents.
   const CallOperands &getParameters() const { return parameters; }
-
-  /// Add a bound value for pre-checked positional parameter binding. The caller
-  /// is responsible for ensuring the keyword is not already present.
-  void addPrechecked(const ExprNode *expr, TypedAttr precheckedBinding);
 
   /// Add a bound value for a positional parameter binding.
   void add(const ExprNode *expr, AnyValue value) {
@@ -129,8 +131,6 @@ public:
                          PogListAttr paramListAttr, ASTDecl *declIfKnown,
                          bool partial) const;
 
-  size_t getNumPreCheckedParams() const { return numPreTypeChecked; }
-
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;
 
@@ -153,10 +153,6 @@ private:
   /// overload set on a method.
   size_t numPosCtadParams = 0;
   size_t numKwOnlyCtadParams = 0;
-
-  /// The number of pre-type-checked positional arguments.
-  /// FIXME: Remove this, why is this needed?
-  size_t numPreTypeChecked = 0;
 
   friend class ParamInf;
   friend TypedAttr getBoundConstAttrForFn(ASTDecl &, const ParamBindings &);

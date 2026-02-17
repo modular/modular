@@ -28,6 +28,32 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Helper function to emit diagnostics for unprovable constraints from a
+/// Fitness result.
+static void
+emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
+                                     SharedState &shared, SMLoc exprLoc,
+                                     ASTDecl *declIfKnown) {
+  if (fitness.unprovableConstraints.empty())
+    return;
+
+  std::string baseName;
+  if (declIfKnown)
+    baseName = "'" + declIfKnown->getUserNameIfOperation()->str() + "'";
+  else
+    baseName = "parametric value";
+
+  MojoInflightDiag diag = shared.emitError(exprLoc)
+                          << "invalid bindings for " << baseName
+                          << ": lacking evidence to prove correctness";
+  if (declIfKnown)
+    diag.attachNote(declIfKnown->getLoc())
+        << "cannot prove constraint"
+        << plural(fitness.unprovableConstraints.size());
+  for (auto constraint : fitness.unprovableConstraints)
+    LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
+}
+
 /// If we're trying to call `foo.lork()`, like this:
 ///
 ///     fn callTraitMethodWithAliasArg[X: MyTrait](t: X, thing: MyStruct[X.T]):
@@ -94,7 +120,6 @@ void ParamBindings::operator=(ParamBindings &&other) {
   ctadPogs = other.ctadPogs;
   numKwOnlyCtadParams = other.numKwOnlyCtadParams;
   numPosCtadParams = other.numPosCtadParams;
-  numPreTypeChecked = other.numPreTypeChecked;
   doNotApplyDefaults = other.doNotApplyDefaults;
 }
 
@@ -181,12 +206,56 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   return paramBindings;
 }
 
-void ParamBindings::addPrechecked(const ExprNode *expr,
-                                  TypedAttr precheckedBinding) {
-  assert(numPreTypeChecked == parameters.size() &&
-         "Cannot add type prechecked after other bindings!");
-  parameters.add({precheckedBinding, expr});
-  ++numPreTypeChecked;
+ParameterExprArrayAttr ParamBindings::concretizeStructTypeFromDefaults(
+    ASTDecl &declScope, ASTType type, const ExprNode *expr) {
+
+  SharedState &shared = declScope.getShared();
+  ASTDecl *structDecl = type.getDecl(shared);
+  assert(structDecl && "expected a struct declaration");
+  auto structDeclOp = cast<StructDeclOp>(structDecl->getIfOperation());
+
+  // TODO: we don't really need a parameter binding here, we should probably
+  // refactoring ParamInf such that it can handle inference without a parameter
+  // binding.
+  ParamBindings paramBindings(declScope, expr);
+
+  std::optional<MojoInflightDiag> diag;
+  auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+    diag = shared.emitError(loc ? *loc : paramBindings.getExprLoc());
+    return *diag;
+  };
+  ParamInf inference(paramBindings, structDeclOp.getSignature().getParamTypes(),
+                     structDeclOp.getSignature().getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, /*partial=*/false,
+                     getDiags, structDecl);
+
+  for (auto [idx, value] : llvm::enumerate(type.getParamBindings())) {
+    // Unbound here means to be inferred.
+    if (isa<UnboundAttr>(value))
+      continue;
+    inference.evaluator.overwriteIndexBinding(idx, value);
+  }
+
+  // Now try to finalize it with defaults.
+  if (succeeded(inference.inferFromDefaults()) &&
+      succeeded(inference.finalizeWithUnbound())) {
+    // If succeeded, Simply return all the binding from the inference.
+    return ParameterExprArrayAttr::get(declScope.getContext(),
+                                       inference.getInferredValues());
+  }
+
+  if (diag) {
+    diag->attachNote(structDecl->getLoc())
+        << "'" << *structDecl->getUserNameIfOperation() << "' declared here";
+    return {};
+  }
+
+  // Emit diagnostics for unprovable constraints if no other diagnostics were
+  // emitted.
+  assert(!inference.unprovableConstraints.empty());
+  emitUnprovableConstraintsFromFitness(Fitness{inference.unprovableConstraints},
+                                       shared, expr->getLoc(), structDecl);
+  return {};
 }
 
 void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
@@ -196,32 +265,6 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
 //===----------------------------------------------------------------------===//
 // verifyBindings
 //===----------------------------------------------------------------------===//
-
-/// Helper function to emit diagnostics for unprovable constraints from a
-/// Fitness result.
-static void
-emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
-                                     SharedState &shared, SMLoc exprLoc,
-                                     ASTDecl *declIfKnown) {
-  if (fitness.unprovableConstraints.empty())
-    return;
-
-  std::string baseName;
-  if (declIfKnown)
-    baseName = "'" + declIfKnown->getUserNameIfOperation()->str() + "'";
-  else
-    baseName = "parametric value";
-
-  MojoInflightDiag diag = shared.emitError(exprLoc)
-                          << "invalid bindings for " << baseName
-                          << ": lacking evidence to prove correctness";
-  if (declIfKnown)
-    diag.attachNote(declIfKnown->getLoc())
-        << "cannot prove constraint"
-        << plural(fitness.unprovableConstraints.size());
-  for (auto constraint : fitness.unprovableConstraints)
-    LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
-}
 
 ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,

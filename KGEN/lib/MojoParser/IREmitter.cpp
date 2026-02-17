@@ -1710,17 +1710,13 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   if (!structDecl)
     return type;
 
-  // Build up a ParamBindings set to validate and check the bindings. Skip
-  // unbound values.
-  ParamBindings paramBindings(getDeclScope(), value.expr);
-  for (TypedAttr binding : type.getParamBindings())
-    paramBindings.addPrechecked(value.expr, binding);
-
   // Check the existing bindings against the full signature of the type and make
   // sure it is fully bound.
+  // TODO: why do we need to call this? Shouldn't be defaulted parameters be
+  // installed already? This could probably be removed after we standardize the
+  // way we handle defaulted parameters.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyStructBindings(*decl, structDecl.getSignature(),
-                                         /*partial=*/false);
+      ParamBindings::concretizeStructTypeFromDefaults(*decl, type, value.expr);
   if (!bindingValuesAttr)
     return {};
 
