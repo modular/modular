@@ -1,5 +1,5 @@
-# Mamba architecture tests (selective_scan, causal_conv1d, fused_norm, layer_norm_gated).
-# state_space provides selective_scan, causal_conv1d, rms_norm_fused_residual kernels.
+# Mamba architecture tests (smoke: import and arch registration).
+# state_space mojopkg provides Mamba kernels used by the pipeline at runtime.
 
 load(
     "//bazel:api.bzl",

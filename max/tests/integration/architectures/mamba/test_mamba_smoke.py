@@ -16,8 +16,9 @@ from __future__ import annotations
 
 
 def test_mamba_arch_imports() -> None:
-    """Mamba architecture and model can be imported."""
+    """Mamba architecture and model can be imported and registered."""
     from max.pipelines.architectures.mamba import mamba_arch
+    from max.pipelines.architectures.mamba.model import MambaModel
 
     assert mamba_arch.name == "MambaForCausalLM"
-    assert mamba_arch.pipeline_model is not None
+    assert mamba_arch.pipeline_model is MambaModel
