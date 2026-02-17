@@ -51,7 +51,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         self.regstate = 1
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         self.regstate = 12
 
     fn __del__(deinit self):
@@ -265,22 +265,14 @@ struct TwoRegs(ImplicitlyCopyable):
         self.reg1 = RegExample()
         self.reg2 = RegExample()
 
-    fn __copyinit__(out self, existing: Self):
-        self.reg1 = existing.reg1
-        self.reg2 = existing.reg2
 
-
-struct TwoRegsRP(RegisterPassable):
+struct TwoRegsRP(RegisterPassable, Copyable):
     var reg1: RegExample
     var reg2: RegExample
 
     fn __init__(out self):
         self.reg1 = RegExample()
         self.reg2 = RegExample()
-
-    fn __copyinit__(out self, existing: Self):
-        self.reg1 = existing.reg1
-        self.reg2 = existing.reg2
 
 
 struct MoreComplexExample(ImplicitlyCopyable):
@@ -292,10 +284,6 @@ struct MoreComplexExample(ImplicitlyCopyable):
         result.mem = MemExample()
         result.reg.reg2 = RegExample()
         self = result  # expected-error {{use of uninitialized value 'result.reg.reg1'}}
-
-    fn __copyinit__(out self, existing: Self):
-        self.mem = existing.mem
-        self.reg = existing.reg
 
     fn __del__(deinit self):
         pass
@@ -641,7 +629,7 @@ fn test_linear_type() raises:
 @fieldwise_init
 @explicit_destroy
 struct ImpCopyableLinear(ImplicitlyCopyable):
-    fn __copyinit__(out self, existing: Self): pass
+    fn __copyinit__(out self, copy: Self): pass
     fn destroy(deinit self): pass
 
 fn test_imp_copyable_linear(var x: ImpCopyableLinear, var y: ImpCopyableLinear):

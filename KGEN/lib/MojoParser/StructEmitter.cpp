@@ -713,7 +713,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   StringRef name = isMove ? "__moveinit__" : "__copyinit__";
   MLIRContext *ctx = shared.getContext();
   Builder b(ctx);
-  StringAttr existingName = b.getStringAttr("other");
+  StringAttr existingName = b.getStringAttr(isMove ? "move" : "copy");
 
   // If the type is register passable trivial, the 'existing' value will be
   // passed as a register, otherwise a reference.

@@ -33,22 +33,22 @@ struct MemType(ImplicitlyCopyable):
 
 # CHECK-LABEL:   lit.fn @"__copyinit__
 # CHECK-NEXT:      [[P0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:      [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:      [[existing_impl:%.*]] = lit.ref.struct.ger %copy[field0]
 # CHECK-NEXT:      [[loaded_existing_impl:%.*]] = lit.ref.load [[existing_impl]]
 # CHECK-NEXT:      lit.ref.store [[loaded_existing_impl]], [[P0]]
 # CHECK-NEXT:      [[P1:%.*]] = lit.ref.struct.ger %self[dtor]
-# CHECK-NEXT:      [[P2:%.*]] = lit.ref.struct.ger %other[dtor]
+# CHECK-NEXT:      [[P2:%.*]] = lit.ref.struct.ger %copy[dtor]
 # CHECK-NEXT:      [[P3:%.*]] = lit.ref.load [[P2]]
 # CHECK-NEXT:      lit.ref.store [[P3]], [[P1]]
 # CHECK-NEXT:      [[P4:%.*]] = lit.ref.struct.ger %self[_copy]
-# CHECK-NEXT:      [[P5:%.*]] = lit.ref.struct.ger %other[_copy]
+# CHECK-NEXT:      [[P5:%.*]] = lit.ref.struct.ger %copy[_copy]
 # CHECK-NEXT:      [[P6:%.*]] = lit.ref.load [[P5]]
 # CHECK-NEXT:      lit.ref.store [[P6]], [[P4]]
 # CHECK-NEXT:      [[P7:%.*]] = lit.ref.struct.ger %self[call]
-# CHECK-NEXT:      [[P8:%.*]] = lit.ref.struct.ger %other[call]
+# CHECK-NEXT:      [[P8:%.*]] = lit.ref.struct.ger %copy[call]
 # CHECK-NEXT:      [[P9:%.*]] = lit.ref.load [[P8]]
 # CHECK-NEXT:      lit.ref.store [[P9]], [[P7]]
-# CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.ref.struct.ger %copy[field0]
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = lit.ref.load [[EXISTING_IMPL_PTR]]
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[_copy]
 # CHECK-NEXT:      [[COPY:%.*]] = lit.ref.load [[COPY_PTR]]
@@ -58,23 +58,23 @@ struct MemType(ImplicitlyCopyable):
 
 # CHECK-LABEL:  lit.fn @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.ref.struct.ger %move[field0]
 # CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]]
 # CHECK-NEXT:     lit.ref.store [[mov_loaded_existing_impl]], [[M0]]
 # CHECK-NEXT:     [[M1:%.*]] = lit.ref.struct.ger %self[dtor]
-# CHECK-NEXT:     [[M2:%.*]] = lit.ref.struct.ger %other[dtor]
+# CHECK-NEXT:     [[M2:%.*]] = lit.ref.struct.ger %move[dtor]
 # CHECK-NEXT:     [[M3:%.*]] = lit.load.consume [[M2]]
 # CHECK-NEXT:     lit.ref.store [[M3]], [[M1]]
 # CHECK-NEXT:     [[M4:%.*]] = lit.ref.struct.ger %self[_copy]
-# CHECK-NEXT:     [[M5:%.*]] = lit.ref.struct.ger %other[_copy]
+# CHECK-NEXT:     [[M5:%.*]] = lit.ref.struct.ger %move[_copy]
 # CHECK-NEXT:     [[M6:%.*]] = lit.load.consume [[M5]]
 # CHECK-NEXT:     lit.ref.store [[M6]], [[M4]]
 # CHECK-NEXT:     [[M7:%.*]] = lit.ref.struct.ger %self[call]
-# CHECK-NEXT:     [[M8:%.*]] = lit.ref.struct.ger %other[call]
+# CHECK-NEXT:     [[M8:%.*]] = lit.ref.struct.ger %move[call]
 # CHECK-NEXT:     [[M9:%.*]] = lit.load.consume [[M8]]
 # CHECK-NEXT:     lit.ref.store [[M9]], [[M7]]
 # CHECK-NEXT:     [[V3:%.*]] = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:     lit.ownership.mark_destroyed %other
+# CHECK-NEXT:     lit.ownership.mark_destroyed %move
 
 
 fn thing(x: fn () escaping -> MemType):

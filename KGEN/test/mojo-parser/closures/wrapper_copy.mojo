@@ -5,25 +5,25 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.fn @"__copyinit__{{.*}}(%other: {{.*}}!MemType1{{.*}}read_mem
+# CHECK: lit.fn @"__copyinit__{{.*}}(%copy: {{.*}}!MemType1{{.*}}read_mem
 # CHECK-SAME: %self: !lit.ref<!MemType1, mut {{.*}}> byref_result)
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %copy[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = lit.ref.load [[existing_impl]]
 # CHECK-NEXT:   lit.ref.store [[loaded_existing_impl]], [[M0]]
 # CHECK-NEXT:   [[M1:%.*]] = lit.ref.struct.ger %self[dtor]
-# CHECK-NEXT:   [[M2:%.*]] = lit.ref.struct.ger %other[dtor]
+# CHECK-NEXT:   [[M2:%.*]] = lit.ref.struct.ger %copy[dtor]
 # CHECK-NEXT:   [[M3:%.*]] = lit.ref.load [[M2]]
 # CHECK-NEXT:   lit.ref.store [[M3]], [[M1]]
 # CHECK-NEXT:   [[M4:%.*]] = lit.ref.struct.ger %self[_copy]
-# CHECK-NEXT:   [[M5:%.*]] = lit.ref.struct.ger %other[_copy]
+# CHECK-NEXT:   [[M5:%.*]] = lit.ref.struct.ger %copy[_copy]
 # CHECK-NEXT:   [[M6:%.*]] = lit.ref.load [[M5]]
 # CHECK-NEXT:   lit.ref.store [[M6]], [[M4]]
 # CHECK-NEXT:   [[M7:%.*]] = lit.ref.struct.ger %self[call]
-# CHECK-NEXT:   [[M8:%.*]] = lit.ref.struct.ger %other[call]
+# CHECK-NEXT:   [[M8:%.*]] = lit.ref.struct.ger %copy[call]
 # CHECK-NEXT:   [[M9:%.*]] = lit.ref.load [[M8]]
 # CHECK-NEXT:   lit.ref.store [[M9]], [[M7]]
-# CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %copy[field0]
 # CHECK-NEXT:   [[W1:%.*]] = lit.ref.load [[W0]]
 # CHECK-NEXT:   [[W2:%.*]] = lit.ref.struct.ger %self[_copy]
 # CHECK-NEXT:   [[W4:%.*]] = lit.ref.load [[W2]]

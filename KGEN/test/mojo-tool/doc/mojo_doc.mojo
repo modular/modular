@@ -785,7 +785,7 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
 # CHECK:     "signature": "__init__(out self)",
-# CHECK:  "signature": "__copyinit__(out self, existing: Self)",
+# CHECK:  "signature": "__copyinit__(out self, copy: Self)",
 # CHECK:  "name": "__del__",
 
 # CHECK: "name": "__add__",
@@ -846,7 +846,7 @@ struct InMemoryStruct(ImplicitlyCopyable, Sized):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __del__(deinit self):

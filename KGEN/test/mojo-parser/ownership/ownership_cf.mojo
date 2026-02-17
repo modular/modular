@@ -41,8 +41,8 @@ struct MemExample(ImplicitlyCopyable):
     fn __moveinit__(out self, deinit take: Self):
         self.x = take.x
 
-    fn __copyinit__(out self, existing: Self):
-        self.x = existing.x
+    fn __copyinit__(out self, copy: Self):
+        self.x = copy.x
 
     fn __bool__(self) -> Bool:
         return True
@@ -672,7 +672,7 @@ fn loop_any_origin(var mem: MemExample, cond: Bool):
 
 # 4694: or/and handling of comparisons on PythonObject
 struct PyObjLike(RegisterPassable):
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         pass
 
     fn __eq__(self, other: Self) raises -> Self:

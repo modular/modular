@@ -728,10 +728,10 @@ struct WrongType(RegisterPassable):
   fn __init__(out self: Int): pass
 
   # expected-error @+1 {{existing value argument must be passed as 'read'}}
-  fn __copyinit__(out self, mut existing: Self): pass
+  fn __copyinit__(out self, mut copy: Self): pass
 
   # TODO: Should err.
-  fn __copyinit__(out self, existing: Int): pass
+  fn __copyinit__(out self, copy: Int): pass
 
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
   fn __moveinit__(out self, deinit take: Self): pass
@@ -744,7 +744,7 @@ struct WrongSelfType[a: Int]:
 
   # Issue #13358
   # expected-error @+1 {{'__copyinit__' requires 1 operand}}
-  fn __copyinit__(out self, other: Self, moar: Int): pass
+  fn __copyinit__(out self, copy: Self, moar: Int): pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
   fn __add__(self): pass
@@ -791,7 +791,7 @@ struct InvalidMember(TrivialRegisterPassable):
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
   fn __moveinit__(out self, deinit take: Self): pass
   # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
-  fn __copyinit__(out self, existing: Self): pass
+  fn __copyinit__(out self, copy: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   fn __del__(deinit self): pass
 
@@ -1052,12 +1052,12 @@ struct copy_init_def:
   var field: Int
 
   # expected-error @+1 {{cannot define '__copyinit__' as 'def'; 'def' implicitly raises}}
-  def __copyinit__(out self, existing: Self):
+  def __copyinit__(out self, copy: Self):
     self.field = existing.field
 
 struct copy_init_raises:
   # expected-error @+1 {{'__copyinit__' cannot be declared as raising an exception}}
-  fn __copyinit__(out self, existing: Self) raises:
+  fn __copyinit__(out self, copy: Self) raises:
      pass
 
 

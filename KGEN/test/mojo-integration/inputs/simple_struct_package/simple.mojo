@@ -28,5 +28,5 @@ struct MyStruct(Copyable):
     fn __init__(out self, value: Int):
         self.value = value
 
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value
+    fn __copyinit__(out self, copy: Self):
+        self.value = copy.value

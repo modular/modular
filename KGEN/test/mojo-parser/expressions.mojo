@@ -25,8 +25,8 @@ struct MemoryOnlyInt(ImplicitlyCopyable):
   fn __del__(deinit self): pass
 
   # CHECK-LABEL: lit.fn @"__copyinit__
-  fn __copyinit__(out self, other: Self):
-    self.x = other.x
+  fn __copyinit__(out self, copy: Self):
+    self.x = copy.x
 
   @staticmethod
   fn variadic(*value: MemoryOnlyInt):
@@ -46,18 +46,18 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
   var x: MemoryOnlyInt
   var y: Int
 
-  # CHECK: lit.fn @"__copyinit__{{.*}}(%other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
+  # CHECK: lit.fn @"__copyinit__{{.*}}(%copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
-  fn __copyinit__(out self, other: MemoryOnlyPair):
+  fn __copyinit__(out self, copy: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[x]
-    # CHECK-NEXT: %1 = lit.ref.struct.ger %other[x]
+    # CHECK-NEXT: %1 = lit.ref.struct.ger %copy[x]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%1, %0)
     # CHECK-NEXT: [[SY:%.*]] = lit.ref.struct.ger %self[y]
-    # CHECK-NEXT: [[OY:%.*]] = lit.ref.struct.ger %other[y]
+    # CHECK-NEXT: [[OY:%.*]] = lit.ref.struct.ger %copy[y]
     # CHECK-NEXT: [[OY_VAL:%.*]] = lit.ref.load [[OY]]
     # CHECK-NEXT: lit.ref.store [[OY_VAL]], [[SY]]
-    self.x = other.x
-    self.y = other.y
+    self.x = copy.x
+    self.y = copy.y
 
   # CHECK: lit.fn @"method{{.*}}(
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> owned_in_mem,
@@ -417,13 +417,13 @@ trait Boolable:
         ...
 
 struct Boolish(Boolable, ImplicitlyCopyable, RegisterPassable):
-  fn __copyinit__(out self, existing: Self): pass
+  fn __copyinit__(out self, copy: Self): pass
   fn __bool__(self) -> Bool: return True
 
 struct MemBoolish(ImplicitlyCopyable):
   @implicit
   fn __init__(out self, value: Boolish): pass
-  fn __copyinit__(out self, other: Self): pass
+  fn __copyinit__(out self, copy: Self): pass
   fn __bool__(self) -> Bool: return True
 
 # CHECK-LABEL: @"unary
@@ -985,7 +985,7 @@ fn test_call_method():
     _ = value(2)
 
 struct MemoryType:
-  fn __copyinit__(out self, other: Self):
+  fn __copyinit__(out self, copy: Self):
     pass
 
 struct RegType(RegisterPassable): pass

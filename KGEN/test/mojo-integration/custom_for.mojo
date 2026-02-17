@@ -12,10 +12,10 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __copyinit__(out self, existing: Self):
-        self.start = existing.start
-        self.end = existing.end
-        self.list = existing.list
+    fn __copyinit__(out self, copy: Self):
+        self.start = copy.start
+        self.end = copy.end
+        self.list = copy.list
 
     @implicit
     fn __init__(out self, list: MyList):
