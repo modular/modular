@@ -969,9 +969,12 @@ struct Dict[
         var output = String(capacity=minimum_capacity)
         self.write_to(output)
         return output^
-
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn _write_dict_body[
+        f_key: fn(Self.K, mut Some[Writer]),
+        f_val: fn(Self.V, mut Some[Writer])
+        ](self, mut writer: Some[Writer]):
+
         fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
         fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
 
@@ -980,15 +983,9 @@ struct Dict[
         var i = 0
         for entry in self.items():
 
-            @parameter
-            if _type_is_eq_parse_time[Self.K, String]():
-                fmt.write_repr_to[Self.K](entry.key, writer)
-            else:
-                fmt.write_to[Self.K](entry.key, writer)
-
+            f_key(entry.key, writer)
             writer.write(": ")
-
-            fmt.write_to[Self.V](entry.value, writer)
+            f_val(entry.value, writer)
 
             if i < len(self) - 1:
                 writer.write(", ")
@@ -997,27 +994,40 @@ struct Dict[
         writer.write("}")
 
     @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+
+        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
+
+        @parameter
+        if _type_is_eq_parse_time[Self.K, String]():
+            self._write_dict_body[
+                f_key = fmt.write_repr_to[Self.K],
+                f_val = fmt.write_to[Self.V],
+            ](writer)
+        else:
+            self._write_dict_body[
+                f_key = fmt.write_to[Self.K],
+                f_val = fmt.write_to[Self.V],
+            ](writer)
+
+    @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
+
+        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            w.write("{")
+            self._write_dict_body[
+                f_key = fmt.write_repr_to[Self.K],
+                f_val = fmt.write_repr_to[Self.V],
+            ](w)
 
-            var i = 0
-            for entry in self.items():
-                fmt.write_repr_to[Self.K](entry.key, w)
-                w.write(": ")
-                fmt.write_repr_to[Self.V](entry.value, w)
-
-                if i < len(self) - 1:
-                    w.write(", ")
-                i += 1
-
-            w.write("}")
-
-        fmt.FormatStruct(writer, "Dict")
-            .params(fmt.TypeNames[Self.K](), fmt.TypeNames[Self.V]())
-            .fields[FieldsFn=write_fields]()
+        fmt.FormatStruct(writer, "Dict").params(
+            fmt.TypeNames[Self.K](),
+            fmt.TypeNames[Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
