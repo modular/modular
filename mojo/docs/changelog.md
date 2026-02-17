@@ -345,6 +345,9 @@ what we publish.
 
 ### ❌ Removed
 
+- The `owned` keyword has been removed. Use `var` for parameters or `deinit`
+  for `__moveinit__`/`__del__` arguments as appropriate.
+
 - `Dict.EMPTY` and `Dict.REMOVED` comptime aliases have been removed. These
   were internal implementation details of the old hash table design.
 
