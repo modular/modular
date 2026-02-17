@@ -45,6 +45,7 @@ namespace {
 static constexpr char kToDeviceType[] = "_to_device_type";
 static constexpr char kIsDeviceTypeConvertible[] =
     "_is_convertible_to_device_type";
+static constexpr char kDeviceType[] = "device_type";
 } // namespace
 
 static FnOp getFnOpNamed(TraitDeclOp traitDecl, StringRef name) {
@@ -2991,30 +2992,63 @@ void ClosureEmitter::addConformanceToDevicePassable(
   ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
   ASTDecl *devicePassableTrait =
       shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
+  if (!devicePassableTrait)
+    return;
   // Ensure body is parsed and unresolved decls pulled in
   if (failed(shared.declResolver->resolveBody(*devicePassableTrait,
                                               devicePassableTrait->getLoc())))
     return;
-  // Ensure the top level members are at least signature resolved.
-  for (auto &nameGroup : devicePassableTrait->getDeclsInScope()) {
-    for (ASTDecl *funcFieldOrAlias : nameGroup.second)
-      if (failed(shared.declResolver->resolveSignature(
-              *funcFieldOrAlias, funcFieldOrAlias->getLoc())))
-        return;
-  }
-  if (!devicePassableTrait)
-    return;
   TraitDeclOp trait = cast<TraitDeclOp>(devicePassableTrait->getIfOperation());
   SymbolRefAttr devicePassableSymbol = devicePassableTrait->getSymbolRef();
+  Type deviceTypeAliasType;
+
+  // Resolve top-level members and collect the `device_type` alias type.
+  for (auto &nameGroup : devicePassableTrait->getDeclsInScope()) {
+    for (ASTDecl *funcFieldOrAlias : nameGroup.second) {
+      if (failed(shared.declResolver->resolveBody(*funcFieldOrAlias,
+                                                  funcFieldOrAlias->getLoc())))
+        return;
+      if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(
+              funcFieldOrAlias->getIfOperation());
+          aliasOp && aliasOp.getDeclName().getValue() == kDeviceType)
+        deviceTypeAliasType = aliasOp.getType();
+    }
+  }
+
+  assert(deviceTypeAliasType &&
+         "DevicePassable trait should define device_type alias");
   SmallVector<std::pair<StringRef, TypedAttr>> devicePassableWitnesses;
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
   ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
 
   for (Operation &member : trait.getFields().getOps()) {
     if (auto function = dyn_cast<FnOp>(member)) {
-      /// Check for the _is_convertible_to_device_type function.
-      if (function.getSourceName() == kIsDeviceTypeConvertible)
+      if (function.getSourceName() == kIsDeviceTypeConvertible) {
+        auto [implementation, parameters, result] =
+            pushBackTraitFunctionImpl(function, structDecl);
+        b.setInsertionPointToStart(&implementation.getBodyRegion().front());
+        assert(
+            !parameters.empty() &&
+            "expected _is_convertible_to_device_type to have type parameter");
+        TypedAttr targetType = ParamDeclRefAttr::get(parameters.front());
+        TypedAttr selfType =
+            cast<TypedAttr>(PValue(structDecl.getTypeDeclSelf()).get());
+        StringAttr traitName =
+            b.getStringAttr(getFlattenedSymbolName(devicePassableSymbol));
+        TypedAttr selfDeviceType = GetWitnessAttr::get(
+            selfType, traitName, StringAttr::get(ctx, kDeviceType),
+            deviceTypeAliasType);
+        TypedAttr isConvertible =
+            ParamOperatorAttr::get(POC::EQ, targetType, selfDeviceType);
+        auto isConvertibleValue =
+            KGEN::ParamConstantOp::create(b, isConvertible);
+        IREmitter::emitNormalReturn(b, isConvertibleValue);
+        devicePassableWitnesses.push_back({
+            *function.getSymName(),
+            buildSymbol(implementation, impl, originSet),
+        });
         continue;
+      }
       /// We already have AnyType members implemented, only implement those
       /// that are defined by DevicePassable.
       auto parent = function.getInheritedFrom();
@@ -3135,10 +3169,10 @@ void ClosureEmitter::addConformanceToDevicePassable(
       auto parent = alias.getInheritedFrom();
       if (parent && parent != devicePassableSymbol)
         continue;
-      assert(alias.getDeclName().getValue().contains("device_type") &&
+      assert(alias.getDeclName().getValue().contains(kDeviceType) &&
              "we assume we are implementing device_type.");
       devicePassableWitnesses.push_back(
-          {"device_type",
+          {kDeviceType,
            TypeParamAttr::get(structDecl.getTypeDeclSelf().mlirType,
                               KGEN::TypeType::get(ctx))});
       continue;
