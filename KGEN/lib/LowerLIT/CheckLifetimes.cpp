@@ -35,6 +35,8 @@ using llvm::BitVector;
 static constexpr StringRef extraOriginUsesAttrName = ".mojo.extra.origin.uses";
 static constexpr StringRef unusedMarkDestroyName =
     ".mojo.unused.mark_destroyed";
+static constexpr StringRef selfPartiallyInitializedAttrName =
+    ".mojo.self.partially.initialized";
 
 namespace {
 /// A simple raise set linked list
@@ -1760,8 +1762,22 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos())) {
       // If the value doesn't need to be live at end of function, ignore it.
-      if (isUninitializedAtExit(valueInfo, op))
+      if (isUninitializedAtExit(valueInfo, op)) {
+        // For any throw from an initializer, record when self is not fully
+        // initialized on this error return (so downstream can avoid demanding
+        // destruction of self as a whole).
+        //
+        // If all the fields are initialized at this point then 'self' is fully
+        // initialized so we don't do partial destruction.  If nothing in the
+        // object is live then something consumed the full object bit, so we
+        // also don't want partial destruction.
+        if (isa<LIT::ErrorReturnOp>(op) && valueInfo.isFullObjectLiveOnEntry &&
+            !valueInfo.getFullValueRef(0).isAllMissing(liveValues) &&
+            !valueInfo.getFullValueRef(0).isAllPresent(liveValues))
+          op.setAttr(selfPartiallyInitializedAttrName,
+                     UnitAttr::get(op.getContext()));
         continue;
+      }
 
       // If this is the hacky RefFromPointerREPLOp op (used by the REPL
       // only!) and if this is an error path, then we look the other way at
@@ -3123,10 +3139,17 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
     // If this value must be live on exit from the function (e.g. a mut
     // argument) demand it.
-    if (isUninitializedAtExit(valueInfo, op))
+    if (!isUninitializedAtExit(valueInfo, op)) {
+      consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
       continue;
+    }
 
-    consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+    // On a throw from an __init__ where self is partially initialized, demand
+    // the full object bit of self so we destroy any live fields, but not
+    // self as a whole.
+    if (isa<ErrorReturnOp>(op) && valueInfo.isFullObjectLiveOnEntry &&
+        op.hasAttr(selfPartiallyInitializedAttrName))
+      consumedValues.set(valueInfo.endValueBit - 1);
   }
 }
 
