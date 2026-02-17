@@ -72,3 +72,11 @@ struct NoneType(
             writer: The object to write to.
         """
         writer.write("None")
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Explicit non-reflective repr for NoneType.
+
+        Writes the literal `None` to preserve existing repr() behavior.
+        """
+        writer.write("None")
