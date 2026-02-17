@@ -39,7 +39,6 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.lib.graph_capture import DeviceGraphExecutor
 from transformers import AutoConfig
 
 
@@ -110,12 +109,6 @@ class MockPipelineModel(PipelineModel):
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora
             else None
-        )
-        self._device_graph_capture_enabled = (
-            pipeline_config.device_graph_capture
-        )
-        self._device_graph_executor = DeviceGraphExecutor(
-            self._execution_trace_inputs
         )
 
     @classmethod

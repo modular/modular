@@ -32,7 +32,6 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 from ..config_enums import SupportedEncoding
-from ..graph_capture import DeviceGraphExecutor
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
@@ -242,13 +241,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             if pipeline_config.lora
             else None
         )
-        self._device_graph_capture_enabled = (
-            pipeline_config.device_graph_capture
-        )
-
-        self._device_graph_executor = DeviceGraphExecutor(
-            self._execution_trace_inputs
-        )
 
     @property
     def lora_manager(self) -> LoRAManager | None:
@@ -396,58 +388,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         This is an abstract method that must be implemented by concrete PipelineModels
         to define their specific execution logic.
         """
-
-    def _execution_trace_inputs(
-        self, model_inputs: ModelInputs
-    ) -> list[Buffer]:
-        raise NotImplementedError(
-            "Device graph inputs not implemented for model. "
-            "Override _execution_trace_inputs to enable capture."
-        )
-
-    def pre_capture_execution_trace(
-        self,
-        model_inputs: list[ModelInputs],
-        batch_size: int,
-    ) -> None:
-        """Pre-captures device graphs for the given model inputs.
-
-        Args:
-            model_inputs: List of model inputs to capture graphs for.
-            batch_size: The batch size for execution.
-        """
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "capture"):
-            return
-
-        self._device_graph_executor.capture(model, model_inputs)
-
-    def execute_with_capture(
-        self,
-        model_inputs: ModelInputs,
-        batch_size: int,
-    ) -> ModelOutputs:
-        """Executes the model with optional capture handling.
-
-        Subclasses can override this to integrate device graph capture/replay.
-        """
-        if not getattr(self, "_device_graph_capture_enabled", False):
-            return self.execute(model_inputs)
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "replay"):
-            raise RuntimeError(
-                "Device graph capture is enabled but model does not support capture."
-            )
-
-        if batch_size > 1:
-            return self.execute(model_inputs)
-
-        self._device_graph_executor.capture(model, [model_inputs])
-
-        return ModelOutputs(
-            *self._device_graph_executor.replay(model, model_inputs)
-        )
 
     @abstractmethod
     def prepare_initial_token_inputs(

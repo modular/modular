@@ -20,18 +20,17 @@ import json
 import logging
 from os import environ
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, cast
+from typing import TYPE_CHECKING, Any, Generic
 
 import llguidance.hf
 import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
-from max.driver import Accelerator, Buffer, Device, load_devices
+from max.driver import Buffer, Device, load_devices
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
-    DUMMY_REQUEST_ID,
     BatchLogitsProcessor,
     LogProbabilities,
     Pipeline,
@@ -43,10 +42,8 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.interfaces.tokens import TokenBuffer
 from max.nn.legacy import ReturnLogits
 from max.nn.legacy.kv_cache import KVCacheInputsSequence
-from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
@@ -231,8 +228,6 @@ class TextGenerationPipeline(
             )
             self._sampler_with_bitmask = None
 
-        self._pre_capture_execution_trace()
-
     @property
     def pipeline_config(self) -> PipelineConfig:
         """Return the pipeline configuration."""
@@ -255,69 +250,6 @@ class TextGenerationPipeline(
     ) -> list[Any]:
         """Return the list of KV cache managers backing this pipeline."""
         return [self._pipeline_model.kv_manager]
-
-    def _pre_capture_execution_trace(self) -> None:
-        if not self._pipeline_config.device_graph_capture:
-            return
-
-        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
-        if kv_manager is None:
-            return
-
-        if self._pipeline_config.model.data_parallel_degree != 1:
-            logger.info(
-                "Device graph pre-capture skipped for data parallel degree %d.",
-                self._pipeline_config.model.data_parallel_degree,
-            )
-            return
-
-        dummy_len = min(
-            self._pipeline_config.max_batch_input_tokens,
-            self._pipeline_model.max_seq_len,
-        )
-        if dummy_len <= 0:
-            return
-
-        tokens = TokenBuffer(np.zeros(dummy_len, dtype=np.int64))
-        context = TextContext(
-            max_length=self._pipeline_model.max_seq_len,
-            tokens=tokens,
-            eos_token_ids=self._eos_token_id,
-            model_name=self._pipeline_config.model.model_name,
-            request_id=DUMMY_REQUEST_ID,
-        )
-        typed_context = cast(TextGenerationContextType, context)
-        try:
-            kv_manager.claim(typed_context.request_id, replica_idx=0)
-            kv_manager.alloc(typed_context, num_steps=1, replica_idx=0)
-            kv_cache_inputs = kv_manager.get_runtime_inputs(
-                [[typed_context]], num_steps=1
-            )
-            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=[[typed_context]],
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
-                return_n_logits=1,
-            )
-            next_tokens = Buffer.from_numpy(np.zeros((1,), dtype=np.int64)).to(
-                self._devices[0]
-            )
-            next_inputs = self._pipeline_model.prepare_next_token_inputs(
-                next_tokens=next_tokens,
-                prev_model_inputs=model_inputs,
-            )
-            self._pipeline_model.pre_capture_execution_trace(
-                [model_inputs, next_inputs],
-                batch_size=1,
-            )
-            # Flush pending capture events before releasing dummy KV buffers.
-            logger.info(
-                "Flushing device events after device-graph pre-capture."
-            )
-            Accelerator(id=self._devices[0].id).synchronize()
-        finally:
-            kv_manager.release(typed_context.request_id, replica_idx=0)
 
     def update_for_structured_output(
         self,
@@ -583,9 +515,8 @@ class TextGenerationPipeline(
             with Tracer(f"multistep_execution_loop_step_{i}"):
                 # Execute the model and get next tokens.
                 try:
-                    model_outputs = self._pipeline_model.execute_with_capture(
-                        model_inputs=curr_step_inputs,
-                        batch_size=len(flat_batch),
+                    model_outputs = self._pipeline_model.execute(
+                        model_inputs=curr_step_inputs
                     )
                 except Exception:
                     batch_size = len(flat_batch)

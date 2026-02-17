@@ -14,12 +14,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
+import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
+from max.engine import Model
 from max.pipelines.lib import ModelInputs, ModelOutputs
+from max.pipelines.lib.graph_capture import DeviceGraphExecutor
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
     mock_huggingface_config,
@@ -52,13 +55,18 @@ class CapturePipelineModel(MockPipelineModel):
         self.output_buffer = Buffer.zeros((4,), dtype=DType.float32)
         self.model = DummyModel(self.output_buffer)
 
-    def _execution_trace_inputs(
-        self, model_inputs: ModelInputs
-    ) -> list[Buffer]:
-        return [self.input_buffer]
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         return ModelOutputs(logits=self.output_buffer)
+
+
+def _trace_inputs(model_inputs: ModelInputs) -> list[Buffer]:
+    model_inputs = cast(MockModelInputs, model_inputs)
+    return [
+        Buffer.zeros(
+            (model_inputs.active_batch_size,),
+            dtype=DType.float32,
+        )
+    ]
 
 
 @mock_huggingface_config
@@ -87,17 +95,21 @@ def test_pipeline_model_capture_replay() -> None:
     )
 
     inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    executor = DeviceGraphExecutor(trace_fn=_trace_inputs)
 
-    model.pre_capture_execution_trace([inputs], batch_size=1)
+    # DummyModel provides the minimal capture/replay surface for this unit test.
+    engine_model = cast(Model, model.model)
+
+    executor.capture(engine_model, [inputs])
     assert model.model.capture_calls
 
-    output = model.execute_with_capture(inputs, batch_size=1)
+    output = executor.replay(engine_model, inputs)
     assert model.model.replay_calls
-    assert output.logits is model.output_buffer
+    assert output[0] is model.output_buffer
 
 
 @mock_huggingface_config
-def test_pipeline_model_capture_skips_without_model() -> None:
+def test_pipeline_model_replay_miss_raises() -> None:
     pipeline_config = DummyPipelineConfig(
         model_path="test/model",
         quantization_encoding=MagicMock(),
@@ -109,11 +121,12 @@ def test_pipeline_model_capture_skips_without_model() -> None:
         "trl-internal-testing/tiny-random-LlamaForCausalLM"
     )
     session = MagicMock()
-    model = MockPipelineModel(
+    model = CapturePipelineModel(
         pipeline_config=pipeline_config,
         session=session,
         huggingface_config=huggingface_config,
         encoding=MagicMock(),
+        devices=[CPU()],
         kv_cache_config=MagicMock(),
         weights=MagicMock(),
         adapter=None,
@@ -121,4 +134,11 @@ def test_pipeline_model_capture_skips_without_model() -> None:
     )
 
     inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
-    model.pre_capture_execution_trace([inputs], batch_size=1)
+    executor = DeviceGraphExecutor(trace_fn=_trace_inputs)
+    engine_model = cast(Model, model.model)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"No captured device graph found for the given input signature\.",
+    ):
+        executor.replay(engine_model, inputs)
