@@ -64,18 +64,26 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructor - copies the stack trace string.
 
         Args:
-            existing: The existing StackTrace to copy from.
+            copy: The existing StackTrace to copy from.
         """
         # Copy the null-terminated string
-        var src_ptr = existing._data.unsafe_ptr()
+        var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
         var new_ptr = alloc[UInt8](str_len + 1)
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
+
+    fn __moveinit__(out self, deinit take: Self):
+        """Move constructor.
+
+        Args:
+            take: The existing StackTrace to move from.
+        """
+        self._data = take._data^
 
     @staticmethod
     @no_inline

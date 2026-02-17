@@ -236,15 +236,15 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         ](), "type is not a union element type"
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a bitwise copy of the union.
 
         Args:
-            other: The union to copy from.
+            copy: The union to copy from.
         """
         # Bitwise copy of the raw storage
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._storage = other._storage
+        self._storage = copy._storage
 
     fn __moveinit__(out self, deinit take: Self):
         """Move initializer for the union.

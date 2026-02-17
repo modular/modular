@@ -53,14 +53,14 @@ struct TMADescriptor[
         self.tensormap = tensormap
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """
         Copy initializes this `TMADescriptor` from another instance.
 
         Args:
-            other: The other `TMADescriptor` instance to copy from.
+            copy: The other `TMADescriptor` instance to copy from.
         """
-        self.tensormap = other.tensormap
+        self.tensormap = copy.tensormap
 
 
 fn create_tma_descriptor[

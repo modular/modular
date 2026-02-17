@@ -231,9 +231,9 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
-    fn __copyinit__(out self, rhs: Self):
-        self.ngpus = rhs.ngpus
-        self.comms = rhs.comms.copy()
+    fn __copyinit__(out self, copy: Self):
+        self.ngpus = copy.ngpus
+        self.comms = copy.comms.copy()
 
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:

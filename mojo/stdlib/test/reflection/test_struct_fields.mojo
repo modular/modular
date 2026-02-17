@@ -938,10 +938,10 @@ struct NonCopyableValue:
     fn __init__(out self, data: Int):
         self.data = data
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         # If this is called, we have a bug!
         print("ERROR: NonCopyableValue was copied!")
-        self.data = other.data
+        self.data = copy.data
 
 
 struct ContainerWithNonCopyable:

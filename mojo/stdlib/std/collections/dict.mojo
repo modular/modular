@@ -864,21 +864,21 @@ struct Dict[
         """
         return Dict[Self.K, Optional[Self.V], Self.H].fromkeys(keys, value)
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy an existing dictiontary.
 
         Args:
-            existing: The existing dict.
+            copy: The existing dict.
         """
-        self._capacity = existing._capacity
-        self._len = existing._len
-        self._growth_left = existing._growth_left
+        self._capacity = copy._capacity
+        self._len = copy._len
+        self._growth_left = copy._growth_left
 
         # Allocate and copy control bytes
         self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
         memcpy(
             dest=self._ctrl,
-            src=existing._ctrl,
+            src=copy._ctrl,
             count=self._capacity + _GROUP_WIDTH,
         )
 
@@ -886,10 +886,10 @@ struct Dict[
         self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
         for i in range(self._capacity):
             if _is_occupied(self._ctrl[i]):
-                (self._slots + i).init_pointee_copy((existing._slots + i)[])
+                (self._slots + i).init_pointee_copy((copy._slots + i)[])
 
         # Copy the order array
-        self._order = existing._order.copy()
+        self._order = copy._order.copy()
 
     fn __del__(deinit self):
         """Destroy all keys and values in the dictionary and free memory."""

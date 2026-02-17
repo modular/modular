@@ -410,14 +410,14 @@ struct List[T: Copyable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a deep copy of the given list.
 
         Args:
-            existing: The list to copy.
+            copy: The list to copy.
         """
-        self = Self(capacity=existing.capacity)
-        self.extend(Span(existing))
+        self = Self(capacity=copy.capacity)
+        self.extend(Span(copy))
 
     fn __del__(deinit self):
         """Destroy all elements in the list and free its memory."""

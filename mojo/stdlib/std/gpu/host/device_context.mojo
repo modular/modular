@@ -367,7 +367,7 @@ struct HostBuffer[dtype: DType](
         self._host_ptr = host_ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing host buffer by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying host buffer
@@ -375,7 +375,7 @@ struct HostBuffer[dtype: DType](
         and the copy will refer to the same memory on the device.
 
         Args:
-            existing: The host buffer to copy.
+            copy: The host buffer to copy.
         """
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         # Increment the reference count before copying the handle.
@@ -385,9 +385,9 @@ struct HostBuffer[dtype: DType](
             "AsyncRT_DeviceBuffer_retain",
             NoneType,
             _DeviceBufferPtr,
-        ](existing._handle)
-        self._host_ptr = existing._host_ptr
-        self._handle = existing._handle
+        ](copy._handle)
+        self._host_ptr = copy._host_ptr
+        self._handle = copy._handle
 
     fn __del__(deinit self):
         """Releases resources associated with this host buffer.
@@ -959,7 +959,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing device buffer by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying device buffer
@@ -967,7 +967,7 @@ struct DeviceBuffer[dtype: DType](
         and the copy will refer to the same memory on the device.
 
         Args:
-            existing: The device buffer to copy.
+            copy: The device buffer to copy.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         # Increment the reference count before copying the handle.
@@ -977,9 +977,9 @@ struct DeviceBuffer[dtype: DType](
             "AsyncRT_DeviceBuffer_retain",
             NoneType,
             _DeviceBufferPtr,
-        ](existing._handle)
-        self._device_ptr = existing._device_ptr
-        self._handle = existing._handle
+        ](copy._handle)
+        self._device_ptr = copy._device_ptr
+        self._handle = copy._handle
 
     @always_inline
     fn __del__(deinit self):
@@ -1419,19 +1419,19 @@ struct DeviceStream(ImplicitlyCopyable):
         self._handle = result
 
     @doc_private
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing stream by incrementing its reference count.
 
         Args:
-            existing: The stream to copy.
+            copy: The stream to copy.
         """
         # void AsyncRT_DeviceStream_retain(const DeviceStream *stream)
         external_call[
             "AsyncRT_DeviceStream_retain",
             NoneType,
             _DeviceStreamPtr,
-        ](existing._handle)
-        self._handle = existing._handle
+        ](copy._handle)
+        self._handle = copy._handle
 
     @doc_private
     @always_inline
@@ -1767,17 +1767,17 @@ struct DeviceEvent(ImplicitlyCopyable):
         self._handle = existing
 
     @doc_private
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing event by incrementing its reference count.
 
         Args:
-            existing: The event to copy.
+            copy: The event to copy.
         """
         # Increment the reference count.
         external_call["AsyncRT_DeviceEvent_retain", NoneType, _DeviceEventPtr](
-            existing._handle
+            copy._handle
         )
-        self._handle = existing._handle
+        self._handle = copy._handle
 
     fn __del__(deinit self):
         """Releases resources associated with this event."""
@@ -1867,13 +1867,13 @@ struct DeviceFunction[
     var _context: DeviceContext
     """The device context backing the function."""
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing DeviceFunction.
 
         This increases the reference count of the underlying device function handle.
 
         Args:
-            existing: The DeviceFunction to copy from.
+            copy: The DeviceFunction to copy from.
         """
         # Increment the reference count before copying the handle.
         #
@@ -1882,10 +1882,10 @@ struct DeviceFunction[
             "AsyncRT_DeviceFunction_retain",
             NoneType,
             _DeviceFunctionPtr,
-        ](existing._handle)
-        self._handle = existing._handle
-        self._func_impl = existing._func_impl
-        self._context = existing._context
+        ](copy._handle)
+        self._handle = copy._handle
+        self._func_impl = copy._func_impl
+        self._context = copy._context
 
     fn __del__(deinit self):
         """Releases resources associated with this DeviceFunction.
@@ -2962,11 +2962,11 @@ struct DeviceExternalFunction:
     var _handle: _DeviceFunctionPtr
     """Internal handle to the native device function object."""
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing device function by incrementing its reference count.
 
         Args:
-            existing: The device function to copy.
+            copy: The device function to copy.
         """
         # Increment the reference count before copying the handle.
         #
@@ -2975,8 +2975,8 @@ struct DeviceExternalFunction:
             "AsyncRT_DeviceFunction_retain",
             NoneType,
             _DeviceFunctionPtr,
-        ](existing._handle)
-        self._handle = existing._handle
+        ](copy._handle)
+        self._handle = copy._handle
 
     fn __del__(deinit self):
         """Releases resources associated with this device function."""
@@ -3373,7 +3373,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         self._handle = ctx_ptr
         self._owning = False
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of an existing device context by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying device context
@@ -3381,13 +3381,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         and the copy will refer to the same device context.
 
         Args:
-            existing: The device context to copy.
+            copy: The device context to copy.
         """
         # Increment the reference count before copying the handle.
-        if existing._owning:
-            existing._retain()
-        self._handle = existing._handle
-        self._owning = existing._owning
+        if copy._owning:
+            copy._retain()
+        self._handle = copy._handle
+        self._owning = copy._owning
 
     fn __del__(deinit self):
         """Releases resources associated with this device context.

@@ -100,7 +100,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         self._inner_a_elem = None
         self._initial_inner_b = inner_b^
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, Copyable),
             Parent=Self,
@@ -108,11 +108,11 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             ParentConformsTo="Copyable",
         ]()
         self._inner_a = rebind_var[Self.IteratorTypeA](
-            trait_downcast[Copyable](existing._inner_a).copy()
+            trait_downcast[Copyable](copy._inner_a).copy()
         )
-        self._inner_b = existing._inner_b.copy()
-        self._inner_a_elem = existing._inner_a_elem.copy()
-        self._initial_inner_b = existing._initial_inner_b.copy()
+        self._inner_b = copy._inner_b.copy()
+        self._inner_a_elem = copy._inner_a_elem.copy()
+        self._initial_inner_b = copy._initial_inner_b.copy()
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -534,9 +534,9 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
         self._orig = iterator.copy()
         self._iter = iterator^
 
-    fn __copyinit__(out self, existing: Self):
-        self._orig = existing._orig.copy()
-        self._iter = existing._iter.copy()
+    fn __copyinit__(out self, copy: Self):
+        self._orig = copy._orig.copy()
+        self._iter = copy._iter.copy()
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -644,7 +644,7 @@ struct _TakeWhileIterator[
         self._inner = inner^
         self._exhausted = False
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
@@ -652,9 +652,9 @@ struct _TakeWhileIterator[
             ParentConformsTo="Copyable",
         ]()
         self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](existing._inner).copy()
+            trait_downcast[Copyable](copy._inner).copy()
         )
-        self._exhausted = existing._exhausted
+        self._exhausted = copy._exhausted
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -764,7 +764,7 @@ struct _DropWhileIterator[
         self._inner = inner^
         self._dropping = True
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
@@ -772,9 +772,9 @@ struct _DropWhileIterator[
             ParentConformsTo="Copyable",
         ]()
         self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](existing._inner).copy()
+            trait_downcast[Copyable](copy._inner).copy()
         )
-        self._dropping = existing._dropping
+        self._dropping = copy._dropping
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:

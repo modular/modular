@@ -29,9 +29,9 @@ struct Pair(Copyable):
         self.a = one
         self.b = two
 
-    fn __copyinit__(out self, existing: Self):
-        self.a = existing.a
-        self.b = existing.b
+    fn __copyinit__(out self, copy: Self):
+        self.a = copy.a
+        self.b = copy.b
 
 fn test_pair():
     var x = Pair(5, 10)
@@ -71,6 +71,7 @@ You should be aware of a few other observable effects:
    constructor](/mojo/manual/lifecycle/life#move-constructor).
 
 ## `@register_passable("trivial")`
+
 (now deprecated, conform to `TrivialRegisterPassable` trait instead)
 
 Most types that use `@register_passable` are just "bags of bits," which we call

@@ -302,13 +302,13 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a copy of a TMA descriptor.
 
         Args:
-            other: The descriptor to copy.
+            copy: The descriptor to copy.
         """
-        self.data = other.data
+        self.data = copy.data
 
 
 fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):

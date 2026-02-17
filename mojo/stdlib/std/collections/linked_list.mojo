@@ -226,17 +226,17 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         elements^.consume_elements[init_elt]()
 
-    fn __copyinit__(out self, read other: Self):
+    fn __copyinit__(out self, read copy: Self):
         """Initialize this list as a copy of another list.
 
         Args:
-            other: The list to copy from.
+            copy: The list to copy from.
 
         Notes:
             Time Complexity: O(n) in len(elements).
         """
         self = Self()
-        var curr = other._head
+        var curr = copy._head
         while curr:
             self.append(curr[].value.copy())
             curr = curr[].next

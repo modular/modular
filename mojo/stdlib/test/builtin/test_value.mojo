@@ -46,8 +46,8 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_DEL)
 
-    fn __copyinit__(out self, other: Self):
-        self.events = other.events
+    fn __copyinit__(out self, copy: Self):
+        self.events = copy.events
 
         @parameter
         if Self.T.__copyinit__is_trivial:

@@ -300,8 +300,8 @@ To make a struct explicitly copyable, you need to:
 By adding the `Copyable` trait, Mojo can generate a default
 `__copyinit__()` method for you unless you've written one yourself.
 This default method copies each field of the existing value
-into the new value. The `Copyable` trait also defines a default `copy()` method, which
-provides a more user-friendly way to copy a value than invoking the
+into the new value. The `Copyable` trait also defines a default `copy()` method,
+which provides a more user-friendly way to copy a value than invoking the
 copy constructor directly.
 
 ```mojo
@@ -332,9 +332,9 @@ into the new value. For example, if you wrote the `__copyinit__()` method for
 `MyPet`, it would look like this:
 
 ```mojo
-fn __copyinit__(out self, existing: Self):
-    self.name = existing.name
-    self.age = existing.age
+fn __copyinit__(out self, copy: Self):
+    self.name = copy.name
+    self.age = copy.age
 ```
 
 This default copy constructor works in most cases, but there are a few cases
@@ -373,9 +373,9 @@ struct HeapArray(Copyable):
         for i in range(self.size):
             (self.data + i).init_pointee_copy(val)
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         # Deep-copy the existing value
-        self.size = existing.size
+        self.size = copy.size
         self.cap = existing.cap
         self.data = alloc[Int](self.cap)
         for i in range(self.size):

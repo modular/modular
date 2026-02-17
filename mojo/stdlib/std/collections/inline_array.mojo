@@ -338,11 +338,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
-            other: The array to copy from.
+            copy: The array to copy from.
 
         Examples:
 
@@ -354,12 +354,12 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
         @parameter
         if Self.ElementType.__copyinit__is_trivial:
-            self._array = other._array
+            self._array = copy._array
         else:
             self = Self(uninitialized=True)
             for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
-                ptr.init_pointee_copy(other.unsafe_get(idx))
+                ptr.init_pointee_copy(copy.unsafe_get(idx))
 
     fn __moveinit__(out self, deinit take: Self):
         """Move constructs the array from another array.

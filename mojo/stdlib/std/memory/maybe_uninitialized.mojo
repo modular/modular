@@ -55,7 +55,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
         self.write(value^)
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """This method is not intended to be called.
 
         This method should never be called as implicit copy should not
@@ -67,7 +67,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
         `copy_from` instead.
 
         Args:
-            other: The object to copy.
+            copy: The object to copy.
         """
         abort(
             "You should never call __copyinit__ on UnsafeMaybeUninitialized"

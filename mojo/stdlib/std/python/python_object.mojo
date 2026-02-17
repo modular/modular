@@ -380,15 +380,15 @@ struct PythonObject(
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=dict_ptr)
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy the object.
 
         This increments the underlying refcount of the existing object.
 
         Args:
-            existing: The value to copy.
+            copy: The value to copy.
         """
-        self = Self(from_borrowed=existing._obj_ptr)
+        self = Self(from_borrowed=copy._obj_ptr)
 
     fn __del__(deinit self):
         """Destroy the object.

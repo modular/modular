@@ -113,11 +113,11 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             ).destroy_pointee()
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy construct the tuple.
 
         Args:
-            existing: The value to copy from.
+            copy: The value to copy from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -138,7 +138,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             # uninitialized memory.
             UnsafePointer(
                 to=trait_downcast[Copyable](self[i])
-            ).init_pointee_copy(trait_downcast[Copyable](existing[i]))
+            ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, deinit take: Self):

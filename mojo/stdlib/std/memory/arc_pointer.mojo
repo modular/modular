@@ -163,16 +163,16 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         )
         self._inner = pointer_to_inner.bitcast[Self._inner_type]()
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy an existing reference. Increment the refcount to the object.
 
         Args:
-            existing: The existing reference.
+            copy: The existing reference.
         """
-        # Order here does not matter since `existing` can't be destroyed until
+        # Order here does not matter since `copy` can't be destroyed until
         # sometime after we return.
-        existing._inner[].add_ref()
-        self._inner = existing._inner
+        copy._inner[].add_ref()
+        self._inner = copy._inner
 
     @no_inline
     fn __del__(deinit self):

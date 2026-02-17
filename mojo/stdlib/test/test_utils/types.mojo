@@ -122,14 +122,14 @@ struct ExplicitCopyOnly(Copyable):
         self.value = value
         self.copy_count = 0
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
-            other: The instance being copied from.
+            copy: The instance being copied from.
         """
-        self = Self(other.value)
-        self.copy_count = other.copy_count + 1
+        self = Self(copy.value)
+        self.copy_count = copy.copy_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -155,14 +155,14 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
         self.value = value
         self.copy_count = 0
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
-            other: The instance being copied from.
+            copy: The instance being copied from.
         """
-        self.value = other.value
-        self.copy_count = other.copy_count + 1
+        self.value = copy.value
+        self.copy_count = copy.copy_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -197,14 +197,14 @@ struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
         self.value = s
         self.copy_count = 0
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
-            existing: The instance being copied from.
+            copy: The instance being copied from.
         """
-        self.value = existing.value
-        self.copy_count = existing.copy_count + 1
+        self.value = copy.value
+        self.copy_count = copy.copy_count + 1
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation to the writer.
@@ -272,14 +272,14 @@ struct MoveCopyCounter(ImplicitlyCopyable):
         self.copied = 0
         self.moved = 0
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copies from another instance and increments the copy count.
 
         Args:
-            other: The instance being copied from.
+            copy: The instance being copied from.
         """
-        self.copied = other.copied + 1
-        self.moved = other.moved
+        self.copied = copy.copied + 1
+        self.moved = copy.moved
 
     fn __moveinit__(out self, deinit take: Self):
         """Moves from an existing instance and increments the move count.
@@ -482,11 +482,11 @@ struct AbortOnCopy(ImplicitlyCopyable):
     Used to test that implicit copies do not occur in certain scenarios.
     """
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Aborts the program if called.
 
         Args:
-            other: The instance being copied from.
+            copy: The instance being copied from.
         """
         abort("We should never implicitly copy AbortOnCopy")
 
@@ -532,15 +532,15 @@ struct Observable[
         self._moves = moves^
         self._dels = dels^
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy initialize the Observable and increment the copy count.
 
         Args:
-            other: The instance being copied from.
+            copy: The instance being copied from.
         """
-        self._copies = other._copies.copy()
-        self._moves = other._moves.copy()
-        self._dels = other._dels.copy()
+        self._copies = copy._copies.copy()
+        self._moves = copy._moves.copy()
+        self._dels = copy._dels.copy()
         if self._copies:
             self._copies.value()[] += 1
 

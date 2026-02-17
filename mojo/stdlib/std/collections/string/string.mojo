@@ -664,16 +664,16 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy initialize the string from another string.
 
         Args:
-            other: The string to copy.
+            copy: The string to copy.
         """
         # Keep inline strings inline, and static strings static.
-        self._ptr_or_data = other._ptr_or_data
-        self._len_or_data = other._len_or_data
-        self._capacity_or_data = other._capacity_or_data
+        self._ptr_or_data = copy._ptr_or_data
+        self._len_or_data = copy._len_or_data
+        self._capacity_or_data = copy._capacity_or_data
 
         # Increment the refcount if it has a mutable buffer.
         self._add_ref()

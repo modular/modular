@@ -186,23 +186,23 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn __copyinit__(out self, other: Self):
-        """Creates a deepcopy of the given deque.
+    fn __copyinit__(out self, copy: Self):
+        """Creates a deep copy of the given deque.
 
         Args:
-            other: The deque to copy.
+            copy: The deque to copy.
         """
         self = Self(
-            capacity=other._capacity,
-            min_capacity=other._min_capacity,
-            maxlen=other._maxlen,
-            shrink=other._shrink,
+            capacity=copy._capacity,
+            min_capacity=copy._min_capacity,
+            maxlen=copy._maxlen,
+            shrink=copy._shrink,
         )
-        for i in range(len(other)):
-            offset = other._physical_index(other._head + i)
-            (self._data + i).init_pointee_copy((other._data + offset)[])
+        for i in range(len(copy)):
+            offset = copy._physical_index(copy._head + i)
+            (self._data + i).init_pointee_copy((copy._data + offset)[])
 
-        self._tail = len(other)
+        self._tail = len(copy)
 
     fn __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
