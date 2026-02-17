@@ -2365,16 +2365,26 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     if (!declaredResultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
-  case SpecialFunctionKind::kCopyInit:
+  case SpecialFunctionKind::kCopyInit: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
     if (parsedArgs[kSelfArgNo].convention != ParsedArgument::kConventionRead)
       emitErrorLoc(parsedArgs[kSelfArgNo].loc,
                    "existing value argument must be passed as 'read'");
+    // The source argument of __copyinit__ must be named 'copy'.
+    if (parsedArgs[kSelfArgNo].name != "copy")
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
+                   "source argument of '__copyinit__' must be named 'copy'");
     break;
-  case SpecialFunctionKind::kMoveInit:
+  }
+  case SpecialFunctionKind::kMoveInit: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
     diagnoseSelfForDelAndMoveInit("existing");
+    // The take argument of __moveinit__ must be named 'take'.
+    if (parsedArgs[kSelfArgNo].name != "take")
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
+                   "take argument of '__moveinit__' must be named 'take'");
     break;
+  }
   case SpecialFunctionKind::kDel:
     assert(parsedArgs.size() == 1 && "arg count already checked above");
     diagnoseSelfForDelAndMoveInit("self");

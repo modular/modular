@@ -23,9 +23,9 @@ struct MemExample(ImplicitlyCopyable):
     # expected-error @below {{'self.y' is uninitialized at the implicit return from this function}}
     fn __copyinit__(
         out self,  # expected-note {{'self' declared here}}
-        existing: Self,
+        copy: Self,
     ):
-        self.x = existing.x
+        self.x = copy.x
 
     fn noop(self):
         pass
