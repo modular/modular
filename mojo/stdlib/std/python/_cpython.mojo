@@ -561,7 +561,7 @@ struct PyObject_FreeThreaded(
     Stringable,
     Writable,
 ):
-    """CPython free-threaded `_object` layout (`Py_GIL_DISABLED`). Same docs for `PyObject` apply, 
+    """CPython free-threaded `_object` layout (`Py_GIL_DISABLED`). Same docs for `PyObject` apply,
     but with additional fields used by the free-threaded interpreter.
     """
 
