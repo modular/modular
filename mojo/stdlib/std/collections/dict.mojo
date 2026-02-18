@@ -70,7 +70,11 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
             writer: The writer to write to.
         """
         writer.write("DictKeyError[", get_type_name[Self.K](), "]")
-
+    
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        fmt.FormatStruct(writer, "DictKeyError")
+            .params(fmt.TypeNames[Self.K]())
+            .fields[]()
 
 @fieldwise_init
 struct EmptyDictError(ImplicitlyCopyable, Writable):
@@ -83,6 +87,9 @@ struct EmptyDictError(ImplicitlyCopyable, Writable):
             writer: The writer to write to.
         """
         writer.write("EmptyDictError")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        fmt.FormatStruct(writer, "EmptyDictError").fields[]()
 
 
 @fieldwise_init
@@ -969,6 +976,7 @@ struct Dict[
         var output = String(capacity=minimum_capacity)
         self.write_to(output)
         return output^
+
     @no_inline
     fn _write_dict_body[
         f_key: fn(Self.K, mut Some[Writer]),

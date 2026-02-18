@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import OwnedKwargsDict
+from collections.dict import (
+    Dict,
+    DictKeyError,
+    EmptyDictError,
+    OwnedKwargsDict,
+)
+
 from hashlib import Hasher, default_comp_time_hasher
 
 from test_utils import CopyCounter
@@ -735,6 +741,16 @@ def test_popitem_no_copies():
     assert_equal(len(dict), 0)
     with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
+
+
+def test_dict_key_error_repr():
+    var e = DictKeyError[Int]()
+    assert_equal(repr(e), "DictKeyError[Int]()")
+
+
+def test_empty_dict_error_repr():
+    var e = EmptyDictError()
+    assert_equal(repr(e), "EmptyDictError()")
 
 
 def main():
