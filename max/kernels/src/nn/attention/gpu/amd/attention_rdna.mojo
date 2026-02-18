@@ -195,32 +195,32 @@ fn _mask_apply_rdna[
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
 
-            @parameter
-            if mask_t.mask_out_of_bound:
-                var bound_seq = num_keys if token_gen else seq_len
+            # Always mask out-of-bound keys on RDNA. Upstream, CausalMask sets
+            # mask_out_of_bound=False on all AMD GPUs, but we do need this to
+            # be masked for RDNA. To avoid a broader impact on CDNA
+            # functionality, perform the masking here.
+            var bound_seq = num_keys if token_gen else seq_len
 
-                if score_seq >= bound_seq:
+            if score_seq >= bound_seq:
 
-                    @parameter
-                    for j in range(output_frag_size):
+                @parameter
+                for j in range(output_frag_size):
+                    p_reg_vectorized[mma_id, 0][j] = Scalar[accum_type](-10000)
+            elif not not_last_iter or token_gen:
+                var bound_key = (
+                    kv_tile_start_row
+                    + kv_tile_num_rows if token_gen else num_keys
+                )
+
+                @parameter
+                for j in range(output_frag_size):
+                    var score_key = mma_key_base + UInt32(
+                        j * 2 + lane_key_group
+                    )
+                    if score_key >= bound_key:
                         p_reg_vectorized[mma_id, 0][j] = Scalar[accum_type](
                             -10000
                         )
-                elif not not_last_iter or token_gen:
-                    var bound_key = (
-                        kv_tile_start_row
-                        + kv_tile_num_rows if token_gen else num_keys
-                    )
-
-                    @parameter
-                    for j in range(output_frag_size):
-                        var score_key = mma_key_base + UInt32(
-                            j * 2 + lane_key_group
-                        )
-                        if score_key >= bound_key:
-                            p_reg_vectorized[mma_id, 0][j] = Scalar[accum_type](
-                                -10000
-                            )
 
 
 struct AttentionRDNA[
