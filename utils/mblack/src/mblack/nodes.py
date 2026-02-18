@@ -57,6 +57,7 @@ STATEMENT: Final = {
     syms.match_stmt,
     syms.case_block,
     syms.var_stmt,
+    syms.comptime_stmt,
 }
 STANDALONE_COMMENT: Final = 153
 token.tok_name[STANDALONE_COMMENT] = "STANDALONE_COMMENT"

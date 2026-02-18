@@ -44,7 +44,28 @@ fn test_if_decorator(a: Bool):
   @parameter
   if 1:
     pass
-  elif a:  # expected-error {{cannot use a dynamic value in '@parameter if' condition}}
+  elif a:  # expected-error {{cannot use a dynamic value in 'comptime if' condition}}
+    pass
+
+fn test_comptime_if_dynamic_elif(a: Bool):
+  comptime if 1:
+    pass
+  elif a:  # expected-error {{cannot use a dynamic value in 'comptime if' condition}}
+    pass
+
+fn test_decorator_with_comptime_if():
+  @parameter
+  comptime if True:  # expected-error {{@parameter decorator is redundant on 'comptime if'}}
+    pass
+
+  @not_good()
+  comptime if True:  # expected-error {{'comptime if' statement does not allow decorators}}
+    pass
+
+fn test_comptime_elif_not_allowed(a: Bool):
+  if a:
+    pass
+  comptime elif a:  # expected-error {{'comptime' cannot be used with 'elif'}}
     pass
 
 ##===----------------------------------------------------------------------===##

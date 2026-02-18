@@ -733,7 +733,7 @@ fn variadic_int(*x: Int) -> Bool: pass
 # https://github.com/modularml/modular/issues/34675
 fn invalid_call_variadic_int(a: Int):
     @parameter
-    # expected-error @+1 {{cannot use dynamic value in '@parameter if' condition}}
+    # expected-error @+1 {{cannot use dynamic value in 'comptime if' condition}}
     if variadic_int(a, a):
         pass
 

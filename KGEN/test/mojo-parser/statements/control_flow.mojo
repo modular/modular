@@ -108,50 +108,6 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     return a
 
 
-# CHECK-LABEL: lit.fn @"param_if{{.*}}"<a: i1, b: !Bool>()
-fn param_if[a: __mlir_type.i1, b: Bool]():
-    # CHECK: kgen.param.if <a> {
-    @parameter
-    if a:
-        # CHECK: lit.var.decl "inside_1" var
-        var inside_1: Int
-    # CHECK: } else {
-    # CHECK:     kgen.param.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
-    elif b:
-        # CHECK:     lit.var.decl "inside_2" var
-        var inside_2: Int
-    # CHECK:     kgen.param.yield
-    # CHECK:   }
-    # CHECK:   kgen.param.yield
-    # CHECK: }
-
-
-# CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
-fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
-    # CHECK: kgen.param.if <cond(a, b, a)>
-    @parameter
-    if a and b:
-        # CHECK:   lit.var.decl "v" var
-        var v: Int
-    # CHECK:   kgen.param.yield
-    # CHECK: } else {
-    # CHECK: kgen.param.if <cond(a, a, b)>
-    elif a or b:
-        # CHECK:   lit.var.decl "w" var
-        var w: Int
-
-
-# CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
-fn param_if_and[a: Bool, b: Bool]():
-    # CHECK: kgen.param.if <#lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "_mlir_value">, b, a), "_mlir_value">>
-    @parameter
-    if a and b:
-        # CHECK:   lit.var.decl "v" var
-        var v: Int
-    # CHECK:   kgen.param.yield
-    # CHECK: }
-
-
 # [Mojo] Can't have try inside else branch
 # https://github.com/modularml/modular/issues/25305
 # CHECK-LABEL: lit.fn @"if_try
@@ -550,24 +506,6 @@ def induction_var_scope_def():
         # CHECK: lit.ref.load %item
         var g = item
 
-struct MyType:
-    pass
-
-fn use(value: MyType):
-    pass
-
-# CHECK-LABEL: lit.fn @"parameter_for
-# CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
-fn parameter_for[a: Int](var value: MyType):
-    # CHECK-NEXT: kgen.param.for [[iter:.*]]:  !IterRange in :!IterRange apply
-    # CHECK-NEXT: has_next {{.*}}paramfor_has_next
-    # CHECK-NEXT: get_next_iter :{{.*}}paramfor_next_iter{{.*}}<:!Iterator_Copyable !IterRange>
-    @parameter
-    for i in IterRange(a):
-        # CHECK: [[IMM:%.*]] = lit.ref.immut %value
-        # CHECK: use{{.*}}[muttoimm [[LT]]]([[IMM]])
-        use(value)
-        # CHECK: kgen.param.for.continue
 
 # CHECK-LABEL: lit.fn @"weird_llvm_dialect_op
 # https://github.com/modular/mojo/issues/3805

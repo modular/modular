@@ -300,6 +300,30 @@ class LineGenerator(Visitor[Line]):
         ):
             yield from self.line()
 
+    def visit_comptime_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit `comptime if`, `comptime for`, `comptime assert`, `comptime x = ...`."""
+        yield from self.line()
+
+        children = iter(node.children)
+        for child in children:
+            yield from self.visit(child)
+
+            if child.type == token.COMPTIME or child.type == STANDALONE_COMMENT:
+                break
+
+        internal_stmt = next(children)
+        if internal_stmt.type in (syms.if_stmt, syms.for_stmt):
+            # Visit child statement's children directly to avoid the
+            # initial line break that visit_if_stmt/visit_for_stmt add.
+            for child in internal_stmt.children:
+                yield from self.visit(child)
+        else:
+            # Simple case (alias_stmt_body, comptime_assert_stmt_body):
+            # visit normally, then consume the trailing NEWLINE.
+            yield from self.visit(internal_stmt)
+            for child in children:
+                yield from self.visit(child)
+
     def visit_async_stmt(self, node: Node) -> Iterator[Line]:
         """Visit `async def`, `async for`, `async with`."""
         yield from self.line()
@@ -532,11 +556,7 @@ class LineGenerator(Visitor[Line]):
         self.visit_comptime_assert_stmt_body = partial(
             v, keywords=set(), parens={"assert", ","}
         )
-        # comptime_stmt handles both "comptime assert" and "comptime x = ..."
-        # No special parens needed at this level since the body handles it.
-        self.visit_comptime_stmt = partial(
-            v, keywords={"comptime"}, parens=set()
-        )
+        # comptime_stmt is handled by the visit_comptime_stmt method below.
         self.visit_if_stmt = partial(
             v, keywords={"if", "else", "elif"}, parens={"if", "elif"}
         )
