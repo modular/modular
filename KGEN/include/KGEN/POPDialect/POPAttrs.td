@@ -759,6 +759,24 @@ class POP_SIMDUnaryAttr<string name>
   let extraClassDeclaration = [{
     Type getType() const { return getOperand().getType(); }
   }];
+
+  let extraClassDefinition = [{
+    bool $cppClass::isConstant() const { return false; }
+
+    LogicalResult $cppClass::verify(function_ref<InFlightDiagnostic()> emitError,
+                                    TypedAttr operand) {
+      if (!isa<SIMDType>(operand.getType()))
+        return emitError() << "requires a SIMD-typed operand";
+      return success();
+    }
+
+    TypedAttr $cppClass::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                    MLIRContext *context, TypedAttr operand) {
+      if (failed(verify(emitError, operand)))
+        return {};
+      return $cppClass::get(context, operand);
+    }
+  }];
 }
 
 def POP_SIMDNegAttr : POP_SIMDUnaryAttr<"Neg"> {
@@ -831,7 +849,26 @@ class POP_SIMDBinaryAttr<string name>
   ];
 
   let extraClassDeclaration = [{
-    Type getType() const;
+    Type getType() const { return getLhs().getType(); };
+  }];
+
+  let extraClassDefinition = [{
+    bool $cppClass::isConstant() const { return false; }
+
+    LogicalResult $cppClass::verify(function_ref<InFlightDiagnostic()> emitError,
+                                    TypedAttr lhs, TypedAttr rhs) {
+      if (lhs.getType() != rhs.getType() || !isa<SIMDType>(lhs.getType()))
+        return emitError() << "requires two equally-typed SIMD operands";
+      return success();
+    }
+
+    TypedAttr $cppClass::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                    MLIRContext *context, TypedAttr lhs,
+                                    TypedAttr rhs) {
+      if (failed(verify(emitError, lhs, rhs)))
+        return {};
+      return $cppClass::get(context, lhs, rhs);
+    }
   }];
 }
 
@@ -845,17 +882,12 @@ def POP_SIMDMulAttr : POP_SIMDBinaryAttr<"Mul">;
 def POP_SIMDDivAttr : POP_SIMDBinaryAttr<"Div">;
 def POP_SIMDFloorDivAttr : POP_SIMDBinaryAttr<"FloorDiv">;
 
-def POP_SIMDShlAttr : POP_ExprAttr<"SIMDShl", "simd_shl"> {
-  let summary = "SIMD Left Shift.";
-  let description = [{
-    The `pop.simd_shl` attribute returns the first operand shifted to the left
-    a specified number of bits. Both arguments to `pop.shl` must be the same
-    integer or index dtype. The shift amount is always treated as unsigned.
+//===----------------------------------------------------------------------===//
+// SIMD Shift Operation Attributes
+//===----------------------------------------------------------------------===//
 
-    If the shift amount is equal to or larger than the number of bits in the
-    value, the results of this operation is a poison value.
-  }];
-
+class POP_SIMDShiftAttr<string name>
+      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name)> {
   let parameters = (ins "TypedAttr":$val, "TypedAttr":$shft);
 
   let assemblyFormat = " `<` $val `,` $shft `>` ";
@@ -873,11 +905,43 @@ def POP_SIMDShlAttr : POP_ExprAttr<"SIMDShl", "simd_shl"> {
   ];
 
   let extraClassDeclaration = [{
-    Type getType() const;
+    Type getType() const { return getVal().getType(); }
+  }];
+
+  let extraClassDefinition = [{
+    bool $cppClass::isConstant() const { return false; }
+
+    TypedAttr $cppClass::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                    MLIRContext *context, TypedAttr value,
+                                    TypedAttr shft) {
+      if (failed(verify(emitError, value, shft)))
+        return {};
+      return $cppClass::get(context, value, shft);
+    }
+
+    LogicalResult $cppClass::verify(function_ref<InFlightDiagnostic()> emitError,
+                                    TypedAttr value, TypedAttr shft) {
+      if (!isa<SIMDType>(value.getType()))
+        return emitError() << "requires a SIMD-type operand";
+
+      return success();
+    }
   }];
 }
 
-def POP_SIMDShrAttr : POP_ExprAttr<"SIMDShr", "simd_shr"> {
+def POP_SIMDShlAttr : POP_SIMDShiftAttr<"Shl"> {
+  let summary = "SIMD Left Shift.";
+  let description = [{
+    The `pop.simd_shl` attribute returns the first operand shifted to the left
+    a specified number of bits. Both arguments to `pop.shl` must be the same
+    integer or index dtype. The shift amount is always treated as unsigned.
+
+    If the shift amount is equal to or larger than the number of bits in the
+    value, the results of this operation is a poison value.
+  }];
+}
+
+def POP_SIMDShrAttr : POP_SIMDShiftAttr<"Shr"> {
   let summary = "SIMD Right Shift.";
   let description = [{
     The `pop.shr` attribute returns the first operand shifted to the right a
@@ -896,26 +960,6 @@ def POP_SIMDShrAttr : POP_ExprAttr<"SIMDShr", "simd_shr"> {
     shift value, the result of this operation is a poison value. If the
     arguments are vectors, each vector element of the shifted value is shifted
     by the corresponding shift amount in the shift amount.
-  }];
-
-  let parameters = (ins "TypedAttr":$val, "TypedAttr":$shft);
-
-  let assemblyFormat = " `<` $val `,` $shft `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$val, "TypedAttr":$shft), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$val, "TypedAttr":$shft), [{
-      return get(val.getContext(), val, shft);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
   }];
 }
 
@@ -976,6 +1020,40 @@ class POP_SIMDReduceAttr<string name>
     AttrBuilderWithInferredContext<(ins "TypedAttr":$vector, "SIMDType":$type),
     [{ return get(vector.getContext(), vector, type); }], "TypedAttr">
   ];
+
+  let extraClassDeclaration = [{
+    static OpFoldResult fold(TypedAttr vector, SIMDType outType);
+  }];
+
+  let extraClassDefinition = [{
+    bool $cppClass::isConstant() const { return false; }
+
+    TypedAttr $cppClass::get(MLIRContext *ctx, TypedAttr vector,
+                             SIMDType outType) {
+      // Fold if possible
+      if (auto foldRes = fold(vector, cast<SIMDType>(vector.getType()))) {
+        if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(foldRes)))
+          return ret;
+      }
+      return Base::get(ctx, vector, outType);
+    }
+
+    TypedAttr $cppClass::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                    MLIRContext *context, TypedAttr vector,
+                                    SIMDType outType) {
+      if (failed(verify(emitError, vector, outType)))
+        return {};
+      return $cppClass::get(context, vector, outType);
+    }
+
+    LogicalResult $cppClass::verify(function_ref<InFlightDiagnostic()> emitError,
+                                    TypedAttr vector, SIMDType outType) {
+      if (!isa<SIMDType>(vector.getType()))
+        return emitError() << "requires a SIMD-type operand";
+
+      return success();
+    }
+  }];
 }
 
 def POP_SIMDReduceOrAttr : POP_SIMDReduceAttr<"Or">;
