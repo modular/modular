@@ -285,6 +285,16 @@ class SamplingParams:
         logger.info("")
 
     def __post_init__(self):
+        # Normalize None values to field defaults. These can arrive when a
+        # user explicitly sends top_p=null or top_k=null in a request.
+        # Treating None as "use the default" keeps the fast gumbel-sampling
+        # path reachable and avoids NaN propagation through numpy.
+        _defaults = self.__dataclass_fields__
+        if self.top_k is None:
+            self.top_k = _defaults["top_k"].default
+        if self.top_p is None:
+            self.top_p = _defaults["top_p"].default
+
         if self.min_p < 0.0 or self.min_p > 1.0:
             raise ValueError("min_p must be in [0.0, 1.0]")
 
@@ -301,6 +311,9 @@ class SamplingParams:
             raise ValueError(
                 f"top_k must be -1 or greater than 0 and less than or equal to 255, was {self.top_k}."
             )
+
+        if self.top_p < 0.0 or self.top_p > 1.0:
+            raise ValueError(f"top_p must be in [0.0, 1.0], was {self.top_p}.")
 
         # If temperature is 0, set top_k to 1.
         if self.temperature == 0:
