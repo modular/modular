@@ -74,6 +74,7 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     DISPATCH_HIT,
     DISPATCH_MISS,
 )
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 
 
 ########################################################
@@ -174,6 +175,7 @@ fn quantize_dynamic_scaled_fp4fp8[
         tensor_sf,
         block_dim=block_dim,
         grid_dim=grid_dim,
+        attributes=pdl_launch_attributes(),
     )
 
 
@@ -223,38 +225,18 @@ fn quantize_dynamic_scaled_fp4fp8_kernel[
     var num_padded_col_threads = num_cols_padded // ELEMENTS_PER_THREAD
     var num_sf_threads = num_sf_cols // ELEMENTS_PER_THREAD
 
-    for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
-        var is_padded_row = global_row_idx >= num_rows
+    with PDL():
+        for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+            var is_padded_row = global_row_idx >= num_rows
 
-        for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
-            var global_col_idx = col_idx * ELEMENTS_PER_THREAD
+            for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
+                var global_col_idx = col_idx * ELEMENTS_PER_THREAD
 
-            if is_padded_row:
-                # This row is entirely padding, so zero out scale factors.
-                # Note: Padding rows do NOT exist in the output tensor (which is sized [num_rows, K]),
-                # they only exist in the scale factor tensor. Tensor cores expects these scale factors to be 0.
-                # there will be accuracy issues if we don't zero out the scale factors for padding rows.
-                if global_col_idx % SF_VECTOR_SIZE == 0:
-                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                        scales,
-                        global_row_idx,
-                        global_col_idx,
-                        Scalar[scales_dtype](0.0),
-                    )
-
-            else:
-                # this is only needed if we do padding in the output tensor N dimension
-                if (
-                    col_idx >= num_col_threads
-                    and col_idx < num_padded_col_threads
-                ):
-                    output.store[width=OUTPUT_WIDTH](
-                        global_row_idx,
-                        col_idx * OUTPUT_WIDTH,
-                        SIMD[out_dtype, OUTPUT_WIDTH](0),
-                    )
-
-                if col_idx >= num_col_threads:
+                if is_padded_row:
+                    # This row is entirely padding, so zero out scale factors.
+                    # Note: Padding rows do NOT exist in the output tensor (which is sized [num_rows, K]),
+                    # they only exist in the scale factor tensor. Tensor cores expects these scale factors to be 0.
+                    # there will be accuracy issues if we don't zero out the scale factors for padding rows.
                     if global_col_idx % SF_VECTOR_SIZE == 0:
                         set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                             scales,
@@ -263,75 +245,98 @@ fn quantize_dynamic_scaled_fp4fp8_kernel[
                             Scalar[scales_dtype](0.0),
                         )
 
-                # This row contains actual data
                 else:
-                    var input_vector = input.load[ELEMENTS_PER_THREAD](
-                        global_row_idx, global_col_idx
-                    )
-
-                    # each thread finds maximum value in its local 8 elements
-                    var thread_max = abs(input_vector).reduce_max()
-                    # find the maximum value among all 16 elements (two threads for 16)
-                    thread_max = max(shuffle_xor(thread_max, 1), thread_max)
-
-                    @parameter
-                    if NUM_THREADS_PER_SF == 4:
-                        thread_max = max(shuffle_xor(thread_max, 2), thread_max)
-
-                    var group_max = thread_max.cast[DType.float32]()
-
-                    # get the scale factor for these 16/32 elements by dividing it by the maximum value of fp4-e2m1/fp8-e4m3
-                    var scale_factor: Float32
-                    scale_factor = tensor_sf * (
-                        group_max * recip(Float32(6.0))
-                    ) if out_dtype == DType.uint8 else (
-                        group_max * recip(Float32(448.0))
-                    )
-
-                    # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
-                    var fp8_scale_factor = scale_factor.cast[scales_dtype]()
-
-                    # find the quantization scale factor for these 16 elements (scale_factor = scale_factor / tensor_sf)
-                    # we divide input by this scale factor which is same as multiplying by the reciprocal of the scale factor
-                    var output_scale = Float32(0.0)
-                    if group_max != 0:
-                        output_scale = recip(
-                            fp8_scale_factor.cast[DType.float32]()
-                            * recip(tensor_sf)
-                        ) if out_dtype == DType.uint8 else (
-                            recip(fp8_scale_factor.cast[DType.float32]())
-                        )
-
-                    # write back the scale factor
-                    if global_col_idx % SF_VECTOR_SIZE == 0:
-                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                            scales,
+                    # this is only needed if we do padding in the output tensor N dimension
+                    if (
+                        col_idx >= num_col_threads
+                        and col_idx < num_padded_col_threads
+                    ):
+                        output.store[width=OUTPUT_WIDTH](
                             global_row_idx,
-                            global_col_idx,
-                            fp8_scale_factor,
+                            col_idx * OUTPUT_WIDTH,
+                            SIMD[out_dtype, OUTPUT_WIDTH](0),
                         )
 
-                    var input_f32 = (
-                        input_vector.cast[DType.float32]() * output_scale
-                    )
+                    if col_idx >= num_col_threads:
+                        if global_col_idx % SF_VECTOR_SIZE == 0:
+                            set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                                scales,
+                                global_row_idx,
+                                global_col_idx,
+                                Scalar[scales_dtype](0.0),
+                            )
 
-                    var output_vector: SIMD[out_dtype, OUTPUT_WIDTH]
-
-                    @parameter
-                    if out_dtype == DType.uint8:
-                        output_vector = bitcast[out_dtype, OUTPUT_WIDTH](
-                            cast_fp32_to_fp4e2m1(input_f32)
-                        )
+                    # This row contains actual data
                     else:
-                        output_vector = rebind[SIMD[out_dtype, OUTPUT_WIDTH]](
-                            input_f32.cast[out_dtype]()
+                        var input_vector = input.load[ELEMENTS_PER_THREAD](
+                            global_row_idx, global_col_idx
                         )
 
-                    output.store[width=OUTPUT_WIDTH](
-                        global_row_idx,
-                        col_idx * OUTPUT_WIDTH,
-                        output_vector,
-                    )
+                        # each thread finds maximum value in its local 8 elements
+                        var thread_max = abs(input_vector).reduce_max()
+                        # find the maximum value among all 16 elements (two threads for 16)
+                        thread_max = max(shuffle_xor(thread_max, 1), thread_max)
+
+                        @parameter
+                        if NUM_THREADS_PER_SF == 4:
+                            thread_max = max(
+                                shuffle_xor(thread_max, 2), thread_max
+                            )
+
+                        var group_max = thread_max.cast[DType.float32]()
+
+                        # get the scale factor for these 16/32 elements by dividing it by the maximum value of fp4-e2m1/fp8-e4m3
+                        var scale_factor: Float32
+                        scale_factor = tensor_sf * (
+                            group_max * recip(Float32(6.0))
+                        ) if out_dtype == DType.uint8 else (
+                            group_max * recip(Float32(448.0))
+                        )
+
+                        # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
+                        var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+
+                        # find the quantization scale factor for these 16 elements (scale_factor = scale_factor / tensor_sf)
+                        # we divide input by this scale factor which is same as multiplying by the reciprocal of the scale factor
+                        var output_scale = Float32(0.0)
+                        if group_max != 0:
+                            output_scale = recip(
+                                fp8_scale_factor.cast[DType.float32]()
+                                * recip(tensor_sf)
+                            ) if out_dtype == DType.uint8 else (
+                                recip(fp8_scale_factor.cast[DType.float32]())
+                            )
+
+                        # write back the scale factor
+                        if global_col_idx % SF_VECTOR_SIZE == 0:
+                            set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                                scales,
+                                global_row_idx,
+                                global_col_idx,
+                                fp8_scale_factor,
+                            )
+
+                        var input_f32 = (
+                            input_vector.cast[DType.float32]() * output_scale
+                        )
+
+                        var output_vector: SIMD[out_dtype, OUTPUT_WIDTH]
+
+                        @parameter
+                        if out_dtype == DType.uint8:
+                            output_vector = bitcast[out_dtype, OUTPUT_WIDTH](
+                                cast_fp32_to_fp4e2m1(input_f32)
+                            )
+                        else:
+                            output_vector = rebind[
+                                SIMD[out_dtype, OUTPUT_WIDTH]
+                            ](input_f32.cast[out_dtype]())
+
+                        output.store[width=OUTPUT_WIDTH](
+                            global_row_idx,
+                            col_idx * OUTPUT_WIDTH,
+                            output_vector,
+                        )
 
 
 @always_inline
@@ -902,143 +907,153 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
         input_dtype
     ]()
 
-    if thread_idx.x >= 128:
-        warpgroup_reg_dealloc[24]()
+    with PDL():
+        if thread_idx.x >= 128:
+            warpgroup_reg_dealloc[24]()
 
-        @parameter
-        for iter_idx in range(NUM_PIPELINES_STAGES):
-            var smem_tile = input_smem.next(iter_idx)[]
+            @parameter
+            for iter_idx in range(NUM_PIPELINES_STAGES):
+                var smem_tile = input_smem.next(iter_idx)[]
 
-            if lane_id() == 0:
-                tma_mbar[iter_idx].expect_bytes(Int32(expected_bytes))
-                input_tma_op.async_copy(
-                    smem_tile,
-                    tma_mbar[iter_idx],
-                    (
-                        Int(
-                            (block_idx.y * SF_K_GROUP_SIZE)
-                            + (iter_idx * STAGE_GROUP_SIZE)
+                if lane_id() == 0:
+                    tma_mbar[iter_idx].expect_bytes(Int32(expected_bytes))
+                    input_tma_op.async_copy(
+                        smem_tile,
+                        tma_mbar[iter_idx],
+                        (
+                            Int(
+                                (block_idx.y * SF_K_GROUP_SIZE)
+                                + (iter_idx * STAGE_GROUP_SIZE)
+                            ),
+                            Int(block_idx.x) * SF_MN_GROUP_SIZE,
                         ),
-                        Int(block_idx.x) * SF_MN_GROUP_SIZE,
+                    )
+
+        else:
+            var scale_factors = SIMD[scales_dtype, SF_ATOM_K]()
+
+            @parameter
+            for iter_idx in range(NUM_PIPELINES_STAGES):
+                var smem_tile = input_smem.next(iter_idx)[]
+
+                tma_mbar[iter_idx].wait(tma_phase[Int(iter_idx)])
+                var quantized_elements = SIMD[DType.uint32, 8]()
+
+                @parameter
+                for group_idx in range(STAGE_GROUP_SIZE // SF_VECTOR_SIZE):
+                    var group_elements = SIMD[
+                        input_dtype, Int(SF_VECTOR_SIZE)
+                    ]()
+
+                    @parameter
+                    for col_idx in range(SF_VECTOR_SIZE // 8):
+                        var swizzle_offset = (
+                            local_row_idx * Int(STAGE_GROUP_SIZE)
+                            + Int(group_idx * SF_VECTOR_SIZE)
+                            + Int(col_idx * 8)
+                        )
+
+                        comptime input_swizzle = make_swizzle[
+                            input_dtype, input_swizzle_mode
+                        ]()
+                        var swizzle_idx = input_swizzle(swizzle_offset)
+                        var temp = smem_tile.ptr.load[
+                            width=8,
+                            alignment = align_of[SIMD[input_dtype, 8]](),
+                        ](swizzle_idx)
+
+                        group_elements = group_elements.insert[
+                            offset = Int(col_idx * 8)
+                        ](temp)
+
+                    var group_max = (
+                        abs(group_elements).reduce_max().cast[DType.float32]()
+                    )
+
+                    var scale_factor = (
+                        tensor_sf * group_max * recip(Float32(6.0))
+                    )
+                    var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+
+                    scale_factors[
+                        Int(iter_idx) * Int(NUM_PIPELINES_STAGES)
+                        + Int(group_idx)
+                    ] = fp8_scale_factor
+
+                    var output_scale = Float32(0.0)
+                    if fp8_scale_factor.cast[DType.float32]() != 0:
+                        output_scale = recip(
+                            fp8_scale_factor.cast[DType.float32]()
+                            * recip(tensor_sf)
+                        )
+
+                    @parameter
+                    for slice_idx in range(2):
+                        var slice_elements = group_elements.slice[
+                            8, offset = slice_idx * 8
+                        ]()
+                        quantized_elements[
+                            Int(group_idx) * 2 + slice_idx
+                        ] = cast_fp32_to_fp4e2m1(
+                            slice_elements.cast[DType.float32]() * output_scale
+                        )
+
+                @parameter
+                for idx in range(2):
+                    var slice_elements = quantized_elements.slice[
+                        4, offset = idx * 4
+                    ]()
+                    comptime output_swizzle = make_swizzle[
+                        output_dtype, output_swizzle_mode
+                    ]()
+                    var swizzle_offset = local_row_idx * Int(
+                        STAGE_GROUP_SIZE // 2
+                    ) + idx * Int(SF_VECTOR_SIZE)
+                    var output_swizzle_idx = output_swizzle(swizzle_offset)
+                    output_smem.ptr.store[
+                        alignment = align_of[
+                            SIMD[output_dtype, Int(SF_VECTOR_SIZE)]
+                        ]()
+                    ](
+                        output_swizzle_idx,
+                        bitcast[output_dtype, Int(SF_VECTOR_SIZE)](
+                            slice_elements
+                        ),
+                    )
+
+                scales_smem.ptr.store[
+                    alignment = align_of[SIMD[scales_dtype, SF_ATOM_K]]()
+                ](
+                    (local_row_idx % 32) * 16
+                    + (local_row_idx // 32) * SF_ATOM_K,
+                    scale_factors,
+                )
+
+            named_barrier[128](1)
+
+            if thread_idx.x == 0:
+                fence_async_view_proxy()
+
+                scales_tma_op.async_store(
+                    scales_smem,
+                    StaticTuple[UInt32, 4](
+                        0,
+                        0,
+                        UInt32(block_idx.y),
+                        UInt32(block_idx.x),
                     ),
                 )
 
-    else:
-        var scale_factors = SIMD[scales_dtype, SF_ATOM_K]()
-
-        @parameter
-        for iter_idx in range(NUM_PIPELINES_STAGES):
-            var smem_tile = input_smem.next(iter_idx)[]
-
-            tma_mbar[iter_idx].wait(tma_phase[Int(iter_idx)])
-            var quantized_elements = SIMD[DType.uint32, 8]()
-
-            @parameter
-            for group_idx in range(STAGE_GROUP_SIZE // SF_VECTOR_SIZE):
-                var group_elements = SIMD[input_dtype, Int(SF_VECTOR_SIZE)]()
-
-                @parameter
-                for col_idx in range(SF_VECTOR_SIZE // 8):
-                    var swizzle_offset = (
-                        local_row_idx * Int(STAGE_GROUP_SIZE)
-                        + Int(group_idx * SF_VECTOR_SIZE)
-                        + Int(col_idx * 8)
-                    )
-
-                    comptime input_swizzle = make_swizzle[
-                        input_dtype, input_swizzle_mode
-                    ]()
-                    var swizzle_idx = input_swizzle(swizzle_offset)
-                    var temp = smem_tile.ptr.load[
-                        width=8, alignment = align_of[SIMD[input_dtype, 8]]()
-                    ](swizzle_idx)
-
-                    group_elements = group_elements.insert[
-                        offset = Int(col_idx * 8)
-                    ](temp)
-
-                var group_max = (
-                    abs(group_elements).reduce_max().cast[DType.float32]()
+                output_tma_op.async_store(
+                    output_smem,
+                    StaticTuple[UInt32, 2](
+                        UInt32(block_idx.y * (SF_K_GROUP_SIZE) // 2),
+                        UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
+                    ),
                 )
+                output_tma_op.commit_group()
 
-                var scale_factor = tensor_sf * group_max * recip(Float32(6.0))
-                var fp8_scale_factor = scale_factor.cast[scales_dtype]()
-
-                scale_factors[
-                    Int(iter_idx) * Int(NUM_PIPELINES_STAGES) + Int(group_idx)
-                ] = fp8_scale_factor
-
-                var output_scale = Float32(0.0)
-                if fp8_scale_factor.cast[DType.float32]() != 0:
-                    output_scale = recip(
-                        fp8_scale_factor.cast[DType.float32]()
-                        * recip(tensor_sf)
-                    )
-
-                @parameter
-                for slice_idx in range(2):
-                    var slice_elements = group_elements.slice[
-                        8, offset = slice_idx * 8
-                    ]()
-                    quantized_elements[
-                        Int(group_idx) * 2 + slice_idx
-                    ] = cast_fp32_to_fp4e2m1(
-                        slice_elements.cast[DType.float32]() * output_scale
-                    )
-
-            @parameter
-            for idx in range(2):
-                var slice_elements = quantized_elements.slice[
-                    4, offset = idx * 4
-                ]()
-                comptime output_swizzle = make_swizzle[
-                    output_dtype, output_swizzle_mode
-                ]()
-                var swizzle_offset = local_row_idx * Int(
-                    STAGE_GROUP_SIZE // 2
-                ) + idx * Int(SF_VECTOR_SIZE)
-                var output_swizzle_idx = output_swizzle(swizzle_offset)
-                output_smem.ptr.store[
-                    alignment = align_of[
-                        SIMD[output_dtype, Int(SF_VECTOR_SIZE)]
-                    ]()
-                ](
-                    output_swizzle_idx,
-                    bitcast[output_dtype, Int(SF_VECTOR_SIZE)](slice_elements),
-                )
-
-            scales_smem.ptr.store[
-                alignment = align_of[SIMD[scales_dtype, SF_ATOM_K]]()
-            ](
-                (local_row_idx % 32) * 16 + (local_row_idx // 32) * SF_ATOM_K,
-                scale_factors,
-            )
-
-        named_barrier[128](1)
-
-        if thread_idx.x == 0:
-            fence_async_view_proxy()
-
-            scales_tma_op.async_store(
-                scales_smem,
-                StaticTuple[UInt32, 4](
-                    0,
-                    0,
-                    UInt32(block_idx.y),
-                    UInt32(block_idx.x),
-                ),
-            )
-
-            output_tma_op.async_store(
-                output_smem,
-                StaticTuple[UInt32, 2](
-                    UInt32(block_idx.y * (SF_K_GROUP_SIZE) // 2),
-                    UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
-                ),
-            )
-            output_tma_op.commit_group()
-
-        output_tma_op.wait_group[0]()
+            output_tma_op.wait_group[0]()
 
 
 fn quantize_dynamic_scaled_fp4_async[
@@ -1186,6 +1201,7 @@ fn quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
+        attributes=pdl_launch_attributes(),
     )
 
 
