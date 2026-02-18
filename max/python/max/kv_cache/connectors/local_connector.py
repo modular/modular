@@ -223,6 +223,9 @@ class LocalConnector:
             self._block_copy_engine.memcpy_h2d(device_block_id, host_block.bid)
             self._h2d_blocks_copied += 1
             loaded_hashes.append(block_hash)
+            # Balance the touch() in lookup() so the block returns to the
+            # free queue and can be evicted when the host pool is full.
+            self._host_block_pool.free_block(host_block)
 
         return loaded_hashes
 
@@ -258,7 +261,12 @@ class LocalConnector:
         block_ids: list[int],
     ) -> None:
         """Clean up request-specific state."""
-        self._pending_loads.pop(str(request_id), None)
+        # Free host blocks that were touched in lookup() but never consumed
+        # by load() (e.g. if the request was cancelled before load()).
+        pending = self._pending_loads.pop(str(request_id), None)
+        if pending:
+            for host_block, _hash in pending:
+                self._host_block_pool.free_block(host_block)
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
