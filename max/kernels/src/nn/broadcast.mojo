@@ -181,10 +181,10 @@ fn _tile_1d[
     init_dst_ptr: UnsafePointer[
         mut=True,
         Scalar[dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
-        ...,
     ],
-    src_ptr: UnsafePointer[
+    src_ptr: ImmutUnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.GENERIC,
         ...,

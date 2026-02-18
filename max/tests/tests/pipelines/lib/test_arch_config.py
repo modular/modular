@@ -56,7 +56,7 @@ def create_mock_pipeline_config(
     quantization_encoding: SupportedEncoding
     | None = SupportedEncoding.bfloat16,
     kv_cache_page_size: int = 128,
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED,
+    cache_strategy: KVCacheStrategy = "paged",
     enable_prefix_caching: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
     host_kvcache_swap_space_gb: float = 50.0,
@@ -237,7 +237,7 @@ class TestArchConfigWithAttentionKVCache:
         """Test that get_kv_params method correctly constructs KVCacheParams."""
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             enable_prefix_caching=True,
             enable_kvcache_swapping_to_host=True,
             host_kvcache_swap_space_gb=100.0,
@@ -257,7 +257,7 @@ class TestArchConfigWithAttentionKVCache:
         assert kv_params.head_dim == 64  # from ConcreteArchConfig
         assert kv_params.num_layers == 12  # from ConcreteArchConfig
         assert kv_params.page_size == 256
-        assert kv_params.cache_strategy == KVCacheStrategy.PAGED
+        assert kv_params.cache_strategy == "paged"
         assert kv_params.enable_prefix_caching is True
         assert kv_params.enable_kvcache_swapping_to_host is True
         assert kv_params.host_kvcache_swap_space_gb == 100.0

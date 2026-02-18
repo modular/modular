@@ -77,7 +77,6 @@ modular_py_library(
     imports = ["."],
     deps = [
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration:hf_repo_lock",

@@ -288,7 +288,7 @@ def execute_flash_attention[
                 ),
             ),
             start_pos=LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
                 cache_lengths_dev.unsafe_ptr(),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

@@ -269,8 +269,8 @@ fn get_conv_shape[
     filter_packed: Bool,
 ](
     output: LayoutTensor,
-    input: LayoutTensor,
-    filter: LayoutTensor,
+    input: LayoutTensor[mut=False, ...],
+    filter: LayoutTensor[mut=False, ...],
     stride: IndexList[rank],
     dilation: IndexList[rank],
     pad_d: IndexList[2],
@@ -315,8 +315,8 @@ fn get_conv_shape[
     filter_packed: Bool,
 ](
     output: TileTensor,
-    input: TileTensor,
-    filter: TileTensor,
+    input: TileTensor[mut=False, ...],
+    filter: TileTensor[mut=False, ...],
     stride: IndexList[rank],
     dilation: IndexList[rank],
     pad_d: IndexList[2],

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import ReturnLogits
@@ -58,6 +60,7 @@ from .model_config import MistralConfig
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class MistralInputs(ModelInputs):
     """A class representing inputs for the Mistral model.
 
@@ -72,20 +75,6 @@ class MistralInputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
     return_n_logits: Buffer
-
-    def __init__(
-        self,
-        input_tokens: Buffer,
-        input_row_offsets: Buffer,
-        signal_buffers: list[Buffer],
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        self.input_tokens = input_tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.return_n_logits = return_n_logits
-        self.kv_cache_inputs = kv_cache_inputs
 
 
 class MistralModel(PipelineModel[TextContext], KVCacheMixin):
@@ -165,7 +154,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         context_batch = replica_batches[0]
 
-        if not self.kv_cache_config.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_cache_config.cache_strategy):
             # TODO(MODELS-407): Consider deleting the padded path entirely.
             raise ValueError("Mistral unsupported for padded token batches")
 
@@ -200,7 +189,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
     ) -> MistralInputs:
         assert isinstance(prev_model_inputs, MistralInputs)
 
-        if not self.kv_cache_config.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_cache_config.cache_strategy):
             # TODO(MODELS-407): Consider deleting the padded path entirely.
             raise ValueError("multistep unsupported for padded token batches")
 

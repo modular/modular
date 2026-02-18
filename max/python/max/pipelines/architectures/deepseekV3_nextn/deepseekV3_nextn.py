@@ -42,7 +42,6 @@ from max.nn.legacy.rotary_embedding import (
 )
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.nn.legacy.transformer.distributed_transformer import (
-    distribute_value,
     forward_sharded_layers,
 )
 
@@ -189,8 +188,10 @@ class DeepseekV3NextN(Module):
         h_embed = self.embed_tokens(tokens, signal_buffers)
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
-        freqs_cis = distribute_value(self.rope.freqs_cis, devices)
-        input_row_offsets_ = distribute_value(input_row_offsets, devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets.to(devices[0]), signal_buffers
+        )
         # Split embeddings FIRST to match already-split hidden_states from target model
         # hidden_states are already data-parallel split (different sizes per device),
         # while norm_embed is replicated (same size on all devices).
@@ -269,7 +270,7 @@ class DeepseekV3NextN(Module):
             ep_inputs=ep_inputs,
         )
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
@@ -280,10 +281,10 @@ class DeepseekV3NextN(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = distribute_value(last_token_h, devices)
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         norm_last_token = forward_sharded_layers(
             self.shared_head_norm_shards, last_token_distributed
@@ -300,11 +301,10 @@ class DeepseekV3NextN(Module):
         if self.return_hidden_states == ReturnHiddenStates.ALL:
             ret_val += tuple(h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.ep_manager is not None:
+            if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
-                # For non-EP case, distribute the single tensor to match interface
-                ret_val += tuple(distribute_value(last_token_h, devices))
+                ret_val += tuple(last_token_distributed)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)
             ret_val += tuple(norm_h)

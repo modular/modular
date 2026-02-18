@@ -40,20 +40,12 @@ from ..kv_cache import (
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear, DistributedGemmConfig
 from ..rotary_embedding import RotaryEmbedding
-from .transformer import ReturnLogits
+from .transformer import ReturnHiddenStates, ReturnLogits
 
 
 def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
     """Return the next *n* items from *it* as a list."""
     return list(islice(it, n))
-
-
-# TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
-# shard_row_value across the codebase into a multi gpu utils file
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
 
 
 # NOTE: This should eventually be deleted once Weight & Linear are refactored to assume
@@ -82,6 +74,157 @@ def forward_sharded_layers(
         f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
     )
     return [layer(x) for layer, x in zip(layers, xs, strict=True)]
+
+
+def distributed_logits_postprocess(
+    h: Sequence[TensorValue],
+    input_row_offsets: Sequence[TensorValue],
+    return_n_logits: TensorValue,
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
+    lm_head: Callable[
+        [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+    ],
+    signal_buffers: Sequence[BufferValue],
+    return_logits: ReturnLogits,
+    device: DeviceRef,
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+    logits_scaling: float = 1.0,
+) -> tuple[TensorValue, ...]:
+    """Common logits postprocessing for multi-device sharded models.
+
+    Handles last-token gathering, logits computation (VARIABLE/ALL/LAST_TOKEN),
+    logits scaling, and hidden states return for models that use per-device
+    sharded hidden states.
+
+    Args:
+        h: Per-device hidden states from the final transformer layer.
+        input_row_offsets: Per-device row offsets for ragged batching.
+        return_n_logits: Number of logits to return per sequence.
+        norm_shards: Per-device normalization functions.
+        lm_head: Language model head (takes per-device inputs + signal buffers).
+        signal_buffers: Signal buffers for collective operations.
+        return_logits: Which logits to return.
+        device: Primary device for scalar ops (e.g. ops.range).
+        return_hidden_states: Which hidden states to return.
+        logits_scaling: Scaling factor for logits.
+
+    Returns:
+        Tuple of (last_logits, [logits, offsets], [hidden_states]).
+    """
+    # Gather last tokens per device and compute last-token logits.
+    last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
+    last_token_h = [
+        ops.gather(h_device, indices, axis=0)
+        for h_device, indices in zip(h, last_token_indices, strict=True)
+    ]
+    norm_last_token = forward_sharded_layers(norm_shards, last_token_h)
+    last_logits = ops.cast(
+        lm_head(norm_last_token, signal_buffers)[0],
+        DType.float32,
+    )
+
+    logits = None
+    offsets = None
+
+    if return_logits == ReturnLogits.VARIABLE and h:
+        return_range = ops.range(
+            start=return_n_logits[0],
+            stop=0,
+            step=-1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=device,
+        )
+        last_indices = [
+            ops.reshape(
+                ops.unsqueeze(row_offset[1:], -1) - return_range,
+                shape=(-1,),
+            )
+            for row_offset in input_row_offsets
+        ]
+
+        variable_tokens = [
+            norm(ops.gather(h_device, indices, axis=0))
+            for norm, h_device, indices in zip(
+                norm_shards, h, last_indices, strict=True
+            )
+        ]
+        logits = ops.cast(
+            lm_head(variable_tokens, signal_buffers)[0], DType.float32
+        )
+        offsets = ops.range(
+            0,
+            last_indices[0].shape[0] + return_n_logits[0],
+            return_n_logits[0],
+            out_dim="logit_offsets",
+            dtype=DType.int64,
+            device=device,
+        )
+    elif return_logits == ReturnLogits.ALL and h:
+        all_normalized = forward_sharded_layers(norm_shards, h)
+        logits = ops.cast(
+            lm_head(all_normalized, signal_buffers)[0], DType.float32
+        )
+        offsets = input_row_offsets[0]
+
+    if logits_scaling != 1.0:
+        last_logits = last_logits / logits_scaling
+        if logits is not None:
+            logits = logits / logits_scaling
+
+    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    if offsets is not None:
+        assert logits is not None
+        ret_val += (logits, offsets)
+
+    if return_hidden_states == ReturnHiddenStates.ALL:
+        ret_val += tuple(h)
+    elif return_hidden_states == ReturnHiddenStates.LAST:
+        ret_val += tuple(last_token_h)
+    elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+        norm_h = forward_sharded_layers(norm_shards, h)
+        ret_val += tuple(norm_h)
+    elif return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
+        ret_val += tuple(norm_last_token)
+
+    return ret_val
+
+
+class DistributedLogitsPostprocessMixin:
+    """Mixin providing logits postprocessing for multi-device sharded models.
+
+    Requires: self.norm_shards, self.lm_head, self.return_logits, self.devices.
+    Optional: self.return_hidden_states, self.logits_scaling.
+    """
+
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]]
+    lm_head: Callable[
+        [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+    ]
+    return_logits: ReturnLogits
+    devices: list[DeviceRef]
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    logits_scaling: float = 1.0
+
+    def _postprocess_logits(
+        self,
+        h: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        return_n_logits: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> tuple[TensorValue, ...]:
+        return distributed_logits_postprocess(
+            h,
+            input_row_offsets,
+            return_n_logits,
+            norm_shards=self.norm_shards,
+            lm_head=self.lm_head,
+            signal_buffers=signal_buffers,
+            return_logits=self.return_logits,
+            device=self.devices[0],
+            return_hidden_states=self.return_hidden_states,
+            logits_scaling=self.logits_scaling,
+        )
 
 
 class DistributedTransformerBlock(Module):
@@ -188,7 +331,7 @@ class DistributedTransformerBlock(Module):
         return hs
 
 
-class DistributedTransformer(Module):
+class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
     """Transformer model consisting for TransformerBlock layers."""
 
     def __init__(
@@ -342,72 +485,6 @@ class DistributedTransformer(Module):
                     freqs_cis=freqs_cis,
                     input_row_offsets=input_row_offsets_,
                 )
-        h0 = h[0]
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = ops.distributed_broadcast(
-            last_token_h, signal_buffers
+        return self._postprocess_logits(
+            h, input_row_offsets_, return_n_logits, signal_buffers
         )
-        # Apply norm to each shard
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
-        )
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    self.lm_head(
-                        forward_sharded_layers(self.norm_shards, h),
-                        signal_buffers,
-                    )[0],
-                    DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(
-                self.lm_head(
-                    forward_sharded_layers(self.norm_shards, h),
-                    signal_buffers,
-                )[0],
-                DType.float32,
-            )
-            offsets = input_row_offsets
-
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-            if logits is not None:
-                logits = logits / self.logits_scaling
-
-        if logits is not None and offsets is not None:
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)

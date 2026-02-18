@@ -42,7 +42,6 @@ from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import flare_mla_decode_ragged
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 
@@ -290,14 +289,26 @@ def bench_flashinfer_trtllm(
         return 1.0, total_bytes
 
     # Benchmark with CUPTI warmup for CUTLASS kernels
-    time_s = bench_kineto_with_cupti_warmup(
-        run_kernel,
-        kernel_names="fmhaSm100",  # FlashInfer TRT-LLM MLA kernel name prefix
-        num_tests=100,
-        suppress_kineto_output=True,
-        flush_l2=True,
-    )
-    assert isinstance(time_s, float)  # Single kernel_name returns float
+    try:
+        time_s = bench_kineto_with_cupti_warmup(
+            run_kernel,
+            kernel_names="fmhaSm100",  # FlashInfer TRT-LLM MLA kernel name prefix
+            num_tests=100,
+            suppress_kineto_output=True,
+            flush_l2=True,
+        )
+        assert isinstance(time_s, float)  # Single kernel_name returns float
+    except RuntimeError as e:
+        # If kineto fails (e.g., running under ncu/nsys), return dummy time
+        if "No kernel times found" in str(e):
+            print(
+                f"Warning: kineto profiling failed (likely running under ncu/nsys). "
+                f"Use --no-kineto flag to skip kineto. Error: {e}"
+            )
+            run_kernel()
+            torch.cuda.synchronize()
+            return 1.0, total_bytes
+        raise
 
     return time_s, total_bytes
 
@@ -341,7 +352,7 @@ def bench_max(
         n_kv_heads=num_kv_heads,
         head_dim=kv_lora_rank + qk_rope_head_dim,  # Compressed dimension
         num_layers=1,  # Benchmarking a single layer
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         devices=[DeviceRef.GPU()],
         is_mla=True,
@@ -521,14 +532,29 @@ def bench_max(
         return 1.0, total_bytes
 
     # Benchmark with CUPTI warmup
-    time_s = bench_kineto_with_cupti_warmup(
-        run_kernel,
-        kernel_names="mla",
-        num_tests=100,
-        suppress_kineto_output=True,
-        flush_l2=True,
-    )
-    assert isinstance(time_s, float)  # Single kernel_name returns float
+    # Note: Split-K implementation uses two kernels (decode + combine), so we
+    # need with_multiple_kernels=True to sum their times
+    try:
+        time_s = bench_kineto_with_cupti_warmup(
+            run_kernel,
+            kernel_names="mla",
+            num_tests=100,
+            suppress_kineto_output=True,
+            flush_l2=True,
+            with_multiple_kernels=True,
+        )
+        assert isinstance(time_s, float)  # Single kernel_name returns float
+    except RuntimeError as e:
+        # If kineto fails (e.g., running under ncu/nsys), return dummy time
+        if "No kernel times found" in str(e):
+            print(
+                f"Warning: kineto profiling failed (likely running under ncu/nsys). "
+                f"Use --no-kineto flag to skip kineto. Error: {e}"
+            )
+            run_kernel()
+            torch.cuda.synchronize()
+            return 1.0, total_bytes
+        raise
 
     return time_s, total_bytes
 

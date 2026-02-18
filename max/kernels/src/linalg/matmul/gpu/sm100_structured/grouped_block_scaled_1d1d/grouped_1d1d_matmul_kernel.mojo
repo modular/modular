@@ -51,6 +51,7 @@ from layout._tile_tensor import TileTensor
 from ..structured_kernels.tile_types import (
     GMEMLayout1D,
     GMEMTile,
+    TMATile,
     TmaOpType,
     lt_to_tt,
     lt_to_tt_1d,
@@ -58,7 +59,7 @@ from ..structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout._coord import CoordLike
+from layout._coord import CoordLike, ComptimeInt, RuntimeInt
 from layout._layout import RowMajorLayout, _IntToComptimeInt
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (
@@ -162,7 +163,7 @@ struct Grouped1D1DMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
-    # Full C device tensor layout (TensorLayout for bounds-checked stores)
+    # C device layout (TensorLayout from caller's TileTensor)
     c_device_layout: TensorLayout,
     # Configuration
     transpose_b: Bool,
@@ -457,15 +458,20 @@ struct Grouped1D1DMatmulKernel[
     ]
 
     # TMA operation types
-    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
-    comptime SFATmaOp = TmaOpType[
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaOp = Self.CTmaTile.InnerType
+    comptime SFATmaTile = TMATile[
         Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
     ]
-    comptime SFBTmaOp = TmaOpType[
+    comptime SFATmaOp = Self.SFATmaTile.InnerType
+    comptime SFBTmaTile = TMATile[
         Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
     ]
+    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
 
     # 1D data TileTensor types (offsets, expert IDs, scales)
     comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]

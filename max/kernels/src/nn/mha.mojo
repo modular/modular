@@ -25,7 +25,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _cdna_4_or_newer
+from sys.info import _cdna_4_or_newer, _is_amd_rdna
 import gpu.primitives.warp as warp
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -73,6 +73,8 @@ from memory import stack_allocation
 
 from .attention.gpu.amd.mha_gfx942 import MHAAttentionConfig
 from .attention.gpu.amd.mha_gfx950 import Attention
+from .attention.gpu.amd.mha_rdna import MHAAttentionConfigRDNA
+from .attention.gpu.amd.attention_rdna import AttentionRDNA
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -130,15 +132,17 @@ fn flash_attention[
     sink: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     # TODO docstring
@@ -287,25 +291,27 @@ fn flash_attention[
     naive_kernel: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: Optional[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Flash attention 2 algorithm.
@@ -417,7 +423,9 @@ fn flash_attention[
             ctx,
             rebind[
                 LayoutTensor[
-                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                    DType.uint32,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    ImmutAnyOrigin,
                 ]
             ](valid_length),
             kv_input_row_offsets,
@@ -427,7 +435,9 @@ fn flash_attention[
 
 
 @always_inline
-fn q_num_matrix_view_rows[dtype: DType, //](q: LayoutTensor[dtype, ...]) -> Int:
+fn q_num_matrix_view_rows[
+    dtype: DType, //
+](q: LayoutTensor[mut=False, dtype, ...]) -> Int:
     # for tma if decoding, we view q as a rows x depth matrix
     # otherwise, we view q as a rows x (depth*num_heads) matrix
     var num_rows: Int = q.dim[0]()
@@ -468,8 +478,10 @@ fn flash_attention_dispatch[
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -481,17 +493,17 @@ fn flash_attention_dispatch[
     ctx: DeviceContext,
     valid_length: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     comptime num_heads = config.num_heads
@@ -1174,9 +1186,11 @@ fn flash_attention[
     sink: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -1185,11 +1199,11 @@ fn flash_attention[
     num_partitions: Optional[Int] = None,
     valid_length: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     # See the kV cache overloads for comments.
@@ -1278,14 +1292,16 @@ fn flash_attention_ragged[
     naive_kernel: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[type, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, type, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     max_prompt_len: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -1360,7 +1376,7 @@ fn flash_attention_ragged[
         ctx,
         OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ](input_row_offsets),
         None,
@@ -1411,15 +1427,15 @@ fn mha[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -1552,6 +1568,27 @@ fn mha[
                 Int(batch_idx),
                 sink_weights,
             )
+    elif _is_amd_rdna():
+        comptime assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
+
+        comptime rdna_config = MHAAttentionConfigRDNA[False, config, group]()
+        var attention = AttentionRDNA[config, group, False, sink](
+            rdna_config,
+            output_ptr + q_batch_offset,
+            q_ptr + q_batch_offset,
+            k,
+            v,
+            mask,
+            sink_weights,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+        )
+        attention.mha_prefill_rdna()
     elif is_amd_gpu():
         comptime assert (
             use_score_mod == False
@@ -1602,7 +1639,7 @@ fn mha_single_batch[
     use_score_mod: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -1616,7 +1653,7 @@ fn mha_single_batch[
     score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
@@ -2371,7 +2408,7 @@ fn mha_single_batch_pipelined[
     use_score_mod: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -2385,7 +2422,7 @@ fn mha_single_batch_pipelined[
     score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
@@ -3110,7 +3147,7 @@ fn mha_decoding[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -3123,10 +3160,10 @@ fn mha_decoding[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],  # valid length per batch
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -3245,6 +3282,62 @@ fn mha_decoding[
                 Int(batch_idx),
                 sink_weights,
             )
+    elif _is_amd_rdna():
+        comptime config = MHAConfig[q_type](
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
+        )
+        comptime assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
+        var sink_weights_lt: OptionalReg[
+            LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ]
+        ] = None
+        if sink_weights:
+            sink_weights_lt = LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ](
+                sink_weights.value().ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](sink_weights.value().size())
+                ),
+            )
+
+        comptime rdna_config = MHAAttentionConfigRDNA[
+            True, config, Int(group)
+        ]()
+        var attention = AttentionRDNA[config, Int(group), True, sink](
+            rdna_config,
+            output_ptr + output_batch_offset,
+            q_ptr + q_batch_offset,
+            k,
+            v,
+            mask,
+            sink_weights_lt,
+            Int(batch_idx),
+            scale,
+            1,
+            num_keys,
+            0,
+        )
+        attention.mha_decoding_rdna(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
+        )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
             num_heads,
@@ -3264,14 +3357,14 @@ fn mha_decoding[
             LayoutTensor[
                 q_ptr.type.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutAnyOrigin,
+                ImmutAnyOrigin,
             ]
         ] = None
         if sink_weights:
             sink_weights_lt = LayoutTensor[
                 q_ptr.type.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutAnyOrigin,
+                ImmutAnyOrigin,
             ](
                 sink_weights.value().ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -3441,7 +3534,7 @@ fn mha_decoding_single_batch[
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -3455,7 +3548,7 @@ fn mha_decoding_single_batch[
     score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ):
     """Flash attention v2 algorithm."""
@@ -4158,7 +4251,7 @@ fn mha_decoding_single_batch_pipelined[
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -4169,7 +4262,7 @@ fn mha_decoding_single_batch_pipelined[
     num_partitions: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -4798,15 +4891,15 @@ fn mha_gpu_naive[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -4817,7 +4910,9 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q.dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[
+            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
     ] = None,
 ) raises:
     comptime q_type = q.dtype
@@ -4938,7 +5033,7 @@ fn _bmm0_bs[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     scale: Float32,
     batch_size: Int,
@@ -5076,7 +5171,7 @@ fn _bmm1_bs[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     max_prompt_len: Int,
     max_cache_size: Int,
@@ -5167,10 +5262,18 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[mask_type, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, k_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, v_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: LayoutTensor[
+        mut=False, mask_type, address_space = AddressSpace.GENERIC, ...
+    ],
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
@@ -5183,7 +5286,7 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     mha_gpu_naive[sink=sink](
@@ -5224,9 +5327,15 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, k_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, v_type, address_space = AddressSpace.GENERIC, ...
+    ],
     mask: MaskType,
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -5240,7 +5349,7 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     var k_operand = LayoutTensorMHAOperand(
@@ -5260,7 +5369,7 @@ fn mha_gpu_naive[
         )
     )
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         UnsafePointer[UInt32, MutAnyOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -5294,7 +5403,9 @@ fn mha_gpu_naive[
     ragged: Bool = False,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
@@ -5302,7 +5413,7 @@ fn mha_gpu_naive[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5313,7 +5424,7 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     var k_operand = KVCacheMHAOperand(k)
@@ -5352,10 +5463,18 @@ fn _naive_attention_with_transpose[
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
@@ -5503,10 +5622,18 @@ fn _naive_attention[
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.

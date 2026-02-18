@@ -13,7 +13,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -22,9 +21,9 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3 import weight_adapters
-from ..llama3.model import Llama3Model
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy import weight_adapters
+from ..llama3_legacy.model import Llama3Model
+from ..llama3_legacy.model_config import Llama3Config
 from .weight_adapters import convert_exaone_safetensor_state_dict
 
 exaone_arch = SupportedArchitecture(
@@ -32,10 +31,10 @@ exaone_arch = SupportedArchitecture(
     default_encoding=SupportedEncoding.float32,
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_k: ["paged"],
+        SupportedEncoding.q6_k: ["paged"],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     example_repo_ids=[
         "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",

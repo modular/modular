@@ -26,14 +26,13 @@ The SM100 epilogue pipeline flows as:
 
 from sys import align_of, simd_width_of
 
-from gpu import WARP_SIZE, lane_id
-from gpu import warp_id as get_warp_id
+from gpu import WARP_SIZE, lane_id, warp_id
 from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
 from layout.int_tuple import IntTuple
-from layout._layout import Layout as InternalLayout, row_major
+from layout._layout import Layout as InternalLayout, TensorLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
@@ -146,7 +145,6 @@ fn store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix instruction."""
     from gpu.compute.mma import st_matrix
     from memory import bitcast
-    from gpu import lane_id as get_lane_id
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -163,7 +161,7 @@ fn store_fragment_to_smem[
         stride0 if transpose_c else stride1
     ) * stsmx_row_size
 
-    var lane = get_lane_id()
+    var lane_id = lane_id()
     var stsm_lane_offset: UInt32
 
     @parameter
@@ -176,10 +174,10 @@ fn store_fragment_to_smem[
             Coord(Idx[8](), Idx[2](), Idx[2]()),
             Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane))))
+        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane_id))))
     else:
         stsm_lane_offset = (
-            UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
+            UInt32(lane_id & 15) * UInt32(stride0) + UInt32(lane_id >> 4) * 8
         )
 
     @always_inline
@@ -228,7 +226,6 @@ fn store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix."""
     from gpu.compute.mma import st_matrix
     from memory import bitcast
-    from gpu import lane_id as get_lane_id
     from layout._coord import Coord, Idx
 
     comptime c_type = dst.dtype
@@ -246,7 +243,7 @@ fn store_fragment_to_smem[
         stride0 if transpose_c else stride1
     ) * stsmx_row_size
 
-    var lane = get_lane_id()
+    var lane_id = lane_id()
     var stsm_lane_offset: UInt32
 
     @parameter
@@ -255,10 +252,10 @@ fn store_fragment_to_smem[
             Coord(Idx[8](), Idx[2](), Idx[2]()),
             Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane))))
+        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane_id))))
     else:
         stsm_lane_offset = (
-            UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
+            UInt32(lane_id & 15) * UInt32(stride0) + UInt32(lane_id >> 4) * 8
         )
 
     @always_inline
@@ -494,9 +491,7 @@ struct TMAStoreExecutor[
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
-                Self._store_non_transpose[c_layout, c_desc_layout](
-                    c_smem_tile, store_coords, c_tma_op
-                )
+                Self._store_non_transpose(c_smem_tile, store_coords, c_tma_op)
 
             c_tma_op.commit_group()
 
@@ -591,6 +586,7 @@ struct TMAStoreExecutor[
     fn _store_non_transpose[
         c_layout: Layout,
         c_desc_layout: Layout,
+        //,
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
@@ -661,7 +657,7 @@ struct TMAStoreExecutor[
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
-                # Non-transpose: convert to LayoutTensor for TMA async_store
+                # Non-transpose: wrap as SMemTile for _store_non_transpose
                 from memory import LegacyUnsafePointer
 
                 comptime SMemPtrType = LegacyUnsafePointer[
@@ -672,9 +668,7 @@ struct TMAStoreExecutor[
                 var c_lt = SMemTile[
                     Self.c_type, Self.c_smem_layout, alignment=128
                 ](rebind[SMemPtrType](c_smem_tile.ptr.mut_cast[True]()))
-                Self._store_non_transpose[c_layout, c_desc_layout](
-                    c_lt, store_coords, c_tma_op
-                )
+                Self._store_non_transpose(c_lt, store_coords, c_tma_op)
 
             c_tma_op.commit_group()
 
@@ -1945,7 +1939,7 @@ fn shared_memory_epilogue[
     var gmem_col = c_col + stage * stageN
 
     # Each warp owns 32 rows: upper half (0-15) and lower half (16-31)
-    var warp_base_row = get_warp_id() * 32
+    var warp_base_row = warp_id() * 32
     var upper_row = warp_base_row
     var lower_row = warp_base_row + 16
 

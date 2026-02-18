@@ -48,7 +48,9 @@ from layout import Layout as LegacyLayout, LayoutTensor
 from layout._layout import TensorLayout
 from layout._tile_tensor import TileTensor
 from layout._layout import RowMajorLayout, _IntToComptimeInt
+from layout._coord import ComptimeInt
 from ..structured_kernels.tile_types import (
+    TMATile,
     TmaOpType,
     tma_desc_layout_3d,
     tma_desc_layout_5d,
@@ -100,6 +102,20 @@ from .grouped_tile_scheduler import (
     GroupedCLCWorkIterator,
     GroupedCLCSchedulerIterator,
 )
+
+
+comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
+    ComptimeInt[max_groups], ComptimeInt[1]
+]
+comptime _GroupPtrTile[max_groups: Int] = TileTensor[
+    DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+]
+comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
+    ComptimeInt[max_groups], ComptimeInt[4]
+]
+comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
+    DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+]
 
 
 # =============================================================================
@@ -270,18 +286,10 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     ](
         self,
         group_idx: UInt32,
-        group_a_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
-        group_b_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
-        group_sfa_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
-        group_sfb_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
+        group_a_ptrs: _GroupPtrTile[max_groups],
+        group_b_ptrs: _GroupPtrTile[max_groups],
+        group_sfa_ptrs: _GroupPtrTile[max_groups],
+        group_sfb_ptrs: _GroupPtrTile[max_groups],
         tma_a: UnsafePointer[
             TMATensorTile[a_dtype, a_layout, a_desc], MutAnyOrigin
         ],
@@ -356,9 +364,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     ](
         self,
         group_idx: UInt32,
-        group_c_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
+        group_c_ptrs: _GroupPtrTile[max_groups],
         tma_c: UnsafePointer[
             TMATensorTile[c_dtype, c_layout, c_desc], MutAnyOrigin
         ],
@@ -669,7 +675,8 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Per-Group Pointer Layout ==========
     # Layout for arrays of per-group tensor pointers
 
-    comptime GroupPtrLayout = LegacyLayout.row_major(Self.max_groups, 1)
+    comptime GroupPtrLayout = _GroupPtrLayout[Self.max_groups]
+    comptime GroupPtrTile = _GroupPtrTile[Self.max_groups]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -947,15 +954,20 @@ struct GroupedBlockScaledMatmulKernel[
     ]
 
     # TMA operation types
-    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
-    comptime SFATmaOp = TmaOpType[
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaOp = Self.CTmaTile.InnerType
+    comptime SFATmaTile = TMATile[
         Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
     ]
-    comptime SFBTmaOp = TmaOpType[
+    comptime SFATmaOp = Self.SFATmaTile.InnerType
+    comptime SFBTmaTile = TMATile[
         Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
     ]
+    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
 
     # TMA load size constants
     comptime a_tma_load_size = Self.a_tile_dim1 * Self.a_swizzle_elems
@@ -1021,7 +1033,8 @@ struct GroupedBlockScaledMatmulKernel[
 
     # ========== Problem Sizes Layout ==========
     # Layout for problem_sizes tensor: (max_groups, 4) with [M, N, K, L] per group
-    comptime ProblemSizesLayout = Layout.row_major(Self.max_groups, 4)
+    comptime ProblemSizesLayout = _ProblemSizesLayout[Self.max_groups]
+    comptime ProblemSizesTile = _ProblemSizesTile[Self.max_groups]
 
     @staticmethod
     @always_inline
@@ -1045,25 +1058,13 @@ struct GroupedBlockScaledMatmulKernel[
         device_tma_sfb: Self.TMATensorTileArraySFB,
         device_tma_c: Self.TMATensorTileArrayC,
         # Per-group pointer arrays (uint64 addresses)
-        group_a_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_b_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_c_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfa_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfb_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
+        group_a_ptrs_lt: Self.GroupPtrTile,
+        group_b_ptrs_lt: Self.GroupPtrTile,
+        group_c_ptrs_lt: Self.GroupPtrTile,
+        group_sfa_ptrs_lt: Self.GroupPtrTile,
+        group_sfb_ptrs_lt: Self.GroupPtrTile,
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
-        problem_sizes_lt: LayoutTensor[
-            DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
-        ],
+        problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int,
     ):
@@ -1583,25 +1584,13 @@ struct GroupedBlockScaledMatmulKernel[
         device_tma_sfb: Self.TMATensorTileArraySFB,
         device_tma_c: Self.TMATensorTileArrayC,
         # Per-group pointer arrays (uint64 addresses)
-        group_a_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_b_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_c_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfa_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfb_ptrs_lt: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
+        group_a_ptrs_lt: Self.GroupPtrTile,
+        group_b_ptrs_lt: Self.GroupPtrTile,
+        group_c_ptrs_lt: Self.GroupPtrTile,
+        group_sfa_ptrs_lt: Self.GroupPtrTile,
+        group_sfb_ptrs_lt: Self.GroupPtrTile,
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
-        problem_sizes_lt: LayoutTensor[
-            DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
-        ],
+        problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int,
     ):
@@ -2008,9 +1997,7 @@ struct GroupedBlockScaledMatmulKernel[
     @staticmethod
     @always_inline
     fn _compute_initial_work(
-        problem_sizes: LayoutTensor[
-            DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
-        ],
+        problem_sizes: Self.ProblemSizesTile,
         num_groups: Int,
         linear_idx: UInt32,
     ) -> GroupedWorkInfo:

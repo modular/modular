@@ -101,7 +101,6 @@ def while_loop(
     Note:
         Buffer operations are currently not supported.
     """
-
     initial_values = (
         list(initial_values)
         if isinstance(initial_values, Iterable)
@@ -146,10 +145,12 @@ def while_loop(
 
         Args:
             user_func: The user's predicate or body function that operates on
-                     loop variables only.
+                loop variables only.
             block_args: The block arguments from the while loop operation, which
-                      include both loop variables and the execution chain as
-                      the last element.
+                include both loop variables and the execution chain as the last
+                element.
+            is_cond_block: If True, this is the condition block; the wrapper
+                yields [condition] + loop_vars for the cond block.
 
         Returns:
             A function that properly manages the execution chain state before
@@ -219,8 +220,10 @@ def while_loop(
     assert len(device_chains) == len(Graph.current.device_chains)
 
     def while_condition_op(args) -> mlir.OpView:  # noqa: ANN001
-        """Adaptor for mo.WhileConditionOp, whose constructor takes the
-        condition value and the list of yielded values."""
+        """Adaptor for ``mo.WhileConditionOp``.
+
+        The constructor takes the condition value and the list of yielded values.
+        """
         condition, *results = args
         return mo.WhileConditionOp(condition, results)
 

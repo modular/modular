@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -64,69 +65,22 @@ def _validate_ep_kernel_limits(
         )
 
 
+@dataclass
 class DeepseekV3Inputs(DeepseekV2Inputs):
     """A class representing inputs for the DeepseekV3 model."""
-
-    data_parallel_splits: Buffer
-    """Tensor containing the data parallel splits for the MLA layer."""
-
-    batch_context_lengths: list[Buffer]
-    """List of tensors containing the context length of each batch."""
 
     host_input_row_offsets: Buffer
     """Tensor containing the host input row offsets."""
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        host_input_row_offsets: Buffer,
-        batch_context_lengths: list[Buffer],
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: Buffer | None = None,
-        data_parallel_splits: Buffer | None = None,
-    ) -> None:
-        self.host_input_row_offsets = host_input_row_offsets
-        self.batch_context_lengths = batch_context_lengths
-        if data_parallel_splits is None:
-            raise ValueError("data_parallel_splits must be provided")
-        self.data_parallel_splits = data_parallel_splits
-        super().__init__(
-            tokens,
-            input_row_offsets,
-            signal_buffers,
-            kv_cache_inputs,
-            return_n_logits,
-        )
+    batch_context_lengths: list[Buffer]
+    """List of tensors containing the context length of each batch."""
 
-
-def _choose_correct_data_parallel_degree(
-    pipeline_config: PipelineConfig, num_devices: int
-) -> None:
-    """Ensures the data parallel degree is set correctly in the PipelineConfig.
-
-    For DeepSeekV3, DP attention requires DP degree to match device count.
-    TP attention requires DP degree to be 1.
-    """
-    data_parallel_degree = pipeline_config.model.data_parallel_degree
-    if data_parallel_degree not in (1, num_devices):
-        raise ValueError(
-            f"--data-parallel-degree for DeepSeekV3 ({data_parallel_degree}) must be "
-            f"1 (TP attention) or equal to the number of devices ({num_devices})."
-        )
-    pipeline_config.model.data_parallel_degree = data_parallel_degree
+    data_parallel_splits: Buffer = field(kw_only=True)
+    """Tensor containing the data parallel splits for the MLA layer."""
 
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
-
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration."""
-        _choose_correct_data_parallel_degree(
-            pipeline_config, len(pipeline_config.model.device_specs)
-        )
 
     @classmethod
     def get_kv_params(

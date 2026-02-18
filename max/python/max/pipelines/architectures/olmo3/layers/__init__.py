@@ -10,20 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from handle_error import incr
-from testing import assert_equal, assert_raises, TestSuite
 
+from ...common_layers.mlp import MLP
+from ...common_layers.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
+from .attention import Olmo3Attention
+from .rms_norm import Olmo3RMSNorm
+from .transformer_block import Olmo3TransformerBlock
 
-def test_incr_no_error():
-    assert_equal(incr(0), 1)
-    assert_equal(incr(1), 2)
-    assert_equal(incr(Int.MAX - 1), Int.MAX)
-
-
-def test_incr_error():
-    with assert_raises(contains="integer overflow"):
-        _ = incr(Int.MAX)
-
-
-def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+__all__ = [
+    "MLP",
+    "Olmo3Attention",
+    "Olmo3RMSNorm",
+    "Olmo3TransformerBlock",
+    "YarnRotaryEmbedding",
+    "YarnScalingParams",
+]

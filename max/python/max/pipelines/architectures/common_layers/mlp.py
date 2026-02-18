@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""A Module for linear transformations."""
+
+"""A gated MLP layer (ModuleV3)."""
 
 from __future__ import annotations
 
@@ -18,8 +19,7 @@ from collections.abc import Callable
 from functools import partial
 
 from max import functional as F
-from max.nn.linear import Linear
-from max.nn.module import Module
+from max.nn import Linear, Module
 from max.tensor import Tensor
 
 _ACTIVATION_FUNCTIONS: dict[str, Callable[[Tensor], Tensor]] = {
@@ -33,12 +33,13 @@ _ACTIVATION_FUNCTIONS: dict[str, Callable[[Tensor], Tensor]] = {
 
 
 class MLP(Module[[Tensor], Tensor]):
-    """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
+    """Simple multi-layer perceptron composed of three Linear layers.
 
-    Computes the MLP transformation as:
+    Computes the gated MLP transformation as::
 
-        down_proj(activation_function(gate_proj(x) * up_proj(x)))
+        down_proj(activation_function(gate_proj(x)) * up_proj(x))
 
+    The gate and up projections are fused into a single matmul for efficiency.
     Defaults to SiLU activation function.
     """
 
@@ -68,7 +69,8 @@ class MLP(Module[[Tensor], Tensor]):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.feed_forward_length = feed_forward_length
-        self.gate_proj = Linear(  # [ffl, hidden]
+        self.has_bias = bias
+        self.gate_proj = Linear(
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
             bias=bias,
@@ -85,7 +87,6 @@ class MLP(Module[[Tensor], Tensor]):
         )
         assert activation_function in _ACTIVATION_FUNCTIONS
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
-        self.bias = bias
 
     def forward(self, x: Tensor) -> Tensor:
         """Applies the MLP transformation to the input.
@@ -96,15 +97,13 @@ class MLP(Module[[Tensor], Tensor]):
         Returns:
             The transformed tensor after applying the MLP layers.
         """
-
         # Optimization to compute a single matmul by merging the
         # gate and up projection weights.
         feed_forward_length = int(self.gate_proj.weight.shape[0])
         gate_proj_weight: Tensor = self.gate_proj.weight.to(x.device)
-
         up_proj_weight: Tensor = self.up_proj.weight.to(x.device)
 
-        if self.bias:
+        if self.has_bias:
             assert isinstance(self.gate_proj.bias, Tensor)
             assert isinstance(self.up_proj.bias, Tensor)
             gate_proj_bias: Tensor = self.gate_proj.bias.to(x.device)
@@ -119,6 +118,7 @@ class MLP(Module[[Tensor], Tensor]):
             output, [feed_forward_length, feed_forward_length], axis=1
         )
         assert isinstance(gate_out, Tensor)
+        assert isinstance(up_out, Tensor)
 
         hidden = self.activation_function(gate_out) * up_out
         return self.down_proj(hidden)

@@ -156,6 +156,17 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 num_steps=num_steps,
                             )
                 step_outputs = self.execute(inputs)
+
+                # Filter out all responses for requests that are already released.
+                # We can get a response for a request that is already released due to
+                # the quirk of overlap scheduling where the pipeline may produce an extra
+                # token after EOS.
+                step_outputs = {
+                    request_id: output
+                    for request_id, output in step_outputs.items()
+                    if request_id in batch_to_replica_idx
+                }
+
                 outputs = []
                 for request_id, output in step_outputs.items():
                     outputs.append(output)
@@ -179,7 +190,9 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                             kv_manager.release(
                                 request_id, replica_idx=replica_idx
                             )
-                yield outputs
+
+                if outputs:
+                    yield outputs
 
                 # Yield to the event loop.  If at no other point (e.g.
                 # tokenizer.decode which we await earlier does not yield to the

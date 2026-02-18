@@ -47,7 +47,7 @@ fn split[
     ctx: DeviceContext,
 ) raises:
     comptime assert (
-        input.rank == outputs[0].rank
+        input.rank == OutputLayoutType.rank
     ), "Input and outputs must have the same rank."
 
     # check inputs have same rank and same dims except for axis dim

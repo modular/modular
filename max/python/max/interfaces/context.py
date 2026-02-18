@@ -16,7 +16,6 @@ import logging
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
-from functools import cached_property
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from .logit_processors_type import LogitsProcessor
@@ -105,7 +104,8 @@ class SamplingParamsGenerationConfigDefaults:
     do_sample: bool | None = None
     """If False, use greedy sampling."""
 
-    @cached_property
+    # Do not cache this property, callers mutate the returned dict.
+    @property
     def values_to_update(self) -> dict[str, float | int]:
         """Extract non-None field values as a dictionary.
 

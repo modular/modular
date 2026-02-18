@@ -21,7 +21,7 @@ from max.graph import Graph, ops
 
 shared_shapes = st.shared(shapes(min_rank=1))
 
-SAME_TYPE_REDUCTIONS = [ops.min, ops.max, ops.mean, ops.sum]
+SAME_TYPE_REDUCTIONS = [ops.min, ops.max, ops.mean, ops.prod, ops.sum]
 INDEX_REDUCTIONS = [ops.argmax, ops.argmin]
 ALL_REDUCTIONS = SAME_TYPE_REDUCTIONS + INDEX_REDUCTIONS
 

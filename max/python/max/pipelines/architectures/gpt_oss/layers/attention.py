@@ -25,15 +25,16 @@ from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
 from max.tensor import Tensor
 
-from ...common_layers.rotary_embedding import YarnRotaryEmbedding
-from .functional_kernels import (
+from ...common_layers.functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
+from ...common_layers.rotary_embedding import YarnRotaryEmbedding
 
 
 class GptOssAttention(Module[..., Tensor]):
@@ -96,7 +97,7 @@ class GptOssAttention(Module[..., Tensor]):
         # Initialize sinks parameter for each attention head
         self.sinks = Tensor.zeros([num_attention_heads])
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"
                 " in Attention layer."

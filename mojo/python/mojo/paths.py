@@ -147,8 +147,7 @@ def _build_mojo_source_package(path: Path) -> Path:
     path_hash = hashlib.md5(str(path.absolute()).encode()).hexdigest()
     tmp_path = (
         Path(tempfile.gettempdir())
-        / ".modular"
-        / "mojo_pkg"
+        / ".modular/mojo_pkg"
         / f"mojo_pkg_{path_hash}.mojopkg"
     )
 

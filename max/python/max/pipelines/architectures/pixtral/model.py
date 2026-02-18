@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
@@ -61,6 +62,7 @@ logger = logging.getLogger("max.pipelines")
 _DO_PARALLEL_COMPILATION = False
 
 
+@dataclass
 class PixtralInputs(ModelInputs):
     """Holds inputs for the Pixtral model."""
 
@@ -69,37 +71,13 @@ class PixtralInputs(ModelInputs):
     return_n_logits: Buffer
 
     # Image inputs
-    _pixel_values: Buffer
-    _attention_mask: Buffer
-
-    def __init__(
-        self,
-        input_ids: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        pixel_values: Buffer,
-        attention_mask: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
-        self._pixel_values = pixel_values
-        self._attention_mask = attention_mask
-        self.kv_cache_inputs = kv_cache_inputs
+    pixel_values: Buffer
+    attention_mask: Buffer
 
     @property
     def has_vision_inputs(self) -> bool:
         """Returns true iff this includes vision model inputs."""
-        return self._pixel_values is not None
-
-    @property
-    def pixel_values(self) -> Buffer:
-        return self._pixel_values
-
-    @property
-    def attention_mask(self) -> Buffer:
-        return self._attention_mask
+        return self.pixel_values is not None
 
 
 class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):

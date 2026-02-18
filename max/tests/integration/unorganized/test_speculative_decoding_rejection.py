@@ -25,7 +25,6 @@ from max.interfaces import (
     TextGenerationInputs,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import SpeculativeMethod
@@ -63,7 +62,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         max_batch_size=4,
         max_num_steps=num_steps,
         max_length=1024,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         kv_cache_page_size=128,
         device_memory_utilization=0.3,
     )

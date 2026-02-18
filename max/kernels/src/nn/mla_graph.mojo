@@ -122,11 +122,11 @@ fn fused_rope_rmsnorm_kernel[
     comptime assert (
         cache_t.kv_params.num_heads == 1
     ), "num_heads should be 1 for MLA"
-    comptime assert q_rope_output.rank == 3
-    comptime assert q_rope.rank == 3
-    comptime assert input_row_offsets.rank == 1
-    comptime assert freqs_cis.rank == 2
-    comptime assert gamma.rank == 1
+    comptime assert q_rope_output.flat_rank == 3
+    comptime assert q_rope.flat_rank == 3
+    comptime assert input_row_offsets.flat_rank == 1
+    comptime assert freqs_cis.flat_rank == 2
+    comptime assert gamma.flat_rank == 1
 
     comptime num_q_heads = q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
@@ -369,6 +369,9 @@ fn split_kv_buffer[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
+        comptime assert kv.flat_rank == 2
+        comptime assert k.flat_rank == 3
+        comptime assert v.flat_rank == 3
 
         comptime assert (
             qk_nope_head_dim % width == 0
@@ -440,7 +443,7 @@ fn mla_prefill_branch_fp8[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     kv_b_proj: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
@@ -557,7 +560,7 @@ fn mla_prefill_branch_fp8[
 
     mla_fused_rope_rmsnorm(
         q_rope_mut,
-        q_rope,
+        q_rope.as_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -758,8 +761,6 @@ fn quantize_and_bmm_fp8_helper[
         ),
     )
 
-    var a_ndbuffer = a._to_ndbuffer()
-
     @parameter
     @__copy_capture(a)
     @always_inline
@@ -767,7 +768,7 @@ fn quantize_and_bmm_fp8_helper[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
-        comptime assert a.rank == 3
+        comptime assert a.flat_rank == 3
         return a.load[width=width]((Idx(row), Idx(batch), Idx(col)))
 
     batched_quantize_dynamic_scaled_fp8[
@@ -1086,7 +1087,7 @@ fn mla_prefill_decode_graph_fp8[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
@@ -1201,7 +1202,7 @@ fn mla_prefill_branch_bf16[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     kv_b_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
@@ -1263,7 +1264,7 @@ fn mla_prefill_branch_bf16[
 
     mla_fused_rope_rmsnorm(
         q_rope_mut,
-        q_rope,
+        q_rope.as_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -1567,10 +1568,10 @@ fn mla_prefill_decode_graph_bf16[
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,

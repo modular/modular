@@ -25,9 +25,17 @@ from PIL import Image
 from scipy.optimize import minimize
 from scipy.stats import gamma  # type: ignore[attr-defined]
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from typing_extensions import override
 
 from .local import LocalBenchmarkDataset
-from .types import ChatSession, SampledRequest, build_chat_message, encode_image
+from .types import (
+    ChatSamples,
+    ChatSession,
+    RequestSamples,
+    SampledRequest,
+    build_chat_message,
+    encode_image,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +228,11 @@ def log_request_actual_length_percentiles(
 
 
 class RandomBenchmarkDataset(LocalBenchmarkDataset):
+    @property
+    def use_synthetic_tokens(self) -> bool:
+        # Overridden in SyntheticBenchmarkDataset
+        return False
+
     def fetch(self) -> None:
         """Fetch Random dataset.
 
@@ -239,12 +252,11 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         max_num_unique_sys_prompt: int,
         distribution_type: str,
         random_state: np.random.Generator,
-        use_synthetic_tokens: bool,
         min_input_len: int = 4,
         min_output_len: int = 1,
         first_turn_ratio: float = 1.0,
-    ) -> Sequence[ChatSession]:
-        first_turns = self.sample_requests(
+    ) -> ChatSamples:
+        first_turn_samples = self.sample_requests(
             num_requests=num_chat_sessions,
             tokenizer=tokenizer,
             input_len=int(input_len * first_turn_ratio),
@@ -256,10 +268,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             min_input_len=min_input_len,
             min_output_len=min_output_len,
             random_state=random_state,
-            use_synthetic_tokens=use_synthetic_tokens,
         )
+        first_turns = first_turn_samples.requests
 
-        follow_up_turns = self.sample_requests(
+        follow_up_turn_samples = self.sample_requests(
             num_requests=num_chat_sessions * (num_turns - 1),
             tokenizer=tokenizer,
             input_len=input_len,
@@ -271,8 +283,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             min_input_len=min_input_len,
             min_output_len=min_output_len,
             random_state=random_state,
-            use_synthetic_tokens=use_synthetic_tokens,
         )
+        follow_up_turns = follow_up_turn_samples.requests
 
         sessions: list[ChatSession] = []
         for session_id, first_turn in enumerate(first_turns):
@@ -308,7 +320,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             sessions.append(ChatSession(session_id, messages))
 
-        return sessions
+        return ChatSamples(chat_sessions=sessions)
 
     def _load_sharegpt_prompts_limited(
         self,
@@ -424,7 +436,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         # Extract required parameters from kwargs
         input_len = kwargs.get("input_len")
         output_len = kwargs.get("output_len")
@@ -437,7 +449,6 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         min_output_len = kwargs.get("min_output_len", 1)
         image_size = kwargs.get("image_size", "")
         image_count = kwargs.get("image_count", 0)
-        use_synthetic_tokens = kwargs.get("use_synthetic_tokens", False)
         model_max_length = min(
             tokenizer.model_max_length, np.iinfo(np.int64).max
         )
@@ -563,7 +574,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         # Load ShareGPT prompts if using synthetic tokens. You may only need a
         # subset of the prompts.
         sharegpt_prompt_subset: list[list[int]] = []
-        if use_synthetic_tokens:
+        if self.use_synthetic_tokens:
             # Use the first max_num_unique_sys_prompt ShareGPT prompts as system
             # prompts and the remainder as user prompts. Only load as many prompts
             # as needed to satisfy the synthetic token requests.
@@ -600,7 +611,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             # Use sys_prompt_idx to select which ShareGPT prompt (for synthetic)
             # or as a seed variation (for random tokens).
             sys_prompt_idx = np.random.randint(0, max_num_unique_sys_prompt)
-            if use_synthetic_tokens:
+            if self.use_synthetic_tokens:
                 # Sample system prompt from ShareGPT, indexed by sys_prompt_idx.
                 sys_prompt_ids = self._sample_sharegpt_tokens(
                     sharegpt_prompt_subset, sys_prompt_len_i, sys_prompt_idx
@@ -667,7 +678,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         log_request_actual_length_percentiles(input_requests)
 
-        return input_requests
+        return RequestSamples(requests=input_requests)
 
     def _generate_random_image(self, height: int, width: int) -> Image.Image:
         # Truly random images end up being too large and incompressible.
@@ -693,3 +704,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         array = array[:height, :width]
 
         return Image.fromarray(array)
+
+
+class SyntheticBenchmarkDataset(RandomBenchmarkDataset):
+    @override
+    @property
+    def use_synthetic_tokens(self) -> bool:
+        return True

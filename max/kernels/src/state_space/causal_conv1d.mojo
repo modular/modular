@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ Causal Convolution:
     In causal convolution, the output at position `i` depends only on inputs at
     positions `[i - width + 1, i]`. This ensures no information leakage from
     future positions, making it suitable for autoregressive sequence modeling.
-    
+
     Mathematical form for width=4:
         out[i] = sum(x[i-3:i+1] * w[0:4]) + bias  (with boundary handling)
 
@@ -30,14 +30,14 @@ Kernel Categories:
         - `causal_conv1d_channel_last_fwd_cpu[_with_seq_idx][_no_bias]`
         - `causal_conv1d_channel_first_fwd_gpu[_with_seq_idx][_no_bias]`
         - `causal_conv1d_channel_last_fwd_gpu[_with_seq_idx][_no_bias]`
-        
+
         SIMD-vectorized implementations with compile-time width specialization.
         Supported widths: 1, 2, 3, 4.
-    
+
     2. Update Kernels (for autoregressive decode):
         - `causal_conv1d_update_cpu[_no_bias]`
         - `causal_conv1d_update_gpu[_no_bias]`
-        
+
         Incremental update operations that maintain conv state for efficient
         autoregressive token generation.
 

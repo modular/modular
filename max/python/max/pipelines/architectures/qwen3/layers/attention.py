@@ -31,6 +31,7 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
@@ -101,7 +102,7 @@ class Qwen3Attention(Module, Shardable):
         self.qk_norm_eps = qk_norm_eps
         self._sharding_strategy: ShardingStrategy | None = None
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"
                 " in Attention layer."

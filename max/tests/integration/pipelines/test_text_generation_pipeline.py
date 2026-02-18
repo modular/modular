@@ -14,7 +14,7 @@
 
 import asyncio
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import hf_repo_lock
 import numpy as np
@@ -28,7 +28,9 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import generate_local_model_path
+from max.pipelines.lib.pipeline_variants import text_generation
 from max.support.image import hash_image
+from pytest import MonkeyPatch
 from test_common.mocks import (
     MockTextTokenizer,
     retrieve_mock_text_generation_pipeline,
@@ -87,13 +89,14 @@ def test_text_generation_image_metadata() -> None:
     assert image_metadata.image_hash is not None
 
 
-@patch("max.graph.weights.weights_format")
-@patch("max.graph.weights.load_weights")
-def test_text_generation_pipeline(
-    mock_load_weights: MagicMock, weights_format: MagicMock
-) -> None:
-    mock_load_weights.return_value = None
-    weights_format.return_value = None
+def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        text_generation, "load_weights", MagicMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        text_generation, "weights_format", MagicMock(return_value=None)
+    )
+
     max_length = 512
     eos_token = 998
 

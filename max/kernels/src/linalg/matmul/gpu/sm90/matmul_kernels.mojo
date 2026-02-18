@@ -34,7 +34,7 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu import warp_id as get_warp_id
+from gpu import warp_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
@@ -459,7 +459,7 @@ struct HopperMatmulSM90Kernel[
         var rank_m = block_id_in_cluster.y
         var rank_n = block_id_in_cluster.x
 
-        var warp_id = get_warp_id()
+        var warp_id = warp_id()
         var lane_predicate = elect_one_sync()
 
         return (
@@ -682,8 +682,8 @@ struct HopperMatmulSM90Kernel[
             WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
         ),
     ](
-        a: LayoutTensor[Self.a_type, Self.a_layout, MutAnyOrigin],
-        b: LayoutTensor[Self.b_type, Self.b_layout, MutAnyOrigin],
+        a: LayoutTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin],
+        b: LayoutTensor[Self.b_type, Self.b_layout, ImmutAnyOrigin],
     ) -> Tuple[
         TileLoaderCPAsync[
             Self.a_type,
@@ -849,8 +849,8 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[Self.c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[Self.a_type, Self.a_layout, MutAnyOrigin],
-        b: LayoutTensor[Self.b_type, Self.b_layout, MutAnyOrigin],
+        a: LayoutTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin],
+        b: LayoutTensor[Self.b_type, Self.b_layout, ImmutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
         lut_ptr: UnsafePointer[UInt32],
     ):

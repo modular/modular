@@ -205,23 +205,6 @@ struct RuntimeTuple[
         for i in range(res.scalar_length):
             res.value[i] = self.value[i + offset]
 
-    @always_inline
-    fn __setitem__[i: Int](mut self, val: Scalar[Self.element_type]):
-        """Sets the value of the element at the specified index in the tuple.
-
-        This method enables array-like assignment for RuntimeTuple elements,
-        handling the internal offset calculation to modify the correct element
-        in the flattened storage array.
-
-        Parameters:
-            i: The index of the element to modify.
-
-        Args:
-            val: The new value to assign to the element.
-        """
-        comptime offset = Self.offset_until[i]()
-        self.value[offset] = Int(val)
-
     @no_inline
     fn __str__(self) -> String:
         """Converts the RuntimeTuple to its string representation.
