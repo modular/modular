@@ -592,6 +592,11 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult ExternalCallOp::verify() {
+  if (getNumResults() > 1)
+    return mlir::emitError(getLoc(),
+                           "pop.external_call may not return more than one "
+                           "value; a C function returning a struct should be "
+                           "modeled with a single !kgen.struct result");
   if (mlir::ArrayAttr argAttrs = getArgAttrsAttr()) {
     size_t numArgs;
     if (std::optional<FunctionType> fnType = getVariadicType())
