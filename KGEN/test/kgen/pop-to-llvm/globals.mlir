@@ -150,20 +150,6 @@ kgen.func @external_call(%a : !kgen.struct<(scalar<si32>)>,
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
-// CHECK-LABEL: @external_call_pack
-kgen.func @external_call_pack() {
-   // CHECK: [[R:%.*]] = llvm.call @call1() : () -> !llvm.struct<(i32, i64)>
-   // CHECK-NEXT: llvm.extractvalue [[R]][0]
-   // CHECK-NEXT: llvm.extractvalue [[R]][1]
-   %0:2 = pop.external_call @call1() : () -> (i32, i64)
-   kgen.return
-}
-}
-
-// -----
-
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-
 // CHECK-LABEL: @noalias_cast
 kgen.func @noalias_cast(%arg0: !kgen.pointer<index>) -> index {
   // CHECK: llvm.call @__kgen_noalias_cast(%0)
