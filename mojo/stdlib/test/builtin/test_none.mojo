@@ -20,6 +20,8 @@ def test_str():
 
 def test_repr():
     assert_equal(NoneType().__repr__(), "None")
+    # Focused non-reflective repr check for literal `None`.
+    assert_equal(repr(None), "None")
 
 
 def test_format_to():
