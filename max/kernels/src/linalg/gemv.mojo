@@ -893,7 +893,7 @@ fn gemv_gpu[
     elif m == 1 and transpose_b == True:
 
         @parameter
-        if a.type == DType.bfloat16:
+        if a.type in (DType.bfloat16, DType.float8_e4m3fn):
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
