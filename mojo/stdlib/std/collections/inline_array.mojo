@@ -41,7 +41,7 @@ from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from compile import get_type_name
 import format._utils as fmt
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -184,14 +184,14 @@ struct InlineArray[ElementType: Copyable, size: Int](
         out self,
         *,
         var unsafe_assume_initialized: InlineArray[
-            UnsafeMaybeUninitialized[Self.ElementType], Self.size
+            UnsafeMaybeUninit[Self.ElementType], Self.size
         ],
     ):
         """Constructs an `InlineArray` from an `InlineArray` of
-        `UnsafeMaybeUninitialized`.
+        `UnsafeMaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized`
+            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:

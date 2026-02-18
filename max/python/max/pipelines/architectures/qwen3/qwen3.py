@@ -38,8 +38,8 @@ from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.moe import MoE
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
@@ -210,7 +210,7 @@ class Qwen3TransformerBlock(Module):
         return hs
 
 
-class Qwen3(Module):
+class Qwen3(DistributedLogitsPostprocessMixin, Module):
     """Unified Qwen3 model that supports both single and multi-GPU inference."""
 
     def __init__(self, config: Qwen3Config) -> None:
@@ -348,79 +348,9 @@ class Qwen3(Module):
                 signal_buffers,
             )
 
-        # Get last token for logits computation
-        h0 = h[0]  # Use first device's output for indexing
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = ops.distributed_broadcast(
-            last_token_h, signal_buffers
+        return self._postprocess_logits(
+            h, input_row_offsets_list, return_n_logits, signal_buffers
         )
-
-        # Apply final norm
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
-        )
-
-        # Get logits - ColumnParallelLinear returns list[TensorValue]
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        # Handle additional logits based on return_logits setting
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-            computed_offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(computed_offsets, shape=(-1,))
-
-            # Gather from all hidden states
-            variable_tokens = [
-                ops.gather(h_device, last_indices, axis=0) for h_device in h
-            ]
-            variable_normed = forward_sharded_layers(
-                self.norm_shards, variable_tokens
-            )
-
-            logits = ops.cast(
-                self.lm_head(variable_normed, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = forward_sharded_layers(self.norm_shards, h)
-
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = input_row_offsets
-
-        if logits is not None and offsets is not None:
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
 
     def input_types(
         self, kv_params: KVCacheParams

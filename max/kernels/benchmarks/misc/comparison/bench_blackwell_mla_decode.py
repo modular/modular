@@ -42,7 +42,6 @@ from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import flare_mla_decode_ragged
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 
@@ -353,7 +352,7 @@ def bench_max(
         n_kv_heads=num_kv_heads,
         head_dim=kv_lora_rank + qk_rope_head_dim,  # Compressed dimension
         num_layers=1,  # Benchmarking a single layer
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         devices=[DeviceRef.GPU()],
         is_mla=True,

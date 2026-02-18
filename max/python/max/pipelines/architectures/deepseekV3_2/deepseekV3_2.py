@@ -586,12 +586,10 @@ class DeepseekV3_2(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = ops.distributed_broadcast(
-                last_token_h, signal_buffers
-            )
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
@@ -661,7 +659,7 @@ class DeepseekV3_2(Module):
             hidden_states = h[0] if isinstance(h, list) else h
             ret_val += (hidden_states,)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_h,)
+            ret_val += (last_token_distributed[0],)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)[0]
             ret_val += (norm_h,)

@@ -37,7 +37,7 @@ from ..kernels import (
     flare_mla_prefill_plan,
     flare_mla_prefill_ragged,
     fused_qk_ragged_rope,
-    matmul_k_cache_ragged,
+    fused_qkv_ragged_matmul,
     mla_prefill_decode_graph_bf16,
     rms_norm_key_cache,
 )
@@ -458,6 +458,17 @@ class LatentAttentionWithRope(Module, Shardable):
             )
 
     @property
+    def wqkv(self) -> TensorValue:
+        """The concatenation of q and kv_a_proj_with_mqa weight vectors."""
+
+        if self.q_lora_rank is not None:
+            wqkv = ops.concat((self.q_a_proj, self.kv_a_proj_with_mqa))
+        else:
+            wqkv = ops.concat((self.q_proj, self.kv_a_proj_with_mqa))
+
+        return wqkv
+
+    @property
     def w_uk_uv(self) -> list[TensorValue]:
         """The concatenation of q, k, and v weight vectors."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
@@ -642,19 +653,23 @@ class LatentAttentionWithRope(Module, Shardable):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        if self.q_lora_rank is not None:
-            xq = self.q_a_layernorm(x @ self.q_a_proj.T) @ self.q_b_proj.T
-        else:
-            xq = x @ self.q_proj.T
-
-        matmul_k_cache_ragged(
+        _xq = fused_qkv_ragged_matmul(
             self.kv_params,
-            hidden_states=x,
-            weight=self.kv_a_proj_with_mqa,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
+            x,
+            input_row_offsets,
+            self.wqkv,
+            kv_collection,
+            layer_idx,
+            self.n_heads,
+            _output_dim=self.q_lora_rank
+            if self.q_lora_rank is not None
+            else self.n_heads * self.qk_head_dim,
         )
+
+        if self.q_lora_rank is not None:
+            xq = self.q_a_layernorm(_xq) @ self.q_b_proj.T
+        else:
+            xq = _xq
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)

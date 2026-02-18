@@ -142,6 +142,7 @@ def test_abs():
     assert_equal(Int(-5).__abs__(), 5)
     assert_equal(Int(2).__abs__(), 2)
     assert_equal(Int(0).__abs__(), 0)
+    assert_equal(Int.MIN.__abs__(), Int.MIN)
 
 
 def test_string_conversion():

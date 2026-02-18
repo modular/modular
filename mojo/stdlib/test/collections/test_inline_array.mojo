@@ -14,7 +14,7 @@
 from sys.info import size_of
 
 from compile import compile_info
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
 from testing import assert_equal, assert_true, assert_false, TestSuite
 
@@ -180,12 +180,12 @@ def test_array_int_pointer():
 
 
 def test_array_unsafe_assume_initialized_constructor_string():
-    var maybe_uninitialized_arr = InlineArray[
-        UnsafeMaybeUninitialized[String], 3
-    ](uninitialized=True)
-    maybe_uninitialized_arr[0].write("hello")
-    maybe_uninitialized_arr[1].write("mojo")
-    maybe_uninitialized_arr[2].write("world")
+    var maybe_uninitialized_arr = InlineArray[UnsafeMaybeUninit[String], 3](
+        uninitialized=True
+    )
+    maybe_uninitialized_arr[0].init_from("hello")
+    maybe_uninitialized_arr[1].init_from("mojo")
+    maybe_uninitialized_arr[2].init_from("world")
 
     var initialized_arr = InlineArray[String, 3](
         unsafe_assume_initialized=maybe_uninitialized_arr^

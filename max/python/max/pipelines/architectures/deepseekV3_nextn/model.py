@@ -46,7 +46,6 @@ from ..deepseekV2.model import DeepseekV2Model
 from ..deepseekV3.model import (
     DeepseekV3Inputs,
     DeepseekV3Model,
-    _choose_correct_data_parallel_degree,
 )
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
@@ -66,13 +65,6 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration."""
-        _choose_correct_data_parallel_degree(
-            pipeline_config, len(pipeline_config.model.device_specs)
-        )
-
     @classmethod
     def get_kv_params(
         cls,
