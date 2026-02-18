@@ -671,13 +671,13 @@ struct Attention[
         out self,
         attention_config: Self.attention_config_t,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
-        q: UnsafePointer[Scalar[Self.q_type], MutAnyOrigin],
+        q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
             LayoutTensor[
-                Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                Self.q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ],
         batch_idx: Int,

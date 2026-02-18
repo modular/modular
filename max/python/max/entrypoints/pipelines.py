@@ -523,18 +523,18 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # args = ctx.params.get("args", [])
 
     # Import lazily to avoid importing benchmark modules at module load time
-    from max.benchmark.benchmark_serving import main as benchmark_main
+    from max.benchmark.benchmark_serving import main_with_parsed_args
     from max.benchmark.benchmark_serving import (
         parse_args as benchmark_parse_args,
     )
 
     logger.debug("Running benchmark subcommand with args: %s", args)
     try:
-        argparse_namespace = benchmark_parse_args(args=args)
+        parsed_args = benchmark_parse_args(args=args)
 
         # Run the benchmark
         click.echo("Starting benchmark...")
-        benchmark_main(argparse_namespace)
+        main_with_parsed_args(parsed_args)
         click.echo("Benchmark completed successfully!")
     except SystemExit as e:
         # argparse calls sys.exit() for help and errors, we need to handle this

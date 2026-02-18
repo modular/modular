@@ -13,7 +13,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
@@ -27,7 +26,7 @@ idefics3_arch = SupportedArchitecture(
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=Idefics3Model,
     tokenizer=Idefics3Tokenizer,

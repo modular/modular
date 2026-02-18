@@ -62,7 +62,7 @@ class DummyPipelineConfig(PipelineConfig):
         max_length: int | None,
         pdl_level: str = "1",
         device_specs: list[DeviceSpec] | None = None,
-        kv_cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT,
+        kv_cache_strategy: KVCacheStrategy = "model_default",
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,

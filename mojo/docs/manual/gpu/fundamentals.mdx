@@ -411,6 +411,15 @@ This means that you must define them using the `fn` keyword and not use the
 `def` as a raising function, even if the body of the function doesn't contain
 any code that could raise an error.)
 
+:::note
+
+For functions called from GPU kernels that need error handling, Mojo supports
+typed errors with types that don't allocate heap memory. See
+[Define a custom error type](/mojo/manual/errors#define-a-custom-error-type)
+for details.
+
+:::
+
 Argument values must be of types that conform to the
 [`DevicePassable`](/mojo/std/builtin/device_passable/DevicePassable/) trait.
 Additionally, a kernel function can't have a return value. Instead, you must

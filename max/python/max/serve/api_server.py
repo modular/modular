@@ -39,6 +39,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -164,21 +165,49 @@ async def lifespan(
 
         METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
 
-        pipeline_class = {
-            PipelineTask.TEXT_GENERATION: TokenGeneratorPipeline,
-            PipelineTask.EMBEDDINGS_GENERATION: TokenGeneratorPipeline,
-            PipelineTask.AUDIO_GENERATION: AudioGeneratorPipeline,
-        }[serving_settings.pipeline_task]
+        # For pixel generation, use GeneralPipelineHandler directly as the pipeline
+        # For other tasks, create modality-specific wrappers for legacy API routes
+        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+            # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
+            pipeline = GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            )
+        else:
+            # Create modality-specific pipeline wrapper for legacy API routes
+            pipeline_class = {
+                PipelineTask.TEXT_GENERATION: TokenGeneratorPipeline,
+                PipelineTask.EMBEDDINGS_GENERATION: TokenGeneratorPipeline,
+                PipelineTask.AUDIO_GENERATION: AudioGeneratorPipeline,
+            }[serving_settings.pipeline_task]
 
-        pipeline = pipeline_class(
-            model_name=serving_settings.pipeline_config.model.model_name,
-            tokenizer=serving_settings.tokenizer,
-            lora_queue=lora_queue,
-            model_worker=model_worker,
-        )
+            pipeline = pipeline_class(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                model_worker=model_worker,
+            )
 
+        # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
+        # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
+        # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+
+        # Also store as handler for OpenResponses API route compatibility
+        # For pixel generation, this is the same as pipeline
+        # For other tasks, we also create a separate handler instance
+        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+            app.state.handler = pipeline
+        else:
+            app.state.handler = GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            )
 
         logger.info(
             f"\n\n{'*' * 80}\n\n"

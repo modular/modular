@@ -1668,6 +1668,82 @@ class TestReduceOps:
         expected = np.mean(x_np, axis=-1, keepdims=True)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
 
+    # --- ReduceMul (prod) tests ---
+
+    @pytest.mark.parametrize(
+        "dtype",
+        FLOAT_DTYPES + [DType.int32, DType.int64],
+    )
+    def test_reduce_mul_last_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        # Use small values to avoid overflow
+        x_np = np.arange(1, 61, dtype=np_dtype).reshape(shape) * 0.1 + 1
+        x_np = x_np.astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=-1)
+
+        expected = np.prod(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_mul_first_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = (rng.standard_normal((3, 4, 5)) * 0.5 + 1).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=0)
+
+        expected = np.prod(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_mul_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_mul on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = (rng.standard_normal((2, 3, 4)) * 0.5 + 1).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=1)
+
+        expected = np.prod(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_mul_2d(self, dtype: DType) -> None:
+        """Test reduce_mul on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(1, 21, dtype=np_dtype).reshape(shape) * 0.1 + 1
+        x_np = x_np.astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.prod(axis=-1)
+
+        expected = np.prod(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
 
 def _numpy_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
     """Numerically stable softmax reference implementation."""
@@ -1997,3 +2073,461 @@ class TestRandomUniformOp:
         result_np = np.from_dlpack(result)
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
+
+
+class TestShapeChangeOps:
+    """Tests for shape change operations (squeeze, unsqueeze, reshape variants).
+
+    These test the reshape semantics that SqueezeShapeOp, UnsqueezeShapeOp,
+    AddSingletonDimOp, SplitDimOp, and MergeDimOp implement. Since these ops
+    are emitted by MLIR lowering passes rather than the Python API directly,
+    we test through the Tensor API methods that produce equivalent reshapes.
+    """
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_squeeze_single_dim(self, dtype: DType) -> None:
+        """Test squeeze removes a size-1 dimension."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 1, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=1)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=1)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_squeeze_first_dim(self, dtype: DType) -> None:
+        """Test squeeze on the first dimension."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(1, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=0)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_squeeze_last_dim(self, dtype: DType) -> None:
+        """Test squeeze on the last dimension."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=-1)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=-1)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_unsqueeze_beginning(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension at the beginning."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=0)
+        assert result.shape == (1, 3, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_unsqueeze_middle(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension in the middle."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=1)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=1)
+        assert result.shape == (3, 1, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_unsqueeze_end(self, dtype: DType) -> None:
+        """Test unsqueeze adds a dimension at the end."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=-1)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=-1)
+        assert result.shape == (3, 4, 1)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reshape_split_dim(self, dtype: DType) -> None:
+        """Test reshape that splits a dimension (equivalent to SplitDimOp).
+
+        E.g., [12, 3] -> [3, 4, 3] splits dimension 0 into (3, 4).
+        """
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(36, dtype=np_dtype).reshape(12, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([3, 4, 3])
+
+        result = np.from_dlpack(y)
+        expected = x_np.reshape(3, 4, 3)
+        assert result.shape == (3, 4, 3)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reshape_merge_dims(self, dtype: DType) -> None:
+        """Test reshape that merges adjacent dimensions (equivalent to MergeDimOp).
+
+        E.g., [2, 3, 4] -> [6, 4] merges dimensions 0 and 1.
+        """
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(2, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([6, 4])
+
+        result = np.from_dlpack(y)
+        expected = x_np.reshape(6, 4)
+        assert result.shape == (6, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reshape_add_singleton(self, dtype: DType) -> None:
+        """Test reshape that adds a singleton dimension (equiv to AddSingletonDimOp).
+
+        E.g., [3, 4] -> [3, 1, 4] adds a dimension of size 1.
+        """
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.reshape([3, 1, 4])
+
+        result = np.from_dlpack(y)
+        expected = x_np.reshape(3, 1, 4)
+        assert result.shape == (3, 1, 4)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_squeeze_then_unsqueeze_roundtrip(self) -> None:
+        """Test that squeeze then unsqueeze returns to original shape."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 1, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            squeezed = x.squeeze(axis=1)
+            unsqueezed = squeezed.unsqueeze(axis=1)
+
+        result = np.from_dlpack(unsqueezed)
+        assert result.shape == (3, 1, 4)
+        np.testing.assert_array_equal(result, x_np)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_squeeze_integer_types(self, dtype: DType) -> None:
+        """Test squeeze with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(6, dtype=np_dtype).reshape(1, 2, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.squeeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.squeeze(x_np, axis=0)
+        assert result.shape == (2, 3)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_unsqueeze_integer_types(self, dtype: DType) -> None:
+        """Test unsqueeze with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(6, dtype=np_dtype).reshape(2, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.unsqueeze(axis=0)
+
+        result = np.from_dlpack(y)
+        expected = np.expand_dims(x_np, axis=0)
+        assert result.shape == (1, 2, 3)
+        np.testing.assert_array_equal(result, expected)
+
+
+class TestSelectOp:
+    """Tests for select (where) op via F.where with interpreter."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_select_basic(self, dtype: DType) -> None:
+        """Test basic select op matches numpy.where."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array(
+            [True, False, True, False, True, False], dtype=np.bool_
+        )
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype=np_dtype)
+        y_np = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_select_2d(self, dtype: DType) -> None:
+        """Test select op with 2D tensors."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array(
+            [[True, False, True], [False, True, False]], dtype=np.bool_
+        )
+        x_np = np.arange(1, 7, dtype=np_dtype).reshape(2, 3)
+        y_np = np.arange(10, 70, 10, dtype=np_dtype).reshape(2, 3)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_select_int(self, dtype: DType) -> None:
+        """Test select op with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+        y_np = np.array([10, 20, 30, 40], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_select_all_true(self) -> None:
+        """Test select with all-true condition returns x."""
+        cond_np = np.ones(4, dtype=np.bool_)
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        y_np = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        np.testing.assert_array_equal(np.from_dlpack(result), x_np)
+
+    def test_select_all_false(self) -> None:
+        """Test select with all-false condition returns y."""
+        cond_np = np.zeros(4, dtype=np.bool_)
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        y_np = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        np.testing.assert_array_equal(np.from_dlpack(result), y_np)
+
+
+class TestConcatOp:
+    """Tests for concat op via F.concat with interpreter."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_concat_axis0(self, dtype: DType) -> None:
+        """Test concat along axis 0."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np_dtype)
+        b_np = np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=0)
+
+        expected = np.concatenate([a_np, b_np], axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_concat_axis1(self, dtype: DType) -> None:
+        """Test concat along axis 1."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np_dtype)
+        b_np = np.array([[5.0, 6.0, 7.0], [8.0, 9.0, 10.0]], dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=1)
+
+        expected = np.concatenate([a_np, b_np], axis=1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_concat_negative_axis(self, dtype: DType) -> None:
+        """Test concat along negative axis (-1 = last dim)."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(6, dtype=np_dtype).reshape(2, 3)
+        b_np = np.arange(4, dtype=np_dtype).reshape(2, 2)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=-1)
+
+        expected = np.concatenate([a_np, b_np], axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_concat_int_dtypes(self, dtype: DType) -> None:
+        """Test concat with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.array([1, 2, 3], dtype=np_dtype)
+        b_np = np.array([4, 5, 6], dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=0)
+
+        expected = np.concatenate([a_np, b_np], axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_concat_multiple_tensors(self) -> None:
+        """Test concat with more than two tensors."""
+        a_np = np.array([[1.0, 2.0]], dtype=np.float32)
+        b_np = np.array([[3.0, 4.0]], dtype=np.float32)
+        c_np = np.array([[5.0, 6.0]], dtype=np.float32)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        c = Tensor.from_dlpack(c_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b, c], axis=0)
+
+        expected = np.concatenate([a_np, b_np, c_np], axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    def test_concat_single_tensor(self) -> None:
+        """Test concat with a single tensor is a no-op."""
+        a_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+        a = Tensor.from_dlpack(a_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a], axis=0)
+
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), a_np)
+
+    def test_concat_3d(self) -> None:
+        """Test concat with 3D tensors."""
+        a_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        b_np = np.arange(24, 48, dtype=np.float32).reshape(2, 3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=0)
+
+        expected = np.concatenate([a_np, b_np], axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)

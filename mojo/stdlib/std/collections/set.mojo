@@ -133,7 +133,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         # Iterate over dict entries directly to reuse cached hash values,
         # avoiding redundant hash recomputation for each lookup in `other`.
         for entry in self._data.items():
-            if not other._data._find_index(entry.hash, entry.key)[0]:
+            if not other._data._find_slot(entry.hash, entry.key)[0]:
                 return False
         return True
 

@@ -52,6 +52,11 @@ what we publish.
 
 ### Language changes
 
+- The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
+  to standardize construction. As such, the argument name for `__moveinit__`
+  must now be named `take` and the argument name for `__copyinit__` must now be
+  named `copy`.
+
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
   keyword argument to disambiguate slices. If you have defined your own range
@@ -115,6 +120,74 @@ what we publish.
 
 ### Library changes
 
+- `Dict` internals have been replaced with a Swiss Table implementation using
+  SIMD group probing for lookups. This improves lookup, insertion, and deletion
+  performance — especially when looking up keys not in the dict — while
+  increasing the load factor from 2/3 to 7/8 for better memory efficiency.
+  The `power_of_two_initial_capacity` keyword argument has been renamed to
+  `capacity` and now accepts any positive integer (it is rounded up to the
+  next power of two internally, minimum 16).
+
+- Implicit conversions from `Int` to `SIMD` are now deprecated, and will be
+  removed in a future version of Mojo. This includes deprecating converions from
+  `Int` to specific `SIMD` scalar types like `Int8` or `Float32`.
+
+  > Note: The experimental `mojo build --experimental-fixit` command may be useful
+  in assiting with migrating your code to reflect this change.
+
+  Code currently relying on implicit conversions, e.g.:
+
+  ```mojo
+  fn foo(arg: Int) -> Float32:
+      return arg
+  ```
+
+  should be changed to use an explicit conversion:
+
+  ```mojo
+  fn foo(arg: Int) -> Float32:
+      return Float32(arg)
+  ```
+
+  Occasionally, when an implicit conversion was happening from a
+  scalar `Int` to a wider `SIMD` value, the compiler will suggest a
+  change to make the conversion explicit that is somewhat verbose,
+  performing both the type conversion and the "splat" in a single step:
+
+  ```diff
+  var bits: SIMD[DType.uint8, 16] = ...
+  - var y = bits >> (j * 4)
+  + var y = bits >> SIMD[DType.uint8, 16](j * 4)
+  ```
+
+  a simpler change is to make the type conversion explicit, and
+  let the "splat" continue to happen implicitly (which will remain supported):
+
+  ```diff
+  var bits: SIMD[DType.uint8, 16] = ...
+  - var y = bits >> (j * 4)
+  + var y = bits >> UInt8(j * 4)
+  ```
+
+  A similar overly verbose suggestion can be emitted relating
+  to `LayoutTensor.element_type`, where the compiler may suggest
+  a change of the form:
+
+  ```diff
+  - tensor[i] = i * l
+  + tensor[i] = LayoutTensor[DType.uint32, Layout(IntTuple(-1)), stack].element_type(i * l)
+  ```
+
+  where a simpler change is sufficient:
+
+  ```diff
+  - tensor[i] = i * l
+  + tensor[i] = UInt32(i * l)
+
+  # Note: If the tensors `dtype` is not statically known, this works as well:
+  + tensor[i] = Scalar[tensor.dtype](i * l)
+  ```
+
 - The `builtin.math` module has been merged into `math`. The traits `Absable`,
   `DivModable`, `Powable`, `Roundable` and functions `abs()`, `divmod()`,
   `max()`, `min()`, `pow()`, `round()` are now part of the `math` module and
@@ -125,6 +198,34 @@ what we publish.
   than being nested under `sys`. This improves discoverability of FFI
   functionality. Update your imports from `from sys.ffi import ...` to
   `from ffi import ...`.
+
+- Added `UnsafeUnion[*Ts]`, a C-style untagged union type for FFI
+  interoperability. Unlike `Variant`, `UnsafeUnion` does not track which type
+  is stored (no discriminant), making it suitable for interfacing with C unions
+  and low-level type punning. The memory layout exactly matches C unions (size
+  is max of elements, alignment is max of elements).
+
+  All element types must have trivial copy, move, and destroy operations,
+  matching C union semantics where types don't have constructors or destructors.
+
+  Construction is explicit (no implicit conversion) to emphasize the unsafe
+  nature of this type. All accessor methods are prefixed with `unsafe_` to make
+  it clear that these operations are unsafe.
+
+  ```mojo
+  from ffi import UnsafeUnion
+
+  # Define a union that can hold Int32 or Float32
+  comptime IntOrFloat = UnsafeUnion[Int32, Float32]
+
+  var u = IntOrFloat(Int32(42))
+  print(u.unsafe_get[Int32]())  # => 42
+  print(u)  # => UnsafeUnion[Int32, Float32](size=4, align=4)
+
+  # Type punning (reinterpreting bits)
+  var u2 = IntOrFloat(Float32(1.0))
+  print(u2.unsafe_get[Int32]())  # => 1065353216 (IEEE 754 bits)
+  ```
 
 - The `itertools` module now includes three new iterator combinators:
   - `cycle(iterable)`: Creates an iterator that cycles through elements
@@ -158,6 +259,7 @@ what we publish.
   of `write_to` and `write_repr_to`.
   - `Tuple`
   - `Variant`
+  - `Optional`
 
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests
@@ -170,6 +272,10 @@ what we publish.
   in reverse order, maintaining consistency with the existing `codepoints()`
   and `codepoint_slices()` methods. The deprecated `__reversed__()` methods
   will continue to work but will emit deprecation warnings.
+
+- The `Origin` struct now takes the underlying MLIR origin as a parameter
+  instead of storing it. This follows the design of `IntLiteral` and related
+  types, and fixes some memory safety problems.
 
 - The `StringSlice` constructor from `String` now propagates mutability. If you
   have a mutable reference to a `String`, `StringSlice(str)` returns a mutable
@@ -222,6 +328,11 @@ what we publish.
 - Documentation for `SIMD.__round__` now clarifies the pre-existing behavior
   that ties are rounded to the nearest even, not away from zero.
 
+- `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
+  names updated to reflect the `init` name. It also now exposes a `zeroed()` method
+  to get zeroed out uninitialized memory. It also no longer calls `abort()` when
+  being copied or moved, allowing for more practical uses.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
@@ -239,10 +350,19 @@ what we publish.
 
 ### ❌ Removed
 
+- The `owned` keyword has been removed. Use `var` for parameters or `deinit`
+  for `__moveinit__`/`__del__` arguments as appropriate.
+
+- `Dict.EMPTY` and `Dict.REMOVED` comptime aliases have been removed. These
+  were internal implementation details of the old hash table design.
+
 ### 🛠️ Fixed
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice
+
+- [Issue #5722](https://github.com/modular/modular/issues/5722): `__del__`
+  incorrectly runs when `__init__` raises before all fields are initialized.
 
 - [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
   `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back

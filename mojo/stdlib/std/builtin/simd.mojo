@@ -624,7 +624,7 @@ struct SIMD[dtype: DType, size: Int](
         self = value.cast[Self.dtype]()
 
     @always_inline("builtin")
-    @implicit
+    @implicit(deprecated=True)
     fn __init__(out self, value: Int, /):
         """Initializes the SIMD vector with a signed integer.
 
@@ -971,20 +971,11 @@ struct SIMD[dtype: DType, size: Int](
                 # this should raise an exception.
                 return Self()
 
-        var div = self / rhs
-
-        @parameter
-        if Self.dtype.is_floating_point():
-            return div.__floor__()
-        elif Self.dtype.is_unsigned():
-            return div
-        else:
-            if all(self.gt(0) & rhs.gt(0)):
-                return div
-
-            var mod = self - div * rhs
-            var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
-            return div - mask.cast[Self.dtype]()
+        return Self(
+            mlir_value=__mlir_op.`pop.floordiv`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
 
     @always_inline("nodebug")
     fn __mod__(self, rhs: Self) -> Self:
@@ -1916,6 +1907,9 @@ struct SIMD[dtype: DType, size: Int](
     @always_inline("builtin")
     fn __abs__(self) -> Self:
         """Defines the absolute value operation.
+
+        For signed integral element types, the absolute value of the minimum
+        representable value is the minimum value itself.
 
         Returns:
             The absolute value of this SIMD vector.

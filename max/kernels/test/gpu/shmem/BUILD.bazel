@@ -5,20 +5,12 @@ package(default_visibility = ["//max:consumers"])
 lit_tests(
     name = "test",
     srcs = glob(["**/*.mojo"]),
-    data = select({
-        "//:amd_gpu": [
-            "@rocshmem//:mpirun",
-            "@rocshmem//:prterun",
-        ],
-        "//conditions:default": [],
-    }),
     env = select({
-        "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+        "//:nvidia_gpu": {
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        },
         "//:amd_gpu": {
             "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
-            "LD_LIBRARY_PATH": "../+http_archive+rocshmem/lib",
-            "OPAL_PREFIX": "../+http_archive+rocshmem",
-            "ROCSHMEM_MPIRUN": "../+http_archive+rocshmem/bin/mpirun",
             # 8GB symmetric heap for large buffer tests
             "ROCSHMEM_HEAP_SIZE": "8589934592",
         },
@@ -37,5 +29,6 @@ lit_tests(
     ],
     tags = [
         "gpu",
+        "requires-network",
     ],
 )

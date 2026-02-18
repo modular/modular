@@ -731,14 +731,14 @@ struct TMATensorTile[
         self.descriptor = descriptor
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """
         Copy initializes this `TMATensorTile` from another instance.
 
         Args:
-            other: The other `TMATensorTile` instance to copy from.
+            copy: The other `TMATensorTile` instance to copy from.
         """
-        self.descriptor = other.descriptor
+        self.descriptor = copy.descriptor
 
     @always_inline
     fn prefetch_descriptor(self):
@@ -1538,6 +1538,40 @@ struct TMATensorTile[
                     UInt(coords[3]),
                     UInt(coords[4]),
                 ),
+            )
+
+    @always_inline
+    fn async_store[
+        rank: Int, //, cta_group: Int = 1
+    ](
+        self,
+        dst: TileTensor[
+            dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
+        ],
+        coords: StaticTuple[UInt32, rank],
+    ):
+        """Schedules an asynchronous store from shared memory to global memory.
+
+        TileTensor overload of the generic rank-dispatched async_store.
+        Dispatches to the rank-specific TileTensor async_store methods.
+
+        Parameters:
+            rank: The dimensionality of the tensor (must be 2 or 3).
+            cta_group: CTA group configuration. Defaults to 1.
+
+        Args:
+            dst: TileTensor in shared memory from which data will be copied.
+            coords: The N-dimensional coordinates in the destination tensor.
+        """
+        comptime assert rank in (2, 3)
+
+        @parameter
+        if rank == 2:
+            self.async_store(dst, (UInt(coords[0]), UInt(coords[1])))
+        elif rank == 3:
+            self.async_store_3d(
+                dst,
+                (UInt(coords[0]), UInt(coords[1]), UInt(coords[2])),
             )
 
     @always_inline
@@ -3535,7 +3569,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -3842,14 +3876,14 @@ struct RaggedTMA3DTile[
         )
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """
         Copy initializes this `RaggedTMA3DTile` from another instance.
 
         Args:
-            other: The other `RaggedTMA3DTile` instance to copy from.
+            copy: The other `RaggedTMA3DTile` instance to copy from.
         """
-        self.descriptor = other.descriptor
+        self.descriptor = copy.descriptor
 
     @always_inline("nodebug")
     fn async_copy_to[
@@ -4473,20 +4507,20 @@ struct TMATensorTileIm2col[
         self.lower_corner_w = lower_corner_w
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy initializes from another instance.
 
         Args:
-            other: The other instance to copy from.
+            copy: The other instance to copy from.
         """
-        self.descriptor = other.descriptor
-        self.out_height = other.out_height
-        self.out_width = other.out_width
-        self.filter_h = other.filter_h
-        self.filter_w = other.filter_w
-        self.in_channels = other.in_channels
-        self.lower_corner_h = other.lower_corner_h
-        self.lower_corner_w = other.lower_corner_w
+        self.descriptor = copy.descriptor
+        self.out_height = copy.out_height
+        self.out_width = copy.out_width
+        self.filter_h = copy.filter_h
+        self.filter_w = copy.filter_w
+        self.in_channels = copy.in_channels
+        self.lower_corner_h = copy.lower_corner_h
+        self.lower_corner_w = copy.lower_corner_w
 
     @always_inline
     fn prefetch_descriptor(self):

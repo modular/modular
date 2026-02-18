@@ -19,14 +19,14 @@ struct WeightsRegistry(ImplicitlyCopyable):
     var names: List[String]
     var weights: List[OpaquePointer[MutAnyOrigin]]
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy an existing weights registry.
 
         Args:
-            existing: The existing weights registry.
+            copy: The existing weights registry.
         """
-        self.names = existing.names.copy()
-        self.weights = existing.weights.copy()
+        self.names = copy.names.copy()
+        self.weights = copy.weights.copy()
 
     def __getitem__(self, name: String) -> OpaquePointer[MutAnyOrigin]:
         for i in range(len(self.names)):

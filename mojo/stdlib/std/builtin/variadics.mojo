@@ -594,7 +594,7 @@ struct VariadicListMem[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](Sized):
+](Movable, Sized):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
     way that can be enumerated.  Each element may be accessed with `elt[]`.
@@ -632,15 +632,6 @@ struct VariadicListMem[
             value: The variadic argument to construct the list with.
         """
         self.value = value
-
-    @always_inline
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves constructor.
-
-        Args:
-          existing: The existing VariadicListMem.
-        """
-        self.value = existing.value
 
     @always_inline
     fn __del__(deinit self):
@@ -717,7 +708,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        unsafe_origin_mutcast[origin_of(Self.origin, self), Self.elt_is_mutable]
+        Origin[mut = Self.elt_is_mutable](
+            unsafe_mut_cast=origin_of(Self.origin, self)
+        )
     ] Self.element_type:
         """Gets a single element on the variadic list.
 

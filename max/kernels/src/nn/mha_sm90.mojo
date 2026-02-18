@@ -131,14 +131,14 @@ fn mha_sm90_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ) raises:
     comptime assert (
@@ -260,7 +260,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutAnyOrigin,
+                        ImmutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -307,7 +307,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutAnyOrigin,
+                        ImmutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -359,7 +359,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutAnyOrigin,
+                        ImmutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -419,12 +419,12 @@ fn _mha_sm90_sink_dispatch[
     valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     sink_weights: OptionalReg[
         LayoutTensor[
-            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     partition: PartitionType,
@@ -562,7 +562,7 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     sink_weights: SinkType,

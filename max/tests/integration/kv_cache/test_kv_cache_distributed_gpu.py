@@ -21,7 +21,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -37,7 +37,7 @@ async def test_kv_cache_multi_gpu() -> None:
             head_dim=128,
             dtype=DType.bfloat16,
             num_layers=32,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             page_size=128,
             devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         )
@@ -45,6 +45,7 @@ async def test_kv_cache_multi_gpu() -> None:
             params=kv_params,
             total_num_pages=8,
             session=inference_session,
+            max_batch_size=128,
         )
         context = create_text_context(np.empty(1))
         kv_manager.claim(context.request_id, replica_idx=0)
@@ -74,7 +75,7 @@ def create_kv_cache(
         n_kv_heads=4,
         head_dim=1,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
@@ -93,6 +94,7 @@ def create_kv_cache(
         total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
+        max_batch_size=max_batch_size,
     )
 
     return kv_manager

@@ -13,6 +13,12 @@
 [MAX Model Development]: /max/docs/development.md
 
 ---
+🔥 [Modular has acquired BentoMl][bentoml-joins] to extend our open source AI stack!
+[Join us][bentoml-joins-ama] on February 17th at
+[9:30-11:30am PT][ama-time] for an Ask Us Anything with Chris Lattner and
+BentoML Founder Chaoyu Yang [in the Modular forum][bentoml-joins-ama].
+We’ll answer questions and share more about our plans!
+[Feel free to share your questions now.][bentoml-joins-ama]
 
 # Modular Platform
 
@@ -123,6 +129,17 @@ here](https://github.com/modular/modular/issues/new/choose).
 
 ## News & Announcements
 
+**[2026/2]** We announced that [BentoML is joining Modular][bentoml-joins].
+We are committed to building in the open and will be extending our support
+of open source AI with [Bento's own open project][bentoml-github]. Join us
+[for an AMA February 17th][bentoml-joins-ama] to discuss our plans.
+
+**[2026/1]** [Modular Platform 26.1][26.1] graduates the MAX Python API out of
+experimental with PyTorch-like eager mode and model.compile() for production,
+stabilizes the MAX LLM Book, and expands Apple silicon GPU support. Mojo gains
+compile-time reflection, linear types, typed errors, and improved error messages
+as it progresses toward 1.0.
+
 **[2025/12]** [The Path to Mojo 1.0][mojo-1.0] was officially announced
 with a planned release in H1 2026 and tons of details on what to expect.
 
@@ -164,6 +181,11 @@ Mojo and MAX.
 [GPU Kernel Hackathon][hackathon], featuring talks from Modular and
 Anthropic engineers.
 
+[bentoml-github]: https://github.com/bentoml/BentoML
+[bentoml-joins-ama]: https://forum.modular.com/t/modular-has-acquired-bentoml-ask-us-anything/2706/1
+[bentoml-joins]: https://www.modular.com/blog/bentoml-joins-modular
+[ama-time]: https://www.inyourowntime.zone/2026-02-17_09.30_America.Los_Angeles
+[26.1]: https://www.modular.com/blog/modular-26-1-a-big-step-towards-more-programmable-and-portable-ai-infrastructure
 [mojo-1.0]: https://www.modular.com/blog/the-path-to-mojo-1-0
 [dec-meetup]: https://www.youtube.com/live/WK5dVQ8vhbU?si=Fjde8j_50V4bwiAv
 [25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience

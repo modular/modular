@@ -50,11 +50,17 @@ from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout
+from layout import Layout as LegacyLayout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     TMATensorTileIm2col,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    TMATile,
+    TmaOpType,
+    TmaOpTypeIm2col,
+    static_row_major,
 )
 
 from utils.index import Index, IndexList
@@ -125,13 +131,6 @@ struct Conv2dFpropKernel[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
-    # Tensor layouts (from TMA descriptors)
-    act_layout: Layout,
-    filter_layout: Layout,
-    out_layout: Layout,
-    act_desc_layout: Layout,
-    filter_desc_layout: Layout,
-    out_desc_layout: Layout,
     # Configuration
     config: Conv2dConfig[act_type, filter_type, out_type],
     # Cluster shape
@@ -141,9 +140,6 @@ struct Conv2dFpropKernel[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-    # Source C layout for residual operations (defaults to same as output)
-    src_layout: Layout = out_layout,
-    src_desc_layout: Layout = out_desc_layout,
 ]:
     """SM100 Conv2D forward propagation kernel.
 
@@ -161,19 +157,11 @@ struct Conv2dFpropKernel[
         act_type: Activation data type.
         filter_type: Filter data type.
         out_type: Output data type.
-        act_layout: Global memory activation layout.
-        filter_layout: Global memory filter layout.
-        out_layout: Global memory output layout.
-        act_desc_layout: TMA descriptor layout for activation.
-        filter_desc_layout: TMA descriptor layout for filter.
-        out_desc_layout: TMA descriptor layout for output.
         config: Kernel configuration.
         cluster_shape: CUDA cluster dimensions.
         elementwise_compute_lambda_fn: Optional epilogue lambda for fusion
             (bias add, activation functions, residual connections).
         register_based_epilogue: Whether to apply the lambda in registers.
-        src_layout: Global memory layout for source C (residual input).
-        src_desc_layout: TMA descriptor layout for source C.
     """
 
     # ========== Derived Constants ==========
@@ -322,14 +310,73 @@ struct Conv2dFpropKernel[
     ]()
 
     # TMA descriptor sizes
-    comptime act_tma_load_size = Self.act_desc_layout.size()
-    comptime filter_tma_load_size = Self.filter_desc_layout.size()
-    comptime act_tma_rows = Self.act_desc_layout.shape[0].value()
-    comptime filter_tma_rows = Self.filter_desc_layout.shape[0].value()
+    # ========== TMA Layouts (computed from config, new Layout types) ==========
+
+    comptime act_tile_dim0 = Self.BM // Self.CLUSTER_N
+    comptime filter_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime act_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
+        Self.act_type
+    ]()
+    comptime filter_swizzle_elems = Self.config.b_swizzle.bytes() // size_of[
+        Self.filter_type
+    ]()
+    comptime out_swizzle_elems = Self.config.c_swizzle.bytes() // size_of[
+        Self.out_type
+    ]()
+
+    # C tile shape -- same logic as matmul kernels
+    comptime out_tile_dim0 = Self.OutputM if (
+        Self.MMA_M == 256 or Self.cta_group == 1
+    ) else 64
+
+    # Activation: 2D im2col TMA layout
+    comptime ActTileLayout = static_row_major[Self.act_tile_dim0, Self.BK]
+    comptime ActDescLayout = static_row_major[
+        Self.act_tile_dim0, Self.act_swizzle_elems
+    ]
+
+    # Filter: 2D standard TMA layout
+    comptime FilterTileLayout = static_row_major[Self.filter_tile_dim0, Self.BK]
+    comptime FilterDescLayout = static_row_major[
+        Self.filter_tile_dim0, Self.filter_swizzle_elems
+    ]
+
+    # Output: 2D standard TMA layout
+    comptime OutTileLayout = static_row_major[Self.out_tile_dim0, Self.OutputN]
+    comptime OutDescLayout = static_row_major[
+        Self.out_tile_dim0, Self.out_swizzle_elems
+    ]
+
+    # Source C (residual): same shape as output
+    comptime SrcTileLayout = Self.OutTileLayout
+    comptime SrcDescLayout = Self.OutDescLayout
+
+    # TMA operation types
+    comptime ActTmaOp = TmaOpTypeIm2col[
+        Self.act_type, Self.ActTileLayout, Self.ActDescLayout
+    ]
+    comptime FilterTmaTile = TMATile[
+        Self.filter_type, Self.FilterTileLayout, Self.FilterDescLayout
+    ]
+    comptime FilterTmaOp = Self.FilterTmaTile.InnerType
+    comptime OutTmaTile = TMATile[
+        Self.out_type, Self.OutTileLayout, Self.OutDescLayout
+    ]
+    comptime OutTmaOp = Self.OutTmaTile.InnerType
+    comptime SrcTmaTile = TMATile[
+        Self.out_type, Self.SrcTileLayout, Self.SrcDescLayout
+    ]
+    comptime SrcTmaOp = Self.SrcTmaTile.InnerType
+
+    # TMA load size constants
+    comptime act_tma_load_size = Self.act_tile_dim0 * Self.act_swizzle_elems
+    comptime filter_tma_load_size = Self.filter_tile_dim0 * Self.filter_swizzle_elems
+    comptime act_tma_rows = Self.act_tile_dim0
+    comptime filter_tma_rows = Self.filter_tile_dim0
 
     # ========== Tensor Memory Type ==========
     comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime accum_layout = LegacyLayout.row_major(Self.MMA_M, Self.MMA_N)
     comptime AccumTensor = TmemTensor[
         Self.accum_type, Self.accum_layout, cta_group = Self.cta_group
     ]
@@ -458,15 +505,9 @@ struct Conv2dFpropKernel[
     @always_inline
     fn init_barriers(
         ctx: Self.Context,
-        act_tma_op: TMATensorTileIm2col[
-            Self.act_type, Self.act_layout, Self.act_desc_layout
-        ],
-        filter_tma_op: TMATensorTile[
-            Self.filter_type, Self.filter_layout, Self.filter_desc_layout
-        ],
-        out_tma_op: TMATensorTile[
-            Self.out_type, Self.out_layout, Self.out_desc_layout
-        ],
+        act_tma_op: Self.ActTmaOp,
+        filter_tma_op: Self.FilterTmaOp,
+        out_tma_op: Self.OutTmaOp,
         input_barriers: Self.SmemType.Pipelines.InputBarriers,
         accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
         clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
@@ -542,15 +583,15 @@ struct Conv2dFpropKernel[
         act_loader: TileLoaderTMAIm2col[
             act_tma_origin,
             Self.act_type,
-            Self.act_layout,
-            Self.act_desc_layout,
+            Self.ActTmaOp.layout,
+            Self.ActTmaOp.desc_layout,
             cta_group = Self.cta_group,
         ],
         filter_loader: TileLoaderTMA[
             filter_tma_origin,
             Self.filter_type,
-            Self.filter_layout,
-            Self.filter_desc_layout,
+            Self.FilterTmaOp.layout,
+            Self.FilterTmaOp.desc_layout,
             cta_group = Self.cta_group,
         ],
         tiles: InputProducerStage[
@@ -633,15 +674,9 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
     fn run(
-        act_tma_op: TMATensorTileIm2col[
-            Self.act_type, Self.act_layout, Self.act_desc_layout
-        ],
-        filter_tma_op: TMATensorTile[
-            Self.filter_type, Self.filter_layout, Self.filter_desc_layout
-        ],
-        out_tma_op: TMATensorTile[
-            Self.out_type, Self.out_layout, Self.out_desc_layout
-        ],
+        act_tma_op: Self.ActTmaOp,
+        filter_tma_op: Self.FilterTmaOp,
+        out_tma_op: Self.OutTmaOp,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
     ):
@@ -656,8 +691,8 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=False,
-            _src_layout = Self.out_layout,
-            _src_desc_layout = Self.out_desc_layout,
+            _src_layout = Self.OutTmaOp.layout,
+            _src_desc_layout = Self.OutTmaOp.desc_layout,
         ](
             act_tma_op,
             filter_tma_op,
@@ -676,18 +711,10 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
     fn run_with_residual(
-        act_tma_op: TMATensorTileIm2col[
-            Self.act_type, Self.act_layout, Self.act_desc_layout
-        ],
-        filter_tma_op: TMATensorTile[
-            Self.filter_type, Self.filter_layout, Self.filter_desc_layout
-        ],
-        out_tma_op: TMATensorTile[
-            Self.out_type, Self.out_layout, Self.out_desc_layout
-        ],
-        src_tma_op: TMATensorTile[
-            Self.out_type, Self.src_layout, Self.src_desc_layout
-        ],
+        act_tma_op: Self.ActTmaOp,
+        filter_tma_op: Self.FilterTmaOp,
+        out_tma_op: Self.OutTmaOp,
+        src_tma_op: Self.SrcTmaOp,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         beta: Float32,
@@ -705,8 +732,8 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=True,
-            _src_layout = Self.src_layout,
-            _src_desc_layout = Self.src_desc_layout,
+            _src_layout = Self.SrcTmaOp.layout,
+            _src_desc_layout = Self.SrcTmaOp.desc_layout,
         ](
             act_tma_op,
             filter_tma_op,
@@ -723,18 +750,12 @@ struct Conv2dFpropKernel[
     @always_inline
     fn _run_impl[
         has_residual: Bool,
-        _src_layout: Layout = Self.src_layout,
-        _src_desc_layout: Layout = Self.src_desc_layout,
+        _src_layout: LegacyLayout = Self.SrcTmaOp.layout,
+        _src_desc_layout: LegacyLayout = Self.SrcTmaOp.desc_layout,
     ](
-        act_tma_op: TMATensorTileIm2col[
-            Self.act_type, Self.act_layout, Self.act_desc_layout
-        ],
-        filter_tma_op: TMATensorTile[
-            Self.filter_type, Self.filter_layout, Self.filter_desc_layout
-        ],
-        out_tma_op: TMATensorTile[
-            Self.out_type, Self.out_layout, Self.out_desc_layout
-        ],
+        act_tma_op: Self.ActTmaOp,
+        filter_tma_op: Self.FilterTmaOp,
+        out_tma_op: Self.OutTmaOp,
         src_tma_op: TMATensorTile[Self.out_type, _src_layout, _src_desc_layout],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],

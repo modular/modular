@@ -599,7 +599,10 @@ struct BlockScaledMatmulConfig[
         )
         var b_scales_smem_bytes_per_stage = (
             self.num_sf_k_tiles
-            * (self.mma_shape[1] // SF_MN_GROUP_SIZE)
+            * (
+                align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
+                // SF_MN_GROUP_SIZE
+            )
             * Self.sf_block_atom_size
             * size_of[Self.sfb_dtype]()
         )
@@ -690,3 +693,187 @@ struct BlockScaledMatmulConfig[
 
     fn __repr__(self) -> String:
         return String.write(self)
+
+
+fn choose_block_scaled_config[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    transpose_b: Bool = True,
+](M: Int, N: Int, K: Int) -> BlockScaledMatmulConfig[
+    a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+]:
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
+    comptime assert (
+        sfa_dtype == sfb_dtype
+    ), "sfa_dtype and sfb_dtype must be the same"
+
+    comptime num_SMs = B200.sm_count
+    # Nvidia mma instruction process 32B in K.
+    comptime Kbytes_per_mma = 32
+    # We use 128B swizzle, tile size in K is 128B over element size.
+    comptime BK = 128 // size_of[a_type]()
+
+    comptime M_pivote = 32
+
+    var cta_group = 1 if M < M_pivote else 2
+    var swapAB = True if M < M_pivote else False
+    var k_group_size = 1  # maybe increased for small M later
+
+    var mma_mn = Tuple[Int, Int](256, 256)
+    var min_num_waves = Int.MAX
+
+    # Traverse possible combinations of BM x MMA_N to choose the one minimizes the
+    # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
+    # timed by max number of ctas per SM i.e. number of waves.
+    # We first minimize the number of waves, then use the flops to break tie.
+
+    # For small M, swap A and B so that the small M maps to mma_n since it supports
+    # a larger range than mma_m.
+    if M < M_pivote:
+        for bm, mma_n in product([128], range(64, align_up(M, 64) + 1, 64)):
+            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+            num_waves = ceildiv(num_ctas, num_SMs)
+            if num_waves < min_num_waves or (
+                num_waves == min_num_waves
+                and bm * mma_n < mma_mn[0] * mma_mn[1]
+            ):
+                min_num_waves = num_waves
+                mma_mn[0] = bm
+                mma_mn[1] = mma_n
+
+    # For large M, use 2xSM mma
+    else:
+
+        @parameter
+        @always_inline
+        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+            N_alignby64 = align_up(N, 64)
+            max_mma_n = min(N_alignby64, 256)
+            # In pratice 64x16 mma creates too many ctas and increase L2
+            # load volume, ends up hurting performance.
+            min_mma_n = min(N_alignby64, 64)
+            for bm in [128]:
+                for mma_n in range(max_mma_n, min_mma_n - 1, -64):
+                    var mma_m = bm * cta_group
+                    var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
+                    var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
+                    if num_waves > min_num_waves:
+                        break
+                    elif num_waves < min_num_waves or (
+                        num_waves == min_num_waves
+                        and mma_m * mma_n < mma_mn[0] * mma_mn[1]
+                    ):
+                        min_num_waves = num_waves
+                        mma_mn[0] = mma_m
+                        mma_mn[1] = mma_n
+                        swapAB = _swapAB
+
+        # Swap AB may work better for M = 192 and not-multiple-of-128 values.
+        # Capture and update min_num_waves, mma_mn
+        select_mma_mn(M, N)
+        select_mma_mn(N, M, True)
+
+    # For small mmas, we group multiple tiles per tma-mma synchronization.
+    var output_block_size = (mma_mn[0] // cta_group) * mma_mn[1]
+    if output_block_size <= 64 * 96 and ceildiv(K, BK) % 2 == 0:
+        k_group_size = 2
+    # For very small mmas we can group more aggressively.
+    if output_block_size <= 64 * 16 and ceildiv(K, BK) % 4 == 0:
+        k_group_size = 4
+
+    var min_load_volume = Int.MAX
+    var optimal_block_swizzle_size = 0
+
+    # Tile waves when there are >= 4 waves. In theory it should be >=2, but let's
+    # be conservative.
+    if min_num_waves >= 4:
+        # Represent the load volume by
+        #    BM * num_ctas_per_wave_m + MMA_N * num_ctas_per_wave_N
+        # Use MMA_N because cta_group = 2, 2 ctas cover entire MMA_N. cta_group = 1
+        # has BN = MMA_N.
+        # Traverse the tile sizes to find min load volume per wave.
+        # TODO: consider the L2 resue across waves.
+        var BM = mma_mn[0] // cta_group
+        for tile_size in [1, 2, 4, 8]:
+            var num_ctas_m = ceildiv(M, BM)
+            # When tile_size is small, it's possible that a wave has more ctas
+            # then num_ctas_m * tile_size and num_ctas_per_wave_m > num_ctas_m.
+            # The ctas mapping will "wrap around" and include following tile_sizes.
+            var num_ctas_per_wave_m = ceildiv(num_SMs, tile_size)
+            var num_ctas_per_wave_n = tile_size * ceildiv(
+                num_ctas_per_wave_m, num_ctas_m
+            )
+            num_ctas_per_wave_m = min(num_ctas_per_wave_m, num_ctas_m)
+            var load_volume_per_wave = (
+                num_ctas_per_wave_m * BM + num_ctas_per_wave_n * mma_mn[1]
+            )
+            if load_volume_per_wave < min_load_volume:
+                min_load_volume = load_volume_per_wave
+                optimal_block_swizzle_size = tile_size
+
+    # TODO: evaluate the comment's perf impact
+    # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
+    var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
+
+    var num_accum_pipeline_stages = 2 if mma_mn[1] <= 128 else 1
+
+    var scaling_kind = (
+        UMMAKind.KIND_MXF4NVF4 if a_type
+        == DType.uint8 else UMMAKind.KIND_MXF8F6F4
+    )
+
+    return BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ](
+        scaling_kind=scaling_kind,
+        mma_shape=IndexList[3](
+            mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
+        ),
+        cta_group=cta_group,
+        cluster_shape=Index(cta_group, 1, 1),
+        AB_swapped=swapAB,
+        block_swizzle_size=optimal_block_swizzle_size,
+        num_accum_pipeline_stages=num_accum_pipeline_stages,
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
+        k_group_size=k_group_size,
+    )
+
+
+fn build_block_scaled_configs[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    N: Int,
+    K: Int,
+    transpose_b: Bool = True,
+]() -> Set[
+    BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ]
+]:
+    comptime config_t = BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ]
+
+    var set = Set[config_t]()
+
+    for m in range(8, 128, 8):  # [8, 128]
+        config = choose_block_scaled_config[
+            a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+        ](m, N, K)
+        if config not in set:
+            set.add(config)
+
+    for m in range(128, 8193, 64):  # [128, 8192]
+        config = choose_block_scaled_config[
+            a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+        ](m, N, K)
+        if config not in set:
+            set.add(config)
+
+    return set^

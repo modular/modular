@@ -22,7 +22,10 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
@@ -106,22 +109,17 @@ def execute_kv_cache_ragged_rope[
     var q_device = ctx.enqueue_create_buffer[dtype](
         Int(total_seq_len) * num_q_heads * head_dim
     )
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
     var output_device = ctx.enqueue_create_buffer[dtype](len(q_device))
+    var q_layout = row_major(
+        (Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())
+    )
     with q_device.map_to_host() as q_host:
-        var q_tensor = LayoutTensor[dtype, q_layout](
-            q_host,
-            RuntimeLayout[q_layout].row_major(
-                IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-            ),
-        )
+        var q_tensor = TileTensor(q_host, q_layout)
         random(q_tensor)
     ctx.enqueue_copy(output_device, q_device)
-    var output_device_tensor = LayoutTensor[dtype, q_layout](
+    var output_device_tensor = TileTensor(
         output_device,
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-        ),
+        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     var kv_block_shape = IndexList[6](
@@ -180,9 +178,9 @@ def execute_kv_cache_ragged_rope[
         max_context_length,
     )
 
-    comptime freqs_cis_table_layout = Layout.row_major(max_seq_len, head_dim)
+    comptime freqs_cis_table_layout = row_major[max_seq_len, head_dim]()
     var freqs_cis_table_device = ctx.enqueue_create_buffer[dtype](
-        comptime (freqs_cis_table_layout.size())
+        freqs_cis_table_layout.static_product
     )
 
     num_flops_per_elem = 6
@@ -207,22 +205,12 @@ def execute_kv_cache_ragged_rope[
                 interleaved=False,
                 target="gpu",
             ](
-                LayoutTensor[dtype, q_layout](
-                    q_device,
-                    RuntimeLayout[q_layout].row_major(
-                        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-                    ),
-                ),
-                LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
-                    input_row_offsets_device,
-                    RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                        IndexList[1](batch_size + 1)
-                    ),
+                TileTensor(q_device, q_layout),
+                TileTensor(
+                    input_row_offsets_device, row_major(Idx(batch_size + 1))
                 ),
                 kv_collection_device,
-                LayoutTensor[dtype, freqs_cis_table_layout](
-                    freqs_cis_table_device
-                ),
+                TileTensor(freqs_cis_table_device, freqs_cis_table_layout),
                 None,
                 0,
                 output_device_tensor,

@@ -32,7 +32,7 @@ from max.nn.legacy.float8_config import (
     Float8Config,
 )
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines.architectures.llama3.model_config import (
+from max.pipelines.architectures.llama3_legacy.model_config import (
     create_rope_embedding,
 )
 from max.pipelines.lib.float8 import parse_float8_config
@@ -245,6 +245,7 @@ def generate_max_outputs_fp4(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Build graph with context manager

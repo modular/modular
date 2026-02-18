@@ -456,6 +456,7 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
+
     @always_inline
     fn __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
@@ -829,6 +830,31 @@ struct LayoutTensor[
             element_runtime_layout,
         )
 
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: LayoutTensor,
+        out self: LayoutTensor[
+            other.dtype,
+            other.layout,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+            element_layout = other.element_layout,
+            layout_int_type = other.layout_int_type,
+            linear_idx_type = other.linear_idx_type,
+            masked = other.masked,
+            alignment = other.alignment,
+        ],
+    ):
+        """Implicitly cast a mutable LayoutTensor to immutable.
+
+        Args:
+            other: The mutable LayoutTensor to cast from.
+        """
+        self.ptr = other.ptr
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
     @always_inline("nodebug")
     fn __merge_with__[
         other_type: type_of(
@@ -953,19 +979,16 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn as_any_origin(
-        self: Self._AsMut,
-    ) -> type_of(self).OriginCastType[MutAnyOrigin]:
-        """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
+        self,
+    ) -> type_of(self).OriginCastType[AnyOrigin[mut = Self.mut]]:
+        """Casts the origin of the `LayoutTensor` to `AnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `MutAnyOrigin`.
-
-        This requires the tensor to already be mutable as casting mutability
-        is inherently very unsafe.
+            A pointer with the origin set to `AnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `MutAnyOrigin`. However, if it is needed, keep in mind that
-        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `AnyOrigin`. However, if it is needed, keep in mind that
+        `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
         return {
@@ -973,40 +996,6 @@ struct LayoutTensor[
             self.runtime_layout,
             self.runtime_element_layout,
         }
-
-    @always_inline("nodebug")
-    fn as_any_origin(
-        self: LayoutTensor[mut=False, ...],
-    ) -> type_of(self).OriginCastType[ImmutAnyOrigin]:
-        """Casts the origin of the immutable `LayoutTensor` to `ImmutAnyOrigin`.
-
-        Returns:
-            A tensor with the origin set to `ImmutAnyOrigin`.
-
-        It is usually preferred to maintain concrete origin values instead of
-        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the tensor.
-        """
-        return {
-            self.ptr.as_any_origin(),
-            self.runtime_layout,
-            self.runtime_element_layout,
-        }
-
-    @doc_private
-    fn as_any_origin(
-        self: LayoutTensor[...],
-    ) -> type_of(self).OriginCastType[ImmutAnyOrigin]:
-        constrained[
-            False,
-            (
-                "A LayoutTensor with unbound mutability cannot be cast to"
-                " 'AnyOrigin'. Consider using `as_immutable` or binding the"
-                " mutability explicitly before calling this function."
-            ),
-        ]()
-        abort()
 
     comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -7547,7 +7536,7 @@ fn _copy_dram_to_local[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor[mut=True, ...],
-    src: LayoutTensor,
+    src: LayoutTensor[mut=False, ...],
     buffer: AMDBufferResource,
     offset: Optional[UInt] = None,
 ):
@@ -7619,8 +7608,8 @@ fn copy_dram_to_local[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor[mut=True, ...],
-    src: LayoutTensor,
-    src_base: LayoutTensor,
+    src: LayoutTensor[mut=False, ...],
+    src_base: LayoutTensor[mut=False, ...],
     offset: Optional[UInt] = None,
 ):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
@@ -7687,7 +7676,7 @@ fn _copy_dram_to_local[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor[mut=True, ...],
-    src_iter: LayoutTensorIter,
+    src_iter: LayoutTensorIter[mut=False, ...],
     buffer: AMDBufferResource,
 ):
     comptime assert is_amd_gpu(), "This function is only supported on AMD GPUs."
@@ -7713,7 +7702,7 @@ fn copy_dram_to_local[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor[mut=True, ...],
-    src_iter: LayoutTensorIter,
+    src_iter: LayoutTensorIter[mut=False, ...],
     bounds: UInt32,
 ):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
@@ -7773,7 +7762,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor[mut=False, ...]):
     """Efficiently copy data from global memory (DRAM) to registers.
 
     This function implements an optimized memory transfer operation from
@@ -8398,6 +8387,36 @@ struct LayoutTensorIter[
         self.runtime_layout = rebind[Self.RuntimeLayoutType](runtime_layout)
         self.dimension_bound = dimension_bound
         self.idx = idx
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: LayoutTensorIter,
+        out self: LayoutTensorIter[
+            other.dtype,
+            other.layout,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+            alignment = other.alignment,
+            circular = other.circular,
+            axis = other.axis,
+            layout_int_type = other.layout_int_type,
+            linear_idx_type = other.linear_idx_type,
+            masked = other.masked,
+        ],
+    ):
+        """Implicitly cast a mutable LayoutTensorIter to immutable.
+
+        Args:
+            other: The mutable LayoutTensorIter to cast from.
+        """
+        self.ptr = other.ptr
+        self.bound = other.bound
+        self.stride = other.stride
+        self.runtime_layout = other.runtime_layout
+        self.offset = other.offset
+        self.dimension_bound = other.dimension_bound
+        self.idx = other.idx
 
     comptime LayoutTensorType = LayoutTensor[
         Self.dtype,

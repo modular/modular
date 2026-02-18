@@ -17,10 +17,10 @@ from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import PipelineConfig
 from transformers import LlamaConfig
 
-from ..llama3.weight_adapters import (
+from ..llama3_legacy.weight_adapters import (
     _convert_safetensor_with_model_config,
 )
-from ..llama3.weight_adapters import (
+from ..llama3_legacy.weight_adapters import (
     convert_gguf_state_dict as llama_convert_gguf_state_dict,
 )
 

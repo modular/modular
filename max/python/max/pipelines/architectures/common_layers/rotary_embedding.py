@@ -114,7 +114,7 @@ class RotaryEmbedding(Module[..., Tensor]):
 
     def compute_scale(self, user_scale: float | None = None) -> float:
         n = self.head_dim
-        return user_scale if user_scale else math.sqrt(1.0 / n)
+        return user_scale if user_scale is not None else math.sqrt(1.0 / n)
 
     @property
     def local_parameters(self) -> Iterable[tuple[str, Tensor]]:

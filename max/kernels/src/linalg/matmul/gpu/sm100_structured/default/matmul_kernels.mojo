@@ -58,9 +58,23 @@ from gpu.primitives.grid_controls import (
 )
 from gpu.sync import syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor, RuntimeLayout
-from ..structured_kernels.tile_types import lt_to_tt
-from layout.int_tuple import IntTuple
+from layout import Layout as LegacyLayout, LayoutTensor
+from layout._layout import (
+    Layout as _NewLayout,
+    TensorLayout,
+    row_major,
+    ComptimeInt,
+    CoordLike,
+)
+from builtin.variadics import Variadic
+from layout._coord import Coord, Idx, coord
+from layout._tile_tensor import TileTensor
+from ..structured_kernels.tile_types import (
+    GMEMTile,
+    TMATile,
+    TmaOpType,
+    static_row_major,
+)
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -107,7 +121,7 @@ from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
 )
-from ..structured_kernels.tile_loader import TileLoaderTMA
+from ..structured_kernels.tile_loader import TileLoader
 from ..structured_kernels.tile_scheduler import TileScheduler
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
@@ -159,7 +173,7 @@ struct B200MatmulSmem[
     bank-conflict-free access patterns for tensor core operations.
 
     Type aliases are provided for tile types (ATile, BTile, CTile) to enable
-    cleaner function signatures without verbose LayoutTensor declarations.
+    cleaner function signatures.
     """
 
     # ========== Derived Constants ==========
@@ -197,8 +211,7 @@ struct B200MatmulSmem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Input tiles: A and B matrices
-    # Tiles are stored with row_major layout and converted to swizzled layouts
-    # at TMA/MMA boundaries using LayoutTensor construction.
+    # Tiles use TileTensor with swizzled layouts, passed directly to TMA/MMA.
     comptime InputTiles = StandardTileStorage[
         Self.a_type,
         Self.b_type,
@@ -291,13 +304,6 @@ struct BlackwellMatmulSM100Kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    # Tensor layouts (from TMA descriptors)
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
     # Configuration
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -464,8 +470,8 @@ struct BlackwellMatmulSM100Kernel[
     # Loaders wrapping TMA operations. Orchestration is in kernel.
     # Origins inferred from constructor Pointer arguments.
 
-    comptime ATileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
-    comptime BTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    # TileLoader types are constructed at call sites with inferred tma_origin.
+    # See load_input_tiles() and the run/run_splitk loader construction.
 
     # Constants for TMA expected_bytes calculation
     comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
@@ -479,10 +485,59 @@ struct BlackwellMatmulSM100Kernel[
     ) * Self.config.k_group_size
 
     # TMA descriptor layout sizes for peer CTA slicing
-    comptime a_tma_load_size = Self.a_desc_layout.size()
-    comptime b_tma_load_size = Self.b_desc_layout.size()
-    comptime a_tma_rows = Self.a_desc_layout.shape[0].value()
-    comptime b_tma_rows = Self.b_desc_layout.shape[0].value()
+    # ========== TMA Layouts (computed from config, new Layout types) ==========
+
+    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
+    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
+        Self.a_type
+    ]()
+    comptime b_swizzle_elems = Self.config.b_swizzle.bytes() // size_of[
+        Self.b_type
+    ]()
+    comptime c_swizzle_elems = Self.config.c_swizzle.bytes() // size_of[
+        Self.c_type
+    ]()
+
+    # C tile shape depends on MMA shape, cta_group, and AB_swapped.
+    # Must match host-side create_tensor_tile tile/desc dimensions exactly.
+    # When AB_swapped, output_tile_shape is transposed, so OutputM is the
+    # N-dimension and always used as dim0. When not AB_swapped and MMA_M=128
+    # with cta_group=2, dim0 is forced to 64 (two 64-row halves).
+    comptime c_tile_dim0 = Self.OutputM if (
+        Self.MMA_M == 256 or Self.cta_group == 1 or Self.config.AB_swapped
+    ) else 64
+    # When AB_swapped, dim1 uses swizzle elements; otherwise OutputN.
+    comptime c_tile_dim1 = Self.c_swizzle_elems if (
+        Self.config.AB_swapped
+    ) else Self.OutputN
+
+    comptime ATileLayout = static_row_major[Self.a_tile_dim0, Self.BK]
+    comptime ADescLayout = static_row_major[
+        Self.a_tile_dim0, Self.a_swizzle_elems
+    ]
+    comptime BTileLayout = static_row_major[Self.b_tile_dim0, Self.BK]
+    comptime BDescLayout = static_row_major[
+        Self.b_tile_dim0, Self.b_swizzle_elems
+    ]
+    comptime CTileLayout = static_row_major[Self.c_tile_dim0, Self.c_tile_dim1]
+    comptime CDescLayout = static_row_major[
+        Self.c_tile_dim0, Self.c_swizzle_elems
+    ]
+
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    # Inner TMATensorTile types for kernel run() (DevicePassable)
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaOp = Self.CTmaTile.InnerType
+
+    # TMA load size constants (from desc layout dimensions)
+    comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim0 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim0
+    comptime b_tma_rows = Self.b_tile_dim0
 
     # ========== Epilogue Configuration ==========
     # Note: stageN is typically c_smem_layout.shape[1] for non-transposed output
@@ -609,9 +664,9 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn init_barriers(
         ctx: Self.Context,
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
         input_barriers: Self.SmemType.Pipelines.InputBarriers,
         accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
         clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
@@ -725,18 +780,18 @@ struct BlackwellMatmulSM100Kernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        a_loader: TileLoaderTMA[
+        a_loader: TileLoader[
             a_tma_origin,
             Self.a_type,
-            Self.a_layout,
-            Self.a_desc_layout,
+            Self.ATileLayout,
+            Self.ADescLayout,
             cta_group = Self.cta_group,
         ],
-        b_loader: TileLoaderTMA[
+        b_loader: TileLoader[
             b_tma_origin,
             Self.b_type,
-            Self.b_layout,
-            Self.b_desc_layout,
+            Self.BTileLayout,
+            Self.BDescLayout,
             cta_group = Self.cta_group,
         ],
         tiles: InputProducerStage[
@@ -759,8 +814,8 @@ struct BlackwellMatmulSM100Kernel[
         - Peer CTA slicing for 2-SM MMA
 
         Args:
-            a_loader: TileLoaderTMA for A matrix.
-            b_loader: TileLoaderTMA for B matrix.
+            a_loader: TileLoader for A matrix.
+            b_loader: TileLoader for B matrix.
             tiles: InputProducerStage context with encapsulated tile access.
             iter_idx: K iteration index (base index).
             work_m_coord: M coordinate of the output tile.
@@ -833,9 +888,9 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run(
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -888,12 +943,20 @@ struct BlackwellMatmulSM100Kernel[
         var work_iter = scheduler.work_iterator()
 
         # Create tile loaders for A and B matrices
-        var a_loader = Self.ATileLoaderType(
-            Pointer(to=a_tma_op), ctx.a_multicast_mask
-        )
-        var b_loader = Self.BTileLoaderType(
-            Pointer(to=b_tma_op), ctx.b_multicast_mask
-        )
+        var a_loader = TileLoader[
+            _,
+            Self.a_type,
+            Self.ATileLayout,
+            Self.ADescLayout,
+            cta_group = Self.cta_group,
+        ](Pointer(to=a_tma_op), ctx.a_multicast_mask)
+        var b_loader = TileLoader[
+            _,
+            Self.b_type,
+            Self.BTileLayout,
+            Self.BDescLayout,
+            cta_group = Self.cta_group,
+        ](Pointer(to=b_tma_op), ctx.b_multicast_mask)
 
         var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
 
@@ -1036,12 +1099,12 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run_splitk[
-        reduction_layout: Layout,
+        reduction_layout: TensorLayout,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
-        reduction_tensor_lt: LayoutTensor[
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
+        reduction_tensor: TileTensor[
             Self.config.accum_type, reduction_layout, MutAnyOrigin
         ],
         lock_ptr: UnsafePointer[UInt8],
@@ -1058,16 +1121,13 @@ struct BlackwellMatmulSM100Kernel[
             a_tma_op: TMA descriptor for matrix A.
             b_tma_op: TMA descriptor for matrix B.
             c_tma_op: TMA descriptor for matrix C.
-            reduction_tensor_lt: Workspace for partial results from each split.
+            reduction_tensor: Workspace for partial results from each split.
             lock_ptr: Synchronization locks for reduction coordination.
             cluster_dim: Cluster dimensions.
             mnk: Problem dimensions (M, N, K).
             workspace: Workspace buffer for profiling/scheduling.
         """
         Self.validate_constraints()
-
-        # Convert kernel arg to TileTensor
-        var reduction_tensor = lt_to_tt(reduction_tensor_lt)
 
         # Access shared memory via bitcast
         ref smem = external_memory[
@@ -1139,12 +1199,20 @@ struct BlackwellMatmulSM100Kernel[
         var work_iter = scheduler.work_iterator()
 
         # Create tile loaders for A and B matrices
-        var a_loader = Self.ATileLoaderType(
-            Pointer(to=a_tma_op), ctx.a_multicast_mask
-        )
-        var b_loader = Self.BTileLoaderType(
-            Pointer(to=b_tma_op), ctx.b_multicast_mask
-        )
+        var a_loader = TileLoader[
+            _,
+            Self.a_type,
+            Self.ATileLayout,
+            Self.ADescLayout,
+            cta_group = Self.cta_group,
+        ](Pointer(to=a_tma_op), ctx.a_multicast_mask)
+        var b_loader = TileLoader[
+            _,
+            Self.b_type,
+            Self.BTileLayout,
+            Self.BDescLayout,
+            cta_group = Self.cta_group,
+        ](Pointer(to=b_tma_op), ctx.b_multicast_mask)
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
             warp_role, Self.max_profiled_tiles_per_SM
@@ -1259,7 +1327,7 @@ struct BlackwellMatmulSM100Kernel[
                                     smem.c_tiles(),
                                     output_stage,
                                     scheduler,
-                                    reduction_tensor_lt,
+                                    reduction_tensor,
                                     current,
                                     (mnk[0], mnk[1]),
                                     ctx.elect_one_warp,
@@ -1277,11 +1345,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
+    c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -1313,6 +1377,31 @@ struct BlackwellMatmulSM100FallbackKernel[
     comptime num_m_mmas = Self.BM // Self.MMA_M
     comptime num_n_mmas = Self.BN // Self.MMA_N
     comptime num_k_mmas = Self.BK // Self.MMA_K
+
+    # TMA layouts for A and B (computed from config)
+    comptime a_swizzle_elems = Self.a_swizzle.bytes() // size_of[Self.a_type]()
+    comptime b_swizzle_elems = Self.b_swizzle.bytes() // size_of[Self.b_type]()
+
+    comptime ATileLayout = static_row_major[Self.BM, Self.BK]
+    comptime ADescLayout = static_row_major[Self.BM, Self.a_swizzle_elems]
+    comptime BTileLayout = static_row_major[Self.BN, Self.BK]
+    comptime BDescLayout = static_row_major[Self.BN, Self.b_swizzle_elems]
+
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaOp = Self.BTmaTile.InnerType
+
+    # Static N dimension (columns) from C layout stride -- used for output tiling
+    comptime static_N = Self.c_layout.static_stride[0]
+
+    # Row-major stride layout [N, 1] for C global memory tiles.
+    # Used as stride_layout in tile/tile_with_offset to override
+    # the parent TileTensor's dynamic strides with static values.
+    comptime CGmemStrideLayout = _NewLayout[
+        Variadic.types[T=CoordLike, ComptimeInt[Self.static_N], ComptimeInt[1]],
+        Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
+    ]
 
     comptime a_smem_layout = tile_layout_k_major[
         Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.a_swizzle
@@ -1364,9 +1453,9 @@ struct BlackwellMatmulSM100FallbackKernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     fn run(
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c_lt: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
         num_iters: UInt,
     ):
         """Run the fallback matmul kernel.
@@ -1374,15 +1463,10 @@ struct BlackwellMatmulSM100FallbackKernel[
         Args:
             a_tma_op: TMA descriptor for matrix A.
             b_tma_op: TMA descriptor for matrix B.
-            c_lt: Output tensor C (LayoutTensor, not TMA).
+            c: Output tensor C (TileTensor, direct global memory writes).
             num_iters: Number of K-dimension iterations.
         """
         Self.validate_constraints()
-
-        # Convert kernel arg to TileTensor
-        var c_tt = lt_to_tt(c_lt)
-        # Reconstruct LayoutTensor for internal operations (uses LT-specific APIs)
-        var c = c_lt
 
         # Setup shared memory for A and B tiles
         var a_smem = rebind[SMemPtr[Scalar[Self.a_type]]](
@@ -1498,49 +1582,48 @@ struct BlackwellMatmulSM100FallbackKernel[
             tcgen05_release_allocation_lock[1]()
             tcgen05_dealloc[1](tmem_addr, Self.max_tmem_cols)
 
-        # Write output to global memory
+        # Write output to global memory using tile/vectorize/distribute.
+        # stride_layout overrides the parent's dynamic strides with
+        # explicit static strides, enabling vectorize/distribute (all_dims_known).
         comptime num_warps = Self.num_threads // WARP_SIZE
+        comptime N = Self.static_N
         var warp_id = get_warp_id()
 
-        ctile, ctile_coords, _ = c.tile_with_offset[Self.BM, Self.BN](
-            Int(block_idx.y), Int(block_idx.x)
-        )
-        comptime c_coord_type = type_of(ctile_coords)
+        var ctile, ctile_coords, _ = c.tile_with_offset[
+            Self.BM, Self.BN, stride_layout = Self.CGmemStrideLayout
+        ](Coord(Idx(Int(block_idx.y)), Idx(Int(block_idx.x))))
 
         var M = c.dim[0]()
-        comptime N = c.layout.shape[1].value()
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
 
             @parameter
             for n_mma in range(Self.num_n_mmas):
-                comptime mma_id = n_mma * Self.num_m_mmas + m_mma
-
-                var c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                    ctile.tile_with_offset[Self.MMA_M // num_warps, Self.MMA_N](
-                        4 * m_mma + Int(warp_id), n_mma
+                var warp_tile, warp_coords, _ = ctile.tile_with_offset[
+                    Self.MMA_M // num_warps,
+                    Self.MMA_N,
+                    stride_layout = Self.CGmemStrideLayout,
+                ](
+                    Coord(
+                        Idx(4 * m_mma + Int(warp_id)),
+                        Idx(n_mma),
                     )
                 )
-                var c_gmem_warp_tile_coords = ctile_coords + rebind[
-                    c_coord_type
-                ](_c_gmem_warp_tile_coords)
+                var warp_m = ctile_coords[0] + warp_coords[0]
+                var warp_n = ctile_coords[1] + warp_coords[1]
 
-                var c_gmem_frag, _c_gmem_frag_coords, _ = (
-                    c_gmem_warp_tile.vectorize[1, 2]().distribute_with_offset[
-                        Layout.row_major(8, 4)
-                    ](lane_id())
-                )
-                var new_c_gmem_frag_coords = rebind[c_coord_type](
-                    _c_gmem_frag_coords
-                )
-                new_c_gmem_frag_coords[1] *= 2
-                var c_gmem_frag_coords = (
-                    c_gmem_warp_tile_coords + new_c_gmem_frag_coords
-                )
+                var vectorized = warp_tile.vectorize[1, 2]()
+                var dist_result = vectorized.distribute_with_offset[
+                    row_major[8, 4]()
+                ](Int(lane_id()))
+                var frag = dist_result[0]
+                var frag_coords = dist_result[1]
+                var frag_m = warp_m + frag_coords[0]
+                var frag_n = warp_n + frag_coords[1] * 2
 
-                comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
-                comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
+                comptime num_vecs_m = type_of(frag).static_shape[0]
+                comptime num_vecs_n = type_of(frag).static_shape[1]
 
                 @parameter
                 for n_vec in range(num_vecs_n):
@@ -1548,13 +1631,11 @@ struct BlackwellMatmulSM100FallbackKernel[
                     @parameter
                     for m_vec in range(num_vecs_m):
                         comptime i_vec = n_vec * num_vecs_m + m_vec
-                        comptime dst_idx = type_of(c_gmem_frag).layout(
-                            IntTuple(m_vec, n_vec)
-                        )
-                        comptime dst_m_offset = dst_idx // N
-                        comptime dst_n_offset = dst_idx % N
-                        var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
-                        var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
+                        var dst_idx = Int(frag.layout(coord[m_vec, n_vec]()))
+                        var dst_m_offset = dst_idx // N
+                        var dst_n_offset = dst_idx % N
+                        var m = UInt32(frag_m + dst_m_offset)
+                        var n = UInt32(frag_n + dst_n_offset)
 
                         if m < UInt32(M) and n < UInt32(N):
                             var c_mn = SIMD[Self.accum_type, 2](
@@ -1573,6 +1654,6 @@ struct BlackwellMatmulSM100FallbackKernel[
                                     (Int(m), Int(n)), c_mn
                                 )
                             else:
-                                c_gmem_frag[m_vec, n_vec] = rebind[
-                                    c_gmem_frag.element_type
+                                frag[m_vec, n_vec] = rebind[
+                                    type_of(frag).ElementType
                                 ](c_mn)

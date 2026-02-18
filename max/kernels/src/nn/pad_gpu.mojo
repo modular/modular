@@ -286,7 +286,9 @@ fn get_padding_output_shape[
     input_shape: IndexList[rank],
     paddings: TileTensor[DType.int, ...],
 ) -> IndexList[rank]:
-    comptime assert paddings.rank == 1 and paddings.static_shape[0] == 2 * rank
+    comptime assert (
+        paddings.flat_rank == 1 and paddings.static_shape[0] == 2 * rank
+    )
     var output_shape = IndexList[rank]()
     for i in range(rank):
         var before = paddings[2 * i]

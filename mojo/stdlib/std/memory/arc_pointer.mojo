@@ -163,16 +163,16 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         )
         self._inner = pointer_to_inner.bitcast[Self._inner_type]()
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy an existing reference. Increment the refcount to the object.
 
         Args:
-            existing: The existing reference.
+            copy: The existing reference.
         """
-        # Order here does not matter since `existing` can't be destroyed until
+        # Order here does not matter since `copy` can't be destroyed until
         # sometime after we return.
-        existing._inner[].add_ref()
-        self._inner = existing._inner
+        copy._inner[].add_ref()
+        self._inner = copy._inner
 
     @no_inline
     fn __del__(deinit self):
@@ -187,12 +187,12 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
 
     # FIXME: The origin returned for this is currently self origin, which
     # keeps the ArcPointer object alive as long as there are references into it.  That
-    # said, this isn't really the right modeling, we need hierarchical origins
+    # said, this isn't really the right modeling, we need indirect origins
     # to model the mutability and invalidation of the returned reference
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref[self_life] self) -> ref[unsafe_origin_mutcast[self_life]] Self.T:
+    ](ref[self_life] self) -> ref[MutOrigin(unsafe_mut_cast=self_life)] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:

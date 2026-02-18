@@ -25,6 +25,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_mla_decode_paged_variable.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -73,6 +77,7 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: PRDT-506
     "test_flash_attention.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: MSTDL-2240
         "//conditions:default": [],
     }),  # FIXME: MOCO-3049
     "test_padding_gpu.mojo": select({
@@ -91,6 +96,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3009
+    "test_fused_qk_rope.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3104
     "test_fused_qk_rope_ragged.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -118,6 +127,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_scatter_set_constant.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
 }
 
 _FILECHECK_TESTS = [
@@ -154,12 +167,20 @@ _FILECHECK_TESTS = [
         copts = [],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
+            # On B200, the SM100 MLA path OOB was fixed (kv_row clamping),
+            # so test_mla.mojo can run with assertions enabled.
+            "//:b200_gpu": src not in [
+                "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
+                "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
+            ],
+            # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
+            # infrastructure on boundary tiles (num_keys not aligned to BN).
+            # The H100 path uses a different code path (mla.mojo) where the
+            # OOB is in the multistage-MMA / async-copy masked tile handling.
+            # The OOB is functionally benign (masked out by _kernel_mask).
             "//conditions:default": src not in [
-                "test_layer_norm.mojo",
-                "test_topk_gpu_fi.mojo",  # Extreme register pressure, even simplified assertions cause issues
-                "test_mha_chunked_causal_mask.mojo",  # KERN-2339: bounds check reveals kernel bug
-                "test_mla.mojo",  # KERN-2339: bounds check reveals kernel bug; fails on H100
-                "test_flash_attention.mojo",  # KERN-2339: bounds check reveals kernel bug
+                "test_mla.mojo",
+                "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
         }),

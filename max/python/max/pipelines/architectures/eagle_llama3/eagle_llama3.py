@@ -21,8 +21,8 @@ from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.transformer import TransformerBlock
 
-from ..llama3.llama3 import Llama3
-from ..llama3.model_config import Llama3Config
+from ..llama3_legacy.llama3 import Llama3
+from ..llama3_legacy.model_config import Llama3Config
 
 
 class EagleLlama3(Llama3):

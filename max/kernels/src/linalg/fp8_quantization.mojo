@@ -47,6 +47,7 @@ from .matmul import matmul
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
+from .matmul.gpu.sm100_structured.structured_kernels.tile_types import lt_to_tt
 from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
@@ -723,14 +724,20 @@ fn naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    a: LayoutTensor[
+        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, b_type, address_space = AddressSpace.GENERIC, ...
+    ],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -954,10 +961,10 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
 ):
     # Note: This is a naive kernel that supports a generalized blockwise scaled
     # fp8 matmul.
@@ -1337,14 +1344,30 @@ fn blockwise_scaled_fp8_with_epilogue[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, _, _, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, _, _, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[b_type, _, _, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, c_type, _, _, address_space = AddressSpace.GENERIC, ...
+    ],
+    a: LayoutTensor[
+        mut=False, a_type, _, _, address_space = AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, b_type, _, _, address_space = AddressSpace.GENERIC, ...
+    ],
     a_scales: LayoutTensor[
-        a_scales_type, _, _, address_space = AddressSpace.GENERIC, ...
+        mut=False,
+        a_scales_type,
+        _,
+        _,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     b_scales: LayoutTensor[
-        b_scales_type, _, _, address_space = AddressSpace.GENERIC, ...
+        mut=False,
+        b_scales_type,
+        _,
+        _,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1385,13 +1408,15 @@ fn blockwise_scaled_fp8_with_epilogue[
 
             blockwise_fp8_matmul[
                 transpose_b=transpose_b,
+                a_scales_type=a_scales_type,
+                b_scales_type=b_scales_type,
                 config=matmul_config,
             ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
+                lt_to_tt(c),
+                lt_to_tt(a),
+                lt_to_tt(b),
+                lt_to_tt(a_scales),
+                lt_to_tt(b_scales),
                 ctx,
             )
         else:
@@ -1425,13 +1450,15 @@ fn blockwise_scaled_fp8_with_epilogue[
 
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
                     config=matmul_config,
                 ](
-                    c,
-                    a,
-                    b,
-                    a_scales,
-                    b_scales,
+                    lt_to_tt(c),
+                    lt_to_tt(a),
+                    lt_to_tt(b),
+                    lt_to_tt(a_scales),
+                    lt_to_tt(b_scales),
                     ctx,
                 )
                 elementwise[epilogue_wrapper, simd_size, target="gpu"](

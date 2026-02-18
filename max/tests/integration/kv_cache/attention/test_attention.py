@@ -48,9 +48,9 @@ BATCH_SIZE = 4
 @pytest.mark.parametrize(
     "cache_strategy,mask_strategy",
     [
-        (KVCacheStrategy.PAGED, MHAMaskVariant.CAUSAL_MASK),
-        (KVCacheStrategy.PAGED, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
-        (KVCacheStrategy.PAGED, MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
+        ("paged", MHAMaskVariant.CAUSAL_MASK),
+        ("paged", MHAMaskVariant.CHUNKED_CAUSAL_MASK),
+        ("paged", MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
     ],
 )
 def test_kv_cache_ragged_attention(
@@ -84,6 +84,7 @@ def test_kv_cache_ragged_attention(
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (

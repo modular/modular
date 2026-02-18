@@ -27,8 +27,11 @@ from max.nn import Linear
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
+from ...common_layers.functional_kernels import (
+    grouped_matmul_ragged,
+    moe_create_indices,
+)
 from ..model_config import GptOssConfig
-from .functional_kernels import grouped_matmul_ragged, moe_create_indices
 from .moe_base import MoE, MoEGate
 
 

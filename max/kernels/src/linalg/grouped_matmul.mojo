@@ -13,7 +13,7 @@
 from collections import Optional
 from math import ceildiv
 from sys import align_of, simd_width_of, size_of
-from sys.info import has_amd_gpu_accelerator
+from sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -39,7 +39,6 @@ from gpu import (
     warp_id,
     lane_id,
     thread_idx,
-    warp_id as get_warp_id,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import external_memory, fence_mbarrier_init
@@ -500,7 +499,7 @@ fn grouped_matmul_kernel_sm100[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // WARP_SIZE
-    warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     comptime c_gmem_type = LayoutTensor[
@@ -1070,7 +1069,7 @@ fn grouped_matmul[
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
     comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
     comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
-    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
+    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
 
     @parameter
     if is_sm90_kernel_applicable:

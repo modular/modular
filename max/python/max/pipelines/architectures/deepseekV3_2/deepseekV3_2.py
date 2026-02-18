@@ -52,7 +52,6 @@ from max.nn.legacy.rotary_embedding import (
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
-    distribute_value,
     forward_sharded_layers,
 )
 
@@ -455,14 +454,10 @@ class DeepseekV3_2(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        freqs_cis = ops.distributed_broadcast(
-            self.rope.freqs_cis.to(devices[0]), signal_buffers
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets.to(devices[0]), signal_buffers
         )
-        # Note: input_row_offsets uses distribute_value instead of broadcast
-        # because its size depends on batch size and may be too small for
-        # the broadcast kernel's SIMD requirements.
-        # TODO: Rebase once kernel fix is merged
-        input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
         if len(devices) > 1:
             # Split batch across devices for data-parallel attention.
@@ -580,7 +575,7 @@ class DeepseekV3_2(Module):
                 )
                 assert isinstance(h, list)
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
@@ -591,12 +586,10 @@ class DeepseekV3_2(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = ops.distributed_broadcast(
-                last_token_h, signal_buffers
-            )
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
@@ -666,7 +659,7 @@ class DeepseekV3_2(Module):
             hidden_states = h[0] if isinstance(h, list) else h
             ret_val += (hidden_states,)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_h,)
+            ret_val += (last_token_distributed[0],)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)[0]
             ret_val += (norm_h,)

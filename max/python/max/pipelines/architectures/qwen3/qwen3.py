@@ -16,10 +16,6 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from max.pipelines.architectures.qwen3vl_moe.nn.moe import Qwen3VLMoE
 
 from max.dtype import DType
 from max.graph import (
@@ -39,21 +35,16 @@ from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.moe import MoE
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
+from max.pipelines.architectures.qwen3.layers.moe import Qwen3MoEGate
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
-
-
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    """Distribute a tensor to multiple devices."""
-    return [v.to(device) for device in devices]
 
 
 class Qwen3TransformerBlock(Module):
@@ -125,7 +116,7 @@ class Qwen3TransformerBlock(Module):
         config: Qwen3Config,
         layer_idx: int,
         linear_cls: Callable[..., Linear],
-    ) -> MLP | Qwen3VLMoE:
+    ) -> MLP | MoE:
         """Get MLP or MoE layer based on config and layer index."""
         use_moe = (
             config.num_experts > 0
@@ -134,18 +125,14 @@ class Qwen3TransformerBlock(Module):
         )
 
         if use_moe:
-            from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
-                Qwen3VLMoE,
-            )
-
-            return Qwen3VLMoE(
+            return MoE(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.num_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
+                gate_cls=Qwen3MoEGate,
                 dtype=config.dtype,
-                mlp_only_layers=config.mlp_only_layers,
                 float8_config=config.float8_config,
             )
         else:
@@ -223,7 +210,7 @@ class Qwen3TransformerBlock(Module):
         return hs
 
 
-class Qwen3(Module):
+class Qwen3(DistributedLogitsPostprocessMixin, Module):
     """Unified Qwen3 model that supports both single and multi-GPU inference."""
 
     def __init__(self, config: Qwen3Config) -> None:
@@ -344,9 +331,9 @@ class Qwen3(Module):
             h = [hi * self.embedding_multiplier for hi in h]
 
         # Distribute RoPE frequencies and row offsets to all devices
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
-        input_row_offsets_list = distribute_value(
-            input_row_offsets, self.devices
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
+        input_row_offsets_list = ops.distributed_broadcast(
+            input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
         # Process through transformer layers
@@ -361,77 +348,9 @@ class Qwen3(Module):
                 signal_buffers,
             )
 
-        # Get last token for logits computation
-        h0 = h[0]  # Use first device's output for indexing
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
-
-        # Apply final norm
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
+        return self._postprocess_logits(
+            h, input_row_offsets_list, return_n_logits, signal_buffers
         )
-
-        # Get logits - ColumnParallelLinear returns list[TensorValue]
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        # Handle additional logits based on return_logits setting
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-            computed_offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(computed_offsets, shape=(-1,))
-
-            # Gather from all hidden states
-            variable_tokens = [
-                ops.gather(h_device, last_indices, axis=0) for h_device in h
-            ]
-            variable_normed = forward_sharded_layers(
-                self.norm_shards, variable_tokens
-            )
-
-            logits = ops.cast(
-                self.lm_head(variable_normed, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = forward_sharded_layers(self.norm_shards, h)
-
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = input_row_offsets
-
-        if logits is not None and offsets is not None:
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
 
     def input_types(
         self, kv_params: KVCacheParams
