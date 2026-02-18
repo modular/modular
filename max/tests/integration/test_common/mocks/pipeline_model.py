@@ -26,7 +26,6 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    KVCacheStrategy,
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -159,7 +158,7 @@ class MockPipelineModel(PipelineModel):
             head_dim=1,
             num_layers=1,
             enable_prefix_caching=False,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

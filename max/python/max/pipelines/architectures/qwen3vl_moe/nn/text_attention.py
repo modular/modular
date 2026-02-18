@@ -30,7 +30,7 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
@@ -77,7 +77,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
         self.float8_config = float8_config
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy is not supported "
                 "in Qwen3VLMoEDecoderAttentionWithRope."

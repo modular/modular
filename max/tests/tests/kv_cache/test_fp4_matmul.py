@@ -29,7 +29,6 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 
@@ -95,7 +94,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )

@@ -23,7 +23,6 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from max.nn.legacy.linear import Linear
@@ -229,7 +228,7 @@ def generate_qwen3_max_outputs(
         for weight_name, value in attention_weights.items()
     }
 
-    kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
+    kv_cache_config = KVCacheConfig(cache_strategy="paged")
     kv_params = KVCacheParams(
         dtype=dtype,
         n_kv_heads=num_kv_heads,

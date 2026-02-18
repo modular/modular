@@ -15,7 +15,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.llama3_legacy import weight_adapters
 from max.pipelines.lib import (
     RopeType,
@@ -34,8 +33,8 @@ qwen2_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,

@@ -991,7 +991,7 @@ class MAXModelConfig(MAXModelConfigBase):
             self.quantization_encoding, []
         )
         if (
-            self.kv_cache.cache_strategy == KVCacheStrategy.MODEL_DEFAULT
+            self.kv_cache.cache_strategy == "model_default"
             and supported_cache_strategies
         ):
             default_strategy = supported_cache_strategies[0]

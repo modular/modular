@@ -183,8 +183,8 @@ class SupportedArchitecture:
                 ],
                 default_encoding=SupportedEncoding.q4_k,
                 supported_encodings={
-                    SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-                    SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+                    SupportedEncoding.q4_k: ["paged"],
+                    SupportedEncoding.bfloat16: ["paged"],
                     # Add other encodings your model supports
                 },
                 pipeline_model=MyModel,

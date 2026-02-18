@@ -19,7 +19,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -45,7 +45,7 @@ def create_local_connector(
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=True,
         host_kvcache_swap_space_gb=999,

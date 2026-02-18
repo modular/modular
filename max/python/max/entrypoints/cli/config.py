@@ -27,6 +27,7 @@ from pathlib import Path
 from types import SimpleNamespace, UnionType
 from typing import (
     Any,
+    Literal,
     TypeGuard,
     TypeVar,
     Union,
@@ -109,6 +110,9 @@ def validate_field_type(field_type: Any) -> bool:
     if get_origin(test_type) is dict:
         return True
 
+    if get_origin(test_type) is Literal:
+        return True
+
     for valid_type in VALID_CONFIG_TYPES:
         if valid_type == test_type:
             return True
@@ -133,6 +137,10 @@ def get_field_type(field_type: Any):  # noqa: ANN201
         field_type = click.Path(path_type=pathlib.Path)
     elif get_origin(field_type) is dict or field_type is dict:
         field_type = JSONType()
+    elif get_origin(field_type) is Literal:
+        field_type = click.Choice(
+            [str(v) for v in get_args(field_type)], case_sensitive=False
+        )
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)

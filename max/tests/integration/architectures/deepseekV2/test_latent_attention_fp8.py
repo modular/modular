@@ -33,7 +33,6 @@ from max.nn.legacy.float8_config import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from max.nn.legacy.rotary_embedding import (
@@ -234,7 +233,7 @@ def generate_max_outputs_fp8(
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,

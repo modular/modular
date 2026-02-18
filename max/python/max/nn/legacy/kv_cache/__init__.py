@@ -20,6 +20,8 @@ from .cache_params import (
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
+    kernel_substring,
+    uses_opaque,
 )
 from .input_types import (
     KVCacheInputs,
@@ -42,10 +44,11 @@ __all__ = [
     "MultiKVCacheParams",
     "NestedIterableDataclass",
     "PagedCacheValues",
-    "PagedCacheValues",
     "RaggedKVCacheInputs",
     "build_max_lengths_tensor",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "estimated_memory_size",
+    "kernel_substring",
+    "uses_opaque",
 ]

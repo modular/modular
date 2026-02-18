@@ -13,7 +13,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
@@ -33,7 +32,7 @@ deepseekV2_arch = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     multi_gpu_supported=False,  # TODO(MODELS-1032): Re-enable multi-GPU
     pipeline_model=DeepseekV2Model,

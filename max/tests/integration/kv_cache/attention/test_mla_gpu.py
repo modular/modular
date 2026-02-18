@@ -26,7 +26,6 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from test_common.context_utils import create_text_context
@@ -45,7 +44,7 @@ def test_mla_prefill_plan() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         is_mla=True,
         devices=[DeviceRef.GPU()],
@@ -150,7 +149,7 @@ def test_mla_decompress_k_cache() -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         is_mla=True,
         devices=[DeviceRef.GPU()],
@@ -297,7 +296,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         is_mla=False,  # intentionally false, which is incorrect
         devices=[DeviceRef.GPU()],

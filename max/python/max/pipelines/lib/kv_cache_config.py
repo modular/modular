@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """MAX KVCache configuration."""
 
-import enum
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from max.config import ConfigFileModel
 from max.dtype import DType
@@ -28,7 +27,7 @@ from pydantic import Field, PrivateAttr
 
 class KVCacheConfig(ConfigFileModel):
     cache_strategy: KVCacheStrategy = Field(
-        default=KVCacheStrategy.MODEL_DEFAULT,
+        default="model_default",
         description=(
             "The cache strategy to use. This defaults to model_default, which "
             "selects the default strategy for the requested architecture. You "
@@ -139,10 +138,3 @@ class KVCacheConfig(ConfigFileModel):
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
         )
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for KVCacheConfig."""
-        return {
-            "KVCacheStrategy": KVCacheStrategy,
-        }

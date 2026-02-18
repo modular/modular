@@ -34,7 +34,7 @@ from .paged_kv_cache import PagedKVCacheManager
 logger = logging.getLogger("max.pipelines")
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
-    KVCacheStrategy.PAGED: PagedKVCacheManager,
+    "paged": PagedKVCacheManager,
 }
 
 
@@ -52,7 +52,7 @@ def _load_single_kv_manager(
         )
         return Mock()
 
-    if params.cache_strategy != KVCacheStrategy.PAGED:
+    if params.cache_strategy != "paged":
         raise ValueError(
             f"Found unsupported KVCache strategy: {params.cache_strategy}"
         )

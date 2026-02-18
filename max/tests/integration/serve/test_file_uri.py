@@ -22,7 +22,6 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
 from PIL import Image
 
@@ -31,7 +30,7 @@ pipeline_config = PipelineConfig(
     max_length=512,
     device_specs=[DeviceSpec.accelerator()],
     quantization_encoding=SupportedEncoding.bfloat16,
-    cache_strategy=KVCacheStrategy.PAGED,
+    cache_strategy="paged",
     max_batch_size=1,
     trust_remote_code=True,
 )

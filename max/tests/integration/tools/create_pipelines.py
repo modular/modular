@@ -35,7 +35,6 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from peft.peft_model import PeftModel
@@ -248,7 +247,7 @@ class InternVLPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             model_path=self.model_path,
             huggingface_model_revision=revision,
             max_length=max_length,
@@ -352,7 +351,7 @@ class Idefics3PipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             model_path=self.model_path,
             huggingface_model_revision=revision,
             huggingface_weight_revision=revision,
@@ -448,7 +447,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             model_path=self.model_path,
             huggingface_model_revision=revision,
             max_length=max_length,
@@ -549,7 +548,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             model_path=self.model_path,
             huggingface_model_revision=revision,
             max_length=max_length,
@@ -924,7 +923,7 @@ class LoRAOracle(PipelineOracle):
             lora_paths=[lora_path],
             max_num_loras=1,
             max_lora_rank=self.lora_rank,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             enable_prefix_caching=False,  # LoRA requires prefix caching disabled
             trust_remote_code=True,
             **self.config_params,
@@ -1306,7 +1305,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
             "max_length": 512,
-            "cache_strategy": KVCacheStrategy.PAGED,
+            "cache_strategy": "paged",
         },
         prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         device_encoding_map={

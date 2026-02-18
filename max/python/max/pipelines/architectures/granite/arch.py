@@ -13,7 +13,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -36,8 +35,8 @@ granite_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

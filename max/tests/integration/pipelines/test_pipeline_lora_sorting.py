@@ -35,7 +35,6 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    KVCacheStrategy,
 )
 from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
@@ -137,7 +136,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
             head_dim=1,
             num_layers=1,
             enable_prefix_caching=False,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             devices=[DeviceRef.from_device(d) for d in devices],
         )
 

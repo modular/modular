@@ -33,7 +33,6 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
-    KVCacheStrategy,
 )
 from max.pipelines import (
     KVCacheConfig,
@@ -353,14 +352,14 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
+        SupportedEncoding.gptq: ["paged"],
         # q4_k intentionally left out to test a valid SupportedEncoding but not
         # supported by the model (supported_encoding).
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_0: ["paged"],
+        SupportedEncoding.q6_k: ["paged"],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
+        SupportedEncoding.float8_e4m3fn: ["paged"],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -380,11 +379,9 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
-        SupportedEncoding.gptq: [
-            KVCacheStrategy.PAGED,
-        ],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.gptq: ["paged"],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -414,7 +411,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=DummyPipelineModel,
     tokenizer=DummyTextTokenizer,

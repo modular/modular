@@ -17,10 +17,9 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum
 from functools import reduce
 from operator import mul
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
@@ -37,34 +36,36 @@ from .input_types import (
 logger = logging.getLogger("max.pipelines")
 
 
-class KVCacheStrategy(str, Enum):
-    """Enumeration of supported KV cache strategies for attention mechanisms.
+KVCacheStrategy = Literal["model_default", "paged"]
+"""Supported KV cache strategies for attention mechanisms.
 
-    This enum defines the different strategies for managing key-value caches
-    in transformer models during inference.
+This defines the different strategies for managing key-value caches
+in transformer models during inference.
+"""
+
+
+def kernel_substring(strategy: KVCacheStrategy) -> str:
+    """Returns the common substring included in the kernel name for this caching strategy.
+
+    Args:
+        strategy: The cache strategy.
+
+    Returns:
+        The string representation of the cache strategy value.
     """
+    return strategy
 
-    MODEL_DEFAULT = "model_default"
-    """Use the model's default caching strategy."""
 
-    PAGED = "paged"
-    """Use paged attention for efficient memory management."""
+def uses_opaque(strategy: KVCacheStrategy) -> bool:
+    """Determines if this cache strategy uses opaque cache implementations.
 
-    def kernel_substring(self) -> str:
-        """Returns the common substring included in the kernel name for this caching strategy.
+    Args:
+        strategy: The cache strategy to check.
 
-        Returns:
-            The string representation of the cache strategy value.
-        """
-        return self.value
-
-    def uses_opaque(self) -> bool:
-        """Determines if this cache strategy uses opaque cache implementations.
-
-        Returns:
-            True if the strategy uses opaque caching, False otherwise.
-        """
-        return True
+    Returns:
+        True if the strategy uses opaque caching, False otherwise.
+    """
+    return True
 
 
 @dataclass
@@ -132,7 +133,7 @@ class KVCacheParams(KVCacheParamInterface):
     host_kvcache_swap_space_gb: float | None = None
     """Amount of host memory (in GB) to reserve for KV cache swapping. Required when swapping is enabled."""
 
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
+    cache_strategy: KVCacheStrategy = "paged"
     """Strategy to use for managing the KV cache."""
 
     page_size: int = 128
@@ -142,7 +143,7 @@ class KVCacheParams(KVCacheParamInterface):
     derived from pipeline configuration.
 
     Current constraints: the page size must be a multiple of 128 and at least 128.
-    Required when ``cache_strategy`` is ``KVCacheStrategy.PAGED``.
+    Required when ``cache_strategy`` is ``"paged"``.
     """
 
     is_mla: bool = False
@@ -192,16 +193,13 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate inputs
-        if (
-            self.enable_prefix_caching
-            and self.cache_strategy != KVCacheStrategy.PAGED
-        ):
+        if self.enable_prefix_caching and self.cache_strategy != "paged":
             raise ValueError(
                 "Prefix caching is only supported for paged cache strategy"
             )
         if (
             self.enable_kvcache_swapping_to_host
-            and self.cache_strategy != KVCacheStrategy.PAGED
+            and self.cache_strategy != "paged"
         ):
             raise ValueError(
                 "KVCache swapping to host is only supported for paged cache strategy"
@@ -220,10 +218,7 @@ class KVCacheParams(KVCacheParamInterface):
             raise ValueError(
                 "host_kvcache_swap_space_gb is required when kvcache_swapping_to_host is enabled"
             )
-        if (
-            self.page_size is None
-            and self.cache_strategy == KVCacheStrategy.PAGED
-        ):
+        if self.page_size is None and self.cache_strategy == "paged":
             raise ValueError("Page size is required for paged cache strategy")
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:

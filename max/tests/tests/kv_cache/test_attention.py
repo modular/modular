@@ -27,7 +27,6 @@ from max.nn.legacy.attention import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
@@ -38,7 +37,7 @@ def create_kv_params(n_kv_heads: int = 8) -> KVCacheParams:
         n_kv_heads=n_kv_heads,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         dtype=DType.float32,
         devices=[DeviceRef.GPU()],
@@ -58,7 +57,7 @@ def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         dtype=DType.float32,
         devices=[DeviceRef.GPU()],

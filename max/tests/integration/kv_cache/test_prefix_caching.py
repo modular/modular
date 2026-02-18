@@ -26,7 +26,6 @@ from max.interfaces import ImageMetadata, RequestID, TokenBuffer
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     RaggedKVCacheInputs,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
@@ -74,7 +73,7 @@ def create_kv_cache(
         num_layers=1,
         n_kv_heads=1,
         head_dim=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         enable_prefix_caching=True,
         page_size=page_size,
         devices=[DeviceRef.CPU()],

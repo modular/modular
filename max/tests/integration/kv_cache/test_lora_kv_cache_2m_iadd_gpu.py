@@ -23,7 +23,6 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kernels import kv_cache_ragged_2m_iadd
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from max.pipelines.core import TextContext
@@ -140,7 +139,7 @@ def run_kv_cache_2m_iadd(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         devices=[device_ref],
     )

@@ -34,6 +34,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import ReturnLogits
@@ -153,7 +154,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         context_batch = replica_batches[0]
 
-        if not self.kv_cache_config.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_cache_config.cache_strategy):
             # TODO(MODELS-407): Consider deleting the padded path entirely.
             raise ValueError("Mistral unsupported for padded token batches")
 
@@ -188,7 +189,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
     ) -> MistralInputs:
         assert isinstance(prev_model_inputs, MistralInputs)
 
-        if not self.kv_cache_config.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_cache_config.cache_strategy):
             # TODO(MODELS-407): Consider deleting the padded path entirely.
             raise ValueError("multistep unsupported for padded token batches")
 

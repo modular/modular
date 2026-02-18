@@ -13,7 +13,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -39,14 +38,14 @@ llama_legacy_arch = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.q4_k,
     supported_encodings={
-        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float4_e2m1fnx2: [KVCacheStrategy.PAGED],
+        SupportedEncoding.gptq: ["paged"],
+        SupportedEncoding.q4_k: ["paged"],
+        SupportedEncoding.q4_0: ["paged"],
+        SupportedEncoding.q6_k: ["paged"],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
+        SupportedEncoding.float8_e4m3fn: ["paged"],
+        SupportedEncoding.float4_e2m1fnx2: ["paged"],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

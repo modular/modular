@@ -29,7 +29,6 @@ from max.nn.legacy.attention.multi_latent_attention import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
     RaggedKVCacheInputs,
 )
@@ -81,7 +80,7 @@ def _single_gpu_baseline(
         num_layers=config.num_hidden_layers,
         n_kv_heads=1,
         head_dim=576,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
@@ -228,7 +227,7 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         devices=[DeviceRef.GPU(i) for i in range(dp_degree)],
         page_size=128,
         data_parallel_degree=dp_degree,

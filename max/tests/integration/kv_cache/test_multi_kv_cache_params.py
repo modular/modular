@@ -20,7 +20,6 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     MultiKVCacheParams,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
@@ -42,7 +41,7 @@ def create_kv_cache_params(
         head_dim=head_dim,
         num_layers=num_layers,
         devices=[DeviceRef.GPU()],
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
     )
 
@@ -65,7 +64,7 @@ class TestMultiKVCacheParamsValidation:
             head_dim=128,
             num_layers=32,
             devices=[DeviceRef.GPU()],
-            cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
+            cache_strategy="model_default",
             page_size=128,
         )
         with pytest.raises(ValueError, match="same cache strategy"):

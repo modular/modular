@@ -17,7 +17,6 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture
@@ -43,7 +42,7 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -79,7 +78,7 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -117,7 +116,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -135,7 +134,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -177,7 +176,7 @@ def test_config__use_legacy_module_default_is_true() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -211,7 +210,7 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -243,7 +242,7 @@ def test_config__use_legacy_module_false_falls_back_to_legacy_arch() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -276,7 +275,7 @@ def test_registry__retrieve_architecture_falls_back_to_non_legacy() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -316,7 +315,7 @@ def test_config__use_legacy_module_with_draft_model() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding=SupportedEncoding.float32,
         supported_encodings={
-            SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+            SupportedEncoding.float32: ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,

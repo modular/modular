@@ -24,7 +24,6 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kernels import sgmv_qkv_lora_kernel
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from max.pipelines.core import TextContext
@@ -294,7 +293,7 @@ def run_sgmv_qkv_lora_kernel(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=page_size,
         devices=[device_ref],
     )
