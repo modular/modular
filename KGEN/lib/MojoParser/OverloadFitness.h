@@ -124,7 +124,7 @@ private:
   /// Describes the metrics that can be used to compare candidates.
   struct Payload {
     /// The number of implicit conversions required.  Normal implicit
-    /// conversions count as 2 each, non-materializable value conversions count
+    /// conversions count as 2 each, nonmaterializable value conversions count
     /// as 1.
     size_t numImplicitConversions = 0;
 

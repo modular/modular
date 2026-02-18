@@ -263,7 +263,7 @@ struct NmTarget(TrivialRegisterPassable):
         return self.x
 
 
-@nonmaterializable(NmTarget)
+@__nonmaterializable(NmTarget)
 struct NmStruct(TrivialRegisterPassable):
     var x: Int
 

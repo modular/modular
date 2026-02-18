@@ -135,7 +135,7 @@ struct NoneType(TrivialRegisterPassable):
         self._value = value
 
 
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     TrivialRegisterPassable
 ):
@@ -258,7 +258,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
 
-@nonmaterializable(FloatDyn)
+@__nonmaterializable(FloatDyn)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     TrivialRegisterPassable
 ):
@@ -552,7 +552,7 @@ struct Span[
         return self._data
 
 
-@nonmaterializable(String)
+@__nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     TrivialRegisterPassable
 ):
@@ -565,7 +565,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return Bool()
 
     # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # non-materializable by making them merge into StaticString.  They should
+    # nonmaterializable by making them merge into StaticString.  They should
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[

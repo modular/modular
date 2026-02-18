@@ -1811,7 +1811,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // TODO(ParameterizedType): This representation is subtly wrong.  We should
     // be inferring Self parameters from the expression later rather than
     // installing "getForDeclaredType", because this won't work correctly with
-    // non-materializable types that need an implicit conversion.
+    // nonmaterializable types that need an implicit conversion.
     //
     // We currently need to bind the Self parameters here so that subsequent
     // parameters are bound correctly.  Consider something like:

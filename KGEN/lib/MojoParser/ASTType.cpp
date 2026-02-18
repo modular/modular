@@ -458,8 +458,8 @@ bool ASTType::isTypeCheckErrorType() const {
   return sugarIsa<TypeCheckErrorType>(mlirType);
 }
 
-/// Return the nonmaterializable decorator target for the type, or null if there
-/// is none.
+/// Return the @__nonmaterializable decorator target for the type, or null if
+/// there is none.
 ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
   if (auto structDecl = getDecl(shared))
     if (auto structOp =

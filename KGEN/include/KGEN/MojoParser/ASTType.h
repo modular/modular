@@ -115,7 +115,7 @@ public:
   /// that could bind to a concrete @register_passable type.
   bool mightBeRegisterPassable(llvm::SMLoc loc, SharedState &shared) const;
 
-  /// Return the nonmaterializable decorator target for the type, or null if
+  /// Return the @__nonmaterializable decorator target for the type, or null if
   /// there is none.
   ASTType getNonmaterializableTarget(SharedState &shared) const;
 

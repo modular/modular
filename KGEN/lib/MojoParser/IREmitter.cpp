@@ -332,7 +332,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
                                              IREmitter &emitter) {
   // Handle inference of a 'var' declaration's type.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
-    // If the result type has a non-materializable type, then we infer the var
+    // If the result type has a nonmaterializable type, then we infer the var
     // to its materialized type.
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;
@@ -404,7 +404,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool requireMLValue, IREmitter &emitter) {
   // Handle inference of a 'var' declaration's type.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
-    // If the result type has a non-materializable type, then we infer the var
+    // If the result type has a nonmaterializable type, then we infer the var
     // to its materialized type.
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;

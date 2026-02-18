@@ -38,7 +38,7 @@ fn anytype_result[T: TrivialRegisterPassable]() -> T:
 
 
 @fieldwise_init
-@nonmaterializable(Thing)
+@__nonmaterializable(Thing)
 struct NMType(ImplicitlyCopyable, RegisterPassable):
     pass
 
@@ -66,7 +66,7 @@ fn metatypes():
     # CHECK: call {{.*}}@"anytype_arg[::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>
     anytype_arg(v)
 
-    # COM: Test inferring from a non-materializable type.
+    # COM: Test inferring from a nonmaterializable type.
     comptime nm_alias = NMType()
     # CHECK: [[DNMVAL:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[NMVAL:%.*]] = kgen.param.materialize: !NMType = <#alias_nm_alias>

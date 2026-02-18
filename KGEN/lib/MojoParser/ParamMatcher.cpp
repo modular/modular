@@ -320,7 +320,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamType>(expectedType)) {
-    // If this is a non-materializable type (like IntLiteral), infer it like its
+    // If this is a nonmaterializable type (like IntLiteral), infer it like its
     // materializable type (like Int), for example:
     //    fn example[T: TrivialRegisterPassable](a: T): ...
     //    example(1) # T should be Int, not IntLiteral.
