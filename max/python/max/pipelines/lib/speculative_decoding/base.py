@@ -372,12 +372,15 @@ class SpeculativeDecodingPipelineBase(
         )
 
         shared_weights: dict[str, DLPackArray] | None = None
+        shared_ep_comm_initializer = None
         if self.pipeline_config.speculative is not None and (
             self.pipeline_config.speculative.is_eagle()
             or self.pipeline_config.speculative.is_mtp()
         ):
-            shared_weights = self._maybe_build_deepseekv3_nextn_shared_weights(
-                actual_draft_pipeline_model
+            shared_weights, shared_ep_comm_initializer = (
+                self._maybe_build_deepseekv3_nextn_shared_resources(
+                    actual_draft_pipeline_model
+                )
             )
 
         draft_model_kwargs: dict[str, Any] = {}
@@ -389,6 +392,11 @@ class SpeculativeDecodingPipelineBase(
             logger.debug(
                 "Draft model %s does not support shared weights; skipping",
                 actual_draft_pipeline_model.__name__,
+            )
+
+        if shared_ep_comm_initializer is not None:
+            draft_model_kwargs["shared_ep_comm_initializer"] = (
+                shared_ep_comm_initializer
             )
 
         self._draft_model = actual_draft_pipeline_model(
@@ -456,10 +464,10 @@ class SpeculativeDecodingPipelineBase(
             self.pipeline_config.speculative.num_speculative_tokens
         )
 
-    def _maybe_build_deepseekv3_nextn_shared_weights(
+    def _maybe_build_deepseekv3_nextn_shared_resources(
         self,
         draft_model_cls: type[PipelineModel[TextContext]],
-    ) -> dict[str, DLPackArray] | None:
+    ) -> tuple[dict[str, DLPackArray] | None, Any]:
         # Imported here to avoid circular imports
         from max.pipelines.architectures.deepseekV3.model import (  # type: ignore[import-not-found]
             DeepseekV3Model,
@@ -469,10 +477,12 @@ class SpeculativeDecodingPipelineBase(
         )
 
         if not isinstance(self._target_model, DeepseekV3Model):
-            return None
+            return None, None
         if not issubclass(draft_model_cls, DeepseekV3NextNModel):
-            return None
+            return None, None
 
+        # Share EP buffers between target and draft to avoid duplicating
+        shared_ep_comm_initializer = self._target_model.ep_comm_initializer
         target_state_dict = getattr(self._target_model, "state_dict", None)
         if not isinstance(target_state_dict, dict):
             raise ValueError(
@@ -496,7 +506,7 @@ class SpeculativeDecodingPipelineBase(
         logger.info(
             "Sharing DeepseekV3 embedding and head weights with NextN draft model."
         )
-        return shared_weights
+        return shared_weights, shared_ep_comm_initializer
 
     @traced
     def calculate_num_steps(

@@ -83,8 +83,10 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         shared_weights: dict[str, DLPackArray] | None = None,
+        shared_ep_comm_initializer: EPCommInitializer | None = None,
     ) -> None:
         self._shared_weights = shared_weights
+        self._shared_ep_comm_initializer = shared_ep_comm_initializer
         super().__init__(
             pipeline_config,
             session,
@@ -266,6 +268,10 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         such as intermediate activations and working buffers. The NextN model
         has a single decoder layer, so activation memory is proportionally smaller.
 
+        Note: EP SHMEM communication buffers are NOT counted here because
+        they are shared with the target model (via shared_ep_comm_initializer).
+        The target's estimate_activation_memory() already accounts for them.
+
         Args:
             pipeline_config: Pipeline configuration
             huggingface_config: HuggingFace model configuration (from draft_model)
@@ -426,8 +432,20 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         self.ep_comm_initializer: EPCommInitializer | None = None
         if config.ep_config is not None:
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
+            if self._shared_ep_comm_initializer is not None:
+                # Reuse target model's EP buffers (NVSHMEM symmetric memory).
+                # Target and draft execute sequentially in the EAGLE pipeline,
+                # so sharing is safe and avoids duplicating ~85 GiB of buffers.
+                self.ep_comm_initializer = self._shared_ep_comm_initializer
+                # Propagate node_id from the shared initializer since NextN
+                # constructs its own EPConfig with node_id=-1.
+                config.ep_config.node_id = (
+                    self._shared_ep_comm_initializer.config.node_id
+                )
+                logger.info("Reusing target model's EP communication buffers.")
+            else:
+                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+                self.ep_comm_initializer.ep_init(session)
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."
