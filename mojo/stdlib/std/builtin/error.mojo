@@ -252,6 +252,13 @@ struct Error(
         self._error.write_to(writer)
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("Error(")
+        self._error.write_repr_to(writer)
+        writer.write(")")
+
+
+    @no_inline
     fn __repr__(self) -> String:
         """Converts the Error to printable representation.
 
