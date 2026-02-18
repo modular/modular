@@ -273,6 +273,9 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- `FileDescriptor.write_bytes()`: Fixed silent data loss on partial writes by
+  looping until all bytes are written, matching `FileHandle.write_bytes()`.
+
 - Fixed `mojo format` crashing after upgrading Mojo versions due to a stale
   grammar cache. ([Issue #6144](https://github.com/modular/modular/issues/6144))
 
