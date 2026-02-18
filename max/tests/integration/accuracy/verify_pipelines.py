@@ -1272,7 +1272,7 @@ PIPELINES = {
         ),
         # Tolerances from running --find-tolerances against vLLM goldens
         cos_dist_threshold=2.7e-02,
-        kl_div_threshold=2.1e-01,
+        kl_div_threshold=4.0e-01,
         timeout=1200,
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(

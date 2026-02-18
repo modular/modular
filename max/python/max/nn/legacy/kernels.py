@@ -178,15 +178,27 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
+    _output_dim: int | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
-    tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [total_seq_len, hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            request in the input tensor with shape [batch_size + 1].
+        wqkv: The concatenated Q, K and V projection weights.
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of Query attention heads.
+        bias: Optional bias vector concatenated as [q, k, v].
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
 
-    Raises:
-        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    Returns:
+        Query projection tensor.
     """
     if input.dtype != wqkv.dtype:
         raise ValueError(
@@ -224,6 +236,10 @@ def fused_qkv_ragged_matmul(
         op_name += ".bias"
         values.append(bias)
 
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
     return ops.inplace_custom(
         op_name,
         device=input.device,
@@ -231,7 +247,7 @@ def fused_qkv_ragged_matmul(
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                shape=input.shape[:-1] + [output_dim],
                 device=input.device,
             )
         ],

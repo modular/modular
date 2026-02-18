@@ -500,7 +500,12 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var v_cache: OptionalReg[type_of(k_cache)] = None
+    comptime kv_params = collection_t.kv_params
+
+    @parameter
+    if not kv_params.is_mla:
+        v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if is_gpu[target]():
@@ -792,7 +797,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     k_cache: cache_t,
-    v_cache: cache_t,
+    v_cache: OptionalReg[cache_t],
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
@@ -855,16 +860,24 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         var hd_idx: UInt
         var cache: cache_t
         var output_val = val
-        if idx[1] < qk_offset:
+
+        @parameter
+        if kv_params.is_mla:
             cache = k_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
-            )
+            h_idx = 0  # in MLA mode we only have one head
+            hd_idx = UInt(idx[1]) - UInt(q_dim)
+
         else:
-            cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
-            )
+            if idx[1] < qk_offset:
+                cache = k_cache
+                h_idx, hd_idx = divmod(
+                    UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                )
+            else:
+                cache = v_cache.value()
+                h_idx, hd_idx = divmod(
+                    UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                )
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
