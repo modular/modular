@@ -341,6 +341,21 @@ what we publish.
   Int(-1).write_padded(s, 4) # writes "  -1"
   ```
 
+- `SIMD` now has a `write_padded` method for integral `DType`s, matching the
+  behaviour of `Int.write_padded`. The padding is added elementwise. Unlike
+  `SIMD` regular printing, there are no spaces added between elements by
+  default:
+
+  ```Mojo
+  Int32(1).write_padded(s, 4)  # writes "   1"
+  Int32(-1).write_padded(s, 4) # writes "  -1"
+
+  # "[   1,  -1,   0,1234]"
+  SIMD[DType.int32, 4](1,-1,0,1234).write_padded(s, 4)
+  # "[255,255]"
+  SIMD[DType.uint8, 2](255).write_padded(s, 1)
+  ```
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

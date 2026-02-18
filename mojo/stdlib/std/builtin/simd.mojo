@@ -42,6 +42,7 @@ domain-specific libraries for machine learning and scientific computing.
 
 import math
 from collections import InlineArray
+from collections.string.string import _calc_initial_buffer_size
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic, trunc
@@ -2205,6 +2206,51 @@ struct SIMD[dtype: DType, size: Int](
                 writer.write_string(", ")
             _write_scalar(writer, element)
         writer.write_string(")")
+
+    fn write_padded[
+        W: Writer
+    ](self, mut writer: W, width: Int) where self.dtype.is_integral():
+        """Write the integral SIMD with each element right-aligned to a set
+        padding. No additional space between elements is inserted.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+            width: The amount to pad to the left.
+        """
+
+        # Write an opening `[`.
+        @parameter
+        if Self.size > 1:
+            writer.write("[")
+
+        # Write each element.
+        for i in range(Self.size):
+            var element = self[i]
+            # _calc_initial_buffer_size adds an extra 1 for the terminator,
+            # which we want to remove, but also doesn't include 1 for a
+            # negative sign.
+            var int_width = _calc_initial_buffer_size(abs(element)) - (
+                1 if element >= 0 else 0
+            )
+
+            # Write separators between each element.
+            if i != 0:
+                writer.write(",")
+
+            # TODO: Assumes user wants right-aligned content.
+            if int_width < width:
+                for _ in range(width - int_width):
+                    writer.write(" ")
+
+            _write_scalar(writer, element)
+
+        # Write a closing `]`.
+        @parameter
+        if Self.size > 1:
+            writer.write("]")
 
     @always_inline
     fn to_bits[
