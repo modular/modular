@@ -423,9 +423,12 @@ fn flare_mla_decoding_dispatch[
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
-        comptime BM = 16 if (
-            num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
-        ) else 32  # for deepseek-v2 lite
+        comptime preferred_BM = 16 if (
+            not has_enough_smem or has_amd_gpu_accelerator()
+        ) else 32
+        comptime BM = preferred_BM if UInt(preferred_BM) <= num_heads else Int(
+            num_heads
+        )
         comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
         comptime BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
         comptime WM = BM
