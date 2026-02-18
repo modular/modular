@@ -53,6 +53,50 @@ bool Token::isKeyword() const {
   }
 }
 
+bool Token::isStatementKeyword() const {
+  switch (kind) {
+  default:
+    return false;
+  // Control flow statements
+  case kw_elif:
+  case kw_else:
+  case kw_while:
+  case kw_pass:
+  case kw_break:
+  case kw_continue:
+  case kw_return:
+  case kw_raise:
+  case kw_try:
+  case kw_except:
+  case kw_finally:
+  case kw_with:
+  case kw_del:
+  case kw_yield:
+  case kw_match:
+  case kw_case:
+  case kw_async:
+  case kw_await:
+  case kw_global:
+  case kw_nonlocal:
+    return true;
+  }
+}
+
+bool Token::isDeclKeyword() const {
+  switch (kind) {
+  default:
+    return false;
+  // Declaration keywords
+  case kw_class:
+  case kw_def:
+  case kw_fn:
+  case kw_struct:
+  case kw_trait:
+  case kw_var:
+    return true;
+  }
+}
+
 bool Token::isIdentifier() const {
   return isAny(identifier, escaped_identifier);
 }
