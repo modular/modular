@@ -806,6 +806,7 @@ def reserve_token_space_for_batch(
                 raise ValueError(
                     f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
                 )
+            ctx.tokens._expand_capacity(min_capacity=new_length)
             ctx.tokens._current_length = new_length
         yield
     finally:

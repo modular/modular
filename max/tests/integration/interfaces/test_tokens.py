@@ -401,3 +401,24 @@ def test_token_buffer__active_length_matches_active_with_offset() -> None:
     )
     assert token_buffer.active_length == len(token_buffer.active)
     assert token_buffer.active_length == 2
+
+
+def test_expand_capacity_with_min_capacity() -> None:
+    tokens = np.arange(4, dtype=np.int64)
+    buf = TokenBuffer(array=tokens)
+    assert buf.array.size == 4
+    assert len(buf) == 4
+
+    buf._expand_capacity(min_capacity=3)
+    assert buf.array.size == 4
+
+    buf._expand_capacity(min_capacity=5)
+    assert buf.array.size >= 5
+    np.testing.assert_array_equal(buf.array[:4], np.arange(4, dtype=np.int64))
+
+    buf._current_length = 5
+    assert len(buf) == 5
+
+    buf._expand_capacity(min_capacity=100)
+    assert buf.array.size >= 100
+    np.testing.assert_array_equal(buf.array[:4], np.arange(4, dtype=np.int64))
