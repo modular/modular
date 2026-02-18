@@ -18,7 +18,6 @@ from typing import Optional, Union
 
 import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
-from max.engine import GPUProfilingMode
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedEncoding,

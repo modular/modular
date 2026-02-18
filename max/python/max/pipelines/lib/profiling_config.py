@@ -14,10 +14,9 @@
 
 from __future__ import annotations
 
-import enum
 import logging
 import os
-from collections.abc import Mapping
+from typing import cast, get_args
 
 from max.config import ConfigFileModel
 from max.engine import GPUProfilingMode
@@ -29,7 +28,7 @@ logger = logging.getLogger("max.pipelines")
 
 class ProfilingConfig(ConfigFileModel):
     gpu_profiling: GPUProfilingMode = Field(
-        default=GPUProfilingMode.OFF,
+        default="off",
         description="Whether to enable GPU profiling of the model.",
     )
 
@@ -38,24 +37,17 @@ class ProfilingConfig(ConfigFileModel):
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
 
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for ProfilingConfig."""
-        return {
-            "GPUProfilingMode": GPUProfilingMode,
-        }
-
     @model_validator(mode="after")
     def _normalize_gpu_profiling(self) -> Self:
         """Normalize gpu_profiling field after validation."""
         gpu_profiling_env = os.environ.get("MODULAR_ENABLE_PROFILING", "off")
 
-        if self.gpu_profiling == GPUProfilingMode.OFF:
-            try:
-                self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
-            except ValueError:
-                valid_values = [mode.value for mode in GPUProfilingMode]
-                raise ValueError(  # noqa: B904
+        if self.gpu_profiling == "off":
+            valid_values = list(get_args(GPUProfilingMode))
+            if gpu_profiling_env in valid_values:
+                self.gpu_profiling = cast(GPUProfilingMode, gpu_profiling_env)
+            else:
+                raise ValueError(
                     "gpu_profiling must be one of: " + ", ".join(valid_values)
                 )
         return self

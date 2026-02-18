@@ -19,7 +19,6 @@ modular_py_test(
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/nn",

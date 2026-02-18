@@ -21,7 +21,6 @@ import pytest
 import yaml
 from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
-from max.engine import GPUProfilingMode
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -141,7 +140,7 @@ class TestMAXConfigFileLoading:
             profiling_config = ProfilingConfig(
                 config_file=f.name, section_name="profiling_config"
             )
-            assert profiling_config.gpu_profiling == GPUProfilingMode.ON
+            assert profiling_config.gpu_profiling == "on"
 
             # Test SamplingConfig enum loading.
             sampling_config = SamplingConfig(
@@ -243,7 +242,7 @@ class TestProfilingConfigEnv:
     ) -> None:
         monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "on")
         config = ProfilingConfig()
-        assert config.gpu_profiling == GPUProfilingMode.ON
+        assert config.gpu_profiling == "on"
 
     def test_env_invalid_value_raises(
         self, monkeypatch: pytest.MonkeyPatch
@@ -256,5 +255,5 @@ class TestProfilingConfigEnv:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "bad-value")
-        config = ProfilingConfig(gpu_profiling=GPUProfilingMode.ON)
-        assert config.gpu_profiling == GPUProfilingMode.ON
+        config = ProfilingConfig(gpu_profiling="on")
+        assert config.gpu_profiling == "on"
