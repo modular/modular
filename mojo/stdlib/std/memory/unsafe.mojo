@@ -21,6 +21,9 @@ from memory import bitcast
 
 from sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
 
+from builtin.dtype import _uint_type_of_width
+
+
 # ===-----------------------------------------------------------------------===#
 # bitcast
 # ===-----------------------------------------------------------------------===#
@@ -112,24 +115,6 @@ fn bitcast[
     return SIMD(mlir_value=res)
 
 
-@always_inline("builtin")
-fn _uint(n: Int) -> DType:
-    # fmt: off
-    return (
-        DType._uint1 if n == 1 else
-        DType._uint2 if n == 2 else
-        DType._uint4 if n == 4 else
-        DType.uint8 if n == 8 else
-        DType.uint16 if n == 16 else
-        DType.uint32 if n == 32 else
-        DType.uint64 if n == 64 else
-        DType.uint128 if n == 128 else
-        DType.uint256 if n == 256 else
-        DType.invalid
-    )
-    # fmt: on
-
-
 fn _llvm_bitwidth(dtype: DType) -> Int:
     # fmt: off
     return (
@@ -151,7 +136,7 @@ fn _llvm_bitwidth(dtype: DType) -> Int:
 fn pack_bits[
     src_width: Int,
     //,
-    dtype: DType = _uint(src_width),
+    dtype: DType = _uint_type_of_width[src_width](),
     width: Int = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
