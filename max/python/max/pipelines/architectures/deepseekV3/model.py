@@ -451,6 +451,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         nn_model = DeepseekV3(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        self.state_dict = nn_model.state_dict()
 
         # Create the graph
         with Graph(
@@ -504,7 +505,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             graph.output(*outputs)
 
         timer.mark_build_complete()
-        model = session.load(graph, weights_registry=nn_model.state_dict())
+        model = session.load(graph, weights_registry=self.state_dict)
         timer.done()
 
         return model

@@ -18,15 +18,17 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
+from typing import cast
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.graph.weights import WeightData
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -34,6 +36,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    SupportedEncoding,
 )
 from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.utils import compute_data_parallel_splits
@@ -65,6 +68,48 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
+    supports_shared_weights = True
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.ALL,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        shared_weights: dict[str, DLPackArray] | None = None,
+    ) -> None:
+        self._shared_weights = shared_weights
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+            return_hidden_states,
+        )
+
+    def _apply_shared_weights(self, state_dict: dict[str, WeightData]) -> None:
+        if not self._shared_weights:
+            return
+        for key, value in self._shared_weights.items():
+            if key in state_dict:
+                state_dict[key] = cast(WeightData, value)
+            else:
+                logger.debug(
+                    "Shared weight '%s' not found in NextN state_dict; skipping",
+                    key,
+                )
+
     @classmethod
     def get_kv_params(
         cls,
@@ -112,18 +157,27 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         total_size = 0
 
-        # 1. Embedding and LM head (always in BF16)
+        sharing_enabled = pipeline_config.speculative is not None and (
+            pipeline_config.speculative.is_eagle()
+            or pipeline_config.speculative.is_mtp()
+        )
+
+        # 1. Embedding and LM head (always in BF16 unless shared with target)
+        # In EAGLE/MTP, embedding and lm_head are shared with the target model.
         embedding_size = (
             config.vocab_size
             * config.hidden_size
             * DType.bfloat16.size_in_bytes
         )
         lm_head_size = embedding_size
-        total_size += embedding_size + lm_head_size
+        if not sharing_enabled:
+            total_size += embedding_size + lm_head_size
 
         # 2. NextN-specific norms (enorm, hnorm, shared_head_norm) - always BF16
         norm_size = config.hidden_size * DType.bfloat16.size_in_bytes
-        total_size += 3 * norm_size
+        total_size += 2 * norm_size
+        if not sharing_enabled:
+            total_size += norm_size
 
         # 3. eh_proj: Linear(hidden_size * 2, hidden_size)
         eh_proj_size = config.hidden_size * 2 * config.hidden_size * dtype_bytes
@@ -367,6 +421,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 key: value.data() for key, value in self.weights.items()
             }
 
+        self._apply_shared_weights(state_dict)
         config = self._create_model_config(state_dict)
 
         self.ep_comm_initializer: EPCommInitializer | None = None
