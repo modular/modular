@@ -1012,13 +1012,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
         model_path="meta-llama/Meta-Llama-3-8B-Instruct",
         weight_path_map={
-            "q4_k": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
             "float32": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp32.gguf",
         },
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float32", "bfloat16"],
-            "cpu": ["float32", "q4_k"],
+            "cpu": ["float32"],
         },
     ),
     "meta-llama/Llama-3.1-8B-Instruct": GenericOracle(
