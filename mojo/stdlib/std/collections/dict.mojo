@@ -40,6 +40,7 @@ See the `Dict` docs for more details.
 from builtin.constrained import _constrained_conforms_to
 from compile import get_type_name
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
+import format._utils as fmt
 from sys.intrinsics import is_compile_time, likely
 
 from bit import count_trailing_zeros, next_power_of_two
@@ -203,7 +204,17 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
         Args:
             writer: The writer to write to.
         """
-        writer.write("DictKeyError[", get_type_name[Self.K](), "]")
+        self.write_repr_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the error to the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "DictKeyError").params(
+            fmt.TypeNames[Self.K]()
+        ).fields()
 
 
 @fieldwise_init
@@ -211,12 +222,20 @@ struct EmptyDictError(ImplicitlyCopyable, Writable):
     """A custom error type for when a `Dict` is empty."""
 
     fn write_to(self, mut writer: Some[Writer]):
-        """This always writes "EmptyDictError".
+        """Write the error to the writer.
 
         Args:
             writer: The writer to write to.
         """
-        writer.write("EmptyDictError")
+        self.write_repr_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the error to the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "EmptyDictError").fields()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1013,7 +1032,9 @@ struct Dict[
         Returns:
             A string representation of the Dict.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
     fn __str__(self) -> String:
@@ -1038,43 +1059,56 @@ struct Dict[
         self.write_to(output)
         return output^
 
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_list.__str__()` to a `Writer`.
+    fn _write_dict_body[
+        f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
 
-        Constraints:
-            `K` must conform to `Representable`.
-            `V` must conform to `Representable`.
-
-        Args:
-            writer: The object to write to.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.K, Representable),
-            Parent=Self,
-            Element = Self.K,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-
-        writer.write("{")
+        writer.write_string("{")
 
         var i = 0
-        for key_entry in self.items():
-            ref key = trait_downcast[Representable](key_entry.key)
-            ref val = trait_downcast[Representable](key_entry.value)
-            writer.write(repr(key), ": ", repr(val))
-            if i < len(self) - 1:
-                writer.write(", ")
+        for entry in self.items():
+            if i > 0:
+                writer.write_string(", ")
             i += 1
-        writer.write("}")
+
+            f_key(entry.key, writer)
+            writer.write(": ")
+            f_val(entry.value, writer)
+
+        writer.write_string("}")
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this `Dict` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        self._write_dict_body[
+            f_key = fmt.write_to[Self.K],
+            f_val = fmt.write_to[Self.V],
+        ](writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this `Dict`'s representation to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_dict_body[
+                f_key = fmt.write_repr_to[Self.K],
+                f_val = fmt.write_repr_to[Self.V],
+            ](w)
+
+        fmt.FormatStruct(writer, "Dict").params(
+            fmt.TypeNames[Self.K, Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
