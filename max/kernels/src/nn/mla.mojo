@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from collections import OptionalReg
-from math import ceildiv, recip
+from math import align_up, ceildiv, recip
 from nn.mha_utils import DynamicInt
 from math.constants import log2e
 from sys import (
@@ -1847,13 +1846,14 @@ fn mla_prefill[
     if seq_len < Int(q_block_idx() * config.block_m()):
         return
 
-    num_keys = k.cache_length(Int(batch_idx))
-
     @parameter
     if _ndbuffer_mha_operand:
-        start_pos = UInt32(k_rope.cache_length(Int(batch_idx)) - seq_len)
+        num_keys = k_rope.cache_length(Int(batch_idx))
+        start_pos = UInt32(num_keys - seq_len)
+
     else:
         start_pos = UInt32(k_rope.cache_length(Int(batch_idx)))
+        num_keys = Int(start_pos) + seq_len
 
     if cache_offsets:
         var cache_offsets_nd = cache_offsets.value()
@@ -2801,7 +2801,7 @@ fn mla_prefill_plan[
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,
-            input_row_offsets,
+            input_row_offsets.get_immutable(),
             k_cache,
             buffer_token_size,
             grid_dim=(ceildiv(batch_size, 128), 1, 1),
@@ -2835,7 +2835,7 @@ fn mla_prefill_plan_kernel[
     input_row_offsets: LayoutTensor[
         DType.uint32,
         input_row_offsets_layout,
-        MutAnyOrigin,
+        ImmutExternalOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -2847,22 +2847,36 @@ fn mla_prefill_plan_kernel[
     var buffer_size: Int = Int(buffer_token_size)
 
     comptime MAX_CHUNKS = Int(buffer_lengths.layout.shape[0])
+    comptime page_size = cache_t.page_size_
+    comptime assert page_size != 0, "Only PagedKVCache is supported."
 
     if seq_idx >= UInt(batch_size):
         return
 
-    # Calculate starting position for this sequence
+    # Calculate starting position for this sequence.
+    # Note: the total cache length of each sequence is aligned to the page size.
+    var prev_row_offset = Int(input_row_offsets[0])
     for i in range(seq_idx):
-        seq_start_pos += k_cache.cache_length(Int(i))
-    seq_start_pos += Int(input_row_offsets[seq_idx])
+        # The cache length that has been prefilled in previous forward passes.
+        var cache_length = k_cache.cache_length(Int(i))
+
+        # account for the new input tokens.
+        var row_offset_i = Int(input_row_offsets[i + 1])
+        cache_length += row_offset_i - prev_row_offset
+        prev_row_offset = row_offset_i
+
+        seq_start_pos += align_up(cache_length, page_size)
+
+    var curr_seq_len = align_up(
+        k_cache.cache_length(Int(seq_idx))
+        + Int(input_row_offsets[seq_idx + 1])
+        - prev_row_offset,
+        page_size,
+    )
 
     # which chunk this sequence starts in
     var start_chunk = seq_start_pos // buffer_size
-
     var processed_seq_len = UInt32(0)
-    var curr_seq_len = k_cache.cache_length(Int(seq_idx)) + Int(
-        input_row_offsets[seq_idx + 1] - input_row_offsets[seq_idx]
-    )
     var seq_len_left = curr_seq_len
 
     # Fill buffer offsets for this sequence
@@ -2889,7 +2903,7 @@ fn mla_prefill_plan_kernel[
     # If this is the last sequence in the batch
     if seq_idx == UInt(batch_size - 1):
         seq_end_pos = seq_start_pos + curr_seq_len
-        var end_chunk = seq_end_pos // buffer_size
+        var end_chunk = (seq_end_pos + buffer_size - 1) // buffer_size - 1
 
         # Set buffer lengths for all chunks
         @parameter
@@ -2898,10 +2912,11 @@ fn mla_prefill_plan_kernel[
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(buffer_size)
                 buffer_lengths[chunk_idx] = Int32(buffer_size)
             elif chunk_idx == end_chunk:
+                var last_chunk_len = seq_end_pos - end_chunk * buffer_size
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
-                    seq_end_pos % buffer_size
+                    last_chunk_len
                 )
-                buffer_lengths[chunk_idx] = Int32(seq_end_pos % buffer_size)
+                buffer_lengths[chunk_idx] = Int32(last_chunk_len)
             else:
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
                 buffer_lengths[chunk_idx] = -1

@@ -392,7 +392,10 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     @always_inline
     fn max_context_length(self) -> UInt32:
-        # NotImplemented
+        constrained[
+            False,
+            "For RaggedMHAOperand, max_context_length is not implemented.",
+        ]()
         return 0
 
     @always_inline

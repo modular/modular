@@ -610,9 +610,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # tensors containing the context length of each batch. Need by MLA
         # prefill.
         if self.pipeline_config.pipeline_role is not PipelineRole.DecodeOnly:
+
+            def align_length(length: int) -> int:
+                page_size = self.kv_cache_config.kv_cache_page_size
+                return (length + page_size - 1) // page_size * page_size
+
             for i, batch in enumerate(replica_batches):
                 curr_length = sum(
-                    [ctx.tokens.current_position for ctx in batch]
+                    [align_length(ctx.tokens.current_position) for ctx in batch]
                 )
                 self._batch_context_lengths_prealloc_cpu[i][0] = curr_length
 
