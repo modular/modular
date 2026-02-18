@@ -242,6 +242,9 @@ class Llama4TextModel(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         input_row_offsets = kwargs["input_row_offsets"]
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets.to(self.devices[0]), signal_buffers
+        )
         cache_positions = TensorValue(cache_positions)
         distributed_cache_positions = [
             cache_positions.to(device) for device in self.devices
@@ -255,12 +258,10 @@ class Llama4TextModel(Module):
                 **kwargs,
             )
 
-        h0 = h[0]
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = ops.distributed_broadcast(
-            last_token_h, signal_buffers
-        )
+        last_token_distributed = [
+            ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+            for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+        ]
         # Apply norm to each shard
         norm_last_token = [
             self.norm_shards[i](last_token_distributed[i])

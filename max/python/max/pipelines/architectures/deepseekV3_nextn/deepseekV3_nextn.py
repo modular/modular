@@ -281,12 +281,10 @@ class DeepseekV3NextN(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = ops.distributed_broadcast(
-                last_token_h, signal_buffers
-            )
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         norm_last_token = forward_sharded_layers(
             self.shared_head_norm_shards, last_token_distributed
