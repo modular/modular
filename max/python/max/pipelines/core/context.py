@@ -679,9 +679,6 @@ class PixelContext:
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
-
     # Precomputed tensors
     timesteps: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)

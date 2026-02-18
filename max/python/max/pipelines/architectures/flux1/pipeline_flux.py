@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from queue import Queue
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 from max import functional as F
@@ -30,9 +30,6 @@ from ..autoencoders import AutoencoderKLModel
 from ..clip import ClipModel
 from ..t5 import T5Model
 from .model import Flux1TransformerModel
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass(kw_only=True)
@@ -318,7 +315,6 @@ class FluxPipeline(DiffusionPipeline):
             self.transformer.devices[0]
         )
         for i in tqdm(range(num_timesteps), desc="Denoising"):
-            self._current_timestep = i
             timestep = timesteps_batched[i]
 
             noise_pred = self.transformer(
