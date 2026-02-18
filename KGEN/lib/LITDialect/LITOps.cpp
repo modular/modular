@@ -403,7 +403,7 @@ LogicalResult LIT::CallIndirectOp::verify() {
 
 /// If this is a special function like __init__ return the enum that
 /// identifies it, otherwise return kNormal.
-SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
+SpecialFunctionKind SpecialFunctionInfo::lookupKind(StringRef name) {
   if (name.size() < 5 || !name.starts_with("__") || !name.ends_with("__"))
     return SpecialFunctionKind::kNormal;
 

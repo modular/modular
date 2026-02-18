@@ -1378,20 +1378,22 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
       // an alias.
       if (!traitFn || traitFn.getInheritedFrom())
         continue;
+      if (failed(shared.declResolver->resolveSignature(*decl, loc)))
+        continue;
+
       // MLIR types are movable, copyable, and destructible only.
       if (llvm::is_contained({SpecialFunctionKind::kMoveInit,
                               SpecialFunctionKind::kCopyInit,
                               SpecialFunctionKind::kDel},
-                             SpecialFunctionInfo::getKind(name))) {
+                             traitFn.getSpecialFunctionKind()))
         continue;
-      }
+
       // MLIR types can conform to the `copy()` method of `Copyable`.
       // NOTE: This only works for `Copyable` because `__MLIRType`
       //       only explicitly conforms to `Copyable`, so its OK that
       //       this doesn't validate the signature of this `copy()` method.
-      if (name == "copy") {
+      if (name == "copy")
         continue;
-      }
 
       return false;
     }

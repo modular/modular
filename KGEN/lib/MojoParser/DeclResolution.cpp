@@ -680,7 +680,7 @@ void FnSigDecorators::applyImplicitDecorator(SMLoc decoratorLoc,
       conversionKind = ImplicitConversionKind::Deprecated;
   }
 
-  if (SpecialFunctionInfo::get(baseName).kind != SpecialFunctionKind::kInit) {
+  if (tcSignature.fnInfo.kind != SpecialFunctionKind::kInit) {
     emitError(decoratorLoc)
         << "'@implicit' may only be applied to '__init__' methods";
     return;
@@ -1505,7 +1505,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (!parsedParamList.params.empty() && baseName == "__call__" &&
       dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
 
-    const bool hasOnlyInferredParams =
+    bool hasOnlyInferredParams =
         llvm::all_of(parsedParamList.params, [](const ParsedArgument &param) {
           // TODO(MOCO-2928): This should ignore whether the parameter is
           //  variadic or not, and check only whether it's inferred or not.
@@ -1594,9 +1594,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   TypeCheckedParamList &paramList = *paramListOrError;
 
   // Emit the argument and result types.
-  SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
   TypeCheckedFnSignature tcSignature(paramList, fnSignature,
-                                     /*captureOrigins=*/nullptr, &decl, fnInfo);
+                                     /*captureOrigins=*/nullptr, &decl,
+                                     baseName);
 
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.
@@ -1637,7 +1637,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
-  tcSignature.verifyFunctionNameBinding(decl, baseName, fnInfo);
+  tcSignature.verifyFunctionNameBinding(decl, baseName);
 
   // Now that we've processed the signature, bail if we had a missing colon.
   if (p.parseToken(Token::colon, "expected ':' in function definition"))
@@ -3290,6 +3290,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     if (!shared.typeHasMember(structDecl, "__moveinit__", structDecl.getLoc()))
       StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
     synthesizeTrivialFlagIfNeeded("__moveinit__");
+    if (auto moveInitAttr = lookupSpecialMethod(structDecl, "__moveinit__",
+                                                SpecialFunctionKind::kMoveInit))
+      structOp.setMoveInitAttr(moveInitAttr);
   }
   if (conformsToTrait("Copyable")) {
     // TODO: this should synthesize a keyword only copy argument:
@@ -3299,6 +3302,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     // NOTE: We don't need to synthesize copy() here, there should be a default
     // implementation.
     synthesizeTrivialFlagIfNeeded("__copyinit__");
+    if (auto copyInitAttr = lookupSpecialMethod(structDecl, "__copyinit__",
+                                                SpecialFunctionKind::kCopyInit))
+      structOp.setCopyInitAttr(copyInitAttr);
   }
 
   // If we synthesized a destructor but the fields are all trivial, just drop
@@ -3321,14 +3327,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (structOp.isRegisterPassable())
     processRegisterPassableDecorator(structOp, structDecl, structFields, *this,
                                      structOp.getConvention());
-
-  // Look up move and copy constructors and record them if declared.
-  if (auto copyInitAttr = lookupSpecialMethod(structDecl, "__copyinit__",
-                                              SpecialFunctionKind::kCopyInit))
-    structOp.setCopyInitAttr(copyInitAttr);
-  if (auto moveInitAttr = lookupSpecialMethod(structDecl, "__moveinit__",
-                                              SpecialFunctionKind::kMoveInit))
-    structOp.setMoveInitAttr(moveInitAttr);
 
   // If any of the fields are bad, we do not process decorators since they
   // assume that the struct body if valid.
@@ -3355,8 +3353,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // symbols.
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
   bool hasConstraints = !constraints.empty();
-  for (size_t i = 0; i < symbols.size(); ++i) {
-    SymbolRefAttr parent = symbols[i];
+  for (auto [i, parent] : llvm::enumerate(symbols)) {
     StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
     ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
     SymbolRefArrayAttr immediateParents =
