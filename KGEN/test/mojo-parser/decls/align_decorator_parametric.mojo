@@ -1,0 +1,42 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s | FileCheck %s
+
+# Test @align decorator with parametric alignment values.
+
+# Test basic parametric alignment using struct parameter
+# CHECK-LABEL: lit.struct.decl @AlignedBuffer
+# CHECK-SAME: minAlignment = #lit.struct.extract<:!Int alignment, "_mlir_value"> : index
+@align(alignment)
+struct AlignedBuffer[alignment: Int]:
+    var data: Int
+
+
+# Test parametric alignment with @register_passable
+# CHECK-LABEL: lit.struct.decl @AlignedTrivialParam
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: minAlignment = #lit.struct.extract<:!Int n, "_mlir_value"> : index
+@align(n)
+@register_passable("trivial")
+struct AlignedTrivialParam[n: Int]:
+    var value: __mlir_type.index
+
+
+# Test parametric alignment combined with multiple parameters
+# CHECK-LABEL: lit.struct.decl @MultiParam
+# CHECK-SAME: minAlignment = #lit.struct.extract<:!Int align_val, "_mlir_value"> : index
+@align(align_val)
+struct MultiParam[T: __TypeOfAllTypes, align_val: Int]:
+    var value: Self.T
+
+
+# Test parametric alignment with an expression (n * 2)
+# CHECK-LABEL: lit.struct.decl @AlignedExpr
+# CHECK-SAME: minAlignment = #kgen.param.expr<mul
+@align(n * 2)
+struct AlignedExpr[n: Int]:
+    var data: Int

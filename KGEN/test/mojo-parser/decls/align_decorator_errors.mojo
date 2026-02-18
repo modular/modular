@@ -8,6 +8,7 @@
 
 # Test error cases for @align decorator.
 
+
 # expected-error @+1 {{@align value must be a positive power of 2}}
 @align(0)
 struct ZeroAlign:
@@ -69,7 +70,7 @@ struct TooManyArguments:
     var x: Int
 
 
-# expected-error @+1 {{@align requires a compile-time integer literal}}
+# expected-error @+1 {{'StringLiteral["64"]' does not implement the '__mlir_index__' method}}
 @align("64")
 struct StringArgument:
     var x: Int
@@ -91,3 +92,31 @@ struct ExcessiveAlignment2:
 @align(1)
 struct AlignOne:
     var x: Int
+
+
+# Test referencing a non-existent parameter
+# expected-error @+1 {{use of unknown declaration 'nonexistent'}}
+@align(nonexistent)
+struct NonExistentParam:
+    var x: Int
+
+
+# Test referencing a non-existent parameter
+# expected-error @+1 {{use of unknown declaration 'missing'}}
+@align(missing)
+struct NonExistentParamExpr:
+    var x: Int
+
+
+# Test using a non-Int typed parameter
+# expected-error @+1 {{'String' does not implement the '__mlir_index__' method}}
+@align(s)
+struct WrongTypeParam[s: String]:
+    var x: Int
+
+
+# Test using a Self. parameter
+# expected-error @+1 {{'Self' type is not available in this context}}
+@align(Self.x)
+struct SelfParam[x: Int]:
+    pass
