@@ -27,3 +27,23 @@ on a struct containing an `Int` (8-byte aligned) will emit a warning and the
 struct will remain 8-byte aligned.
 
 Both stack and heap allocations respect `@align`.
+
+## Parametric alignment
+
+The alignment value can also be a struct parameter, enabling generic aligned
+types:
+
+```mojo
+from sys import align_of
+
+@align(Self.alignment)
+struct AlignedBuffer[alignment: Int]:
+    var data: Int
+
+fn main():
+    print(align_of[AlignedBuffer[64]]())   # Prints 64
+    print(align_of[AlignedBuffer[128]]())  # Prints 128
+```
+
+The alignment is validated when the struct is instantiated, so invalid values
+like `AlignedBuffer[3]` will produce a compile-time error.
