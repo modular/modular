@@ -333,6 +333,14 @@ what we publish.
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
 
+- `Int.write_padded` now accounts for a negative sign when calculating the
+  width, resulting in a consistent width regardless of sign:
+
+  ```Mojo
+  Int(1).write_padded(s, 4)  # writes "   1"
+  Int(-1).write_padded(s, 4) # writes "  -1"
+  ```
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

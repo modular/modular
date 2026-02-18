@@ -1029,7 +1029,7 @@ struct Int(
             writer: The object to write to.
             width: The amount to pad to the left.
         """
-        var int_width = self._decimal_digit_count()
+        var int_width = self._decimal_digit_count() + (1 if self < 0 else 0)
 
         # TODO: Assumes user wants right-aligned content.
         if int_width < width:

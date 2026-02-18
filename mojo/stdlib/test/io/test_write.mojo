@@ -69,9 +69,17 @@ def test_write_int_padded():
 
     assert_equal(s1, "    5")
 
+    Int(-5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5")
+
     Int(123).write_padded(s1, width=5)
 
-    assert_equal(s1, "    5  123")
+    assert_equal(s1, "    5   -5  123")
+
+    Int(0).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5  123    0")
 
     # ----------------------------------
     # Test writing int larger than width
@@ -82,6 +90,14 @@ def test_write_int_padded():
     Int(12345).write_padded(s2, width=3)
 
     assert_equal(s2, "12345")
+
+    Int(-1).write_padded(s2, width=1)
+
+    assert_equal(s2, "12345-1")
+
+    Int(-1).write_padded(s2, width=0)
+
+    assert_equal(s2, "12345-1-1")
 
 
 def test_hex_digits_to_hex_chars():
