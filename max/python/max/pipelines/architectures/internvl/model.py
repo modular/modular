@@ -49,7 +49,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -206,7 +205,6 @@ class InternVLModel(
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -217,7 +215,6 @@ class InternVLModel(
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

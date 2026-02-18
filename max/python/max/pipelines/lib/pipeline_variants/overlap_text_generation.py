@@ -388,7 +388,6 @@ class OverlapTextGenerationPipeline(
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=huggingface_config,
-            encoding=model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=model_config.kv_cache,
             weights=load_weights(weight_paths),

@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -84,7 +83,6 @@ class MockPipelineModel(PipelineModel):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         devices: list[Device] = [],  # noqa: B006
@@ -96,7 +94,6 @@ class MockPipelineModel(PipelineModel):
         self.huggingface_config = huggingface_config
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
-        self.encoding = encoding
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
@@ -122,7 +119,7 @@ class MockPipelineModel(PipelineModel):
             LoRAManager(
                 config=self.pipeline_config.lora,
                 base_model_path=pipeline_config.model.model_path,
-                base_dtype=self.encoding.dtype,
+                base_dtype=self.dtype,
                 n_heads=huggingface_config.num_attention_heads,
                 n_kv_heads=huggingface_config.num_key_value_heads,
                 head_dim=huggingface_config.head_dim,

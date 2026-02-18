@@ -20,7 +20,7 @@ from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
 from ..mistral.model import MistralModel
@@ -34,7 +34,6 @@ class Mistral3Model(MistralModel):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -45,7 +44,6 @@ class Mistral3Model(MistralModel):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

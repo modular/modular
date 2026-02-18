@@ -31,7 +31,6 @@ from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
-from ..config_enums import SupportedEncoding
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
@@ -206,11 +205,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        # TODO: This is no longer necessary inside PipelineModel since it can be
-        # inferred directly from model_config, remove it and from
-        # other PipelineModel methods that depend on it.
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -220,7 +215,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -314,13 +308,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     @property
     def dtype(self) -> DType:
-        """Returns the model data type (from encoding or pipeline config)."""
-        # AudioGeneratorPipeline passes Nones for all args except pipeline config
-        return (
-            self.encoding.dtype
-            if self.encoding is not None
-            else self.pipeline_config.model.quantization_encoding.dtype
-        )
+        """Returns the model data type from pipeline config."""
+        quantization_encoding = self.pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        return quantization_encoding.dtype
 
     @classmethod
     @abstractmethod

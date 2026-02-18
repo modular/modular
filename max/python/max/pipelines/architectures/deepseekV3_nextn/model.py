@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    SupportedEncoding,
 )
 from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.utils import compute_data_parallel_splits
@@ -75,7 +74,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -91,7 +89,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

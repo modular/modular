@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -96,7 +95,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -109,7 +107,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             pipeline_config: Pipeline configuration
             session: Inference session
             huggingface_config: HuggingFace model configuration
-            encoding: Encoding configuration
             devices: List of devices
             weights: Model weights
             adapter: Optional weight adapter
@@ -117,7 +114,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self.pipeline_config = pipeline_config
         self.session = session
         self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
 
         # Build and compile graph
@@ -126,11 +122,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         logger.info(f"Compiling {self.__class__.__name__} model")
         self.model = session.load(graph, weights_registry=self.state_dict)
         logger.info("Model loaded successfully")
-
-    @property
-    def dtype(self) -> DType:
-        """Get the model's data type."""
-        return self.encoding.dtype
 
     def _get_state_dict(
         self, weights: Weights, adapter: WeightsAdapter | None
@@ -172,7 +163,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         state_dict = self._get_state_dict(weights, adapter)
 
         # Get configuration
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         device_refs = [DeviceRef.from_device(d) for d in self.devices]
 
         # Create RoPE

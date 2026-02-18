@@ -41,7 +41,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -92,7 +91,6 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -104,7 +102,6 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

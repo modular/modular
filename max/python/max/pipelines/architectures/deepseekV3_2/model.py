@@ -56,7 +56,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             graph_mode = "auto"
 
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         if dtype == DType.float8_e4m3fn:
             float8_config = parse_float8_config(config, state_dict, dtype)
         else:

@@ -47,7 +47,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -89,7 +88,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -101,7 +99,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

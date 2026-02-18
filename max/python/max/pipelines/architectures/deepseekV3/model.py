@@ -120,7 +120,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             graph_mode = "auto"
 
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             float8_config = parse_float8_config(config, state_dict, dtype)
         else:

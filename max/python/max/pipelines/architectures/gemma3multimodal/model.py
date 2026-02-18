@@ -48,7 +48,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -189,8 +188,6 @@ class Gemma3_MultiModalModel(
         session: The MAX inference session managing the runtime.
         huggingface_config: The configuration loaded from HuggingFace
             (:obj:`transformers.AutoConfig`).
-        encoding: The quantization and data type encoding used for the model
-            (:obj:`max.pipelines.config_enums.SupportedEncoding`).
         devices: A list of MAX devices (:obj:`max.driver.Device`) to
             run the model on.
         kv_cache_config: Configuration settings for the Key-Value cache
@@ -218,7 +215,6 @@ class Gemma3_MultiModalModel(
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -229,7 +225,6 @@ class Gemma3_MultiModalModel(
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

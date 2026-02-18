@@ -25,7 +25,7 @@ from max.pipelines.architectures.llama3_legacy.model import (
     Llama3Inputs,
     Llama3Model,
 )
-from max.pipelines.lib import ModelOutputs, SupportedEncoding
+from max.pipelines.lib import ModelOutputs
 from test_common.mocks import DummyPipelineConfig
 from transformers.models.llama.configuration_llama import LlamaConfig
 
@@ -52,7 +52,6 @@ def test_build_compile_and_execute_llama3_graph(
         pipeline_config=pipeline_config,
         session=session,
         huggingface_config=hf_config,
-        encoding=SupportedEncoding.bfloat16,
         devices=devices,
         kv_cache_config=pipeline_config.model.kv_cache,
         weights=weights,
