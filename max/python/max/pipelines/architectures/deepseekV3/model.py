@@ -26,6 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -359,6 +360,32 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # We only need to consider the maximum of the MLA and MoE activation
         # memories, because the MLA and MoE layers are executed sequentially.
         activation_memory = max(mla_activation_memory, moe_activation_memory)
+
+        # EP SHMEM communication buffers are persistent (allocated once at
+        # model init, not freed between layers), so add on top of the
+        # per-layer activation peak.
+        ep_buffer_memory = 0
+        if pipeline_config.ep_size > 1:
+            n_gpus_per_node = len(pipeline_config.model.device_specs)
+
+            per_device_ep_memory = estimate_ep_memory_usage(
+                hidden_size=huggingface_config.hidden_size,
+                dispatch_dtype_size=encoding.dtype.size_in_bytes,
+                combine_dtype_size=DType.bfloat16.size_in_bytes,
+                max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
+                n_experts=huggingface_config.n_routed_experts,
+                top_k=huggingface_config.num_experts_per_tok,
+            )
+            ep_buffer_memory = (
+                per_device_ep_memory * NUM_GROUPS * n_gpus_per_node
+            )
+
+            logger.info(
+                "Estimated EP SHMEM buffer memory: "
+                f"{to_human_readable_bytes(ep_buffer_memory)}"
+            )
+
+        activation_memory += ep_buffer_memory
 
         if activation_memory != 0:
             logger.info(

@@ -43,7 +43,10 @@ from max.graph import (
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 
-from .ep_config import NUM_GROUPS, EPConfig
+from .ep_config import (
+    NUM_GROUPS,
+    EPConfig,
+)
 from .ep_kernels import (
     call_ep_combine,
     call_ep_combine_async,
@@ -591,24 +594,6 @@ class EPCommInitializer:
     atomic_counters: list[Buffer]
     """List of atomic counters used for synchronization."""
 
-    def _estimate_ep_memory_usage(self) -> int:
-        """Estimate the memory usage for the EP communication.
-
-        Returns:
-            int: Total estimated memory usage in bytes.
-        """
-        # fmt: off
-        d_token_size = self.config.hidden_size * self.config.dispatch_dtype.size_in_bytes
-        dispatch_send_buf_size = self.config.max_tokens_per_rank * d_token_size
-        dispatch_recv_buf_size = self.config.n_experts * self.config.max_tokens_per_rank * d_token_size
-
-        c_token_size = self.config.hidden_size * self.config.combine_dtype.size_in_bytes
-        combine_send_buf_size = self.config.n_experts * self.config.max_tokens_per_rank * c_token_size
-        combine_recv_buf_size = self.config.top_k * self.config.max_tokens_per_rank * c_token_size
-
-        return dispatch_send_buf_size + dispatch_recv_buf_size + combine_send_buf_size + combine_recv_buf_size
-        # fmt: on
-
     def __init__(self, config: EPConfig):
         """Initialize the EP communication initializer.
 
@@ -688,7 +673,7 @@ class EPCommInitializer:
         """
         logger.info("Initializing EP communication infrastructure...")
         logger.info(
-            f"Estimated EP memory usage per device: {to_human_readable_bytes(self._estimate_ep_memory_usage())}"
+            f"Estimated EP memory usage per device: {to_human_readable_bytes(self.config.estimate_memory_usage())}"
         )
 
         # Skip setting NVSHMEM-specific env vars on single node.

@@ -80,6 +80,21 @@ class EPConfig:
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
 
+    def estimate_memory_usage(self) -> int:
+        """Estimate the EP communication memory usage per device per buffer group.
+
+        Returns:
+            Estimated memory usage in bytes per device per buffer group.
+        """
+        return estimate_ep_memory_usage(
+            hidden_size=self.hidden_size,
+            dispatch_dtype_size=self.dispatch_dtype.size_in_bytes,
+            combine_dtype_size=self.combine_dtype.size_in_bytes,
+            max_tokens_per_rank=self.max_tokens_per_rank,
+            n_experts=self.n_experts,
+            top_k=self.top_k,
+        )
+
     def __post_init__(self):
         if self.dispatch_dtype != DType.bfloat16:
             if self.dispatch_fp8_config is None:
@@ -103,3 +118,45 @@ class EPConfig:
                 raise ValueError(
                     f"Unsupported dispatch dtype: {self.dispatch_dtype}"
                 )
+
+
+def estimate_ep_memory_usage(
+    *,
+    hidden_size: int,
+    dispatch_dtype_size: int,
+    combine_dtype_size: int,
+    max_tokens_per_rank: int,
+    n_experts: int,
+    top_k: int,
+) -> int:
+    """Estimate the EP communication memory usage per device per buffer group.
+
+    This is a standalone function so it can be called both from
+    :class:`EPCommInitializer` (which has a fully-validated ``EPConfig``)
+    and from memory estimators that only need the numeric fields.
+
+    Args:
+        hidden_size: Model hidden dimension.
+        dispatch_dtype_size: Size in bytes of the dispatch data type.
+        combine_dtype_size: Size in bytes of the combine data type.
+        max_tokens_per_rank: Maximum tokens per GPU rank.
+        n_experts: Total number of routed experts.
+        top_k: Number of experts each token is routed to.
+
+    Returns:
+        Total estimated memory usage in bytes per device per buffer group.
+    """
+    d_token_size = hidden_size * dispatch_dtype_size
+    dispatch_send_buf_size = max_tokens_per_rank * d_token_size
+    dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
+
+    c_token_size = hidden_size * combine_dtype_size
+    combine_send_buf_size = n_experts * max_tokens_per_rank * c_token_size
+    combine_recv_buf_size = top_k * max_tokens_per_rank * c_token_size
+
+    return (
+        dispatch_send_buf_size
+        + dispatch_recv_buf_size
+        + combine_send_buf_size
+        + combine_recv_buf_size
+    )

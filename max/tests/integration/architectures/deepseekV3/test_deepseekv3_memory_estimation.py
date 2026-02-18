@@ -62,6 +62,7 @@ def mock_huggingface_config() -> MagicMock:
     huggingface_config.num_nextn_predict_layers = 1
     huggingface_config.vocab_size = 129280
     huggingface_config.n_shared_experts = 1
+    huggingface_config.num_experts_per_tok = 8
 
     return huggingface_config
 
@@ -100,14 +101,14 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 6442450944
+    assert mem == 17966301184
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
     pipeline_config = mock_pipeline_config(PipelineRole.PrefillAndDecode)
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 549755813888
+    assert mem == 561279664128
 
 
 def mock_weights_pipeline_config(
