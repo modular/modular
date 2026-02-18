@@ -31,6 +31,7 @@ Note that if you're running this script inside bazel, only available for max-ci,
 then the virtualenvs are not needed.
 """
 
+import csv
 import json
 import logging
 import os
@@ -88,6 +89,20 @@ def validate_hf_token() -> None:
 
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
+
+
+@cache
+def _load_hf_repo_lock() -> dict[str, str]:
+    """Read hf-repo-lock.tsv, return {lowercase_repo: revision} mapping."""
+    tsv = Path(__file__).resolve().parent.parent.parent / "hf-repo-lock.tsv"
+    if not tsv.exists():
+        logger.warning("hf-repo-lock.tsv not found, skipping revision pinning")
+        return {}
+    db = {}
+    with open(tsv) as f:
+        for row in csv.DictReader(f, dialect="excel-tab"):
+            db[row["hf_repo"].lower()] = row["revision"]
+    return db
 
 
 def test_single_request(model: str, task: str) -> None:
@@ -167,6 +182,21 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     # so we need to enable penalties on the server
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
+
+    revision = _load_hf_repo_lock().get(model)
+    if revision:
+        if framework in ("max", "max-ci"):
+            cmd += [
+                "--huggingface-model-revision",
+                revision,
+                "--huggingface-weight-revision",
+                revision,
+            ]
+        else:  # vllm, sglang
+            cmd += ["--revision", revision]
+        logger.info(f"Pinned to revision {revision[:12]}")
+    else:
+        logger.warning(f"No locked revision for {model}")
 
     return cmd
 

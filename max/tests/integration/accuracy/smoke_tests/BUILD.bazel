@@ -21,6 +21,7 @@ modular_py_binary(
         requirement("requests"),
         requirement("lm-eval"),
         "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration:hf_repo_lock",
     ],
 )
 
@@ -38,6 +39,19 @@ modular_py_binary(
     testonly = True,
     srcs = ["bisect_smoke_test.py"],
     imports = [".."],
+)
+
+modular_py_test(
+    name = "test_smoke_test",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_smoke_test.py",
+    ],
+    imports = [".."],
+    deps = [
+        ":smoke_test",
+    ],
 )
 
 modular_py_test(
