@@ -23,7 +23,7 @@ def exec_gpu_query() -> None:
     # We shouldn't run this through Bazel
     assert root
 
-    os.execv(str(root / "bin" / "gpu-query"), sys.argv)
+    os.execv(str(root / "bin/gpu-query"), sys.argv)
 
 
 if __name__ == "__main__":

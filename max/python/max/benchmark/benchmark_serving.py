@@ -1788,8 +1788,7 @@ def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
     parsed_args = parse_benchmark_args(
         config_class=ServingBenchmarkConfig,
         default_config_path=Path(__file__).parent
-        / "configs"
-        / "serving_config.yaml",
+        / "configs/serving_config.yaml",
         description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
         args=args,
     )

@@ -42,7 +42,7 @@ from max.mlir.dialects import mo
 
 
 def modular_lib_path() -> Path:
-    return Path(os.environ["MODULAR_PATH"]) / ".derived" / "build" / "lib"
+    return Path(os.environ["MODULAR_PATH"]) / ".derived/build/lib"
 
 
 @pytest.fixture
@@ -56,15 +56,7 @@ def custom_ops_package_path(request: pytest.FixtureRequest) -> Path:
 @pytest.fixture
 def mo_listio_model_path(modular_path: Path) -> Path:
     """Returns the path to the generated model with list I/O."""
-    return (
-        modular_path
-        / "max"
-        / "tests"
-        / "integration"
-        / "API"
-        / "Inputs"
-        / "mo-list-model.mlir"
-    )
+    return modular_path / "max/tests/integration/API/Inputs/mo-list-model.mlir"
 
 
 def test_execute_success(
