@@ -622,14 +622,4 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         This method modifies the set in-place, removing all of its elements.
         After calling this method, the set will be empty.
         """
-        for _ in range(len(self)):
-            # Can't fail from an empty set
-            try:
-                _ = self.pop()
-            except:
-                pass
-
-        #! This code below (without using range function) won't pass tests
-        #! It leaves set with one remaining item. Is this a bug?
-        # for _ in self:
-        #     var a = self.pop()
+        self._data.clear()
