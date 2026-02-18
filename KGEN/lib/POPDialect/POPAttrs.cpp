@@ -1904,23 +1904,6 @@ TypedAttr SIMDNegAttr::get(MLIRContext *ctx, TypedAttr operand) {
   return Base::get(ctx, operand);
 }
 
-TypedAttr SIMDNegAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr operand) {
-  if (failed(verify(emitError, operand)))
-    return {};
-  return SIMDNegAttr::get(context, operand);
-}
-
-bool SIMDNegAttr::isConstant() const { return false; }
-
-LogicalResult SIMDNegAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr operand) {
-  if (!isa<SIMDType>(operand.getType()))
-    return emitError() << "requires a SIMD-typed operand";
-
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDFloorAttr
 //===----------------------------------------------------------------------===//
@@ -1938,25 +1921,6 @@ TypedAttr SIMDFloorAttr::get(MLIRContext *ctx, TypedAttr operand) {
       return ret;
   }
   return Base::get(ctx, operand);
-}
-
-TypedAttr
-SIMDFloorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                          MLIRContext *context, TypedAttr operand) {
-  if (failed(verify(emitError, operand)))
-    return {};
-  return SIMDFloorAttr::get(context, operand);
-}
-
-bool SIMDFloorAttr::isConstant() const { return false; }
-
-LogicalResult
-SIMDFloorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                      TypedAttr operand) {
-  auto simdType = dyn_cast<SIMDType>(operand.getType());
-  if (!simdType)
-    return emitError() << "requires a SIMD-typed operand";
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1978,23 +1942,6 @@ TypedAttr SIMDCeilAttr::get(MLIRContext *ctx, TypedAttr operand) {
   return Base::get(ctx, operand);
 }
 
-TypedAttr SIMDCeilAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                   MLIRContext *context, TypedAttr operand) {
-  if (failed(verify(emitError, operand)))
-    return {};
-  return SIMDCeilAttr::get(context, operand);
-}
-
-bool SIMDCeilAttr::isConstant() const { return false; }
-
-LogicalResult SIMDCeilAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                   TypedAttr operand) {
-  auto simdType = dyn_cast<SIMDType>(operand.getType());
-  if (!simdType)
-    return emitError() << "requires a SIMD-typed operand";
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDTruncAttr
 //===----------------------------------------------------------------------===//
@@ -2014,37 +1961,9 @@ TypedAttr SIMDTruncAttr::get(MLIRContext *ctx, TypedAttr operand) {
   return Base::get(ctx, operand);
 }
 
-TypedAttr
-SIMDTruncAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                          MLIRContext *context, TypedAttr operand) {
-  if (failed(verify(emitError, operand)))
-    return {};
-  return SIMDTruncAttr::get(context, operand);
-}
-
-bool SIMDTruncAttr::isConstant() const { return false; }
-
-LogicalResult
-SIMDTruncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                      TypedAttr operand) {
-  auto simdType = dyn_cast<SIMDType>(operand.getType());
-  if (!simdType)
-    return emitError() << "requires a SIMD-typed operand";
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // SIMD Binary Operation Attrs
 //===----------------------------------------------------------------------===//
-
-static LogicalResult
-verifySIMDBinaryOp(function_ref<InFlightDiagnostic()> emitError, TypedAttr lhs,
-                   TypedAttr rhs) {
-  if (lhs.getType() != rhs.getType() || !isa<SIMDType>(lhs.getType()))
-    return emitError() << "requires two equally-typed SIMD operands";
-
-  return success();
-}
 
 //===----------------------------------------------------------------------===//
 // SIMDAndAttr
@@ -2059,23 +1978,6 @@ TypedAttr SIMDAndAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
       return ret;
   }
   return Base::get(ctx, lhs, rhs);
-}
-
-TypedAttr SIMDAndAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr lhs,
-                                  TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDAndAttr::get(context, lhs, rhs);
-}
-
-bool SIMDAndAttr::isConstant() const { return false; }
-
-Type SIMDAndAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDAndAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2093,23 +1995,6 @@ TypedAttr SIMDXorAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
   return Base::get(ctx, lhs, rhs);
 }
 
-TypedAttr SIMDXorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr lhs,
-                                  TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDXorAttr::get(context, lhs, rhs);
-}
-
-bool SIMDXorAttr::isConstant() const { return false; }
-
-Type SIMDXorAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDXorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDOrAttr
 //===----------------------------------------------------------------------===//
@@ -2123,23 +2008,6 @@ TypedAttr SIMDOrAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
       return ret;
   }
   return Base::get(ctx, lhs, rhs);
-}
-
-TypedAttr SIMDOrAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                 MLIRContext *context, TypedAttr lhs,
-                                 TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDOrAttr::get(context, lhs, rhs);
-}
-
-bool SIMDOrAttr::isConstant() const { return false; }
-
-Type SIMDOrAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDOrAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2158,23 +2026,6 @@ TypedAttr SIMDAddAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
   return Base::get(ctx, lhs, rhs);
 }
 
-TypedAttr SIMDAddAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr lhs,
-                                  TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDAddAttr::get(context, lhs, rhs);
-}
-
-bool SIMDAddAttr::isConstant() const { return false; }
-
-Type SIMDAddAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDAddAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDSubAttr
 //===----------------------------------------------------------------------===//
@@ -2191,23 +2042,6 @@ TypedAttr SIMDSubAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
   return Base::get(ctx, lhs, rhs);
 }
 
-TypedAttr SIMDSubAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr lhs,
-                                  TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDSubAttr::get(context, lhs, rhs);
-}
-
-bool SIMDSubAttr::isConstant() const { return false; }
-
-Type SIMDSubAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDSubAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDMulAttr
 //===----------------------------------------------------------------------===//
@@ -2222,23 +2056,6 @@ TypedAttr SIMDMulAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
       return ret;
   }
   return Base::get(ctx, lhs, rhs);
-}
-
-TypedAttr SIMDMulAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr lhs,
-                                  TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDMulAttr::get(context, lhs, rhs);
-}
-
-bool SIMDMulAttr::isConstant() const { return false; }
-
-Type SIMDMulAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDMulAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2268,23 +2085,6 @@ TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
   return Base::get(ctx, lhs, rhs);
 }
 
-TypedAttr SIMDDivAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr lhs,
-                                  TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDDivAttr::get(context, lhs, rhs);
-}
-
-bool SIMDDivAttr::isConstant() const { return false; }
-
-Type SIMDDivAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult SIMDDivAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDAbsAttr
 //===----------------------------------------------------------------------===//
@@ -2297,23 +2097,6 @@ TypedAttr SIMDAbsAttr::get(MLIRContext *ctx, TypedAttr operand) {
       return ret;
   }
   return Base::get(ctx, operand);
-}
-
-TypedAttr SIMDAbsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr operand) {
-  if (failed(verify(emitError, operand)))
-    return {};
-  return SIMDAbsAttr::get(context, operand);
-}
-
-bool SIMDAbsAttr::isConstant() const { return false; }
-
-LogicalResult SIMDAbsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr operand) {
-  auto simdType = dyn_cast<SIMDType>(operand.getType());
-  if (!simdType)
-    return emitError() << "requires a SIMD-typed operand";
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2330,25 +2113,6 @@ TypedAttr SIMDRoundAttr::get(MLIRContext *ctx, TypedAttr operand) {
   return Base::get(ctx, operand);
 }
 
-TypedAttr
-SIMDRoundAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                          MLIRContext *context, TypedAttr operand) {
-  if (failed(verify(emitError, operand)))
-    return {};
-  return SIMDRoundAttr::get(context, operand);
-}
-
-bool SIMDRoundAttr::isConstant() const { return false; }
-
-LogicalResult
-SIMDRoundAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                      TypedAttr operand) {
-  auto simdType = dyn_cast<SIMDType>(operand.getType());
-  if (!simdType)
-    return emitError() << "requires a SIMD-typed operand";
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDFloorDivAttr
 //===----------------------------------------------------------------------===//
@@ -2363,25 +2127,6 @@ TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
       return ret;
   }
   return Base::get(ctx, lhs, rhs);
-}
-
-TypedAttr
-SIMDFloorDivAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                             MLIRContext *context, TypedAttr lhs,
-                             TypedAttr rhs) {
-  if (failed(verify(emitError, lhs, rhs)))
-    return {};
-  return SIMDFloorDivAttr::get(context, lhs, rhs);
-}
-
-bool SIMDFloorDivAttr::isConstant() const { return false; }
-
-Type SIMDFloorDivAttr::getType() const { return getLhs().getType(); }
-
-LogicalResult
-SIMDFloorDivAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2491,70 +2236,16 @@ LogicalResult SIMDCmpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // SIMDReduceOrAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr SIMDReduceOrAttr::get(MLIRContext *ctx, TypedAttr vector,
-                                SIMDType outType) {
-  // Fold if possible
-  if (auto fold = foldSIMDReduceOr(/*vector=*/{}, vector,
-                                   cast<SIMDType>(vector.getType()))) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, vector, outType);
-}
-
-TypedAttr
-SIMDReduceOrAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                             MLIRContext *context, TypedAttr vector,
-                             SIMDType outType) {
-  if (failed(verify(emitError, vector, outType)))
-    return {};
-  return SIMDReduceOrAttr::get(context, vector, outType);
-}
-
-bool SIMDReduceOrAttr::isConstant() const { return false; }
-
-LogicalResult
-SIMDReduceOrAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         TypedAttr vector, SIMDType outType) {
-  if (!isa<SIMDType>(vector.getType()))
-    return emitError() << "requires a SIMD-type operand";
-
-  return success();
+OpFoldResult SIMDReduceOrAttr::fold(TypedAttr vector, SIMDType outType) {
+  return foldSIMDReduceOr(/*vector=*/{}, vector, outType);
 }
 
 //===----------------------------------------------------------------------===//
 // SIMDReduceAndAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr SIMDReduceAndAttr::get(MLIRContext *ctx, TypedAttr vector,
-                                 SIMDType outType) {
-  // Fold if possible
-  if (auto fold = foldSIMDReduceAnd(/*vector=*/{}, vector,
-                                    cast<SIMDType>(vector.getType()))) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, vector, outType);
-}
-
-TypedAttr
-SIMDReduceAndAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                              MLIRContext *context, TypedAttr vector,
-                              SIMDType outType) {
-  if (failed(verify(emitError, vector, outType)))
-    return {};
-  return SIMDReduceAndAttr::get(context, vector, outType);
-}
-
-bool SIMDReduceAndAttr::isConstant() const { return false; }
-
-LogicalResult
-SIMDReduceAndAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                          TypedAttr vector, SIMDType outType) {
-  if (!isa<SIMDType>(vector.getType()))
-    return emitError() << "requires a SIMD-type operand";
-
-  return success();
+OpFoldResult SIMDReduceAndAttr::fold(TypedAttr vector, SIMDType outType) {
+  return foldSIMDReduceAnd(/*vector=*/{}, vector, outType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2570,26 +2261,6 @@ TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
   return Base::get(ctx, value, shft);
 }
 
-TypedAttr SIMDShlAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr value,
-                                  TypedAttr shft) {
-  if (failed(verify(emitError, value, shft)))
-    return {};
-  return SIMDShlAttr::get(context, value, shft);
-}
-
-bool SIMDShlAttr::isConstant() const { return false; }
-
-Type SIMDShlAttr::getType() const { return getVal().getType(); }
-
-LogicalResult SIMDShlAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr value, TypedAttr shft) {
-  if (!isa<SIMDType>(value.getType()))
-    return emitError() << "requires a SIMD-type operand";
-
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // SIMDShrAttr
 //===----------------------------------------------------------------------===//
@@ -2601,26 +2272,6 @@ TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
       return ret;
   }
   return Base::get(ctx, value, shft);
-}
-
-TypedAttr SIMDShrAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  MLIRContext *context, TypedAttr value,
-                                  TypedAttr shft) {
-  if (failed(verify(emitError, value, shft)))
-    return {};
-  return SIMDShrAttr::get(context, value, shft);
-}
-
-bool SIMDShrAttr::isConstant() const { return false; }
-
-Type SIMDShrAttr::getType() const { return getVal().getType(); }
-
-LogicalResult SIMDShrAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr value, TypedAttr shft) {
-  if (!isa<SIMDType>(value.getType()))
-    return emitError() << "requires a SIMD-type operand";
-
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
