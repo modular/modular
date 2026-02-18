@@ -363,3 +363,6 @@ what we publish.
 - `StringSlice.find`: Fixed integer overflow bug in SIMD string search that
   caused searches to fail when searching for strings longer than
   `simd_width_of[DType.bool]()` and haystacks larger than UInt16.MAX.
+
+- `FileDescriptor.write_bytes()`: Fixed silent data loss on partial writes by
+  looping until all bytes are written, matching `FileHandle.write_bytes()`.
