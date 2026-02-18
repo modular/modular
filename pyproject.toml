@@ -144,9 +144,3 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "max.*"
 disallow_any_generics = true
-
-# TODO: Ideally there would be no exception for max.experimental, but, well, it
-# is experimental...  Hopefully it graduates soon.
-[[tool.mypy.overrides]]
-module = "max.experimental.*"
-disallow_any_generics = false
