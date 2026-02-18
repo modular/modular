@@ -34,7 +34,7 @@ deepseekV2_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: ["paged"],
     },
-    multi_gpu_supported=False,  # TODO(MODELS-1032): Re-enable multi-GPU
+    multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
