@@ -1844,7 +1844,10 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             128,
             192,
             256,
-        ), "Only support cta_group == 2 with MMA_M == 256"
+        ), (
+            "Only support cta_group == 2 with MMA_M == 256 and MMA_N in (64,"
+            " 128, 192, 256)"
+        )
 
     else:
         comptime assert MMA_M == 128 and MMA_N in (64, 128, 192, 256), (

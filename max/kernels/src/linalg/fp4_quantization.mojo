@@ -65,6 +65,16 @@ from memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
 from algorithm import elementwise
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from sys import env_get_bool
+from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
+    heuristic_and_outliers_dispatch,
+)
+from gpu.primitives.grid_controls import PDLLevel
+from linalg.matmul.gpu.sm100_structured.default.dispatch import (
+    DISPATCH_HIT,
+    DISPATCH_MISS,
+)
+
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -1194,6 +1204,8 @@ fn block_scaled_matmul[
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     target: StaticString = "cpu",
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
     a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
@@ -1217,11 +1229,11 @@ fn block_scaled_matmul[
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
-    var c = from_ndbuffer_row_major(c_device)
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var a_scales = from_ndbuffer_row_major(a_scales_device)
-    var b_scales = from_ndbuffer_row_major(b_scales_device)
+    var c = from_ndbuffer_row_major(c_device).as_any_origin()
+    var a = from_ndbuffer_row_major(a_device).as_any_origin()
+    var b = from_ndbuffer_row_major(b_device).as_any_origin()
+    var a_scales = from_ndbuffer_row_major(a_scales_device).as_any_origin()
+    var b_scales = from_ndbuffer_row_major(b_scales_device).as_any_origin()
 
     comptime sfa_layout = a_scales.layout
     comptime sfb_layout = b_scales.layout
@@ -1242,6 +1254,49 @@ fn block_scaled_matmul[
     comptime assert (
         sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
     ), ""
+
+    var m = c.dim(0)
+    var n = c.dim(1)
+    var k = a.dim(1) * 2 if a_type == DType.uint8 else a.dim(1)
+
+    if m == 0 or n == 0:
+        return
+
+    logger.info(
+        "------ Dispatching to SM100 (B200+) Block Scaled matmul kernel ------"
+    )
+    logger.info(
+        "Input Data Types: ",
+        a_type,
+        ", ",
+        b_type,
+        " Output Data Type: ",
+        c_type,
+        " Problem Shape: MNK=[",
+        m,
+        ", ",
+        n,
+        ", ",
+        k,
+        "]",
+    )
+
+    @parameter
+    if env_get_bool["ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False]():
+        var status = heuristic_and_outliers_dispatch[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+        if status == DISPATCH_HIT:
+            logger.info("Executing SM100 Block Scaled matmul kernel")
+            return
+        else:
+            raise Error("Heuristic and outliers dispatch failed")
+
+    logger.info("Executing CUBLAS SM100 Block Scaled matmul kernel")
 
     block_scaled_matmul_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
