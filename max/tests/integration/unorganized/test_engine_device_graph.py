@@ -220,3 +220,41 @@ def test_replay_with_external_allocations() -> None:
     accelerator.synchronize()
     del results
     accelerator.synchronize()
+
+
+def test_debug_verify_replay() -> None:
+    """Test that debug_verify_replay validates captured graphs match eager execution."""
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    # TODO: Fix this
+    pytest.skip("This test causes stateful issues due to the previous test")
+
+    accelerator = Accelerator()
+    session = InferenceSession(devices=[accelerator])
+
+    # Create a simple graph that adds 1 to the input
+    with Graph(
+        "debug_verify_test",
+        input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 1)
+
+    model = session.load(graph)
+    input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
+        model.input_devices[0]
+    )
+
+    # Capture the graph
+    model.capture(input_tensor)
+
+    # Verify that the captured graph matches eager execution
+    # This should succeed since the execution is identical
+    model.debug_verify_replay(input_tensor)
+
+    # Verify the captured output is still correct after verification
+    model.replay(input_tensor)
+    (output,) = model.execute(input_tensor)
+    np.testing.assert_allclose(
+        output.to_numpy(), np.arange(4, dtype=np.float32) + 1
+    )

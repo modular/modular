@@ -162,12 +162,40 @@ def _Model_replay(self: Model, *inputs: Buffer) -> None:
     self._replay(list(inputs))
 
 
+def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
+    """Execute eagerly and verify the launch trace matches the captured graph.
+
+    This method validates that graph capture correctly represents eager
+    execution by running the model and comparing kernel launch sequences
+    against a previously captured device graph.
+
+    Args:
+        self: The model to debug/verify
+        inputs: Input buffers matching the captured input signature (same
+            shapes and dtypes used during capture).
+
+    Raises:
+        ValueError: If no input buffers are provided.
+        RuntimeError: If no graph has been captured for this input configuration.
+        RuntimeError: If the eager execution trace doesn't match the captured graph.
+
+    Example:
+        >>> model.capture(input_tensor)
+        >>> model.debug_verify_replay(input_tensor)  # Validates capture
+        >>> model.replay(input_tensor)  # Safe to use optimized replay
+    """
+    if not inputs:
+        raise ValueError("Model.debug_verify_replay requires input buffers.")
+    self._debug_verify_replay(list(inputs))
+
+
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:
