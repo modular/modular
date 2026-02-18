@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(tempfile.mkdtemp())
-HOME = ROOT / "home" / "user"
+HOME = ROOT / "home/user"
 
 
 class ConfigWithEnvTest(unittest.TestCase):

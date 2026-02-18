@@ -79,7 +79,7 @@ from tests.util import (
 )
 
 THIS_FILE = Path(__file__)
-EMPTY_CONFIG = THIS_DIR / "data" / "empty_pyproject.toml"
+EMPTY_CONFIG = THIS_DIR / "data/empty_pyproject.toml"
 PY36_ARGS = [f"--target-version={version.name.lower()}" for version in PY36_VERSIONS]
 DEFAULT_EXCLUDE = mblack.re_compile_maybe_verbose(mblack.const.DEFAULT_EXCLUDES)
 DEFAULT_INCLUDE = mblack.re_compile_maybe_verbose(mblack.const.DEFAULT_INCLUDES)
@@ -1299,7 +1299,7 @@ class BlackTestCase(BlackBaseTestCase):
             report = MagicMock()
             # Even with an existing file, since we are forcing stdin, black
             # should output to stdout and not modify the file inplace
-            p = THIS_DIR / "data" / "simple_cases" / "collections.mojo"
+            p = THIS_DIR / "data/simple_cases/collections.mojo"
             # Make sure is_file actually returns True
             self.assertTrue(p.is_file())
             path = Path(f"__BLACK_STDIN_FILENAME__{p}")
@@ -2075,7 +2075,7 @@ def assert_collected_sources(
 @pytest.mark.skip("bazel's sandboxing breaks the assumptions of these tests")
 class TestFileCollection:
     def test_include_exclude(self) -> None:
-        path = THIS_DIR / "data" / "include_exclude_tests"
+        path = THIS_DIR / "data/include_exclude_tests"
         src = [path]
         expected = [
             Path(path / "b/dont_exclude/a.mojo"),
@@ -2102,8 +2102,8 @@ class TestFileCollection:
     def test_gitignore_used_on_multiple_sources(self) -> None:
         root = Path(DATA_DIR / "gitignore_used_on_multiple_sources")
         expected = [
-            root / "dir1" / "b.mojo",
-            root / "dir2" / "b.mojo",
+            root / "dir1/b.mojo",
+            root / "dir2/b.mojo",
         ]
         ctx = FakeContext()
         ctx.obj["root"] = root
@@ -2121,7 +2121,7 @@ class TestFileCollection:
         assert_collected_sources(src, expected, include="", exclude=r"/exclude/|a\.mojo")
 
     def test_gitignore_exclude(self) -> None:
-        path = THIS_DIR / "data" / "include_exclude_tests"
+        path = THIS_DIR / "data/include_exclude_tests"
         include = re.compile(r"\.pyi?$")
         exclude = re.compile(r"")
         report = mblack.Report()
@@ -2151,7 +2151,7 @@ class TestFileCollection:
         assert sorted(expected) == sorted(sources)
 
     def test_nested_gitignore(self) -> None:
-        path = Path(THIS_DIR / "data" / "nested_gitignore_tests")
+        path = Path(THIS_DIR / "data/nested_gitignore_tests")
         include = re.compile(r"\.pyi?$")
         exclude = re.compile(r"")
         root_gitignore = mblack.files.get_gitignore(path)
@@ -2182,12 +2182,12 @@ class TestFileCollection:
     def test_nested_gitignore_directly_in_source_directory(self) -> None:
         # https://github.com/psf/black/issues/2598
         path = Path(DATA_DIR / "nested_gitignore_tests")
-        src = Path(path / "root" / "child")
+        src = Path(path / "root/child")
         expected = [src / "a.mojo", src / "c.mojo"]
         assert_collected_sources([src], expected)
 
     def test_invalid_gitignore(self) -> None:
-        path = THIS_DIR / "data" / "invalid_gitignore_tests"
+        path = THIS_DIR / "data/invalid_gitignore_tests"
         empty_config = path / "pyproject.toml"
         result = BlackRunner().invoke(
             mblack.main, ["--verbose", "--config", str(empty_config), str(path)]
@@ -2199,7 +2199,7 @@ class TestFileCollection:
         assert f"Could not parse {gitignore}" in result.stderr_bytes.decode()
 
     def test_invalid_nested_gitignore(self) -> None:
-        path = THIS_DIR / "data" / "invalid_nested_gitignore_tests"
+        path = THIS_DIR / "data/invalid_nested_gitignore_tests"
         empty_config = path / "pyproject.toml"
         result = BlackRunner().invoke(
             mblack.main, ["--verbose", "--config", str(empty_config), str(path)]
@@ -2207,12 +2207,12 @@ class TestFileCollection:
         assert result.exit_code == 1
         assert result.stderr_bytes is not None
 
-        gitignore = path / "a" / ".gitignore"
+        gitignore = path / "a/.gitignore"
         assert f"Could not parse {gitignore}" in result.stderr_bytes.decode()
 
     def test_gitignore_that_ignores_subfolders(self) -> None:
         # If gitignore with */* is in root
-        root = Path(DATA_DIR / "ignore_subfolders_gitignore_tests" / "subdir")
+        root = Path(DATA_DIR / "ignore_subfolders_gitignore_tests/subdir")
         expected = [root / "b.mojo"]
         ctx = FakeContext()
         ctx.obj["root"] = root
@@ -2222,7 +2222,7 @@ class TestFileCollection:
         root = Path(DATA_DIR / "ignore_subfolders_gitignore_tests")
         expected = [
             root / "a.mojo",
-            root / "subdir" / "b.mojo",
+            root / "subdir/b.mojo",
         ]
         ctx = FakeContext()
         ctx.obj["root"] = root
@@ -2343,7 +2343,7 @@ class TestFileCollection:
         # file being passed directly. This is the same as
         # test_exclude_for_issue_1572
         src = ["-"]
-        path = THIS_DIR / "data" / "include_exclude_tests"
+        path = THIS_DIR / "data/include_exclude_tests"
         stdin_filename = str(path / "b/exclude/a.mojo")
         expected = [f"__BLACK_STDIN_FILENAME__{stdin_filename}"]
         assert_collected_sources(
@@ -2357,7 +2357,7 @@ class TestFileCollection:
     def test_get_sources_with_stdin_filename_and_force_exclude(self) -> None:
         # Force exclude should exclude the file when passing it through
         # stdin_filename
-        path = THIS_DIR / "data" / "include_exclude_tests"
+        path = THIS_DIR / "data/include_exclude_tests"
         stdin_filename = str(path / "b/exclude/a.mojo")
         assert_collected_sources(
             src=["-"],

@@ -59,9 +59,7 @@ def _libname() -> str:
 def _libpath() -> pathlib.Path:
     # todo: proper install path
     modularpath = pathlib.Path(os.environ.get("MODULAR_PATH", ""))
-    libpath = (
-        modularpath / "bazel-bin" / "KGEN" / "tools" / "mojo-ipython-extension"
-    )
+    libpath = modularpath / "bazel-bin/KGEN/tools/mojo-ipython-extension"
     return libpath
 
 
