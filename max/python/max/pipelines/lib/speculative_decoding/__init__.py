@@ -28,7 +28,6 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextContext
 
-from ..speculative_config import SpeculativeMethod
 from .accepted_hidden_states_extractor import (
     accepted_hidden_states_extractor,
     call_per_device_graph,

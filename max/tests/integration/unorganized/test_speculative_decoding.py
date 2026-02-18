@@ -30,7 +30,6 @@ from max.interfaces import (
 from max.nn.legacy.kv_cache import RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
-from max.pipelines.lib.speculative_config import SpeculativeMethod
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -61,7 +60,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
+        speculative_method="standalone",
         num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=num_steps,
@@ -207,7 +206,7 @@ def test_draft_model_encoding_selection() -> None:
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
+        speculative_method="standalone",
         num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
@@ -233,7 +232,7 @@ def test_draft_model_encoding_selection() -> None:
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
+        speculative_method="standalone",
         num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
@@ -267,7 +266,7 @@ def test_kv_cache_claiming_protocol() -> None:
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
+        speculative_method="standalone",
         num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,

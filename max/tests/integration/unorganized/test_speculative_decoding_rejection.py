@@ -27,7 +27,6 @@ from max.interfaces import (
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
-from max.pipelines.lib.speculative_config import SpeculativeMethod
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -53,7 +52,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
         model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
+        speculative_method="standalone",
         num_speculative_tokens=10,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
