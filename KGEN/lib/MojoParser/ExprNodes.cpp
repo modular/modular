@@ -1067,17 +1067,20 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (auto declRef = dyn_cast<ParamDeclRefAttr>(pvalue.get())) {
       auto [parentDecl, paramDecls, paramIdx] =
           decl->lookupParamReference(declRef);
-      if (parentDecl) {
-        if (isa<StructDeclOp>(parentDecl->getIfOperation())) {
-          auto diag =
-              emitter.emitError(loc, "unqualified access to struct parameter '")
-              << spelling << "'; use 'Self." << spelling << "' instead";
-          diag << FixIt::replaceToken(loc, "Self." + spelling);
+      // If the StructDecl does not have a self type, that means it is still
+      // being signature resolved (and the ASTDecl we're looking at is the
+      // temporary one made for signature emission). In this case, we allow
+      // unqualified access to parameters.
+      if (parentDecl && isa<StructDeclOp>(parentDecl->getIfOperation()) &&
+          parentDecl->getTypeDeclSelf()) {
+        auto diag =
+            emitter.emitError(loc, "unqualified access to struct parameter '")
+            << spelling << "'; use 'Self." << spelling << "' instead";
+        diag << FixIt::replaceToken(loc, "Self." + spelling);
 
-          for (auto paramDecl : parentDecl->lookupInCurrentScope(spelling)) {
-            diag.attachNote(paramDecl->getLoc())
-                << "parameter '" << spelling << "' declared here";
-          }
+        for (auto paramDecl : parentDecl->lookupInCurrentScope(spelling)) {
+          diag.attachNote(paramDecl->getLoc())
+              << "parameter '" << spelling << "' declared here";
         }
       }
     }

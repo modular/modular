@@ -2675,12 +2675,65 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
   return failure();
 }
 
+/// Process the @align(N) decorator on structs.
+/// Returns true if the decorator was handled (with or without errors),
+/// false if not an align decorator.
+static bool processAlignDecoratorHelper(ExprNode *alignExpr,
+                                        StructDeclOp structOp,
+                                        SharedState &shared, ASTDecl &decl) {
+  // Emit the alignment expression as an index-typed value. This handles
+  // both integer literals and parametric expressions.
+  IREmitter emitter(decl, EC_Decorator);
+  CValue alignCValue = emitter.emitIndex(alignExpr, EC_Decorator);
+  if (!alignCValue) {
+    // Error already emitted by IREmitter.
+    return true;
+  }
+
+  PValue alignPValue = alignCValue.getIfPValue();
+  if (!alignPValue) {
+    shared.emitError(alignExpr->getLoc(),
+                     "@align requires a compile-time value");
+    return true;
+  }
+
+  TypedAttr alignAttr = alignPValue.get();
+
+  // If this resolved to an immediate integer value (which is expected to be the
+  // common case), validate it early for faster feedback.
+  if (auto intAttr = dyn_cast<IntegerAttr>(alignAttr)) {
+    int64_t alignVal = intAttr.getInt();
+
+    // Validate: must be positive power of 2
+    if (alignVal <= 0 || !llvm::isPowerOf2_64(alignVal)) {
+      shared.emitError(alignExpr->getLoc(),
+                       "@align value must be a positive power of 2");
+      return true;
+    }
+
+    // Validate: must not exceed reasonable upper bound (2^29 bytes = 512MB).
+    // This matches common compiler limits and avoids overflow issues.
+    constexpr int64_t kMaxAlignment = 1LL << 29;
+    if (alignVal > kMaxAlignment) {
+      shared.emitError(alignExpr->getLoc(),
+                       "@align value exceeds maximum alignment (2^29)");
+      return true;
+    }
+  }
+
+  structOp.setMinAlignmentAttr(alignAttr);
+  return true;
+}
+
 /// Process a decorator that is resolved at the signature phase of resolution
 /// and return success, otherwise failure if it is handled later.
+/// `sigDecl` is the fully-resolved signature scope with struct parameters.
 static LogicalResult
 processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
-                                SharedState &shared, ASTDecl &structDecl,
+                                SharedState &shared, ASTDecl &sigDecl,
                                 SmallVectorImpl<SymbolRefAttr> &traits) {
+  ASTDecl *parentDecl = sigDecl.getParentDecl();
+
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       // MOCO-3233: Mark deprecated and remove after 26.2.
@@ -2689,8 +2742,8 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
                          "RegisterPassable instead");
       structOp.setConvention(TypeConvention::RegisterPassable);
       // RP types implicitly conforms to Movable
-      if (ASTDecl *decl = shared.lookupBuiltinTrait(
-              "Movable", structDecl.getParentDecl(), decorator->getLoc()))
+      if (ASTDecl *decl = shared.lookupBuiltinTrait("Movable", parentDecl,
+                                                    decorator->getLoc()))
         traits.push_back(decl->getSymbolRef());
       return success();
     }
@@ -2713,11 +2766,10 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
                            "conform to TrivialRegisterPassable instead");
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
         if (ASTDecl *decl = shared.lookupBuiltinTrait(
-                "ImplicitlyCopyable", structDecl.getParentDecl(),
-                decorator->getLoc()))
+                "ImplicitlyCopyable", parentDecl, decorator->getLoc()))
           traits.push_back(decl->getSymbolRef());
-        if (ASTDecl *decl = shared.lookupBuiltinTrait(
-                "Movable", structDecl.getParentDecl(), decorator->getLoc()))
+        if (ASTDecl *decl = shared.lookupBuiltinTrait("Movable", parentDecl,
+                                                      decorator->getLoc()))
           traits.push_back(decl->getSymbolRef());
         return success();
       }
@@ -2726,7 +2778,6 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
       if (declRef->spelling == "nonmaterializable" &&
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
-          ASTDecl *parentDecl = structDecl.getParentDecl();
           IREmitter emitter(*parentDecl, EC_Type);
           if (ASTType t = emitter.emitExprType(drn)) {
             structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
@@ -2742,46 +2793,8 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
                            "@align requires exactly one argument");
           return success();
         }
-
-        auto alignExpr = callNode->operands[0].expr;
-        if (auto intLit = dyn_cast<IntLiteralNode>(alignExpr)) {
-          APInt value = Lexer::getIntegerLiteralValue(intLit->spelling);
-          int64_t alignVal = value.getSExtValue();
-
-          // Validate: must be positive power of 2
-          if (alignVal <= 0 || !llvm::isPowerOf2_64(alignVal)) {
-            shared.emitError(intLit->getLoc(),
-                             "@align value must be a positive power of 2");
-            return success();
-          }
-
-          // Validate: must not exceed reasonable upper bound (2^29 bytes =
-          // 512MB). This matches common compiler limits and avoids overflow
-          // issues.
-          constexpr int64_t kMaxAlignment = 1LL << 29;
-          if (alignVal > kMaxAlignment) {
-            shared.emitError(intLit->getLoc(),
-                             "@align value exceeds maximum alignment (2^29)");
-            return success();
-          }
-
-          structOp.setMinAlignmentAttr(
-              IntegerAttr::get(IndexType::get(shared.getContext()), alignVal));
-          return success();
-        }
-
-        // Check for negative literal like @align(-1) - parsed as unary negation
-        if (auto unaryOp = dyn_cast<UnaryOpNode>(alignExpr)) {
-          if (unaryOp->kind == ExprNode::kNeg &&
-              isa<IntLiteralNode>(unaryOp->subExpr)) {
-            shared.emitError(alignExpr->getLoc(),
-                             "@align value must be a positive power of 2");
-            return success();
-          }
-        }
-
-        shared.emitError(alignExpr->getLoc(),
-                         "@align requires a compile-time integer literal");
+        processAlignDecoratorHelper(callNode->operands[0].expr, structOp,
+                                    shared, sigDecl);
         return success();
       }
     }
@@ -2845,9 +2858,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       decl.isErroneous())
     return failure();
 
-  // Propagate signature errors and decls.
-  decl.takeDecls(sigDecl);
-
   auto paramsArrayAttr =
       ParamDeclArrayAttr::get(getContext(), paramSignature.paramDeclAttrs);
   auto sig = TypeSignatureType::remapToSignature(
@@ -2878,8 +2888,12 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   Decorators(decl).applySignatureDecorators(
       decoratorExprs, [&](ExprNode *decorator) {
         return processStructSignatureDecorator(decorator, structOp, shared,
-                                               decl, parentTraits);
+                                               sigDecl, parentTraits);
       });
+
+  // Propagate signature errors and decls.
+  decl.takeDecls(sigDecl);
+
   std::string linearTypeErrorMsg;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
