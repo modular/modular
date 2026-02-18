@@ -26,12 +26,12 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights.weights import WeightData
 from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
     VisionConfig,
 )
-from max.pipelines.architectures.llama3.model_config import (
+from max.pipelines.architectures.llama3_legacy.model_config import (
     DistributedGemmConfig,
     Llama3Config,
 )
@@ -110,7 +110,7 @@ class ConfigLoader:
             // llm_config["num_attention_heads"],
             num_layers=llm_config["num_hidden_layers"],
             page_size=16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             enable_prefix_caching=False,
             enable_kvcache_swapping_to_host=False,
             host_kvcache_swap_space_gb=0,

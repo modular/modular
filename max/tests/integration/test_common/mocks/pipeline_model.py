@@ -13,7 +13,7 @@
 """Utilities for working with mock pipeline_model for unit testing"""
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -26,12 +26,10 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    KVCacheStrategy,
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    InputKey,
     KVCacheConfig,
     LoRAManager,
     ModelInputs,
@@ -49,12 +47,35 @@ class MockModelInputs(ModelInputs):
         active_batch_size: int,
         eos_prob: float,
         kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
+        return_n_logits: int | Buffer = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
         self.eos_prob = eos_prob
+        self.tokens = Buffer.from_numpy(
+            np.zeros((max(active_batch_size, 1),), dtype=np.int64)
+        )
+        self.input_row_offsets = Buffer.from_numpy(
+            np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
+        )
+        self.signal_buffers: list[Buffer] = []
         self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+        if isinstance(return_n_logits, Buffer):
+            self.return_n_logits = return_n_logits
+        else:
+            self.return_n_logits = Buffer.from_numpy(
+                np.array([return_n_logits], dtype=np.uint32)
+            )
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.return_n_logits,
+            *self.signal_buffers,
+            *kv_cache_inputs,
+        )
 
 
 class MockPipelineModel(PipelineModel):
@@ -111,10 +132,6 @@ class MockPipelineModel(PipelineModel):
             and self.pipeline_config.lora.enable_lora
             else None
         )
-        self._device_graph_capture_enabled = (
-            pipeline_config.device_graph_capture
-        )
-        self._device_graph_states: dict[InputKey, Any] = {}
 
     @classmethod
     def calculate_max_seq_len(
@@ -141,7 +158,7 @@ class MockPipelineModel(PipelineModel):
             head_dim=1,
             num_layers=1,
             enable_prefix_caching=False,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

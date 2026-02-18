@@ -33,7 +33,6 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
-    KVCacheStrategy,
 )
 from max.pipelines import (
     KVCacheConfig,
@@ -52,25 +51,12 @@ from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
 
+@dataclass
 class DummyModelInputs(ModelInputs):
     input1: Buffer | None = None
     input2: Buffer | None = None
     input3: Buffer | None = None
     input4: Buffer | None = None
-
-    def __init__(
-        self,
-        input1: Buffer | None = None,
-        input2: Buffer | None = None,
-        input3: Buffer | None = None,
-        input4: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        self.input1 = input1
-        self.input2 = input2
-        self.input3 = input3
-        self.input4 = input4
-        self.kv_cache_inputs = kv_cache_inputs
 
 
 class DummyPipelineModel(PipelineModel, KVCacheMixin):
@@ -366,14 +352,14 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
+        SupportedEncoding.gptq: ["paged"],
         # q4_k intentionally left out to test a valid SupportedEncoding but not
         # supported by the model (supported_encoding).
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_0: ["paged"],
+        SupportedEncoding.q6_k: ["paged"],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
+        SupportedEncoding.float8_e4m3fn: ["paged"],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -393,11 +379,9 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
-        SupportedEncoding.gptq: [
-            KVCacheStrategy.PAGED,
-        ],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.gptq: ["paged"],
+        SupportedEncoding.float32: ["paged"],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -427,7 +411,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: ["paged"],
     },
     pipeline_model=DummyPipelineModel,
     tokenizer=DummyTextTokenizer,

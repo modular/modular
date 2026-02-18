@@ -19,7 +19,6 @@ from typing import Any
 import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
@@ -41,7 +40,7 @@ MAX_READ_SIZE = 10 * 1024
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             max_batch_size=16,
         )
     ],
@@ -88,7 +87,7 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:  # type: ignore
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             max_batch_size=16,
         )
     ],
@@ -131,7 +130,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             max_batch_size=16,
         )
     ],

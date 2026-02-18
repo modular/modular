@@ -429,11 +429,13 @@ fn _copy_frag_to_smem_nvidia[
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
+    # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
+        ImmutAnyOrigin,
         address_space = AddressSpace.SHARED,
-    ](p_smem_iter.ptr)
+    ](p_smem_iter.ptr.as_immutable())
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
     )
@@ -527,11 +529,13 @@ fn _copy_frag_to_smem_amd[
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
+    # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
+        ImmutAnyOrigin,
         address_space = AddressSpace.SHARED,
-    ](p_smem_iter.ptr)
+    ](p_smem_iter.ptr.as_immutable())
 
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
@@ -708,7 +712,7 @@ fn dispatch_materialized_mask_and_score_mod[
     mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
 ) raises -> None:

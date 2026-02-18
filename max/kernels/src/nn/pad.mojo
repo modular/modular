@@ -94,10 +94,10 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     fn _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
-    fn __copyinit__(out self, other: Self):
-        self.cur = other.cur
-        self.loop_bounds = other.loop_bounds.copy()
-        self.early_stop = other.early_stop
+    fn __copyinit__(out self, copy: Self):
+        self.cur = copy.cur
+        self.loop_bounds = copy.loop_bounds.copy()
+        self.early_stop = copy.early_stop
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
@@ -281,7 +281,9 @@ fn pad_shape[
     Returns:
         The output shape.
     """
-    comptime assert paddings_buf.rank == 1, "paddings_buf must be of rank 1"
+    comptime assert (
+        paddings_buf.flat_rank == 1
+    ), "paddings_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.

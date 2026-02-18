@@ -35,7 +35,6 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 
@@ -233,7 +232,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -371,7 +370,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[get_device(wqkv_dev)],
     )
@@ -427,7 +426,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -473,7 +472,7 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -548,7 +547,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -668,7 +667,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.MODEL_DEFAULT,  # Invalid strategy
+        cache_strategy="model_default",  # Invalid strategy
         page_size=128,
         devices=[device],
     )

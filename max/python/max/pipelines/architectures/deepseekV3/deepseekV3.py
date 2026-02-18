@@ -63,12 +63,6 @@ from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
 
 
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
-
-
 def _unpack_kv_collections(
     kv_collections: Sequence[PagedCacheValues],
 ) -> tuple[
@@ -465,7 +459,14 @@ class DeepseekV3(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        freqs_cis = distribute_value(self.rope.freqs_cis, devices)
+        # Keep this as explicit per-device `.to()` copies.
+        # Broadcasting graph-time constants can hang when chained after
+        # runtime-dependent collectives (GEX-3200).
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
+        if not input_row_offsets.device == devices[0]:
+            raise ValueError(
+                f"input_row_offsets must be located on {devices[0]}"
+            )
         input_row_offsets_ = ops.distributed_broadcast(
             input_row_offsets, signal_buffers
         )
@@ -586,7 +587,7 @@ class DeepseekV3(Module):
                 )
                 assert isinstance(h, list)
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
@@ -597,10 +598,10 @@ class DeepseekV3(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = distribute_value(last_token_h, devices)
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
@@ -615,8 +616,8 @@ class DeepseekV3(Module):
         offsets = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
-            if self.ep_manager is not None:
-                # EP case: gather variable tokens per device, then allgather
+            if self.config.data_parallel_degree > 1:
+                # Data-parallel case: gather variable tokens per device, then allgather
                 # Create the range once on device 0 (range inputs must be on CPU)
                 return_n_logits_range = ops.range(
                     start=return_n_logits[0],
@@ -718,11 +719,10 @@ class DeepseekV3(Module):
         if self.return_hidden_states == ReturnHiddenStates.ALL:
             ret_val += tuple(h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.ep_manager is not None:
+            if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
-                # For non-EP case, distribute the single tensor to match interface
-                ret_val += tuple(distribute_value(last_token_h, devices))
+                ret_val += tuple(last_token_distributed)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)
             ret_val += tuple(norm_h)

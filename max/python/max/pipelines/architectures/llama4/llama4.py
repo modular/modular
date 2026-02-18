@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import cast
 
 from max.dtype import DType
@@ -37,14 +38,8 @@ from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.legacy.transformer import ReturnLogits
 
 from .layers.attention import Llama4TextAttention
-from .layers.moe import DistributedLlama4MoE, Llama4MoEGate
+from .layers.moe import Llama4MoE, Llama4MoEGate
 from .model_config import Llama4Config
-
-
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
 
 
 class Llama4DecoderLayer(Module):
@@ -78,8 +73,9 @@ class Llama4DecoderLayer(Module):
         )
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module
+        self.feed_forward_shards: Sequence[Module]
         if self.is_moe_layer:
-            self.feed_forward = DistributedLlama4MoE(
+            self.feed_forward = Llama4MoE(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.num_local_experts,
@@ -90,6 +86,13 @@ class Llama4DecoderLayer(Module):
                 shared_experts_dim=config.intermediate_size,
                 dtype=config.dtype,
                 apply_router_weight_first=True,
+            )
+            self.feed_forward.sharding_strategy = (
+                ShardingStrategy.tensor_parallel(len(config.devices))
+            )
+            self.feed_forward_shards = self.feed_forward.shard(config.devices)
+            self.feed_forward_allreduce = Allreduce(
+                num_accelerators=len(config.devices)
             )
         else:
             self.feed_forward = MLP(
@@ -161,18 +164,13 @@ class Llama4DecoderLayer(Module):
             for i in range(len(hidden_states))
         ]
 
-        if self.is_moe_layer:
-            mlp_outs = self.feed_forward(
-                post_norm_states, signal_buffers=signal_buffers
+        mlp_outs = [
+            shard(x)
+            for shard, x in zip(
+                self.feed_forward_shards, post_norm_states, strict=True
             )
-        else:
-            mlp_outs = [
-                shard(x)
-                for shard, x in zip(
-                    self.feed_forward_shards, post_norm_states, strict=True
-                )
-            ]
-            mlp_outs = self.feed_forward_allreduce(mlp_outs, signal_buffers)
+        ]
+        mlp_outs = self.feed_forward_allreduce(mlp_outs, signal_buffers)
         hidden_states = [
             h + mlp_out
             for h, mlp_out in zip(hidden_states, mlp_outs, strict=True)
@@ -244,8 +242,13 @@ class Llama4TextModel(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         input_row_offsets = kwargs["input_row_offsets"]
-        distributed_cache_positions = distribute_value(
-            TensorValue(cache_positions), self.devices
+        cache_positions = TensorValue(cache_positions)
+        if not cache_positions.device == self.devices[0]:
+            raise ValueError(
+                f"cache_positions must be located on {self.devices[0]}"
+            )
+        distributed_cache_positions = ops.distributed_broadcast(
+            cache_positions, signal_buffers
         )
         for _, layer in enumerate(self.layers):
             h = layer(
@@ -259,7 +262,9 @@ class Llama4TextModel(Module):
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
+        last_token_distributed = ops.distributed_broadcast(
+            last_token_h, signal_buffers
+        )
         # Apply norm to each shard
         norm_last_token = [
             self.norm_shards[i](last_token_distributed[i])

@@ -42,7 +42,10 @@ from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import LayerNorm, RMSNorm
 from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
-from max.pipelines.architectures.llama3.model_config import (
+from max.nn.legacy.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+)
+from max.pipelines.architectures.llama3_legacy.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
@@ -62,21 +65,6 @@ class DeviceAttentionParams:
     device_heads: int
     head_start: int
     head_dim: int
-
-
-def distribute_value(
-    v: TensorValue, devices: Sequence[DeviceRef]
-) -> list[TensorValue]:
-    """Distributes a tensor value across multiple devices.
-
-    Args:
-        v: The tensor value to distribute.
-        devices: The list of devices to distribute the tensor across.
-
-    Returns:
-        A list of tensor values, one per device.
-    """
-    return [v.to(device) for device in devices]
 
 
 class InternVLDecoderLayer(Module):
@@ -235,7 +223,7 @@ class InternVLDecoderLayer(Module):
         return hs
 
 
-class InternVLLanguageModel(Module):
+class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
     """Implements the language model component of InternVL.
 
     This model is based on Qwen2.5 architecture and is designed to process
@@ -326,13 +314,15 @@ class InternVLLanguageModel(Module):
             quantization_encoding=None,
         )
 
+        self.return_logits = config.llm_config.return_logits
+
         # Store image context token ID.
         self.image_context_token_id = image_context_token_id
 
     def __call__(
         self,
         tokens: TensorValue,
-        signal_buffers: Iterable[BufferValue],
+        signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
@@ -371,7 +361,7 @@ class InternVLLanguageModel(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         # Run through decoder layers.
         for idx, layer in enumerate(self.layers):
@@ -384,27 +374,9 @@ class InternVLLanguageModel(Module):
                 input_row_offsets=input_row_offsets,
             )
 
-        # Get last token logits only (no variable logits support).
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    norm_shard(h)
-                    for norm_shard, h in zip(
-                        self.norm_shards, last_token_h, strict=True
-                    )
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        return (last_logits,)
 
 
 class InternVisionEmbeddings(Module, Shardable):

@@ -22,7 +22,6 @@ import yaml
 from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
 from max.engine import GPUProfilingMode
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -134,7 +133,7 @@ class TestMAXConfigFileLoading:
             kv_config = KVCacheConfig(
                 config_file=f.name, section_name="kv_cache_config"
             )
-            assert kv_config.cache_strategy == KVCacheStrategy.PAGED
+            assert kv_config.cache_strategy == "paged"
             assert kv_config.kv_cache_page_size == 256
             assert kv_config.enable_kvcache_swapping_to_host is True
 

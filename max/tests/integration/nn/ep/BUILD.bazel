@@ -13,16 +13,24 @@ modular_py_test(
     srcs = glob(
         ["test_*.py"],
     ) + ["conftest.py"],
-    env = {
-        "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
-        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        },
+        "//:amd_gpu": {
+            "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for rocshmem
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
+            # 8GB symmetric heap for large buffer tests
+            "ROCSHMEM_HEAP_SIZE": "8589934592",
+        },
+        "//conditions:default": {},
+    }),
     exec_properties = {
         "test.resources:gpu-memory": "20",
     },
     gpu_constraints = [
         "//:has_4_gpus",
-        "//:nvidia_gpu",
     ],
     mojo_deps = [
         "//max:shmem",

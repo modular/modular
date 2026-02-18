@@ -87,13 +87,13 @@ fn apply_rope[
     @parameter
     if interleaved:
         var coord = Coord(idx)
-        comptime assert coord.rank == x.rank
+        comptime assert coord.flat_rank == x.flat_rank
         val = x.load[width=width](coord)
     else:
         var re_coord = Coord(pos_re)
-        comptime assert re_coord.rank == x.rank
+        comptime assert re_coord.flat_rank == x.flat_rank
         var im_coord = Coord(pos_im)
-        comptime assert im_coord.rank == x.rank
+        comptime assert im_coord.flat_rank == x.flat_rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2](re_coord).interleave(
                 x.load[width=width_2](im_coord)
@@ -148,38 +148,14 @@ fn rope_ragged[
         ]
     ] = None,
 ) raises where (
-    input_row_offsets.rank == 1
-    and start_pos.rank == 1
-    and position_ids.T.rank == 2
-    and freqs_cis.rank == 2
+    input_row_offsets.flat_rank == 1
+    and start_pos.flat_rank == 1
+    and position_ids.T.flat_rank == 2
+    and freqs_cis.flat_rank == 2
 ):
-    @parameter
-    for i in range(x.rank):
-        comptime assert x.LayoutType._shape_types[i].is_static_value, (
-            "x.layout.shape["
-            + String(i)
-            + "] must be a scalar, was "
-            # + String(x.layout.shape[i])
-        )
-    # comptime assert (
-    #     x.layout.shape[1].all_known() and x.layout.shape[2].all_known()
-    # ), (
-    #     "x.shape[1] (num_heads) and x.shape[2] (head_dim) must be static, was "
-    #     + String(x.layout.shape)
-    # )
-    comptime assert (
-        input_row_offsets.all_dims_known
-    ), "input_row_offsets shape must be statically shaped"
     comptime assert (
         freqs_cis.all_dims_known
     ), "freqs_cis shape must be statically shaped"
-    debug_assert(
-        input_row_offsets.static_shape[0] - 1 == start_pos.static_shape[0],
-        (
-            "input_row_offsets shape must be batch_size + 1 and start_pos must"
-            " be batch_size"
-        ),
-    )
     comptime head_size = x.static_shape[2]
     comptime rope_dim = freqs_cis.static_shape[1]
     comptime unroped_dim = head_size - rope_dim
@@ -195,7 +171,15 @@ fn rope_ragged[
 
         @parameter
         if width == 1:
-            # constrained[False, "ROPE SIMD_WIDTH=1, We should never be here"]()
+            debug_assert(
+                False,
+                (
+                    "RoPE kernel called with simd width = 1, We should never be"
+                    " here. This is indicative of an uneven last dimension of"
+                    " the rope tensor. Ensure the model's head_size is"
+                    " divisible by the simd width of your target hardware."
+                ),
+            )
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -208,7 +192,6 @@ fn rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_idx = idx[1]
             var head_dim_idx = idx[2]
 
             # Use position_ids if provided, otherwise fall back to cache calculation
@@ -284,7 +267,13 @@ fn rope_ragged[
                 mrope_section.value()[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert (
+        kernel_simd_width >= 2 and rope_dim % kernel_simd_width == 0
+    ), (
+        "Rope kernel simd width must be between 2 and rope_dim and divisible by"
+        " rope_dim. Ensure the model's head_size is divisible by the simd width"
+        " of your target hardware."
+    )
 
     @parameter
     if is_cpu[target]():

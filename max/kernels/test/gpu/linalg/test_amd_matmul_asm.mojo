@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,13 +42,6 @@ struct RegisterCounts(Movable):
         self.agprs = 0
         self.vgpr_spills = 0
         self.sgpr_spills = 0
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.vgprs = existing.vgprs
-        self.sgprs = existing.sgprs
-        self.agprs = existing.agprs
-        self.vgpr_spills = existing.vgpr_spills
-        self.sgpr_spills = existing.sgpr_spills
 
     fn print_summary(self):
         """Print register usage summary."""

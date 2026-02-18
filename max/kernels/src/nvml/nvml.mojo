@@ -89,8 +89,8 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
     fn __init__(out self, var value: List[String]):
         self._value = value^
 
-    fn __copyinit__(out self, other: Self):
-        self._value = other._value.copy()
+    fn __copyinit__(out self, copy: Self):
+        self._value = copy._value.copy()
 
     fn major(self) raises -> Int:
         return Int(self._value[0])

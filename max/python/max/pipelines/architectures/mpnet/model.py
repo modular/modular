@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -48,6 +49,7 @@ logger = logging.getLogger("max.pipelines")
 PAD_VALUE = 1
 
 
+@dataclass
 class MPNetInputs(ModelInputs):
     """A class representing inputs for the MPNet model.
 
@@ -58,16 +60,6 @@ class MPNetInputs(ModelInputs):
 
     next_tokens_batch: Buffer
     attention_mask: Buffer
-
-    def __init__(
-        self,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> None:
-        self.next_tokens_batch = next_tokens_batch
-        self.attention_mask = attention_mask
-        # MPNet does not have KV cache inputs.
-        self.kv_cache_inputs = None
 
 
 class MPNetPipelineModel(PipelineModel[TextContext]):

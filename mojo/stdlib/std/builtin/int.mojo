@@ -923,6 +923,8 @@ struct Int(
     fn __abs__(self) -> Self:
         """Return the absolute value of the Int value.
 
+        The absolute value of Int.MIN is Int.MIN.
+
         Returns:
             The absolute value.
         """

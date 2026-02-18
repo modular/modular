@@ -20,7 +20,7 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
-from ..llama3.model import Llama3Model
+from ..llama3_legacy.model import Llama3Model
 
 
 class Qwen2Model(Llama3Model):

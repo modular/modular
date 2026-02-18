@@ -8,6 +8,14 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_sampling_params",
+    srcs = ["test_sampling_params.py"],
+    deps = [
+        "//max/python/max/interfaces",
+    ],
+)
+
+modular_py_test(
     name = "tests-pure",
     size = "large",
     srcs = [
@@ -68,7 +76,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
@@ -128,7 +135,6 @@ modular_py_test(
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
@@ -301,7 +307,6 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",

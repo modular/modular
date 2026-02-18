@@ -21,7 +21,13 @@ from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .huggingface import HuggingFaceBenchmarkDataset
-from .types import ChatSession, SampledRequest, build_chat_message
+from .types import (
+    ChatSamples,
+    ChatSession,
+    RequestSamples,
+    SampledRequest,
+    build_chat_message,
+)
 
 CODE_DEBUG_TEMPLATE = """\
 There is ONLY ONE function in the large project that is deliberately made to \
@@ -64,17 +70,17 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
         self,
         num_chat_sessions: int,
         tokenizer: PreTrainedTokenizerBase,
-    ) -> Sequence[ChatSession]:
+    ) -> ChatSamples:
         # Expand code_debug dataset to 2-turn chats with a pre-defined followup question
         DUMMY_OUTPUT = "A"
         CODE_DEBUG_FOLLOWUP_QUESTION = "Explain your reasoning?"
-        input_requests = self.sample_requests(
+        request_samples = self.sample_requests(
             num_requests=num_chat_sessions,
             tokenizer=tokenizer,
         )
 
         sessions: list[ChatSession] = []
-        for session_id, input_request in enumerate(input_requests):
+        for session_id, input_request in enumerate(request_samples.requests):
             assert isinstance(input_request.prompt_formatted, str)
             messages = [
                 build_chat_message(
@@ -90,7 +96,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
             ]
             sessions.append(ChatSession(session_id, messages))
 
-        return sessions
+        return ChatSamples(chat_sessions=sessions)
 
     def sample_requests(
         self,
@@ -99,7 +105,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         """
         The Long-Context dataset workload is based on InfiniteBench Code.debug
         """
@@ -180,7 +186,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 f"Min: {min(list_prompt_len)}, Max: {max(list_prompt_len)})"
             )
 
-        return filtered_dataset
+        return RequestSamples(requests=filtered_dataset)
 
     @staticmethod
     def format_code_debug_context(request_features: CodeDebugLine) -> str:

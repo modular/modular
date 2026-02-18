@@ -48,8 +48,12 @@ from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout.tma_async import create_tensor_tile, create_tensor_tile_im2col
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout.tma_async import create_tensor_tile_im2col
+
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    create_tma_tile,
+)
+from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
 from linalg.utils import elementwise_compute_lambda_type
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -193,7 +197,7 @@ fn conv2d_fprop[
     )
 
     # Create activation LayoutTensor view (4D NHWC)
-    comptime act_4d_layout = Layout.row_major(1, 1, 1, 1)  # Dynamic
+    comptime act_4d_layout = LegacyLayout.row_major(1, 1, 1, 1)  # Dynamic
     var act_tensor = LayoutTensor[act_type, act_4d_layout](
         activation.data,
         RuntimeLayout[act_4d_layout](
@@ -212,14 +216,36 @@ fn conv2d_fprop[
         ),
     )
 
-    # Create im2col TMA descriptor for activation
-    # tile_shape is [pixels_per_column, channels_per_pixel]
-    # For im2col: pixels_per_column = BM (output spatial tile)
-    # channels_per_pixel = BK for the tile load (K iteration handles C * R * S)
+    # Shared memory size
+    comptime SmemType = Conv2dSmem[
+        act_type, filter_type, out_type, config=config
+    ]
+    comptime smem_size = size_of[SmemType]()
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+
+    # Instantiate kernel first -- TMA layouts computed from config
+    comptime conv_kernel = Conv2dFpropKernel[
+        act_type,
+        filter_type,
+        out_type,
+        config,
+        cluster_shape = StaticTuple[Int32, 3](
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
+        ),
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+    ]
+    comptime KernelType = type_of(conv_kernel)
+
+    # Create TMA descriptors using kernel-derived layout types
     act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
+        __tile_layout = KernelType.ActTmaOp.layout,
+        __desc_layout = KernelType.ActTmaOp.desc_layout,
     ](
         ctx,
         act_tensor,
@@ -234,7 +260,7 @@ fn conv2d_fprop[
     )
 
     # Create filter 2D view: [N, K] transposed (K-major)
-    comptime filter_2d_layout = Layout.row_major(1, 1)  # Dynamic
+    comptime filter_2d_layout = LegacyLayout.row_major(1, 1)  # Dynamic
     var filter_tensor = LayoutTensor[filter_type, filter_2d_layout](
         filter.data,
         RuntimeLayout[filter_2d_layout](
@@ -243,14 +269,15 @@ fn conv2d_fprop[
         ),
     )
 
-    # Filter TMA descriptor: standard 2D tile
-    filter_tma_op = create_tensor_tile[
+    filter_tma_op = create_tma_tile[
+        KernelType.FilterTmaTile.tile_layout,
+        KernelType.FilterTmaTile.desc_layout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode = config.b_swizzle,
     ](ctx, filter_tensor)
 
     # Create output 2D view: [M, N] row-major
-    comptime out_2d_layout = Layout.row_major(1, 1)  # Dynamic
+    comptime out_2d_layout = LegacyLayout.row_major(1, 1)  # Dynamic
     var out_tensor = LayoutTensor[out_type, out_2d_layout](
         output.data,
         RuntimeLayout[out_2d_layout](
@@ -259,45 +286,17 @@ fn conv2d_fprop[
         ),
     )
 
-    # Output TMA descriptor
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
     comptime c_tma_tile_shape = config.output_tile_shape if (
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tensor_tile[
+    out_tma_op = create_tma_tile[
+        KernelType.OutTmaTile.tile_layout,
+        KernelType.OutTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
     ](ctx, out_tensor)
-
-    # Shared memory size
-    comptime SmemType = Conv2dSmem[
-        act_type, filter_type, out_type, config=config
-    ]
-    comptime smem_size = size_of[SmemType]()
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
-    # Instantiate the kernel with im2col activation TMA
-    comptime conv_kernel = Conv2dFpropKernel[
-        act_type,
-        filter_type,
-        out_type,
-        act_tma_op.layout,
-        filter_tma_op.layout,
-        out_tma_op.layout,
-        act_tma_op.desc_layout,
-        filter_tma_op.desc_layout,
-        out_tma_op.desc_layout,
-        config,
-        cluster_shape = StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
-        # Epilogue lambda for fusion (bias, activation, residual add)
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-    ]
 
     comptime kernel = conv_kernel.run
 
@@ -450,7 +449,7 @@ fn conv2d_fprop_with_residual[
 
     # ========== Create TMA descriptors ==========
     # Activation TMA with im2col (4D NHWC)
-    comptime act_4d_layout = Layout.row_major(1, 1, 1, 1)
+    comptime act_4d_layout = LegacyLayout.row_major(1, 1, 1, 1)
     var act_tensor = LayoutTensor[act_type, act_4d_layout](
         activation.data,
         RuntimeLayout[act_4d_layout](
@@ -469,10 +468,36 @@ fn conv2d_fprop_with_residual[
         ),
     )
 
+    # ========== Instantiate kernel ==========
+    comptime SmemType = Conv2dSmem[
+        act_type, filter_type, out_type, config=config
+    ]
+    comptime smem_size = size_of[SmemType]()
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+
+    # Instantiate kernel first -- TMA layouts computed from config
+    comptime conv_kernel = Conv2dFpropKernel[
+        act_type,
+        filter_type,
+        out_type,
+        config,
+        cluster_shape = StaticTuple[Int32, 3](
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
+        ),
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+    ]
+    comptime KernelType = type_of(conv_kernel)
+
+    # Create TMA descriptors using kernel-derived layout types
     act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
+        __tile_layout = KernelType.ActTmaOp.layout,
+        __desc_layout = KernelType.ActTmaOp.desc_layout,
     ](
         ctx,
         act_tensor,
@@ -487,7 +512,7 @@ fn conv2d_fprop_with_residual[
     )
 
     # Filter TMA (2D K-major)
-    comptime filter_2d_layout = Layout.row_major(1, 1)
+    comptime filter_2d_layout = LegacyLayout.row_major(1, 1)
     var filter_tensor = LayoutTensor[filter_type, filter_2d_layout](
         filter.data,
         RuntimeLayout[filter_2d_layout](
@@ -495,13 +520,15 @@ fn conv2d_fprop_with_residual[
             Index(K, 1),
         ),
     )
-    filter_tma_op = create_tensor_tile[
+    filter_tma_op = create_tma_tile[
+        KernelType.FilterTmaTile.tile_layout,
+        KernelType.FilterTmaTile.desc_layout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode = config.b_swizzle,
     ](ctx, filter_tensor)
 
     # Output TMA (D) - 2D row-major
-    comptime out_2d_layout = Layout.row_major(1, 1)
+    comptime out_2d_layout = LegacyLayout.row_major(1, 1)
     var out_tensor = LayoutTensor[out_type, out_2d_layout](
         output.data,
         RuntimeLayout[out_2d_layout](
@@ -514,7 +541,9 @@ fn conv2d_fprop_with_residual[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tensor_tile[
+    out_tma_op = create_tma_tile[
+        KernelType.OutTmaTile.tile_layout,
+        KernelType.OutTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
     ](ctx, out_tensor)
@@ -527,39 +556,12 @@ fn conv2d_fprop_with_residual[
             Index(N, 1),
         ),
     )
-    src_tma_op = create_tensor_tile[
+    src_tma_op = create_tma_tile[
+        KernelType.SrcTmaTile.tile_layout,
+        KernelType.SrcTmaTile.desc_layout,
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
     ](ctx, src_tensor)
-
-    # ========== Instantiate kernel ==========
-    comptime SmemType = Conv2dSmem[
-        act_type, filter_type, out_type, config=config
-    ]
-    comptime smem_size = size_of[SmemType]()
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
-    comptime conv_kernel = Conv2dFpropKernel[
-        act_type,
-        filter_type,
-        out_type,
-        act_tma_op.layout,
-        filter_tma_op.layout,
-        out_tma_op.layout,
-        act_tma_op.desc_layout,
-        filter_tma_op.desc_layout,
-        out_tma_op.desc_layout,
-        config,
-        cluster_shape = StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-        src_layout = src_tma_op.layout,
-        src_desc_layout = src_tma_op.desc_layout,
-    ]
 
     comptime kernel = conv_kernel.run_with_residual
 

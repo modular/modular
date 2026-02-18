@@ -36,9 +36,10 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
-from max.pipelines.lib.kv_cache_config import KVCacheConfig
 from max.pipelines.lib.utils import upper_bounded_default
 from typing_extensions import Self, override
+
+from ..kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
@@ -139,16 +140,11 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
         """Returns the KV cache parameters for this architecture."""
         if self._kv_params is not None:
             return self._kv_params
-        self._kv_params = KVCacheParams(
+        self._kv_params = self.kv_cache.to_params(
             dtype=self.cache_dtype or self.dtype,
             n_kv_heads=self.num_key_value_heads,
             head_dim=self.head_dim,
             num_layers=self.num_layers,
-            page_size=self.kv_cache.kv_cache_page_size,
-            cache_strategy=self.kv_cache.cache_strategy,
-            enable_prefix_caching=self.kv_cache.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=self.kv_cache.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=self.kv_cache.host_kvcache_swap_space_gb,
             devices=self.devices,
             data_parallel_degree=self.data_parallel_degree,
         )

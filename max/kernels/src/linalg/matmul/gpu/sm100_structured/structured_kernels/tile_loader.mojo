@@ -26,7 +26,7 @@ Usage:
     a_loader.load(a_tile, barrier, k_coord, m_coord)
     b_loader.load(b_tile, barrier, k_coord, n_coord)
 
-    # TileTensor tiles are automatically converted to LayoutTensor for TMA ops
+    # TileTensor tiles are passed directly to TMA ops
 """
 
 from gpu.memory import AddressSpace
@@ -36,7 +36,7 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile as LTSMemTile
 
 # Import TileTensor types for overloaded load methods
-from .tile_types import SMemTile2D
+from .tile_types import SMemTile2D, TMATile
 
 # Import variadic types for TileTensor load overload
 from builtin.variadics import Variadic
@@ -174,95 +174,118 @@ struct TileLoaderTMA[
         )
 
 
-struct ScalesTileLoader[
+# =============================================================================
+# TileLoader -- TileTensor-native TMA loader (new Layout types)
+# =============================================================================
+
+
+struct TileLoader[
     tma_origin: ImmutOrigin,
     dtype: DType,
-    gmem_layout: Layout,
-    desc_layout: Layout,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout,
     /,
     *,
     cta_group: Int,
 ](TrivialRegisterPassable):
-    """TMA-based scales tile loader for blockwise FP8.
+    """TMA tile loader parameterized on new Layout types.
 
-    Unlike TileLoaderTMA, this loader:
-    - Uses async_copy (no multicast) since scales aren't distributed across CTAs
-    - Uses (row_coord, k_coord) coordinate order matching scales tensor layout
-
-    Parameters:
-        tma_origin: Origin of the TMA descriptor pointer.
-        dtype: Element data type (typically float8 for scales).
-        gmem_layout: Global memory tensor layout.
-        desc_layout: TMA descriptor layout (tile dimensions).
-        cta_group: CTA group size (1 or 2 for SM100 2-SM MMA).
+    Uses TMATile to derive the TMATensorTile type from new Layout.
+    Accepts TileTensor destinations.
     """
 
-    comptime TmaOp = TMATensorTile[
-        Self.dtype, Self.gmem_layout, Self.desc_layout
-    ]
+    comptime TmaOp = TMATile[
+        Self.dtype, Self.tile_layout, Self.desc_layout
+    ].InnerType
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
-    # TMA descriptor pointer (referencing grid constant)
+    var tma_op: Self.TmaOpPtr
+    var multicast_mask: UInt16
+
+    @always_inline
+    fn __init__[
+        tma_op_type: AnyType
+    ](
+        out self,
+        tma_op: Pointer[tma_op_type, Self.tma_origin],
+        multicast_mask: UInt16,
+    ):
+        """Accepts any TMA pointer. Rebinds to the loader's derived type."""
+        self.tma_op = rebind[Self.TmaOpPtr](tma_op)
+        self.multicast_mask = multicast_mask
+
+    @always_inline
+    fn load[
+        LayoutType: TensorLayout
+    ](
+        self,
+        dest: TileTensor[
+            Self.dtype,
+            LayoutType,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ],
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+        k_coord: UInt,
+        row_coord: UInt,
+    ):
+        """Load a tile using TMA async multicast load."""
+        self.tma_op[].async_multicast_load[Self.cta_group](
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
+        )
+
+
+# =============================================================================
+# ScalesLoader -- TileTensor-native scales loader (new Layout types)
+# =============================================================================
+
+
+struct ScalesLoader[
+    tma_origin: ImmutOrigin,
+    dtype: DType,
+    tile_layout: TensorLayout,
+    desc_layout: TensorLayout = tile_layout,
+    /,
+    *,
+    cta_group: Int,
+](TrivialRegisterPassable):
+    """TMA scales loader parameterized on new Layout types.
+
+    Uses TMATile to derive the TMATensorTile type from new Layout.
+    Uses async_copy (no multicast). Coordinate order is
+    (row_coord, k_coord) matching scales tensor layout.
+    """
+
+    comptime TmaOp = TMATile[
+        Self.dtype, Self.tile_layout, Self.desc_layout
+    ].InnerType
+    comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
+
     var tma_op: Self.TmaOpPtr
 
     @always_inline
-    fn __init__(out self, tma_op: Self.TmaOpPtr):
-        """Initialize the scales tile loader.
-
-        Args:
-            tma_op: Pointer to TMA descriptor (grid constant).
-        """
-        self.tma_op = tma_op
+    fn __init__[
+        tma_op_type: AnyType
+    ](out self, tma_op: Pointer[tma_op_type, Self.tma_origin]):
+        """Accepts any TMA pointer. Rebinds to the loader's derived type."""
+        self.tma_op = rebind[Self.TmaOpPtr](tma_op)
 
     @always_inline
     fn load[
-        tile_layout: Layout,
-        /,
-        alignment: Int = 128,
+        LayoutType: TensorLayout
     ](
         self,
-        dest: LTSMemTile[Self.dtype, tile_layout, alignment=alignment],
+        dest: TileTensor[
+            Self.dtype,
+            LayoutType,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,
         k_coord: Int,
     ):
-        """Load a scales tile using TMA hardware acceleration.
-
-        Issues an async copy from global memory to shared memory.
-        Unlike TileLoaderTMA, this uses (row_coord, k_coord) order
-        matching the scales tensor layout.
-
-        Args:
-            dest: Destination SMEM tile.
-            barrier: Memory barrier for TMA completion signaling.
-            row_coord: Row coordinate (M for A-scales) in global memory.
-            k_coord: K dimension coordinate in global memory.
-        """
-        self.tma_op[].async_copy[Self.cta_group](
-            dest, barrier, (row_coord, k_coord)
-        )
-
-    @always_inline
-    fn load[
-        dim0: Int,
-        dim1: Int,
-        /,
-        alignment: Int = 128,
-    ](
-        self,
-        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
-        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        row_coord: Int,
-        k_coord: Int,
-    ):
-        """Load a TileTensor scales tile using TMA hardware acceleration.
-
-        Args:
-            dest: Destination SMEM TileTensor tile.
-            barrier: Memory barrier for TMA completion signaling.
-            row_coord: Row coordinate (M for A-scales) in global memory.
-            k_coord: K dimension coordinate in global memory.
-        """
+        """Load scales using TMA async copy."""
         self.tma_op[].async_copy[Self.cta_group](
             dest, barrier, (row_coord, k_coord)
         )

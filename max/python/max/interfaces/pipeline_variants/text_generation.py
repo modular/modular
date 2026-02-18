@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
+from itertools import chain
 from typing import (
     Any,
     Generic,
@@ -38,9 +39,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TextGenerationRequestFunction(TypedDict):
-    """
-    Represents a function definition for a text generation request.
-    """
+    """Represents a function definition for a text generation request."""
 
     name: str
     """The name of the function to be invoked."""
@@ -53,9 +52,7 @@ class TextGenerationRequestFunction(TypedDict):
 
 
 class TextGenerationRequestTool(TypedDict):
-    """
-    Represents a tool definition for a text generation request.
-    """
+    """Represents a tool definition for a text generation request."""
 
     type: str
     """The type of the tool, typically indicating the tool's category or usage."""
@@ -65,9 +62,7 @@ class TextGenerationRequestTool(TypedDict):
 
 
 class TextGenerationResponseFormat(TypedDict):
-    """
-    Represents the response format specification for a text generation request.
-    """
+    """Represents the response format specification for a text generation request."""
 
     type: str
     """The type of response format, e.g., "json_object"."""
@@ -117,6 +112,7 @@ class TextGenerationRequestMessage(BaseModel):
     @field_validator("content", mode="before")
     @classmethod
     def validate_content_format(cls, v: Any) -> str | list[MessageContent]:
+        """Normalizes message content to a string or list of content parts."""
         if isinstance(v, str):
             return v
 
@@ -164,6 +160,7 @@ class TextGenerationRequestMessage(BaseModel):
         return normalized
 
     def flatten_content(self) -> dict[str, str]:
+        """Flattens message content to a single role/content dict for text-only messages."""
         if isinstance(self.content, str):
             return {"role": str(self.role), "content": self.content}
 
@@ -304,8 +301,7 @@ class TextGenerationRequest(Request):
 
     @cached_property
     def number_of_images(self) -> int:
-        """
-        Returns the total number of image-type contents across all provided messages.
+        """Returns the total number of image-type contents across all provided messages.
 
         Returns:
             int: Total count of image-type contents found in messages.
@@ -325,9 +321,10 @@ def _check_text_generation_output_implements_pipeline_output(
 
 @dataclass(kw_only=True)
 class TextGenerationOutput:
-    """
-    Represents the output of a text generation operation, combining token IDs,
-    final generation status, request ID, and optional log probabilities for each token.
+    """Represents the output of a text generation operation.
+
+    Combines token IDs, final generation status, request ID, and optional log
+    probabilities for each token.
     """
 
     request_id: RequestID
@@ -344,13 +341,42 @@ class TextGenerationOutput:
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the text generation process is complete.
+        """Indicates whether the text generation process is complete.
 
         Returns:
             bool: True if the generation is done, False otherwise.
         """
         return self.final_status.is_done
+
+    @classmethod
+    def merge(cls, outputs: list[TextGenerationOutput]) -> TextGenerationOutput:
+        """Combine many TextGenerationOutput chunks into a single TextGenerationOutput."""
+        if len(outputs) == 0:
+            raise ValueError("Cannot combine empty list of chunks")
+        if len(outputs) == 1:
+            return outputs[0]
+
+        if all(output.log_probabilities is not None for output in outputs):
+            log_probabilities = list(
+                chain.from_iterable(
+                    output.log_probabilities or [] for output in outputs
+                )
+            )
+        elif all(output.log_probabilities is None for output in outputs):
+            log_probabilities = None
+        else:
+            raise ValueError(
+                "Cannot combine TextGenerationOutput chunks with mixed None and non-None log_probabilities"
+            )
+
+        return cls(
+            request_id=outputs[0].request_id,
+            tokens=list(
+                chain.from_iterable(output.tokens for output in outputs)
+            ),
+            log_probabilities=log_probabilities,
+            final_status=outputs[-1].final_status,
+        )
 
 
 @runtime_checkable
@@ -392,8 +418,10 @@ class TextGenerationContext(BaseContext, Protocol):
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt.
+
         This method is used when a request is evicted, meaning that the context
-        needed to be re-encoded in the following CE iteration."""
+        needed to be re-encoded in the following CE iteration.
+        """
         ...
 
     def compute_num_available_steps(
@@ -587,8 +615,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     def to_generation_output(self) -> TextGenerationOutput:
-        """
-        Convert this context to a TextGenerationOutput object.
+        """Convert this context to a TextGenerationOutput object.
 
         This property provides a standardized way to extract the final output
         of the text generation process from the context, including generated
@@ -622,8 +649,7 @@ class BatchType(Enum):
 
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
-    """
-    Input parameters for text generation pipeline operations.
+    """Input parameters for text generation pipeline operations.
 
     This class encapsulates the batch of contexts and number of steps required
     for token generation in a single input object, replacing the previous

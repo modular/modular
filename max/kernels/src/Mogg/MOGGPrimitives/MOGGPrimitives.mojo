@@ -1295,9 +1295,9 @@ struct MyInt(Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(out self, deinit other: MyInt):
-        print("MyInt.__moveinit__", other.val)
-        self.val = other.val
+    fn __moveinit__(out self, deinit take: MyInt):
+        print("MyInt.__moveinit__", take.val)
+        self.val = take.val
 
     fn __del__(deinit self):
         print("MyInt.__del__", self.val)

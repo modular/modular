@@ -136,6 +136,16 @@ def token_sampler(
     device: DeviceRef,
     return_logits: bool = False,
 ) -> Graph:
+    """Builds a sampling graph that samples tokens from logits.
+
+    Args:
+        sampling_config: Sampling configuration (top-k, temperature, etc.).
+        device: Device for the graph inputs and ops.
+        return_logits: Whether the graph should expose logits as an output.
+
+    Returns:
+        A graph that takes logits (and optional penalty inputs) and outputs tokens.
+    """
     _input_dict = _sampling_input_types(
         sampling_config, return_logits=return_logits, device=device
     )
@@ -308,6 +318,19 @@ def rejection_sampler(
     *,
     seed: int = 0,
 ) -> Graph:
+    """Builds a graph that implements speculative decoding rejection sampling.
+
+    Accepts or rejects draft tokens using target vs draft probabilities and
+    resamples from the target distribution when rejected.
+
+    Args:
+        device: Device for the graph.
+        seed: Random seed for sampling.
+
+    Returns:
+        A graph that takes draft tokens, draft logits, and target logits and
+        outputs accepted tokens and metadata.
+    """
     # We have two distributions:
     #   p(x) - The target model distribution
     #   q(x) - The draft model distribution

@@ -36,7 +36,7 @@ def cond(
     in ``out_types``. Buffer mutations in branches are tracked automatically
     through the chain mechanism.
 
-    Examples:
+    Here are some examples:
 
     1. Basic conditional with return values:
 
@@ -65,27 +65,23 @@ def cond(
 
             ops.cond(pred, None, then_fn, else_fn)
 
-    ::
     Args:
-        pred:
-            Boolean scalar tensor of type :obj:`DType.bool` determining branch execution
-
-        out_types:
-            Expected output types for both branches. Use :obj:`None` for branches that don't return values
-
-        then_fn:
-            Callable executed when ``pred`` is True. Must return values matching ``out_types`` if ``out_types`` is not :obj:`None`
-
-        else_fn:
-            Callable executed when ``pred`` is False. Must return values matching ``out_types`` if ``out_types`` is not :obj:`None`
+        pred: Boolean scalar tensor of type :obj:`DType.bool` determining branch
+            execution.
+        out_types: Expected output types for both branches. Use :obj:`None` for
+            branches that don't return values.
+        then_fn: Callable executed when ``pred`` is True. Must return values
+            matching ``out_types`` if ``out_types`` is not :obj:`None`.
+        else_fn: Callable executed when ``pred`` is False. Must return values
+            matching ``out_types`` if ``out_types`` is not :obj:`None`.
 
     Returns:
-        List of output values from executed branch. Returns empty list when ``out_types``
-        is :obj:`None`
+        List of output values from executed branch. Returns empty list when
+        ``out_types`` is :obj:`None`.
 
     Raises:
-        ValueError: If branches return different numbers of results or result types
-                  don't match ``out_types``
+        ValueError: If branches return different numbers of results or result
+            types don't match ``out_types``.
 
     Note:
         Buffer operations in branches automatically update the global chain state to

@@ -361,11 +361,11 @@ struct GlobalMemoryManager[
         qtype: DType,
     ](
         self,
-        ptr: UnsafePointer[Scalar[qtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[qtype], ImmutAnyOrigin],
         out result: LayoutTensor[
             qtype,
             Self.q_gmem_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             masked=True,
@@ -396,12 +396,12 @@ struct GlobalMemoryManager[
         //,
     ](
         self,
-        ptr: UnsafePointer[Scalar[kvtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[kvtype], ImmutAnyOrigin],
         kv_tile_num_rows: UInt32,
         out result: LayoutTensor[
             kvtype,
             Self.kv_gmem_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             masked=True,
             address_space = ptr.address_space,
         ],

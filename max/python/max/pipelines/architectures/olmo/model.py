@@ -22,7 +22,7 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
-from ..llama3.model import LlamaModelBase
+from ..llama3_legacy.model import LlamaModelBase
 
 
 class OlmoModel(LlamaModelBase):

@@ -27,7 +27,7 @@ from utils.index import Index, IndexList
 fn compute_rms[
     dtype: DType
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
-    comptime assert data.rank == 1, "data.rank must be 1"
+    comptime assert data.flat_rank == 1, "data.rank must be 1"
     comptime assert data.element_size == 1
 
     comptime accum_type = get_accum_type[dtype]()

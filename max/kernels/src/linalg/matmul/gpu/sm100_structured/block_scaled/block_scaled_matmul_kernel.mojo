@@ -68,9 +68,6 @@ from gpu.primitives.grid_controls import (
 )
 from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout
-from layout.int_tuple import IntTuple
-from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -105,7 +102,14 @@ from ..structured_kernels.tile_pipeline import (
     InputConsumerStage,
     BlockScaledTilePayload,
 )
-from ..structured_kernels.tile_types import internal_k_major_128B
+from layout._layout import RowMajorLayout, _IntToComptimeInt
+from ..structured_kernels.tile_types import (
+    TMATile,
+    TmaOpType,
+    internal_k_major_128B,
+    tma_desc_layout_3d,
+    tma_desc_layout_5d,
+)
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
@@ -133,17 +137,6 @@ struct BlackwellBlockScaledMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
-    # Tensor layouts (from TMA descriptors)
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    sfa_desc_layout: Layout,
-    sfb_desc_layout: Layout,
     # Configuration
     transpose_b: Bool,
     config: BlockScaledMatmulConfig[
@@ -275,11 +268,106 @@ struct BlackwellBlockScaledMatmulKernel[
         + Self.sfb_expected_bytes
     ) * Self.config.k_group_size
 
-    # TMA descriptor layout sizes for peer CTA slicing
-    comptime a_tma_load_size = Self.a_desc_layout.size()
-    comptime b_tma_load_size = Self.b_desc_layout.size()
-    comptime a_tma_rows = Self.a_desc_layout.shape[1].value()
-    comptime b_tma_rows = Self.b_desc_layout.shape[1].value()
+    # ========== TMA Layouts (computed from config, new Layout types) ==========
+
+    comptime a_tile_dim1 = Self.BM // Self.CLUSTER_N
+    comptime b_tile_dim1 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
+        Self.a_type
+    ]()
+    comptime b_swizzle_elems = Self.config.b_swizzle.bytes() // size_of[
+        Self.b_type
+    ]()
+    comptime c_swizzle_elems = Self.config.c_swizzle.bytes() // size_of[
+        Self.c_type
+    ]()
+
+    # C tile shape depends on MMA shape, cta_group, and AB_swapped
+    comptime c_tile_dim1 = (
+        Self.OutputM if (Self.MMA_M == 256 or Self.cta_group == 1) else (
+            Self.OutputM if Self.config.AB_swapped else 64
+        )
+    )
+
+    # 3D tile layout types (batch=1, rows, cols)
+    comptime ATileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.a_tile_dim1, Self.BK]
+    ]
+    comptime ADescLayout = tma_desc_layout_3d[
+        Self.a_type, 1, Self.a_tile_dim1, Self.config.a_swizzle
+    ]
+    comptime BTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.b_tile_dim1, Self.BK]
+    ]
+    comptime BDescLayout = tma_desc_layout_3d[
+        Self.b_type, 1, Self.b_tile_dim1, Self.config.b_swizzle
+    ]
+    # C tile shape: when AB_swapped, last dim is swizzle elems
+    comptime c_tile_dim2 = Self.OutputN if not Self.config.AB_swapped else Self.c_swizzle_elems
+    comptime CTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.c_tile_dim1, Self.c_tile_dim2]
+    ]
+    comptime CDescLayout = tma_desc_layout_3d[
+        Self.c_type, 1, Self.c_tile_dim1, Self.config.c_swizzle
+    ]
+
+    # 5D scale factor layout types (SWIZZLE_NONE)
+    comptime SFATileLayout = RowMajorLayout[
+        *_IntToComptimeInt[
+            1,
+            Self.BM // SF_MN_GROUP_SIZE,
+            Self.config.num_sf_k_tiles,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ]
+    ]
+    comptime SFADescLayout = tma_desc_layout_5d[
+        Self.sfa_dtype,
+        1,
+        Self.BM // SF_MN_GROUP_SIZE,
+        Self.config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        TensorMapSwizzle.SWIZZLE_NONE,
+    ]
+    comptime SFBTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[
+            1,
+            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.config.num_sf_k_tiles,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ]
+    ]
+    comptime SFBDescLayout = tma_desc_layout_5d[
+        Self.sfb_dtype,
+        1,
+        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        TensorMapSwizzle.SWIZZLE_NONE,
+    ]
+
+    # TMA operation types
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaOp = Self.CTmaTile.InnerType
+    comptime SFATmaTile = TMATile[
+        Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
+    ]
+    comptime SFATmaOp = Self.SFATmaTile.InnerType
+    comptime SFBTmaTile = TMATile[
+        Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
+    ]
+    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
+
+    # TMA load size constants (from desc layout dimensions)
+    comptime a_tma_load_size = Self.a_tile_dim1 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim1 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim1
+    comptime b_tma_rows = Self.b_tile_dim1
 
     # ========== Shared Memory Type ==========
     # Uses BlockScaledSmem with typed accessors (same pattern as B200MatmulSmem)
@@ -335,7 +423,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Tile Pipeline Type ==========
     # Manages A, B, SFA, SFB tiles with producer-consumer synchronization
-    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
+    # TileTensor-native payload - passed directly to TMA/MMA
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
         Self.b_type,
@@ -431,14 +519,10 @@ struct BlackwellBlockScaledMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        sfa_tma_op: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_op: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
         tiles: InputProducerStage[
             tiles_origin,
             Self.TilePayload,
@@ -640,7 +724,7 @@ struct BlackwellBlockScaledMatmulKernel[
     @always_inline
     fn epilogue(
         c_tiles: Self.SmemType.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
+        c_tma_op: Self.CTmaOp,
         stage: Self.TileWriterType.Stage,
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
@@ -707,15 +791,11 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
     fn run(
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
-        sfa_tma_op: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_op: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
         alpha: Float32,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],

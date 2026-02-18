@@ -1300,14 +1300,14 @@ fn mha_sm100_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ) raises:
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
@@ -1348,7 +1348,6 @@ fn mha_sm100_dispatch[
     var batch_size: UInt32 = UInt32(batch_size_arg)
     var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
     var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, UInt32(BM))
-    var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
     comptime num_scheduler_heads = config.num_heads // UInt(
         group
@@ -1521,7 +1520,7 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     sink_weights: SinkType,
@@ -2530,7 +2529,6 @@ fn _mha_sm100[
         var elect_one_warp = warp_id == 0
 
         var lane = UInt32(lane_id())
-        var elect_one_thread = thread_idx.x == 128
 
         var warp_y: UInt32 = warp_id  # // num_warps_n
 

@@ -100,14 +100,14 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = 0
         self.capacity = capacity
 
-    fn __copyinit__(out self, existing: Self):
-        self.allocated_bytes = existing.allocated_bytes
-        self.count = existing.count
-        self.capacity = existing.capacity
+    fn __copyinit__(out self, copy: Self):
+        self.allocated_bytes = copy.allocated_bytes
+        self.count = copy.count
+        self.capacity = copy.capacity
         self.keys = alloc[UInt8](self.allocated_bytes)
-        memcpy(dest=self.keys, src=existing.keys, count=self.allocated_bytes)
+        memcpy(dest=self.keys, src=copy.keys, count=self.allocated_bytes)
         self.keys_end = alloc[Scalar[Self.KeyEndType]](self.capacity)
-        memcpy(dest=self.keys_end, src=existing.keys_end, count=self.capacity)
+        memcpy(dest=self.keys_end, src=copy.keys_end, count=self.capacity)
 
     fn __del__(deinit self):
         self.keys.free()
@@ -231,26 +231,26 @@ struct StringDict[
         else:
             self.deleted_mask = alloc[UInt8](0)
 
-    fn __copyinit__(out self, existing: Self):
-        self.count = existing.count
-        self.capacity = existing.capacity
-        self.keys = existing.keys
+    fn __copyinit__(out self, copy: Self):
+        self.count = copy.count
+        self.capacity = copy.capacity
+        self.keys = copy.keys
 
         @parameter
         if Self.caching_hashes:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
             memcpy(
                 dest=self.key_hashes,
-                src=existing.key_hashes,
+                src=copy.key_hashes,
                 count=self.capacity,
             )
         else:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
-        self.values = existing.values.copy()
+        self.values = copy.values.copy()
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
         memcpy(
             dest=self.slot_to_index,
-            src=existing.slot_to_index,
+            src=copy.slot_to_index,
             count=self.capacity,
         )
 
@@ -259,7 +259,7 @@ struct StringDict[
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
             memcpy(
                 dest=self.deleted_mask,
-                src=existing.deleted_mask,
+                src=copy.deleted_mask,
                 count=self.capacity >> 3,
             )
         else:
@@ -510,7 +510,7 @@ fn bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._entries.unsafe_ptr())
+        keep(d._ctrl)
 
     b.iter[call_fn]()
 
@@ -525,7 +525,7 @@ fn bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._entries.unsafe_ptr())
+        keep(d._ctrl)
 
     b.iter[call_fn]()
 

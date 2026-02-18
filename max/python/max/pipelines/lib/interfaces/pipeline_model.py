@@ -24,23 +24,22 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
-if TYPE_CHECKING:
-    from ..config import PipelineConfig
-
-logger = logging.getLogger("max.pipelines")
-
-from max.graph import DeviceRef
-
 from ..config_enums import SupportedEncoding
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
+
+if TYPE_CHECKING:
+    from ..config import PipelineConfig
+
+logger = logging.getLogger("max.pipelines")
 
 
 class AlwaysSignalBuffersMixin:
@@ -91,25 +90,55 @@ class AlwaysSignalBuffersMixin:
         ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ModelOutputs:
+    """Pipeline model outputs.
+
+    Shape conventions below are for text-generation pipelines:
+
+    - ``B``: batch size
+    - ``V``: vocabulary size
+    - ``H``: hidden-state width
+    - ``T``: number of returned logit rows (depends on return mode)
+
+    The shape depends on the value of the `ReturnLogits` and `ReturnHiddenStates`
+    enums. Unless we are running with spec decoding, we use `ReturnLogits.LAST_TOKEN`
+    and `ReturnHiddenStates.NONE`.
+    """
+
     logits: Buffer
-    """Logits for a variable number of tokens per sequence."""
+    """Primary logits buffer.
+
+    For text generation this has shape ``[T, V]`` where:
+    - last-token mode: ``T = B`` (default)
+    - all-token mode: ``T = total_input_tokens``
+    - variable mode: ``T = logit_offsets[-1]`` (typically ``B * return_n_logits``)
+    """
 
     next_token_logits: Buffer | None = None
-    """Logits for just the next token."""
+    """Next-token logits for text generation, shape ``[B, V]`` when present."""
 
     logit_offsets: Buffer | None = None
-    """Offsets to access variable length logits for each sequence."""
+    """Cumulative row offsets into ``logits`` for text generation.
+
+    Shape is ``[B + 1]``. Per-sequence logits are:
+    ``logits[logit_offsets[i]:logit_offsets[i + 1], :]``.
+    """
 
     hidden_states: Buffer | list[Buffer] | None = None
-    """Hidden states for a variable number of tokens per sequence.
+    """Optional hidden states for text generation.
+
+    Single-device shape is ``[T_h, H]`` where:
+    - none mode: NONE (default)
+    - last-token mode: ``T_h = B``
+    - all-token mode: ``T_h = total_input_tokens``
 
     For data parallel models, this can be a list of Buffers where each Buffer
-    contains hidden states for the sequences assigned to that device.
+    has shape ``[T_h_device, H]`` for the sequences assigned to that device.
     """
 
 
+@dataclass(kw_only=True)
 class ModelInputs:
     """Base class for model inputs.
 
@@ -120,13 +149,10 @@ class ModelInputs:
 
     .. code-block:: python
 
+        @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
             input_row_offsets: Buffer
-
-            def __init__(self, tokens: Buffer, input_row_offsets: Buffer):
-                self.tokens = tokens
-                self.input_row_offsets = input_row_offsets
 
         # Create tensors
         tokens = Buffer.zeros((1, 2, 3), DType.int64)
@@ -162,24 +188,12 @@ class ModelInputs:
             if hasattr(self, key) and value is not None:
                 setattr(self, key, value)
 
-
-@dataclass
-class _DeviceGraphState:
-    buffers: list[Buffer]
-    outputs: ModelOutputs
-
-
-class InputKey:
-    def __init__(self, *inputs: Buffer):
-        self.keys = tuple((input.dtype, tuple(input.shape)) for input in inputs)
-
-    def __eq__(self, other: Any):
-        if not isinstance(other, InputKey):
-            return False
-        return self.keys == other.keys
-
-    def __hash__(self) -> int:
-        return hash(self.keys)
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns positional Buffer inputs for model ABI calls."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not define model ABI buffers."
+        )
 
 
 class PipelineModel(ABC, Generic[BaseContextType]):
@@ -256,10 +270,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             if pipeline_config.lora
             else None
         )
-        self._device_graph_capture_enabled = (
-            pipeline_config.device_graph_capture
-        )
-        self._device_graph_states: dict[InputKey, _DeviceGraphState] = {}
 
     @property
     def lora_manager(self) -> LoRAManager | None:
@@ -381,15 +391,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         del pipeline_config, huggingface_config  # Unused.
         return 0
 
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration.
-
-        This method is called after the pipeline configuration is resolved.
-        It can be overridden to perform any finalization steps that are needed.
-        """
-        del pipeline_config  # Unused.
-
     @abstractmethod
     def execute(
         self,
@@ -407,123 +408,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         This is an abstract method that must be implemented by concrete PipelineModels
         to define their specific execution logic.
         """
-
-    def _execution_trace_inputs(
-        self, model_inputs: ModelInputs
-    ) -> Sequence[Buffer]:
-        raise NotImplementedError(
-            "Device graph inputs not implemented for model. "
-            "Override _execution_trace_inputs to enable capture."
-        )
-
-    def execute_with_capture(
-        self,
-        model_inputs: ModelInputs,
-        batch_size: int,
-    ) -> ModelOutputs:
-        """Executes the model with optional capture handling.
-
-        Subclasses can override this to integrate device graph capture/replay.
-        """
-        if not getattr(self, "_device_graph_capture_enabled", False):
-            return self.execute(model_inputs)
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "replay"):
-            raise RuntimeError(
-                "Device graph capture is enabled but model does not support capture."
-            )
-
-        if batch_size > 1:
-            return self.execute(model_inputs)
-
-        self.pre_capture_execution_trace([model_inputs], batch_size)
-
-        graph_inputs = list(self._execution_trace_inputs(model_inputs))
-
-        state = self._device_graph_states.get(InputKey(*graph_inputs))
-
-        if state is None:
-            return self.execute(model_inputs)
-
-        if not self._copy_graph_inputs(graph_inputs, state.buffers):
-            return self.execute(model_inputs)
-
-        try:
-            model.replay(*state.buffers)
-        except Exception:
-            logger.exception("Device graph replay failed for replica.")
-            raise
-
-        return state.outputs
-
-    def pre_capture_execution_trace(
-        self,
-        model_inputs: Sequence[ModelInputs],
-        batch_size: int,
-    ) -> None:
-        """Captures execution traces for device graph replay when enabled."""
-        if not self._device_graph_capture_enabled:
-            return
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "capture"):
-            return
-
-        if batch_size > 1:
-            return
-
-        for inputs in model_inputs:
-            graph_inputs = list(self._execution_trace_inputs(inputs))
-
-            key = InputKey(*graph_inputs)
-
-            if key in self._device_graph_states:
-                continue
-
-            try:
-                outputs = model.capture(*graph_inputs)
-            except Exception:
-                logger.exception("Device graph capture failed for replica.")
-                raise
-
-            self._device_graph_states[key] = _DeviceGraphState(
-                buffers=graph_inputs,
-                outputs=ModelOutputs(*outputs),
-            )
-            logger.info(
-                f"Device graph captured {len(self._device_graph_states)}."
-            )
-
-    def _copy_graph_inputs(
-        self, src: Sequence[Buffer], dst: Sequence[Buffer]
-    ) -> bool:
-        if len(src) != len(dst):
-            logger.error(
-                "Device graph input count mismatch: src=%s dst=%s",
-                len(src),
-                len(dst),
-            )
-            return False
-
-        for src_value, dst_value in zip(src, dst, strict=True):
-            if src_value is dst_value:
-                continue
-
-            try:
-                dst_value.inplace_copy_from(src_value)
-            except ValueError:
-                logger.error(
-                    "Device graph input mismatch: src_shape=%s dst_shape=%s src_dtype=%s dst_dtype=%s src_device=%s dst_device=%s",
-                    src_value.shape,
-                    dst_value.shape,
-                    src_value.dtype,
-                    dst_value.dtype,
-                    src_value.device,
-                    dst_value.device,
-                )
-                return False
-        return True
 
     @abstractmethod
     def prepare_initial_token_inputs(

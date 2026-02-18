@@ -22,9 +22,8 @@ var ptr: OwnedPointer[Int]
 ptr = OwnedPointer(100)
 ```
 
-The `ptr` variable has a value of type `OwnedPointer[Int]`. The pointer *points
-to* a value of type `Int`, as shown in Figure 1.
-
+The `ptr` variable has a value of type `OwnedPointer[Int]`. The pointer _points
+to_ a value of type `Int`, as shown in Figure 1.
 
 <figure>
 
@@ -76,13 +75,13 @@ or a "null pointer"). Safe pointers aren't nullable.
   Being able to access uninitialized memory is unsafe by definition.
 
 - **Copyable types**: can be copied implicitly (for example, by assigning a
-  value to a variable). Also called *implicitly copyable types*.
+  value to a variable). Also called _implicitly copyable types_.
 
   ```mojo
   copied_ptr = ptr
   ```
 
-  *Explicitly copyable* types require the user to request a copy, using a
+  _Explicitly copyable_ types require the user to request a copy, using a
     constructor with a keyword argument:
 
   ```mojo
@@ -134,7 +133,7 @@ destroying instances of the stored type. The user is responsible for managing
 the lifecycle of stored values.
 
 <sup>3</sup> `OwnedPointer` is explicitly copyable, but explicitly copying an
-`OwnedPointer` copies the *stored value* into a new `OwnedPointer`.
+`OwnedPointer` copies the _stored value_ into a new `OwnedPointer`.
 
 The following sections provide more details on each pointer type.
 
@@ -230,8 +229,8 @@ struct SharedDict:
         attributesDict: Dict[String, String] = {}
         self.attributes = ArcPointer(attributesDict)
 
-    fn __copyinit__(out self, other: Self):
-        self.attributes = other.attributes
+    fn __copyinit__(out self, copy: Self):
+        self.attributes = copy.attributes
 
     def __setitem__(mut self, key: String, value: String):
         self.attributes[][key] = value

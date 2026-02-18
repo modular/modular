@@ -35,7 +35,7 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from .config_enums import PipelineRole
 from .hf_utils import is_diffusion_pipeline
@@ -85,7 +85,9 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "Maximum batch size to execute with the model. When not specified "
             "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity."
+            "set this higher based on server capacity. When "
+            "device_graph_capture is enabled, overlap pre-captures decode "
+            "graph entries for batch sizes [1..max_batch_size]."
         ),
     )
 
@@ -236,8 +238,9 @@ class PipelineConfig(ConfigFileModel):
     max_batch_total_tokens: int | None = Field(
         default=None,
         description=(
-            "Ensures that the sum of the context length in a batch does not "
-            "exceed max_batch_total_tokens. If None, the sum is not limited."
+            "Ensures the sum of page-aligned context lengths in a batch does "
+            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
+            "page size. If None, the sum is not limited."
         ),
     )
 
@@ -269,16 +272,18 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "Whether to enable the overlap scheduler. This feature allows the scheduler "
             "to run alongside GPU execution. This helps improve GPU utilization. "
-            "This is an experimental feature which may crash and burn."
+            "This is an experimental feature which may crash and burn. "
+            "This feature will be enabled by default for some selected architectures. "
+            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
         ),
     )
 
     use_legacy_module: bool = Field(
         default=True,
         description=(
-            "Whether to use the legacy Module architecture (default=True for backward "
-            "compatibility). Set to False to use the new Module-based architecture when "
-            "available."
+            "Whether to prefer the legacy ModuleV2 architecture (default=True for backward "
+            "compatibility). When True, tries the ModuleV2 architecture first and falls back "
+            "to ModuleV3. When False, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 
@@ -827,7 +832,45 @@ class PipelineConfig(ConfigFileModel):
 
             self._validate_pipeline_config_for_speculative_decoding()
 
-        # Disable features that are not supported with the overlap scheduler.
+        self._validate_and_resolve_overlap_scheduler()
+
+    def _validate_and_resolve_overlap_scheduler(self) -> None:
+        self._validate_and_resolve_device_graph_capture()
+
+        if self.force and not self.device_graph_capture:
+            return
+
+        # Automatically enable overlap scheduling for select architectures.
+        if not self.enable_overlap_scheduler:
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                huggingface_repo=self.model.huggingface_model_repo,
+                use_legacy_module=self.use_legacy_module,
+            )
+            if (
+                arch is not None
+                and arch.name
+                in (
+                    "LlamaForCausalLM_Legacy",
+                    "DeepseekV2ForCausalLM_Legacy",
+                    "DeepseekV3ForCausalLM_Legacy",
+                    "DeepseekV3_2ForCausalLM_Legacy",
+                    "DeepseekV3ForCausalLMNextN_Legacy",
+                )
+                and self.pipeline_role == PipelineRole.PrefillAndDecode
+                and not self.sampling.enable_structured_output
+                and not self.sampling.enable_variable_logits
+                and not self.speculative
+                and not self.lora
+                and self.model.device_specs[0].device_type != "cpu"
+            ):
+                self.enable_overlap_scheduler = True
+                self.max_num_steps = 1
+                logger.info(
+                    f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
+                    "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+                )
+
+        # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.enable_overlap_scheduler:
             if self.pipeline_role != PipelineRole.PrefillAndDecode:
                 raise ValueError(
@@ -855,6 +898,34 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
+            if self.model.device_specs[0].device_type == "cpu":
+                raise ValueError(
+                    "Overlap scheduler is not supported with CPU models."
+                )
+
+    def _validate_and_resolve_device_graph_capture(self) -> None:
+        if not self.device_graph_capture:
+            return
+
+        # TODO(GENAI-363): Support device graph capture warmup with data
+        # parallelism by capturing per-replica inputs.
+        if self.model.data_parallel_degree > 1:
+            raise ValueError(
+                "device_graph_capture currently requires "
+                "data_parallel_degree=1."
+            )
+        if self.max_batch_size is None:
+            raise ValueError(
+                "device_graph_capture requires max_batch_size to be set."
+            )
+        if not self.enable_overlap_scheduler:
+            logger.info("Enabling overlap scheduling for device graph capture.")
+        self.enable_overlap_scheduler = True
+        if self.max_num_steps != 1:
+            logger.info(
+                "Setting max-num-steps=1 for device graph capture with overlap scheduling."
+            )
+        self.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
         """Validates and resolves the max_num_steps field (platform-specific)."""
@@ -877,6 +948,18 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if not draft_arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=self.draft_model.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for draft model '{self.draft_model.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                    )
             raise ValueError(
                 "MAX-Optimized architecture not found for `draft_model`"
             )
@@ -886,6 +969,18 @@ class PipelineConfig(ConfigFileModel):
             use_legacy_module=self.use_legacy_module,
         )
         if not target_arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=self.model.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for target model '{self.model.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                    )
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
@@ -961,6 +1056,20 @@ class PipelineConfig(ConfigFileModel):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
+            # Check if a non-legacy version exists when legacy lookup failed
+            if self.use_legacy_module:
+                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+                    huggingface_repo=model_config.huggingface_model_repo,
+                    use_legacy_module=False,
+                )
+                if non_legacy_arch:
+                    raise ValueError(
+                        f"MAX-optimized architecture found for '{model_config.model_path}', "
+                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
+                        f"Please use the '--no-use-legacy-module' flag to use the new implementation.\n"
+                        f"Example: max serve --model-path {model_config.model_path} --no-use-legacy-module"
+                    )
+
             raise ValueError(
                 f"MAX-optimized architecture not available for '{model_config.model_path}'. "
                 "Please file a request at https://modul.ar/request to add this model architecture to MAX."
@@ -1030,10 +1139,6 @@ class PipelineConfig(ConfigFileModel):
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
-
-        # Resolve final pipeline-specific changes to the config before doing
-        # memory estimations.
-        arch.pipeline_model.finalize_pipeline_config(self)
 
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
@@ -1238,43 +1343,50 @@ class PipelineConfig(ConfigFileModel):
                 "This should not happen after config resolution."
             )
 
-        # Get pipeline task
-        arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
-        )
-        if arch is None:
-            raise ValueError(
-                f"No architecture found for {self.model.huggingface_model_repo.repo_id}. "
-                "This should not happen after config resolution."
-            )
-
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
         pipeline_class = get_pipeline_for_task(task, self)
 
-        # Get reserved memory info from KVCache config
-        kv_config = self.model.kv_cache
-        if kv_config._available_cache_memory is None:
-            raise ValueError(
-                "KVCache config is not available after config resolution."
+        # Get reserved memory info from KVCache config (only for tasks that use KV cache)
+        from max.interfaces.task import PipelineTask
+
+        kv_cache_tasks = {
+            PipelineTask.TEXT_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
+            PipelineTask.SPEECH_TOKEN_GENERATION,
+        }
+
+        memory_str = None
+        if task in kv_cache_tasks:
+            kv_config = self.model.kv_cache
+            if kv_config._available_cache_memory is None:
+                raise ValueError(
+                    "KVCache config is not available after config resolution."
+                )
+            memory_str = to_human_readable_bytes(
+                kv_config._available_cache_memory
             )
-        memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs
         )
 
         # Log basic configuration
-        config_entries: list[tuple[str, Any]] = [
-            ("model", self.model.model_path),
-            ("architecture", arch.name),
-            ("pipeline", pipeline_class.__name__),
-            ("devices", devices_str),
-            ("max_batch_size", self.max_batch_size),
-            ("max_seq_len", self.max_length),
-            ("cache_memory", memory_str),
-            ("device_graph_capture", self.device_graph_capture),
-        ]
+        config_entries: list[tuple[str, Any]] = (
+            [
+                ("model", self.model.model_path),
+                ("architecture", arch.name),
+                ("pipeline", pipeline_class.__name__),
+                ("devices", devices_str),
+                ("max_batch_size", self.max_batch_size),
+                ("max_seq_len", self.max_length),
+            ]
+            + [("cache_memory", memory_str)]
+            if memory_str
+            else []
+            + [
+                ("device_graph_capture", self.device_graph_capture),
+            ]
+        )
 
         logger.info("")
         logger.info("=" * 60)
@@ -1546,3 +1658,14 @@ class AudioGenerationConfig(PipelineConfig):
             prometheus_metrics_mode=prometheus_metrics_mode,
             **config_flags,
         )
+
+    @override
+    def _validate_and_resolve_overlap_scheduler(self) -> None:
+        if self.force:
+            return
+
+        if self.enable_overlap_scheduler:
+            raise ValueError(
+                "The Overlap scheduler does not support Audio Generation. "
+                "Detected AudioGenerationConfig."
+            )

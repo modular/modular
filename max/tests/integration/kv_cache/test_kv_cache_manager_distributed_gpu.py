@@ -25,7 +25,6 @@ from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     RaggedKVCacheInputs,
 )
 from test_common.context_utils import create_text_context
@@ -47,7 +46,7 @@ def _create_kv_manager(
         n_kv_heads=8,
         head_dim=32,
         num_layers=10,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,
@@ -56,6 +55,7 @@ def _create_kv_manager(
         params=params,
         session=InferenceSession(devices=devices),
         total_num_pages=8,
+        max_batch_size=128,
     )
     assert isinstance(manager, PagedKVCacheManager)
     return manager

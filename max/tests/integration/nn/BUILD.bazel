@@ -93,6 +93,7 @@ modular_py_library(
 
 modular_py_test(
     name = "nn_gpu_tests",
+    size = "large",
     srcs = glob(
         ["*_gpu.py"],
         exclude = [

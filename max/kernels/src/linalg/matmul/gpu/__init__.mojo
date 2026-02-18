@@ -17,6 +17,7 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     simd_width_of,
@@ -36,10 +37,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
-from memory import LegacyUnsafePointer, bitcast, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from memory import bitcast, stack_allocation
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
 
@@ -62,6 +60,7 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_split_k_kernel,
 )
 from .amd import gemm_kernel_amd
+from .amd_rdna import gemm_kernel_rdna
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100_structured.default.dispatch import matmul_dispatch_sm100
@@ -78,9 +77,9 @@ fn matmul_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: UnsafePointer[Scalar[c_type]],
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    b_ptr: UnsafePointer[Scalar[b_type]],
+    c_ptr: UnsafePointer[mut=True, Scalar[c_type], MutAnyOrigin],
+    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -201,8 +200,8 @@ fn matmul_kernel_naive[
     s_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -401,8 +400,8 @@ fn _matmul_gpu[
     register_based_epilogue: Bool = True,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime a_shape = a.shape
@@ -443,6 +442,7 @@ fn _matmul_gpu[
         (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
         and c_type in (DType.float32, DType.bfloat16)
+        and not has_amd_rdna_gpu_accelerator()
     )
 
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
@@ -767,6 +767,7 @@ fn _matmul_gpu[
         and b_type in vendor_blas_fallback_dtypes
         and c_type in vendor_blas_fallback_dtypes
         and not has_apple_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
         and not _vendor_blas_fallback_disabled()
     ):
@@ -780,6 +781,42 @@ fn _matmul_gpu[
         except:
             # Fallback to the naive kernel.
             logger.warning("Vendor BLAS failed")
+
+    @parameter
+    if has_amd_rdna_gpu_accelerator() and not a_type.is_float8():
+        if m > 1 and n > 1 and k >= 16 and k % 16 == 0:
+            logger.info("Executing: RDNA WMMA MATMUL kernel")
+            comptime _BLOCK_M = 64
+            comptime _BLOCK_N = 64
+            comptime _NUM_WARPS = 4
+            comptime _WARP_SIZE = 32
+
+            var c_lt = from_ndbuffer_row_major(c)
+            var a_lt = from_ndbuffer_row_major(a)
+            var b_lt = from_ndbuffer_row_major(b)
+
+            comptime rdna_kernel = gemm_kernel_rdna[
+                c_type,
+                a_type,
+                b_type,
+                c_lt.layout,
+                a_lt.layout,
+                b_lt.layout,
+                transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ]
+
+            ctx.enqueue_function[rdna_kernel, rdna_kernel](
+                c_lt,
+                a_lt,
+                b_lt,
+                m,
+                n,
+                k,
+                grid_dim=(ceildiv(n, _BLOCK_N), ceildiv(m, _BLOCK_M)),
+                block_dim=(_NUM_WARPS * _WARP_SIZE,),
+            )
+            return
 
     logger.info("Executing: Naive MATMUL kernel")
     comptime BLOCK_DIM = 16
@@ -887,7 +924,11 @@ fn multistage_gemm[
     var tensor_b = from_ndbuffer_row_major(b)
 
     @parameter
-    if has_amd_gpu_accelerator() and transpose_b:
+    if (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
         logger.info("Executing: AMD standard GEMM (no split-K)")
         comptime gemm_kernel_type = gemm_kernel_amd[
             c_type,
@@ -961,8 +1002,8 @@ fn multistage_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    a: NDBuffer[mut=False, a_type, 2, _, a_shape],
+    b: NDBuffer[mut=False, b_type, 2, _, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
 ) raises:
@@ -1014,7 +1055,7 @@ fn multistage_gemm[
         ]
 
         @parameter
-        if has_amd_gpu_accelerator():
+        if has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator():
             ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
@@ -1048,7 +1089,11 @@ fn multistage_gemm[
 
     # Dispatch w/o split K
     @parameter
-    if has_amd_gpu_accelerator() and transpose_b:
+    if (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
         logger.info("Executing: AMD standard GEMM (no split-K)")
         comptime gemm_kernel_type = gemm_kernel_amd[
             c_type,

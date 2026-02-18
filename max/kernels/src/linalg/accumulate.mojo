@@ -86,15 +86,15 @@ struct _Accumulator[
         )
         self._storage = other_storage
 
-    # NOTE: This is NOT a deepcopy; self uses the same _storage as other.
+    # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
-        self._storage = other._storage
+        self._storage = copy._storage
 
     @staticmethod
     @always_inline

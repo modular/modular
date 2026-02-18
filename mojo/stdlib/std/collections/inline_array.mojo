@@ -41,7 +41,7 @@ from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from compile import get_type_name
 import format._utils as fmt
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -184,14 +184,14 @@ struct InlineArray[ElementType: Copyable, size: Int](
         out self,
         *,
         var unsafe_assume_initialized: InlineArray[
-            UnsafeMaybeUninitialized[Self.ElementType], Self.size
+            UnsafeMaybeUninit[Self.ElementType], Self.size
         ],
     ):
         """Constructs an `InlineArray` from an `InlineArray` of
-        `UnsafeMaybeUninitialized`.
+        `UnsafeMaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized`
+            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:
@@ -338,11 +338,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
-            other: The array to copy from.
+            copy: The array to copy from.
 
         Examples:
 
@@ -352,27 +352,33 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        self = Self(uninitialized=True)
+        @parameter
+        if Self.ElementType.__copyinit__is_trivial:
+            self._array = copy._array
+        else:
+            self = Self(uninitialized=True)
+            for idx in range(Self.size):
+                var ptr = self.unsafe_ptr() + idx
+                ptr.init_pointee_copy(copy.unsafe_get(idx))
 
-        for idx in range(Self.size):
-            var ptr = self.unsafe_ptr() + idx
-            ptr.init_pointee_copy(other.unsafe_get(idx))
-
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
-            other: The array to move from.
+            take: The array to move from.
 
         Notes:
             Moves the elements from the source array into this array.
         """
 
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-
-        for idx in range(Self.size):
-            var other_ptr = other.unsafe_ptr() + idx
-            (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
+        @parameter
+        if Self.ElementType.__moveinit__is_trivial:
+            self._array = take._array
+        else:
+            self = Self(uninitialized=True)
+            for idx in range(Self.size):
+                var other_ptr = take.unsafe_ptr() + idx
+                (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):
         """Deallocates the array and destroys its elements."""
