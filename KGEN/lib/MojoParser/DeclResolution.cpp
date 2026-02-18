@@ -2774,8 +2774,8 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
         return success();
       }
 
-      // @nonmaterializable(TargetType)
-      if (declRef->spelling == "nonmaterializable" &&
+      // @__nonmaterializable(TargetType)
+      if (declRef->spelling == "__nonmaterializable" &&
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           IREmitter emitter(*parentDecl, EC_Type);

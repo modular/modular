@@ -1175,7 +1175,7 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   if (isConvertibleToType1 && isConvertibleToType2)
     return {CTR_Ambiguous, PValue(), PValue()};
 
-  // If one or the other type is non-materializable, the conversion is free,
+  // If one or the other type is nonmaterializable, the conversion is free,
   // so check to see if there is an unambiguous common type.
   bool type2ConvertsToType1Nonmat = false;
   bool type1ConvertsToType2Nonmat = false;

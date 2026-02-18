@@ -1026,7 +1026,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
   // into the overload set.
   //
   // We don't do this for initializers; if you use T() syntax, we only will give
-  // you a T instance, even if it is non-materializable.
+  // you a T instance, even if it is nonmaterializable.
   if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
     if (syntax != CallSyntax::kTypeCall &&
         syntax != CallSyntax::kImplicitConvert) {

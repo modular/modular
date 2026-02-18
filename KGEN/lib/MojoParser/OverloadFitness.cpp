@@ -583,7 +583,7 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
 
 int8_t OverloadFitness::Payload::getBoolMask() const {
   // We consider exact matches of concrete types to be more specific than
-  // those needing non-materializable conversions, both of these more
+  // those needing nonmaterializable conversions, both of these more
   // specific than varargs matches (for example, when overloading a
   // `foo(Int)` and `foo(Int*)` we should pick the former if both work), and
   // all of these more specific than matches with variadic parameters.
