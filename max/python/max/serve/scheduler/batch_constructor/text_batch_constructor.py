@@ -443,6 +443,7 @@ class TextBatchConstructor:
                         RequestType.CE,
                         RequestType.MIXED,
                     ],
+                    cost_alignment=self.kv_cache.page_size,
                 )
             )
 

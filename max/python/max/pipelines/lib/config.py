@@ -238,8 +238,9 @@ class PipelineConfig(ConfigFileModel):
     max_batch_total_tokens: int | None = Field(
         default=None,
         description=(
-            "Ensures that the sum of the context length in a batch does not "
-            "exceed max_batch_total_tokens. If None, the sum is not limited."
+            "Ensures the sum of page-aligned context lengths in a batch does "
+            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
+            "page size. If None, the sum is not limited."
         ),
     )
 

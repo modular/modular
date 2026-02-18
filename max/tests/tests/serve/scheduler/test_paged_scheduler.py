@@ -813,27 +813,28 @@ def test_paged_scheduler_oom_tg() -> None:
 
 def test_paged_scheduler_max_batch_total_tokens_ce() -> None:
     max_batch_total_tokens = 1000
+    prompt_len = 60
+    page_size = 128
     scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_batch_total_tokens,
         max_batch_total_tokens=max_batch_total_tokens,
         target_tokens_per_batch_ce=max_batch_total_tokens,
         enable_chunked_prefill=True,
+        page_size=page_size,
     )
 
     for _ in range(20):
-        enqueue_request(request_queue, prompt_len=60, max_seq_len=67)
+        enqueue_request(request_queue, prompt_len=prompt_len, max_seq_len=67)
 
     actual = run_until_completion(scheduler)
     # fmt: off
     #
     #
     expected = [
-        # CE batch is limited to 17 requests as we can fit 16 * 60 = 960, and then chunk a 17th request
-        # to get to 1000.
-        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=0),
-        # As we can increase the TG batch size, by introducing new CE requests. We introduce the remaining
-        # CE requests.
-        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=200, cached_toks=40),
+        # CE batch is limited by the page-aligned total-context budget.
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=420, cached_toks=0),
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=420, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=360, cached_toks=0),
         BatchInfo(TG, batch_size=20, terminated=20, steps=7, preempted=0, input_toks=20, cached_toks=1200),
         # The entire batch is completed, leading to a remaining empty batch.
         BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
@@ -841,29 +842,32 @@ def test_paged_scheduler_max_batch_total_tokens_ce() -> None:
     # fmt: on
     assert_batch_info_equal(actual, expected)
     for batch in actual:
-        cached_toks = batch.cached_toks
-        steps = batch.steps
-        batch_size = batch.batch_size
         if batch.batch_type == BatchType.CE:
-            assert cached_toks + batch_size * steps <= max_batch_total_tokens
+            aligned_len = ceildiv(prompt_len, page_size) * page_size
+            assert batch.batch_size * aligned_len <= max_batch_total_tokens
 
 
 def test_paged_scheduler_max_batch_total_tokens_tg() -> None:
     max_batch_total_tokens = 1000
+    prompt_len = 30
+    page_size = 128
     scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_batch_total_tokens,
         max_batch_total_tokens=max_batch_total_tokens,
         target_tokens_per_batch_ce=max_batch_total_tokens,
         enable_chunked_prefill=True,
+        page_size=page_size,
     )
 
     for _ in range(20):
-        enqueue_request(request_queue, prompt_len=30, max_seq_len=67)
+        enqueue_request(request_queue, prompt_len=prompt_len, max_seq_len=67)
 
     actual = run_until_completion(scheduler)
     # fmt: off
     expected = [
-        BatchInfo(CE, batch_size=20, terminated=0, steps=1, preempted=0, input_toks=600, cached_toks=0),
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=210, cached_toks=0),
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=210, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=180, cached_toks=0),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=600),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=800),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=1000),
@@ -873,11 +877,11 @@ def test_paged_scheduler_max_batch_total_tokens_tg() -> None:
     # fmt: on
     assert_batch_info_equal(actual, expected)
     for batch in actual:
-        cached_toks = batch.cached_toks
         steps = batch.steps
         batch_size = batch.batch_size
+        per_req_aligned_len = ceildiv(prompt_len + steps, page_size) * page_size
         if batch.batch_type == BatchType.CE:
-            assert cached_toks + batch_size * steps <= max_batch_total_tokens
+            assert batch_size * per_req_aligned_len <= max_batch_total_tokens
 
 
 def test_paged_scheduler_dp8() -> None:
