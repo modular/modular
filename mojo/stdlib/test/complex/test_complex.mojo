@@ -16,6 +16,7 @@ import math
 from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
 from testing import TestSuite
+from testing import assert_true
 
 
 def test_init():
@@ -123,6 +124,11 @@ def test_exp():
     var c = math.exp(ComplexFloat64(0, math.pi))
     assert_almost_equal(c.re, -1)
     assert_almost_equal(c.im, 0)
+
+
+def test_complex_repr():
+    var c = ComplexFloat32(1, 2)
+    assert_equal(repr(c), "ComplexSIMD(1.0 + 2.0i)")
 
 
 def main():

@@ -22,6 +22,7 @@ from complex import ComplexSIMD
 import math
 from math.math import _Expable
 from sys import llvm_intrinsic
+from format._utils import FormatStruct
 
 comptime ComplexScalar = ComplexSIMD[size=1]
 """Represents a scalar complex value."""
@@ -164,6 +165,10 @@ struct ComplexSIMD[dtype: DType, size: Int](
         @parameter
         if Self.size > 1:
             writer.write("]")
+    
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        FormatStruct(writer, "ComplexSIMD").fields(self)
 
     @always_inline
     fn __abs__(self) -> SIMD[Self.dtype, Self.size]:
