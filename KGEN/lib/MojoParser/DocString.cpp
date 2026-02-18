@@ -37,9 +37,9 @@ static bool hasDocPrivateDecorator(ArrayRef<TypedAttr> decorators) {
 /// Given a function name such as "__init__(module::Struct=&)", returns whether
 /// it is a "special function," also known as a "dunder method"
 /// (double-underscore method).
-static bool isPublicSpecialFunction(StringRef name) {
+static bool isPublicSpecialFunction(StringRef name, FnOp op) {
   // If this is a normal function, treat it as a dunder if it's a __.
-  if (SpecialFunctionInfo::getKind(name) == SpecialFunctionKind::kNormal)
+  if (!op || op.getSpecialFunctionKind() == SpecialFunctionKind::kNormal)
     return name.starts_with("__");
 
   // Otherwise, for non-normal special functions, ignore mlir methods.
@@ -48,14 +48,17 @@ static bool isPublicSpecialFunction(StringRef name) {
 
 /// Return if a decl should be hidden given its name.
 bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
+  Operation *declOp = decl.getIfOperation();
   // Hide private names (non special names starting with _).
-  if (name.starts_with("_") && !isPublicSpecialFunction(name))
+  if (name.starts_with("_") &&
+      !isPublicSpecialFunction(name, dyn_cast_if_present<FnOp>(declOp)))
     return true;
 
-  if (!decl.getIfOperation())
+  if (!declOp)
     return false;
+
   // Otherwise, check to see if this was marked explicitly to be hidden.
-  return TypeSwitch<Operation *, bool>(decl.getIfOperation())
+  return TypeSwitch<Operation *, bool>(declOp)
       .Case<FnOp, StructDeclOp>(
           [&](auto op) { return hasDocPrivateDecorator(op.getDecorators()); })
       .Default(false);
@@ -76,7 +79,7 @@ static bool requiresDocString(ASTDeclInterface op) {
 ///    method on a struct that itself requires a doc string.
 static bool requiresDocString(FnOp op) {
   StringRef name = *op.getSourceName();
-  if (name.starts_with("_") && !isPublicSpecialFunction(name))
+  if (name.starts_with("_") && !isPublicSpecialFunction(name, op))
     return false;
 
   // Don't require doc strings for explicitly annotated methods.

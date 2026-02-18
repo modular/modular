@@ -256,9 +256,12 @@ public:
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ExprNode *originExpr, ASTDecl *fnDecl,
-                         SpecialFunctionInfo &fnInfo);
+                         StringAttr baseName);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
+
+  /// This indicates whether the function is a special function like __init__.
+  SpecialFunctionInfo fnInfo;
 
   /// For methods, this is the default type of Self.  For global functions this
   /// is null.
@@ -295,9 +298,8 @@ public:
   /// because that is how defs work in Python.
   ///
   /// If this function detects a problem, it marks the decl as erroneous and
-  /// resets the SpecialFunctionInfo.
-  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
-                                 SpecialFunctionInfo &fnInfo) const;
+  /// resets fnInfo.
+  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name);
 
   /// In a method with a self argument, check to make sure it has the correct
   /// type and invariants. "isSelfResult" is true for initializers that return

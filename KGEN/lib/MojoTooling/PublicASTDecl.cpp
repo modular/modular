@@ -95,7 +95,7 @@ static constexpr const char *kMarkdownIndent = "&nbsp;&nbsp;";
 /// are ordered first.
 static unsigned getDeclNamePriority(StringRef name) {
   // If the name is a special function, use that as the priority.
-  SpecialFunctionKind specialFnKind = SpecialFunctionInfo::getKind(name);
+  SpecialFunctionKind specialFnKind = SpecialFunctionInfo::lookupKind(name);
   if (specialFnKind != SpecialFunctionKind::kNormal)
     return static_cast<unsigned>(specialFnKind);
 

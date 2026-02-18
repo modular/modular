@@ -1838,8 +1838,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 /// Type check the result type for the function.  `resultTypeExpr` will be
 /// non-null if explicitly specified in source code, and the `resultLoc` will
 /// always be valid point for end of the argument list.
-static void typeCheckResult(ParsedArgument resultArg,
-                            const SpecialFunctionInfo &fnInfo, ASTDecl *fnDecl,
+static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
                             TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
@@ -1860,7 +1859,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     // calls to this function though.
     if (!resultType)
       resultType = shared.getTypeCheckErrorType();
-  } else if (fnInfo.isInitializer() &&
+  } else if (tcSignature.fnInfo.isInitializer() &&
              resultArg.convention == ParsedArgument::kConventionOut) {
     // If this is an initializer with an 'out self' argument, infer Self.
     resultType = tcSignature.selfType;
@@ -2058,8 +2057,12 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
                                                const ExprNode *originExpr,
                                                ASTDecl *fnDecl,
-                                               SpecialFunctionInfo &fnInfo)
+                                               StringAttr baseName)
     : paramList(paramList), argList(argList) {
+
+  if (baseName) // Function pointer types don't have a name.
+    fnInfo =
+        SpecialFunctionInfo::get(SpecialFunctionInfo::lookupKind(baseName));
   SharedState &shared = paramList.shared;
   IREmitter typeEmitter(paramList.declScope, EC_Type);
 
@@ -2161,7 +2164,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     typeCheckOneArgument(i, fnDecl, *this);
 
   // Compute the result type.
-  typeCheckResult(argList.resultArg, fnInfo, fnDecl, *this);
+  typeCheckResult(argList.resultArg, fnDecl, *this);
 
   // If a capture origin set was specified, emit it. It will be added to the
   // signature type later.
@@ -2209,9 +2212,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 /// because that is how defs work in Python.
 ///
 /// If this function detects a problem, it marks the decl as erroneous and
-/// resets the SpecialFunctionInfo.
-void TypeCheckedFnSignature::verifyFunctionNameBinding(
-    ASTDecl &decl, StringAttr name, SpecialFunctionInfo &fnInfo) const {
+/// resets fnInfo.
+void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
+                                                       StringAttr name) {
   FnOp funcOp = cast<FnOp>(*decl.getIfOperation());
 
   MutableArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;

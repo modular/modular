@@ -88,14 +88,11 @@ public:
 
   /// Return a record that describes special functions like __init__.  The
   /// kind field identifies it.
-  static const SpecialFunctionInfo &get(llvm::StringRef name) {
-    return get(getKind(name));
-  }
   static const SpecialFunctionInfo &get(SpecialFunctionKind kind);
 
   /// Given a function name like "__init__" return the special function kind
   /// that corresponds to it.
-  static SpecialFunctionKind getKind(llvm::StringRef name);
+  static SpecialFunctionKind lookupKind(llvm::StringRef name);
 };
 
 } // namespace M::KGEN::LIT
