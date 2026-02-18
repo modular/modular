@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
+import diffusers
+
 # 3rd-party
 import hf_repo_lock
 import huggingface_hub
@@ -36,14 +38,15 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
+from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.core import PixelContext
+from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
 from peft.peft_model import PeftModel
-
-# Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import test_data, torch_utils
-from test_common.torch_utils import MockTextGenerationRequest
+from test_common.test_data import MockTextGenerationRequest
 
 
 # This is required since the presence of peft changes
@@ -965,6 +968,110 @@ class LoRAOracle(PipelineOracle):
         return self._use_cache
 
 
+class ImageGenerationOracle(PipelineOracle):
+    """Pipeline oracle for FLUX image generation."""
+
+    model_path: str
+    """ID of the Hugging Face repository."""
+
+    num_steps: int
+    """Number of denoising steps."""
+
+    def __init__(
+        self,
+        model_path: str = "black-forest-labs/FLUX.1-dev",
+        num_steps: int = 50,
+    ) -> None:
+        super().__init__()
+        self.model_path = model_path
+        self.task = (
+            PipelineTask.PIXEL_GENERATION
+        )  # Placeholder, may need IMAGE_GENERATION
+        self.num_steps = num_steps
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    @property
+    def inputs(self) -> list[Any]:
+        """Input prompts for image generation."""
+
+        return test_data.DEFAULT_PIXEL_GENERATION
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        """Create MAX FLUX pixel generation pipeline."""
+
+        config = pipelines.PipelineConfig(
+            model_path=self.model_path,
+            device_specs=device_specs,
+            use_legacy_module=False,
+        )
+
+        # Step 2: Initialize the tokenizer
+        tokenizer = PixelGenerationTokenizer(
+            model_path=self.model_path,
+            pipeline_config=config,
+            subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
+            max_length=77,  # Standard max length for CLIP-based encoders
+            subfolder_2="tokenizer_2",
+            secondary_max_length=512,  # Standard max length for T5 encoders
+        )
+
+        pipeline = PixelGenerationPipeline[PixelContext](
+            pipeline_config=config,
+            pipeline_model=FluxPipeline,
+        )
+
+        return MaxPipelineAndTokenizer(
+            pipeline=pipeline,  # type: ignore
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, encoding: str | None, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        """Create diffusers FLUX pipeline."""
+
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+
+        # Load FLUX pipeline
+        pipeline = diffusers.AutoPipelineForText2Image.from_pretrained(
+            self.model_path,
+            revision=revision,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE.get(encoding, torch.bfloat16),  # type: ignore
+        )
+        pipeline = pipeline.to(device)
+
+        # Return pipeline as "model" and None as data_processor (not needed for diffusers)
+        return TorchModelAndDataProcessor(
+            model=pipeline,
+            data_processor=None,
+        )
+
+    def run_torch_image_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+        num_steps: int,
+        inputs: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Run image generation using diffusers FLUX."""
+
+        return torch_utils.run_image_generation(
+            pipeline=torch_pipeline_and_tokenizer.model,
+            device=device,
+            requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
+        )
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "allenai/OLMo-1B-hf": GenericOracle(
         model_path="allenai/OLMo-1B-hf",
@@ -1456,5 +1563,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>In a hole in the ground there lived a hobbit.<|TEXT_UNDERSTANDING_END|>",
         ],
         use_cache=True,
+    ),
+    "black-forest-labs/FLUX.1-dev": ImageGenerationOracle(
+        "black-forest-labs/FLUX.1-dev"
     ),
 }

@@ -14,9 +14,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 from collections.abc import Sequence
+from dataclasses import replace
+from io import BytesIO
 from typing import Any, TypeVar
 
+import numpy as np
 from max import pipelines
 from max.driver import Device
 from max.dtype import DType
@@ -33,11 +38,14 @@ from max.graph import (
 from max.interfaces import (
     LogitsProcessor,
     PipelineTokenizer,
+    PixelGenerationInputs,
     ProcessorInputs,
     RequestID,
     SamplingParams,
     TextGenerationRequest,
 )
+from max.pipelines.lib import PixelGenerationTokenizer
+from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
 from .model_output import (
@@ -45,7 +53,22 @@ from .model_output import (
     TokenInfo,
 )
 from .numerics import log_softmax
-from .test_data import MockTextGenerationRequest
+from .test_data import MockPixelGenerationRequest, MockTextGenerationRequest
+
+
+def _decode_base64_image_to_numpy(image_data: str) -> np.ndarray:
+    """Decode base64-encoded image to numpy array (H, W, C) float32 [0, 1].
+
+    Mirrors the decode logic used in simple_offline_generation.save_image,
+    but returns numpy for evaluation/comparison instead of saving to file.
+    """
+    image_bytes = base64.b64decode(image_data)
+    pil_image = Image.open(BytesIO(image_bytes))
+    img_array = np.array(pil_image, dtype=np.float32) / 255.0
+    if img_array.ndim == 2:
+        img_array = np.stack([img_array] * 3, axis=-1)
+    return img_array
+
 
 NUM_STEPS = 10
 
@@ -261,3 +284,96 @@ class ReplaceLogitsWithReference:
         next_token = reference["values"][step]["next_token"]
         self.replace_logits(logits, next_token)
         self.step_by_id[context.request_id] += 1
+
+
+def run_pixel_generation(
+    pipeline: pipelines.PixelGenerationPipeline,
+    tokenizer: PixelGenerationTokenizer,
+    requests: list[MockPixelGenerationRequest],
+    num_steps: int,
+    print_outputs: bool = False,
+) -> list[dict[str, Any]]:
+    """Run pixel generation using MAX PixelGenerationPipeline.
+
+    Args:
+        pipeline: MAX PixelGenerationPipeline instance
+        tokenizer: MAX PixelGenerationTokenizer instance
+        requests: List of MockPixelGenerationRequest objects
+        num_steps: Number of inference steps (denoising steps)
+        print_outputs: Whether to print outputs
+
+    Returns:
+        List of dicts with prompt and generated images
+    """
+
+    results = []
+
+    for mock_request in requests:
+        prompt = mock_request.prompt
+        # Override num_steps if explicitly provided (for verification with different step counts)
+        if num_steps != mock_request.num_inference_steps:
+            mock_request = replace(mock_request, num_inference_steps=num_steps)
+
+        if print_outputs:
+            print(
+                f'Generating image for prompt (steps={num_steps}): "{prompt}"'
+            )
+
+        # Convert MockPixelGenerationRequest to OpenResponsesRequest
+        request_id = RequestID()
+        request = mock_request.to_open_responses_request(
+            request_id=request_id,
+            model_name=tokenizer.model_path,
+        )
+
+        # Create context from request using tokenizer
+        context = asyncio.run(tokenizer.new_context(request))
+
+        if print_outputs:
+            print(
+                f"Context created: {context.height}x{context.width}, "
+                f"{context.num_inference_steps} steps, guidance={context.guidance_scale}"
+            )
+
+        # Prepare inputs for the pipeline
+        inputs = PixelGenerationInputs(batch={context.request_id: context})
+
+        # Execute the pipeline
+        outputs = pipeline.execute(inputs)
+
+        # Get the output for our request
+        output = outputs[context.request_id]
+
+        pixel_data_list: list[np.ndarray] = []
+        for image_content in output.output:
+            if image_content.type != "output_image":
+                raise ValueError(
+                    f"Unexpected output content type '{image_content.type}'"
+                )
+
+            if image_content.image_data:
+                pixel_data_list.append(
+                    _decode_base64_image_to_numpy(image_content.image_data)
+                )
+            elif image_content.image_url:
+                raise ValueError("image_url not supported")
+            else:
+                raise ValueError("No image data or URL in output")
+
+        if not pixel_data_list:
+            raise ValueError("No pixel data in output")
+
+        pixel_data = np.stack(pixel_data_list, axis=0)
+
+        if print_outputs:
+            print(
+                f"Generated image shape: {pixel_data.shape}, "
+                f"dtype: {pixel_data.dtype}, range: [{pixel_data.min():.3f}, {pixel_data.max():.3f}]"
+            )
+
+        # Take first image from batch dimension
+        image_np = pixel_data[0]  # Shape: (H, W, C)
+
+        results.append({"prompt": prompt, "images": image_np})
+
+    return results
