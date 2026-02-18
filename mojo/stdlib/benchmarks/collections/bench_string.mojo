@@ -391,6 +391,30 @@ fn bench_string_repr[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string write int
+# ===-----------------------------------------------------------------------===#
+
+
+@parameter
+fn bench_string_write_int[short: Bool](mut b: Bencher) raises:
+    @always_inline
+    fn call_fn() unified {read}:
+        for _ in range(1000 if not short else 1_000_000):
+            # NOTE: we are keeping the string allocation in the loop to take
+            # that overhead into account
+            var res: String
+
+            @parameter
+            if short:
+                res = String.write(UInt8(123))
+            else:  # more than 24 bytes
+                res = String.write(UInt64.MAX)
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main():
@@ -495,6 +519,12 @@ def main():
     )
     m.bench_function[bench_string_join[False]](
         BenchId(String("bench_string_join_long"))
+    )
+    m.bench_function[bench_string_write_int[True]](
+        BenchId(String("bench_string_write_int_short"))
+    )
+    m.bench_function[bench_string_write_int[False]](
+        BenchId(String("bench_string_write_int_long"))
     )
 
     # NOTE: do not delete this. This is supposed to measure the average for

@@ -1695,8 +1695,12 @@ def test_reduce():
 
 
 def test_reduce_bit_count():
-    var int_0xFFFF = Int32(0xFFFF)
-    assert_equal(int_0xFFFF.reduce_bit_count(), 16)
+    assert_equal(UInt8.MAX.reduce_bit_count(), 8)
+    assert_equal(UInt16.MAX.reduce_bit_count(), 16)
+    assert_equal(UInt32.MAX.reduce_bit_count(), 32)
+    assert_equal(UInt64.MAX.reduce_bit_count(), 64)
+    assert_equal(UInt128.MAX.reduce_bit_count(), 128)
+    assert_equal(UInt256.MAX.reduce_bit_count(), 256)
 
     var int_iota8 = SIMD[DType.int32, 8](0, 1, 2, 3, 4, 5, 6, 7)
     assert_equal(int_iota8.reduce_bit_count(), 12)
@@ -2687,6 +2691,46 @@ def test_float8_e8m0fnu_cast_from_float32():
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
     _ = h_A[0].cast[DType.float8_e8m0fnu]()
+
+
+def test_estimate_bytes_to_write():
+    def _test[dtype: DType]():
+        @parameter
+        for size in [1, 2, 4, 8]:
+            comptime S = SIMD[dtype, size]
+            for i in range(min(Int(Scalar[dtype].MAX), 1000)):
+                assert_equal(
+                    S(i).estimate_bytes_to_write(), String(S(i)).byte_length()
+                )
+
+            comptime length_min = String(S.MIN).byte_length()
+            comptime length_max = String(S.MAX).byte_length()
+
+            assert_equal(
+                S.MAX.estimate_bytes_to_write(), String(S.MAX).byte_length()
+            )
+
+            @parameter
+            if dtype.is_signed():
+                assert_equal(
+                    S(-1).estimate_bytes_to_write(), String(S(-1)).byte_length()
+                )
+                assert_equal(
+                    S.MIN.estimate_bytes_to_write(), String(S.MIN).byte_length()
+                )
+
+    _test[DType.uint8]()
+    _test[DType.int8]()
+    _test[DType.uint16]()
+    _test[DType.int16]()
+    _test[DType.uint32]()
+    _test[DType.int32]()
+    _test[DType.uint64]()
+    _test[DType.int64]()
+    _test[DType.uint128]()
+    _test[DType.int128]()
+    _test[DType.uint256]()
+    _test[DType.int256]()
 
 
 def main():

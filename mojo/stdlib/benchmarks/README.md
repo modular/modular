@@ -21,7 +21,7 @@ If you want to just compile and run all the benchmarks as-is,
 we need to execute the following command:
 
 ```bash
-./bazelw test mojo/stdlib/benchmarks/... --local_test_jobs=1 --test_output=all
+./bazelw test mojo/stdlib/benchmarks/... --local_test_jobs=1 --test_output=all --cache_test_results=no
 ```
 
 This script builds the open source `std.mojopkg` and then executes
