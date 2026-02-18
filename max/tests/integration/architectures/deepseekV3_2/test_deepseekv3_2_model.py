@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
@@ -89,7 +89,7 @@ def make_test_config() -> DeepseekV3_2Config:
 
     kv_params = KVCacheParams(
         dtype=DType.bfloat16,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         n_kv_heads=hf_config.num_key_value_heads,
         head_dim=hf_config.v_head_dim,
         num_layers=hf_config.num_hidden_layers,

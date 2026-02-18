@@ -103,7 +103,4 @@ class Idefics3LanguageModel(Llama3):
                 input_row_offsets=input_row_offsets,
             )
 
-        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
-
-        return (last_logits,)
+        return self._postprocess_logits(h, input_row_offsets, return_n_logits)

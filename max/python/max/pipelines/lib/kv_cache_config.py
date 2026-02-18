@@ -12,18 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """MAX KVCache configuration."""
 
-import enum
-from collections.abc import Mapping
+from collections.abc import Sequence
 
 from max.config import ConfigFileModel
 from max.dtype import DType
-from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.graph import DeviceRef
+from max.nn.legacy.kv_cache.cache_params import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVCacheStrategy,
+)
 from pydantic import Field, PrivateAttr
 
 
 class KVCacheConfig(ConfigFileModel):
     cache_strategy: KVCacheStrategy = Field(
-        default=KVCacheStrategy.MODEL_DEFAULT,
+        default="model_default",
         description=(
             "The cache strategy to use. This defaults to model_default, which "
             "selects the default strategy for the requested architecture. You "
@@ -93,9 +97,44 @@ class KVCacheConfig(ConfigFileModel):
         """Returns the data type used for KV cache storage."""
         return self._cache_dtype
 
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for KVCacheConfig."""
-        return {
-            "KVCacheStrategy": KVCacheStrategy,
-        }
+    def to_params(
+        self,
+        dtype: DType,
+        n_kv_heads: int,
+        head_dim: int,
+        num_layers: int,
+        devices: Sequence[DeviceRef],
+        data_parallel_degree: int = 1,
+        is_mla: bool = False,
+        kvcache_quant_config: KVCacheQuantizationConfig | None = None,
+    ) -> KVCacheParams:
+        """Return KVCacheParams built from this config.
+
+        Args:
+            dtype: Data type for KV cache storage.
+            n_kv_heads: Total number of KV heads across all devices.
+            head_dim: Dimension of each attention head.
+            num_layers: Number of model layers.
+            devices: Devices that host the KV cache.
+            data_parallel_degree: Degree of data parallelism.
+            is_mla: Whether the model uses Multi-Latent Attention.
+            kvcache_quant_config: KV cache quantization configuration.
+
+        Returns:
+            The constructed KV cache parameters.
+        """
+        return KVCacheParams(
+            dtype=dtype,
+            n_kv_heads=n_kv_heads,
+            head_dim=head_dim,
+            num_layers=num_layers,
+            page_size=self.kv_cache_page_size,
+            cache_strategy=self.cache_strategy,
+            enable_prefix_caching=self.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
+            devices=devices,
+            is_mla=is_mla,
+            data_parallel_degree=data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
+        )

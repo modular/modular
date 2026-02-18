@@ -27,7 +27,7 @@ from max.interfaces import (
     SamplingParams,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache import RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import SpeculativeMethod
@@ -67,7 +67,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         max_num_steps=num_steps,
         max_length=1024,
     )
-    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
@@ -213,7 +213,7 @@ def test_draft_model_encoding_selection() -> None:
         max_num_steps=5,
         max_length=1024,
     )
-    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
@@ -239,7 +239,7 @@ def test_draft_model_encoding_selection() -> None:
         max_num_steps=5,
         max_length=1024,
     )
-    pipeline_config2.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config2.model.kv_cache.cache_strategy = "paged"
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
     pipeline_config2.model.kv_cache.device_memory_utilization = 0.3
 
@@ -273,7 +273,7 @@ def test_kv_cache_claiming_protocol() -> None:
         max_num_steps=5,
         max_length=1024,
     )
-    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 

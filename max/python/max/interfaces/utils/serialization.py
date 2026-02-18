@@ -66,10 +66,12 @@ def _build_type_registry() -> dict[str, type]:
 # Initialize registry at module load time
 _PYDANTIC_TYPE_REGISTRY = _build_type_registry()
 
+SHARED_MEMORY_THRESHOLD = 24000000
+
 
 def numpy_encoder_hook(
     use_shared_memory: bool = False,
-    shared_memory_threshold: int = 24000000,
+    shared_memory_threshold: int = SHARED_MEMORY_THRESHOLD,
 ) -> Callable[[Any], Any]:
     """Create a configurable numpy encoding hook.
 
@@ -138,7 +140,7 @@ class MsgpackNumpyEncoder:
     def __init__(
         self,
         use_shared_memory: bool = False,
-        shared_memory_threshold: int = 0,
+        shared_memory_threshold: int = SHARED_MEMORY_THRESHOLD,
     ):
         """Initialize the encoder.
 
@@ -201,7 +203,7 @@ class MsgpackNumpyEncoder:
 
 def msgpack_numpy_encoder(
     use_shared_memory: bool = False,
-    shared_memory_threshold: int = 0,
+    shared_memory_threshold: int = SHARED_MEMORY_THRESHOLD,
 ) -> MsgpackNumpyEncoder:
     """Create an encoder function that handles numpy arrays.
 

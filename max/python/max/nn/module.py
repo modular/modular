@@ -729,6 +729,38 @@ def module_dataclass(  # noqa: ANN201
     preserving :obj:`Module`'s specialized ``__repr__`` method for better
     debugging experience when printing module structures.
 
+    .. code-block:: python
+
+        from max.nn import Module, Linear, module_dataclass
+        from max.tensor import Tensor
+        from max import functional as F
+
+        @module_dataclass
+        class MLP(Module):
+            fc1: Linear
+            fc2: Linear
+
+            def forward(self, x: Tensor) -> Tensor:
+                x = self.fc1(x)
+                x = F.relu(x)
+                x = self.fc2(x)
+                return x
+
+        # Create module with automatic parameter tracking
+        mlp = MLP(
+            fc1=Linear(128, 256),
+            fc2=Linear(256, 128)
+        )
+
+        # All parameters are automatically tracked
+        print(dict(mlp.parameters).keys())
+        # {'fc1.weight', 'fc1.bias', 'fc2.weight', 'fc2.bias'}
+
+        # Use the module
+        x = Tensor.randn([4, 128])
+        output = mlp(x)
+        print(output.shape)  # (4, 128)
+
     Args:
         cls: The class to decorate. Must define a ``forward`` method.
             When :obj:`None`, returns a decorator function (supports

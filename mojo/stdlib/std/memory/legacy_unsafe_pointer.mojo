@@ -30,7 +30,7 @@ from format._utils import (
 )
 from memory import memcpy
 from memory.memory import _free, _malloc
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from os import abort
 from python import PythonObject
 
@@ -645,8 +645,8 @@ struct LegacyUnsafePointer[
             # code with only 2 loads and 2 stores. Whereas with only 1 temporary
             # and a memcpy between the pointers it produces 3 load and 3 stores.
 
-            var self_tmp = UnsafeMaybeUninitialized[U]()
-            var other_tmp = UnsafeMaybeUninitialized[U]()
+            var self_tmp = UnsafeMaybeUninit[U]()
+            var other_tmp = UnsafeMaybeUninit[U]()
             memcpy(dest=self_tmp.unsafe_ptr(), src=UnsafePointer(self), count=1)
             memcpy(
                 dest=other_tmp.unsafe_ptr(), src=UnsafePointer(other), count=1

@@ -35,7 +35,8 @@ class TokenGenerationSchedulerConfig:
     """The maximum sequence length of the model."""
 
     max_batch_total_tokens: int | None = None
-    """Ensures that the sum of the context length in a batch does not exceed max_batch_total_tokens."""
+    """Ensures the sum of page-aligned context lengths in a batch does not
+    exceed max_batch_total_tokens. Alignment uses the KV cache page size."""
 
     enable_chunked_prefill: bool = True
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure

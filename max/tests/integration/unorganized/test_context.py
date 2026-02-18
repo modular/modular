@@ -23,8 +23,6 @@ from max.interfaces import (
     PixelGenerationContext,
     RequestID,
     SamplingParams,
-    SamplingParamsGenerationConfigDefaults,
-    SamplingParamsInput,
     TextGenerationContext,
     TokenBuffer,
     VLMTextGenerationContext,
@@ -467,85 +465,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
 
     assert not context.is_done
     assert np.array_equal(context.tokens.generated, np.array([3, 6]))
-
-
-def test_sampling_params_from_input_and_generation_config_defaults_override() -> (
-    None
-):
-    """Test that SamplingParamsGenerationConfigDefaults values override SamplingParams class defaults."""
-    # Create defaults that override some SamplingParams class defaults
-    generation_defaults = SamplingParamsGenerationConfigDefaults(
-        temperature=0.5,
-        top_k=50,
-        max_new_tokens=100,
-    )
-
-    # Create SamplingParams with no user overrides
-    sampling_params = SamplingParams.from_input_and_generation_config(
-        SamplingParamsInput(),
-        sampling_params_defaults=generation_defaults,
-    )
-
-    # Verify that generation config defaults override SamplingParams class defaults
-    assert (
-        sampling_params.temperature == 0.5
-    )  # from generation_defaults, not 1.0 (class default)
-    assert (
-        sampling_params.top_k == 50
-    )  # from generation_defaults, not -1 (class default)
-    assert (
-        sampling_params.max_new_tokens == 100
-    )  # from generation_defaults, not None (class default)
-
-    # Verify that fields not in generation_defaults retain their class defaults
-    assert sampling_params.top_p == 1  # class default
-    assert sampling_params.min_p == 0.0  # class default
-    assert sampling_params.frequency_penalty == 0.0  # class default
-    assert sampling_params.repetition_penalty == 1.0  # class default
-
-
-def test_sampling_params_from_input_and_generation_config_user_override() -> (
-    None
-):
-    """Test that user-provided values take highest priority over defaults."""
-    # Create generation defaults
-    generation_defaults = SamplingParamsGenerationConfigDefaults(
-        temperature=0.5,
-        top_k=50,
-        top_p=0.9,
-        max_new_tokens=100,
-    )
-
-    # Create SamplingParams with user overrides
-    user_input = SamplingParamsInput(
-        temperature=0.8,  # Override generation default (0.5)
-        top_k=10,  # Override generation default (50)
-        min_new_tokens=5,  # Not in generation defaults, overrides class default (0)
-    )
-
-    sampling_params = SamplingParams.from_input_and_generation_config(
-        user_input,
-        sampling_params_defaults=generation_defaults,
-    )
-
-    # Verify user values take highest priority
-    assert (
-        sampling_params.temperature == 0.8
-    )  # user value, not generation default (0.5)
-    assert (
-        sampling_params.top_k == 10
-    )  # user value, not generation default (50)
-    assert (
-        sampling_params.min_new_tokens == 5
-    )  # user value, not class default (0)
-
-    # Verify generation defaults are used when user doesn't override
-    assert sampling_params.top_p == 0.9  # from generation_defaults
-    assert sampling_params.max_new_tokens == 100  # from generation_defaults
-
-    # Verify class defaults are used when neither user nor generation defaults provide values
-    assert sampling_params.min_p == 0.0  # class default
-    assert sampling_params.frequency_penalty == 0.0  # class default
 
 
 def test_context_serializable() -> None:

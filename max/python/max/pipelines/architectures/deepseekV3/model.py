@@ -79,32 +79,8 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     """Tensor containing the data parallel splits for the MLA layer."""
 
 
-def _choose_correct_data_parallel_degree(
-    pipeline_config: PipelineConfig, num_devices: int
-) -> None:
-    """Ensures the data parallel degree is set correctly in the PipelineConfig.
-
-    For DeepSeekV3, DP attention requires DP degree to match device count.
-    TP attention requires DP degree to be 1.
-    """
-    data_parallel_degree = pipeline_config.model.data_parallel_degree
-    if data_parallel_degree not in (1, num_devices):
-        raise ValueError(
-            f"--data-parallel-degree for DeepSeekV3 ({data_parallel_degree}) must be "
-            f"1 (TP attention) or equal to the number of devices ({num_devices})."
-        )
-    pipeline_config.model.data_parallel_degree = data_parallel_degree
-
-
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
-
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration."""
-        _choose_correct_data_parallel_degree(
-            pipeline_config, len(pipeline_config.model.device_specs)
-        )
 
     @classmethod
     def get_kv_params(

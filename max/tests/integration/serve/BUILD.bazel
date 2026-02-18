@@ -156,7 +156,6 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",

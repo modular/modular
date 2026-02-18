@@ -25,7 +25,6 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
     RaggedKVCacheInputs,
 )
@@ -40,7 +39,7 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU()],
     )
@@ -48,6 +47,7 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
         kv_params,
         total_num_pages=16,
         session=session,
+        max_batch_size=128,
     )
     return device, kv_manager
 

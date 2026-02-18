@@ -1036,6 +1036,7 @@ fn consumer_main_loop[
     elect_one_warp: Bool,
     iter_idx: UInt32,
     k_start: UInt32,
+    work_tile_coord: Tuple[UInt, UInt],
 ):
     comptime BM = block_tile_shape[0]
     comptime MMA_N = mma_shape[1]
@@ -1078,6 +1079,7 @@ fn consumer_main_loop[
                 init_c=(
                     (iter_idx + j) == k_start
                 ),  # Initialize C on first iteration
+                work_tile_coord=work_tile_coord,
             )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
@@ -2058,6 +2060,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             elect_one_warp,
                             i * UInt32(config.k_group_size),
                             0,
+                            work_tile_coord=(
+                                UInt(work_info.m),
+                                UInt(work_info.n),
+                            ),
                         )
                         load_mma_pipeline.consumer_step()
 

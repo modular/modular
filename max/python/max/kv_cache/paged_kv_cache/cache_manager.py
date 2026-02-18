@@ -71,6 +71,8 @@ class PagedKVCacheManager:
         total_num_pages: int,
         total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
+        *,
+        max_batch_size: int,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
@@ -79,8 +81,13 @@ class PagedKVCacheManager:
             session: The MAX Engine inference session
             total_num_pages: The total number of pages to allocate
             total_num_host_pages: The total number of host pages to allocate
+            max_batch_size: Maximum runtime batch size used to preallocate
+                per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks
         """
+        if max_batch_size < 1:
+            raise ValueError("max_batch_size must be positive")
+
         self.params = params
         self.devices = [d.to_device() for d in params.devices]
 
@@ -102,6 +109,7 @@ class PagedKVCacheManager:
                     total_num_host_pages=total_num_host_pages,
                     devices=devices,
                     session=session,
+                    max_batch_size=max_batch_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )

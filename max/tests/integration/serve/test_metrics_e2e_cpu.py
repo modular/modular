@@ -20,7 +20,6 @@ import requests
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.serve.config import MetricLevel, MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
@@ -66,7 +65,7 @@ def assert_metrics(
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             max_batch_size=16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )
@@ -137,7 +136,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             max_batch_size=16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )
@@ -207,7 +206,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             max_batch_size=16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )

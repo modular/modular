@@ -37,9 +37,7 @@ from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
-from .layers.rotary_embedding import (
-    LongRoPERotaryEmbedding,
-)
+from .layers.rotary_embedding import LongRoPERotaryEmbedding
 
 
 @dataclass(kw_only=True)
@@ -118,16 +116,11 @@ class Llama3Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=Llama3Config.get_head_dim(huggingface_config),
             num_layers=Llama3Config.get_num_layers(huggingface_config),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
