@@ -51,4 +51,4 @@ from .unsafe_pointer import (
     MutUnsafePointer,
     UnsafePointer,
 )
-from .maybe_uninitialized import UnsafeMaybeUninitialized
+from .unsafe_maybe_uninit import UnsafeMaybeUninit

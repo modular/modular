@@ -328,6 +328,11 @@ what we publish.
 - Documentation for `SIMD.__round__` now clarifies the pre-existing behavior
   that ties are rounded to the nearest even, not away from zero.
 
+- `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
+  names updated to reflect the `init` name. It also now exposes a `zeroed()` method
+  to get zeroed out uninitialized memory. It also no longer calls `abort()` when
+  being copied or moved, allowing for more practical uses.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

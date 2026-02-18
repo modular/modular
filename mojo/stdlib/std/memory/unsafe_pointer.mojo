@@ -31,7 +31,7 @@ from compile import get_type_name
 from format._utils import FormatStruct, Named, TypeNames
 from memory import memcpy
 from memory.memory import _free, _malloc
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from os import abort
 from python import PythonObject
 
