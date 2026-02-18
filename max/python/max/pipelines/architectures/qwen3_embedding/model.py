@@ -177,7 +177,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
 
         # Create RoPE
         head_dim = self.huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.max_length or 32768
+        max_seq_len = self.pipeline_config.model.max_length or 32768
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
@@ -435,7 +435,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
         )
-        configured_max = pipeline_config.max_length or 8192
+        configured_max = pipeline_config.model.max_length or 8192
 
         if configured_max > model_max:
             raise ValueError(

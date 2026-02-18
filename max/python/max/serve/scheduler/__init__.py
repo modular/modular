@@ -147,14 +147,14 @@ def load_scheduler(
 
         assert pipeline_config.ce_delay_ms is not None
         assert pipeline_config.enable_prioritize_first_decode is not None
-        assert pipeline_config.max_length is not None
+        assert pipeline_config.model.max_length is not None
 
         token_gen_config = AudioGenerationSchedulerConfig(
             max_batch_size=pipeline_config.max_batch_size,
             max_forward_steps_tg=pipeline_config.max_num_steps
             if pipeline_config.max_num_steps != -1
             else 1,
-            max_seq_len=pipeline_config.max_length,
+            max_seq_len=pipeline_config.model.max_length,
             target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,

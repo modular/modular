@@ -175,7 +175,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
 
         max_seq_len = upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
-            default=pipeline_config.max_length,
+            default=pipeline_config.model.max_length,
         )
 
         return cls(

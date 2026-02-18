@@ -99,7 +99,7 @@ class TokenGenerationSchedulerConfig:
             if pipeline_config.max_num_steps != -1
             else 1,
             target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
-            max_seq_len=pipeline_config.max_length,
+            max_seq_len=pipeline_config.model.max_length,
             max_batch_total_tokens=pipeline_config.max_batch_total_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,

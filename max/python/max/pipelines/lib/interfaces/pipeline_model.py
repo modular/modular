@@ -340,12 +340,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     try:
                         return upper_bounded_default(
                             upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.max_length,
+                            default=pipeline_config.model.max_length,
                         )
                     except ValueError as e:
                         raise ValueError(
                             "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
                             f"model's max_seq_len ({huggingface_config.max_seq_len})."
                         ) from e
 

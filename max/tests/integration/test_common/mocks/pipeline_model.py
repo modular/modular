@@ -109,7 +109,7 @@ class MockPipelineModel(PipelineModel):
             self.devices = devices
 
         # This is required to smuggle these parameters in.
-        self.max_length = pipeline_config.max_length
+        self.max_length = pipeline_config.model.max_length
         self.kv_manager = MagicMock(spec=PagedKVCacheManager)
 
         # These mypy ignores, are needed to smuggle in these settings without
@@ -138,8 +138,8 @@ class MockPipelineModel(PipelineModel):
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         MAX_LENGTH = 1200
-        if pipeline_config.max_length:
-            return min(MAX_LENGTH, pipeline_config.max_length)
+        if pipeline_config.model.max_length:
+            return min(MAX_LENGTH, pipeline_config.model.max_length)
 
         return MAX_LENGTH
 

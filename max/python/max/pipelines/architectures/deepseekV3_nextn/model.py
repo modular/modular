@@ -294,7 +294,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             if pipeline_config.max_batch_total_tokens is None:
                 # If max_batch_total_tokens is not set, we use max_length.
-                max_kv_length = pipeline_config.max_length or 0
+                max_kv_length = pipeline_config.model.max_length or 0
             else:
                 max_kv_length = pipeline_config.max_batch_total_tokens
 

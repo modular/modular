@@ -38,7 +38,7 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
 
     # Pipeline config attributes
     pipeline_config.pipeline_role = pipeline_role
-    pipeline_config.max_length = 1024 * 1024  # ~million tokens
+    pipeline_config.model.max_length = 1024 * 1024  # ~million tokens
     pipeline_config.max_batch_total_tokens = None
     pipeline_config.ep_size = NUM_RANKS
     pipeline_config.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK

@@ -228,12 +228,12 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Mistral, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e

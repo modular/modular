@@ -232,7 +232,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the maximum sequence length for the Idefics3 model."""
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
 

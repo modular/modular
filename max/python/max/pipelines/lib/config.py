@@ -68,10 +68,6 @@ class PipelineConfig(ConfigFileModel):
     default.
     """
 
-    max_length: int | None = Field(
-        default=None, description="Maximum sequence length of the model."
-    )
-
     pipeline_role: PipelineRole = Field(
         default=PipelineRole.PrefillAndDecode,
         description=(
@@ -630,6 +626,27 @@ class PipelineConfig(ConfigFileModel):
             self.resolve()
         return self
 
+    @model_validator(mode="after")
+    def _sync_max_length_for_speculative_decoding(self) -> Self:
+        """Sync max_length between target and draft models for speculative decoding.
+
+        When speculative decoding is enabled with a draft model, ensure both models
+        have a max_length value. If only one is set, copy it to the other.
+        """
+        if self.draft_model is not None:
+            if (
+                self.model.max_length is not None
+                and self.draft_model.max_length is None
+            ):
+                self.draft_model.max_length = self.model.max_length
+            elif (
+                self.draft_model.max_length is not None
+                and self.model.max_length is None
+            ):
+                self.model.max_length = self.draft_model.max_length
+
+        return self
+
     def retrieve_chat_template(self) -> str | None:
         """Returns the chat template string, or None if not set."""
         # Read the file content
@@ -798,9 +815,7 @@ class PipelineConfig(ConfigFileModel):
 
         self.model.resolve()
 
-        # Validate if a provided max_length is non-negative.
-        if self.max_length is not None and self.max_length < 0:
-            raise ValueError("max_length must be non-negative.")
+        # Validation for max_length is handled in MAXModelConfig
 
         self._validate_and_resolve_max_num_steps()
 
@@ -1180,13 +1195,13 @@ class PipelineConfig(ConfigFileModel):
             devices,
             arch_config,
         ):
-            if self.max_length is None:
-                self.max_length = clamped_max_seq_len
-            elif self.max_length > clamped_max_seq_len:
+            if self.model.max_length is None:
+                self.model.max_length = clamped_max_seq_len
+            elif self.model.max_length > clamped_max_seq_len:
                 logging.warning(
-                    f"Clamping max_length from {self.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
+                    f"Clamping max_length from {self.model.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
                 )
-                self.max_length = clamped_max_seq_len
+                self.model.max_length = clamped_max_seq_len
 
         # Validate whether the architecture requires a max batch total tokens to be specified.
         # This needs to be done after max_length is resolved.
@@ -1196,9 +1211,9 @@ class PipelineConfig(ConfigFileModel):
         ):
             logger.warning(
                 f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
-                f"Defaulting to the max sequence length of the model: {self.max_length}"
+                f"Defaulting to the max sequence length of the model: {self.model.max_length}"
             )
-            self.max_batch_total_tokens = self.max_length
+            self.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1297,7 +1312,7 @@ class PipelineConfig(ConfigFileModel):
             logger.info(line)
 
         pipeline_entries: list[tuple[str, Any]] = [
-            ("max_seq_len", self.max_length),
+            ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
             ("chunked_prefill", self.enable_chunked_prefill),
             ("max_batch_input_tokens", self.max_batch_input_tokens),
@@ -1383,7 +1398,7 @@ class PipelineConfig(ConfigFileModel):
                 ("pipeline", pipeline_class.__name__),
                 ("devices", devices_str),
                 ("max_batch_size", self.max_batch_size),
-                ("max_seq_len", self.max_length),
+                ("max_seq_len", self.model.max_length),
             ]
             + [("cache_memory", memory_str)]
             if memory_str

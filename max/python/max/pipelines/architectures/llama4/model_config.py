@@ -184,7 +184,7 @@ class Llama4Config(ArchConfigWithKVCache):
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
 
