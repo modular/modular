@@ -110,25 +110,16 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert config is not None
         n_gpus_per_node = len(draft_model_config.device_specs)
 
-        # Check if weights are shared (EAGLE or MTP mode)
-        # In these modes, embed_tokens and lm_head are shared with the target model
-        weights_are_shared = pipeline_config.speculative is not None and (
-            pipeline_config.speculative.is_eagle()
-            or pipeline_config.speculative.is_mtp()
-        )
-
         total_size = 0
 
-        # 1. Embedding and LM head (only if not shared)
-        # These are always in BF16
-        if not weights_are_shared:
-            embedding_size = (
-                config.vocab_size
-                * config.hidden_size
-                * DType.bfloat16.size_in_bytes
-            )
-            lm_head_size = embedding_size
-            total_size += embedding_size + lm_head_size
+        # 1. Embedding and LM head (always in BF16)
+        embedding_size = (
+            config.vocab_size
+            * config.hidden_size
+            * DType.bfloat16.size_in_bytes
+        )
+        lm_head_size = embedding_size
+        total_size += embedding_size + lm_head_size
 
         # 2. NextN-specific norms (enorm, hnorm, shared_head_norm) - always BF16
         norm_size = config.hidden_size * DType.bfloat16.size_in_bytes

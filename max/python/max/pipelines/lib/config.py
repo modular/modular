@@ -514,7 +514,12 @@ class PipelineConfig(ConfigFileModel):
                 memory_util = kv_cache_kwargs.get(
                     "device_memory_utilization", 0.9
                 )
-                main_model_util = memory_util * 0.7
+
+                if self.speculative and self.speculative.is_mtp():
+                    main_model_util = memory_util * 0.95
+                else:
+                    main_model_util = memory_util * 0.7
+
                 draft_model_util = memory_util - main_model_util
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
