@@ -234,9 +234,3 @@ var static_str: StaticString = str_literal  # or a StaticString
 Both `String` and `StaticString` can be implicitly created from a
 `StringLiteral`, but without a type annotation, Mojo defaults to materializing
 `StringLiteral` as a `String`.
-
-You can define a "nonmaterializable" struct that can only exist at compile time,
-and which is replaced by a different type at run time. For example, the standard
-library `IntLiteral` type supports arbitrary-precision math at compile time, but
-materializes as a standard `Int` in run-time code. For more information, see the
-[`@nonmaterializable`](/mojo/manual/decorators/nonmaterializable) decorator.

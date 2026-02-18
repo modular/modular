@@ -584,6 +584,10 @@ what we publish.
 - `Dict.EMPTY` and `Dict.REMOVED` comptime aliases have been removed. These
   were internal implementation details of the old hash table design.
 
+- The `@nonmaterializable` decorator has been renamed to `@__nonmaterializable`.
+  This decorator should not be used outside the standard library, and might be
+  removed in a future release.
+
 ### 🛠️ Fixed
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions

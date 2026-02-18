@@ -15,7 +15,7 @@
 from math import Ceilable, Floorable, Truncable
 
 
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Boolable,
     Ceilable,

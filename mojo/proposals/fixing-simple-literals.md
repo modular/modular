@@ -100,7 +100,7 @@ to, and if nothing else, it defaults to `Int` .  This is handled by the
 implementation of `IntLiteral` , a simplified version of which looks like this:
 
 ```mojo
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral:
     var value: __mlir_type.`!pop.int_literal`
 
@@ -218,13 +218,13 @@ into this slowly and discuss the implications.  First the top level of
 
 ```mojo
 # Old design we are replacing:
-# @nonmaterializable(Int)
+# @__nonmaterializable(Int)
 # struct IntLiteral:
 #    var value: __mlir_type.`!pop.int_literal`
 #    ...
 
 # New design:
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     # no var or other state
     ...
@@ -426,7 +426,7 @@ float literals.  They work exactly the same, and given we already know how the
 pieces work, we can take more at once:
 
 ```mojo
-@nonmaterializable(Float64)
+@__nonmaterializable(Float64)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     # Create from a float literal parameter expression.
     fn __init__(out self):
