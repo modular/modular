@@ -1006,7 +1006,7 @@ ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
       op->dropAllDefinedValueUses();
     } else {
       node->setToError(ErrorTree(terminator->getLoc(),
-                                 "unknown terminator kind for parameter if "
+                                 "unknown terminator kind for comptime if "
                                  "(compiler bug, please report!)"));
       return failure();
     }
@@ -1272,7 +1272,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   if (options.loopUnrollingWarnThreshold > 0 &&
       loopUnrollCount > options.loopUnrollingWarnThreshold) {
     InFlightDiagnostic diag = mlir::emitWarning(
-        op->getLoc(), "parameter for unrolling loop more than " +
+        op->getLoc(), "comptime for unrolling loop more than " +
                           Twine(options.loopUnrollingWarnThreshold) +
                           " times may cause long "
                           "compilation time and large code size. (use "

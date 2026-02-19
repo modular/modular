@@ -11,7 +11,7 @@ fn test_unroll_warn_threshold():
     var cnt = 0
 
     @parameter
-    # expected-warning @+1 {{parameter for unrolling loop more than 27 times may cause long compilation time and large code size}}
+    # expected-warning @+1 {{comptime for unrolling loop more than 27 times may cause long compilation time and large code size}}
     for i in range(28):
         cnt += 1
     debug_assert(cnt == 28)
