@@ -158,9 +158,6 @@ class KVCacheParams(KVCacheParamInterface):
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
 
-    lmcache_config_file: str | None = None
-    """Path to LMCache YAML config file. Enables LMCache external KV cache tiering."""
-
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
 
@@ -399,7 +396,6 @@ class KVCacheParams(KVCacheParamInterface):
             is_mla=self.is_mla,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
-            lmcache_config_file=self.lmcache_config_file,
         )
 
     def _get_symbolic_inputs_for_replica(
