@@ -10,7 +10,10 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       memory = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read, errnoMem = none, targetMem0 = none, targetMem1 = none>
     } : (!pop.simd<1, ui32>) -> !pop.simd<4, f64>
     // CHECK: llvm.call @bar
-    %1 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = [{llvm.signext}]} : (!kgen.pointer<i32>) -> i32
+    %1 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}} : (!kgen.pointer<i32>) -> i32
+
+    // CHECK: llvm.call @bar
+    %2 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}} : (!kgen.pointer<i32>) -> i32
     kgen.return %0 : !pop.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>

@@ -1637,15 +1637,16 @@ def POP_ExternalCallOp : POPOp<"external_call", [
     The `funcAttrs` attribute specifies LLVM function attributes on the external
     callee, such as `noinline` or `noreturn`. LLVM argument and result
     attributes can be attached to the operation through `argAttrs` and
-    `resAttrs` as well.
+    `resAttrs` as well, where `resAttrs` is a `DictionaryAttr` as only one
+    result can be returned.
   }];
 
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$func, Variadic<AnyType>:$operands,
     OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
     OptionalAttr<ArrayAttr>:$funcAttrs, OptionalAttr<DictArrayAttr>:$argAttrs,
-    OptionalAttr<DictArrayAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
-  let results = (outs Variadic<AnyType>:$results);
+    OptionalAttr<DictionaryAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
+  let results = (outs Optional<AnyType>:$result);
 
   let assemblyFormat = [{
     custom<ExternalCallee>($func) `(` operands `)`
@@ -1660,9 +1661,9 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 
   let builders = [
     OpBuilder<(ins "StringRef":$func, "ValueRange":$operands)>,
-    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
+    OpBuilder<(ins "Type":$result, "StringRef":$func,
                    "ValueRange":$operands)>,
-    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
+    OpBuilder<(ins "Type":$result, "StringRef":$func,
                    "ValueRange":$operands, "FunctionType":$variadicType)>
   ];
 

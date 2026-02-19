@@ -3475,7 +3475,10 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
     mlir::ArrayAttr passthrough = attachTargetPassthroughAttrs(
         rewriter, getTypeConverter()->getTarget(), op.getFuncAttrsAttr());
     mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
-    mlir::ArrayAttr resAttrs = op.getResAttrsAttr();
+    mlir::DictionaryAttr resAttrs = op.getResAttrsAttr();
+    mlir::ArrayAttr resArrayAttrs;
+    if (resAttrs)
+      resArrayAttrs = rewriter.getArrayAttr(resAttrs);
     auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
 
     // Lookup an existing function.
@@ -3489,7 +3492,7 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
     if (func &&
         std::make_tuple(func.getPassthroughAttr(), func.getArgAttrsAttr(),
                         func.getResAttrsAttr(), func.getMemoryEffectsAttr()) !=
-            std::make_tuple(passthrough, argAttrs, resAttrs, memory)) {
+            std::make_tuple(passthrough, argAttrs, resArrayAttrs, memory)) {
       return mlir::emitError(op.getLoc(),
                              "existing function with conflicting attributes")
                  .attachNote(func.getLoc())
@@ -3507,7 +3510,7 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
       if (argAttrs)
         func.setArgAttrsAttr(argAttrs);
       if (resAttrs)
-        func.setResAttrsAttr(resAttrs);
+        func.setResAttrsAttr(resArrayAttrs);
       if (memory)
         func.setMemoryEffectsAttr(memory);
       symtab.insert(func);
