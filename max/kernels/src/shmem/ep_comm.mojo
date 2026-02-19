@@ -13,7 +13,8 @@
 
 from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
-from sys.info import align_of, simd_width_of, size_of
+from sys import is_amd_gpu, is_nvidia_gpu
+from sys.info import CompilationTarget, align_of, simd_width_of, size_of
 
 from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
@@ -85,6 +86,34 @@ comptime EP_DATA_READY_FLAG = 1 << 10
 # Maximum number of GPUs per node for P2P signaling.
 # Used to track per-rank expert completion.
 comptime MAX_GPUS_PER_NODE = 8
+
+
+@always_inline
+fn _BLOCK_SCOPE() -> StaticString:
+    comptime if is_nvidia_gpu():
+        return "block"
+    elif is_amd_gpu():
+        return "workgroup"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString, operation = __get_current_function_name()
+        ]()
+
+
+@always_inline
+fn _DEVICE_SCOPE() -> StaticString:
+    comptime if is_nvidia_gpu():
+        return "device"
+    elif is_amd_gpu():
+        return "agent"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString, operation = __get_current_function_name()
+        ]()
+
+
+comptime DEVICE_SCOPE = _DEVICE_SCOPE()
+comptime BLOCK_SCOPE = _BLOCK_SCOPE()
 
 
 @always_inline
@@ -192,9 +221,9 @@ fn ep_signal_completion[
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
         var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
-        var old_count = Atomic[DType.int32].fetch_add(
-            rank_completion_counter + Int(dst_p2p_rank), 1
-        )
+        var old_count = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
+            ordering = Consistency.MONOTONIC
+        ](rank_completion_counter + Int(dst_p2p_rank), 1)
 
         # If this is the last expert for this destination rank,
         # use store_release to flush all pending stores.
@@ -1363,9 +1392,9 @@ struct EPDispatchKernel[
                 if my_p2p_world == dst_p2p_world:
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
-                        slot_idx = Atomic.fetch_add(
-                            expert_reserved_counter + target_expert, 1
-                        )
+                        slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.MONOTONIC
+                        ](expert_reserved_counter + target_expert, 1)
                     slot_idx = warp.broadcast(slot_idx)
 
                     var dst_recv_buf_ptr = recv_buf_ptrs[
@@ -1388,9 +1417,9 @@ struct EPDispatchKernel[
                     syncwarp()
 
                     if lane_id() == 0:
-                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
-                            expert_finished_counter + target_expert, 1
-                        )
+                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.RELEASE
+                        ](expert_finished_counter + target_expert, 1)
 
             # We set up `n_local_experts` Reliable Communications (RCs) for each
             # remote device. We would like to use the same RC for each expert.
@@ -1421,9 +1450,9 @@ struct EPDispatchKernel[
                         rc_map_offset == dst_expert_local_idx
                         and my_p2p_world != dst_p2p_world
                     ):
-                        var slot_idx = Atomic.fetch_add(
-                            expert_reserved_counter + target_expert, 1
-                        )
+                        var slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.MONOTONIC
+                        ](expert_reserved_counter + target_expert, 1)
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
                         ] + recv_buf_layout(
@@ -1441,9 +1470,9 @@ struct EPDispatchKernel[
                             dst_rank,
                         )
 
-                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
-                            expert_finished_counter + target_expert, 1
-                        )
+                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.RELEASE
+                        ](expert_finished_counter + target_expert, 1)
 
     # ===-------------------------------------------------------------------===#
     # Dispatch Callback Kernel Methods
@@ -1554,9 +1583,9 @@ struct EPDispatchKernel[
             # Conduct a atomic add to get how many experts have already completed
             # the communication, and the offset where the previous expert end in the
             # output tensor.
-            var packed_expert_idx_offset = Atomic.fetch_add(
-                shared_mem, local_expert_tok_count | 0x00100000
-            )
+            var packed_expert_idx_offset = Atomic[scope=BLOCK_SCOPE].fetch_add[
+                ordering = Consistency.MONOTONIC
+            ](shared_mem, local_expert_tok_count | 0x00100000)
 
             var expert_idx = packed_expert_idx_offset >> 20
             var prev_expert_offset = packed_expert_idx_offset & 0x000FFFFF
