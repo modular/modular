@@ -195,7 +195,7 @@ pull request:
 
 ### Step 3: PR triage and review
 
-A Modular team member will take an initial look the the pull request and
+A Modular team member will take an initial look at the pull request and
 determine how to proceed. This may include:
 
 - **Leaving the PR as-is** (e.g. if it's a draft).
@@ -235,7 +235,7 @@ If we need changes from you, we'll leave clear comments with action items.
 Once everything is approved and CI checks pass, we'll take care of the final
 steps to get your PR merged.
 
-Merged changes will generally show up in the the next nightly build (or docs
+Merged changes will generally show up in the next nightly build (or docs
 website), a day or two after it's merged.
 
 ## Guidelines for review time

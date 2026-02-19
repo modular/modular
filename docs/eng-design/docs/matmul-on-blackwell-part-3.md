@@ -292,7 +292,7 @@ store_C() # Write the results out
 ```
 
 At any given moment, half of our hardware is idle. Either the tensor cores are
-waiting for the data to arrive or the TMA is waiting for for MMA to finish so
+waiting for the data to arrive or the TMA is waiting for MMA to finish so
 that the shared memory buffer becomes available. The data dependence prevents a
 CTA from leveraging both hardware units simultaneously.
 
@@ -499,7 +499,7 @@ operating on smaller tiles.
 The important part of the code is how we synchronize the TMA stores. Recall
 that `commit_group` commits previous TMA stores as one group and
 `wait_group[N]` waits until only the last N groups are still on-the-fly (the
-last N+1, N+2, etc groups are finished). In the code above, the the first
+last N+1, N+2, etc groups are finished). In the code above, the first
 iteration does not wait since it can proceed using the second buffer. The
 second up to `num_stage - 1` iterations wait until there is only 1 TMA store
 on-the-fly. This enables TMA store overlap with the TMEM load and `stmatrix` in

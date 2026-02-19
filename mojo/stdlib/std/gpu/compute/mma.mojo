@@ -87,7 +87,7 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         False,
         # fmt: off
         String(
-        "no valid implementation of mma for for a=",
+        "no valid implementation of mma for a=",
         a.size, "x",  a.dtype,
         ", b=",  b.size, "x",  b.dtype,
         ", c=",  c.size, "x",  c.dtype,

@@ -80,7 +80,7 @@ fn bitcast[
     # generate different ops on Arm.
     @parameter
     if not is_nvidia_gpu() and not is_amd_gpu():
-        # Arm doesnt support casting between float16 and two ints.
+        # Arm doesn't support casting between float16 and two ints.
         comptime assert not (
             src_dtype == DType.float16
             and src_width == 1

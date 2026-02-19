@@ -628,7 +628,7 @@ fn _get_c_smem_layout[
     # this leaves little shared memory for other resources. To solve this we set the max shared memory N to 128, and
     # try to minimize it as much as possible.
 
-    # We cant make Shared Memory N 1, since we would like to use stmatrix. stmatrix transports
+    # We can't make Shared Memory N 1, since we would like to use stmatrix. stmatrix transports
     # matrices of sizes of 16bytes by 16bytes, and we need to also be able to use TMA. The lowest
     # TMA swizzle is 16 bytes. So we set the minimum shared memory N to 16.
 

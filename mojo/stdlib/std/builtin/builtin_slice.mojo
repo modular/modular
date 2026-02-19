@@ -293,7 +293,7 @@ struct ContiguousSlice(ImplicitlyCopyable):
             length: The length of the target container.
 
         Returns:
-            A tuple containing two integers for start and and.
+            A tuple containing two integers for start and end.
         """
         var start = self.start.or_else(0)
         var end = self.end.or_else(length)

@@ -364,7 +364,7 @@ struct YourType:
 ```
 
 The problem here is that we need some keyword that conveys that the function
-"consumes an owned value", which is is the important thing from the caller
+"consumes an owned value", which is the important thing from the caller
 perspective.
 
 Other potential names are something like `consuming` (which is what Swift uses)

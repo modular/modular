@@ -314,7 +314,7 @@ what we publish.
   the usability of any individual `struct` type that opts-in to being explicitly
   destroyed.
 
-  Libraries with generic algorithms and types should be written to accomodate
+  Libraries with generic algorithms and types should be written to accommodate
   linear types. Making `ImplicitlyDestructible` opt-in for traits
   encourages a default stance of support, with specific types and functions
   only opting-in to the narrower `ImplicitlyDestructible` requirement if they

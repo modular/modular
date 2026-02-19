@@ -203,7 +203,7 @@ fn ep_signal_completion[
         else:
             # Technically, this store_release only guarantees the arrival of
             # all experts' messages to the target device. It doesn't guarantee
-            # the the arrival of the previous experts' signals to the target
+            # the arrival of the previous experts' signals to the target
             # device. However, this does not matter as we will check the
             # arrival signal individually in the dispatch_wait/combine_wait kernel.
             store_release[scope = Scope.SYSTEM](dst_p2p_ptr, signal)

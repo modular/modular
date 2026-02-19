@@ -233,7 +233,7 @@ class SamplingParams:
                 defaults["temperature"] = 0
                 defaults["top_k"] = 1
 
-            # This isnt included in SamplingParams, therefore we should remove it.
+            # This isn't included in SamplingParams, therefore we should remove it.
             del defaults["do_sample"]
 
         # Overlay user-provided values (highest priority)

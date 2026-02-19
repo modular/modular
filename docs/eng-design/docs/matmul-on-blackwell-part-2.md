@@ -364,7 +364,7 @@ store matmul results which has a few issues:
     for its completion and continue tasks that depended on the MMA result e.g.
         epilogue.
 
-TMEM addresses these issues, separating the concerns between the the registers
+TMEM addresses these issues, separating the concerns between the registers
 used by the ALU from the ones required by the Tensor Cores.
 
 This is how we make use of `tcgen05.mma` and tensor memory in our code:

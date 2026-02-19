@@ -425,7 +425,7 @@ else:
     return "llvm.amdgcn..."
 ```
 
-Always gate hardware-specific logic on an explicit check that that vendor or
+Always gate hardware-specific logic on an explicit check that the vendor or
 feature is being targeted:
 
 ```mojo

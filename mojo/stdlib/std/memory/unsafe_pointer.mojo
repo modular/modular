@@ -359,7 +359,7 @@ struct UnsafePointer[
             caller must ensure the address is valid before writing to it, and
             that the memory is initialized before reading from it. The caller
             must also ensure the pointer's origin and mutability is valid for
-            the address, failure to to do may result in undefined behavior.
+            the address, failure to do may result in undefined behavior.
         """
         comptime assert (
             size_of[type_of(self)]() == size_of[Int]()

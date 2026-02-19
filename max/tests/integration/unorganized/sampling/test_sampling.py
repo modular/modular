@@ -131,7 +131,7 @@ def test_llguidance_sampling(
         # Run through Sampler
         _, new_tokens = sampler(
             Buffer.from_dlpack(logits).to(device),
-            generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
+            generated_tokens,  # This isn't used by the sampler, so we can safely ignore it.
             top_k,
             max_k,
             temperature,
@@ -845,7 +845,7 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
         for i in range(batch_size - 1):
             assert set(batch_sampled_tokens[i]) == expected_tokens[i]
 
-        # Seed doesnt change, so it only samples 1 token
+        # Seed doesn't change, so it only samples 1 token
         assert len(set(batch_sampled_tokens[batch_size - 1])) == 1
 
     def test_top_k_sampling() -> None:

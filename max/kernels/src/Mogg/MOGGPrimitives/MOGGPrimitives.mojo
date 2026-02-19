@@ -1643,7 +1643,7 @@ fn tmp_reshape_contiguous_buffer[
     ),
 ]:
     """
-    Constructs a new ManagedTensorSlice with with a new shape and static spec.
+    Constructs a new ManagedTensorSlice with a new shape and static spec.
     """
     return {buffer._ptr, shape}
 
