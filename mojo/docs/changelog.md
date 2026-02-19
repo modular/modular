@@ -328,6 +328,9 @@ what we publish.
 
 ### Library changes
 
+- `Path.__fspath__()` now returns `self.path` directly instead of creating an
+  unnecessary copy via `String(self)`.
+
 - `Dict` internals have been replaced with a Swiss Table implementation using
   SIMD group probing for lookups. This improves lookup, insertion, and deletion
   performance — especially when looking up keys not in the dict — while
