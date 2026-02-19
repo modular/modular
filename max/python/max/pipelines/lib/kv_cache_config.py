@@ -83,6 +83,14 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
 
+    lmcache_config_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to an LMCache YAML configuration file. When set, enables "
+            "LMCache-based external KV cache tiering (CPU, disk, remote)."
+        ),
+    )
+
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
     """The amount of available cache memory in bytes. This should only be set by internal code."""
@@ -137,4 +145,5 @@ class KVCacheConfig(ConfigFileModel):
             is_mla=is_mla,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            lmcache_config_file=self.lmcache_config_file,
         )
