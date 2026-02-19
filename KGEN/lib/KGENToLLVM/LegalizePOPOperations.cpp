@@ -273,6 +273,7 @@ void LegalizePOPOperations::initializeTargetLegalConversions(MLIRContext *ctx) {
                          });
 
   // Register remaining conversions that must be supported by LLVM
+  addLLVMNativeConversions(kNVPTXArchName);
   addLLVMNativeConversions(kNVPTXHopperArchName);
   addLLVMNativeConversions(kAMDGCNArchName);
   addLLVMNativeConversions(kMetalArchName);
