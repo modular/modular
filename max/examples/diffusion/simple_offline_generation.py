@@ -340,13 +340,16 @@ async def generate_image(args: argparse.Namespace) -> None:
                 )
             ),
         )
-        request_warmup = OpenResponsesRequest(request_id=RequestID(), body=body_warmup)
+        request_warmup = OpenResponsesRequest(
+            request_id=RequestID(), body=body_warmup
+        )
         input_image = load_image(args.input_image)
-        context_warmup = await tokenizer.new_context(request_warmup, input_image=input_image)
+        context_warmup = await tokenizer.new_context(
+            request_warmup, input_image=input_image
+        )
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}
         )
-
 
     # Step 7: Execute the pipeline
     print("Running diffusion model...")

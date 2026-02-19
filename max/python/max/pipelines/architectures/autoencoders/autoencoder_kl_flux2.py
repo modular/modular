@@ -14,7 +14,6 @@
 from types import SimpleNamespace
 from typing import Any
 
-from max import functional as F
 from max.driver import Device
 from max.graph.weights import Weights
 from max.nn import Module

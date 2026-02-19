@@ -17,8 +17,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from max.engine import Model
 from max.driver import Device
+from max.engine import Model
 from max.graph.weights import Weights
 
 if TYPE_CHECKING:
@@ -46,6 +46,7 @@ class ComponentModel(ABC):
         ...
 
     def unwrap_model(self) -> Model | None:
+        """Return the unwrapped runtime model when available."""
         model: Any = getattr(self, "model", None)
         if model is None:
             return None
@@ -54,6 +55,5 @@ class ComponentModel(ABC):
             model = model.__wrapped__
 
         if isinstance(model, Model):
-            setattr(self, "model", model)
             return model
         return None

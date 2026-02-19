@@ -113,7 +113,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self.build_decode_latents()
 
         # A workaround to remove overhead from `functional.wrapped`.
-        if (unwrapped_transformer := self.transformer.unwrap_model()):
+        if unwrapped_transformer := self.transformer.unwrap_model():
             self.transformer = cast(Any, unwrapped_transformer)
 
         self._cached_guidance: dict[str, Tensor] = {}
@@ -140,13 +140,9 @@ class Flux2Pipeline(DiffusionPipeline):
             for _ in range(3)
         ]
 
-        setattr(
-            self,
-            "_prepare_prompt_embeddings",
-            max_compile(
-                self._prepare_prompt_embeddings,
-                input_types=input_types,
-            ),
+        self.__dict__["_prepare_prompt_embeddings"] = max_compile(
+            self._prepare_prompt_embeddings,
+            input_types=input_types,
         )
 
     def build_preprocess_latents(self) -> None:
@@ -158,26 +154,22 @@ class Flux2Pipeline(DiffusionPipeline):
                 device=device,
             ),
         ]
-        setattr(
-            self,
-            "_patchify_and_pack",
-            max_compile(
-                self._patchify_and_pack,
-                input_types=input_types,
-            ),
+        self.__dict__["_patchify_and_pack"] = max_compile(
+            self._patchify_and_pack,
+            input_types=input_types,
         )
 
     def build_prepare_scheduler(self) -> None:
         input_types = [
-            TensorType(DType.float32, shape=["num_sigmas"], device=self.transformer.devices[0]),
-        ]
-        setattr(
-            self,
-            "prepare_scheduler",
-            max_compile(
-                self.prepare_scheduler,
-                input_types=input_types,
+            TensorType(
+                DType.float32,
+                shape=["num_sigmas"],
+                device=self.transformer.devices[0],
             ),
+        ]
+        self.__dict__["prepare_scheduler"] = max_compile(
+            self.prepare_scheduler,
+            input_types=input_types,
         )
 
     def build_scheduler_step(self) -> None:
@@ -193,13 +185,9 @@ class Flux2Pipeline(DiffusionPipeline):
             TensorType(DType.float32, shape=[1], device=device),
             TensorType(DType.int64, shape=[], device=DeviceRef.CPU()),
         ]
-        setattr(
-            self,
-            "scheduler_step",
-            max_compile(
-                self.scheduler_step,
-                input_types=input_types,
-            ),
+        self.__dict__["scheduler_step"] = max_compile(
+            self.scheduler_step,
+            input_types=input_types,
         )
 
     def build_decode_latents(self) -> None:
@@ -217,13 +205,9 @@ class Flux2Pipeline(DiffusionPipeline):
             TensorType(dtype, shape=[num_channels], device=device),
         ]
 
-        setattr(
-            self,
-            "_postprocess_latents",
-            max_compile(
-                self._postprocess_latents,
-                input_types=input_types,
-            ),
+        self.__dict__["_postprocess_latents"] = max_compile(
+            self._postprocess_latents,
+            input_types=input_types,
         )
 
     @staticmethod
@@ -577,9 +561,8 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: npt.NDArray[np.float32],
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Tensor, Tensor]:
-        latents_tensor = (
-            Tensor.from_dlpack(latents)
-            .to(self.transformer.devices[0])
+        latents_tensor = Tensor.from_dlpack(latents).to(
+            self.transformer.devices[0]
         )
         batch = latents_tensor.shape[0]
         c = latents_tensor.shape[1]
@@ -661,11 +644,19 @@ class Flux2Pipeline(DiffusionPipeline):
         """Apply a single Euler update step in sigma space."""
         latents_sliced = F.slice_tensor(
             latents,
-            [slice(None), (slice(0, num_noise_tokens), "num_tokens"), slice(None)],
+            [
+                slice(None),
+                (slice(0, num_noise_tokens), "num_tokens"),
+                slice(None),
+            ],
         )
         noise_pred_sliced = F.slice_tensor(
             noise_pred,
-            [slice(None), (slice(0, num_noise_tokens), "num_tokens"), slice(None)],
+            [
+                slice(None),
+                (slice(0, num_noise_tokens), "num_tokens"),
+                slice(None),
+            ],
         )
         latents_dtype = latents_sliced.dtype
         latents_sliced = latents_sliced.cast(DType.float32)
@@ -784,7 +775,9 @@ class Flux2Pipeline(DiffusionPipeline):
             )[0]
             noise_pred = Tensor.from_dlpack(noise_pred)
 
-            latents = self.scheduler_step(latents, noise_pred, dt, num_noise_tokens)
+            latents = self.scheduler_step(
+                latents, noise_pred, dt, num_noise_tokens
+            )
 
             if hasattr(device, "synchronize"):
                 device.synchronize()
