@@ -168,6 +168,11 @@ struct ComplexSIMD[dtype: DType, size: Int](
     
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
+        """Formats the complex value for debug representation.
+
+        Args:
+            writer: The Writer to write the representation to.
+        """
         FormatStruct(writer, "ComplexSIMD").fields(self)
 
     @always_inline
