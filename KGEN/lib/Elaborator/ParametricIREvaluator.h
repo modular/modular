@@ -38,7 +38,6 @@ struct ParametricExpansionGraph;
 /// etc.
 class ParametricIREvaluator : public ParameterEvaluationContext,
                               public IREvaluatorContext,
-                              public ParametricParameterEvaluator,
                               public ParametricIRInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
@@ -112,29 +111,29 @@ public:
   Attribute getReboundAttribute(Attribute attr) override {
     if (!isCurrOpParam)
       return attr;
-    return getCurrentParamEval().getReboundAttribute(attr);
+    return getCurrentParamEvalFrame().evaluator.getReboundAttribute(attr);
   }
 
   Type getReboundType(Type type) override {
     if (!isCurrOpParam)
       return type;
-    return getCurrentParamEval().getReboundType(type);
+    return getCurrentParamEvalFrame().evaluator.getReboundType(type);
   }
 
   Type getReboundTypeAlways(Type type) override {
-    return getCurrentParamEval().getReboundType(type);
+    return getCurrentParamEvalFrame().evaluator.getReboundType(type);
   }
 
   TypedAttr getReboundAttribute(TypedAttr attr) override {
     if (!isCurrOpParam)
       return attr;
-    return getCurrentParamEval().getReboundAttribute(attr);
+    return getCurrentParamEvalFrame().evaluator.getReboundAttribute(attr);
   }
 
   void setDeclBinding(Attribute decl, TypedAttr value,
                       bool overwrite = false) override {
-    getCurrentParamEval().setDeclBinding(cast<ParamDeclAttr>(decl), value,
-                                         overwrite);
+    getCurrentParamEvalFrame().evaluator.setDeclBinding(
+        cast<ParamDeclAttr>(decl), value, overwrite);
   }
 
   bool overwriteDeclBinding(Attribute decl, TypedAttr value) override {
@@ -142,13 +141,15 @@ public:
   }
 
   bool overwriteDeclBinding(ParamDeclAttr decl, TypedAttr value) {
-    return getCurrentParamEval().overwriteDeclBinding(decl, value);
+    return getCurrentParamEvalFrame().evaluator.overwriteDeclBinding(decl,
+                                                                     value);
   }
 
   TypedAttr getFailableReboundAttribute(TypedAttr attr) override {
     if (!isCurrOpParam)
       return attr;
-    return getCurrentParamEval().getFailableReboundAttribute(attr);
+    return getCurrentParamEvalFrame().evaluator.getFailableReboundAttribute(
+        attr);
   }
 
   ErrorTreeOr<TypedAttr>
@@ -161,7 +162,7 @@ public:
       ArrayRef<Attribute> arguments, Location loc) override;
 
   void setDeclBindings(const DenseMap<StringAttr, TypedAttr> &values) override {
-    getCurrentParamEval().setDeclBindings(values);
+    getCurrentParamEvalFrame().evaluator.setDeclBindings(values);
   }
 
   void setDeclBindings(Operation *gen, ArrayRef<TypedAttr> values) override;
@@ -173,8 +174,8 @@ public:
   void popEvalFrame(size_t size) override;
   void dumpParams() override { dump(); }
 
-  void *currentEvaluator() override { return &paramEvaluators.back(); }
-  size_t numParamEvals() override { return paramEvaluators.size(); }
+  void *currentEvaluator() override { return &paramEvalFrames.back(); }
+  size_t numParamEvals() override { return paramEvalFrames.size(); }
   void *currentFrame() override { return &stack.back(); }
 
   void pushParamValues(llvm::ArrayRef<TypedAttr> values, bool pushFrame,
@@ -190,7 +191,7 @@ public:
 
   void setRewritten(const DenseMap<std::pair<size_t, const void *>,
                                    const void *> &value) override {
-    getCurrentParamEval().setRewritten(value);
+    getCurrentParamEvalFrame().evaluator.setRewritten(value);
   }
 
   DenseSet<Operation *> *getParamOps(Operation *op, std::string &name) override;
@@ -217,14 +218,14 @@ private:
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
 
   void dump() {
-    for (auto pair : getCurrentParamEval().getDeclBindings()) {
+    for (auto pair : getCurrentParamEvalFrame().evaluator.getDeclBindings()) {
       llvm::dbgs() << "[param name]: " << pair.first
                    << " value: " << pair.second << "\n";
     }
   }
 
-  ParametricParameterEvaluator &getCurrentParamEval() {
-    return paramEvaluators.back();
+  ParameterEvaluatorFrame &getCurrentParamEvalFrame() {
+    return paramEvalFrames.back();
   }
 
   ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) override;
@@ -256,7 +257,7 @@ private:
   /// The contextual node being elaborated.
   PImplNode *parent = nullptr;
 
-  std::vector<ParametricParameterEvaluator> paramEvaluators;
+  std::vector<ParameterEvaluatorFrame> paramEvalFrames;
 };
 
 //===----------------------------------------------------------------------===//
