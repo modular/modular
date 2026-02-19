@@ -536,6 +536,15 @@ what we publish.
 - Documentation for `SIMD.__round__` now clarifies the pre-existing behavior
   that ties are rounded to the nearest even, not away from zero.
 
+- A new `utils/type_functions` module was added for holding type functions. Type
+  functions are `comptime` declarations that produce a type from compile-time
+  parameter inputs. Unlike regular `fn` functions which accept and return runtime
+  values, type functions operate entirely at compile time -- they take `comptime`
+  parameters and evaluate to a type, with no runtime component.
+  - `ConditionalType` - A type function that conditionally selects between two
+    types based on a compile-time boolean condition. It is the type-level
+    equivalent of the ternary conditional expression `Then if If else Else`.
+
 - `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
