@@ -1,13 +1,103 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "mojo_library", "mojo_shared_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "op_utils",
+    srcs = glob(["op_utils/*.mojo"]),
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_shared_library(
+    name = "broadcast_ops",
+    srcs = [
+        "broadcast_ops.mojo",
+    ],
+    shared_lib_name = "broadcast_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
+mojo_shared_library(
+    name = "elementwise_ops",
+    srcs = [
+        "elementwise_ops.mojo",
+    ],
+    shared_lib_name = "elementwise_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
+mojo_shared_library(
+    name = "matmul_ops",
+    srcs = [
+        "matmul_ops.mojo",
+    ],
+    shared_lib_name = "matmul_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
+mojo_shared_library(
+    name = "misc_ops",
+    srcs = [
+        "misc_ops.mojo",
+    ],
+    shared_lib_name = "misc_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
+mojo_shared_library(
+    name = "reduce_ops",
+    srcs = [
+        "reduce_ops.mojo",
+    ],
+    shared_lib_name = "reduce_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
+mojo_shared_library(
+    name = "softmax_ops",
+    srcs = [
+        "softmax_ops.mojo",
+    ],
+    shared_lib_name = "softmax_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
 
 modular_py_library(
     name = "_interpreter_ops",
     srcs = glob(["**/*.py"]),
-    data = glob(["**/*.mojo"]) + [
-        "//max:MOGGKernelAPI",
-        "@mojo//:std",
+    data = [
+        ":broadcast_ops",
+        ":elementwise_ops",
+        ":matmul_ops",
+        ":misc_ops",
+        ":reduce_ops",
+        ":softmax_ops",
     ],
     deps = [
         "//max/python/max:_core",

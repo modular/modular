@@ -26,7 +26,7 @@ from layout.runtime_layout import RuntimeLayout
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
 from runtime.asyncrt import DeviceContextPtr
 
-from _common import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 # =============================================================================

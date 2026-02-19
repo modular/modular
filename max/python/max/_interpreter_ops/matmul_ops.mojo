@@ -25,7 +25,7 @@ from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 
-from _common import _get_dtype, _get_buffer_ptr, _get_ctx
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx
 
 
 fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:

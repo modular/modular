@@ -30,7 +30,7 @@ from tensor.io_spec import FusedOutput
 from compiler_internal import StaticTensorSpec
 from MOGGKernelAPI.MOGGKernelAPI import Range
 
-from _common import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
+from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 # =============================================================================
