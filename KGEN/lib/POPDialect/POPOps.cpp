@@ -568,22 +568,21 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state, StringRef func,
   build(b, state, {}, func, operands);
 }
 
-void ExternalCallOp::build(OpBuilder &b, OperationState &state,
-                           TypeRange results, StringRef func,
-                           ValueRange operands) {
-  build(b, state, results,
+void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
+                           StringRef func, ValueRange operands) {
+  build(b, state, result,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(),
-        Attribute());
+        TypeAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(),
+        mlir::DictionaryAttr(), Attribute());
 }
 
-void ExternalCallOp::build(OpBuilder &b, OperationState &state,
-                           TypeRange results, StringRef func,
-                           ValueRange operands, FunctionType variadicType) {
-  build(b, state, results,
+void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
+                           StringRef func, ValueRange operands,
+                           FunctionType variadicType) {
+  build(b, state, result,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
         TypeAttr::get(variadicType), mlir::ArrayAttr(), mlir::ArrayAttr(),
-        mlir::ArrayAttr(), Attribute());
+        mlir::DictionaryAttr(), Attribute());
 }
 
 LogicalResult
@@ -592,11 +591,6 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult ExternalCallOp::verify() {
-  if (getNumResults() > 1)
-    return mlir::emitError(getLoc(),
-                           "pop.external_call may not return more than one "
-                           "value; a C function returning a struct should be "
-                           "modeled with a single !kgen.struct result");
   if (mlir::ArrayAttr argAttrs = getArgAttrsAttr()) {
     size_t numArgs;
     if (std::optional<FunctionType> fnType = getVariadicType())
@@ -608,12 +602,6 @@ LogicalResult ExternalCallOp::verify() {
              << numArgs << " arguments but " << argAttrs.size()
              << " argument attributes specified";
     }
-  }
-  if (mlir::ArrayAttr resAttrs = getResAttrsAttr()) {
-    if (getNumResults() != resAttrs.size())
-      return mlir::emitError(getLoc(), "external callee has ")
-             << getNumResults() << " results but " << resAttrs.size()
-             << " result attributes specified";
   }
   return success();
 }
