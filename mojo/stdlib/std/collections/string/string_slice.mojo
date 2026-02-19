@@ -1337,12 +1337,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
         """
-        if end == -1:
-            return self.find(prefix, start) == start
-        # FIXME: use normalize_index
-        return StringSlice[Self.origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
-        ).startswith(prefix)
+        var slen = len(self) - start if end == -1 else end - start
+        if len(prefix) > slen:
+            return False
+        return (
+            memcmp(
+                self.unsafe_ptr() + start, prefix.unsafe_ptr(), len(prefix)
+            )
+            == 0
+        )
 
     def endswith(
         self, suffix: StringSlice, start: Int = 0, end: Int = -1
@@ -1361,17 +1364,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
         """
-        if suffix.byte_length() > self.byte_length():
+        var e = len(self) if end == -1 else end
+        var slen = e - start
+        if len(suffix) > slen:
             return False
-        if end == -1:
-            return (
-                self.rfind(suffix, start) + suffix.byte_length()
-                == self.byte_length()
+        return (
+            memcmp(
+                self.unsafe_ptr() + e - len(suffix),
+                suffix.unsafe_ptr(),
+                len(suffix),
             )
-        # FIXME: use normalize_index
-        return StringSlice[Self.origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
-        ).endswith(suffix)
+            == 0
+        )
 
     def removeprefix(self, prefix: StringSlice, /) -> Self:
         """Returns a new string with the prefix removed if it was present.
