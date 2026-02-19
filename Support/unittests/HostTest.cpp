@@ -196,6 +196,22 @@ TEST(Host, ParseV2CPULimits) {
   EXPECT_EQ(errOrLimits->period_us, 100001);
 }
 
+TEST(Host, CPULimitsToMillicores) {
+  // 128 cores: quota=12800000us, period=100000us -> 128000 millicores.
+  // This previously overflowed: 1000 * 12800000 > INT_MAX.
+  Detail::linuxCPULimits limits;
+  limits.quota_us = 12800000;
+  limits.period_us = 100000;
+  auto millicores = limits.toMillicores();
+  ASSERT_TRUE(millicores.has_value());
+  EXPECT_EQ(*millicores, 128000UL);
+}
+
+TEST(Host, CPULimitsToMillicoresNoQuota) {
+  Detail::linuxCPULimits limits;
+  EXPECT_FALSE(limits.toMillicores().has_value());
+}
+
 constexpr static StringRef kCgroupHybrid = R"(
 13:pids:/user.slice/user-1000.slice/session-1.scope
 12:rdma:/

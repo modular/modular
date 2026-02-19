@@ -146,6 +146,9 @@ namespace Detail {
 struct linuxCPULimits {
   int quota_us = -1;
   int period_us = 100000;
+
+  /// Converts to millicores, if a quota is set.
+  std::optional<size_t> toMillicores() const;
 };
 
 /// Returns the cgroup v1 CPU membership from |buf|.
