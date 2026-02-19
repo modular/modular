@@ -189,6 +189,9 @@ def get_server_cmd(
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
+    if framework in ["max-ci", "max"] and "tbmod" in model:
+        cmd += ["--no-use-legacy-module"]
+
     revision = _load_hf_repo_lock().get(model)
     if revision:
         if framework in ("max", "max-ci"):
