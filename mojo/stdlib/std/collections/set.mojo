@@ -520,10 +520,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             other: Another Set instance to subtract from this one.
         """
         for o in other:
-            try:
-                self.remove(o)
-            except:
-                pass
+            self.discard(o)
 
     fn issubset(self, other: Self) -> Bool:
         """Check if this set is a subset of another set.
