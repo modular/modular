@@ -27,7 +27,7 @@ from max.pipelines.lib import (
     ProfilingConfig,
     SamplingConfig,
 )
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 
 class TestConfig(ConfigFileModel):
@@ -257,3 +257,64 @@ class TestProfilingConfigEnv:
         monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "bad-value")
         config = ProfilingConfig(gpu_profiling="on")
         assert config.gpu_profiling == "on"
+
+
+class _StrictModel(MAXBaseModel):
+    count: int = 0
+    name: str = "default"
+
+
+class _LaxConfigModel(ConfigFileModel):
+    count: int = 0
+    ratio: float = 1.0
+    enabled: bool = False
+    label: str = "default"
+
+
+class TestModelConfigStrictness:
+    """Verify extra='forbid' and strict/lax behavior on MAXBaseModel vs ConfigFileModel."""
+
+    def test_base_model_rejects_extra_fields(self) -> None:
+        with pytest.raises(
+            ValidationError, match="Extra inputs are not permitted"
+        ):
+            _StrictModel(count=1, name="ok", unknown_field="boom")  # type: ignore[call-arg]
+
+    def test_base_model_rejects_wrong_types(self) -> None:
+        with pytest.raises(ValidationError):
+            _StrictModel(count="not-an-int")  # type: ignore[arg-type]
+
+    def test_base_model_accepts_correct_types(self) -> None:
+        m = _StrictModel(count=5, name="hello")
+        assert m.count == 5
+        assert m.name == "hello"
+
+    def test_config_file_model_rejects_extra_fields(self) -> None:
+        with pytest.raises(
+            ValidationError, match="Extra inputs are not permitted"
+        ):
+            _LaxConfigModel(count=1, bogus="nope")  # type: ignore[call-arg]
+
+    def test_config_file_model_coerces_str_to_int(self) -> None:
+        m = _LaxConfigModel(count="42")  # type: ignore[arg-type]
+        assert m.count == 42
+
+    def test_config_file_model_coerces_str_to_float(self) -> None:
+        m = _LaxConfigModel(ratio="3.14")  # type: ignore[arg-type]
+        assert m.ratio == pytest.approx(3.14)
+
+    def test_config_file_model_coerces_int_to_float(self) -> None:
+        m = _LaxConfigModel(ratio=2)
+        assert m.ratio == 2.0
+        assert isinstance(m.ratio, float)
+
+    def test_config_file_model_coerces_str_to_bool(self) -> None:
+        m = _LaxConfigModel(enabled="true")  # type: ignore[arg-type]
+        assert m.enabled is True
+
+    def test_config_file_model_accepts_correct_types(self) -> None:
+        m = _LaxConfigModel(count=7, ratio=0.5, enabled=True, label="test")
+        assert m.count == 7
+        assert m.ratio == 0.5
+        assert m.enabled is True
+        assert m.label == "test"

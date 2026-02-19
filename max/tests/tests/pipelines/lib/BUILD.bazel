@@ -8,7 +8,7 @@ package(default_visibility = [
 ])
 
 modular_py_test(
-    name = "lib",
+    name = "tests",
     srcs = glob(["test_*.py"]),
     imports = ["."],
     target_compatible_with = select({

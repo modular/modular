@@ -30,6 +30,7 @@ from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
+    ConfigDict,
     Field,
     ModelWrapValidatorHandler,
     PrivateAttr,
@@ -67,6 +68,14 @@ class PipelineConfig(ConfigFileModel):
     flag, config file, environment variable, or internally set to a reasonable
     default.
     """
+
+    # PipelineConfig intentionally accepts kwargs that belong to sub-configs
+    # (MAXModelConfig, KVCacheConfig, etc.) and routes them via the
+    # _preprocess_kwargs wrap validator.  Allow extras so pydantic (and its
+    # mypy plugin) don't reject those unmatched kwargs.
+    # TODO: This should be removed though, but only after we've fully unrolled
+    # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
+    model_config = ConfigDict(extra="ignore")
 
     pipeline_role: PipelineRole = Field(
         default=PipelineRole.PrefillAndDecode,
