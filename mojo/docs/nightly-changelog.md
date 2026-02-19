@@ -82,6 +82,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Set.difference_update()` now uses `discard()` instead of a try/except
+  `remove()` pattern, avoiding exception overhead for missing elements.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 
