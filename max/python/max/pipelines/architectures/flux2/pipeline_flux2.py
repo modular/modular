@@ -13,9 +13,10 @@
 
 from dataclasses import dataclass
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
+import numpy.typing as npt
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
@@ -113,7 +114,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # A workaround to remove overhead from `functional.wrapped`.
         if (unwrapped_transformer := self.transformer.unwrap_model()):
-            self.transformer = unwrapped_transformer
+            self.transformer = cast(Any, unwrapped_transformer)
 
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
@@ -139,9 +140,13 @@ class Flux2Pipeline(DiffusionPipeline):
             for _ in range(3)
         ]
 
-        self._prepare_prompt_embeddings = max_compile(
-            self._prepare_prompt_embeddings,
-            input_types=input_types,
+        setattr(
+            self,
+            "_prepare_prompt_embeddings",
+            max_compile(
+                self._prepare_prompt_embeddings,
+                input_types=input_types,
+            ),
         )
 
     def build_preprocess_latents(self) -> None:
@@ -153,18 +158,26 @@ class Flux2Pipeline(DiffusionPipeline):
                 device=device,
             ),
         ]
-        self._patchify_and_pack = max_compile(
-            self._patchify_and_pack,
-            input_types=input_types,
+        setattr(
+            self,
+            "_patchify_and_pack",
+            max_compile(
+                self._patchify_and_pack,
+                input_types=input_types,
+            ),
         )
 
     def build_prepare_scheduler(self) -> None:
         input_types = [
             TensorType(DType.float32, shape=["num_sigmas"], device=self.transformer.devices[0]),
         ]
-        self.prepare_scheduler = max_compile(
-            self.prepare_scheduler,
-            input_types=input_types,
+        setattr(
+            self,
+            "prepare_scheduler",
+            max_compile(
+                self.prepare_scheduler,
+                input_types=input_types,
+            ),
         )
 
     def build_scheduler_step(self) -> None:
@@ -180,9 +193,13 @@ class Flux2Pipeline(DiffusionPipeline):
             TensorType(DType.float32, shape=[1], device=device),
             TensorType(DType.int64, shape=[], device=DeviceRef.CPU()),
         ]
-        self.scheduler_step = max_compile(
-            self.scheduler_step,
-            input_types=input_types,
+        setattr(
+            self,
+            "scheduler_step",
+            max_compile(
+                self.scheduler_step,
+                input_types=input_types,
+            ),
         )
 
     def build_decode_latents(self) -> None:
@@ -200,9 +217,13 @@ class Flux2Pipeline(DiffusionPipeline):
             TensorType(dtype, shape=[num_channels], device=device),
         ]
 
-        self._postprocess_latents = max_compile(
-            self._postprocess_latents,
-            input_types=input_types,
+        setattr(
+            self,
+            "_postprocess_latents",
+            max_compile(
+                self._postprocess_latents,
+                input_types=input_types,
+            ),
         )
 
     @staticmethod
@@ -419,7 +440,7 @@ class Flux2Pipeline(DiffusionPipeline):
             Otherwise returns a float32 HWC NumPy array.
         """
         if output_type == "latent":
-            return latents[0] if latents.shape[0].dim > 1 else latents
+            return latents[0] if int(latents.shape[0]) > 1 else latents
 
         if is_img2img:
             # Image-to-image: scatter-based unpack for mixed-origin IDs
@@ -552,23 +573,27 @@ class Flux2Pipeline(DiffusionPipeline):
         return result
 
     def preprocess_latents(
-        self, latents: Tensor, latent_image_ids: Tensor
+        self,
+        latents: npt.NDArray[np.float32],
+        latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Tensor, Tensor]:
-        latents = (
+        latents_tensor = (
             Tensor.from_dlpack(latents)
             .to(self.transformer.devices[0])
         )
-        batch = latents.shape[0]
-        c = latents.shape[1]
-        h = latents.shape[2]
-        w = latents.shape[3]
-        latents = F.reshape(latents, (batch, c, h//2, 2, w//2, 2))
-        latents = self._patchify_and_pack(latents)
+        batch = latents_tensor.shape[0]
+        c = latents_tensor.shape[1]
+        h = latents_tensor.shape[2]
+        w = latents_tensor.shape[3]
+        latents_tensor = F.reshape(
+            latents_tensor, (batch, c, h // 2, 2, w // 2, 2)
+        )
+        latents_tensor = self._patchify_and_pack(latents_tensor)
 
-        latent_image_ids = Tensor.from_dlpack(
+        latent_image_ids_tensor = Tensor.from_dlpack(
             latent_image_ids.astype(np.int64)
         ).to(self.transformer.devices[0])
-        return latents, latent_image_ids
+        return latents_tensor, latent_image_ids_tensor
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
         """Patchify (B,C,H,W)->(B,C*4,H//2,W//2) then pack to (B,H//2*W//2,C*4)."""
@@ -631,7 +656,7 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: Tensor,
         noise_pred: Tensor,
         dt: Tensor,
-        num_noise_tokens: Tensor,
+        num_noise_tokens: int,
     ) -> Tensor:
         """Apply a single Euler update step in sigma space."""
         latents_sliced = F.slice_tensor(
@@ -714,7 +739,7 @@ class Flux2Pipeline(DiffusionPipeline):
             )
             self._cached_guidance[guidance_key] = guidance
 
-        image_seq_len = latents.shape[1].dim
+        image_seq_len = int(latents.shape[1])
         num_inference_steps = model_inputs.num_inference_steps
         sigmas_key = f"{num_inference_steps}_{image_seq_len}"
         if sigmas_key in self._cached_sigmas:
@@ -725,18 +750,20 @@ class Flux2Pipeline(DiffusionPipeline):
         all_timesteps, all_dts = self.prepare_scheduler(sigmas)
 
         # For faster tensor slicing inside the denoising loop.
-        if hasattr(all_timesteps, "driver_tensor"):
-            all_timesteps = all_timesteps.driver_tensor
-        if hasattr(all_dts, "driver_tensor"):
-            all_dts = all_dts.driver_tensor
+        timesteps_seq: Any = all_timesteps
+        dts_seq: Any = all_dts
+        if hasattr(timesteps_seq, "driver_tensor"):
+            timesteps_seq = timesteps_seq.driver_tensor
+        if hasattr(dts_seq, "driver_tensor"):
+            dts_seq = dts_seq.driver_tensor
 
         # 4) Denoising loop.
         num_noise_tokens = int(latents.shape[1])
 
         is_img2img = image_latents is not None
         for i in tqdm(range(num_inference_steps), desc="Denoising"):
-            timestep = all_timesteps[i : i + 1]
-            dt = all_dts[i : i + 1]
+            timestep = timesteps_seq[i : i + 1]
+            dt = dts_seq[i : i + 1]
 
             if is_img2img:
                 latents_concat = F.concat([latents, image_latents], axis=1)
@@ -764,13 +791,16 @@ class Flux2Pipeline(DiffusionPipeline):
 
             if callback_queue is not None:
                 callback_queue.put_nowait(
-                    self.decode_latents(
-                        latents,
-                        latent_image_ids,
-                        model_inputs.height,
-                        model_inputs.width,
-                        output_type=output_type,
-                        is_img2img=is_img2img,
+                    cast(
+                        np.ndarray,
+                        self.decode_latents(
+                            latents,
+                            latent_image_ids,
+                            model_inputs.height,
+                            model_inputs.width,
+                            output_type=output_type,
+                            is_img2img=is_img2img,
+                        ),
                     )
                 )
 
