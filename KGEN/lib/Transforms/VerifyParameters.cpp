@@ -27,26 +27,9 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-namespace {
-class ParameterSimplifier : public ParameterEvaluator {
-public:
-  ParameterSimplifier(ModuleOp module, ParameterEvaluationContext &evalContext)
-      : module(module) {
-    setEvaluationContext(&evalContext);
-  }
-  ParameterSimplifier(const ParameterSimplifier &other)
-      : ParameterEvaluator(other.getDeclBindings()), module(other.module) {
-    setEvaluationContext(other.getEvaluationContext());
-  }
-
-private:
-  ModuleOp module;
-};
-} // namespace
-
 /// Function to walk all op users of parameters and substitute parameters based
 /// on the values currently in the evaluator.
-static void processOp(Operation *op, ParameterSimplifier &evaluator) {
+static void processOp(Operation *op, ParameterEvaluator &evaluator) {
   SmallVector<NamedAttribute> attrs;
   bool changed = false;
   for (const NamedAttribute &attr : op->getAttrs()) {
@@ -69,7 +52,7 @@ static void processOp(Operation *op, ParameterSimplifier &evaluator) {
 static void propagateTrivialParameters(Region *region,
                                        const ParameterUseDefGraph &graph,
                                        const ParameterUseDefGraph &topLevel,
-                                       ParameterSimplifier evaluator) {
+                                       ParameterEvaluator evaluator) {
   // Collect the defining operations in topological order. The same operation
   // can define multiple parameters, so punt them according to their most
   // dominated definition. Do this by collecting them in reverse.
@@ -250,9 +233,10 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
-      propagateTrivialParameters(
-          declRegion, graph, graph,
-          ParameterSimplifier(module, evaluationContext));
+      ParameterEvaluator evaluator;
+      evaluator.setEvaluationContext(&evaluationContext);
+      propagateTrivialParameters(declRegion, graph, graph,
+                                 std::move(evaluator));
     }
   }
 };
