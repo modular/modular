@@ -23,7 +23,6 @@ Here is the CPU and GPU timeline for overlap scheduling:
    O3: Output processing for batch 3
    K3: GPU kernel execution for batch 3
 
-   Time:
     CPU: [I1][I2]          [O1][I3]      [O2][I4]      [O3][I5]      ...
     GPU:     [     K1     ][     K2     ][     K3     ][     K4     ][ ...
 

@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+
 import numpy as np
 import pytest
 from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
 from max.pipelines.core import TextContext
-from max.pipelines.lib.registry import OverlapTextGenerationPipeline
+from max.pipelines.lib import OverlapTextGenerationPipeline
 
 
 def test_throws_if_num_steps_gt_1() -> None:
