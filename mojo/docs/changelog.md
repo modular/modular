@@ -328,6 +328,9 @@ what we publish.
 
 ### Library changes
 
+- `ascii()` now pre-allocates capacity to avoid repeated reallocations when
+  building the result string.
+
 - `Dict` internals have been replaced with a Swiss Table implementation using
   SIMD group probing for lookups. This improves lookup, insertion, and deletion
   performance — especially when looking up keys not in the dict — while
