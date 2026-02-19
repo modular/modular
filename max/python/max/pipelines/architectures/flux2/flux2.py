@@ -56,6 +56,7 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
             time_embed_dim=embedding_dim,
             sample_proj_bias=bias,
         )
+        self.guidance_embedder: TimestepEmbedding | None
         if guidance_embeds:
             self.guidance_embedder = TimestepEmbedding(
                 in_channels=in_channels,
@@ -63,6 +64,7 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
                 sample_proj_bias=bias,
             )
         else:
+            # Distilled checkpoints can omit guidance embedding weights.
             self.guidance_embedder = None
 
     def forward(self, timestep: Tensor, guidance: Tensor) -> Tensor:
