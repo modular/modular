@@ -1282,12 +1282,14 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
                                     ExprContext context) {
   // Evaluate foo() as a param call not dynamic call if in a dynamic context.
   auto emitter = srcEmitter.getParamEmitter(EC_TypeParamValue);
-
-  // Handle `_` syntax as an unbound parameter.
   if (operand.expr->kind == ExprNode::kDiscardLiteral) {
-    // FIXME: Remove *_ in preference for ... in parameter lists.
-    if (operand.isUnpackedKeyword())
-      return EllipsisAttr::get(emitter.getContext());
+    if (operand.isUnpackedKeyword()) {
+      srcEmitter.shared.emitError(operand.expr->getLoc())
+          << "'**_' not supported on parameter list, using '...' instead"
+          << operand.expr->getRange();
+      return {};
+    }
+    // Handle `_` syntax as an unbound parameter.
     return UnboundAttr::get(UnresolvedType::get(emitter.getContext()));
   }
 
@@ -1295,11 +1297,12 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
   if (operand.expr->kind == ExprNode::kUnpack) {
     auto *unpackExpr = cast<UnaryOpNode>(operand.expr);
 
-    // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
-    // specially.
-    // FIXME: Remove this syntax in favor of ...
-    if (unpackExpr->subExpr->kind == ExprNode::kDiscardLiteral)
-      return EllipsisAttr::get(emitter.getContext());
+    if (unpackExpr->subExpr->kind == ExprNode::kDiscardLiteral) {
+      srcEmitter.shared.emitError(operand.expr->getLoc())
+          << "'*_' not supported on parameter list, using '...' instead"
+          << operand.expr->getRange();
+      return {};
+    }
 
     // Only variadic-typed parameters can be unpacked. Emit the subexpression.
     // `expectedType` isn't needed here, because a variadic value would have
@@ -1319,6 +1322,28 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
   return emitter.emitExpr(operand.expr, context);
 }
 
+static LogicalResult parseParameterBindings(ArrayRef<Operand> operands,
+                                            IREmitter &emitter,
+                                            ParamBindings &paramBindings) {
+  bool seenEllipsis = false;
+  for (auto op : operands) {
+    auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
+    if (!value)
+      return failure();
+
+    if (!op.name && seenEllipsis) {
+      // Regardless of the pog that the binding will be applied to, we can only
+      // allow passing by keyword after `...`. Otherwise, it leads to ambiguity.
+      return emitter.emitError(op.expr->getLoc())
+             << "parameter after `...` must be passed by keyword"
+             << op.expr->getRange();
+    }
+    seenEllipsis |= isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get());
+    paramBindings.add(op.expr, value, op.name);
+  }
+  return success();
+}
+
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
@@ -1334,12 +1359,8 @@ static PValue substituteParametersIntoUserDefinedType(
   TypeSignatureType sig = metaType.getSignature();
 
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
-  for (auto op : operands) {
-    auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
-    if (!value)
-      return {};
-    paramBindings.add(op.expr, value, op.name);
-  }
+  if (failed(parseParameterBindings(operands, emitter, paramBindings)))
+    return {};
 
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
@@ -1363,12 +1384,8 @@ static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
                                    const SourceRange &range) {
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
-  for (auto op : operands) {
-    auto value = emitSingleParamExpr(op, emitter, EC_ParameterList);
-    if (!value)
-      return {};
-    paramBindings.add(op.expr, value, op.name);
-  }
+  if (failed(parseParameterBindings(operands, emitter, paramBindings)))
+    return {};
 
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
@@ -2546,12 +2563,9 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
                                                     rsquareLoc, operands);
     // Mutate the OverloadSet directly.  This is a bit gross, but we know we're
     // the only user of it.
-    for (auto op : operands) {
-      auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
-      if (!value)
-        return {};
-      overloads->paramBindings.add(op.expr, value, op.name);
-    }
+    if (failed(parseParameterBindings(operands, emitter,
+                                      overloads->paramBindings)))
+      return {};
 
     return emitter.emitResult(overloads, this, dest);
   }
