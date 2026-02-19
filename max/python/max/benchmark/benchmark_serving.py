@@ -496,6 +496,9 @@ async def chat_session_driver(
     chat_session: ChatSession,
     max_chat_len: int,
     delay_between_chat_turns: int | None,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
     skip_session_count: int | None = None,
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
@@ -503,9 +506,9 @@ async def chat_session_driver(
     request_func_input = RequestFuncInput(
         model=model_id,
         session_id=str(chat_session.id),
-        temperature=None,
-        top_p=None,
-        top_k=None,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
         prompt=[],
         images=[],
         api_url=api_url,
@@ -681,6 +684,9 @@ async def run_multiturn_benchmark(
     lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
     max_concurrency: int | None,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
 ) -> list[RequestFuncOutput]:
     """Run multi-turn chat benchmark scenario."""
 
@@ -711,6 +717,9 @@ async def run_multiturn_benchmark(
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
                 delay_between_chat_turns=delay_between_chat_turns,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
@@ -724,6 +733,9 @@ async def run_multiturn_benchmark(
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
                 delay_between_chat_turns=delay_between_chat_turns,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
@@ -1021,6 +1033,9 @@ async def benchmark(
                     lora_manager=lora_manager,
                     warmup_delay_ms=warmup_delay_ms,
                     max_concurrency=max_concurrency,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
                 )
 
             # Close pbar if it was created
@@ -1776,6 +1791,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             "request_rate",
             "seed",
             "temperature",
+            "top_k",
             "top_p",
         )
         output_lens_dict = {}
