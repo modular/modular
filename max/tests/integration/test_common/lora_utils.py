@@ -28,7 +28,7 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib import KVCacheConfig, LoRAConfig, MAXModelConfig
 from safetensors.torch import save_file
 from transformers import AutoConfig
 
@@ -223,18 +223,24 @@ def create_pipeline_config_with_lora(
         PipelineConfig: Configuration with LoRA settings
     """
     return PipelineConfig(
-        model_path=model_path,
-        quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
+        model=MAXModelConfig(
+            model_path=model_path,
+            quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
+            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            device_specs=[DeviceSpec(device_type="gpu", id=0)],
+            kv_cache=KVCacheConfig(
+                cache_strategy="paged",
+                enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
+            ),
+            max_length=512,
+        ),
+        lora=LoRAConfig(
+            enable_lora=True,
+            max_num_loras=max_num_loras,
+            lora_paths=lora_paths,
+            max_lora_rank=max_lora_rank,
+        ),
         max_batch_size=4,
-        enable_lora=True,
-        max_num_loras=max_num_loras,
-        lora_paths=lora_paths,
-        max_lora_rank=max_lora_rank,
-        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-        max_length=512,
-        cache_strategy="paged",
-        enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
-        device_specs=[DeviceSpec(device_type="gpu", id=0)],
     )
 
 
@@ -248,13 +254,15 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
         PipelineConfig: Base configuration without LoRA
     """
     return PipelineConfig(
-        model_path=model_path,
-        quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
+        model=MAXModelConfig(
+            model_path=model_path,
+            quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
+            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            device_specs=[DeviceSpec(device_type="gpu", id=0)],
+            kv_cache=KVCacheConfig(cache_strategy="paged"),
+            max_length=512,
+        ),
         max_batch_size=4,
-        max_length=512,
-        cache_strategy="paged",
-        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-        device_specs=[DeviceSpec(device_type="gpu", id=0)],
     )
 
 

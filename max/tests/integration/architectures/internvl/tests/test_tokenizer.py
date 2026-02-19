@@ -19,7 +19,9 @@ from unittest.mock import MagicMock, NonCallableMock
 import numpy as np
 import pytest
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -214,8 +216,8 @@ async def test_internvl_tokenizer_image_token_indices(
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "text", "text": "test"},
-                    {"type": "image", "content": test_image},
+                    TextContentPart(text="test"),
+                    ImageContentPart(),
                 ],
             )
         ],
@@ -284,8 +286,8 @@ async def test_internvl_tokenizer_image_placement(
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "text", "text": "Sorry, here it is."},
-                    {"type": "image", "content": test_image},
+                    TextContentPart(text="Sorry, here it is."),
+                    ImageContentPart(),
                 ],
             ),
         ],

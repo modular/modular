@@ -48,10 +48,8 @@ def test_debug_context_with_hf_overrides() -> None:
     orig_prop = MAXModelConfig.huggingface_config
     orig_module_load = Module.load_state_dict
 
-    real_cfg = MAXModelConfig(
-        model_path="dummy/text",
-        _huggingface_config=base_cfg,
-    )
+    real_cfg = MAXModelConfig(model_path="dummy/text")
+    real_cfg._huggingface_config = base_cfg
 
     with dbg.debug_context(
         output_directory=None,
@@ -74,10 +72,8 @@ def test_debug_context_without_hf_overrides() -> None:
     orig_prop = MAXModelConfig.huggingface_config
     orig_module_load = Module.load_state_dict
 
-    real_cfg = MAXModelConfig(
-        model_path="dummy/text",
-        _huggingface_config=base_cfg,
-    )
+    real_cfg = MAXModelConfig(model_path="dummy/text")
+    real_cfg._huggingface_config = base_cfg
     with dbg.debug_context(
         output_directory=None,
         hf_config_overrides=None,

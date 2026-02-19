@@ -272,7 +272,7 @@ def test_json_deserialization() -> None:
         "max_output_tokens": 500,
     }
 
-    request = OpenResponsesRequestBody(**json_data)
+    request = OpenResponsesRequestBody.model_validate(json_data)
 
     assert request.model == "gpt-4"
     assert request.input == "Hello!"
@@ -365,7 +365,7 @@ def test_create_response_body_provider_options_json_deserialization() -> None:
         },
     }
 
-    request = OpenResponsesRequestBody(**json_data)
+    request = OpenResponsesRequestBody.model_validate(json_data)
 
     assert request.model == "gpt-4"
     assert request.input == "Hello!"

@@ -44,8 +44,8 @@ async def test_openai_extract_image_from_requests() -> None:
             {"type": "text", "text": "What'''s in this image?"},
         ],
     }
-    request = CreateChatCompletionRequest(
-        model="test", messages=[system_message, user_message_no_images]
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [system_message, user_message_no_images]}
     )
 
     settings = Settings()
@@ -77,8 +77,8 @@ async def test_openai_extract_image_from_requests() -> None:
             },
         ],
     }
-    request = CreateChatCompletionRequest(
-        model="test", messages=[user_message_image_with_url]
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [user_message_image_with_url]}
     )
     messages, images = await openai_parse_chat_completion_request(
         request,

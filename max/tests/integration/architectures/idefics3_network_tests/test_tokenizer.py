@@ -18,7 +18,9 @@ import io
 import hf_repo_lock
 import pytest
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -66,8 +68,8 @@ async def test_idefics3_tokenizer_image_token_indices() -> None:
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "text", "text": "test"},
-                    {"type": "image", "content": test_image},
+                    TextContentPart(text="test"),
+                    ImageContentPart(),
                 ],
             )
         ],

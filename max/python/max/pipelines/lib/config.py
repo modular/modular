@@ -597,9 +597,15 @@ class PipelineConfig(ConfigFileModel):
         This runs after all fields have been validated and set.
         """
         # Get unmatched kwargs that were stored during preprocessing
-        unmatched_kwargs = self._unmatched_kwargs
-        if hasattr(self, "_unmatched_kwargs"):
-            delattr(self, "_unmatched_kwargs")
+        try:
+            unmatched_kwargs = self._unmatched_kwargs
+        except AttributeError:
+            # Pydantic re-validates 'after' validators when placed inside
+            # another model, at which point _postprocess_configs will have
+            # already run once and _unmatched_kwargs won't be set.  We don't
+            # need to run again in this case.
+            return self
+        delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
         self._create_lora_config_if_needed(unmatched_kwargs)

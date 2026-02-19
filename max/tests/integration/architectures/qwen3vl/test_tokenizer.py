@@ -22,7 +22,9 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -100,8 +102,8 @@ def test_qwen3vl_tokenizer() -> None:
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "image"},
-                    {"type": "text", "text": "Describe this image."},
+                    ImageContentPart(),
+                    TextContentPart(text="Describe this image."),
                 ],
             )
         ],
@@ -187,7 +189,7 @@ def test_qwen3vl_tokenizer_no_images() -> None:
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "text", "text": "What is the capital of France?"}
+                    TextContentPart(text="What is the capital of France?")
                 ],
             )
         ],

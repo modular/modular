@@ -63,9 +63,7 @@ def patch_pipeline_registry_context_type(
 
 @pytest_asyncio.fixture(scope="function")
 def app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001, ANN201
-    settings = Settings(
-        api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
-    )
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
 
     model_factory = EchoTokenGenerator
     tokenizer = EchoPipelineTokenizer()

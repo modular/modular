@@ -144,3 +144,7 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "max.*"
 disallow_any_generics = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true

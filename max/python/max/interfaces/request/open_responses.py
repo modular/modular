@@ -1408,7 +1408,7 @@ class ResponseResource(BaseModel):
         message = Message(
             id=f"msg_{generation_output.request_id.value}_{message_index}",
             role=MessageRole.assistant,
-            content=generation_output.output,
+            content=list(generation_output.output),
             status=MessageStatus.completed,
         )
 

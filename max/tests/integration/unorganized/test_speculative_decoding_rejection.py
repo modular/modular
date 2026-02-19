@@ -27,6 +27,9 @@ from max.interfaces import (
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
+from max.pipelines.lib.kv_cache_config import KVCacheConfig
+from max.pipelines.lib.model_config import MAXModelConfig
+from max.pipelines.lib.speculative_config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -50,20 +53,29 @@ class SpeculativeDecodingSetup:
 def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
-    pipeline_config = PipelineConfig(
-        model_path=model_name,
-        speculative_method="standalone",
-        num_speculative_tokens=10,
-        quantization_encoding=SupportedEncoding.float32,
-        device_specs=[DeviceSpec.accelerator()],
-        draft_model_path=model_name,
-        draft_device_specs=[DeviceSpec.accelerator()],
-        max_batch_size=4,
-        max_num_steps=num_steps,
-        max_length=1024,
+    kv_cache_config = KVCacheConfig(
         cache_strategy="paged",
         kv_cache_page_size=128,
         device_memory_utilization=0.3,
+    )
+    pipeline_config = PipelineConfig(
+        model=MAXModelConfig(
+            model_path=model_name,
+            quantization_encoding=SupportedEncoding.float32,
+            device_specs=[DeviceSpec.accelerator()],
+            kv_cache=kv_cache_config,
+            max_length=1024,
+        ),
+        draft_model=MAXModelConfig(
+            model_path=model_name,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="standalone",
+            num_speculative_tokens=10,
+        ),
+        max_batch_size=4,
+        max_num_steps=num_steps,
     )
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)

@@ -18,13 +18,15 @@ from __future__ import annotations
 import os
 
 from max.entrypoints.llm import LLM
-from max.pipelines import PipelineConfig
+from max.pipelines import MAXModelConfig, PipelineConfig
 
 
 def main() -> None:
     model_path = "modularai/Llama-3.1-8B-Instruct-GGUF"
     print(f"Loading model: {model_path}")
-    pipeline_config = PipelineConfig(model_path=model_path)
+    pipeline_config = PipelineConfig(
+        model=MAXModelConfig(model_path=model_path)
+    )
     llm = LLM(pipeline_config)
 
     prompts = [

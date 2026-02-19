@@ -89,14 +89,15 @@ modular_py_library(
         "//max/tests/integration/architectures/qwen3vl:generate_utils",
         "//max/tests/integration/test_common:test_data",
         "//max/tests/integration/test_common:torch_utils",
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
+        requirement("huggingface-hub"),
+        requirement("peft"),  # Required for LoRA support
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
-        requirement("huggingface-hub"),
         requirement("transformers"),
-        requirement("peft"),  # Required for LoRA support
-        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("typing-extensions"),
     ],
 )
 

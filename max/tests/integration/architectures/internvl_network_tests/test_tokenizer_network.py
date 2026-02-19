@@ -19,7 +19,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -90,7 +92,7 @@ async def test_internvl_tokenizer_with_image() -> None:
     messages = [
         TextGenerationRequestMessage(
             role="user",
-            content=[{"type": "text", "text": test_text}, {"type": "image"}],
+            content=[TextContentPart(text=test_text), ImageContentPart()],
         )
     ]
     image_context = await max_tokenizer.new_context(
@@ -134,8 +136,8 @@ async def test_internvl_tokenizer_apply_chat_template(
 
     # Test with multimodal message (text + image).
     messages = [
-        TextGenerationRequestMessage(
-            **{
+        TextGenerationRequestMessage.model_validate(
+            {
                 "role": "user",
                 "content": [
                     {"type": "text", "content": "What is this?"},
@@ -178,9 +180,7 @@ async def test_internvl_tokenizer_apply_chat_template(
     # Test with text-only message.
     mock_tokenizer.apply_chat_template.reset_mock()
     text_only_messages = [
-        TextGenerationRequestMessage(
-            **{"role": "user", "content": "Hello world"}
-        )
+        TextGenerationRequestMessage(role="user", content="Hello world")
     ]
 
     processor.apply_chat_template(
@@ -200,8 +200,8 @@ async def test_internvl_tokenizer_apply_chat_template(
     )
 
     multi_text_messages = [
-        TextGenerationRequestMessage(
-            **{
+        TextGenerationRequestMessage.model_validate(
+            {
                 "role": "user",
                 "content": [
                     {"type": "text", "content": "Hello"},

@@ -30,7 +30,7 @@ from max.interfaces.provider_options import (
 )
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import OpenResponsesRequestBody
-from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib import MAXModelConfig, PixelGenerationTokenizer
 from max.pipelines.lib.config import PipelineConfig
 
 
@@ -49,7 +49,9 @@ class TestPixelGenerationTokenizer:
     @pytest.fixture
     def flux_pipeline_config(self, flux_model_path: str) -> PipelineConfig:
         """Pipeline config for Flux model."""
-        return PipelineConfig(model_path=flux_model_path, defer_resolve=True)
+        return PipelineConfig(
+            model=MAXModelConfig(model_path=flux_model_path), defer_resolve=True
+        )
 
     @pytest.fixture
     def zimage_model_path(self) -> str:
@@ -59,7 +61,10 @@ class TestPixelGenerationTokenizer:
     @pytest.fixture
     def zimage_pipeline_config(self, zimage_model_path: str) -> PipelineConfig:
         """Pipeline config for Z-Image model."""
-        return PipelineConfig(model_path=zimage_model_path, defer_resolve=True)
+        return PipelineConfig(
+            model=MAXModelConfig(model_path=zimage_model_path),
+            defer_resolve=True,
+        )
 
     def test_initialization_basic(
         self, flux_model_path: str, flux_pipeline_config: PipelineConfig
@@ -89,7 +94,8 @@ class TestPixelGenerationTokenizer:
         # Use a non-diffusion model (text-generation model) which won't have diffusers_config
         non_diffusion_model = "gpt2"
         config = PipelineConfig(
-            model_path=non_diffusion_model, defer_resolve=True
+            model=MAXModelConfig(model_path=non_diffusion_model),
+            defer_resolve=True,
         )
 
         with pytest.raises(ValueError, match="diffusers_config cannot be None"):

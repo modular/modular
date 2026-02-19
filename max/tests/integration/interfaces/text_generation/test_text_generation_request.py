@@ -13,7 +13,9 @@
 
 import pytest
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -29,7 +31,7 @@ def test_text_generation_request_init() -> None:
             messages=[
                 TextGenerationRequestMessage(
                     role="user",
-                    content=[{"type": "text", "text": "hello world"}],
+                    content=[TextContentPart(text="hello world")],
                 )
             ],
         )
@@ -47,7 +49,7 @@ def test_text_generation_request_init() -> None:
         messages=[
             TextGenerationRequestMessage(
                 role="user",
-                content=[{"type": "text", "text": "hello world"}],
+                content=[TextContentPart(text="hello world")],
             )
         ],
     )
@@ -72,9 +74,9 @@ def test_text_generation_request_init() -> None:
                 TextGenerationRequestMessage(
                     role="user",
                     content=[
-                        {"type": "text", "text": "hello world"},
-                        {"type": "image"},
-                        {"type": "image"},
+                        TextContentPart(text="hello world"),
+                        ImageContentPart(),
+                        ImageContentPart(),
                     ],
                 )
             ],
@@ -89,7 +91,7 @@ def test_text_generation_request_init() -> None:
             messages=[
                 TextGenerationRequestMessage(
                     role="user",
-                    content=[{"type": "text", "text": "hello world"}],
+                    content=[TextContentPart(text="hello world")],
                 )
             ],
             images=[b"", b""],
@@ -103,9 +105,9 @@ def test_text_generation_request_init() -> None:
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "text", "text": "hello world"},
-                    {"type": "image"},
-                    {"type": "image"},
+                    TextContentPart(text="hello world"),
+                    ImageContentPart(),
+                    ImageContentPart(),
                 ],
             )
         ],
@@ -119,9 +121,11 @@ def test_text_generation_request_init() -> None:
             model_name="test",
             prompt=None,
             messages=[
-                TextGenerationRequestMessage(
-                    role="not_user",
-                    content=[{"type": "text", "text": "hello world"}],
+                TextGenerationRequestMessage.model_validate(
+                    {
+                        "role": "not_user",
+                        "content": [{"type": "text", "text": "hello world"}],
+                    }
                 )
             ],
         )
@@ -133,15 +137,17 @@ def test_text_generation_request_init() -> None:
             model_name="test",
             prompt=None,
             messages=[
-                TextGenerationRequestMessage(
-                    role="user",
-                    content=[
-                        {"type": "text", "text": "hello world"},
-                        {
-                            "type": "image_url",
-                            "image_url": "https://example.com/image.jpg",
-                        },
-                    ],
+                TextGenerationRequestMessage.model_validate(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "hello world"},
+                            {
+                                "type": "image_url",
+                                "image_url": "https://example.com/image.jpg",
+                            },
+                        ],
+                    }
                 )
             ],
         )
@@ -154,7 +160,7 @@ def test_text_generation_request_message_dict_roundtrip() -> None:
         "content": [{"type": "text", "text": "hello world"}],
     }
 
-    message = TextGenerationRequestMessage(**messages_dict)
+    message = TextGenerationRequestMessage.model_validate(messages_dict)
     assert messages_dict == message.model_dump()
 
     # Test with images
@@ -167,8 +173,8 @@ def test_text_generation_request_message_dict_roundtrip() -> None:
         ],
     }
 
-    message_with_images = TextGenerationRequestMessage(
-        **messages_dict_with_images
+    message_with_images = TextGenerationRequestMessage.model_validate(
+        messages_dict_with_images
     )
     assert messages_dict_with_images == message_with_images.model_dump()
 
@@ -188,7 +194,7 @@ def test_text_generation_request_message_flatten_content() -> None:
     # Test with single text content part
     message_single_text = TextGenerationRequestMessage(
         role="assistant",
-        content=[{"type": "text", "text": "response text"}],
+        content=[TextContentPart(text="response text")],
     )
     flattened = message_single_text.flatten_content()
     assert flattened == {
@@ -200,9 +206,9 @@ def test_text_generation_request_message_flatten_content() -> None:
     message_multi_text = TextGenerationRequestMessage(
         role="user",
         content=[
-            {"type": "text", "text": "first line"},
-            {"type": "text", "text": "second line"},
-            {"type": "text", "text": "third line"},
+            TextContentPart(text="first line"),
+            TextContentPart(text="second line"),
+            TextContentPart(text="third line"),
         ],
     )
     flattened = message_multi_text.flatten_content()
@@ -215,8 +221,8 @@ def test_text_generation_request_message_flatten_content() -> None:
     message_with_image = TextGenerationRequestMessage(
         role="user",
         content=[
-            {"type": "text", "text": "describe this"},
-            {"type": "image"},
+            TextContentPart(text="describe this"),
+            ImageContentPart(),
         ],
     )
     with pytest.raises(ValueError, match="only text content can be flattened"):
@@ -225,7 +231,7 @@ def test_text_generation_request_message_flatten_content() -> None:
     # Test with only image content
     message_only_image = TextGenerationRequestMessage(
         role="user",
-        content=[{"type": "image"}],
+        content=[ImageContentPart()],
     )
     with pytest.raises(ValueError, match="only text content can be flattened"):
         message_only_image.flatten_content()

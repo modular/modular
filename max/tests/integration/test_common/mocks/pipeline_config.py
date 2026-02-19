@@ -85,7 +85,6 @@ class DummyPipelineConfig(PipelineConfig):
         # validation / resolution.
         base = PipelineConfig.model_construct(
             max_batch_size=max_batch_size,
-            max_length=max_length,
             pdl_level=pdl_level,
         )
         self.__dict__.update(base.__dict__)
@@ -101,6 +100,7 @@ class DummyPipelineConfig(PipelineConfig):
             model_path=model_path,
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
+            max_length=max_length,
         )
         model_config.kv_cache = KVCacheConfig(
             cache_strategy=kv_cache_strategy,

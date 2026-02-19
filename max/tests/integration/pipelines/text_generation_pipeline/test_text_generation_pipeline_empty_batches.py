@@ -18,7 +18,11 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import PipelineTask, TextGenerationInputs
 from max.pipelines.core import TextContext
-from max.pipelines.lib import TextGenerationPipeline
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    TextGenerationPipeline,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.interfaces import ModelOutputs
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
@@ -29,10 +33,12 @@ def pipeline() -> TextGenerationPipeline[TextContext]:
     """Retrieve the text generation pipeline once for all tests in this module."""
     _, p = PIPELINE_REGISTRY.retrieve(
         PipelineConfig(
-            model_path="kathywu95/deepseek-v3-small-random",
-            max_length=100,
+            model=MAXModelConfig(
+                model_path="kathywu95/deepseek-v3-small-random",
+                kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                max_length=100,
+            ),
             max_batch_size=2,
-            enable_prefix_caching=False,
         ),
         task=PipelineTask.TEXT_GENERATION,
     )

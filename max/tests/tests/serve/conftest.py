@@ -57,7 +57,6 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
     pipeline_config = PipelineConfig.model_construct(
         # scheduler-required surface
         max_batch_size=1,
-        enable_prefix_caching=enable_prefix_caching,
         zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE,
     )
 

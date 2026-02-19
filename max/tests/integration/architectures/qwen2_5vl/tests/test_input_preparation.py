@@ -35,8 +35,10 @@ from unittest.mock import MagicMock, Mock, NonCallableMock
 import numpy as np
 import pytest
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
     SamplingParams,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TokenBuffer,
@@ -639,8 +641,8 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "image", "image": mock_image_url},
-                    {"type": "text", "text": "What's in this image?"},
+                    ImageContentPart(),
+                    TextContentPart(text="What's in this image?"),
                 ],
             )
         ],
@@ -704,8 +706,8 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "image", "image": mock_image_url},
-                    {"type": "text", "text": "What's in this image?"},
+                    ImageContentPart(),
+                    TextContentPart(text="What's in this image?"),
                 ],
             )
         ],

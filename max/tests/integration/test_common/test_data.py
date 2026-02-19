@@ -21,8 +21,10 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
     SamplingParams,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -77,8 +79,8 @@ class MockTextGenerationRequest:
             proper_messages = [
                 TextGenerationRequestMessage(
                     role="user",
-                    content=[{"type": "text", "text": prompt}]
-                    + [{"type": "image"} for _ in images],
+                    content=[TextContentPart(text=prompt)]
+                    + [ImageContentPart() for _ in images],
                 )
             ]
         else:

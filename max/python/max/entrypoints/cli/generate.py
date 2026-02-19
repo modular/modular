@@ -23,12 +23,14 @@ from typing import Any
 
 import requests
 from max.interfaces import (
+    ImageContentPart,
     LogitsProcessor,
     Pipeline,
     PipelineTokenizer,
     ProcessorInputs,
     RequestID,
     SamplingParams,
+    TextContentPart,
     TextGenerationContext,
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -84,8 +86,8 @@ async def stream_text_to_console(
     messages = [
         TextGenerationRequestMessage(
             role="user",
-            content=[{"type": "text", "text": prompt}]
-            + [{"type": "image"} for _ in images],
+            content=[TextContentPart(text=prompt)]
+            + [ImageContentPart() for _ in images],
         )
     ]
     request = TextGenerationRequest(

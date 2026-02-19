@@ -75,7 +75,7 @@ def echo_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
         tokenizer=tokenizer,
     )
 
-    settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
+    settings = Settings(use_heartbeat=True)
     app = fastapi_app(settings, serving_settings)
     return app
 
