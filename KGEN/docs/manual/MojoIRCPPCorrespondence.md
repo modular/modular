@@ -109,7 +109,7 @@ auto operands =
 result->emitCall(std::move(operands), dest, emitter);
 ```
 
-(You cant use OverloadSet::lookup because there is no `ASTType` around.)
+(You can't use OverloadSet::lookup because there is no `ASTType` around.)
 
 See this code in context
 [here](https://github.com/modularml/modular/pull/62701/files#diff-42ea563c834abefb6324d1bd2762b5646f776d563179fb4ad98e7318cd90fb96R2743).

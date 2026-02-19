@@ -4,7 +4,7 @@
 
 This library is a loose collection of utilities that all other code in the
 repository can use. In order to maintain proper build dependencies, it is
-_required_ that code in the the `Support/` directory cannot depend on code in
+_required_ that code in the `Support/` directory cannot depend on code in
 any other top level directory.
 
 ## Libraries

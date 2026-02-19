@@ -184,7 +184,7 @@ value into a dynamic one, e.g. when storing into a variable:
   var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
 ```
 
-Note that that is making a 17-bit integer MLIR attribute, and a dialect specific
+Note that this is making a 17-bit integer MLIR attribute, and a dialect specific
 attribute of `!kgen.dtype` type.
 
 When used in the attribute list of an operation (see below), you have access to
