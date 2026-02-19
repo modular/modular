@@ -415,6 +415,7 @@ struct Range:
         dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
+        use_blocking_impl: Bool = False,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=1],
         start: Scalar[dtype],
@@ -433,6 +434,7 @@ struct Range:
             func,
             target=target,
             _trace_name=_trace_name,
+            use_blocking_impl=use_blocking_impl,
         ](output, ctx)
 
     @staticmethod

@@ -548,7 +548,7 @@ class TestStaticBroadcastToGPU:
 
 
 class TestRangeGPU:
-    """Tests for GPU range operations via Tensor.arange with interpreter."""
+    """Tests for GPU range operations via Tensor.arange with typed inputs."""
 
     @pytest.mark.parametrize(
         "dtype",
@@ -562,12 +562,22 @@ class TestRangeGPU:
         """Test basic range op on GPU with float dtypes."""
         gpu = Accelerator()
         torch_dtype = DTYPE_TO_TORCH[dtype]
+        start_t = Tensor.from_dlpack(torch.tensor(0, dtype=torch_dtype))
+        stop_t = Tensor.from_dlpack(torch.tensor(10, dtype=torch_dtype))
+        step_t = Tensor.from_dlpack(torch.tensor(1, dtype=torch_dtype))
 
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(10, dtype=dtype, device=gpu)
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=10,
+                dtype=dtype,
+                device=gpu,
+            )
 
         result_torch = torch.from_dlpack(t)
         expected = torch.arange(0, 10, 1, dtype=torch_dtype, device="cuda")
@@ -576,12 +586,22 @@ class TestRangeGPU:
     def test_range_with_step_gpu(self) -> None:
         """Test range op with custom step on GPU."""
         gpu = Accelerator()
+        start_t = Tensor.from_dlpack(torch.tensor(0, dtype=torch.float32))
+        stop_t = Tensor.from_dlpack(torch.tensor(10, dtype=torch.float32))
+        step_t = Tensor.from_dlpack(torch.tensor(2, dtype=torch.float32))
 
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(0, 10, 2, dtype=DType.float32, device=gpu)
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=5,
+                dtype=DType.float32,
+                device=gpu,
+            )
 
         result_torch = torch.from_dlpack(t)
         expected = torch.arange(0, 10, 2, dtype=torch.float32, device="cuda")
@@ -598,12 +618,22 @@ class TestRangeGPU:
         """Test range op with integer dtypes on GPU."""
         gpu = Accelerator()
         torch_dtype = DTYPE_TO_TORCH[dtype]
+        start_t = Tensor.from_dlpack(torch.tensor(0, dtype=torch_dtype))
+        stop_t = Tensor.from_dlpack(torch.tensor(10, dtype=torch_dtype))
+        step_t = Tensor.from_dlpack(torch.tensor(1, dtype=torch_dtype))
 
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(10, dtype=dtype, device=gpu)
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=10,
+                dtype=dtype,
+                device=gpu,
+            )
 
         result_torch = torch.from_dlpack(t)
         expected = torch.arange(0, 10, 1, dtype=torch_dtype, device="cuda")

@@ -1056,20 +1056,17 @@ def _handle_range(
     assert isinstance(inputs[2], Buffer)
 
     start_buffer = inputs[0]
-    limit_buffer = inputs[1]
+    stop_buffer = inputs[1]
     step_buffer = inputs[2]
 
-    # Compute output size from inputs: ceil((limit - start) / step)
+    # Compute output size from inputs
     shape = result_type.shape
     if graph.Shape.is_static(shape):
         output_shape = graph.Shape(shape).static_dims
     else:
-        import math
-
-        start_val = start_buffer.to_numpy().item()
-        limit_val = limit_buffer.to_numpy().item()
-        step_val = step_buffer.to_numpy().item()
-        size = max(0, math.ceil((limit_val - start_val) / step_val))
+        size = int(
+            ops.misc_ops.RangeShape(start_buffer, stop_buffer, step_buffer)
+        )
         output_shape = [size]
 
     # Allocate output buffer
@@ -1081,7 +1078,11 @@ def _handle_range(
 
     # Call Mojo kernel
     ops.misc_ops.Range(
-        output, start_buffer, step_buffer, target_device._device_context_ptr()
+        output,
+        start_buffer,
+        stop_buffer,
+        step_buffer,
+        target_device._device_context_ptr(),
     )
 
     return [output]
