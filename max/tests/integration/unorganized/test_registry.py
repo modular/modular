@@ -19,7 +19,7 @@ import pytest
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
-from max.pipelines.lib.config_enums import RopeType, SupportedEncoding
+from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.model_config import MAXModelConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -117,7 +117,7 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type=RopeType.normal,
+        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -140,7 +140,7 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type=RopeType.normal,
+        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -312,7 +312,7 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type=RopeType.none,  # Different rope type
+        rope_type="none",  # Different rope type
     )
     assert arch1 != arch11
 

@@ -22,7 +22,7 @@ from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.rotary_embedding import LinearScalingParams
 from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, RopeType
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -235,7 +235,7 @@ class Gemma3Config(ArchConfigWithKVCache):
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

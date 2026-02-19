@@ -16,7 +16,6 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -41,7 +40,7 @@ olmo3_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    rope_type=RopeType.yarn,
+    rope_type="yarn",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

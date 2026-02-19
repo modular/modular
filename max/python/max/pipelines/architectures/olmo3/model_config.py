@@ -20,7 +20,7 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.legacy import ReturnLogits, YarnScalingParams
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, RopeType
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -208,7 +208,7 @@ class Olmo3Config(ArchConfigWithKVCache):
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

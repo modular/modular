@@ -25,7 +25,6 @@ from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
     KVCacheConfig,
     PipelineConfig,
-    RopeType,
     parse_float8_config,
 )
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
@@ -253,7 +252,7 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

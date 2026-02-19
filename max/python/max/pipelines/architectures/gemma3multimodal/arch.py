@@ -15,7 +15,6 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextAndVisionTokenizer,
@@ -50,7 +49,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,

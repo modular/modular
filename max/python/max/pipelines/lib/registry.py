@@ -192,7 +192,7 @@ class SupportedArchitecture:
                 context_type=TextContext,
                 config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
-                rope_type=RopeType.none,
+                rope_type="none",
                 weight_adapters={
                     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
                     # Add other weight formats if needed
@@ -243,7 +243,7 @@ class SupportedArchitecture:
     implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
     """
 
-    rope_type: RopeType = RopeType.none
+    rope_type: RopeType = "none"
     """The type of RoPE (Rotary Position Embedding) used by the model."""
 
     weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(

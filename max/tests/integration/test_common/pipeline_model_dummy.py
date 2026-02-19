@@ -46,7 +46,7 @@ from max.pipelines import (
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.lib import KVCacheMixin, RopeType
+from max.pipelines.lib import KVCacheMixin
 from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
@@ -417,7 +417,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     multi_gpu_supported=False,
     config=DummyLlamaArchConfig,
 )

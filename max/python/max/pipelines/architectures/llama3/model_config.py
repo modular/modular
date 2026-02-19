@@ -30,7 +30,6 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     PipelineConfig,
-    RopeType,
     upper_bounded_default,
 )
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
@@ -164,7 +163,7 @@ class Llama3Config(ArchConfigWithKVCache):
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == "normal"
         )
 
         device_refs = [

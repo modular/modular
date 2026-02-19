@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from max.driver import DeviceSpec
 from max.dtype import DType
@@ -46,12 +47,7 @@ class RepoType(str, Enum):
 
 
 # Reference: https://github.com/ggerganov/llama.cpp/blob/eb5c3dc64bd967f2e23c87d9dec195f45468de60/src/llama.cpp#L20778
-class RopeType(str, Enum):
-    none = "none"
-    normal = "normal"
-    neox = "neox"
-    longrope = "longrope"
-    yarn = "yarn"
+RopeType = Literal["none", "normal", "neox", "longrope", "yarn"]
 
 
 class PipelineRole(str, Enum):

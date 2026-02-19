@@ -21,7 +21,7 @@ from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
 from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, RopeType
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -221,9 +221,7 @@ class Llama4Config(ArchConfigWithKVCache):
         dtype = quantization_encoding.dtype
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
-        interleaved_rope_weights = (
-            pipeline_config.model.rope_type == RopeType.normal
-        )
+        interleaved_rope_weights = pipeline_config.model.rope_type == "normal"
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
