@@ -19,6 +19,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice.startswith()` and `StringSlice.endswith()` now use a direct
+  `memcmp` against the prefix/suffix bytes instead of going through `find()`,
+  avoiding the cost of a full search when the answer is determined by a single
+  bounded comparison.
+
 ## Tooling changes
 
 ## GPU programming
