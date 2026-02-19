@@ -23,12 +23,13 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.reflection import call_location
 from std.bit.mask import splat
 from std.bit import pop_count
-from std.memory import pack_bits, uninit_copy_n
+from std.memory import memcmp, pack_bits, uninit_copy_n
 from std.memory._nonnull import NonNullUnsafePointer
 from std.collections._index_normalization import normalize_index
 from std.builtin.rebind import downcast
 from std.sys import align_of
 from std.sys.info import simd_width_of
+from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
@@ -615,6 +616,17 @@ struct Span[
         # same pointer and length, so equal
         if self.unsafe_ptr() == rhs.unsafe_ptr():
             return True
+        # Fast path: use memcmp for byte-comparable types.
+        @parameter
+        if _type_is_eq[_T, Byte]():
+            return (
+                memcmp(
+                    self.unsafe_ptr().bitcast[Byte](),
+                    rhs.unsafe_ptr().bitcast[Byte](),
+                    len(self),
+                )
+                == 0
+            )
         for i in range(len(self)):
             if self[i] != rhs[i]:
                 return False
