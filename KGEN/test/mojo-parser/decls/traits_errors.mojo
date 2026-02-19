@@ -179,3 +179,9 @@ trait TBarSub(TBar):
 # expected-error @+1 {{trait method requirement 'bar' has conflicting default implementations in 'TBar' and 'TBarSub' you must implement it manually}}
 struct TBarActual(TBarSub):
     pass
+
+
+trait WhereClauseOnTraitMethod:
+    # expected-error @+1 {{'where' clauses on trait methods are not supported}}
+    fn guarded_method(self) where Self.x > 10:
+        pass
