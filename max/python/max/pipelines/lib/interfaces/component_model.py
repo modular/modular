@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from max.engine import Model
 from max.driver import Device
 from max.graph.weights import Weights
 
@@ -43,3 +44,12 @@ class ComponentModel(ABC):
     def load_model(self) -> Callable[..., Any]:
         """Load and return a runtime model instance."""
         ...
+    
+    def unwrap_model(self) -> Model | None:
+        if not hasattr(self, "model"):
+            return None
+
+        while hasattr(self.model, "__wrapped__"):
+            self.model = self.model.__wrapped__
+
+        return self.model

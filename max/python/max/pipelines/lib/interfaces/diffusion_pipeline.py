@@ -18,15 +18,20 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
+from max.driver import Buffer, CPU, Accelerator
+from max.engine import InferenceSession
+from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
+from max.nn import Module
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.tensor import Tensor
 from PIL import Image
 from tqdm import tqdm
 from typing_extensions import Self
@@ -183,10 +188,10 @@ class DiffusionPipeline(ABC):
 
 @dataclass(kw_only=True)
 class PixelModelInputs:
-    """Common input container for pixel-generation models.
+    """
+    A common input container for pixel-generation models.
 
-    Provides a consistent set of fields used across multiple pixel
-    pipelines and models.
+    This dataclass is designed to provide a consistent set of fields used across multiple pixel pipelines/models.
     """
 
     tokens: TokenBuffer
@@ -355,11 +360,11 @@ class PixelModelInputs:
     """
 
     def __post_init__(self) -> None:
-        """Runs basic invariant checks for core scalar fields.
+        """
+        Basic invariant checks for core scalar fields.
 
-        Model-specific subclasses may override and call ``super().__post_init__()``
-        to add stricter validations (e.g., requiring timesteps/sigmas/latents
-        to be non-empty).
+        Model-specific subclasses may override __post_init__ and call super().__post_init__()
+        to add stricter validations (e.g., requiring timesteps/sigmas/latents to be non-empty).
         """
         if not isinstance(self.height, int) or self.height <= 0:
             raise ValueError(
@@ -438,3 +443,96 @@ class PixelModelInputs:
                 kwargs[name] = v
 
         return cls(**kwargs)
+
+
+class CompileWrapper:
+    def __init__(
+        self,
+        compile_target: Callable | Module,
+        input_types: Iterable[TensorType] | None = None,
+    ) -> None:
+        """Initialize the CompileWrapper.
+
+        Args:
+            compile_target: The function or module to be compiled.
+            input_types: A list of input types (TensorTypes) required for compilation.
+
+        Raises:
+            ValueError: If input_types is not provided.
+        """
+        if input_types is None:
+            raise ValueError(
+                f"input_types must be provided for compilation of {compile_target.__name__}."
+            )
+
+        self.is_module = False
+        if isinstance(compile_target, Module):
+            self.is_module = True
+            self.session = compile_target.compile(input_types)
+            return
+
+        with Graph(compile_target.__name__, input_types=input_types) as graph:
+            output = compile_target(*graph.inputs)
+            if isinstance(output, Iterable):
+                graph.output(*output)
+            else:
+                graph.output(output)
+            compiled_graph = graph
+
+        if any(input_type.device.is_gpu() for input_type in input_types):
+            device = Accelerator()
+        else:
+            device = CPU()
+        session = InferenceSession([device])
+        loaded_session = session.load(compiled_graph)
+        self.session = loaded_session
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | list[Tensor]:
+        """Execute the compiled session with the given arguments.
+
+        Args:
+            *args: Positional arguments to pass to the session.
+            **kwargs: Keyword arguments to pass to the session.
+
+        Returns:
+            The result of the session execution.
+        """
+        if self.is_module:
+            return self.session(*args, **kwargs)
+        
+        normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
+        normalized_kwargs = {key: self._unwrap_tensor(val) for key, val in kwargs.items()}
+        outputs: list[Buffer] = self.session.execute(*normalized_args, **normalized_kwargs)
+        outputs = [Tensor.from_dlpack(output) for output in outputs]
+        return outputs[0] if len(outputs) == 1 else outputs
+
+    @staticmethod
+    def _unwrap_tensor(value: Any) -> Any:
+        try:
+            if hasattr(value, "driver_tensor"):
+                return value.driver_tensor
+            return value
+        except TypeError:
+            return value
+
+def max_compile(
+    compile_target: Callable | Module | None = None,
+    input_types: Iterable[TensorType] | None = None,
+) -> Callable[[Callable | Module], CompileWrapper] | CompileWrapper:
+    """Decorator or function to compile a target with specified input types.
+
+    Args:
+        compile_target: The function or module to compile. If None, returns a decorator.
+        input_types: The input types for the compilation.
+
+    Returns:
+        A CompileWrapper instance if compile_target is provided, otherwise a decorator.
+    """
+    if compile_target is None:
+
+        def decorator(f: Callable | Module) -> CompileWrapper:
+            return CompileWrapper(f, input_types)
+
+        return decorator
+
+    return CompileWrapper(compile_target, input_types)
