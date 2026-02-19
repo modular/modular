@@ -1521,7 +1521,12 @@ fn flare_mla_prefill[
     comptime assert rank == 3, "only support ragged inputs"
     comptime assert (
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+    ) if k_rope.dtype == DType.bfloat16 else (
+        q.dtype == k.dtype == v.dtype == output.dtype
+    ), (
+        "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
+        " otherwise only Q, K, V should have same type."
+    )
     comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
@@ -1707,10 +1712,13 @@ fn flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime fa4_enabled = ctx.default_device_info == B200 and use_fa4
-
     @parameter
-    if fa4_enabled:
+    if ctx.default_device_info == B200 and use_fa4:
+        comptime assert (
+            k_rope_t.dtype == DType.bfloat16
+            or k_rope_t.dtype == DType.float8_e4m3fn
+        ), "Only support bfloat16 or float8_e4m3fn for SM100"
+
         mla_sm100_prefill[
             config=config,
             group = Int(group),
@@ -1734,6 +1742,10 @@ fn flare_mla_prefill_dispatch[
         )
 
     else:
+        comptime assert (
+            k_rope_t.dtype == DType.bfloat16
+        ), "Only support bfloat16 for non-B200 devices"
+
         comptime kernel = mla_prefill[
             config.dtype,
             k_t,
