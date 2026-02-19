@@ -74,6 +74,36 @@ class MOInterpreter:
         # shape_attr but extracting static shapes requires handling
         # symbolic dimensions.
 
+    # Op names that require the compiled execution path. When any of these
+    # are present in a graph the interpreter falls back to compilation
+    # instead of raising NotImplementedError.  Name-based matching is used
+    # (like _is_dispatchable and the handler name-fallback) because
+    # nanobind may create different class objects for the same MLIR op.
+    _COMPILATION_REQUIRED_OP_NAMES: tuple[str, ...] = ("CustomOp",)
+
+    def can_execute(self, graph: Graph) -> bool:
+        """Check whether the graph contains ops that require compilation.
+
+        Pre-scans the graph for ops listed in
+        ``_COMPILATION_REQUIRED_OP_NAMES``.  Returns False if any such op
+        is found, indicating the caller should use the compiled execution
+        path instead.
+
+        Args:
+            graph: The graph to check.
+
+        Returns:
+            True if the interpreter can handle the graph, False if it
+            contains ops that require compilation.
+        """
+        module: builtin.ModuleOp = _core.Operation._from_cmlir(
+            graph._module.operation
+        )  # type: ignore[assignment]
+        for op in self._walk_ops(module):
+            if type(op).__name__ in self._COMPILATION_REQUIRED_OP_NAMES:
+                return False
+        return True
+
     def execute(
         self,
         graph: Graph,

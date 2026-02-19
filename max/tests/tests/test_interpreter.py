@@ -47,6 +47,43 @@ class TestMOInterpreter:
             interp._validate_inputs(graph, inputs)
 
 
+class TestCanExecute:
+    """Tests for MOInterpreter.can_execute() pre-flight check."""
+
+    def test_can_execute_supported_graph(self) -> None:
+        """Test can_execute returns True for a graph with only supported ops."""
+        with Graph("supported", input_types=[]) as graph:
+            a = ops.constant([1.0, 2.0], dtype=DType.float32, device=CPU())
+            b = ops.constant([3.0, 4.0], dtype=DType.float32, device=CPU())
+            c = ops.add(a, b)
+            graph.output(c)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is True
+
+    def test_can_execute_returns_false_for_compilation_required_op(
+        self,
+    ) -> None:
+        """Test can_execute returns False when graph contains a
+        compilation-required op (e.g. mo.CustomOp)."""
+        interp = MOInterpreter()
+
+        # Temporarily add ConstantOp to _COMPILATION_REQUIRED_OP_NAMES to
+        # simulate a compilation-required op without needing a real custom
+        # kernel.  ConstantOp is used because it's always present in simple
+        # graphs and its name is stable.
+        orig = MOInterpreter._COMPILATION_REQUIRED_OP_NAMES
+        MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = ("ConstantOp",)
+        try:
+            with Graph("custom", input_types=[]) as graph:
+                c = ops.constant([1.0, 1.0], dtype=DType.float32, device=CPU())
+                graph.output(c)
+
+            assert interp.can_execute(graph) is False
+        finally:
+            MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = orig
+
+
 class TestOpHandlerRegistry:
     """Tests for op handler registration."""
 

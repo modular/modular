@@ -224,11 +224,16 @@ class EagerRealizationContext(RealizationContext):
         outputs, graph = self.finalize_graph()
 
         # Execute graph via interpreter or compilation
-        if self._use_interpreter:
+        use_interpreter = self._use_interpreter
+        if use_interpreter:
             # Lazy import to avoid circular dependency
             from ._interpreter import MOInterpreter
 
             interp = MOInterpreter()
+            if not interp.can_execute(graph):
+                use_interpreter = False
+
+        if use_interpreter:
             inputs = [self.sources[input._mlir_value] for input in graph.inputs]
             results = interp.execute(
                 graph,
