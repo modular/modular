@@ -219,40 +219,33 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
         )
         has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
 
-        assert isinstance(model_outputs[0], Buffer)
         if has_offsets and has_hidden_states:
             assert len(model_outputs) == 4
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
-            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
-                logits=model_outputs[1],
-                next_token_logits=model_outputs[0],
-                logit_offsets=model_outputs[2],
-                hidden_states=model_outputs[3],
+                logits=cast(Buffer, model_outputs[1].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
+                hidden_states=cast(Buffer, model_outputs[3].driver_tensor),
             )
         elif has_offsets:
             assert len(model_outputs) == 3
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
-                logits=model_outputs[1],
-                next_token_logits=model_outputs[0],
-                logit_offsets=model_outputs[2],
+                logits=cast(Buffer, model_outputs[1].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
             )
         elif has_hidden_states:
             assert len(model_outputs) == 2
-            assert isinstance(model_outputs[1], Buffer)
             return ModelOutputs(
-                logits=model_outputs[0],
-                next_token_logits=model_outputs[0],
-                hidden_states=model_outputs[1],
+                logits=cast(Buffer, model_outputs[0].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                hidden_states=cast(Buffer, model_outputs[1].driver_tensor),
             )
         else:
             assert len(model_outputs) == 1
             return ModelOutputs(
-                logits=model_outputs[0],
-                next_token_logits=model_outputs[0],
+                logits=cast(Buffer, model_outputs[0].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
 
     def prepare_initial_token_inputs(
