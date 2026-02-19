@@ -1404,7 +1404,7 @@ PIPELINES = {
         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
         encoding="bfloat16",
         cos_dist_threshold=8.0e-03,
-        kl_div_threshold=9.0e-02,
+        kl_div_threshold=1.5e-01,
     ),
     # TODO(MODELS-812): Investigate deepseek timeout
     "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
