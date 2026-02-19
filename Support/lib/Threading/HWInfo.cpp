@@ -551,13 +551,18 @@ std::vector<std::string> M::localMACs() {
   return macs;
 }
 
+#if HAVE_LINUX_X86_SYSTEM_INFO
+std::optional<size_t> Detail::linuxCPULimits::toMillicores() const {
+  if (quota_us >= 0 && period_us > 0)
+    return (uint64_t(1000) * quota_us) / period_us;
+  return std::nullopt;
+}
+#endif
+
 ErrorOr<CPULimits> CPULimits::get() {
 #if HAVE_LINUX_X86_SYSTEM_INFO
-  CPULimits limits; // Translate below.
-  Detail::linuxCPULimits linuxLimits = Detail::getLinuxCPULimits();
-  if (linuxLimits.quota_us >= 0 && linuxLimits.period_us > 0)
-    limits.millicores = static_cast<size_t>((1000 * linuxLimits.quota_us) /
-                                            linuxLimits.period_us);
+  CPULimits limits;
+  limits.millicores = Detail::getLinuxCPULimits().toMillicores();
   return limits;
 #endif
   return Error("CPULimits are not supported by this build");
