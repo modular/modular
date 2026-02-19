@@ -868,7 +868,7 @@ PIPELINES = {
     ),
     "unsloth/gpt-oss-20b-BF16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi", "no-b200-multi"],
+        tags=["nvidia-multi"],
         pipeline="unsloth/gpt-oss-20b-BF16",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
