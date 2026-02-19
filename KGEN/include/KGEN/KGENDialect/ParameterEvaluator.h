@@ -217,7 +217,7 @@ private:
 /// (i.e. not all the index bindings are registered, only a given prefix of the
 /// index bindings are registered), the user can manually set the total number
 /// of index bindings so that the assertion is only triggered for real errors.
-class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
+class ParameterEvaluator final : public ParameterReplacer<ParameterEvaluator> {
 public:
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,

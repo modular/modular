@@ -28,16 +28,15 @@ struct ExpansionGraph;
 // IREvaluator
 //===----------------------------------------------------------------------===//
 
-/// This IR evaluator is a parameter evaluator that can work during elaboration
-/// to concretize parameter expressions and compute symbolic parameter
-/// expressions, such as `apply` on a symbol constant or `get_sizeof` and
-/// `get_alignof` a decl type.
+/// This IR evaluator is a ParameterEvaluationContext that can work during
+/// elaboration to concretize parameter expressions and compute symbolic
+/// parameter expressions, such as `apply` on a symbol constant or `get_sizeof`
+/// and `get_alignof` a decl type.
 ///
-/// Uses the base class for common struct reflection operations and provides
+/// Owns a ParameterEvaluator for parameter substitution and provides
 /// elaboration-specific handling for ParamOperatorAttr, GetLinkageNameAttr,
-/// etc.
+/// etc. via the BytecodeInterpreter.
 class IREvaluator : public ParameterEvaluationContext,
-                    public ParameterEvaluator,
                     public IREvaluatorContext,
                     public BytecodeInterpreter {
 public:
@@ -104,6 +103,11 @@ public:
   /// Get error with prelude setting from the elaborator.
   bool getElabErrorIncludePrelude();
 
+  /// Bind a parameter declaration to a value.
+  void setDeclBinding(ParamDeclAttr decl, TypedAttr value) {
+    evaluator.setDeclBinding(decl, value);
+  }
+
 private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
@@ -115,13 +119,6 @@ private:
   /// Helper to get the base generator symbol name from a type reference.
   /// Returns the generator's symbol name, or nullptr if not a struct type.
   StringAttr getGeneratorSymbolName(TypedAttr typeRef);
-
-  Attribute getReboundAttribute(Attribute attr) {
-    return ParameterEvaluator::getReboundAttribute(attr);
-  }
-  Type getReboundType(Type type) {
-    return ParameterEvaluator::getReboundType(type);
-  }
 
   ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) override;
 
@@ -144,6 +141,9 @@ private:
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;
 
   ImplNodeBase *getParentNode() override;
+
+  /// The parameter evaluator for substituting parameter bindings.
+  ParameterEvaluator evaluator;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
