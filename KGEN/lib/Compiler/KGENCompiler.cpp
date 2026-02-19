@@ -898,8 +898,7 @@ setEmissionOptions(llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options,
     if (reset) {
       boolVal->reset();
     } else {
-      boolVal->addOccurrence(0, key,
-                             std::to_string(value.equals_insensitive("true")));
+      boolVal->addOccurrence(0, key, value.lower());
     }
   } else if (llvm::all_of(value, llvm::isDigit) || intKeys.contains(key)) {
     auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
