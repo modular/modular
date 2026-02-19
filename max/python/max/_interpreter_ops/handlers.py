@@ -565,6 +565,37 @@ def _handle_matmul(
     return [output]
 
 
+@register_op_handler(mo.BatchMatmulOp)
+def _handle_batch_matmul(
+    op: mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.batch_matmul by dispatching to Mojo batched matmul kernel."""
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_buffers_on_device(inputs, target_device)
+
+    lhs = inputs[0]
+    rhs = inputs[1]
+    assert isinstance(lhs, Buffer)
+    assert isinstance(rhs, Buffer)
+
+    # Compute output shape - try static first, fall back to Mojo shape fn
+    shape = result_type.shape
+    if graph.Shape.is_static(shape):
+        output_shape = graph.Shape(shape).static_dims
+    else:
+        shape_result = ops.matmul_ops.BatchMatmulShape(lhs, rhs)
+        output_shape = [int(shape_result[i]) for i in range(len(shape_result))]
+
+    output = Buffer(shape=output_shape, dtype=lhs.dtype, device=target_device)
+
+    ops.matmul_ops.BatchMatmul(
+        output, lhs, rhs, target_device._device_context_ptr()
+    )
+    return [output]
+
+
 # Shape manipulation operations
 
 
@@ -1172,9 +1203,7 @@ def _handle_range(
 
     # Allocate output buffer
     output = Buffer(
-        shape=tuple(output_shape),
-        dtype=result_type.dtype,
-        device=target_device,
+        shape=output_shape, dtype=result_type.dtype, device=target_device
     )
 
     # Call Mojo kernel
@@ -1214,7 +1243,7 @@ def _handle_random_normal(
     assert isinstance(inputs[3], Buffer)  # seed
 
     # Extract output shape from shape tensor (on CPU)
-    output_shape = tuple(inputs[0].to_numpy().tolist())
+    output_shape = inputs[0].to_numpy().tolist()
 
     # Extract scalar params from CPU buffers
     mean_val = float(inputs[1].to_numpy().item())
@@ -1264,7 +1293,7 @@ def _handle_random_uniform(
     assert isinstance(inputs[3], Buffer)  # seed
 
     # Extract output shape from shape tensor (on CPU)
-    output_shape = tuple(inputs[0].to_numpy().tolist())
+    output_shape = inputs[0].to_numpy().tolist()
 
     # Extract scalar params from CPU buffers
     lower_val = float(inputs[1].to_numpy().item())
@@ -1385,9 +1414,7 @@ def _handle_concat(
     output_shape[axis] = sum(inp.shape[axis] for inp in tensor_inputs)
 
     output = Buffer(
-        shape=tuple(output_shape),
-        dtype=tensor_inputs[0].dtype,
-        device=target_device,
+        shape=output_shape, dtype=tensor_inputs[0].dtype, device=target_device
     )
     ctx_ptr = target_device._device_context_ptr()
 

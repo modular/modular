@@ -1304,6 +1304,83 @@ class TestMatmulOp:
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
 
+class TestBatchMatmulOp:
+    """Tests for batch matmul Mojo op."""
+
+    @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
+    def test_batch_matmul_3d(self, dtype: DType) -> None:
+        """Test 3D batch matmul: (2, 3, 4) @ (2, 4, 5)."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(24, dtype=np_dtype).reshape(2, 3, 4) % 10
+        b_np = np.arange(40, dtype=np_dtype).reshape(2, 4, 5) % 10
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_batch_matmul_4d(self, dtype: DType) -> None:
+        """Test 4D batch matmul: (2, 3, 4, 5) @ (2, 3, 5, 6)."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(120, dtype=np_dtype).reshape(2, 3, 4, 5) % 10
+        b_np = np.arange(180, dtype=np_dtype).reshape(2, 3, 5, 6) % 10
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_batch_matmul_float_precision(self, dtype: DType) -> None:
+        """Test batch matmul with random floats for precision."""
+        np_dtype = dtype.to_numpy()
+        np.random.seed(42)
+        a_np = np.random.randn(2, 8, 16).astype(np_dtype)
+        b_np = np.random.randn(2, 16, 8).astype(np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_almost_equal(
+            np.from_dlpack(c), expected, decimal=5
+        )
+
+    def test_batch_matmul_single_batch(self) -> None:
+        """Test batch matmul with single batch dimension."""
+        a_np = np.arange(12, dtype=np.float32).reshape(1, 3, 4) % 10
+        b_np = np.arange(20, dtype=np.float32).reshape(1, 4, 5) % 10
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
+
+
 class TestRangeOp:
     """Tests for range Mojo op via Tensor.arange with typed tensor inputs."""
 

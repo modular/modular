@@ -449,6 +449,70 @@ class TestMatmulGPU:
                 lhs @ rhs
 
 
+class TestBatchMatmulGPU:
+    """Tests for GPU batch matmul operations."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_batch_matmul_gpu(self, dtype: DType) -> None:
+        """Test batch matmul on GPU with various dtypes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+
+        batch, m, k, n = 2, 3, 4, 5
+        lhs_torch = torch.randn(batch, m, k, dtype=torch_dtype, device="cuda")
+        rhs_torch = torch.randn(batch, k, n, dtype=torch_dtype, device="cuda")
+
+        lhs = Tensor.from_dlpack(lhs_torch)
+        rhs = Tensor.from_dlpack(rhs_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = lhs @ rhs
+
+        expected = torch.matmul(lhs_torch, rhs_torch)
+        result_torch = torch.from_dlpack(c)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    def test_batch_matmul_gpu_4d(self) -> None:
+        """Test 4D batch matmul on GPU."""
+        lhs_torch = torch.randn(2, 3, 4, 5, dtype=torch.float32, device="cuda")
+        rhs_torch = torch.randn(2, 3, 5, 6, dtype=torch.float32, device="cuda")
+
+        lhs = Tensor.from_dlpack(lhs_torch)
+        rhs = Tensor.from_dlpack(rhs_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = lhs @ rhs
+
+        expected = torch.matmul(lhs_torch, rhs_torch)
+        result_torch = torch.from_dlpack(c)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    def test_batch_matmul_gpu_mixed_device_raises_error(self) -> None:
+        """Test that mixed CPU/GPU inputs raise an error for batch matmul."""
+        lhs_torch_cpu = torch.randn(2, 3, 4, dtype=torch.float32, device="cpu")
+        rhs_torch_gpu = torch.randn(2, 4, 5, dtype=torch.float32, device="cuda")
+
+        lhs = Tensor.from_dlpack(lhs_torch_cpu)
+        rhs = Tensor.from_dlpack(rhs_torch_gpu)
+
+        with pytest.raises(Exception):
+            with (
+                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                realization_context(ctx),
+            ):
+                lhs @ rhs
+
+
 class TestStaticBroadcastToGPU:
     """Tests for GPU static broadcast_to operations in the interpreter."""
 

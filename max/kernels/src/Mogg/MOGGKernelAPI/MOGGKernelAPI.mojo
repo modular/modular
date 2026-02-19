@@ -3866,6 +3866,7 @@ struct BatchMatmul:
         rank: Int,
         transpose_b: Bool,
         target: StaticString,
+        single_thread_blocking_override: Bool = False,
     ](
         c: _FusedComputeOutputTensor[rank=rank],
         a: InputTensor[rank=rank],
@@ -3907,7 +3908,7 @@ struct BatchMatmul:
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
-            single_thread_blocking_override=False,
+            single_thread_blocking_override=single_thread_blocking_override,
             target=target,
         ](c_buffer, a_buffer, b_buffer, context=ctx)
 

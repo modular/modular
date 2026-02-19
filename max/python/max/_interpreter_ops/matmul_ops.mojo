@@ -24,8 +24,12 @@ from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
+from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor.io_spec import Input, _FusedComputeOutput
+from compiler_internal import StaticTensorSpec
+from MOGGKernelAPI.MOGGKernelAPI import BatchMatmul as BatchMatmulKernel
 
-from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
@@ -55,6 +59,13 @@ fn PyInit_matmul_ops() -> PythonObject:
 
         b.def_function[matmul_dispatcher](
             "Matmul", docstring="Matrix multiplication"
+        )
+        b.def_function[batch_matmul_dispatcher](
+            "BatchMatmul", docstring="Batched matrix multiplication"
+        )
+        b.def_function[batch_matmul_shape_dispatcher](
+            "BatchMatmulShape",
+            docstring="Compute batch matmul output shape",
         )
 
         return b.finalize()
@@ -291,6 +302,390 @@ fn matmul_op[
             else:
                 raise Error(
                     "GPU execution not supported for matmul with dtype "
+                    + String(dtype)
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+# =============================================================================
+# Batch matmul shape computation
+# =============================================================================
+
+
+fn batch_matmul_shape_dispatcher(
+    lhs_buffer: PythonObject,
+    rhs_buffer: PythonObject,
+) raises -> PythonObject:
+    """Compute batch matmul output shape using BatchMatmul.shape.
+
+    Delegates to BatchMatmul.shape from MOGGKernelAPI for validation
+    and shape computation.
+
+    Args:
+        lhs_buffer: The left-hand side buffer object.
+        rhs_buffer: The right-hand side buffer object.
+
+    Returns:
+        The output shape as a Python list.
+    """
+    var lhs_shape = lhs_buffer.shape
+    var rhs_shape = rhs_buffer.shape
+    var rank = Int(py=len(lhs_shape))
+    var rhs_rank = Int(py=len(rhs_shape))
+
+    if rank != rhs_rank:
+        raise Error(
+            "Mismatched ranks for batch_matmul: "
+            + String(rank)
+            + " and "
+            + String(rhs_rank)
+        )
+
+    if rank < 3 or rank > MAX_RANK:
+        raise Error(
+            "batch_matmul requires 3 <= rank <= "
+            + String(MAX_RANK)
+            + ", got "
+            + String(rank)
+        )
+
+    # Extract shapes into InlineArrays
+    var a_dims = _get_shape(lhs_shape, rank)
+    var b_dims = _get_shape(rhs_shape, rank)
+
+    # Dispatch on rank to call batched_matmul_shape with compile-time rank
+    from python import Python
+
+    var out_shape = Python.evaluate("[]")
+    if rank == 3:
+        var result = _batch_matmul_shape_for_rank[3](a_dims, b_dims)
+        for i in range(3):
+            _ = out_shape.append(result[i])
+    elif rank == 4:
+        var result = _batch_matmul_shape_for_rank[4](a_dims, b_dims)
+        for i in range(4):
+            _ = out_shape.append(result[i])
+    elif rank == 5:
+        var result = _batch_matmul_shape_for_rank[5](a_dims, b_dims)
+        for i in range(5):
+            _ = out_shape.append(result[i])
+    else:
+        raise Error("Unsupported rank for batch_matmul: " + String(rank))
+
+    return out_shape
+
+
+fn _batch_matmul_shape_for_rank[
+    rank: Int
+](
+    a_dims: InlineArray[Int, MAX_RANK],
+    b_dims: InlineArray[Int, MAX_RANK],
+) raises -> IndexList[rank]:
+    """Call BatchMatmul.shape with compile-time rank.
+
+    Creates shape-only InputTensors (null data pointers) since
+    BatchMatmul.shape only inspects shape metadata.
+
+    Parameters:
+        rank: The compile-time rank of the tensors.
+
+    Args:
+        a_dims: Shape dimensions of the lhs tensor.
+        b_dims: Shape dimensions of the rhs tensor.
+
+    Returns:
+        The output shape as an IndexList.
+    """
+    var a_shape = IndexList[rank]()
+    var b_shape = IndexList[rank]()
+    for i in range(rank):
+        a_shape[i] = a_dims[i]
+        b_shape[i] = b_dims[i]
+
+    # Create shape-only InputTensors with null pointers
+    comptime spec = StaticTensorSpec[DType.float32, rank].create_unknown()
+    var null_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+        unsafe_from_address=0
+    )
+    var a = ManagedTensorSlice[io_spec=Input, static_spec=spec](
+        null_ptr, a_shape
+    )
+    var b = ManagedTensorSlice[io_spec=Input, static_spec=spec](
+        null_ptr, b_shape
+    )
+
+    return BatchMatmulKernel.shape[rank, DType.float32, DType.float32](a, b)
+
+
+# =============================================================================
+# Batch matmul dispatcher
+# =============================================================================
+
+
+fn batch_matmul_dispatcher(
+    out_buffer: PythonObject,
+    lhs_buffer: PythonObject,
+    rhs_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Batch matmul dispatcher with dtype dispatch.
+
+    Collapses all batch dimensions into a single batch dimension to produce
+    rank-3 tensors, then dispatches to the batched_matmul kernel.
+
+    Args:
+        out_buffer: The output buffer object.
+        lhs_buffer: The left-hand side buffer object.
+        rhs_buffer: The right-hand side buffer object.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(lhs_buffer)
+    var rhs_dtype = _get_dtype(rhs_buffer)
+    if dtype != rhs_dtype:
+        raise Error(
+            "Mismatched input dtypes for batch_matmul: "
+            + String(dtype)
+            + " and "
+            + String(rhs_dtype)
+        )
+
+    # Extract shapes and collapse batch dimensions
+    var lhs_shape = lhs_buffer.shape
+    var rhs_shape = rhs_buffer.shape
+    var rank = Int(py=len(lhs_shape))
+
+    if rank < 3:
+        raise Error("batch_matmul requires rank >= 3, got " + String(rank))
+
+    # Compute collapsed batch dim: B = product of all batch dims
+    var batch_size = 1
+    for i in range(rank - 2):
+        batch_size *= Int(py=lhs_shape[i])
+
+    var m = Int(py=lhs_shape[rank - 2])
+    var k = Int(py=lhs_shape[rank - 1])
+    var n = Int(py=rhs_shape[rank - 1])
+
+    var ctx = _get_ctx(device_context_ptr)
+
+    # Float types
+    if dtype == DType.float16:
+        batch_matmul_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.float16](lhs_buffer),
+            _get_buffer_ptr[DType.float16](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        batch_matmul_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.float32](lhs_buffer),
+            _get_buffer_ptr[DType.float32](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        batch_matmul_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.float64](lhs_buffer),
+            _get_buffer_ptr[DType.float64](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        batch_matmul_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bfloat16](lhs_buffer),
+            _get_buffer_ptr[DType.bfloat16](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    # Integer types
+    elif dtype == DType.int8:
+        batch_matmul_op[DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.int8](lhs_buffer),
+            _get_buffer_ptr[DType.int8](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        batch_matmul_op[DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.int16](lhs_buffer),
+            _get_buffer_ptr[DType.int16](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        batch_matmul_op[DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.int32](lhs_buffer),
+            _get_buffer_ptr[DType.int32](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        batch_matmul_op[DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.int64](lhs_buffer),
+            _get_buffer_ptr[DType.int64](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.uint8:
+        batch_matmul_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.uint8](lhs_buffer),
+            _get_buffer_ptr[DType.uint8](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        batch_matmul_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.uint16](lhs_buffer),
+            _get_buffer_ptr[DType.uint16](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        batch_matmul_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.uint32](lhs_buffer),
+            _get_buffer_ptr[DType.uint32](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        batch_matmul_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.uint64](lhs_buffer),
+            _get_buffer_ptr[DType.uint64](rhs_buffer),
+            batch_size,
+            m,
+            k,
+            n,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for batch_matmul: " + String(dtype))
+
+
+# =============================================================================
+# Batch matmul kernel implementation
+# =============================================================================
+
+
+@always_inline
+fn batch_matmul_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    batch_size: Int,
+    m: Int,
+    k: Int,
+    n: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Batched matrix multiplication: out = lhs @ rhs with batch dims collapsed.
+
+    All batch dimensions are collapsed into a single batch_size dimension,
+    so we always operate on rank-3 tensors: (batch_size, M, K) @ (batch_size, K, N).
+    Uses BatchMatmul.execute from MOGGKernelAPI.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        lhs_ptr: Pointer to the left-hand side buffer data.
+        rhs_ptr: Pointer to the right-hand side buffer data.
+        batch_size: Product of all batch dimensions.
+        m: Number of rows in each matrix of lhs and output.
+        k: Number of columns in lhs / rows in rhs (inner dim).
+        n: Number of columns in each matrix of rhs and output.
+        ctx: Device context pointer (null for CPU).
+    """
+    # Create rank-3 ManagedTensorSlice wrappers with collapsed batch dimension
+    comptime in_spec = StaticTensorSpec[dtype, 3].create_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, 3].create_unknown()
+
+    var a = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
+        lhs_ptr, IndexList[3](batch_size, m, k)
+    )
+    var b = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
+        rhs_ptr, IndexList[3](batch_size, k, n)
+    )
+    var c = ManagedTensorSlice[
+        io_spec=_FusedComputeOutput, static_spec=out_spec
+    ](out_ptr, IndexList[3](batch_size, m, n))
+
+    if not ctx:
+        # TODO(MXF-108): Remove single_thread_blocking_override
+        BatchMatmulKernel.execute[
+            lambdas_have_fusion=False,
+            rank=3,
+            transpose_b=False,
+            target="cpu",
+            single_thread_blocking_override=True,
+        ](c, a, b, DeviceContextPtr())
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if _is_gpu_allowed_matmul_dtype[dtype]():
+                var device_ctx = DeviceContextPtr(ctx)
+                BatchMatmulKernel.execute[
+                    lambdas_have_fusion=False,
+                    rank=3,
+                    transpose_b=False,
+                    target="gpu",
+                ](c, a, b, device_ctx)
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for batch_matmul with dtype "
                     + String(dtype)
                 )
         else:
