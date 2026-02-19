@@ -21,6 +21,7 @@ from python import PythonObject
 from python.bindings import PythonModuleBuilder
 from sys.info import has_accelerator
 
+from math import iota
 from random import NormalRandom, Random
 from algorithm.functional import elementwise, IndexList
 from memory import OpaquePointer
@@ -247,12 +248,26 @@ fn range_op[
 
             @parameter
             if dtype != DType.float64:
+                # Range.execute uses iota with auto-selected SIMD width,
+                # which triggers llvm.stepvector with 64-bit integers that
+                # the Metal shader compiler cannot handle. Use elementwise
+                # with simd_width=1 to avoid this issue on all GPU targets.
+                @always_inline
+                @parameter
+                @__copy_capture(out_ptr, start, step)
+                fn range_func[
+                    width: Int, rank: Int, alignment: Int = 1
+                ](idx: IndexList[rank]):
+                    var i = rebind[IndexList[1]](idx)[0]
+                    var result = start + (
+                        iota[dtype, width](Scalar[dtype](i)) * step
+                    )
+                    out_ptr.store[width=width](i, result)
+
                 var device_ctx = DeviceContextPtr(ctx)
-                Range.execute[
-                    dtype=dtype,
-                    target="gpu",
-                    _trace_name="interpreter.range",
-                ](output_tensor, start, stop, step, device_ctx)
+                elementwise[range_func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
                 # TODO(MXF-108): Remove device sync
                 device_ctx.get_device_context().synchronize()
             else:
