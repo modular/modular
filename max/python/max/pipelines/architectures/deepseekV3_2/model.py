@@ -25,7 +25,6 @@ from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
 from max.pipelines.lib import CompilationTimer
-from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.float8 import parse_float8_config
 from typing_extensions import override
 
@@ -49,14 +48,14 @@ class DeepseekV3_2Model(DeepseekV3Model):
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+        if self.pipeline_config.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+        elif self.pipeline_config.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
 
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         if dtype == DType.float8_e4m3fn:
             float8_config = parse_float8_config(config, state_dict, dtype)
         else:

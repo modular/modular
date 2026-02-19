@@ -42,6 +42,7 @@ domain-specific libraries for machine learning and scientific computing.
 
 import math
 from collections import InlineArray
+from collections.string.string import _calc_initial_buffer_size
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic, trunc
@@ -371,6 +372,7 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
+    ConvertibleToPython,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -842,6 +844,33 @@ struct SIMD[dtype: DType, size: Int](
         else:
             self = bitcast[Self.dtype, Self.size](from_bits)
 
+    @always_inline
+    fn __init__(out self: Scalar[Self.dtype], *, py: PythonObject) raises:
+        """Initialize a SIMD value from a PythonObject.
+
+        Args:
+            py: The PythonObject to convert.
+
+        Raises:
+            If the conversion to double fails.
+        """
+
+        @parameter
+        if Self.dtype.is_floating_point():
+            ref cpy = Python().cpython()
+            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
+            if float_value == -1.0 and cpy.PyErr_Occurred():
+                # Note that -1.0 does not guarantee an error, it just means we
+                # need to check if there was an exception.
+                raise cpy.unsafe_get_error()
+            # NOTE: if dtype is not float64, we truncate.
+            self = Scalar[Self.dtype](float_value)
+        elif Self.dtype.is_integral() and bit_width_of[Self.dtype]() <= 64:
+            self = Scalar[Self.dtype](Int(py=py))
+        else:
+            self = Scalar[Self.dtype]()
+            constrained[False, "unsupported dtype"]()
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
@@ -965,17 +994,17 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_numeric(), "the type must be numeric"
 
-        @parameter
-        if Self.dtype.is_integral():
-            if not all(rhs):
-                # this should raise an exception.
-                return Self()
+        var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
+            0
+        )
+        var safe_divisor = is_zero_mask.select(Self(1), rhs)
 
-        return Self(
+        var floordiv = Self(
             mlir_value=__mlir_op.`pop.floordiv`(
-                self._mlir_value, rhs._mlir_value
+                self._mlir_value, safe_divisor._mlir_value
             )
         )
+        return is_zero_mask.select(Self(), floordiv)
 
     @always_inline("nodebug")
     fn __mod__(self, rhs: Self) -> Self:
@@ -989,21 +1018,21 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_numeric(), "the type must be numeric"
 
-        @parameter
-        if Self.dtype.is_integral():
-            if not all(rhs):
-                # this should raise an exception.
-                return Self()
+        var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
+            0
+        )
+        var safe_divisor = is_zero_mask.select(Self(1), rhs)
 
         @parameter
         if Self.dtype.is_unsigned():
-            return Self(
+            var rem = Self(
                 mlir_value=__mlir_op.`pop.rem`(
-                    self._mlir_value, rhs._mlir_value
+                    self._mlir_value, safe_divisor._mlir_value
                 )
             )
+            return is_zero_mask.select(Self(), rem)
         else:
-            var div = self / rhs
+            var div = self / safe_divisor
 
             @parameter
             if Self.dtype.is_floating_point():
@@ -1011,7 +1040,8 @@ struct SIMD[dtype: DType, size: Int](
 
             var mod = self - div * rhs
             var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
-            return mod + mask.select(rhs, Self(0))
+            var mod_result = mod + mask.select(rhs, Self(0))
+            return is_zero_mask.select(Self(), mod_result)
 
     @always_inline("nodebug")
     fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
@@ -1024,15 +1054,18 @@ struct SIMD[dtype: DType, size: Int](
             The quotient and remainder as a
             `Tuple(self // denominator, self % denominator)`.
         """
-        if not all(denominator):
-            # this should raise an exception.
-            return Self(0), Self(0)
+        var is_zero_mask = denominator.eq(0)
+        var safe_denominator = is_zero_mask.select(Self(1), denominator)
 
         @parameter
         if Self.dtype.is_unsigned():
-            return self // denominator, self % denominator
+            var div = self // safe_denominator
+            var mod = self % safe_denominator
+            return is_zero_mask.select(Self(0), div), is_zero_mask.select(
+                Self(0), mod
+            )
 
-        var div = self / denominator
+        var div = self / safe_denominator
 
         @parameter
         if Self.dtype.is_floating_point():
@@ -1044,7 +1077,9 @@ struct SIMD[dtype: DType, size: Int](
         if any(mask):
             div = div - mask.cast[Self.dtype]()
 
-        return div, mod + mask.select(denominator, Self(0))
+        var div_res = is_zero_mask.select(Self(0), div)
+        var mod_res = mod + mask.select(denominator, Self(0))
+        return div_res, is_zero_mask.select(Self(0), mod_res)
 
     @always_inline("nodebug")
     fn __pow__(self, exp: Int) -> Self:
@@ -2206,6 +2241,51 @@ struct SIMD[dtype: DType, size: Int](
             _write_scalar(writer, element)
         writer.write_string(")")
 
+    fn write_padded[
+        W: Writer
+    ](self, mut writer: W, width: Int) where self.dtype.is_integral():
+        """Write the integral SIMD with each element right-aligned to a set
+        padding. No additional space between elements is inserted.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+            width: The amount to pad to the left.
+        """
+
+        # Write an opening `[`.
+        @parameter
+        if Self.size > 1:
+            writer.write("[")
+
+        # Write each element.
+        for i in range(Self.size):
+            var element = self[i]
+            # _calc_initial_buffer_size adds an extra 1 for the terminator,
+            # which we want to remove, but also doesn't include 1 for a
+            # negative sign.
+            var int_width = _calc_initial_buffer_size(abs(element)) - (
+                1 if element >= 0 else 0
+            )
+
+            # Write separators between each element.
+            if i != 0:
+                writer.write(",")
+
+            # TODO: Assumes user wants right-aligned content.
+            if int_width < width:
+                for _ in range(width - int_width):
+                    writer.write(" ")
+
+            _write_scalar(writer, element)
+
+        # Write a closing `]`.
+        @parameter
+        if Self.size > 1:
+            writer.write("]")
+
     @always_inline
     fn to_bits[
         _dtype: DType = _uint_type_of_width[bit_width_of[Self.dtype]()]()
@@ -3189,6 +3269,22 @@ struct SIMD[dtype: DType, size: Int](
             return res
 
         return self.shuffle[mask = indices()]()
+
+    # ===----------------------------------------------------------------------=== #
+    # ConvertibleToPython
+    # ===------------------------------------------------------------------=== #
+
+    fn to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Raises:
+            If the conversion to a PythonObject failed.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        comptime assert Self.size == 1, "only works with scalar values"
+        return PythonObject(self._refine[new_size=1]())
 
 
 comptime U8x16 = SIMD[DType.uint8, 16]

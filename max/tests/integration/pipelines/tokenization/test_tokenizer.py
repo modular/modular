@@ -21,8 +21,10 @@ import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
     SamplingParams,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
@@ -38,7 +40,7 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig
 
@@ -95,9 +97,9 @@ def test_text_and_vision_tokenizer() -> None:
             model_path, pipeline_config=pipeline_config, trust_remote_code=True
         )
         for imgs_list in imgs:
-            content = [
-                {"type": "text", "text": "What is in this image?"},
-            ] + [{"type": "image"} for _ in imgs_list]
+            content: list[TextContentPart | ImageContentPart] = [
+                TextContentPart(text="What is in this image?"),
+            ] + [ImageContentPart() for _ in imgs_list]
             filtered_imgs_list = [img for img in imgs_list if img is not None]
             assert len(filtered_imgs_list) == len(imgs_list)
             request = TextGenerationRequest(
@@ -311,10 +313,12 @@ def test_text_tokenizer_with_constrained_decoding(
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model_path=modular_ai_llama_3_1_local_path,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        device_specs=device_specs,
-        enable_structured_output=True,
+        model=MAXModelConfig(
+            model_path=modular_ai_llama_3_1_local_path,
+            quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=device_specs,
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
     )
 
     tokenizer = TextTokenizer(
@@ -400,8 +404,10 @@ def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
     model_path = "OpenGVLab/InternVL3-1B-Instruct"
 
     pipeline_config = PipelineConfig(
-        model_path=model_path,
-        trust_remote_code=True,
+        model=MAXModelConfig(
+            model_path=model_path,
+            trust_remote_code=True,
+        ),
     )
 
     tokenizer = PIPELINE_REGISTRY.retrieve_tokenizer(pipeline_config)
@@ -444,9 +450,11 @@ def test_tokenizer_stores_eos_token_ids(
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model_path=modular_ai_llama_3_1_local_path,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        device_specs=device_specs,
+        model=MAXModelConfig(
+            model_path=modular_ai_llama_3_1_local_path,
+            quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=device_specs,
+        ),
     )
 
     # Test single eos token id
@@ -477,10 +485,10 @@ def test_text_and_vision_tokenizer_stores_eos_token_ids(
     model_path = google_gemma_3_4b_it_local_path
 
     pipeline_config = PipelineConfig(
-        model_path=model_path,
-        trust_remote_code=True,
+        model=MAXModelConfig(
+            model_path=model_path, trust_remote_code=True, max_length=100
+        ),
         max_batch_size=1,
-        max_length=100,
     )
 
     gemma_3_eos_token_ids = {1, 106}
@@ -507,8 +515,8 @@ async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
         TextGenerationRequestMessage(
             role="user",
             content=[
-                {"type": "text", "text": "Hello, how are you"},
-                {"type": "text", "text": "today?"},
+                TextContentPart(text="Hello, how are you"),
+                TextContentPart(text="today?"),
             ],
         ),
         TextGenerationRequestMessage(

@@ -68,7 +68,7 @@ from MOGGKernelAPI.MOGGKernelAPI import (
     Pow,
 )
 
-from _common import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
+from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 # TODO(EMF-96): add support for remaining float dtypes

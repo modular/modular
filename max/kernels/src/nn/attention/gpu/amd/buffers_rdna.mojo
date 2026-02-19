@@ -617,8 +617,18 @@ struct VBufferRDNA[
                 Self.pad[Self.depth](), Self.simd_width
             ](0, k_mma * 2 + 1)
 
-            # Lane selects depth position (row of hardware A)
-            var depth_row = depth_offset + depth_idx * Self.MMA_M + Int(lane)
+            # Compute the logical depth position, then remap to the padded
+            # shared memory row.  copy_to_shared writes in sub-tiles of
+            # pad(depth_tile_size) rows each, so positions in the second
+            # (and subsequent) depth tiles are offset by the padding.
+            var global_depth_pos = (
+                depth_offset + depth_idx * Self.MMA_M + Int(lane)
+            )
+            var dtile_idx = global_depth_pos // Self.depth_tile_size
+            var pos_in_dtile = global_depth_pos % Self.depth_tile_size
+            var depth_row = (
+                dtile_idx * Self.pad[Self.depth_tile_size]() + pos_in_dtile
+            )
 
             @parameter
             for j in range(RDNA_AB_FRAG_SIZE):
@@ -682,7 +692,7 @@ struct QRegisterBufferRDNA[
         return Self.reg_dtype
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor[Self.dtype, **_]):
+    fn __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
         self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
         var warp_row = get_rdna_warp_coords[Self.BN, Self.WN]()[0]
@@ -803,7 +813,7 @@ struct OutputRegisterBufferRDNA[
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, **_]):
+    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
         """Apply softmax denominator normalization to output accumulator."""
 
         @parameter

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, load_devices
+from max.driver import Buffer, Device, DLPackArray, load_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -244,7 +244,6 @@ class SpeculativeDecodingPipelineBase(
             pipeline_config=self.pipeline_config,
             session=target_session,
             huggingface_config=target_config,
-            encoding=self.pipeline_config.model.quantization_encoding,
             devices=self.target_devices,
             kv_cache_config=self.pipeline_config.model.kv_cache,
             weights=target_weights,
@@ -371,11 +370,38 @@ class SpeculativeDecodingPipelineBase(
             else weight_adapters
         )
 
+        shared_weights: dict[str, DLPackArray] | None = None
+        shared_ep_comm_initializer = None
+        if self.pipeline_config.speculative is not None and (
+            self.pipeline_config.speculative.is_eagle()
+            or self.pipeline_config.speculative.is_mtp()
+        ):
+            shared_weights, shared_ep_comm_initializer = (
+                self._maybe_build_deepseekv3_nextn_shared_resources(
+                    actual_draft_pipeline_model
+                )
+            )
+
+        draft_model_kwargs: dict[str, Any] = {}
+        if shared_weights and getattr(
+            actual_draft_pipeline_model, "supports_shared_weights", False
+        ):
+            draft_model_kwargs["shared_weights"] = shared_weights
+        elif shared_weights:
+            logger.debug(
+                "Draft model %s does not support shared weights; skipping",
+                actual_draft_pipeline_model.__name__,
+            )
+
+        if shared_ep_comm_initializer is not None:
+            draft_model_kwargs["shared_ep_comm_initializer"] = (
+                shared_ep_comm_initializer
+            )
+
         self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
             session=draft_session,
             huggingface_config=draft_config,
-            encoding=draft_encoding,
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model.kv_cache,
             weights=draft_weights,
@@ -384,6 +410,7 @@ class SpeculativeDecodingPipelineBase(
             return_hidden_states=hidden_states_return_config(
                 self.pipeline_config, is_draft=True
             ),
+            **draft_model_kwargs,
         )
 
         # Load draft sampler
@@ -434,6 +461,50 @@ class SpeculativeDecodingPipelineBase(
         self._num_draft_steps = (
             self.pipeline_config.speculative.num_speculative_tokens
         )
+
+    def _maybe_build_deepseekv3_nextn_shared_resources(
+        self,
+        draft_model_cls: type[PipelineModel[TextContext]],
+    ) -> tuple[dict[str, DLPackArray] | None, Any]:
+        # Imported here to avoid circular imports
+        from max.pipelines.architectures.deepseekV3.model import (  # type: ignore[import-not-found]
+            DeepseekV3Model,
+        )
+        from max.pipelines.architectures.deepseekV3_nextn.model import (  # type: ignore[import-not-found]
+            DeepseekV3NextNModel,
+        )
+
+        if not isinstance(self._target_model, DeepseekV3Model):
+            return None, None
+        if not issubclass(draft_model_cls, DeepseekV3NextNModel):
+            return None, None
+
+        # Share EP buffers between target and draft to avoid duplicating
+        shared_ep_comm_initializer = self._target_model.ep_comm_initializer
+        target_state_dict = getattr(self._target_model, "state_dict", None)
+        if not isinstance(target_state_dict, dict):
+            raise ValueError(
+                "Target DeepseekV3 model has no state_dict; "
+                "cannot share weights with NextN draft model."
+            )
+
+        required_prefixes = ("embed_tokens.", "lm_head.")
+        shared_weights: dict[str, DLPackArray] = {}
+        for name, value in target_state_dict.items():
+            for prefix in required_prefixes:
+                if name.startswith(prefix):
+                    shared_weights[name] = value
+
+        if len(shared_weights) != len(required_prefixes):
+            raise ValueError(
+                f"Missing weight prefixes {required_prefixes} in target DeepseekV3 "
+                f"state_dict. Cannot share weights with NextN draft model."
+            )
+
+        logger.info(
+            "Sharing DeepseekV3 embedding and head weights with NextN draft model."
+        )
+        return shared_weights, shared_ep_comm_initializer
 
     @traced
     def calculate_num_steps(

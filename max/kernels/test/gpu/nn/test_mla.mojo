@@ -417,6 +417,7 @@ fn test[
 
 fn test_prefill[
     qkv_type: DType,
+    k_rope_type: DType,
     depth: Int,
     num_heads: Int,
     kv_depth: Int,
@@ -435,6 +436,8 @@ fn test_prefill[
         num_keys,
         "qkv_type:",
         qkv_type,
+        "k_rope_type:",
+        k_rope_type,
         "depth:",
         depth,
         "kv_depth:",
@@ -456,14 +459,14 @@ fn test_prefill[
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
     var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
     var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var cache_ptr = UnsafePointer[Scalar[qkv_type]].alloc(cache_size)
+    var cache_ptr = UnsafePointer[Scalar[k_rope_type]].alloc(cache_size)
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
     randn[qkv_type](v_ptr, v_size)
-    randn[qkv_type](cache_ptr, cache_size)
+    randn[k_rope_type](cache_ptr, cache_size)
 
     # input row offsets and cache row offsets
     var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
@@ -493,7 +496,7 @@ fn test_prefill[
             Index(batch_size * num_keys, num_heads, kv_depth)
         ),
     )
-    var cache = LayoutTensor[qkv_type, Layout.row_major[4]()](
+    var cache = LayoutTensor[k_rope_type, Layout.row_major[4]()](
         cache_ptr,
         RuntimeLayout[Layout.row_major[4]()].row_major(
             Index(batch_size, num_keys, cache_num_heads, cache_depth)
@@ -510,7 +513,7 @@ fn test_prefill[
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    var cache_device_ptr = ctx.enqueue_create_buffer[qkv_type](cache_size)
+    var cache_device_ptr = ctx.enqueue_create_buffer[k_rope_type](cache_size)
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -552,7 +555,7 @@ fn test_prefill[
     comptime cache_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, cache_num_heads, cache_depth
     )
-    var cache_device = LayoutTensor[qkv_type, cache_layout](
+    var cache_device = LayoutTensor[k_rope_type, cache_layout](
         cache_device_ptr.unsafe_ptr(),
         RuntimeLayout[cache_layout].row_major(
             Index(batch_size, num_keys, cache_num_heads, cache_depth)
@@ -686,9 +689,9 @@ fn test_prefill[
         for s in range(num_keys):
             for h in range(num_heads):
                 for d in range(depth - kv_depth):
-                    k_ref[b, s, h, d + kv_depth] = cache[
-                        b, s, 0, cache_depth - (depth - kv_depth) + d
-                    ]
+                    k_ref[b, s, h, d + kv_depth] = Scalar[qkv_type](
+                        cache[b, s, 0, cache_depth - (depth - kv_depth) + d][0]
+                    )
                     v_ref[b, s, h, d + kv_depth] = 0
 
     # view q_device as a rank 4 buffer
@@ -791,6 +794,8 @@ fn test_prefill[
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
+                    if abs((lhs - rhs)) > 2e-2:
+                        print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
                         lhs,
@@ -1031,9 +1036,12 @@ fn test_decoding[
 
 fn test_mla_prefill[
     batch_size: Int,
+    qkv_type: DType,
+    k_rope_type: DType,
 ](ctx: DeviceContext) raises:
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1042,7 +1050,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](120, 120, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=16,
         kv_depth=128,
@@ -1051,7 +1060,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](1179, 1179, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1060,7 +1070,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](700, 700, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1069,7 +1080,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](701, 701, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1078,7 +1090,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](12, 12, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1087,7 +1100,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](350, 700, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1114,7 +1128,12 @@ def main():
         test_decoding[0, 1, False, True](ctx, False)
 
         # test mla prefill
-        test_mla_prefill[2](ctx)
-        test_mla_prefill[4](ctx)
-        # Test with zero batch size
-        test_mla_prefill[0](ctx)
+        test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)
+        test_mla_prefill[4, DType.bfloat16, DType.bfloat16](ctx)
+        test_mla_prefill[0, DType.bfloat16, DType.bfloat16](ctx)
+
+        @parameter
+        if ctx.default_device_info == B200:
+            test_mla_prefill[2, DType.bfloat16, DType.float8_e4m3fn](ctx)
+            test_mla_prefill[4, DType.bfloat16, DType.float8_e4m3fn](ctx)
+            test_mla_prefill[0, DType.bfloat16, DType.float8_e4m3fn](ctx)

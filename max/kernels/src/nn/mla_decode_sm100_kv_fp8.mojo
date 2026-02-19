@@ -621,17 +621,9 @@ struct MLA_SM100_Decode_KV_FP8[
         var row: UInt = UInt(offset_position.q_row_offset)
         # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
-        # Clamp kv_row to the last physical cache token to prevent OOB
-        # lookup_table access on the last tile.
-        var physical_cache_len = UInt32(offset_position.num_keys)
-
-        # When !_is_cache_length_accurate, num_keys includes seq_len
-        # padding; subtract it to recover the physical cache length.
-        @parameter
-        if not Self._is_cache_length_accurate:
-            physical_cache_len -= UInt32(offset_position.seq_len)
-        # Clamp kv_row to physical cache boundary.
-        kv_row = min(kv_row, max(physical_cache_len, UInt32(1)) - 1)
+        # Clamp kv_row to prevent OOB lookup_table access on the last tile.
+        var num_keys_u32 = UInt32(offset_position.num_keys)
+        kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(
             UInt32(offset_position.batch_idx), kv_row
         )
@@ -671,8 +663,7 @@ struct MLA_SM100_Decode_KV_FP8[
             var stage_ptr = kv_load_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_load_prod.producer_mbar[qk_stage=0]()
 
-            # Clamp kv_row to physical cache boundary.
-            kv_row = min(kv_row, max(physical_cache_len, UInt32(1)) - 1)
+            kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
             var kv_gmem_row: UInt32 = kv_lut.row_idx(
                 UInt32(offset_position.batch_idx), kv_row
             )

@@ -236,7 +236,7 @@ def generate_llm_logits(
         num_steps = 1
     else:
         inputs = pipeline_oracle.inputs
-        num_steps = NUM_STEPS
+        num_steps = getattr(pipeline_oracle, "num_steps", NUM_STEPS)
 
     evaluation_batch_size: int | list[int]
     if max_batch_size is None:

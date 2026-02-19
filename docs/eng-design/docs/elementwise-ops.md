@@ -238,7 +238,7 @@ fn run_func(ctx: DeviceContext, iteration: Int) raises:
     )
 ```
 
-where `n` is is 800_000_000 and n is 4_000_000 i.e. `n` is a 2 GiB in and out
+where `n` is 800_000_000 and n is 4_000_000 i.e. `n` is a 2 GiB in and out
 buffer and `n2`  is 16 MiB memcpy (read and write).
 
 Time it like this

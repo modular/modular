@@ -60,7 +60,11 @@ from test_common.model_output import (
 )
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.table import CONSOLE
-from test_common.verify_utils import construct_validator
+from test_common.verify_utils import (
+    compute_lpips,
+    compute_ssim,
+    construct_validator,
+)
 
 
 class VerificationError(click.ClickException):
@@ -77,6 +81,7 @@ class AccuracyError(VerificationError):
 class ModelModality(str, Enum):
     LOGIT = "logit"
     EMBEDDING = "embedding"
+    IMAGE = "image"
 
 
 # Shared defaults between CLI and verify function
@@ -85,6 +90,8 @@ DEFAULT_RELATIVE_TOLERANCE = 1e-03
 DEFAULT_ABSOLUTE_TOLERANCE = 1e-04
 DEFAULT_COS_DIST_THRESHOLD = 1e-3
 DEFAULT_KL_DIV_THRESHOLD = 1e-3
+DEFAULT_SSIM_THRESHOLD = 0.8
+DEFAULT_LPIPS_THRESHOLD = 0.3
 DEFAULT_DIFF_COUNT = 4
 DEFAULT_PRINT_SUGGESTED_TOLERANCES = False
 
@@ -139,6 +146,26 @@ DEFAULT_PRINT_SUGGESTED_TOLERANCES = False
     show_default=True,
 )
 @click.option(
+    "--ssim-threshold",
+    type=float,
+    default=DEFAULT_SSIM_THRESHOLD,
+    help=(
+        "The threshold for Structural Similarity Index (SSIM) for image outputs."
+        " Range is 0-1, where 1.0 means identical images."
+    ),
+    show_default=True,
+)
+@click.option(
+    "--lpips-threshold",
+    type=float,
+    default=DEFAULT_LPIPS_THRESHOLD,
+    help=(
+        "The threshold for Learned Perceptual Image Patch Similarity (LPIPS) for image outputs."
+        " Lower is better, typically 0.0-1.0 for similar images."
+    ),
+    show_default=True,
+)
+@click.option(
     "--diff-count",
     type=int,
     default=DEFAULT_DIFF_COUNT,
@@ -162,6 +189,8 @@ def main(
     absolute_tolerance: float,
     cos_dist_threshold: float,
     kl_div_threshold: float,
+    ssim_threshold: float,
+    lpips_threshold: float,
     diff_count: int,
     print_suggested_tolerances: bool,
 ) -> None:
@@ -179,6 +208,8 @@ def main(
         absolute_tolerance=absolute_tolerance,
         cos_dist_threshold=cos_dist_threshold,
         kl_div_threshold=kl_div_threshold,
+        ssim_threshold=ssim_threshold,
+        lpips_threshold=lpips_threshold,
         diff_count=diff_count,
         print_suggested_tolerances=print_suggested_tolerances,
     )
@@ -207,6 +238,12 @@ class DiscrepancyReport:
     max_kl_div: float | None = None
     """Max KL divergence across all prompts (only for logit outputs)."""
 
+    ssim_per_prompt: list[float] | None = None
+    """Structural similarity index for each prompt (only for image outputs)."""
+
+    lpips_per_prompt: list[float] | None = None
+    """LPIPS (Learned Perceptual Image Patch Similarity) for each prompt (only for image outputs)."""
+
     @property
     def avg_mae(self) -> float:
         """Calculate average mean absolute error across all prompts."""
@@ -225,6 +262,20 @@ class DiscrepancyReport:
         return sum(self.kl_div_per_prompt) / len(self.kl_div_per_prompt)
 
     @property
+    def avg_ssim(self) -> float | None:
+        """Calculate average SSIM across all prompts (only for image outputs)."""
+        if self.ssim_per_prompt is None:
+            return None
+        return sum(self.ssim_per_prompt) / len(self.ssim_per_prompt)
+
+    @property
+    def avg_lpips(self) -> float | None:
+        """Calculate average LPIPS across all prompts (only for image outputs)."""
+        if self.lpips_per_prompt is None:
+            return None
+        return sum(self.lpips_per_prompt) / len(self.lpips_per_prompt)
+
+    @property
     def default_metric(self) -> float:
         """A default avg error metric for the type of model (KL Div for LLM)"""
         if self.model_modality == ModelModality.LOGIT:
@@ -232,6 +283,9 @@ class DiscrepancyReport:
             return self.avg_kl_div
         elif self.model_modality == ModelModality.EMBEDDING:
             return self.avg_mae
+        elif self.model_modality == ModelModality.IMAGE:
+            assert self.avg_lpips is not None
+            return self.avg_lpips
         else:
             raise ValueError(f"Unknown model modality: {self.model_modality}")
 
@@ -258,6 +312,8 @@ def verify(
     absolute_tolerance: float | None = None,
     cos_dist_threshold: float | None = None,
     kl_div_threshold: float | None = None,
+    ssim_threshold: float | None = None,
+    lpips_threshold: float | None = None,
     diff_count: int | None = None,
     print_suggested_tolerances: bool | None = None,
 ) -> VerificationResult:
@@ -266,11 +322,13 @@ def verify(
     Args:
         pipeline_outputs: Path to the pipeline outputs JSON file
         torch_outputs: Path to the torch outputs JSON file
-        eval_metric: Metrics to use for evaluation (e.g., ["tol", "cos", "kl"])
+        eval_metric: Metrics to use for evaluation (e.g., ["tol", "cos", "kl", "ssim", "lpips"])
         relative_tolerance: Relative tolerance for numerical comparison
         absolute_tolerance: Absolute tolerance for numerical comparison
         cos_dist_threshold: Threshold for cosine similarity
         kl_div_threshold: Threshold for KL divergence
+        ssim_threshold: Threshold for SSIM (Structural Similarity Index) for images
+        lpips_threshold: Threshold for LPIPS (Learned Perceptual Image Patch Similarity) for images
         diff_count: Number of differences to show in error output
         print_suggested_tolerances: Whether to print suggested tolerances on failure
 
@@ -291,6 +349,8 @@ def verify(
     absolute_tolerance = val_or(absolute_tolerance, DEFAULT_ABSOLUTE_TOLERANCE)
     cos_dist_threshold = val_or(cos_dist_threshold, DEFAULT_COS_DIST_THRESHOLD)
     kl_div_threshold = val_or(kl_div_threshold, DEFAULT_KL_DIV_THRESHOLD)
+    ssim_threshold = val_or(ssim_threshold, DEFAULT_SSIM_THRESHOLD)
+    lpips_threshold = val_or(lpips_threshold, DEFAULT_LPIPS_THRESHOLD)
     diff_count = val_or(diff_count, DEFAULT_DIFF_COUNT)
     print_suggested_tolerances = val_or(
         print_suggested_tolerances, DEFAULT_PRINT_SUGGESTED_TOLERANCES
@@ -304,6 +364,8 @@ def verify(
         rtol=relative_tolerance,
         cos_threshold=cos_dist_threshold,
         kl_div_threshold=kl_div_threshold,
+        ssim_threshold=ssim_threshold,
+        lpips_threshold=lpips_threshold,
     )
 
     pipeline_results: list[ModelOutput] = NumpyDecoder().decode(
@@ -468,13 +530,21 @@ def compute_discrepancy_report(
     if len(results) != len(references):
         raise ValueError("The two lists must have the same length")
 
-    mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
+    mae_per_prompt, rmse_per_prompt, kl_div_per_prompt, ssim_per_prompt = (
+        [],
+        [],
+        [],
+        [],
+    )
+    lpips_per_prompt = []
     model_modality: ModelModality | None = None
     model_max_kl_div: float | None = None
     for result, reference in zip(results, references, strict=True):
         verify_matching_prompts(result, reference)
         avg_kl_div = None
         max_kl_div = None
+        ssim_value = None
+        lpips_value = None
         if "embeddings" in result and "embeddings" in reference:
             mae, rmse = calculate_mae_and_rmse(
                 result["embeddings"].astype(np.float64),
@@ -486,9 +556,21 @@ def compute_discrepancy_report(
                 result["values"], reference["values"]
             )
             model_modality = ModelModality.LOGIT
+        elif "images" in result and "images" in reference:
+            mae, rmse = calculate_mae_and_rmse(
+                result["images"].astype(np.float64).flatten(),
+                reference["images"].astype(np.float64).flatten(),
+            )
+            # Compute image quality metrics (shared with validators in verify_utils)
+            result_img = result["images"]
+            reference_img = reference["images"]
+            ssim_value = compute_ssim(result_img, reference_img)
+            lpips_arr = compute_lpips(result_img, reference_img)
+            lpips_value = float(np.mean(lpips_arr))
+            model_modality = ModelModality.IMAGE
         else:
             raise ValueError(
-                "Unknown model modality, did not find embeddings or values"
+                "Unknown model modality, did not find embeddings, values, or images"
             )
         mae_per_prompt.append(mae)
         rmse_per_prompt.append(rmse)
@@ -499,6 +581,10 @@ def compute_discrepancy_report(
                 model_max_kl_div = max_kl_div
             else:
                 model_max_kl_div = max(model_max_kl_div, max_kl_div)
+        if ssim_value is not None:
+            ssim_per_prompt.append(float(ssim_value))
+        if lpips_value is not None:
+            lpips_per_prompt.append(float(lpips_value))
 
     if model_modality is None:
         raise ValueError("Could not determine model modality")
@@ -508,6 +594,8 @@ def compute_discrepancy_report(
         rmse_per_prompt=rmse_per_prompt,
         kl_div_per_prompt=kl_div_per_prompt if kl_div_per_prompt else None,
         max_kl_div=model_max_kl_div,
+        ssim_per_prompt=ssim_per_prompt if ssim_per_prompt else None,
+        lpips_per_prompt=lpips_per_prompt if lpips_per_prompt else None,
         model_modality=model_modality,
     )
 
@@ -625,6 +713,13 @@ def print_discrepancy_report(report: DiscrepancyReport) -> None:
 
     CONSOLE.print(f"RMSE:   {formatter(report.avg_rmse)}")
     CONSOLE.print(f"MAE:    {formatter(report.avg_mae)}")
+
+    # Print image quality metrics if available
+    if report.ssim_per_prompt is not None:
+        CONSOLE.print(f"SSIM:   {formatter(report.avg_ssim)}")
+    if report.lpips_per_prompt is not None:
+        CONSOLE.print(f"LPIPS:  {formatter(report.avg_lpips)}")
+
     CONSOLE.print("\nPer prompt discrepancy numbers:")
 
     if report.kl_div_per_prompt is not None:
@@ -633,10 +728,17 @@ def print_discrepancy_report(report: DiscrepancyReport) -> None:
     CONSOLE.print(f"RMSE:   [{formatted_rmse}]")
     CONSOLE.print(f"MAE:    [{formatted_mae}]")
 
-    CONSOLE.print("\nLower numbers are better.")
-    CONSOLE.print(
-        f"They measure how close the {report.model_modality}s are between the two frameworks."
-    )
+    # Print per-prompt image metrics
+    if report.ssim_per_prompt is not None:
+        formatted_ssim = ", ".join(
+            formatter(value) for value in report.ssim_per_prompt
+        )
+        CONSOLE.print(f"SSIM:   [{formatted_ssim}]")
+    if report.lpips_per_prompt is not None:
+        formatted_lpips = ", ".join(
+            formatter(value) for value in report.lpips_per_prompt
+        )
+        CONSOLE.print(f"LPIPS:  [{formatted_lpips}]")
 
     CONSOLE.print("\n===== end discrepancy report =====\n")
 

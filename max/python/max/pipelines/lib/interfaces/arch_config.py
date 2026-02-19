@@ -58,7 +58,7 @@ class ArchConfig(Protocol):
         """Returns the default maximum sequence length for the model.
 
         Subclasses should determine whether this value can be overridden by
-        setting the ``--max-length`` (``pipeline_config.max_length``) flag.
+        setting the ``--max-length`` (``pipeline_config.model.max_length``) flag.
         """
 
 
@@ -121,7 +121,7 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
             cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
             kv_cache=pipeline_config.model.kv_cache,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            user_provided_max_length=pipeline_config.max_length,
+            user_provided_max_length=pipeline_config.model.max_length,
             huggingface_config=pipeline_config.model.huggingface_config,
         )
 

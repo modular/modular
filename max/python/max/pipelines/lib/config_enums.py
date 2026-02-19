@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from max.driver import DeviceSpec
 from max.dtype import DType
@@ -46,44 +47,11 @@ class RepoType(str, Enum):
 
 
 # Reference: https://github.com/ggerganov/llama.cpp/blob/eb5c3dc64bd967f2e23c87d9dec195f45468de60/src/llama.cpp#L20778
-class RopeType(str, Enum):
-    none = "none"
-    normal = "normal"
-    neox = "neox"
-    longrope = "longrope"
-    yarn = "yarn"
+RopeType = Literal["none", "normal", "neox", "longrope", "yarn"]
 
 
-class PipelineRole(str, Enum):
-    """Indicates whether the pipeline should do prefill and/or decode."""
-
-    PrefillAndDecode = "prefill_and_decode"
-    PrefillOnly = "prefill_only"
-    DecodeOnly = "decode_only"
-
-    @property
-    def uses_dispatch_service(self) -> bool:
-        """Whether the scheduler needs a dispatcher client to be started.
-
-        The dispatcher is a message routing system that enables communication between
-        components across instances. It handles:
-        - Request forwarding between schedulers on different instances
-        - Reply routing for request-response patterns
-
-        Schedulers that operate in isolation don't need the dispatcher client.
-        However, schedulers that are part of a distributed pipeline require the
-        dispatcher client to communicate with their counterparts.
-
-        When this method returns True, the ModelWorker will start the dispatcher client
-        before running the scheduler, enabling distributed message passing.
-
-        Returns:
-            bool: True if the scheduler requires dispatcher client startup, False otherwise.
-        """
-        return self in (
-            PipelineRole.PrefillOnly,
-            PipelineRole.DecodeOnly,
-        )
+PipelineRole = Literal["prefill_and_decode", "prefill_only", "decode_only"]
+"""Indicates whether the pipeline should do prefill and/or decode."""
 
 
 class SupportedEncoding(str, Enum):

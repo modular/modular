@@ -90,6 +90,23 @@ class MAXModelConfig(MAXModelConfigBase):
         ),
     )
 
+    max_length: int | None = Field(
+        default=None,
+        description=(
+            "Maximum sequence length the model can process. If not specified, "
+            "defaults to the model's max_position_embeddings. May be clamped "
+            "during resolution based on available memory."
+        ),
+    )
+
+    @field_validator("max_length")
+    @classmethod
+    def validate_max_length(cls, v: int | None) -> int | None:
+        """Validate that max_length is non-negative if provided."""
+        if v is not None and v < 0:
+            raise ValueError("max_length must be non-negative")
+        return v
+
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.

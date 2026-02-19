@@ -302,7 +302,7 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = PipelineConfig.model_construct(max_length=512)
+    mock_config = PipelineConfig.model_construct()
     mock_config.model.quantization_encoding = SupportedEncoding.float32
     mock_config.sampling = SamplingConfig()
     mock_config.sampling.enable_structured_output = False

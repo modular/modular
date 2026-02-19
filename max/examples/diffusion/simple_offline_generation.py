@@ -51,7 +51,7 @@ from max.interfaces.request.open_responses import (
     OpenResponsesRequestBody,
     OutputImageContent,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
@@ -205,8 +205,10 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 1: Initialize pipeline configuration
     config = PipelineConfig(
-        model_path=args.model,
-        device_specs=[DeviceSpec.accelerator()],
+        model=MAXModelConfig(
+            model_path=args.model,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
         use_legacy_module=False,
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(

@@ -2278,18 +2278,6 @@ struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
         self.mbar = mbar
         self.smem = smem
 
-    @always_inline
-    fn split_smem[
-        first: Layout, second: Layout
-    ](self) -> Tuple[
-        SharedMemLT[Self.dtype, first], SharedMemLT[Self.dtype, second]
-    ]:
-        comptime first_size = first.size()
-        return {
-            SharedMemLT[Self.dtype, first](self.smem.ptr),
-            SharedMemLT[Self.dtype, second](self.smem.ptr + first_size),
-        }
-
 
 struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     TrivialRegisterPassable

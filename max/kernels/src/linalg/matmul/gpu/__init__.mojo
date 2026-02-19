@@ -480,13 +480,7 @@ fn _matmul_gpu[
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
-        (
-            m > 1
-            or (
-                has_amd_gpu_accelerator()
-                and (transpose_b == False or a_type.is_float8())
-            )
-        )
+        (m > 1 or has_amd_gpu_accelerator())
         and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
         and k % 32 == 0
         and k >= 128
@@ -630,6 +624,13 @@ fn _matmul_gpu[
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
+
+                if m == 1:
+                    return gemv_gpu[
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                        pdl_level=pdl_level,
+                    ](c, a, b, ctx)
 
                 @parameter
                 if not transpose_b:

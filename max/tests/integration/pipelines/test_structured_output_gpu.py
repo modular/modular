@@ -32,6 +32,7 @@ from max.pipelines import (
     TextGenerationPipeline,
 )
 from max.pipelines.core import TextContext
+from max.pipelines.lib import MAXModelConfig, SamplingConfig
 from max.pipelines.lib.registry import PipelineRegistry
 
 pytest_plugins = "test_common.registry"
@@ -40,15 +41,19 @@ pytest_plugins = "test_common.registry"
 def test_smollm_with_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
+    revision = hf_repo_lock.revision_for_hf_repo(
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+    )
+    assert revision is not None
     pipeline_config = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-        enable_structured_output=True,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-            "HuggingFaceTB/SmolLM2-135M-Instruct",
+        model=MAXModelConfig(
+            model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+            quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=[DeviceSpec.accelerator()],
+            huggingface_model_revision=revision,
+            max_length=8192,
         ),
-        max_length=8192,
+        sampling=SamplingConfig(enable_structured_output=True),
         max_batch_size=1,
     )
 

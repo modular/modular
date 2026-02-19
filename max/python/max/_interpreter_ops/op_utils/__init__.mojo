@@ -19,6 +19,7 @@ from algorithm.functional import IndexList
 
 
 comptime MAX_RANK = 5
+"""The maximum rank of a tensor supported by the MO interpreter."""
 
 
 fn _get_dtype(buffer: PythonObject) raises -> DType:

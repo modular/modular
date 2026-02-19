@@ -679,9 +679,6 @@ class PixelContext:
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
-
     # Precomputed tensors
     timesteps: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
@@ -806,6 +803,7 @@ def reserve_token_space_for_batch(
                 raise ValueError(
                     f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
                 )
+            ctx.tokens._expand_capacity(min_capacity=new_length)
             ctx.tokens._current_length = new_length
         yield
     finally:

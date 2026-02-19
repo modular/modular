@@ -354,3 +354,106 @@ def test_shutdown_clears_pending_state() -> None:
 
     assert len(connector._pending_saves) == 0
     assert len(connector._pending_loads) == 0
+
+
+# -- ref_cnt leak fix (Change 2: free_block after H2D) --
+
+
+def test_load_releases_host_blocks_after_h2d() -> None:
+    """Verify host blocks return to free queue after lookup+load cycle.
+
+    Before the fix, touch() in lookup() incremented ref_cnt but load()
+    never called free_block() to balance it, causing a permanent leak.
+    """
+    connector = create_local_connector(num_host_blocks=32)
+
+    free_before = connector._host_block_pool.free_block_queue.num_free_blocks
+
+    # Save 3 blocks
+    connector.save([0, 1, 2], [100, 200, 300])
+    connector.flush()
+
+    # After flush: alloc_block (removes from free) + commit + free_block
+    # Net: blocks are in both prefix cache AND free queue (ref_cnt=0)
+    free_after_flush = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_flush == free_before
+
+    # Lookup touches blocks (ref_cnt 0→1, removed from free queue)
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    tokens = connector.lookup(ctx, [100, 200, 300])
+    assert tokens == 3 * 16
+
+    free_after_lookup = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_lookup == free_before - 3
+
+    # Load should release blocks back (ref_cnt 1→0, back in free queue)
+    loaded = connector.load(ctx, [10, 11, 12], [])
+    assert loaded == [100, 200, 300]
+
+    free_after_load = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_load == free_before, (
+        "Host blocks should return to free queue after load()"
+    )
+
+
+def test_repeated_lookup_load_does_not_leak() -> None:
+    """Verify N rounds of lookup+load don't accumulate leaked blocks."""
+    connector = create_local_connector(num_host_blocks=32)
+
+    # Save a block
+    connector.save([0], [100])
+    connector.flush()
+
+    free_baseline = connector._host_block_pool.free_block_queue.num_free_blocks
+
+    # Do 5 lookup+load cycles on the same block
+    for _i in range(5):
+        ctx = create_text_context(np.array([1], dtype=np.int64))
+        tokens = connector.lookup(ctx, [100])
+        assert tokens == 16
+        loaded = connector.load(ctx, [10], [])
+        assert loaded == [100]
+
+    free_after_cycles = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_cycles == free_baseline, (
+        f"Free block count should be stable after repeated lookup+load "
+        f"cycles: expected {free_baseline}, got {free_after_cycles}"
+    )
+
+
+def test_on_request_complete_releases_unconsumed_blocks() -> None:
+    """Verify on_request_complete frees blocks that lookup() pinned but load() didn't consume."""
+    connector = create_local_connector(num_host_blocks=32)
+
+    connector.save([0, 1], [100, 200])
+    connector.flush()
+
+    free_before = connector._host_block_pool.free_block_queue.num_free_blocks
+
+    # Lookup pins 2 blocks (touch → ref_cnt=1)
+    ctx = create_text_context(np.array([1, 2], dtype=np.int64))
+    tokens = connector.lookup(ctx, [100, 200])
+    assert tokens == 2 * 16
+
+    free_after_lookup = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_lookup == free_before - 2
+
+    # DON'T call load() — simulate a cancelled request
+    connector.on_request_complete(ctx.request_id, [0, 1])
+
+    free_after_complete = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_complete == free_before, (
+        "on_request_complete should release blocks that load() never consumed"
+    )

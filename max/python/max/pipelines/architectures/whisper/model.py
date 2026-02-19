@@ -28,7 +28,6 @@ from max.pipelines.lib import (
     ModelInputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -64,7 +63,6 @@ class Whisper(PipelineModel[Any]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -75,7 +73,6 @@ class Whisper(PipelineModel[Any]):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -98,7 +95,7 @@ class Whisper(PipelineModel[Any]):
         graph = build_graph(
             state_dict,
             self.huggingface_config,
-            self.encoding.dtype,
+            self.dtype,
             DeviceRef.from_device(self.devices[0]),
         )
         timer.mark_build_complete()

@@ -31,7 +31,7 @@ from python import ConvertibleToPython, PythonObject
 # ===-----------------------------------------------------------------------===#
 
 
-@nonmaterializable(String)
+@__nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
     ConvertibleToPython,
@@ -295,7 +295,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return StaticString(ptr=self.unsafe_ptr() + idx, length=1)
 
     # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # non-materializable by making them merge into StaticString.  They should
+    # nonmaterializable by making them merge into StaticString.  They should
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[

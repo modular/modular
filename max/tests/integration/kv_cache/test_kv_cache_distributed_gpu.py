@@ -45,7 +45,6 @@ async def test_kv_cache_multi_gpu() -> None:
             params=kv_params,
             total_num_pages=8,
             session=inference_session,
-            max_batch_size=128,
         )
         context = create_text_context(np.empty(1))
         kv_manager.claim(context.request_id, replica_idx=0)
@@ -94,7 +93,6 @@ def create_kv_cache(
         total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
-        max_batch_size=max_batch_size,
     )
 
     return kv_manager

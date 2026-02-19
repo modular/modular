@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import click
 from click.testing import CliRunner
@@ -31,7 +32,7 @@ class _TestConfig(ConfigFileModel):
 def _make_cli() -> click.Command:
     @click.command()
     @config_to_flag(_TestConfig)
-    def cli(**config_kwargs: object) -> None:
+    def cli(**config_kwargs: Any) -> None:
         config = _TestConfig(**config_kwargs)
         click.echo(f"{config.model_path}|{config.device_graph_capture}")
 

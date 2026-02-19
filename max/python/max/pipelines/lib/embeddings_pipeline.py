@@ -105,7 +105,6 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=huggingface_config,
-            encoding=self._pipeline_config.model.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=weights,

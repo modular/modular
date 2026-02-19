@@ -1905,32 +1905,3 @@ fn _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
     cpy.Py_DecRef(stop)
     cpy.Py_DecRef(step)
     return res
-
-
-__extension SIMD:
-    @always_inline
-    fn __init__(out self: Scalar[dtype], *, py: PythonObject) raises:
-        """Initialize a SIMD value from a PythonObject.
-
-        Args:
-            py: The PythonObject to convert.
-
-        Raises:
-            If the conversion to double fails.
-        """
-
-        @parameter
-        if dtype.is_floating_point():
-            ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
-            if float_value == -1.0 and cpy.PyErr_Occurred():
-                # Note that -1.0 does not guarantee an error, it just means we
-                # need to check if there was an exception.
-                raise cpy.unsafe_get_error()
-            # NOTE: if dtype is not float64, we truncate.
-            self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Scalar[dtype](Int(py=py))
-        else:
-            self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()

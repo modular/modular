@@ -41,7 +41,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -92,7 +91,6 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -104,7 +102,6 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -222,37 +219,33 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
         )
         has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
 
-        # compile() wraps with F.functional, returning Tensor objects.
-        # Extract the underlying Buffer via .driver_tensor.
-        bufs = [cast(Buffer, o.driver_tensor) for o in model_outputs]
-
         if has_offsets and has_hidden_states:
-            assert len(bufs) == 4
+            assert len(model_outputs) == 4
             return ModelOutputs(
-                logits=bufs[1],
-                next_token_logits=bufs[0],
-                logit_offsets=bufs[2],
-                hidden_states=bufs[3],
+                logits=cast(Buffer, model_outputs[1].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
+                hidden_states=cast(Buffer, model_outputs[3].driver_tensor),
             )
         elif has_offsets:
-            assert len(bufs) == 3
+            assert len(model_outputs) == 3
             return ModelOutputs(
-                logits=bufs[1],
-                next_token_logits=bufs[0],
-                logit_offsets=bufs[2],
+                logits=cast(Buffer, model_outputs[1].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
             )
         elif has_hidden_states:
-            assert len(bufs) == 2
+            assert len(model_outputs) == 2
             return ModelOutputs(
-                logits=bufs[0],
-                next_token_logits=bufs[0],
-                hidden_states=bufs[1],
+                logits=cast(Buffer, model_outputs[0].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                hidden_states=cast(Buffer, model_outputs[1].driver_tensor),
             )
         else:
-            assert len(bufs) == 1
+            assert len(model_outputs) == 1
             return ModelOutputs(
-                logits=bufs[0],
-                next_token_logits=bufs[0],
+                logits=cast(Buffer, model_outputs[0].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
 
     def prepare_initial_token_inputs(

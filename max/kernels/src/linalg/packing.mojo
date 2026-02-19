@@ -196,7 +196,7 @@ struct PackMatrixRows[
                         width = Self.simd_size
                     ](row_global_index)
                 else:
-                    # Not skipping col bound, need to to a partial fill of
+                    # Not skipping col bound, need to do a partial fill of
                     #  the transpose buffer row.
                     row_data = partial_simd_load[Self.simd_size](
                         self.original_matrix._offset(row_global_index),

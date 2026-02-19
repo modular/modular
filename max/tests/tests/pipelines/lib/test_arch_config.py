@@ -65,13 +65,13 @@ def create_mock_pipeline_config(
 ) -> NonCallableMock:
     """Create a mock PipelineConfig for testing."""
     mock_config = NonCallableMock(spec=PipelineConfig)
-    mock_config.max_length = max_length
 
     # Create mock model config
     mock_model = NonCallableMock(spec=MAXModelConfig)
     mock_model.quantization_encoding = quantization_encoding
     mock_model.data_parallel_degree = data_parallel_degree
     mock_model.device_specs = []
+    mock_model.max_length = max_length
 
     # Create mock kv_cache_config
     mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)

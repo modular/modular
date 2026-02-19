@@ -18,6 +18,7 @@ from max.driver import DeviceSpec, accelerator_count
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
+from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -54,10 +55,12 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
     PIPELINE_REGISTRY.register(legacy_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
-        quantization_encoding=SupportedEncoding.float32,
     )
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -90,10 +93,12 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
     PIPELINE_REGISTRY.register(legacy_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.float32,
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
     )
 
     # When use_legacy_module=False but only legacy exists, should fall back
@@ -146,10 +151,12 @@ def test_registry__retrieve_architecture_new_module() -> None:
     PIPELINE_REGISTRY.register(new_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
-        quantization_encoding=SupportedEncoding.float32,
     )
 
     arch_new = PIPELINE_REGISTRY.retrieve_architecture(
@@ -188,10 +195,12 @@ def test_config__use_legacy_module_default_is_true() -> None:
     PIPELINE_REGISTRY.register(legacy_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.float32,
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
     )
 
     assert config.use_legacy_module is True
@@ -222,10 +231,12 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
     PIPELINE_REGISTRY.register(new_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.float32,
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
         use_legacy_module=False,
     )
 
@@ -254,12 +265,14 @@ def test_config__use_legacy_module_false_falls_back_to_legacy_arch() -> None:
 
     # Should succeed by falling back to legacy arch
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        # Use only one GPU since this model does not support multi-GPU inference.
-        device_specs=[DeviceSpec.accelerator()],
-        quantization_encoding=SupportedEncoding.float32,
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            # Use only one GPU since this model does not support multi-GPU inference.
+            device_specs=[DeviceSpec.accelerator()],
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
         use_legacy_module=False,
     )
     assert config.use_legacy_module is False
@@ -287,10 +300,12 @@ def test_registry__retrieve_architecture_falls_back_to_non_legacy() -> None:
     PIPELINE_REGISTRY.register(new_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.float32,
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
     )
 
     # Default use_legacy_module=True, but only non-legacy exists — should fall back
@@ -326,10 +341,12 @@ def test_config__use_legacy_module_with_draft_model() -> None:
     PIPELINE_REGISTRY.register(new_arch)
 
     config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-        quantization_encoding=SupportedEncoding.float32,
+        model=MAXModelConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_length=128,
+        ),
         max_batch_size=1,
-        max_length=128,
         use_legacy_module=False,
     )
 

@@ -27,7 +27,7 @@ from algorithm.functional import IndexList
 from memory import OpaquePointer
 from runtime.asyncrt import DeviceContextPtr
 
-from _common import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 # =============================================================================

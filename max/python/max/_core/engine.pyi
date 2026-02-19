@@ -225,6 +225,21 @@ class Model:
     def replay(self, *inputs: Buffer) -> None:
         """Replay the captured device graph for these inputs."""
 
+    def debug_verify_replay(self, *inputs: Buffer) -> None:
+        """
+        Execute eagerly and verify the launch trace matches the captured graph.
+
+        This method validates that graph capture correctly represents eager execution
+        by running the model and comparing kernel launch traces. Useful for debugging
+        graph capture issues.
+
+        Args:
+            inputs: Input buffers matching the captured input signature.
+
+        Raises:
+            RuntimeError: If no graph captured or trace verification fails.
+        """
+
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
@@ -235,6 +250,11 @@ class Model:
 
     def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
         """Replay the captured device graph."""
+
+    def _debug_verify_replay(
+        self, inputs: Sequence[max._core.driver.Buffer]
+    ) -> None:
+        """Debug verify replay against captured graph."""
 
     def _export_mef(self, path: str) -> None:
         """

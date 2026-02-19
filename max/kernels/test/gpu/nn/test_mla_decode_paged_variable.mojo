@@ -105,7 +105,8 @@ fn run_test_paged_variable[
     for i in range(batch_size):
         if cache_lengths[i] > max_cache_len:
             max_cache_len = cache_lengths[i]
-        total_pages += ceildiv(cache_lengths[i], PAGE_SIZE)
+        # Match production: allocate pages for cache_len + new token
+        total_pages += ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
 
     comptime scale = Float32(0.125)
     comptime group = num_heads
@@ -164,7 +165,8 @@ fn run_test_paged_variable[
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
-    var max_pages_per_batch = ceildiv(max_cache_len, PAGE_SIZE)
+    # Match production: pages cover cache_len + new token
+    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = UnsafePointer[UInt32].alloc(lut_size)
     for i in range(lut_size):
@@ -172,20 +174,20 @@ fn run_test_paged_variable[
 
     var page_offset = 0
     for i in range(batch_size):
-        var num_pages_i = ceildiv(cache_lengths[i], PAGE_SIZE)
+        var num_pages_i = ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
         for p in range(num_pages_i):
             lookup_table_host[i * max_pages_per_batch + p] = UInt32(
                 page_offset + p
             )
         page_offset += num_pages_i
 
-    # Zero out tail slots in each page (tokens beyond cache_len).
+    # Zero out tail slots in each page (tokens beyond num_keys).
     var cur_page = 0
     for bi in range(batch_size):
-        var cl = cache_lengths[bi]
-        var num_pages_i = ceildiv(cl, PAGE_SIZE)
+        var num_keys_i = cache_lengths[bi] + q_max_seq_len
+        var num_pages_i = ceildiv(num_keys_i, PAGE_SIZE)
         for pg in range(num_pages_i):
-            var valid_toks = cl - pg * PAGE_SIZE
+            var valid_toks = num_keys_i - pg * PAGE_SIZE
             if valid_toks > PAGE_SIZE:
                 valid_toks = PAGE_SIZE
             # Zero out tokens [valid_toks, PAGE_SIZE) in this page
@@ -360,16 +362,18 @@ fn run_test_paged_variable[
     # zero-padding effects from shorter caches.
     for b in range(batch_size):
         var cache_len = cache_lengths[b]
+        # num_keys includes the new token (production: cache_len + seq_len)
+        var ref_num_keys = cache_len + q_max_seq_len
 
         # Extract contiguous K for this batch from paged blocks
-        var k_b_size = cache_len * KV_NUM_HEADS * DEPTH
+        var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
         var k_b_host = UnsafePointer[Scalar[kv_type]].alloc(k_b_size)
 
         var page_base_b = 0
         for bi in range(b):
-            page_base_b += ceildiv(cache_lengths[bi], PAGE_SIZE)
+            page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
-        for tok in range(cache_len):
+        for tok in range(ref_num_keys):
             var page_idx = tok // PAGE_SIZE
             var tok_in_page = tok % PAGE_SIZE
             var physical_page = page_base_b + page_idx
@@ -418,7 +422,7 @@ fn run_test_paged_variable[
         var k_b_lt = LayoutTensor[kv_type, layout_4d](
             k_b_device.unsafe_ptr(),
             RuntimeLayout[layout_4d].row_major(
-                Index(1, cache_len, KV_NUM_HEADS, DEPTH)
+                Index(1, ref_num_keys, KV_NUM_HEADS, DEPTH)
             ),
         )
         var ref_b_lt = LayoutTensor[q_type, layout_4d](
@@ -426,7 +430,7 @@ fn run_test_paged_variable[
             RuntimeLayout[layout_4d].row_major(Index(1, 1, num_heads, DEPTH)),
         )
 
-        # Run mha_gpu_naive: batch_size=1, num_keys=cache_len
+        # Run mha_gpu_naive: batch_size=1, num_keys=ref_num_keys
         # K passed as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
             q_b_lt,
@@ -437,7 +441,7 @@ fn run_test_paged_variable[
             scale,
             1,  # batch_size
             1,  # seq_len
-            cache_len,  # num_keys (exact per batch)
+            ref_num_keys,  # num_keys (cache_len + new token)
             num_heads,
             DEPTH,
             group,
@@ -536,7 +540,8 @@ fn run_bench_paged_variable[
     for i in range(batch_size):
         if cache_lengths[i] > max_cache_len:
             max_cache_len = cache_lengths[i]
-        total_pages += ceildiv(cache_lengths[i], PAGE_SIZE)
+        # Match production: allocate pages for cache_len + new token
+        total_pages += ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
 
     comptime scale = Float32(0.125)
 
@@ -583,7 +588,8 @@ fn run_bench_paged_variable[
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
-    var max_pages_per_batch = ceildiv(max_cache_len, PAGE_SIZE)
+    # Match production: pages cover cache_len + new token
+    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = UnsafePointer[UInt32].alloc(lut_size)
     for i in range(lut_size):
@@ -591,20 +597,20 @@ fn run_bench_paged_variable[
 
     var page_offset = 0
     for i in range(batch_size):
-        var num_pages_i = ceildiv(cache_lengths[i], PAGE_SIZE)
+        var num_pages_i = ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
         for p in range(num_pages_i):
             lookup_table_host[i * max_pages_per_batch + p] = UInt32(
                 page_offset + p
             )
         page_offset += num_pages_i
 
-    # Zero out tail slots in each page
+    # Zero out tail slots in each page (tokens beyond num_keys)
     var cur_page = 0
     for bi in range(batch_size):
-        var cl = cache_lengths[bi]
-        var num_pages_i = ceildiv(cl, PAGE_SIZE)
+        var num_keys_i = cache_lengths[bi] + q_max_seq_len
+        var num_pages_i = ceildiv(num_keys_i, PAGE_SIZE)
         for pg in range(num_pages_i):
-            var valid_toks = cl - pg * PAGE_SIZE
+            var valid_toks = num_keys_i - pg * PAGE_SIZE
             if valid_toks > PAGE_SIZE:
                 valid_toks = PAGE_SIZE
             var base = cur_page * _page_stride + valid_toks * _tok_stride

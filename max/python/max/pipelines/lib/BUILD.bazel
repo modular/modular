@@ -17,6 +17,9 @@ modular_py_library(
     ignore_unresolved_imports = [
         # Conditional import at runtime in pixel_tokenizer, architectures already depends on lib
         "max.pipelines.architectures.flux2.system_messages.format_input",
+        # Conditional imports at runtime in speculative_decoding/base.py, architectures already depends on lib
+        "max.pipelines.architectures.deepseekV3.model.DeepseekV3Model",
+        "max.pipelines.architectures.deepseekV3_nextn.model.DeepseekV3NextNModel",
     ],
     deps = [
         "//max/python/max:_core",

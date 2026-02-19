@@ -196,9 +196,6 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         (kernel_rows, TileN, TileK) tile.
         """
         comptime assert b_packed.rank == 3, "b_packed must be rank 3"
-        debug_assert(
-            tile_n_k[1] % 0 == 0, "K dimension must be a multiple of 4"
-        )
 
         var c_stride = c.dim[1]()
 

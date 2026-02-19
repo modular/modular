@@ -1050,30 +1050,24 @@ fn _int_type_of_width[width: Int]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-@always_inline
+@always_inline("builtin")
 fn _uint_type_of_width[width: Int]() -> DType:
+    # fmt: off
     comptime assert width in (
-        8,
-        16,
-        32,
-        64,
-        128,
-        256,
-    ), "width must be either 8, 16, 32, 64, 128, or 256"
-
-    @parameter
-    if width == 8:
-        return DType.uint8
-    elif width == 16:
-        return DType.uint16
-    elif width == 32:
-        return DType.uint32
-    elif width == 64:
-        return DType.uint64
-    elif width == 128:
-        return DType.uint128
-    else:
-        return DType.uint256
+        1, 2, 4, 8, 16, 32, 64, 128, 256,
+    ), "width must be 1, 2, 4, 8, 16, 32, 64, 128, or 256"
+    return (
+        DType._uint1 if width == 1 else
+        DType._uint2 if width == 2 else
+        DType._uint4 if width == 4 else
+        DType.uint8 if width == 8 else
+        DType.uint16 if width == 16 else
+        DType.uint32 if width == 32 else
+        DType.uint64 if width == 64 else
+        DType.uint128 if width == 128 else
+        DType.uint256
+    )
+    # fmt: on
 
 
 # ===-------------------------------------------------------------------===#

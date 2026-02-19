@@ -15,7 +15,6 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -38,7 +37,7 @@ eagle_llama_arch = SupportedArchitecture(
     pipeline_model=EagleLlama3Model,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={

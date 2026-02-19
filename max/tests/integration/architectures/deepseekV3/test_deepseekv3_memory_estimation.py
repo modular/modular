@@ -38,7 +38,7 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
 
     # Pipeline config attributes
     pipeline_config.pipeline_role = pipeline_role
-    pipeline_config.max_length = 1024 * 1024  # ~million tokens
+    pipeline_config.model.max_length = 1024 * 1024  # ~million tokens
     pipeline_config.max_batch_total_tokens = None
     pipeline_config.ep_size = NUM_RANKS
     pipeline_config.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
@@ -62,13 +62,14 @@ def mock_huggingface_config() -> MagicMock:
     huggingface_config.num_nextn_predict_layers = 1
     huggingface_config.vocab_size = 129280
     huggingface_config.n_shared_experts = 1
+    huggingface_config.num_experts_per_tok = 8
 
     return huggingface_config
 
 
 def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
@@ -96,18 +97,18 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     assert huggingface_config is not None
 
     # For DecodeOnly, we only need to consider moe_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 6442450944
+    assert mem == 17966301184
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.PrefillAndDecode)
+    pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 549755813888
+    assert mem == 561279664128
 
 
 def mock_weights_pipeline_config(

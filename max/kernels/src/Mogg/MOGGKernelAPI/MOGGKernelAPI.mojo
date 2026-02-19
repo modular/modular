@@ -219,6 +219,7 @@ from nn.normalization import (
     group_norm,
     layer_norm,
     rms_norm,
+    rms_norm_fused_fp8,
     rms_norm_fused_residual_add,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
@@ -415,6 +416,7 @@ struct Range:
         dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
+        use_blocking_impl: Bool = False,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=1],
         start: Scalar[dtype],
@@ -433,6 +435,7 @@ struct Range:
             func,
             target=target,
             _trace_name=_trace_name,
+            use_blocking_impl=use_blocking_impl,
         ](output, ctx)
 
     @staticmethod
@@ -2157,6 +2160,7 @@ struct Slice:
         static_steps: DimList,
         dtype: DType,
         rank: Int,
+        use_blocking_impl: Bool = False,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         input: InputTensor[dtype=dtype, rank=rank],
@@ -2172,6 +2176,7 @@ struct Slice:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
+            use_blocking_impl=use_blocking_impl,
         ](output, view_tensor, ctx)
 
     @staticmethod
@@ -3577,6 +3582,69 @@ struct RMSNorm:
         return input.shape()
 
 
+@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
+struct RMSNormFusedQuantizeDynamicScaledFP8:
+    @staticmethod
+    fn execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        scale_dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=rank],
+        scales: OutputTensor[dtype=scale_dtype, rank=rank],
+        input: FusedInputTensor[dtype=input_dtype, rank=rank],
+        gamma: InputTensor[dtype=input_dtype, rank=1],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        rms_norm_fused_fp8[
+            input_dtype,
+            output_dtype,
+            scale_dtype,
+            rank,
+            input_fn,
+            target=target,
+        ](
+            input.shape(),
+            managed_tensor_slice_to_ndbuffer(output),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+            scale_ub,
+            managed_tensor_slice_to_ndbuffer(scales),
+        )
+
+    @staticmethod
+    fn shape[
+        input_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=input_dtype, rank=rank],
+        gamma: InputTensor[dtype=input_dtype, rank=1],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
 @compiler.register("group_norm")
 struct GroupNorm:
     @staticmethod
@@ -3864,6 +3932,7 @@ struct BatchMatmul:
         rank: Int,
         transpose_b: Bool,
         target: StaticString,
+        single_thread_blocking_override: Bool = False,
     ](
         c: _FusedComputeOutputTensor[rank=rank],
         a: InputTensor[rank=rank],
@@ -3905,7 +3974,7 @@ struct BatchMatmul:
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
-            single_thread_blocking_override=False,
+            single_thread_blocking_override=single_thread_blocking_override,
             target=target,
         ](c_buffer, a_buffer, b_buffer, context=ctx)
 

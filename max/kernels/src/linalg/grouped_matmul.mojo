@@ -1124,9 +1124,6 @@ fn grouped_matmul[
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,
         )
-        comptime assert (
-            K % BK == 0
-        ), "b_shape[2] must be a multiple of BK. Got " + String(K)
 
         grouped_matmul_sm100_persistent[
             transpose_b=transpose_b,

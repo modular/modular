@@ -30,7 +30,6 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     PipelineConfig,
-    RopeType,
     upper_bounded_default,
 )
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
@@ -133,12 +132,12 @@ class Llama3Config(ArchConfigWithKVCache):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
@@ -164,7 +163,7 @@ class Llama3Config(ArchConfigWithKVCache):
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == "normal"
         )
 
         device_refs = [

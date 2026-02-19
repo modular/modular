@@ -62,7 +62,7 @@ fn _rms_norm_fused_residual_cpu_2d[
     residual_read_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -200,7 +200,7 @@ fn rms_norm_fused_residual_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -414,8 +414,8 @@ fn rms_norm_fused_residual_gpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    shape: IndexList[rank, **_],
-    gamma: LayoutTensor[dtype, **_],
+    shape: IndexList[rank, ...],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -535,7 +535,7 @@ fn _rms_norm_fused_residual_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
@@ -655,7 +655,7 @@ fn rms_norm_fused_residual[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,

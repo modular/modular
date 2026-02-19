@@ -11,10 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import OwnedKwargsDict, _GROUP_WIDTH
+from collections.dict import (
+    Dict,
+    DictKeyError,
+    EmptyDictError,
+    OwnedKwargsDict,
+    _GROUP_WIDTH,
+)
+
 from hashlib import Hasher, default_comp_time_hasher
 
-from test_utils import CopyCounter
+from test_utils import CopyCounter, check_write_to
 from testing import (
     assert_equal,
     assert_false,
@@ -126,29 +133,23 @@ def test_big_dict():
 
 
 def test_dict_string_representation_string_int():
-    var some_dict: Dict[String, Int] = {}
-    some_dict["a"] = 1
-    some_dict["b"] = 2
-    dict_as_string = some_dict.__str__()
-    assert_true(
-        some_dict._minimum_size_of_string_representation()
-        <= len(dict_as_string)
+    var d: Dict[String, Int] = {"a": 1, "b": 2}
+    check_write_to(d, expected="{a: 1, b: 2}", is_repr=False)
+    check_write_to(
+        d,
+        expected="Dict[String, Int]({'a': Int(1), 'b': Int(2)})",
+        is_repr=True,
     )
-    assert_equal(dict_as_string, "{'a': 1, 'b': 2}")
 
 
 def test_dict_string_representation_int_int():
-    var some_dict: Dict[Int, Int] = {}
-    some_dict[3] = 1
-    some_dict[4] = 2
-    some_dict[5] = 3
-    some_dict[6] = 4
-    dict_as_string = some_dict.__str__()
-    # one char per key and value, we should have the minimum size of string possible
-    assert_equal(
-        some_dict._minimum_size_of_string_representation(), len(dict_as_string)
+    var d: Dict[Int, Int] = {1: 2, 3: 4}
+    check_write_to(d, expected="{1: 2, 3: 4}", is_repr=False)
+    check_write_to(
+        d,
+        expected="Dict[Int, Int]({Int(1): Int(2), Int(3): Int(4)})",
+        is_repr=True,
     )
-    assert_equal(dict_as_string, "{3: 1, 4: 2, 5: 3, 6: 4}")
 
 
 def test_dict_string_representation_custom_hasher():
@@ -720,8 +721,9 @@ def test_dict_repr_wrap():
     assert_equal(
         repr(tmp_dict),
         (
-            "{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
-            " 1](2.0)}"
+            "Dict[String, SIMD[DType.float64, 1]]"
+            "({'one': SIMD[DType.float64, 1](1.0), "
+            "'two': SIMD[DType.float64, 1](2.0)})"
         ),
     )
 
@@ -742,6 +744,18 @@ def test_popitem_no_copies():
     assert_equal(len(dict), 0)
     with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
+
+
+def test_dict_key_error_repr():
+    var e = DictKeyError[Int]()
+    check_write_to(e, expected="DictKeyError[Int]()", is_repr=False)
+    check_write_to(e, expected="DictKeyError[Int]()", is_repr=True)
+
+
+def test_empty_dict_error_repr():
+    var e = EmptyDictError()
+    check_write_to(e, expected="EmptyDictError()", is_repr=False)
+    check_write_to(e, expected="EmptyDictError()", is_repr=True)
 
 
 def test_high_fill():
