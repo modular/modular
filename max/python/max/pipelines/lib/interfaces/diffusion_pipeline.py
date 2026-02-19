@@ -16,15 +16,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import Buffer, CPU, Accelerator
-from max.engine import InferenceSession
+from max.driver import CPU, Accelerator
+from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
@@ -40,6 +41,9 @@ if TYPE_CHECKING:
     from max.engine import InferenceSession
 
     from ..config import PipelineConfig
+
+CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
+CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
 
 
 class DiffusionPipeline(ABC):
@@ -448,7 +452,7 @@ class PixelModelInputs:
 class CompileWrapper:
     def __init__(
         self,
-        compile_target: Callable | Module,
+        compile_target: CompileTarget,
         input_types: Iterable[TensorType] | None = None,
     ) -> None:
         """Initialize the CompileWrapper.
@@ -460,18 +464,25 @@ class CompileWrapper:
         Raises:
             ValueError: If input_types is not provided.
         """
+        target_name = (
+            compile_target.__name__
+            if not isinstance(compile_target, Module)
+            else type(compile_target).__name__
+        )
         if input_types is None:
             raise ValueError(
-                f"input_types must be provided for compilation of {compile_target.__name__}."
+                f"input_types must be provided for compilation of {target_name}."
             )
 
-        self.is_module = False
+        input_types_tuple = tuple(input_types)
+        self._compiled_module: Callable[..., Any] | None = None
+        self._compiled_model: Model | None = None
+
         if isinstance(compile_target, Module):
-            self.is_module = True
-            self.session = compile_target.compile(input_types)
+            self._compiled_module = compile_target.compile(*input_types_tuple)
             return
 
-        with Graph(compile_target.__name__, input_types=input_types) as graph:
+        with Graph(compile_target.__name__, input_types=input_types_tuple) as graph:
             output = compile_target(*graph.inputs)
             if isinstance(output, Iterable):
                 graph.output(*output)
@@ -479,13 +490,13 @@ class CompileWrapper:
                 graph.output(output)
             compiled_graph = graph
 
-        if any(input_type.device.is_gpu() for input_type in input_types):
+        device: CPU | Accelerator
+        if any(input_type.device.is_gpu() for input_type in input_types_tuple):
             device = Accelerator()
         else:
             device = CPU()
         session = InferenceSession([device])
-        loaded_session = session.load(compiled_graph)
-        self.session = loaded_session
+        self._compiled_model = session.load(compiled_graph)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Tensor | list[Tensor]:
         """Execute the compiled session with the given arguments.
@@ -497,13 +508,18 @@ class CompileWrapper:
         Returns:
             The result of the session execution.
         """
-        if self.is_module:
-            return self.session(*args, **kwargs)
-        
+        if self._compiled_module is not None:
+            return self._compiled_module(*args, **kwargs)
+
+        if self._compiled_model is None:
+            raise RuntimeError("CompileWrapper has no compiled target.")
+
         normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
-        normalized_kwargs = {key: self._unwrap_tensor(val) for key, val in kwargs.items()}
-        outputs: list[Buffer] = self.session.execute(*normalized_args, **normalized_kwargs)
-        outputs = [Tensor.from_dlpack(output) for output in outputs]
+        normalized_kwargs = {
+            key: self._unwrap_tensor(val) for key, val in kwargs.items()
+        }
+        buffers = self._compiled_model(*normalized_args, **normalized_kwargs)
+        outputs = [Tensor.from_dlpack(buffer) for buffer in buffers]
         return outputs[0] if len(outputs) == 1 else outputs
 
     @staticmethod
@@ -516,9 +532,9 @@ class CompileWrapper:
             return value
 
 def max_compile(
-    compile_target: Callable | Module | None = None,
+    compile_target: CompileTarget | None = None,
     input_types: Iterable[TensorType] | None = None,
-) -> Callable[[Callable | Module], CompileWrapper] | CompileWrapper:
+) -> CompileDecorator | CompileWrapper:
     """Decorator or function to compile a target with specified input types.
 
     Args:
@@ -530,7 +546,7 @@ def max_compile(
     """
     if compile_target is None:
 
-        def decorator(f: Callable | Module) -> CompileWrapper:
+        def decorator(f: CompileTarget) -> CompileWrapper:
             return CompileWrapper(f, input_types)
 
         return decorator

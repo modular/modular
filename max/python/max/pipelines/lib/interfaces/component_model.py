@@ -44,12 +44,16 @@ class ComponentModel(ABC):
     def load_model(self) -> Callable[..., Any]:
         """Load and return a runtime model instance."""
         ...
-    
+
     def unwrap_model(self) -> Model | None:
-        if not hasattr(self, "model"):
+        model: Any = getattr(self, "model", None)
+        if model is None:
             return None
 
-        while hasattr(self.model, "__wrapped__"):
-            self.model = self.model.__wrapped__
+        while hasattr(model, "__wrapped__"):
+            model = model.__wrapped__
 
-        return self.model
+        if isinstance(model, Model):
+            setattr(self, "model", model)
+            return model
+        return None
