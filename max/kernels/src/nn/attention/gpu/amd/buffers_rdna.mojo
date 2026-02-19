@@ -692,7 +692,7 @@ struct QRegisterBufferRDNA[
         return Self.reg_dtype
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor[Self.dtype, **_]):
+    fn __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
         self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
         var warp_row = get_rdna_warp_coords[Self.BN, Self.WN]()[0]
@@ -813,7 +813,7 @@ struct OutputRegisterBufferRDNA[
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, **_]):
+    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
         """Apply softmax denominator normalization to output accumulator."""
 
         @parameter

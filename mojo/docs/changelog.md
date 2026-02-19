@@ -257,6 +257,9 @@ what we publish.
 
 ### Language changes
 
+- `**_` and `*_` are no longer supported in parameter binding lists. Use a more
+  concise `...` to unbind any unspecified parameter explicitly.
+
 - The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
   to standardize construction. As such, the argument name for `__moveinit__`
   must now be named `take` and the argument name for `__copyinit__` must now be
