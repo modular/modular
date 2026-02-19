@@ -164,7 +164,7 @@ void ParametricIREvaluator::setDeclBindings(Operation *op,
                                             ArrayRef<TypedAttr> paramValues) {
   if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
     for (auto [decl, attr] : llvm::zip(gen.getInputParams(), paramValues)) {
-      getCurrentParamEval().overwriteDeclBinding(decl, attr);
+      getCurrentParamEvalFrame().evaluator.overwriteDeclBinding(decl, attr);
     }
   }
 }
@@ -174,8 +174,8 @@ void ParametricIREvaluator::clearParameterCache() {}
 void ParametricIREvaluator::pushEvalFrame(Operation *op, Region *region,
                                           llvm::ArrayRef<TypedAttr> paramValues,
                                           int id) {
-  ParametricParameterEvaluator curr(paramEvaluators.back());
-  curr.setEvaluationContext(this);
+  ParameterEvaluatorFrame curr(paramEvalFrames.back().evaluator);
+  curr.evaluator.setEvaluationContext(this);
 
   ParameterExprArrayAttr paramValueAttr;
   SmallVector<TypedAttr> pValues;
@@ -193,7 +193,7 @@ void ParametricIREvaluator::pushEvalFrame(Operation *op, Region *region,
   auto tlIter = elaborator->tlParamInterpCache->find({region, paramValueAttr});
 
   if (tlIter != elaborator->tlParamInterpCache->end()) {
-    curr.setRewritten(tlIter->second);
+    curr.evaluator.setRewritten(tlIter->second);
     curr.foundCached = true;
   } else {
     std::optional<DenseMap<std::pair<size_t, const void *>, const void *>>
@@ -209,7 +209,7 @@ void ParametricIREvaluator::pushEvalFrame(Operation *op, Region *region,
             });
 
     if (result) {
-      curr.setRewritten(std::move(*result));
+      curr.evaluator.setRewritten(std::move(*result));
       curr.foundCached = true;
     } else {
       bool clearCache = !isa<ParamIfOp>(op);
@@ -218,18 +218,17 @@ void ParametricIREvaluator::pushEvalFrame(Operation *op, Region *region,
         clearCache = g.hasParams || !gen.getInputParams().empty();
       }
       if (clearCache)
-        curr.clearCache();
+        curr.evaluator.clearCache();
     }
   }
 
-  paramEvaluators.push_back(std::move(curr));
+  paramEvalFrames.push_back(std::move(curr));
 }
 
 void ParametricIREvaluator::popEvalFrame() {
-  ParametricParameterEvaluator &back = paramEvaluators.back();
+  ParameterEvaluatorFrame &back = paramEvalFrames.back();
   if (!back.foundCached && back.cachedRegionKey) {
-    // set the cache
-    auto &rewritten = back.getRewritten();
+    auto &rewritten = back.evaluator.getRewritten();
     if (!rewritten.empty()) {
       (*elaborator
             ->tlParamInterpCache)[{back.cachedRegionKey, back.cachedAttrKey}] =
@@ -240,13 +239,13 @@ void ParametricIREvaluator::popEvalFrame() {
     }
   }
 
-  paramEvaluators.pop_back();
+  paramEvalFrames.pop_back();
 }
 
 void ParametricIREvaluator::popEvalFrame(size_t size) {
-  assert(paramEvaluators.size() >= size && "popEvalFrame failed!");
-  paramEvaluators.erase(paramEvaluators.begin() + size - 1,
-                        paramEvaluators.end());
+  assert(paramEvalFrames.size() >= size && "popEvalFrame failed!");
+  paramEvalFrames.erase(paramEvalFrames.begin() + size - 1,
+                        paramEvalFrames.end());
 }
 
 void ParametricIREvaluator::pushParamValues(llvm::ArrayRef<TypedAttr> values,
@@ -714,7 +713,7 @@ void ParametricIREvaluator::withEvaluator(
   nestedEvaluator.pushParamValues(paramValues, true);
   for (auto [param, value] : llvm::zip(paramDecls, paramValues))
     nestedEvaluator.overwriteDeclBinding(param, value);
-  callback(nestedEvaluator.getCurrentParamEval());
+  callback(nestedEvaluator.getCurrentParamEvalFrame().evaluator);
 }
 
 void ParametricIREvaluator::emitMaterializationError(const Twine &message) {
@@ -765,31 +764,24 @@ ParametricIREvaluator::ParametricIREvaluator(ParametricElaborator &elaborator,
                                              PImplNode *parent)
     : IREvaluatorContext(elaborator.env, elaborator.getTarget().getContext(),
                          this),
-      ParametricParameterEvaluator(),
       ParametricIRInterpreter(elaborator.config.maxDepth,
                               elaborator.getTarget()),
       elaborator(&elaborator), parent(parent) {
-  setEvaluationContext(this);
-  paramEvaluators.emplace_back(*this);
-  paramEvaluators.back().setEvaluationContext(this);
+  paramEvalFrames.emplace_back();
+  paramEvalFrames.back().evaluator.setEvaluationContext(this);
 }
 
 ParametricIREvaluator::ParametricIREvaluator(const ParametricIREvaluator &other)
     : IREvaluatorContext(other.elaborator->env, other.getTarget().getContext(),
                          this),
-      ParametricParameterEvaluator(other),
       ParametricIRInterpreter(other.maxDepth, other.getTarget()),
       elaborator(other.elaborator), parent(other.parent) {
-  setEvaluationContext(this);
-  // This is weird, should move this initialization somewhere else.
   nestedStackDepth = other.nestedStackDepth + other.stack.size();
   this->errorLoc = other.errorLoc;
   this->emitError = other.emitError;
-  if (!other.paramEvaluators.empty()) {
-    const ParametricParameterEvaluator &eval = other.paramEvaluators.back();
-    this->paramEvaluators.push_back(ParametricParameterEvaluator(
-        eval.getDeclBindings(), eval.getIndexBindings(), eval.inputDepth));
-    this->paramEvaluators.back().setEvaluationContext(this);
+  if (!other.paramEvalFrames.empty()) {
+    this->paramEvalFrames.emplace_back(other.paramEvalFrames.back().evaluator);
+    this->paramEvalFrames.back().evaluator.setEvaluationContext(this);
   }
 }
 
@@ -799,7 +791,7 @@ ParametricIREvaluator::ParametricIREvaluator(const ParametricIREvaluator &other)
 ErrorTreeOr<Attribute>
 ParametricIREvaluator::concretizeParameterExpr(PImplNode *parent, Location loc,
                                                Attribute expr) {
-  // FIXME: Refactor ParametricParameterEvaluator for better error propagation.
+  // FIXME: Refactor ParameterEvaluator for better error propagation.
   this->parent = parent;
   errorLoc = loc;
   std::optional<ErrorTree> error;
@@ -858,7 +850,7 @@ ParametricIREvaluator::concretizeParameterExpr(PImplNode *parent, Location loc,
 ErrorTreeOr<Type>
 ParametricIREvaluator::concretizeParameterExpr(PImplNode *parent, Location loc,
                                                Type expr) {
-  // FIXME: Refactor ParametricParameterEvaluator for better error propagation.
+  // FIXME: Refactor ParameterEvaluator for better error propagation.
   this->parent = parent;
   errorLoc = loc;
   std::optional<ErrorTree> error;

@@ -376,28 +376,15 @@ struct PartiallySpecializedInputParams {
 };
 
 //===----------------------------------------------------------------------===//
-// ParameterEvaluator for ParametricElaborator that
-// does parametric interpreting
+// ParameterEvaluatorFrame
 //===----------------------------------------------------------------------===//
-class ParametricParameterEvaluator : public ParameterEvaluator {
-public:
-  /// Instantiate a new parameter evaluator with the given parameter values.
-  ParametricParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
-                               ArrayRef<TypedAttr> declBindings);
-  /// Instantiate a new parameter evaluator with the given input parameters.
-  ParametricParameterEvaluator(ArrayRef<TypedAttr> declBindings);
 
-  /// Instantiate a new parameter evaluator with the given parameter values.
-  ParametricParameterEvaluator(
-      DenseMap<StringAttr, TypedAttr> declBindings =
-          DenseMap<StringAttr, TypedAttr>(),
-      ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
-      size_t inputDepth = 0);
-
-  /// Fields added for interpreting parametric functions
-  /// for memorizing ParameterReplacer's rewritten cache
-  /// to avoid having to rebuild the cache when re-entering the same
-  /// parameter domain with the same parameters.
+/// A per-stack-frame wrapper around ParameterEvaluator used by the parametric
+/// elaborator's interpreter. Holds the evaluator plus caching metadata for the
+/// ParameterReplacer's rewritten cache, allowing cache reuse when re-entering
+/// the same parameter domain with the same parameters.
+struct ParameterEvaluatorFrame {
+  ParameterEvaluator evaluator;
 
   /// Operation as part of cache key.
   Operation *cachedOpKey = nullptr;
@@ -407,6 +394,10 @@ public:
   ParameterExprArrayAttr cachedAttrKey;
   /// A flag to note if the cache has been memorized.
   bool foundCached = false;
+
+  ParameterEvaluatorFrame() = default;
+  explicit ParameterEvaluatorFrame(const ParameterEvaluator &eval)
+      : evaluator(eval) {}
 };
 
 } // namespace M::KGEN

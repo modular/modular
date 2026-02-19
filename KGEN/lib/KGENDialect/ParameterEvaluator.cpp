@@ -563,18 +563,3 @@ PartiallySpecializedInputParams::from(
 
   return result;
 }
-
-/// Instantiate a new parameter evaluator with the given parameter values.
-ParametricParameterEvaluator::ParametricParameterEvaluator(
-    ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> declBindings)
-    : ParameterEvaluator(paramDecls, declBindings) {}
-/// Instantiate a new parameter evaluator with the given input parameters.
-ParametricParameterEvaluator::ParametricParameterEvaluator(
-    ArrayRef<TypedAttr> declBindings)
-    : ParameterEvaluator(declBindings) {}
-
-/// Instantiate a new parameter evaluator with the given parameter values.
-ParametricParameterEvaluator::ParametricParameterEvaluator(
-    DenseMap<StringAttr, TypedAttr> declBindings,
-    ArrayRef<TypedAttr> indexBindings, size_t inputDepth)
-    : ParameterEvaluator(declBindings, indexBindings, inputDepth) {}
