@@ -69,7 +69,7 @@ def mock_huggingface_config() -> MagicMock:
 
 def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
@@ -97,14 +97,14 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     assert huggingface_config is not None
 
     # For DecodeOnly, we only need to consider moe_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
     assert mem == 17966301184
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.PrefillAndDecode)
+    pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )

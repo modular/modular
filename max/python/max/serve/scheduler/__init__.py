@@ -41,7 +41,6 @@ from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
-    PipelineRole,
     TextGenerationPipeline,
 )
 from max.pipelines.lib.audio_generator_pipeline import (
@@ -178,7 +177,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             kv_cache=kv_cache,
         )
-    elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
+    elif pipeline_config.pipeline_role == "prefill_and_decode":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_text_generation_scheduler(
             text_pipeline,
@@ -192,7 +191,7 @@ def load_scheduler(
             ),
             cancel_queue=cancel_queue,
         )
-    elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
+    elif pipeline_config.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_decode_scheduler(
             text_pipeline,
@@ -207,7 +206,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             settings=settings,
         )
-    elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
+    elif pipeline_config.pipeline_role == "prefill_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:

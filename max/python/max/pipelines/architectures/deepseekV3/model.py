@@ -37,7 +37,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
@@ -113,9 +112,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+        if self.pipeline_config.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+        elif self.pipeline_config.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
@@ -308,7 +307,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
         # should be limited by max_batch_total_tokens.
-        if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
+        if pipeline_config.pipeline_role != "decode_only":
             max_kv_length: int = 0
 
             if pipeline_config.max_batch_total_tokens is None:
@@ -609,7 +608,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Need by MLA
         # prefill.
-        if self.pipeline_config.pipeline_role is not PipelineRole.DecodeOnly:
+        if self.pipeline_config.pipeline_role != "decode_only":
 
             def align_length(length: int) -> int:
                 page_size = self.kv_cache_config.kv_cache_page_size

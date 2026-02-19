@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
+from .config_enums import RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -142,7 +142,7 @@ def get_pipeline_for_task(
         role = pipeline_config.pipeline_role
         if (
             task == PipelineTask.TEXT_GENERATION
-            and role == PipelineRole.PrefillAndDecode
+            and role == "prefill_and_decode"
         ):
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(

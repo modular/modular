@@ -30,7 +30,6 @@ from max.pipelines.lib import (
     LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
-    PipelineRole,
     SamplingConfig,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
@@ -1312,7 +1311,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                 model_path="test/model",
                 device_specs=[DeviceSpec.accelerator()],
             ),
-            pipeline_role=PipelineRole.PrefillOnly,
+            pipeline_role="prefill_only",
         )
         config._validate_and_resolve_overlap_scheduler()
         assert config.enable_overlap_scheduler is False
@@ -1396,7 +1395,7 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             model_path="test/model",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        pipeline_role=PipelineRole.PrefillOnly,
+        pipeline_role="prefill_only",
         enable_overlap_scheduler=True,
     )
     with pytest.raises(ValueError):
@@ -1408,7 +1407,7 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             model_path="test/model",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        pipeline_role=PipelineRole.PrefillAndDecode,
+        pipeline_role="prefill_and_decode",
         audio_decoder=Mock(),
         enable_overlap_scheduler=True,
     )

@@ -37,7 +37,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -286,7 +285,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
 
-        if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
+        if pipeline_config.pipeline_role != "decode_only":
             max_kv_length: int = 0
 
             if pipeline_config.max_batch_total_tokens is None:
@@ -615,7 +614,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Needed by MLA prefill.
-        if self.pipeline_config.pipeline_role is not PipelineRole.DecodeOnly:
+        if self.pipeline_config.pipeline_role != "decode_only":
             for i, batch in enumerate(replica_batches):
                 curr_length = sum([ctx.tokens.active_length for ctx in batch])
                 self._batch_context_lengths_prealloc_cpu[i][0] = curr_length

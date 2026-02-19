@@ -78,7 +78,7 @@ class PipelineConfig(ConfigFileModel):
     model_config = ConfigDict(extra="ignore")
 
     pipeline_role: PipelineRole = Field(
-        default=PipelineRole.PrefillAndDecode,
+        default="prefill_and_decode",
         description=(
             "Whether the pipeline should serve both a prefill or decode role or "
             "both."
@@ -891,7 +891,7 @@ class PipelineConfig(ConfigFileModel):
                     "DeepseekV3_2ForCausalLM_Legacy",
                     "DeepseekV3ForCausalLMNextN_Legacy",
                 )
-                and self.pipeline_role == PipelineRole.PrefillAndDecode
+                and self.pipeline_role == "prefill_and_decode"
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
                 and not self.speculative
@@ -907,7 +907,7 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.enable_overlap_scheduler:
-            if self.pipeline_role != PipelineRole.PrefillAndDecode:
+            if self.pipeline_role != "prefill_and_decode":
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
                     "It is only supported with the PrefillAndDecode pipeline role. "
