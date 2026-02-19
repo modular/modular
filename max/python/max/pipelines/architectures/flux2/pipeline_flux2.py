@@ -417,47 +417,6 @@ class Flux2Pipeline(DiffusionPipeline):
         return Flux2ModelInputs.from_context(context)
 
     @staticmethod
-    def _prepare_image_ids(
-        image_latents: list[Tensor],
-        scale: int = 10,
-        device: DeviceRef | None = None,
-    ) -> Tensor:
-        if not isinstance(image_latents, list):
-            raise ValueError(
-                f"Expected `image_latents` to be a list, got {type(image_latents)}."
-            )
-
-        if len(image_latents) == 0:
-            raise ValueError("Expected at least one image latent in the list.")
-
-        if device is None:
-            device = image_latents[0].device
-
-        image_latent_ids = []
-
-        for i, latent in enumerate(image_latents):
-            latent_squeezed = F.squeeze(latent, axis=0)
-            _, height, width = map(int, latent_squeezed.shape)
-            t_coord = scale + scale * i
-            t_coords = np.full((height, width), t_coord, dtype=np.int64)
-            h_coords, w_coords = np.meshgrid(
-                np.arange(height, dtype=np.int64),
-                np.arange(width, dtype=np.int64),
-                indexing="ij",
-            )
-            l_coords = np.zeros((height, width), dtype=np.int64)
-
-            coords = np.stack([t_coords, h_coords, w_coords, l_coords], axis=-1)
-            coords = coords.reshape(-1, 4)
-            coords_tensor = Tensor.from_dlpack(coords).to(device)
-            image_latent_ids.append(coords_tensor)
-
-        image_latent_ids = F.concat(image_latent_ids, axis=0)
-        image_latent_ids = F.unsqueeze(image_latent_ids, 0)
-
-        return image_latent_ids
-
-    @staticmethod
     def retrieve_latents(
         encoder_output: "DiagonalGaussianDistribution",
         generator: Any = None,
@@ -626,11 +585,11 @@ class Flux2Pipeline(DiffusionPipeline):
         driver_inputs = [hs.driver_tensor for hs in selected]
         prompt_embeds = Tensor.from_dlpack(prompt_embed_model.execute(*driver_inputs)[0])
 
-        # if num_images_per_prompt != 1:
-        #     prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
-        #     prompt_embeds = F.reshape(
-        #         prompt_embeds, [batch_size * num_images_per_prompt, seq_len, -1]
-        #     )
+        if num_images_per_prompt != 1:
+            prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
+            prompt_embeds = F.reshape(
+                prompt_embeds, [batch_size * num_images_per_prompt, seq_len, -1]
+            )
         
         bs_embed = prompt_embeds.shape[0].dim
         seq_len = prompt_embeds.shape[1].dim
@@ -714,33 +673,6 @@ class Flux2Pipeline(DiffusionPipeline):
         if img.ndim == 3 and img.shape[0] == 3:
             img = np.transpose(img, (1, 2, 0))
         return img.astype(np.float32, copy=False)
-
-    @staticmethod
-    def _prepare_text_ids(
-        batch_size: int,
-        seq_len: int,
-        device: DeviceRef,
-    ) -> Tensor:
-        """Create 4D text position IDs in (T, H, W, L) format.
-
-        For text tokens:
-            T = 0, H = 0, W = 0, and L indexes the token position [0..seq_len-1].
-
-        Returns:
-            Tensor[int64] of shape (batch_size, seq_len, 4).
-        """
-        coords = np.stack(
-            [
-                np.zeros(seq_len, dtype=np.int64),  # T
-                np.zeros(seq_len, dtype=np.int64),  # H
-                np.zeros(seq_len, dtype=np.int64),  # W
-                np.arange(seq_len, dtype=np.int64),  # L
-            ],
-            axis=-1,
-        )  # (seq_len, 4)
-
-        text_ids = np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
-        return Tensor.from_dlpack(text_ids).to(device)
 
     def _preprocess_latents(
         self, latents: np.ndarray, latent_image_ids: Tensor, dtype: DType
