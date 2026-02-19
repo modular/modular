@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from queue import Queue
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from max import functional as F
@@ -59,8 +59,6 @@ class Flux2KleinPipelineOutput:
 
 class Flux2KleinPipeline(Flux2Pipeline):
     """Flux2 Klein diffusion pipeline with Qwen3 text encoder."""
-
-    text_encoder: Qwen3TextEncoderModel
 
     components = {
         "vae": Flux2Pipeline.components["vae"],
@@ -165,24 +163,27 @@ class Flux2KleinPipeline(Flux2Pipeline):
     def _prepare_prompt_embeddings(
         self,
         tokens: TokenBuffer,
-        attention_mask: np.ndarray | None = None,
         num_images_per_prompt: int = 1,
+        hidden_states_layers: list[int] | None = None,
+        *,
+        attention_mask: np.ndarray | None = None,
     ) -> tuple[Tensor, Tensor]:
         prompt_embeds = self._get_qwen3_prompt_embeds(
-            tokens=tokens, attention_mask=attention_mask
+            tokens=tokens,
+            attention_mask=attention_mask,
+            hidden_states_layers=hidden_states_layers,
         )
-        bs_embed, seq_len, _ = prompt_embeds.shape
+        batch_size = int(prompt_embeds.shape[0])
+        seq_len = int(prompt_embeds.shape[1])
 
         prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
         prompt_embeds = prompt_embeds.reshape(
-            (bs_embed.dim * num_images_per_prompt, seq_len, -1)
+            (batch_size * num_images_per_prompt, seq_len, -1)
         )
 
-        batch_size = bs_embed.dim * num_images_per_prompt
-        text_seq_len = seq_len.dim if hasattr(seq_len, "dim") else seq_len
         text_ids = self._prepare_text_ids(
-            batch_size=batch_size,
-            seq_len=text_seq_len,
+            batch_size=batch_size * num_images_per_prompt,
+            seq_len=seq_len,
             device=self.text_encoder.devices[0],
         )
         return prompt_embeds, text_ids
