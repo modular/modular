@@ -219,6 +219,7 @@ from nn.normalization import (
     group_norm,
     layer_norm,
     rms_norm,
+    rms_norm_fused_fp8,
     rms_norm_fused_residual_add,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
@@ -3577,6 +3578,69 @@ struct RMSNorm:
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
+struct RMSNormFusedQuantizeDynamicScaledFP8:
+    @staticmethod
+    fn execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        scale_dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=rank],
+        scales: OutputTensor[dtype=scale_dtype, rank=rank],
+        input: FusedInputTensor[dtype=input_dtype, rank=rank],
+        gamma: InputTensor[dtype=input_dtype, rank=1],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        rms_norm_fused_fp8[
+            input_dtype,
+            output_dtype,
+            scale_dtype,
+            rank,
+            input_fn,
+            target=target,
+        ](
+            input.shape(),
+            managed_tensor_slice_to_ndbuffer(output),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+            scale_ub,
+            managed_tensor_slice_to_ndbuffer(scales),
+        )
+
+    @staticmethod
+    fn shape[
+        input_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=input_dtype, rank=rank],
+        gamma: InputTensor[dtype=input_dtype, rank=1],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
     ) -> IndexList[rank]:
         return input.shape()
 
