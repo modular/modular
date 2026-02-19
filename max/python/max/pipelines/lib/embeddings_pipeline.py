@@ -104,7 +104,6 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=huggingface_config,
             devices=devices,
             kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=weights,

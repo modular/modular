@@ -95,7 +95,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -107,14 +106,14 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         Args:
             pipeline_config: Pipeline configuration
             session: Inference session
-            huggingface_config: HuggingFace model configuration
             devices: List of devices
+            kv_cache_config: KV cache configuration
             weights: Model weights
             adapter: Optional weight adapter
+            return_logits: Return logits mode
         """
         self.pipeline_config = pipeline_config
         self.session = session
-        self.huggingface_config = huggingface_config
         self.devices = devices
 
         # Build and compile graph
