@@ -21,7 +21,6 @@ class ExprNode;
 class FnOp;
 class FnTypeGeneratorType;
 class LITGeneratorType;
-class ParserParameterEvaluator;
 class PogListAttr;
 class PValue;
 class StructDeclOp;

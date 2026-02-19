@@ -565,7 +565,7 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
 
   // Figure out the callee.  We synthesize a bound reference to the callee
   // making up nonsense parameter bindings.
-  ParserParameterEvaluator evaluator(shared);
+  ParameterEvaluator evaluator = shared.getParameterEvaluator();
   SmallVector<TypedAttr> params;
   for (auto paramDecl : fnOp.collectAllParams(/*implOrigins*/ false)) {
     params.push_back(

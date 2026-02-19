@@ -473,8 +473,8 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       if (findUnboundParams.wasInterrupted())
         return {};
 
-      ParserParameterEvaluator evaluator(emitter.shared, structDecl.getParams(),
-                                         paramValues);
+      ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator(
+          structDecl.getParams(), paramValues);
       return evaluator.getReboundAttribute(aliasValue);
     }
 
@@ -489,8 +489,8 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
           cast<StructDeclOp>(structAstDecl.getIfOperation());
       assert(decl.getValueAttr() && "Extension's alias should have value");
       TypedAttr aliasValue = decl.getValueAttr();
-      ParserParameterEvaluator evaluator(emitter.shared,
-                                         structDeclOp.getParams(), paramValues);
+      ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator(
+          structDeclOp.getParams(), paramValues);
       return evaluator.getReboundAttribute(aliasValue);
     }
 
@@ -1954,7 +1954,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // TraitDeclOp always have one input parameter `_Self`
     ParamDeclAttr traitSelf =
         cast<TraitDeclOp>(traitDecl->getIfOperation()).getParamsAttr().back();
-    ParserParameterEvaluator selfReplacer(shared);
+    ParameterEvaluator selfReplacer = shared.getParameterEvaluator();
     selfReplacer.setDeclBinding(traitSelf.getName(), basePValue);
     Type aliasType = selfReplacer.getReboundType(aliasDeclOpParam.getType());
 

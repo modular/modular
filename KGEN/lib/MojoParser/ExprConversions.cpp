@@ -400,7 +400,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // (see TAPCPTTT) and the actual function's input parameters.
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramValues;
-  ParserParameterEvaluator evaluator(shared);
+  ParameterEvaluator evaluator = shared.getParameterEvaluator();
   ImplicitLocOpBuilder b(mlirLoc, ctx);
   for (auto [idx, type] :
        llvm::enumerate(thunkSignature.getInputParamTypes())) {
@@ -692,7 +692,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // instead of an incorrect:
   //     mut s: Ship[foo's Z]
   // It also helps us generate some more general signatures for the thunk keys.
-  ParserParameterEvaluator paramRefsReplacer(emitter.shared);
+  ParameterEvaluator paramRefsReplacer = emitter.shared.getParameterEvaluator();
   for (auto [i, ref] : llvm::enumerate(mentionedParamRefs)) {
     // Add these mentioned param refs as "clarifying" parameters to the thunk,
     // see TAPCPTTT.
@@ -767,7 +767,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   auto calleeParam = ParamOperatorAttr::getRebind(callee.get(), reducedActual);
 
   // Assemble the parameters (`ZC, read_ship[ZC]`) that we'll bind to the thunk.
-  ParserParameterEvaluator evaluator(emitter.shared);
+  ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator();
   for (ParamDeclRefAttr ref : mentionedParamRefs) {
     // Bind the clarifying parameter (see TAPCPTTT).
     evaluator.appendIndexBinding(ref);

@@ -139,7 +139,7 @@ private:
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
-  ParserParameterEvaluator evaluator;
+  ParameterEvaluator evaluator;
 
   /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
   ParamIndexRefAttrFinder paramFinder;

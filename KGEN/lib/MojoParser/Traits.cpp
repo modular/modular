@@ -59,7 +59,7 @@ static std::pair<FnTypeGeneratorType, ParamBindings>
 getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
-                          ParserParameterEvaluator &traitAliasReplacer) {
+                          ParameterEvaluator &traitAliasReplacer) {
   TraitType trait = TraitType::get(traitSymbol);
   FnTypeGeneratorType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
@@ -101,8 +101,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 // signature.
 static LogicalResult signatureResolveDefaultTraitFnStubs(
     ASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
-    ArrayRef<ASTDecl *> candidates,
-    ParserParameterEvaluator &traitAliasReplacer) {
+    ArrayRef<ASTDecl *> candidates, ParameterEvaluator &traitAliasReplacer) {
 
   auto &shared = structDecl.getShared();
 
@@ -435,7 +434,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   auto structSelf = PValue(structDecl.getTypeDeclSelf());
   auto traitSelfDecl =
       cast<ParamDeclRefAttr>(PValue(traitDecl.getTypeDeclSelf()).get());
-  ParserParameterEvaluator traitAliasReplacer(shared);
+  ParameterEvaluator traitAliasReplacer = shared.getParameterEvaluator();
   traitAliasReplacer.setDeclBinding(traitSelfDecl.getName(), structSelf);
 
   // Prepare an error. It will be abandoned if the check succeeds.
@@ -667,7 +666,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     return success();
   };
 
-  // TODO(MOCO-1143): this loop needs a ParserParameterEvaluator that is
+  // TODO(MOCO-1143): this loop needs a ParameterEvaluator that is
   // populated with the mappings of trait alias requirements to their matched
   // values on the implementing struct, then you call getReboundType/Attribute
   // when checking both the function and future alias requirements
@@ -907,7 +906,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
-                           ParserParameterEvaluator *traitAliasReplacer,
+                           ParameterEvaluator *traitAliasReplacer,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
@@ -964,7 +963,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
 
   // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
   // used) not an UnboundAttr which remains an unbound parameter.
-  ParserParameterEvaluator evaluator(declResolver.shared);
+  ParameterEvaluator evaluator = declResolver.shared.getParameterEvaluator();
   evaluator.appendIndexBinding(
       UnknownAttr::get(signature.getInputParamTypes()[0]));
   // Use UnboundAttr for any other parameters so they remain in the result.

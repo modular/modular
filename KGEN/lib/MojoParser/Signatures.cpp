@@ -818,7 +818,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
-  ParserParameterEvaluator evaluator(shared);
+  ParameterEvaluator evaluator = shared.getParameterEvaluator();
 
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name,
@@ -1061,7 +1061,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     // Test that any default given doesn't immediately violate the constraints
     // on this parameter. Otherwise that default value can never be used.
     if (defaultVal && !paramConstraints.empty()) {
-      ParserParameterEvaluator evaluator(result.shared);
+      ParameterEvaluator evaluator = result.shared.getParameterEvaluator();
       evaluator.setDeclBinding(newDecl, defaultVal);
       // Only report direct violations. Unprovable constraints are allowed
       // since they may depend on other parameters.

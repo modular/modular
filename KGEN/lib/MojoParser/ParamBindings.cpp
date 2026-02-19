@@ -83,7 +83,8 @@ emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
 FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue) {
-  ParserParameterEvaluator traitAliasReplacer(declResolver.shared);
+  ParameterEvaluator traitAliasReplacer =
+      declResolver.shared.getParameterEvaluator();
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       AliasDeclOp traitAlias =

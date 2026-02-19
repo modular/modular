@@ -2465,11 +2465,25 @@ ParserEvaluationContext &SharedState::getEvaluationContext() {
   return impl->evaluationContext;
 }
 
+ParameterEvaluator SharedState::getParameterEvaluator() {
+  ParameterEvaluator evaluator;
+  evaluator.setEvaluationContext(&getEvaluationContext());
+  return evaluator;
+}
+
+ParameterEvaluator
+SharedState::getParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                                   ArrayRef<TypedAttr> paramValues) {
+  ParameterEvaluator evaluator(paramDecls, paramValues);
+  evaluator.setEvaluationContext(&getEvaluationContext());
+  return evaluator;
+}
+
 namespace {
 /// This struct is used to fold @always_inline("builtin") functions.
 struct BuiltinFunctionFolder {
   SharedState &shared;
-  ParserParameterEvaluator evaluator;
+  ParameterEvaluator evaluator;
   bool doEmitError;
 
   // Keep track of the parameter values for each of the live SSA values in the
@@ -2483,7 +2497,8 @@ struct BuiltinFunctionFolder {
   SmallDenseMap<Value, TypedAttr> varDeclSoFar;
 
   BuiltinFunctionFolder(SharedState &shared, bool doEmitError)
-      : shared(shared), evaluator(shared), doEmitError(doEmitError) {}
+      : shared(shared), evaluator(shared.getParameterEvaluator()),
+        doEmitError(doEmitError) {}
 
   // This helper handles emitting an error (or not) as needed.
   MojoInflightDiag emitError(Location loc) {

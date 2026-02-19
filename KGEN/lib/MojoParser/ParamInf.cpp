@@ -91,7 +91,8 @@ ParamInf::ParamInf(
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     ASTDecl *declIfDirect)
     : paramBindings(paramBinding), declIfKnown(declIfDirect),
-      getDiag(std::move(getDiag)), evaluator(paramBinding.shared),
+      getDiag(std::move(getDiag)),
+      evaluator(paramBinding.shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
       allowImplicitConversions(allowImplicitConversions), partial(partial) {
