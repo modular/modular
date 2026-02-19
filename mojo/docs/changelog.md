@@ -328,6 +328,9 @@ what we publish.
 
 ### Library changes
 
+- `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
+  `issubset()` traversal instead of two full traversals.
+
 - Added `uninit_move_n()`, `uninit_copy_n()`, and `destroy_n()` functions to the
   `memory` module for efficient bulk memory operations. These functions handle
   moving, copying, and destroying multiple values in contiguous memory, with

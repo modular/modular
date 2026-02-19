@@ -236,7 +236,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict superset of the `other` set, False otherwise.
         """
-        return self >= other and self != other
+        return len(self) > len(other) and other.issubset(self)
 
     fn __lt__(self, other: Self) -> Bool:
         """Overloads the < operator for strict subset comparison of sets.
@@ -247,7 +247,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict subset of the `other` set, False otherwise.
         """
-        return self <= other and self != other
+        return len(self) < len(other) and self.issubset(other)
 
     fn __xor__(self, other: Self) -> Self:
         """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
