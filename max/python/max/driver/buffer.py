@@ -71,9 +71,6 @@ def inplace_copy_from(self: Buffer, src: Buffer) -> None:
     These buffers may be on different devices.
     Requires that both buffers are contiguous and have same size.
     """
-    if self is src:
-        return
-
     # check that both buffers are contiguous
     if not self.is_contiguous:
         raise ValueError("Cannot copy from non-contiguous buffer")

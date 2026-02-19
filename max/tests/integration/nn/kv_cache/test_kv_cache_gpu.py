@@ -42,7 +42,6 @@ async def _test_kv_cache_gpu() -> None:
         params=kv_params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
-        max_batch_size=128,
     )
     context = create_text_context(np.empty(1))
     kv_manager.claim(context.request_id, replica_idx=0)

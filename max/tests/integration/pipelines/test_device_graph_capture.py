@@ -22,7 +22,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.pipelines.lib import ModelInputs, ModelOutputs
-from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
+from max.pipelines.lib.graph_capture import DeviceGraphExecutor
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
     mock_huggingface_config,
@@ -37,7 +37,6 @@ from transformers import AutoConfig
 class DummyModel:
     def __init__(self, output_buffer: Buffer) -> None:
         self.output_buffer = output_buffer
-        self.input_devices = [CPU()]
         self.capture_calls: list[list[Buffer]] = []
         self.replay_calls: list[list[Buffer]] = []
 
@@ -58,6 +57,16 @@ class CapturePipelineModel(MockPipelineModel):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         return ModelOutputs(logits=self.output_buffer)
+
+
+def _trace_inputs(model_inputs: ModelInputs) -> list[Buffer]:
+    model_inputs = cast(MockModelInputs, model_inputs)
+    return [
+        Buffer.zeros(
+            (model_inputs.active_batch_size,),
+            dtype=DType.float32,
+        )
+    ]
 
 
 @mock_huggingface_config
@@ -85,26 +94,17 @@ def test_pipeline_model_capture_replay() -> None:
     )
 
     inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
-    runner = ServeGraphCaptureRunner(
-        # DummyModel emulates the minimal capture/replay surface for this test.
-        model=cast(Model, model.model),
-        warmup_model_inputs=MagicMock(),
-        execute_model=model.execute,
-        max_batch_size=1,
-    )
+    executor = DeviceGraphExecutor(trace_fn=_trace_inputs)
 
-    trace_inputs = inputs.buffers
-    runner.graph_entries[1] = (
-        trace_inputs,
-        ModelOutputs(*model.model.capture(*trace_inputs)),
-    )
+    # DummyModel provides the minimal capture/replay surface for this unit test.
+    engine_model = cast(Model, model.model)
+
+    executor.capture(engine_model, [inputs])
     assert model.model.capture_calls
 
-    output = runner.replay(
-        model_inputs=inputs,
-    )
+    output = executor.replay(engine_model, inputs)
     assert model.model.replay_calls
-    assert output.logits is model.output_buffer
+    assert output[0] is model.output_buffer
 
 
 @mock_huggingface_config
@@ -112,7 +112,7 @@ def test_pipeline_model_replay_miss_raises() -> None:
     pipeline_config = DummyPipelineConfig(
         model_path="test/model",
         quantization_encoding=MagicMock(),
-        max_batch_size=4,
+        max_batch_size=1,
         max_length=128,
     )
     pipeline_config.device_graph_capture = True
@@ -131,19 +131,12 @@ def test_pipeline_model_replay_miss_raises() -> None:
         return_logits=MagicMock(),
     )
 
-    inputs = MockModelInputs(active_batch_size=4, eos_prob=0.0)
-    runner = ServeGraphCaptureRunner(
-        # DummyModel emulates the minimal capture/replay surface for this test.
-        model=cast(Model, model.model),
-        warmup_model_inputs=MagicMock(),
-        execute_model=model.execute,
-        max_batch_size=1,
-    )
+    inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    executor = DeviceGraphExecutor(trace_fn=_trace_inputs)
+    engine_model = cast(Model, model.model)
+
     with pytest.raises(
         RuntimeError,
-        match=r"No captured device graph found for batch_token_count: 4\.",
+        match=r"No captured device graph found for the given input signature\.",
     ):
-        runner.replay(model_inputs=inputs)
-
-    assert not model.model.capture_calls
-    assert not model.model.replay_calls
+        executor.replay(engine_model, inputs)

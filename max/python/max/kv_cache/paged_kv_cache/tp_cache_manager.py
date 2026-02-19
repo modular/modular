@@ -39,11 +39,8 @@ from .block_manager import BlockManager
 logger = logging.getLogger("max.pipelines")
 
 
-class _PersistentKVInputBuffers:
-    """Persistent buffers backing runtime LUT and cache-length inputs."""
-
-    max_batch_size: int
-    """Maximum number of request rows currently allocated."""
+class _RuntimeInputs:
+    """Internal cache holding the runtime buffers for the LUT and cache lengths."""
 
     lut_table_host: Buffer
     """LUT host buffer."""
@@ -59,21 +56,17 @@ class _PersistentKVInputBuffers:
 
     def __init__(
         self,
-        max_batch_size: int,
-        total_num_pages: int,
+        batch_size: int,
+        max_total_num_pages: int,
         devices: Sequence[Device],
     ):
-        self.max_batch_size = max_batch_size
         device0 = devices[0]
         pinned = not device0.is_host
 
-        # Runtime lookup-table shape is [max_batch_size, total_num_pages]:
-        # rows map to request slots in the current batch and columns map to
-        # per-request page slots.
         # [0, total_num_pages) are the valid block ids and total_num_pages
         # denotes an unassigned block.
         self.lut_table_host = Buffer(
-            shape=(max_batch_size, total_num_pages),
+            shape=(batch_size, max_total_num_pages),
             dtype=DType.uint32,
             device=device0,
             pinned=pinned,
@@ -83,7 +76,7 @@ class _PersistentKVInputBuffers:
             self.lut_table_host.disable_auto_sync()
 
         self.cache_lengths_host = Buffer(
-            shape=(max_batch_size,),
+            shape=(batch_size,),
             dtype=DType.uint32,
             device=device0,
             pinned=pinned,
@@ -157,7 +150,6 @@ class _TPPagedKVCacheManager:
         total_num_host_pages: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        max_batch_size: int,
         enable_runtime_checks: bool = False,
     ) -> None:
         """Initialize the tensor-parallel paged KV cache manager.
@@ -169,9 +161,6 @@ class _TPPagedKVCacheManager:
             devices: The devices on which the manager will allocate memory.
                 For tensor parallelism, KV cache data is sharded across these devices.
             session: The inference session to load ops from.
-            max_batch_size: Maximum runtime batch size expected for this
-                replica. Runtime lookup-table and cache-length buffers are
-                preallocated to this row capacity.
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
         self.params = params
@@ -194,15 +183,7 @@ class _TPPagedKVCacheManager:
 
         # Track the set of requests that are currently claimed.
         self._claimed_requests: set[RequestID] = set()
-        self._max_batch_size = max_batch_size
-        if self._max_batch_size < 1:
-            raise ValueError("max_batch_size must be positive")
-
-        self._persistent_kv_input_buffers = _PersistentKVInputBuffers(
-            max_batch_size=self._max_batch_size,
-            total_num_pages=self.total_num_pages,
-            devices=self.devices,
-        )
+        self._runtime_inputs_cache: dict[tuple[int, int], _RuntimeInputs] = {}
 
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
@@ -334,6 +315,7 @@ class _TPPagedKVCacheManager:
         # Wait for any pending connector operations (H2D loads from host cache).
         self.connector.sync()
 
+        max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):  # noqa: B007
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(ctx, num_steps):
@@ -341,28 +323,27 @@ class _TPPagedKVCacheManager:
                     f"Called fetch with request {ctx.request_id} but it does not have sufficient blocks. `alloc` must be called first."
                 )
 
+            # Compute the total sequence length
+            seq_len = len(ctx.tokens) + num_steps - 1
+            max_seq_len = max(max_seq_len, seq_len)
+
+        max_total_num_pages = ceildiv(max_seq_len, self.page_size)
         batch_size = len(batch)
-        if batch_size > self._max_batch_size:
-            raise ValueError(
-                "Runtime batch size exceeds preallocated KV runtime "
-                f"buffer capacity: {batch_size} > {self._max_batch_size}."
+
+        # Allocate or reuse persistent lookup table/cache length buffers.
+        key = (batch_size, max_total_num_pages)
+        if not (buffers := self._runtime_inputs_cache.get(key)):
+            buffers = _RuntimeInputs(
+                batch_size, max_total_num_pages, self.devices
             )
+            self._runtime_inputs_cache[key] = buffers
 
-        runtime_inputs = self._persistent_kv_input_buffers
-        # Slice row views from persistent full-capacity buffers so we only
-        # update active requests while preserving stable shapes/pointers for
-        # replayed graphs.
-        lut_table_host = runtime_inputs.lut_table_host[:batch_size, :]
-        cache_lengths_host = runtime_inputs.cache_lengths_host[:batch_size]
-        lut_table_by_device = [
-            buffer[:batch_size, :]
-            for buffer in runtime_inputs.lut_table_by_device
-        ]
-        cache_lengths_by_device = [
-            buffer[:batch_size]
-            for buffer in runtime_inputs.cache_lengths_by_device
-        ]
-
+        (
+            lut_table_host,
+            cache_lengths_host,
+            lut_table_by_device,
+            cache_lengths_by_device,
+        ) = buffers.values()
         lut_table_np = lut_table_host.to_numpy()
         lut_table_np.fill(self.total_num_pages)
         cache_lengths_np = cache_lengths_host.to_numpy()

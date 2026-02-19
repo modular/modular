@@ -104,7 +104,6 @@ def create_kv_cache(
         total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
-        max_batch_size=max_batch_size,
     )
 
     assert kv_manager.get_num_pages(replica_idx=0) == num_blocks

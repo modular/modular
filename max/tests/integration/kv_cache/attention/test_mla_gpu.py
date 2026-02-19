@@ -62,7 +62,6 @@ def test_mla_prefill_plan() -> None:
         kv_params,
         total_num_pages=8,
         session=session,
-        max_batch_size=128,
     )
 
     def construct() -> Graph:
@@ -177,7 +176,6 @@ def test_mla_decompress_k_cache() -> None:
         kv_params,
         total_num_pages=8,
         session=session,
-        max_batch_size=128,
     )
 
     def construct() -> Graph:

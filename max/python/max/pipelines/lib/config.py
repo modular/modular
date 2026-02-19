@@ -90,9 +90,7 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "Maximum batch size to execute with the model. When not specified "
             "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity. When "
-            "device_graph_capture is enabled, overlap pre-captures decode "
-            "graph entries for batch sizes [1..max_batch_size]."
+            "set this higher based on server capacity."
         ),
     )
 
@@ -870,9 +868,7 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_overlap_scheduler()
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
-        self._validate_and_resolve_device_graph_capture()
-
-        if self.force and not self.device_graph_capture:
+        if self.force:
             return
 
         # Automatically enable overlap scheduling for select architectures.
@@ -937,30 +933,6 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Overlap scheduler is not supported with CPU models."
                 )
-
-    def _validate_and_resolve_device_graph_capture(self) -> None:
-        if not self.device_graph_capture:
-            return
-
-        # TODO(GENAI-363): Support device graph capture warmup with data
-        # parallelism by capturing per-replica inputs.
-        if self.model.data_parallel_degree > 1:
-            raise ValueError(
-                "device_graph_capture currently requires "
-                "data_parallel_degree=1."
-            )
-        if self.max_batch_size is None:
-            raise ValueError(
-                "device_graph_capture requires max_batch_size to be set."
-            )
-        if not self.enable_overlap_scheduler:
-            logger.info("Enabling overlap scheduling for device graph capture.")
-        self.enable_overlap_scheduler = True
-        if self.max_num_steps != 1:
-            logger.info(
-                "Setting max-num-steps=1 for device graph capture with overlap scheduling."
-            )
-        self.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
         """Validates and resolves the max_num_steps field (platform-specific)."""

@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
-import time
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import (
@@ -24,7 +23,7 @@ from contextlib import (
     asynccontextmanager,
 )
 from multiprocessing.synchronize import Event
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any
 
 import uvloop
 from max.driver import Buffer, Device
@@ -59,11 +58,6 @@ from max.serve.worker_interface import (
 logger = logging.getLogger("max.serve")
 
 GiB = 1024 * 1024 * 1024
-
-
-@runtime_checkable
-class SupportsGraphCaptureWarmup(Protocol):
-    def warmup_graph_capture(self) -> None: ...
 
 
 def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
@@ -104,7 +98,7 @@ def get_reset_prefix_cache_backend(
         The paged KV cache manager if available, None otherwise.
     """
     if hasattr(pipeline, "kv_managers"):
-        kv_manager = cast(Any, pipeline).kv_managers[-1]
+        kv_manager = pipeline.kv_managers[-1]
         if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
             kv_manager, DummyKVCache
         ):
@@ -202,29 +196,6 @@ class ModelWorker:
             # Initialize token generator.
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
-
-            with Tracer("graph_capture_warmup"):
-                if pipeline_config.device_graph_capture:
-                    if not isinstance(pipeline, SupportsGraphCaptureWarmup):
-                        raise ValueError(
-                            "device_graph_capture is enabled but the pipeline "
-                            "does not support graph-capture warmup."
-                        )
-                    max_batch_size = pipeline_config.max_batch_size
-                    if max_batch_size is None:
-                        raise ValueError(
-                            "device_graph_capture requires max_batch_size to be set."
-                        )
-                    warmup_start_s = time.monotonic()
-                    pipeline.warmup_graph_capture()
-                    warmup_duration_s = time.monotonic() - warmup_start_s
-                    logger.info(
-                        "Device graph capture warmup completed in %.2fs "
-                        "(model=%s, max_batch_size=%d).",
-                        warmup_duration_s,
-                        pipeline_config.model.model_path,
-                        max_batch_size,
-                    )
 
             # Boot up the api worker comms
             worker_queues = await exit_stack.enter_async_context(

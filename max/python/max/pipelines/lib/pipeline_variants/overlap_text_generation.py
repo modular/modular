@@ -60,22 +60,14 @@ For example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Generic,
-    Protocol,
-    runtime_checkable,
-)
+from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, load_devices
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
 from max.graph.weights import (
     WeightsAdapter,
@@ -84,8 +76,6 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
-    DUMMY_REQUEST_ID,
-    BatchType,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
@@ -94,11 +84,9 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.interfaces.tokens import TokenBuffer
 from max.nn.legacy import kernels
 from max.nn.legacy.kv_cache import KVCacheInputsSequence
 from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
 from .text_generation import TextGenerationPipelineInterface
@@ -113,8 +101,7 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 
-from ..graph_capture import ServeGraphCaptureRunner
-from ..interfaces import ModelInputs, ModelOutputs, PipelineModel
+from ..interfaces import ModelOutputs, PipelineModel
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -122,16 +109,6 @@ from ..sampling import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-@runtime_checkable
-class _HasRaggedTokens(Protocol):
-    tokens: Buffer
-
-
-@runtime_checkable
-class _SupportsModelCapture(Protocol):
-    model: Model
 
 
 @dataclass
@@ -317,12 +294,10 @@ class OverlapTextGenerationPipeline(
 ):
     """Overlap text generation pipeline."""
 
-    _pipeline_model: PipelineModel[Any]
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[Any]],
+        pipeline_model: type[PipelineModel[TextGenerationContextType]],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
@@ -383,7 +358,7 @@ class OverlapTextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        self._pipeline_model: PipelineModel[Any] = pipeline_model(
+        self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=huggingface_config,
@@ -412,7 +387,6 @@ class OverlapTextGenerationPipeline(
         self._scatter_future_tokens = ScatterFutureTokenProcessor(session)
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
-        self._graph_capture_runner: ServeGraphCaptureRunner | None = None
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -445,60 +419,6 @@ class OverlapTextGenerationPipeline(
         """
         return self._prev_batch is not None
 
-    @contextmanager
-    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
-        capture_contexts = [
-            TextContext(
-                max_length=self._pipeline_model.max_seq_len,
-                tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
-                eos_token_ids=self._eos_token_id,
-                model_name=self._pipeline_config.model.model_name,
-                request_id=RequestID(
-                    f"{DUMMY_REQUEST_ID}-overlap-capture-b{batch_size}-i{idx}"
-                ),
-            )
-            for idx in range(batch_size)
-        ]
-        with self._kv_manager.reserve(
-            capture_contexts, replica_idx=0, num_steps=1
-        ):
-            kv_cache_inputs = self._kv_manager.get_runtime_inputs(
-                [capture_contexts], num_steps=1
-            )
-            with Tracer("prepare_initial_token_inputs"):
-                model_inputs = (
-                    self._pipeline_model.prepare_initial_token_inputs(
-                        replica_batches=[capture_contexts],
-                        kv_cache_inputs=KVCacheInputsSequence(
-                            kv_cache_inputs=kv_cache_inputs
-                        ),
-                    )
-                )
-            yield model_inputs
-
-    def warmup_graph_capture(self) -> None:
-        """Initializes and runs overlap device graph capture warmup."""
-        if not isinstance(self._pipeline_model, _SupportsModelCapture):
-            raise RuntimeError(
-                "Device graph capture is enabled but pipeline model does not "
-                "expose a compiled model for capture/replay."
-            )
-        if self._pipeline_config.max_batch_size is None:
-            raise RuntimeError(
-                "device_graph_capture requires max_batch_size to be resolved."
-            )
-
-        graph_capture_runner = ServeGraphCaptureRunner(
-            model=self._pipeline_model.model,
-            warmup_model_inputs=self._warmup_model_inputs,
-            execute_model=self._pipeline_model.execute,
-            max_batch_size=self._pipeline_config.max_batch_size,
-        )
-        self._graph_capture_runner = graph_capture_runner
-        logger.info("Starting serve device graph capture warmup.")
-        graph_capture_runner.warmup_pre_ready()
-        logger.info("Completed serve device graph capture warmup.")
-
     def _run_forward(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> ModelOutputs:
@@ -516,11 +436,7 @@ class OverlapTextGenerationPipeline(
                 ),
             )
 
-        if not isinstance(model_inputs, _HasRaggedTokens):
-            raise RuntimeError(
-                "OverlapTextGenerationPipeline requires model inputs with a "
-                "Buffer `tokens` field."
-            )
+        assert hasattr(model_inputs, "tokens")
         ragged_input_tokens = model_inputs.tokens
         if self._prev_batch is not None:
             with Tracer("scatter_future_tokens"):
@@ -537,13 +453,6 @@ class OverlapTextGenerationPipeline(
         # Execute the model and get next tokens.
         try:
             with Tracer("pipeline_model.execute"):
-                if (
-                    (runner := self._graph_capture_runner)
-                    and inputs
-                    and inputs.batch_type == BatchType.TG
-                ):
-                    return runner.replay(model_inputs=model_inputs)
-
                 return self._pipeline_model.execute(model_inputs=model_inputs)
         except Exception:
             batch_size = len(inputs.flat_batch)
