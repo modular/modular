@@ -2298,3 +2298,79 @@ class TestTransposeGPU:
         expected = x_torch.transpose(1, 3).contiguous()
         assert result_torch.shape == expected.shape
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestSliceGPU:
+    """Tests for GPU slice operations with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16],
+    )
+    def test_slice_1d_gpu(self, dtype: DType) -> None:
+        """Test basic 1D slice on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch_dtype, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(1, 4)])
+
+        expected = x_torch[1:4]
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16],
+    )
+    def test_slice_2d_gpu(self, dtype: DType) -> None:
+        """Test 2D slice across both dimensions on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(12, dtype=torch_dtype, device="cuda").reshape(
+            3, 4
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
+
+        expected = x_torch[0:2, 1:3]
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    def test_slice_with_step_gpu(self) -> None:
+        """Test slice with step > 1 on GPU."""
+        x_torch = torch.arange(10, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 10, 2)])
+
+        expected = x_torch[0:10:2]
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    def test_slice_3d_gpu(self) -> None:
+        """Test slice with 3D tensor on GPU."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3), slice(0, 2)])
+
+        expected = x_torch[0:2, 1:3, 0:2]
+        torch.testing.assert_close(torch.from_dlpack(result), expected)

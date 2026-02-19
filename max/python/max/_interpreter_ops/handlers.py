@@ -814,38 +814,68 @@ def _handle_transpose(
 def _handle_slice(
     op: mo.SliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.slice - tensor slicing with start/stop/step.
+    """Handle mo.slice by dispatching to Mojo slice kernel.
 
-    The op takes (input, start, stop, step) tensors where start/stop/step
-    are 1D tensors with one element per dimension of the input.
+    Args:
+        op: The slice operation.
+        inputs: Input buffers - (input, starts, stops, steps) where
+            starts/stops/steps are 1D tensors with one element per dimension.
+
+    Returns:
+        List containing the sliced tensor buffer.
     """
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
-    _check_buffers_on_device(inputs, target_device)
+    target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     assert isinstance(inputs[2], Buffer)
     assert isinstance(inputs[3], Buffer)
-    input_np = inputs[0].to_numpy()
-    start_np = inputs[1].to_numpy().astype(np.int64)
-    stop_np = inputs[2].to_numpy().astype(np.int64)
-    step_np = inputs[3].to_numpy().astype(np.int64)
 
-    # Build slice objects for each dimension
-    slices = []
-    for i in range(len(start_np)):
-        start_i = int(start_np[i])
-        stop_i = int(stop_np[i])
-        step_i = int(step_np[i])
-        slices.append(slice(start_i, stop_i, step_i))
+    input_buffer = inputs[0]
+    starts_buffer = inputs[1]
+    stops_buffer = inputs[2]
+    steps_buffer = inputs[3]
 
-    result_np = input_np[tuple(slices)]
-    # Ensure we have a contiguous array
-    result_np = np.ascontiguousarray(result_np)
-    return [Buffer.from_numpy(result_np)]
+    # Read starts/stops/steps to compute output shape
+    # .to_numpy() handles GPU→CPU transfer transparently
+    start_np = starts_buffer.to_numpy().astype(np.int64)
+    stop_np = stops_buffer.to_numpy().astype(np.int64)
+    step_np = steps_buffer.to_numpy().astype(np.int64)
+
+    rank = len(start_np)
+    output_shape = tuple(
+        int(max(0, int(np.ceil((stop_np[i] - start_np[i]) / step_np[i]))))
+        for i in range(rank)
+    )
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    # Pad starts/stops/steps to MAX_RANK=5 for Mojo kernel
+    max_rank = 5
+    pad_count = max_rank - rank
+    padded_starts = np.zeros(max_rank, dtype=np.int64)
+    padded_stops = np.ones(max_rank, dtype=np.int64)
+    padded_steps = np.ones(max_rank, dtype=np.int64)
+    padded_starts[pad_count:] = start_np
+    padded_stops[pad_count:] = stop_np
+    padded_steps[pad_count:] = step_np
+
+    # Call Mojo kernel
+    ops.data_movement_ops.Slice(
+        output,
+        input_buffer,
+        Buffer.from_numpy(padded_starts),
+        Buffer.from_numpy(padded_stops),
+        Buffer.from_numpy(padded_steps),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 # Shape/parameter operations
