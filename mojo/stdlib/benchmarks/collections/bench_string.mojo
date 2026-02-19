@@ -176,8 +176,9 @@ fn bench_string_lower[
 
     @always_inline
     fn call_fn() unified {read}:
-        var res = black_box(items).lower()
-        keep(res)
+        for _ in range(10**6 // length):
+            var res = black_box(items).lower()
+            keep(res)
 
     b.iter(call_fn)
 
@@ -193,8 +194,9 @@ fn bench_string_upper[
 
     @always_inline
     fn call_fn() unified {read}:
-        var res = black_box(items).upper()
-        keep(res)
+        for _ in range(10**6 // length):
+            var res = black_box(items).upper()
+            keep(res)
 
     b.iter(call_fn)
 
