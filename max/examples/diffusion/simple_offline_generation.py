@@ -272,7 +272,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         max_length = components_config["tokenizer"]["config_dict"].get(
             "model_max_length", None
         )
-        if arch.name == "Flux2Pipeline":
+        if arch.name in ("Flux2Pipeline", "Flux2KleinPipeline"):
             max_length = 512
         print(f"Using max length: {max_length} for tokenizer")
 
