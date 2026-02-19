@@ -156,17 +156,6 @@ fn _open_file(path: String, mode: String) raises -> Int:
             var err = get_errno()
             raise Error("Failed to set file permissions: " + String(err))
 
-    # For append mode, seek to end (though O_APPEND should handle this)
-    if mode == "a":
-        var pos = external_call["lseek", Int64](
-            Int(fd), Int64(0), Int(SEEK_END)
-        )
-        if pos < 0:
-            # Clean up: close the file descriptor before raising
-            _ = external_call["close", c_int](fd)
-            var err = get_errno()
-            raise Error("Failed to seek to end in append mode: " + String(err))
-
     return Int(fd)
 
 
