@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -9,12 +9,27 @@ package(default_visibility = [
 
 modular_py_test(
     name = "kv_cache",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_disk_tier.py"],
+    ),
     mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_disk_tier",
+    srcs = [
+        "__init__.py",
+        "test_disk_tier.py",
+    ],
+    deps = [
+        "//max/python/max/kv_cache",
+        requirement("numpy"),
     ],
 )

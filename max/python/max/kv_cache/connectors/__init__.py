@@ -15,12 +15,14 @@
 
 - `NullConnector`: No-op connector when external caching is disabled
 - `LocalConnector`: Host memory offloading
+- `TieredConnector`: GPU <-> CPU <-> Disk offloading
 - `LMCacheConnector`: LMCache integration for tiered external caching
 - `create_connector()`: Factory function
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 
 from max.driver import Buffer, Device
@@ -30,6 +32,9 @@ from max.nn.legacy.kv_cache import KVCacheParams
 
 from .local_connector import LocalConnector
 from .null_connector import NullConnector
+from .tiered_connector import TieredConnector
+
+logger = logging.getLogger("max.pipelines")
 
 
 def create_connector(
@@ -45,7 +50,8 @@ def create_connector(
 
     Returns a connector appropriate for the configuration:
     - If `params.lmcache_config_file` is set: LMCacheConnector
-    - If `params.enable_kvcache_swapping_to_host` is True: LocalConnector
+    - If swapping enabled + disk_offload_dir set: TieredConnector
+    - If swapping enabled (no disk): LocalConnector
     - Otherwise: NullConnector
 
     Args:
@@ -60,6 +66,7 @@ def create_connector(
     Returns:
         A connector instance implementing KVConnectorProtocol.
     """
+    # TODO: SERVOPT-1020
     # Check for LMCache configuration
     if params.lmcache_config_file:
         try:
@@ -81,14 +88,38 @@ def create_connector(
         )
 
     if params.enable_kvcache_swapping_to_host and total_num_host_blocks > 0:
-        return LocalConnector(
-            params=params,
-            devices=devices,
-            device_tensors=device_tensors,
-            device_scale_tensors=device_scale_tensors,
-            total_num_host_blocks=total_num_host_blocks,
-        )
+        if params.disk_offload_dir is not None:
+            logger.info(
+                "Creating TieredConnector: "
+                f"host_blocks={total_num_host_blocks}, "
+                f"disk_dir={params.disk_offload_dir}, "
+                f"disk_max_gb={params.disk_offload_max_gb}"
+            )
+            return TieredConnector(
+                params=params,
+                devices=devices,
+                device_tensors=device_tensors,
+                device_scale_tensors=device_scale_tensors,
+                total_num_host_blocks=total_num_host_blocks,
+                disk_cache_dir=params.disk_offload_dir,
+                max_disk_size_gb=params.disk_offload_max_gb,
+                use_direct_io=params.disk_offload_direct_io,
+            )
+        else:
+            logger.info(
+                f"Creating LocalConnector: host_blocks={total_num_host_blocks}"
+            )
+            return LocalConnector(
+                params=params,
+                devices=devices,
+                device_tensors=device_tensors,
+                device_scale_tensors=device_scale_tensors,
+                total_num_host_blocks=total_num_host_blocks,
+            )
 
+    logger.info(
+        "Creating NullConnector: external KV cache swapping disabled or no host blocks allocated"
+    )
     return NullConnector()
 
 
@@ -97,5 +128,6 @@ __all__ = [
     "LMCacheConnector",
     "LocalConnector",
     "NullConnector",
+    "TieredConnector",
     "create_connector",
 ]

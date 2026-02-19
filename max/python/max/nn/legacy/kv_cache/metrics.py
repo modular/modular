@@ -30,6 +30,10 @@ class KVCacheMetrics:
     """Number of cache blocks copied from host to device."""
     d2h_blocks_copied: int = 0
     """Number of cache blocks copied from device to host."""
+    disk_blocks_written: int = 0
+    """Number of cache blocks written to disk."""
+    disk_blocks_read: int = 0
+    """Number of cache blocks read from disk."""
 
     @property
     def prompt_tokens(self) -> int:
@@ -66,4 +70,7 @@ class KVCacheMetrics:
             cache_tokens=self.cache_tokens + other.cache_tokens,
             h2d_blocks_copied=self.h2d_blocks_copied + other.h2d_blocks_copied,
             d2h_blocks_copied=self.d2h_blocks_copied + other.d2h_blocks_copied,
+            disk_blocks_written=self.disk_blocks_written
+            + other.disk_blocks_written,
+            disk_blocks_read=self.disk_blocks_read + other.disk_blocks_read,
         )
