@@ -2597,3 +2597,124 @@ class TestConcatOp:
 
         expected = np.concatenate([a_np, b_np], axis=0)
         np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+
+def _numpy_layer_norm(
+    x: np.ndarray, gamma: np.ndarray, beta: np.ndarray, eps: float = 1e-5
+) -> np.ndarray:
+    """Numerically stable layer normalization reference implementation."""
+    mean = np.mean(x, axis=-1, keepdims=True)
+    var = np.var(x, axis=-1, keepdims=True)
+    return (x - mean) / np.sqrt(var + eps) * gamma + beta
+
+
+class TestLayerNormOps:
+    """Tests for layer_norm Mojo op."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_layer_norm_2d(self, dtype: DType) -> None:
+        """Test layer_norm on a 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+        beta_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_layer_norm_3d(self, dtype: DType) -> None:
+        """Test layer_norm on a 3D tensor."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+        beta_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_layer_norm_4d(self, dtype: DType) -> None:
+        """Test layer_norm on a 4D tensor."""
+        shape = [2, 3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+        beta_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_layer_norm_large_feature_dim(self) -> None:
+        """Test layer_norm with a large feature dimension."""
+        shape = [8, 128]
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np.float32)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np.float32)
+        beta_np = rng.standard_normal(shape[-1]).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_layer_norm_single_element_feature(self) -> None:
+        """Test layer_norm with a single-element feature dimension."""
+        shape = [4, 1]
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np.float32)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np.float32)
+        beta_np = rng.standard_normal(shape[-1]).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)

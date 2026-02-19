@@ -37,6 +37,19 @@ mojo_shared_library(
 )
 
 mojo_shared_library(
+    name = "layer_norm_ops",
+    srcs = [
+        "layer_norm_ops.mojo",
+    ],
+    shared_lib_name = "layer_norm_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
+mojo_shared_library(
     name = "matmul_ops",
     srcs = [
         "matmul_ops.mojo",
@@ -94,6 +107,7 @@ modular_py_library(
     data = [
         ":broadcast_ops",
         ":elementwise_ops",
+        ":layer_norm_ops",
         ":matmul_ops",
         ":misc_ops",
         ":reduce_ops",

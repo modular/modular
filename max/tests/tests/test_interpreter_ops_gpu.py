@@ -2124,3 +2124,93 @@ class TestConcatGPU:
 
         expected = torch.cat([a_torch, b_torch], dim=0)
         torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+
+class TestLayerNormGPU:
+    """Tests for layer_norm on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_layer_norm_gpu(self, dtype: DType) -> None:
+        """Test layer_norm on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+        torch.manual_seed(42)
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        gamma_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
+        beta_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = torch.nn.functional.layer_norm(
+            x_torch, [shape[-1]], weight=gamma_torch, bias=beta_torch, eps=1e-5
+        )
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_layer_norm_gpu_2d(self, dtype: DType) -> None:
+        """Test layer_norm on a 2D tensor on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [4, 8]
+        torch.manual_seed(42)
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        gamma_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
+        beta_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = torch.nn.functional.layer_norm(
+            x_torch, [shape[-1]], weight=gamma_torch, bias=beta_torch, eps=1e-5
+        )
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    def test_layer_norm_gpu_large(self) -> None:
+        """Test layer_norm with a large feature dimension on GPU."""
+        shape = [8, 128]
+        torch.manual_seed(42)
+        x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
+        gamma_torch = torch.randn(shape[-1], dtype=torch.float32, device="cuda")
+        beta_torch = torch.randn(shape[-1], dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = torch.nn.functional.layer_norm(
+            x_torch,
+            [shape[-1]],
+            weight=gamma_torch,
+            bias=beta_torch,
+            eps=1e-5,
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-5, rtol=1e-5
+        )

@@ -1031,6 +1031,51 @@ for op_type in ops.SOFTMAX:
     register_op_handler(op_type)(softmax_handler(op_type))
 
 
+# Layer norm operations
+
+
+@register_op_handler(mo.LayerNormOp)
+def _handle_layer_norm(
+    op: mo.LayerNormOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.layer_norm by dispatching to Mojo layer_norm kernel.
+
+    Args:
+        op: The layer_norm operation.
+        inputs: Input buffers - input tensor, gamma, beta, epsilon.
+            Note: epsilon is always on CPU (MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the normalized tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # gamma
+    assert isinstance(inputs[2], Buffer)  # beta
+    assert isinstance(inputs[3], Buffer)  # epsilon (always CPU)
+
+    # Output shape = input shape (trivial, no Mojo shape delegation)
+    output = Buffer(
+        shape=inputs[0].shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    ops.layer_norm_ops.LayerNorm(
+        output,
+        inputs[0],
+        inputs[1],
+        inputs[2],
+        inputs[3],
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
 # Range operations
 
 

@@ -28,6 +28,7 @@ from max._core.driver import Buffer
 from . import (  # type: ignore[attr-defined]
     broadcast_ops,
     elementwise_ops,
+    layer_norm_ops,
     matmul_ops,
     misc_ops,
     reduce_ops,
