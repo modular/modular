@@ -1081,6 +1081,25 @@ def test_list_can_infer_iterable_element_type():
         ],
     )
 
+fn test_flatten():
+    var data = List(List(1, List(2, 3)), 4)
+
+    # Flatten of depth 1
+    var flatten_data1 = data.flatten[1]()
+    assert_equal(flatten_data1, List(1, List(2, 3), 4))
+
+    # Flatten of depth 2
+    var flatten_data2 = data.flatten[2]()
+    assert_equal(flatten_data2, List(1, 2, 3, 4))
+
+    # Complete flatten
+    var flatten_data3 = data.flatten[None]()
+    assert_equal(flatten_data3, List(1, 2, 3, 4))
+
+    # depth == 0 -> no changes
+    var flatten_data0 = data.flatten[0]()
+    assert_equal(flatten_data0, data)
+
 
 # ===-------------------------------------------------------------------===#
 # main

@@ -1481,6 +1481,42 @@ struct List[T: Copyable](
         var length = self._len
         return self.unsafe_ptr() + length
 
+fn flatten[depth: Optional[AnyType] = None](self) -> List:
+    """Flattens nested lists up to a specified depth.
+
+    Parameters:
+        depth: The maximum depth to flatten. If None, flattens all levels.
+
+    Returns:
+        A flattened list with elements from nested lists up to the specified depth.
+    """
+    # if depth is 0 no changes will be done to the list, so we can return early
+    if depth is not None and depth == 0:
+        return self
+
+    var result = List()
+
+    for item in self:
+        if item is List:
+            # if depth is None, we make a full recursive flatten
+            if depth is None:
+                var sub_flat = item.flatten[None]()
+                for sub in sub_flat:
+                    result.append(sub)
+            else:
+                # if depth is 1, we only want to flatten one level, so we can just append the sub items directly to the result
+                if depth == 1:
+                    for sub in item:
+                        result.append(sub)
+                else:
+                    var sub_flat = item.flatten[depth - 1]()
+                    for sub in sub_flat:
+                        result.append(sub)
+        else:
+            result.append(item)
+
+    return result
+
 
 fn _clip(value: Int, start: Int, end: Int) -> Int:
     return max(start, min(value, end))
