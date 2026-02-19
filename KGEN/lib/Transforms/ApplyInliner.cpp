@@ -206,7 +206,10 @@ void ApplyInlinerPass::runOnOperation() {
         op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
   };
   std::vector<Operation *> ops;
+  // Substitution cannot be run in parallel due to data race to `inlinedForm`
+  // attribute.
+  // TODO: If this becomes a bottleneck, need to refactor replacer and
+  // SymTabEvaluationContext:
   for (Operation &op : getOperation().getOps())
-    ops.push_back(&op);
-  parallelForEach(&getContext(), ops, substTrivialFuncs, replacer);
+    substTrivialFuncs(replacer, &op);
 }
