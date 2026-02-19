@@ -1454,14 +1454,15 @@ struct String(
         """Return the number of non-overlapping occurrences of substring
         `substr` in the string.
 
-        If sub is empty, returns the number of empty strings between characters
-        which is the length of the string plus one.
-
         Args:
-          substr: The substring to count.
+            substr: The substring to count.
 
         Returns:
-          The number of occurrences of `substr`.
+            The number of occurrences of `substr`.
+
+        Notes:
+            If sub is empty, returns the number of empty strings between
+            characters which is the length of the string plus one.
         """
         return StringSlice(self).count(substr)
 
