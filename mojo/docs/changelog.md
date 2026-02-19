@@ -328,6 +328,9 @@ what we publish.
 
 ### Library changes
 
+- `StringSlice.startswith()` and `StringSlice.endswith()` now use direct
+  `memcmp` instead of `find()`/`rfind()`, reducing from O(n) to O(m).
+
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
   `issubset()` traversal instead of two full traversals.
 
