@@ -14,10 +14,14 @@
 from sys import simd_width_of, size_of
 
 from memory import (
+    destroy_n,
     memcmp,
     memcpy,
+    memmove,
     memset,
     memset_zero,
+    uninit_copy_n,
+    uninit_move_n,
 )
 from testing import TestSuite
 from testing import (
@@ -25,6 +29,12 @@ from testing import (
     assert_equal,
     assert_not_equal,
     assert_true,
+)
+from test_utils import (
+    CopyCounter,
+    DelCounter,
+    MoveCounter,
+    MoveCopyCounter,
 )
 
 from utils.numerics import nan
@@ -783,6 +793,238 @@ def test_indexing():
     assert_equal(ptr[Int(2)], 2)
     assert_equal(ptr[1], 1)
 
+    ptr.free()
+
+
+def test_memmove_overlapping_regions():
+    var list = [1, 2, 3, 4, 5, 6, 7]
+    # shift all values down by 1
+    memmove(
+        dest=list.unsafe_ptr(), src=list.unsafe_ptr() + 1, count=len(list) - 1
+    )
+    assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
+
+
+def test_memmove_non_overlapping_regions():
+    var list1 = [1, 2, 3]
+    var list2 = [4, 5, 6]
+    # shift all values down by 1
+    memmove(dest=list1.unsafe_ptr(), src=list2.unsafe_ptr(), count=len(list1))
+    assert_equal(list1, [4, 5, 6])
+    assert_equal(list2, [4, 5, 6])
+
+
+def test_uninit_move_n_trivial():
+    # Test with trivial move type - should use memcpy, not call __moveinit__
+    comptime Counter = MoveCounter[Int, trivial_move=True]
+    var src = alloc[Counter](3)
+    (src + 0).init_pointee_move(Counter(10))
+    (src + 1).init_pointee_move(Counter(20))
+    (src + 2).init_pointee_move(Counter(30))
+
+    var dest = alloc[Counter](3)
+
+    uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
+
+    # Verify values were moved
+    assert_equal(dest[0].value, 10)
+    assert_equal(dest[1].value, 20)
+    assert_equal(dest[2].value, 30)
+
+    # Move should only be called once when moving into the allocation.
+    assert_equal(dest[0].move_count, 1)
+    assert_equal(dest[1].move_count, 1)
+    assert_equal(dest[2].move_count, 1)
+
+    # Don't destroy src - it's uninitialized after move
+    src.free()
+    destroy_n(dest, count=3)
+    dest.free()
+
+
+def test_uninit_move_n_nontrivial():
+    # Test with non-trivial type that tracks moves
+    var src = alloc[MoveCounter[String]](3)
+    (src + 0).init_pointee_move(MoveCounter("foo"))
+    (src + 1).init_pointee_move(MoveCounter("bar"))
+    (src + 2).init_pointee_move(MoveCounter("baz"))
+
+    var dest = alloc[MoveCounter[String]](3)
+
+    uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
+
+    # Verify values were moved
+    assert_equal(dest[0].value, "foo")
+    assert_equal(dest[1].value, "bar")
+    assert_equal(dest[2].value, "baz")
+
+    # Verify move constructor was called.
+    # First time for the initial move into the allocation.
+    # Second time for the move from src -> dest
+    assert_equal(dest[0].move_count, 2)
+    assert_equal(dest[1].move_count, 2)
+    assert_equal(dest[2].move_count, 2)
+
+    # Don't destroy src - it's uninitialized after move
+    src.free()
+    destroy_n(dest, count=3)
+    dest.free()
+
+
+def test_uninit_copy_n_trivial():
+    # Test with trivial copy type - should use memcpy, not call __copyinit__
+    comptime Counter = CopyCounter[Int, trivial_copy=True]
+    var src = alloc[Counter](3)
+    src.init_pointee_move(Counter(0))
+    (src + 1).init_pointee_move(Counter(1))
+    (src + 2).init_pointee_move(Counter(2))
+
+    var dest = alloc[Counter](3)
+
+    uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
+
+    # Both src and dest should have the values
+    assert_equal(src[0].value, 0)
+    assert_equal(src[1].value, 1)
+    assert_equal(src[2].value, 2)
+    assert_equal(dest[0].value, 0)
+    assert_equal(dest[1].value, 1)
+    assert_equal(dest[2].value, 2)
+
+    # Verify copy constructor was NOT called (trivial copy uses memcpy)
+    assert_equal(dest[0].copy_count, 0)
+    assert_equal(dest[1].copy_count, 0)
+    assert_equal(dest[2].copy_count, 0)
+
+    src.free()
+    dest.free()
+
+
+def test_uninit_copy_n_nontrivial():
+    # Test with non-trivial type that tracks copies
+    var src = alloc[CopyCounter[String]](3)
+    src.init_pointee_move(CopyCounter("alpha"))
+    (src + 1).init_pointee_move(CopyCounter("beta"))
+    (src + 2).init_pointee_move(CopyCounter("gamma"))
+
+    var dest = alloc[CopyCounter[String]](3)
+
+    uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
+
+    # Verify values were copied
+    assert_equal(dest[0].value, "alpha")
+    assert_equal(dest[1].value, "beta")
+    assert_equal(dest[2].value, "gamma")
+
+    # Verify copy constructor was called (count incremented)
+    assert_equal(dest[0].copy_count, 1)
+    assert_equal(dest[1].copy_count, 1)
+    assert_equal(dest[2].copy_count, 1)
+
+    # Source should still be valid
+    assert_equal(src[0].value, "alpha")
+    assert_equal(src[1].value, "beta")
+    assert_equal(src[2].value, "gamma")
+    assert_equal(src[0].copy_count, 0)
+    assert_equal(src[1].copy_count, 0)
+    assert_equal(src[2].copy_count, 0)
+
+    destroy_n(src, count=3)
+    destroy_n(dest, count=3)
+    src.free()
+    dest.free()
+
+
+def test_destroy_n_trivial():
+    # Test with trivial destructor - should be no-op, not call __del__
+    var del_count = 0
+    var counter_ptr = UnsafePointer(to=del_count)
+    comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
+
+    var ptr = alloc[Counter](3)
+    (ptr + 0).init_pointee_move(Counter(counter_ptr))
+    (ptr + 1).init_pointee_move(Counter(counter_ptr))
+    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+
+    # This should compile to nothing for trivial destructors
+    destroy_n(ptr, count=3)
+    # Verify destructor was NOT called (trivial destructor is no-op)
+    assert_equal(del_count, 0)
+
+    ptr.free()
+
+
+def test_destroy_n_nontrivial():
+    # Test with non-trivial type that tracks destructor calls
+    var del_count = 0
+    var counter_ptr = UnsafePointer(to=del_count)
+    comptime Counter = DelCounter[origin_of(del_count)]
+
+    var ptr = alloc[Counter](3)
+    (ptr + 0).init_pointee_move(Counter(counter_ptr))
+    (ptr + 1).init_pointee_move(Counter(counter_ptr))
+    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+
+    destroy_n(ptr, count=3)
+    # Verify destructor was called for all 3 elements
+    assert_equal(del_count, 3)
+
+    ptr.free()
+
+
+def test_uninit_move_n_zero_count():
+    # Test with zero count - should be no-op
+    var src = alloc[MoveCounter[String]](1)
+    # Use memcpy to initialize without calling move constructor
+    var tmp = MoveCounter("test")
+    memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
+
+    var dest = alloc[MoveCounter[String]](1)
+
+    uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
+
+    # Nothing should have happened - move count should still be 0
+    assert_equal(src[0].move_count, 0)
+
+    # Cleanup/free the memory
+    destroy_n(src, count=1)
+    src.free()
+    dest.free()
+
+
+def test_uninit_copy_n_zero_count():
+    # Test with zero count - should be no-op
+    var src = alloc[CopyCounter[String]](1)
+    src.init_pointee_move(CopyCounter("test"))
+
+    var dest = alloc[CopyCounter[String]](1)
+
+    uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
+
+    # Nothing should have happened - copy count should still be 0
+    assert_equal(src[0].copy_count, 0)
+
+    # Cleanup/free the memory
+    destroy_n(src, count=1)
+    src.free()
+    dest.free()
+
+
+def test_destroy_n_zero_count():
+    # Test with zero count - should be no-op
+    var del_count = 0
+    var counter_ptr = UnsafePointer(to=del_count)
+    comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
+
+    var ptr = alloc[Counter](1)
+    ptr.init_pointee_move(Counter(counter_ptr))
+
+    destroy_n(ptr, count=0)
+    # Destructor should NOT have been called - del_count should still be 0
+    assert_equal(del_count, 0)
+
+    # Cleanup/free the memory
+    destroy_n(ptr, count=1)
     ptr.free()
 
 

@@ -328,6 +328,15 @@ what we publish.
 
 ### Library changes
 
+- Added `uninit_move_n()`, `uninit_copy_n()`, and `destroy_n()` functions to the
+  `memory` module for efficient bulk memory operations. These functions handle
+  moving, copying, and destroying multiple values in contiguous memory, with
+  automatic optimization for trivial types using `memcpy`. They encapsulate the
+  common pattern of checking `__moveinit__is_trivial`, `__copyinit__is_trivial`,
+  or `__del__is_trivial` and selecting the appropriate implementation. The `List`
+  collection now uses these functions internally for improved code clarity and
+  maintainability.
+
 - `Dict` internals have been replaced with a Swiss Table implementation using
   SIMD group probing for lookups. This improves lookup, insertion, and deletion
   performance — especially when looking up keys not in the dict — while

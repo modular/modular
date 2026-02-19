@@ -170,14 +170,19 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
-    ImplicitlyCopyable, Writable
-):
+struct CopyCounter[
+    T: ImplicitlyCopyable & Writable & Defaultable = NoneType,
+    *,
+    trivial_copy: Bool = False,
+](ImplicitlyCopyable, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:
         T: The type of value to wrap and count copies for.
+        trivial_copy: Weather the copy constructor should be considered trivial.
     """
+
+    comptime __copyinit__is_trivial = Self.trivial_copy
 
     var value: Self.T
     """The wrapped value."""
@@ -194,6 +199,12 @@ struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
         Args:
             s: The value to wrap.
         """
+        comptime assert (
+            Self.T.__copyinit__is_trivial or not Self.trivial_copy
+        ), (
+            "You cannot override CopyCounter's trivial copy construct when T"
+            " does not have one"
+        )
         self.value = s
         self.copy_count = 0
 
@@ -222,12 +233,17 @@ struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
 
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
-struct MoveCounter[T: Copyable & ImplicitlyDestructible](Copyable):
+struct MoveCounter[
+    T: Copyable & ImplicitlyDestructible, *, trivial_move: Bool = False
+](Copyable):
     """Counts the number of moves performed on a value.
 
     Parameters:
         T: The type of value to wrap and count moves for.
+        trivial_move: Weather the move constructor should be treated as trivial.
     """
+
+    comptime __moveinit__is_trivial = Self.trivial_move
 
     var value: Self.T
     """The wrapped value."""
@@ -241,6 +257,12 @@ struct MoveCounter[T: Copyable & ImplicitlyDestructible](Copyable):
         Args:
             value: The value to wrap.
         """
+        comptime assert (
+            Self.T.__moveinit__is_trivial or not Self.trivial_move
+        ), (
+            "You cannot override MoveCounter's trivial move construct when T"
+            " does not have one"
+        )
         self.value = value^
         self.move_count = 0
 
