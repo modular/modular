@@ -1587,6 +1587,22 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Parse the constraints if present.
   if (failed(fnSignature.parseConstraintsIfPresent(p)))
     return failure();
+
+  // Reject where clauses on trait methods. Users almost certainly expect
+  // availability semantics (method absent when constraint fails), but `where`
+  // gives callability (method exists, constraint checked at call site). To be
+  // useful, the struct would also need a conditional conformance implying the
+  // method's constraint, but nothing useful can be expressed in such a
+  // constraint today.
+  // See: https://www.notion.so/modularai/Conditional-Method-Availability for a
+  // discussion on conditional availability vs. callability.
+  if (!fnSignature.fnConstraints.empty() &&
+      isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation())) {
+    shared.emitError(funcOp.getLoc())
+        << "'where' clauses on trait methods are not supported";
+    return failure();
+  }
+
   std::optional<TypeCheckedParamList> paramListOrError =
       TypeCheckedParamList::create(parsedParamList, sigDecl);
   if (!paramListOrError.has_value())
