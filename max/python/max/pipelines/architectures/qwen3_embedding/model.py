@@ -35,6 +35,7 @@ from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -117,11 +118,11 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self.devices = devices
 
         # Build and compile graph
-        logger.info(f"Building {self.__class__.__name__} graph")
+        timer = CompilationTimer("model")
         graph = self._build_graph(weights, adapter, session)
-        logger.info(f"Compiling {self.__class__.__name__} model")
+        timer.mark_build_complete()
         self.model = session.load(graph, weights_registry=self.state_dict)
-        logger.info("Model loaded successfully")
+        timer.done()
 
     def _get_state_dict(
         self, weights: Weights, adapter: WeightsAdapter | None
