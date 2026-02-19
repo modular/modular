@@ -30,6 +30,7 @@ from typing import Any
 
 import aiohttp
 from tqdm.asyncio import tqdm
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .datasets.types import OpenAIImage
 from .tts_workloads_utils import SampleTTSRequest
@@ -85,6 +86,8 @@ class BaseRequestFuncOutput:
     latency: float = 0.0
     # List of inter-token latencies
     itl: list[float] = field(default_factory=list)
+    # List of per-chunk time-per-output-token values
+    tpot: list[float] = field(default_factory=list)
     error: str = ""
 
 
@@ -198,6 +201,16 @@ def samples_to_tokens(tts_config: Any, num_samples: int) -> int:
 class RequestDriver(ABC):
     """Abstract base class for a driver that handles API requests to different backends."""
 
+    def __init__(
+        self, tokenizer: PreTrainedTokenizerBase | None = None
+    ) -> None:
+        """Initialize the request driver.
+
+        Args:
+            tokenizer: Optional tokenizer for per-chunk TPOT computation.
+        """
+        self.tokenizer = tokenizer
+
     @abstractmethod
     async def request(
         self, request_func_input: RequestFuncInput
@@ -223,6 +236,7 @@ class ProgressBarRequestDriver(RequestDriver):
             request_driver: The underlying request driver to wrap.
             pbar: Progress bar to update after each request completes.
         """
+        super().__init__(tokenizer=request_driver.tokenizer)
         self.request_driver = request_driver
         self.pbar = pbar
 
@@ -256,7 +270,6 @@ class TRTLLMRequestDriver(RequestDriver):
             payload: dict[
                 str, bool | str | int | float | list[dict[str, Any]]
             ] = {
-                "accumulate_tokens": True,
                 "text_input": request_func_input.prompt,
                 "ignore_eos": request_func_input.ignore_eos,
                 "stream": True,
@@ -290,7 +303,8 @@ class TRTLLMRequestDriver(RequestDriver):
                             )
 
                             data = json.loads(chunk)
-                            output.generated_text += data["text_output"]
+                            chunk_text = data["text_output"]
+                            output.generated_text += chunk_text
                             timestamp = time.perf_counter()
                             # First token
                             if ttft == 0.0:
@@ -299,9 +313,13 @@ class TRTLLMRequestDriver(RequestDriver):
 
                             # Decoding phase
                             else:
-                                output.itl.append(
-                                    timestamp - most_recent_timestamp
+                                itl_value = timestamp - most_recent_timestamp
+                                output.itl.append(itl_value)
+                                tpot = _compute_chunk_tpot(
+                                    self.tokenizer, chunk_text, itl_value
                                 )
+                                if tpot is not None:
+                                    output.tpot.append(tpot)
 
                             most_recent_timestamp = timestamp
 
@@ -319,6 +337,26 @@ class TRTLLMRequestDriver(RequestDriver):
             return output
 
 
+def _compute_chunk_tpot(
+    tokenizer: PreTrainedTokenizerBase | None,
+    chunk_text: str,
+    itl_value: float,
+) -> float | None:
+    """Compute per-chunk time-per-output-token.
+
+    Note: This is approximate. Re-tokenizing the chunk text may not exactly
+    match the server's tokenization of the generated output.
+    """
+    if tokenizer is None or not chunk_text:
+        return None
+    chunk_tokens = len(
+        tokenizer(chunk_text, add_special_tokens=False).input_ids
+    )
+    if chunk_tokens > 0:
+        return itl_value / chunk_tokens
+    return None
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
@@ -326,6 +364,7 @@ async def _run_openai_stream_request(
     headers: dict[str, str],
     prompt_len: int,
     content_extractor: Callable[[dict[str, Any]], str],
+    tokenizer: PreTrainedTokenizerBase | None = None,
 ) -> RequestFuncOutput:
     output = RequestFuncOutput()
     output.prompt_len = prompt_len
@@ -371,9 +410,13 @@ async def _run_openai_stream_request(
 
                             # Decoding phase
                             else:
-                                output.itl.append(
-                                    timestamp - most_recent_timestamp
+                                itl_value = timestamp - most_recent_timestamp
+                                output.itl.append(itl_value)
+                                tpot = _compute_chunk_tpot(
+                                    tokenizer, text_content, itl_value
                                 )
+                                if tpot is not None:
+                                    output.tpot.append(tpot)
 
                             most_recent_timestamp = timestamp
                             generated_text += text_content
@@ -436,6 +479,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             headers=headers,
             prompt_len=request_func_input.prompt_len,
             content_extractor=lambda data: data["choices"][0]["text"],
+            tokenizer=self.tokenizer,
         )
 
 
@@ -496,6 +540,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             content_extractor=lambda data: data["choices"][0]["delta"].get(
                 "content", ""
             ),
+            tokenizer=self.tokenizer,
         )
 
 

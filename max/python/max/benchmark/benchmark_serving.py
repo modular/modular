@@ -358,10 +358,7 @@ def calculate_metrics(
             if i < skip_first_n_requests:
                 continue
 
-            if output_len > 1:
-                tpots.append(
-                    (outputs[i].latency - outputs[i].ttft) / (output_len - 1)
-                )
+            tpots += outputs[i].tpot
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
             # Input throughput is fully calculated once we reach the first output token.
@@ -478,6 +475,15 @@ def calculate_metrics(
         cpu_utilization_system=cpu_metrics.get("system_percent"),
         server_metrics=server_metrics,
     )
+
+    # Override TPOT mean with weighted average: sum(ITL) / decode_tokens.
+    # This is more accurate than mean-of-means since it properly weights
+    # by tokens returned per response. Decode tokens = total output - completed,
+    # since each request's first token is from prefill (TTFT), not decode.
+    total_output_tokens = sum(actual_output_lens)
+    decode_tokens = total_output_tokens - completed
+    if decode_tokens > 0 and itls:
+        metrics.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
 
     return metrics, actual_output_lens
 
@@ -878,7 +884,9 @@ async def benchmark(
     )
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
-    test_request_driver: RequestDriver = request_driver_class()
+    test_request_driver: RequestDriver = request_driver_class(
+        tokenizer=tokenizer
+    )
 
     if do_test_prompt:
         await run_single_test_prompt(
@@ -970,7 +978,7 @@ async def benchmark(
         pbar = create_benchmark_pbar(disable_tqdm=disable_tqdm, samples=samples)
 
         # Create base driver and wrap with ProgressBarRequestDriver if pbar is provided
-        base_driver: RequestDriver = request_driver_class()
+        base_driver: RequestDriver = request_driver_class(tokenizer=tokenizer)
         request_driver: RequestDriver = (
             ProgressBarRequestDriver(base_driver, pbar)
             if pbar is not None
