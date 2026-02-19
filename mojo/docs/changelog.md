@@ -328,6 +328,9 @@ what we publish.
 
 ### Library changes
 
+- `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
+  `issubset()` traversal instead of two full traversals.
+
 - `Dict` internals have been replaced with a Swiss Table implementation using
   SIMD group probing for lookups. This improves lookup, insertion, and deletion
   performance — especially when looking up keys not in the dict — while
