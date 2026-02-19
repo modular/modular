@@ -248,7 +248,7 @@ def _handle_transfer(
             dtype=input_buffer.dtype,
             device=target_device,
         )
-        ops.broadcast_ops.StaticBroadcastTo(
+        ops.data_movement_ops.StaticBroadcastTo(
             output,
             input_buffer,
             list(input_buffer.shape),
@@ -317,7 +317,7 @@ def _handle_static_broadcast_to(
     )
 
     # Call Mojo kernel
-    ops.broadcast_ops.StaticBroadcastTo(
+    ops.data_movement_ops.StaticBroadcastTo(
         output, inputs[0], target_shape, target_device._device_context_ptr()
     )
 
@@ -372,7 +372,7 @@ def _handle_broadcast_to(
     )
 
     # Call Mojo kernel (supports both CPU and GPU)
-    ops.broadcast_ops.StaticBroadcastTo(
+    ops.data_movement_ops.StaticBroadcastTo(
         output, inputs[0], target_shape, target_device._device_context_ptr()
     )
 
@@ -798,7 +798,7 @@ def _handle_transpose(
     )
 
     # Call Mojo kernel (supports both CPU and GPU)
-    ops.transpose_ops.Transpose(
+    ops.data_movement_ops.Transpose(
         output,
         inputs[0],
         perm,
@@ -1372,7 +1372,7 @@ def _handle_concat(
         inner_count = inp.shape[axis] * suffix_size
         inp_stride = inner_count
         for outer_idx in range(outer_size):
-            ops.misc_ops.Memcpy(
+            ops.data_movement_ops.Memcpy(
                 output,
                 inp,
                 outer_idx * out_axis_stride + dst_axis_offset * suffix_size,

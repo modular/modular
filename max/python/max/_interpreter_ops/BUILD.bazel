@@ -11,11 +11,11 @@ mojo_library(
 )
 
 mojo_shared_library(
-    name = "broadcast_ops",
+    name = "data_movement_ops",
     srcs = [
-        "broadcast_ops.mojo",
+        "data_movement_ops.mojo",
     ],
-    shared_lib_name = "broadcast_ops.so",
+    shared_lib_name = "data_movement_ops.so",
     deps = [
         ":op_utils",
         "//max:MOGGKernelAPI",
@@ -101,31 +101,17 @@ mojo_shared_library(
     ],
 )
 
-mojo_shared_library(
-    name = "transpose_ops",
-    srcs = [
-        "transpose_ops.mojo",
-    ],
-    shared_lib_name = "transpose_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
 modular_py_library(
     name = "_interpreter_ops",
     srcs = glob(["**/*.py"]),
     data = [
-        ":broadcast_ops",
+        ":data_movement_ops",
         ":elementwise_ops",
         ":layer_norm_ops",
         ":matmul_ops",
         ":misc_ops",
         ":reduce_ops",
         ":softmax_ops",
-        ":transpose_ops",
     ],
     deps = [
         "//max/python/max:_core",
