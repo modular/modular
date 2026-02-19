@@ -9,6 +9,7 @@
 #include "ParamBindings.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -55,9 +56,8 @@ bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
   propB = getCanonicalAttr(propB);
 
   // Trivially true is implied by anything.
-  if (auto intB = dyn_cast<IntegerAttr>(propB))
-    if (intB.getValue().isOne())
-      return true;
+  if (isTriviallyTrueProposition(propB))
+    return true;
   // Direct equality: A implies A.
   if (propA == propB)
     return true;
@@ -87,6 +87,52 @@ bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
   // Fallback: canonicalization trick - A implies B iff AND(A, B) == A.
   TypedAttr combined = ParamOperatorAttr::get(POC::And, {propA, propB});
   return combined == propA;
+}
+
+/// Check if prop is NOT(inner), i.e., XOR(inner, true). Returns inner if so.
+static TypedAttr getNotOperand(TypedAttr prop) {
+  auto xorOp = dyn_cast<ParamOperatorAttr>(prop);
+  if (!xorOp || xorOp.getOpcode() != POC::Xor ||
+      xorOp.getOperands().size() != 2)
+    return {};
+
+  // NOT is represented as XOR(x, true). Check both operand orderings.
+  for (auto [maybeInner, maybeTrue] :
+       {std::pair{xorOp.getOperand(0), xorOp.getOperand(1)},
+        std::pair{xorOp.getOperand(1), xorOp.getOperand(0)}}) {
+    if (isTriviallyTrueProposition(maybeTrue))
+      return maybeInner;
+  }
+  return {};
+}
+
+bool LIT::constraintsContradict(TypedAttr propA, TypedAttr propB) {
+  propA = getCanonicalAttr(propA);
+  propB = getCanonicalAttr(propB);
+
+  // Negation rule: A contradicts NOT(A).
+  // If B = NOT(inner) and A implies inner, then A contradicts B.
+  if (TypedAttr innerB = getNotOperand(propB))
+    if (constraintImplies(propA, innerB))
+      return true;
+  if (TypedAttr innerA = getNotOperand(propA))
+    if (constraintImplies(propB, innerA))
+      return true;
+
+  // AND decomposition: (X AND Y) contradicts Z if any operand contradicts Z.
+  // Example: A contradicts (NOT(A) AND B) because A contradicts NOT(A).
+  if (auto andOpA = dyn_cast<ParamOperatorAttr>(propA);
+      andOpA && andOpA.getOpcode() == POC::And)
+    for (TypedAttr operand : andOpA.getOperands())
+      if (constraintsContradict(operand, propB))
+        return true;
+  if (auto andOpB = dyn_cast<ParamOperatorAttr>(propB);
+      andOpB && andOpB.getOpcode() == POC::And)
+    for (TypedAttr operand : andOpB.getOperands())
+      if (constraintsContradict(propA, operand))
+        return true;
+
+  return false;
 }
 
 ConstraintResult LIT::checkConstraints(

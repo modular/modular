@@ -503,14 +503,18 @@ printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
 // Constraint Utilities
 //===----------------------------------------------------------------------===//
 
+/// Returns true if the proposition is trivially true (constant i1 = 1).
+inline bool isTriviallyTrueProposition(TypedAttr prop) {
+  auto intAttr = dyn_cast<IntegerAttr>(prop);
+  return intAttr && intAttr.getValue().isOne();
+}
+
 /// Returns true if the constraint is trivially true (proposition = constant 1)
 /// or null (for backward compatibility with old IR).
 inline bool isTriviallyTrueConstraint(ConstraintAttr constraint) {
   if (!constraint)
     return true;
-  if (auto intAttr = dyn_cast<IntegerAttr>(constraint.getProposition()))
-    return intAttr.getValue().isOne();
-  return false;
+  return isTriviallyTrueProposition(constraint.getProposition());
 }
 
 /// Create a placeholder constraint for unconditional trait conformance.
