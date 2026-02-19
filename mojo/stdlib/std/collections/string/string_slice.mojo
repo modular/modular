@@ -45,6 +45,7 @@ from memory import (
     Span,
     memcmp,
     memcpy,
+    memset,
     pack_bits,
 )
 from python import ConvertibleToPython, Python, PythonObject
@@ -2473,13 +2474,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             len(fillchar) == 1, "fill char needs to be a one byte literal"
         )
 
+        var fill_byte = fillchar.as_bytes()[0]
         var result = String(capacity=width)
-        for _ in range(start):
-            result += fillchar
-        result += self
+        var ptr = result.unsafe_ptr_mut(capacity=width)
 
-        while result.byte_length() < width:
-            result += fillchar
+        # Left padding
+        memset(ptr, fill_byte, start)
+        # Content
+        memcpy(ptr + start, self.unsafe_ptr(), len(self))
+        # Right padding
+        var end_padding = width - start - len(self)
+        memset(ptr + start + len(self), fill_byte, end_padding)
+
+        result.set_byte_length(width)
         return result
 
     fn join[
