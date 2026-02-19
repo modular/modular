@@ -839,12 +839,14 @@ fn slice_op[
     comptime unknown_steps = DimList.create_unknown[MAX_RANK]()
 
     if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl
         Slice.execute[
             target="cpu",
             _trace_name="interpreter.slice",
             static_steps=unknown_steps,
             dtype=dtype,
             rank=MAX_RANK,
+            use_blocking_impl=True,
         ](
             output_tensor,
             input_tensor,

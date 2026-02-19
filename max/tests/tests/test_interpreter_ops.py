@@ -2795,3 +2795,111 @@ class TestLayerNormOps:
 
         expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestSliceOp:
+    """Tests for slice operations."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_slice_1d(self, dtype: DType) -> None:
+        """Test basic 1D slice."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(10, dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(2, 7)])
+
+        expected = x_np[2:7]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_slice_2d(self, dtype: DType) -> None:
+        """Test 2D slice across both dimensions."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
+
+        expected = x_np[0:2, 1:3]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_with_step(self) -> None:
+        """Test slice with step > 1."""
+        x_np = np.arange(10, dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 10, 2)])
+
+        expected = x_np[0:10:2]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_3d(self) -> None:
+        """Test slice with 3D tensor."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3), slice(0, 2)])
+
+        expected = x_np[0:2, 1:3, 0:2]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_slice_int_dtypes(self, dtype: DType) -> None:
+        """Test slice with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(1, 3), slice(0, 2)])
+
+        expected = x_np[1:3, 0:2]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_single_element(self) -> None:
+        """Test slice extracting a single element along each dim."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(1, 2), slice(2, 3)])
+
+        expected = x_np[1:2, 2:3]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_full_dim(self) -> None:
+        """Test slice that takes the full range of a dimension."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 3), slice(0, 4)])
+
+        expected = x_np[0:3, 0:4]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
