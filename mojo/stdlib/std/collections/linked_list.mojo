@@ -309,6 +309,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         while curr:
             var next = curr[].next
             curr[].next = prev
+            curr[].prev = next
             prev = curr
             curr = next
         self._tail = self._head

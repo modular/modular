@@ -638,3 +638,6 @@ what we publish.
 - `StringSlice.find`: Fixed integer overflow bug in SIMD string search that
   caused searches to fail when searching for strings longer than
   `simd_width_of[DType.bool]()` and haystacks larger than UInt16.MAX.
+
+- `LinkedList.reverse()`: Fixed missing `prev` pointer updates, which caused
+  `__reversed__()` to produce wrong results after reversing.

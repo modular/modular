@@ -96,6 +96,18 @@ def test_reverse():
     assert_equal(l1[2], 1)
 
 
+def test_reverse_prev_pointers():
+    var l1 = LinkedList[Int](1, 2, 3)
+    l1.reverse()
+
+    # After reverse, forward order is [3, 2, 1].
+    # Backward iteration via __reversed__ should yield [1, 2, 3].
+    var riter = l1.__reversed__()
+    assert_equal(riter.__next__(), 1)
+    assert_equal(riter.__next__(), 2)
+    assert_equal(riter.__next__(), 3)
+
+
 def test_pop():
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(l1.pop(), 3)
