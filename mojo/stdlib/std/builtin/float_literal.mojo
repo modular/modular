@@ -172,13 +172,21 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        """Writes the FloatLiteral in string form."""
-        writer.write(String(self))
+        """Writes the FloatLiteral in string form.
+
+        Args:
+            writer: The Writer to write the value to.
+        """
+        Float64(self).write_to(writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the FloatLiteral in repr form."""
-        writer.write(String(self))
+        """Writes the FloatLiteral in repr form.
+
+        Args:
+            writer: The Writer to write the value to.
+        """
+        Float64(self).write_repr_to(writer)
 
     # ===------------------------------------------------------------------===#
     # Unary Operators
