@@ -246,6 +246,9 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `StringSlice.startswith()` and `StringSlice.endswith()` now use direct
+  `memcmp` instead of `find()`/`rfind()`, reducing from O(n) to O(m).
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
