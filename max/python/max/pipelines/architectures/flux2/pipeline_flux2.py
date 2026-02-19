@@ -145,6 +145,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self._scheduler_step_model: Model = self._build_scheduler_step_model()
         self._time_step_model: Model = self._build_all_time_steps_model()
         self._unsqueeze_model: Model = self._build_unsqueeze_model()
+        self._concat_model: Model = self._build_concat_model()
         self._latent_prep_models: dict[str, Model] = {}
         self._vae_prep_models: dict[str, Model] = {}
         self._prompt_embed_models: dict[str, Model] = {}
@@ -331,13 +332,22 @@ class Flux2Pipeline(DiffusionPipeline):
                 dtype, shape=["batch", "seq", "channels"], device=device
             ),
             TensorType(
-                dtype, shape=["batch", "seq", "channels"], device=device
+                dtype, shape=["batch", "pred_seq", "channels"], device=device
             ),
             TensorType(dtype, shape=[1], device=device),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
         ]
         with Graph("scheduler_step", input_types=input_types) as graph:
-            latents_in, noise_pred_in, dt_in = graph.inputs
-            result = latents_in + dt_in * noise_pred_in
+            latents_in, noise_pred_in, dt_in, num_noise_tokens_in = graph.inputs
+            latents_sliced = ops.slice_tensor(
+                latents_in,
+                [slice(None), (slice(0, num_noise_tokens_in), "num_tokens"), slice(None)],
+            )
+            noise_pred_sliced = ops.slice_tensor(
+                noise_pred_in,
+                [slice(None), (slice(0, num_noise_tokens_in), "num_tokens"), slice(None)],
+            )
+            result = latents_sliced + dt_in * noise_pred_sliced
             graph.output(result)
 
         session = InferenceSession([Accelerator()])
@@ -353,6 +363,44 @@ class Flux2Pipeline(DiffusionPipeline):
             hidden_dim = tensor_in.shape[1]
             result = ops.reshape(tensor_in, [1, seq_len, hidden_dim])
             graph.output(result)
+
+        session = InferenceSession([Accelerator()])
+        model = session.load(graph)
+        return model
+
+    def _build_concat_model(self)-> Model:
+        dtype = self.transformer.config.dtype
+        device = self.devices[0]
+        input_types = [
+            TensorType(
+                dtype,
+                shape=["batch_size", "seq_len_latent", "latent_dim"],
+                device=device,
+            ),
+            TensorType(
+                dtype,
+                shape=["batch_size", "seq_len_image", "latent_dim"],
+                device=device,
+            ),
+            TensorType(
+                DType.int64,
+                shape=["batch_size", "seq_len_latent", 4],
+                device=device,
+            ),
+            TensorType(
+                DType.int64,
+                shape=["batch_size", "seq_len_image", 4],
+                device=device,
+            ),
+        ]
+        with Graph("concat_layer", input_types=input_types) as graph:
+            latents = graph.inputs[0]
+            img_latents = graph.inputs[1]
+            latent_img_ids = graph.inputs[2]
+            image_latent_ids = graph.inputs[3]
+            result_latents = ops.concat([latents, img_latents], axis=1)
+            result_latent_ids = ops.concat([latent_img_ids, image_latent_ids], axis=1)
+            graph.output(result_latents, result_latent_ids)
 
         session = InferenceSession([Accelerator()])
         model = session.load(graph)
@@ -426,69 +474,102 @@ class Flux2Pipeline(DiffusionPipeline):
                 f"got {type(encoder_output)}"
             )
 
-    # def _encode_vae_image(
-    #     self,
-    #     image: Tensor,
-    #     generator: Any = None,
-    #     sample_mode: str = "mode",
-    # ) -> Tensor:
-    #     if len(image.shape) != 4:
-    #         raise ValueError(f"Expected image dims 4, got {len(image.shape)}.")
+    @staticmethod
+    def _prepare_image_ids_from_shapes(
+        latent_shapes: list[tuple[int, int]],
+        batch_size: int,
+        device: DeviceRef,
+        scale: int = 10,
+    ) -> Tensor:
+        if len(latent_shapes) == 0:
+            raise ValueError("Expected at least one latent shape.")
 
-    #     encoder_output = self.vae.encode(image, return_dict=True)
+        coords_all = []
+        for i, (height, width) in enumerate(latent_shapes):
+            t_coord = scale + scale * i
+            t_coords = np.full((height, width), t_coord, dtype=np.int64)
+            h_coords, w_coords = np.meshgrid(
+                np.arange(height, dtype=np.int64),
+                np.arange(width, dtype=np.int64),
+                indexing="ij",
+            )
+            l_coords = np.zeros((height, width), dtype=np.int64)
+            coords = np.stack([t_coords, h_coords, w_coords, l_coords], axis=-1)
+            coords_all.append(coords.reshape(-1, 4))
 
-    #     if isinstance(encoder_output, dict):
-    #         encoder_output = encoder_output["latent_dist"]
+        coords_concat = np.concatenate(coords_all, axis=0)
+        batched = np.tile(coords_concat[np.newaxis, :, :], (batch_size, 1, 1))
+        return Tensor.from_dlpack(np.ascontiguousarray(batched)).to(device)
 
-    #     image_latents = self.retrieve_latents(
-    #         encoder_output, generator=generator, sample_mode=sample_mode
-    #     )
-    #     image_latents = self._patchify_latents(image_latents)
+    def _encode_vae_image(
+        self,
+        image: Tensor,
+        dtype: DType,
+        generator: Any = None,
+        sample_mode: str = "mode",
+    ) -> tuple[Tensor, tuple[int, int]]:
+        if image.rank != 4:
+            raise ValueError(f"Expected image dims 4, got {image.rank}.")
 
-    #     bn_mean = self.vae.bn.running_mean
-    #     bn_var = self.vae.bn.running_var
+        encoder_output = self.vae.encode(image, return_dict=True)
+        if isinstance(encoder_output, dict):
+            encoder_output = encoder_output["latent_dist"]
 
-    #     num_channels = bn_mean.shape[0].dim
-    #     bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
-    #     bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
-    #     bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
-    #     image_latents = (image_latents - bn_mean) / bn_std
+        image_latents = self.retrieve_latents(
+            encoder_output, generator=generator, sample_mode=sample_mode
+        )
+        latent_h = image_latents.shape[2].dim
+        latent_w = image_latents.shape[3].dim
+        latent_prep_model = self._ensure_latent_prep_model(latent_h, latent_w, dtype)
+        packed_drv = latent_prep_model.execute(
+            image_latents.cast(DType.float32).driver_tensor
+        )[0]
+        packed = Tensor.from_dlpack(packed_drv)
 
-    #     return image_latents
+        bn_mean = self.vae.bn.running_mean.cast(dtype)
+        bn_var = self.vae.bn.running_var.cast(dtype)
+        num_channels = bn_mean.shape[0].dim
+        bn_mean = F.reshape(bn_mean, (1, 1, num_channels))
+        bn_std = F.sqrt(
+            F.reshape(bn_var, (1, 1, num_channels)) + self.vae.config.batch_norm_eps
+        )
+        packed = (packed - bn_mean) / bn_std
+        return packed, (latent_h // 2, latent_w // 2)
 
-    # def prepare_image_latents(
-    #     self,
-    #     images: list[Tensor],
-    #     batch_size: int,
-    #     device: DeviceRef,
-    #     dtype: DType,
-    #     generator: Any = None,
-    #     sample_mode: str = "mode",
-    # ) -> tuple[Tensor, Tensor]:
-    #     image_latents = []
-    #     for image in images:
-    #         image = image.to(device).cast(dtype)
-    #         latent = self._encode_vae_image(
-    #             image=image, generator=generator, sample_mode=sample_mode
-    #         )
-    #         image_latents.append(latent)
+    def prepare_image_latents(
+        self,
+        images: list[Tensor],
+        batch_size: int,
+        device: DeviceRef,
+        dtype: DType,
+        generator: Any = None,
+        sample_mode: str = "mode",
+    ) -> tuple[Tensor, Tensor]:
+        image_latents: list[Tensor] = []
+        latent_shapes: list[tuple[int, int]] = []
+        for image in images:
+            image = image.to(device).cast(self.vae.config.dtype)
+            latent, latent_shape = self._encode_vae_image(
+                image=image,
+                dtype=dtype,
+                generator=generator,
+                sample_mode=sample_mode,
+            )
+            image_latents.append(latent)
+            latent_shapes.append(latent_shape)
 
-    #     image_latent_ids = self._prepare_image_ids(image_latents, device=device)
+        if len(image_latents) == 1:
+            condition_latents = image_latents[0]
+        else:
+            condition_latents = F.concat(image_latents, axis=1)
 
-    #     packed_latents = []
-    #     for latent in image_latents:
-    #         packed = self._pack_latents(latent)
-    #         packed = F.squeeze(packed, axis=0)
-    #         packed_latents.append(packed)
-
-    #     image_latents = F.concat(packed_latents, axis=0)
-    #     image_latents = F.unsqueeze(image_latents, 0)
-    #     image_latents = F.tile(image_latents, (batch_size, 1, 1))
-
-    #     image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
-    #     image_latent_ids = image_latent_ids.to(device)
-
-    #     return image_latents, image_latent_ids
+        condition_latents = F.tile(condition_latents, (batch_size, 1, 1))
+        image_latent_ids = self._prepare_image_ids_from_shapes(
+            latent_shapes=latent_shapes,
+            batch_size=batch_size,
+            device=device,
+        )
+        return condition_latents, image_latent_ids
 
     def _prepare_prompt_embeddings(
         self,
@@ -550,12 +631,6 @@ class Flux2Pipeline(DiffusionPipeline):
         #     prompt_embeds = F.reshape(
         #         prompt_embeds, [batch_size * num_images_per_prompt, seq_len, -1]
         #     )
-
-        # text_ids = self._prepare_text_ids(
-        #     batch_size=batch_size * num_images_per_prompt,
-        #     seq_len=seq_len,
-        #     device=self.text_encoder.devices[0],
-        # )
         
         bs_embed = prompt_embeds.shape[0].dim
         seq_len = prompt_embeds.shape[1].dim
@@ -721,21 +796,25 @@ class Flux2Pipeline(DiffusionPipeline):
         dtype = prompt_embeds.dtype
 
         image_latents = None
-        image_latent_ids = None
-        # TODO: implement image latents support
-        # if model_inputs.input_image is not None:
-        #     image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
-        #     image_latents, image_latent_ids = self.prepare_image_latents(
-        #         images=[image_tensor],
-        #         batch_size=batch_size,
-        #         device=self.vae.devices[0],
-        #         dtype=self.vae.config.dtype,
-        #     )
+        if model_inputs.input_image is not None:
+            image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
+            image_latents, image_latent_ids = self.prepare_image_latents(
+                images=[image_tensor],
+                batch_size=batch_size,
+                device=self.transformer.devices[0],
+                dtype=dtype,
+            )
 
         # 2) Prepare latents and conditioning tensors.
         latents, latent_image_ids = self._preprocess_latents(
             model_inputs.latents, model_inputs.latent_image_ids, dtype
         )
+        if image_latents is not None:
+            if image_latents.shape[1].dim != latents.shape[1].dim:
+                raise ValueError(
+                    "Input image latent sequence length mismatch. "
+                    f"Expected {latents.shape[1].dim}, got {image_latents.shape[1].dim}."
+                )
 
         # 3) Prepare scheduler tensors.
         device = self.transformer.devices[0]
@@ -795,6 +874,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         raw_compiled_model = _unwrap_model(self.transformer.model)
         raw_scheduler_step_model = _unwrap_model(self._scheduler_step_model)
+        num_noise_tokens = Tensor.from_dlpack(np.array([latents_drv.shape[1]], dtype=np.int64))
 
         # 4) Denoising loop.
         for i in tqdm(range(num_inference_steps), desc="Denoising"):
@@ -802,24 +882,25 @@ class Flux2Pipeline(DiffusionPipeline):
             timestep_drv = all_timesteps_drv[i : i + 1]
             dt_drv = all_dts_drv[i : i + 1]
 
-            # TODO: support image latents (taesu)
-            # if image_latents is not None:
-            #     latents = F.concat([latents, image_latents], axis=1)
-            #     latent_image_ids = F.concat(
-            #         [latent_image_ids, image_latent_ids], axis=1
-            #     )
+            if image_latents is not None:
+                latents_model_input_drv, latent_model_ids_drv = self._concat_model.execute(
+                    latents_drv, image_latents.driver_tensor, img_ids_drv, image_latent_ids.driver_tensor
+                )
+            else:
+                latents_model_input_drv = latents_drv
+                latent_model_ids_drv = img_ids_drv
 
             noise_pred_drv = raw_compiled_model.execute(
-                latents_drv,
+                latents_model_input_drv,
                 encoder_hidden_states_drv,
                 timestep_drv,
-                img_ids_drv,
+                latent_model_ids_drv,
                 txt_ids_drv,
                 guidance_drv,
             )[0]
 
             latents_drv = raw_scheduler_step_model.execute(
-                latents_drv, noise_pred_drv, dt_drv
+                latents_drv, noise_pred_drv, dt_drv, num_noise_tokens
             )[0]
 
             if hasattr(device, "synchronize"):
