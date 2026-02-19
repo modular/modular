@@ -40,7 +40,7 @@ from max.interfaces.provider_options import (
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .base import Request, RequestID
+from .base import RequestID
 
 if TYPE_CHECKING:
     from max.interfaces.generation import GenerationOutput
@@ -1462,12 +1462,15 @@ class FastAPIRequestProtocol(Protocol):
 
 
 @dataclass(frozen=True)
-class OpenResponsesRequest(Request):
+class OpenResponsesRequest:
     """General request container for OpenResponses API requests.
 
     This class wraps an OpenResponsesRequestBody and adheres to the Request schema.
     All request fields are accessed directly from the body.
     """
+
+    request_id: RequestID = field()
+    """A unique identifier for the request."""
 
     body: OpenResponsesRequestBody = field()
     """The complete OpenResponses request body."""
