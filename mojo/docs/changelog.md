@@ -573,6 +573,20 @@ what we publish.
   SIMD[DType.uint8, 2](255).write_padded(s, 1)
   ```
 
+- `SIMD`'s safe division operators (`__floordiv__`, `__mod__`, `__divmod__`)
+  now return safe results in an elementwise fashion. They previously returned a
+  zero result if *any* element of the divisor was zero:
+
+  ```Mojo
+  comptime Int32x2 = SIMD[DType.int32, 2]
+
+  var a = Int32x2(99, 99)
+  var b = Int32x2(4, 0)
+  # Now returns [24, 0]
+  # Previously returned [0, 0]
+  print(a.__floordiv__(b))
+  ```
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

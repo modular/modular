@@ -994,17 +994,17 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_numeric(), "the type must be numeric"
 
-        @parameter
-        if Self.dtype.is_integral():
-            if not all(rhs):
-                # this should raise an exception.
-                return Self()
+        var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
+            0
+        )
+        var safe_divisor = is_zero_mask.select(Self(1), rhs)
 
-        return Self(
+        var floordiv = Self(
             mlir_value=__mlir_op.`pop.floordiv`(
-                self._mlir_value, rhs._mlir_value
+                self._mlir_value, safe_divisor._mlir_value
             )
         )
+        return is_zero_mask.select(Self(), floordiv)
 
     @always_inline("nodebug")
     fn __mod__(self, rhs: Self) -> Self:
@@ -1018,21 +1018,21 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_numeric(), "the type must be numeric"
 
-        @parameter
-        if Self.dtype.is_integral():
-            if not all(rhs):
-                # this should raise an exception.
-                return Self()
+        var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
+            0
+        )
+        var safe_divisor = is_zero_mask.select(Self(1), rhs)
 
         @parameter
         if Self.dtype.is_unsigned():
-            return Self(
+            var rem = Self(
                 mlir_value=__mlir_op.`pop.rem`(
-                    self._mlir_value, rhs._mlir_value
+                    self._mlir_value, safe_divisor._mlir_value
                 )
             )
+            return is_zero_mask.select(Self(), rem)
         else:
-            var div = self / rhs
+            var div = self / safe_divisor
 
             @parameter
             if Self.dtype.is_floating_point():
@@ -1040,7 +1040,8 @@ struct SIMD[dtype: DType, size: Int](
 
             var mod = self - div * rhs
             var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
-            return mod + mask.select(rhs, Self(0))
+            var mod_result = mod + mask.select(rhs, Self(0))
+            return is_zero_mask.select(Self(), mod_result)
 
     @always_inline("nodebug")
     fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
@@ -1053,15 +1054,18 @@ struct SIMD[dtype: DType, size: Int](
             The quotient and remainder as a
             `Tuple(self // denominator, self % denominator)`.
         """
-        if not all(denominator):
-            # this should raise an exception.
-            return Self(0), Self(0)
+        var is_zero_mask = denominator.eq(0)
+        var safe_denominator = is_zero_mask.select(Self(1), denominator)
 
         @parameter
         if Self.dtype.is_unsigned():
-            return self // denominator, self % denominator
+            var div = self // safe_denominator
+            var mod = self % safe_denominator
+            return is_zero_mask.select(Self(0), div), is_zero_mask.select(
+                Self(0), mod
+            )
 
-        var div = self / denominator
+        var div = self / safe_denominator
 
         @parameter
         if Self.dtype.is_floating_point():
@@ -1073,7 +1077,9 @@ struct SIMD[dtype: DType, size: Int](
         if any(mask):
             div = div - mask.cast[Self.dtype]()
 
-        return div, mod + mask.select(denominator, Self(0))
+        var div_res = is_zero_mask.select(Self(0), div)
+        var mod_res = mod + mask.select(denominator, Self(0))
+        return div_res, is_zero_mask.select(Self(0), mod_res)
 
     @always_inline("nodebug")
     fn __pow__(self, exp: Int) -> Self:
