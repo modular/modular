@@ -356,10 +356,8 @@ IREvaluator::resolveConformanceForStruct(ResolvedStructHandle resolved,
 void IREvaluator::withEvaluator(
     ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
     llvm::function_ref<void(ParameterEvaluator &)> callback) {
-  IREvaluator nestedEvaluator(*elaborator, parent);
-  nestedEvaluator.setErrorLoc(*errorLoc);
-  for (auto [param, value] : llvm::zip(paramDecls, paramValues))
-    nestedEvaluator.setDeclBinding(param, value);
+  ParameterEvaluator nestedEvaluator(paramDecls, paramValues);
+  nestedEvaluator.setEvaluationContext(this);
   callback(nestedEvaluator);
 }
 
@@ -493,16 +491,16 @@ IREvaluator::IREvaluator(Elaborator &elaborator, ImplNode *parent)
                          this),
       BytecodeInterpreter(elaborator.getTarget(), &elaborator),
       elaborator(&elaborator), parent(parent) {
-  setEvaluationContext(this);
+  evaluator.setEvaluationContext(this);
 }
 
 IREvaluator::IREvaluator(const IREvaluator &other)
-    : ParameterEvaluator(other),
-      IREvaluatorContext(other.elaborator->env, other.getTarget().getContext(),
+    : IREvaluatorContext(other.elaborator->env, other.getTarget().getContext(),
                          this),
       BytecodeInterpreter(other.getTarget(), other.elaborator),
-      elaborator(other.elaborator), parent(other.parent) {
-  setEvaluationContext(this);
+      evaluator(other.evaluator), elaborator(other.elaborator),
+      parent(other.parent) {
+  evaluator.setEvaluationContext(this);
 }
 
 /// Given a generic parameter expression, simplify it by folding the
@@ -517,7 +515,7 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
 
-  Attribute result = getReboundAttribute(expr);
+  Attribute result = evaluator.getReboundAttribute(expr);
   if (error)
     return std::move(*error);
 
@@ -576,7 +574,7 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
 
-  Type result = getReboundType(expr);
+  Type result = evaluator.getReboundType(expr);
   if (error)
     return std::move(*error);
   return result;
