@@ -165,6 +165,7 @@ from nn.index_tensor import (
     index_tensor,
 )
 from nn.irfft import irfft
+from kv_cache.lmcache_transfer import lmcache_offload, lmcache_onload
 from nn.kv_cache import (
     copy_kv_pages_d2h,
     generic_flash_attention_kv_cache_padded,
@@ -10249,6 +10250,133 @@ struct KVCacheCopyPagesD2H:
                 ),
             ),
             Int(layer_idx),
+            gpu_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache External Gather/Scatter Operations (for LMCache integration)
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.lmcache.offload")
+struct LMCacheOffload:
+    """Offload KV cache data from paged format to external contiguous format.
+
+    Used by LMCache connector to copy KV data from MAX's paged cache layout
+    to LMCache's contiguous KV_2LTD format for external storage.
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        page_size: Int,
+        num_kv_heads: Int,
+        head_dim: Int,
+        kv_dim: Int,
+        target: StaticString,
+    ](
+        output: MutableInputTensor[dtype=dtype, rank=4],
+        paged_cache: InputTensor[dtype=dtype, rank=6],
+        slot_mapping: InputTensor[dtype = DType.int64, rank=1],
+        start_token: InputTensor[dtype = DType.int64, rank=1],
+        end_token: InputTensor[dtype = DType.int64, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+        var start = Int(start_token[0])
+        var end = Int(end_token[0])
+
+        lmcache_offload[
+            dtype,
+            page_size,
+            num_kv_heads,
+            head_dim,
+            kv_dim,
+            target,
+        ](
+            LayoutTensor[dtype, Layout.row_major[4](), MutAnyOrigin](
+                output.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[4]()].row_major(
+                    output.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                paged_cache.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    paged_cache.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                slot_mapping.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    slot_mapping.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            start,
+            end,
+            gpu_ctx,
+        )
+
+
+@compiler.register("mo.lmcache.onload")
+struct LMCacheOnload:
+    """Onload KV cache data from external contiguous format to paged format.
+
+    Used by LMCache connector to copy KV data from LMCache's contiguous
+    KV_2LTD format into MAX's paged cache layout.
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        page_size: Int,
+        num_kv_heads: Int,
+        head_dim: Int,
+        kv_dim: Int,
+        target: StaticString,
+    ](
+        paged_cache: MutableInputTensor[dtype=dtype, rank=6],
+        input: InputTensor[dtype=dtype, rank=4],
+        slot_mapping: InputTensor[dtype = DType.int64, rank=1],
+        start_token: InputTensor[dtype = DType.int64, rank=1],
+        end_token: InputTensor[dtype = DType.int64, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+        var start = Int(start_token[0])
+        var end = Int(end_token[0])
+
+        lmcache_onload[
+            dtype,
+            page_size,
+            num_kv_heads,
+            head_dim,
+            kv_dim,
+            target,
+        ](
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                paged_cache.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    paged_cache.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[4](), MutAnyOrigin](
+                input.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[4]()].row_major(
+                    input.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                slot_mapping.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    slot_mapping.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            start,
+            end,
             gpu_ctx,
         )
 

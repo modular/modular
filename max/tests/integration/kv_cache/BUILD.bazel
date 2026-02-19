@@ -83,6 +83,7 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "test_lora_*.py",
+            "test_lmcache_*.py",  # Requires external lmcache package
         ],
     ) + ["conftest.py"],
     exec_properties = {
