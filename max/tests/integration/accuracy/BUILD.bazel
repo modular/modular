@@ -247,6 +247,26 @@ modular_py_test(
 )
 
 modular_py_binary(
+    name = "dataset_eval_matrix",
+    srcs = ["dataset_eval_matrix.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_dataset_eval_matrix",
+    size = "small",
+    srcs = ["test_dataset_eval_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":dataset_eval_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
     name = "pipelines_mteb",
     testonly = True,
     srcs = ["pipelines_mteb.py"],
