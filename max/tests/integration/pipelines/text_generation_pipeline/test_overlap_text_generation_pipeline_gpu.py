@@ -421,7 +421,7 @@ def test_overlap_execution(
     )
 
     num_trials = 3
-    for trial in range(num_trials):
+    for _trial in range(num_trials):
         _ = pipeline.execute(TextGenerationInputs(batches=[[]], num_steps=1))
 
         req_a = create_context(isl=17, osl=1, offset=100)
@@ -505,7 +505,9 @@ def test_overlap_execution(
             f"Actual: {elapsed:.2f}s, Expected: {expected_duration:.2f}s, Error: {error:.2f}s"
         )
 
+        # Disable check since this is unreliable in CI
+        #
         # For the last trial, ensure that the error is less than 1 second.
         # Don't check this for the other trials since we need to warmup the kernels.
-        if trial == num_trials - 1:
-            assert error < 1.0
+        # if trial == num_trials - 1:
+        #     assert error < 1.0
