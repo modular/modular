@@ -246,6 +246,9 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `ascii()` now pre-allocates capacity to avoid repeated reallocations when
+  building the result string.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
