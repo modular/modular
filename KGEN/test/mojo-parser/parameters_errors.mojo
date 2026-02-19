@@ -625,3 +625,10 @@ fn test_unpack(d: Int):
     test_unpack(**d)
     # expected-error @+1 {{unpacked arguments are not supported yet}}
     test_unpack(*d)
+
+
+struct SomeStruct[a: Int, b: Int, c: Int]:
+    pass
+
+# expected-error @+1 {{parameter after `...` must be passed by keyword}}
+comptime S = SomeStruct[..., 3]
