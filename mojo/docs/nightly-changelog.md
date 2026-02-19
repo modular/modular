@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice._justify()` (used by `ljust`, `rjust`, `center`) now uses
+  `memset`/`memcpy` instead of repeated single-character concatenation.
+
 ## Tooling changes
 
 ## GPU programming
