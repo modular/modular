@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import math
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -44,8 +46,28 @@ def _calculate_basic_stats(
     }
 
 
+def _is_finite_and_positive(value: float) -> bool:
+    """Check that a numeric value is finite and positive."""
+    return math.isfinite(value) and value > 0
+
+
+class Metrics(ABC):
+    """Base class for all benchmark metric containers."""
+
+    @abstractmethod
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate metric values are meaningful (not 0, NaN, inf, or negative).
+
+        Returns:
+            A ``(success, errors)`` tuple where *success* is ``True`` when all
+            checks pass and *errors* is a list of human-readable descriptions
+            of any failed checks.
+        """
+        ...
+
+
 @dataclass
-class PercentileMetrics:
+class PercentileMetrics(Metrics):
     """Container for percentile-based metrics."""
 
     mean: float
@@ -85,8 +107,14 @@ class PercentileMetrics:
             for label, value in metrics_data
         )
 
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate that the mean is finite and positive."""
+        if not _is_finite_and_positive(self.mean):
+            return False, [f"Invalid mean: {self.mean}"]
+        return True, []
 
-class ThroughputMetrics:
+
+class ThroughputMetrics(Metrics):
     """
     Container for throughput-based metrics with automatic percentile calculations.
 
@@ -137,8 +165,12 @@ class ThroughputMetrics:
         """Return a formatted string representation of throughput metrics in table format."""
         return self.format_with_prefix(prefix="throughput")
 
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate by delegating to the inner PercentileMetrics."""
+        return self._metrics.validate()
 
-class StandardPercentileMetrics:
+
+class StandardPercentileMetrics(Metrics):
     """
     Container for standard percentile-based metrics with automatic calculations.
 
@@ -189,6 +221,10 @@ class StandardPercentileMetrics:
         """Return a formatted string representation of standard percentile metrics in table format."""
         return self.format_with_prefix(prefix="metric")
 
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate by delegating to the inner PercentileMetrics."""
+        return self._metrics.validate()
+
 
 @dataclass
 class LoRAMetrics:
@@ -205,7 +241,7 @@ class LoRAMetrics:
 
 
 @dataclass
-class BenchmarkMetrics:
+class BenchmarkMetrics(Metrics):
     """Container for comprehensive benchmark metrics."""
 
     completed: int
@@ -280,3 +316,48 @@ class BenchmarkMetrics:
             "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
         )
         return int(hist.count) if hist else 0
+
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate that metrics contain meaningful, non-degenerate values.
+
+        Checks scalar fields owned by this class, then delegates to each
+        sub-metric's own ``validate()``.  Intended to be called after metrics
+        are computed and before results are persisted or the process exits
+        successfully.
+
+        Returns:
+            A ``(success, errors)`` tuple where *success* is ``True`` when all
+            checks pass and *errors* is a list of human-readable descriptions
+            of any failed checks.
+        """
+        errors: list[str] = []
+
+        if self.failures > 0:
+            errors.append(f"Some requests failed (failures={self.failures})")
+
+        if self.completed <= 0:
+            errors.append(f"No requests completed (completed={self.completed})")
+
+        if self.total_output <= 0:
+            errors.append(
+                f"No output tokens generated (total_output={self.total_output})"
+            )
+
+        if not _is_finite_and_positive(self.request_throughput):
+            errors.append(
+                "Invalid throughput:"
+                f" request_throughput={self.request_throughput}"
+            )
+
+        sub_metrics: list[tuple[str, Metrics]] = [
+            ("output_throughput", self.output_throughput),
+            ("ttft_ms", self.ttft_ms),
+            ("latency_ms", self.latency_ms),
+        ]
+        for name, metric in sub_metrics:
+            ok, sub_errors = metric.validate()
+            if not ok:
+                for err in sub_errors:
+                    errors.append(f"{name}: {err}")
+
+        return len(errors) == 0, errors

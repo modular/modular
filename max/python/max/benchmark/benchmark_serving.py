@@ -863,7 +863,7 @@ async def benchmark(
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
     trace_session: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], BenchmarkMetrics]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set."
@@ -1376,7 +1376,7 @@ async def benchmark(
             "decode_batch_count": metrics.decode_batch_count,
         }
 
-    return result
+    return result, metrics
 
 
 def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
@@ -1656,7 +1656,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
-    benchmark_result: dict[str, Any] = asyncio.run(
+    benchmark_result, benchmark_metrics = asyncio.run(
         benchmark(
             backend=backend,
             api_url=api_url,
@@ -1690,8 +1690,11 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
     )
 
-    # Benchmark run failed if any failed requests
-    if benchmark_result["failures"] != 0:
+    # Validate that metrics are meaningful (no failures, not 0 or NaN)
+    ok, validation_errors = benchmark_metrics.validate()
+    if not ok:
+        for err in validation_errors:
+            logger.error(f"Benchmark result validation failed: {err}")
         logger.info("finished benchmark run: Failed.")
         sys.exit(1)
 
