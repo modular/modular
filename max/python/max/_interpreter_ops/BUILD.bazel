@@ -10,96 +10,27 @@ mojo_library(
     ],
 )
 
-mojo_shared_library(
-    name = "data_movement_ops",
-    srcs = [
-        "data_movement_ops.mojo",
-    ],
-    shared_lib_name = "data_movement_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
-mojo_shared_library(
-    name = "elementwise_ops",
-    srcs = [
-        "elementwise_ops.mojo",
-    ],
-    shared_lib_name = "elementwise_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
-mojo_shared_library(
-    name = "layer_norm_ops",
-    srcs = [
-        "layer_norm_ops.mojo",
-    ],
-    shared_lib_name = "layer_norm_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
-mojo_shared_library(
-    name = "matmul_ops",
-    srcs = [
-        "matmul_ops.mojo",
-    ],
-    shared_lib_name = "matmul_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
-mojo_shared_library(
-    name = "misc_ops",
-    srcs = [
-        "misc_ops.mojo",
-    ],
-    shared_lib_name = "misc_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
-mojo_shared_library(
-    name = "reduce_ops",
-    srcs = [
-        "reduce_ops.mojo",
-    ],
-    shared_lib_name = "reduce_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
-
-mojo_shared_library(
-    name = "softmax_ops",
-    srcs = [
-        "softmax_ops.mojo",
-    ],
-    shared_lib_name = "softmax_ops.so",
-    deps = [
-        ":op_utils",
-        "//max:MOGGKernelAPI",
-        "@mojo//:python",
-    ],
-)
+[
+    mojo_shared_library(
+        name = name,
+        srcs = [name + ".mojo"],
+        shared_lib_name = name + ".so",
+        deps = [
+            ":op_utils",
+            "//max:MOGGKernelAPI",
+            "@mojo//:python",
+        ],
+    )
+    for name in [
+        "data_movement_ops",
+        "elementwise_ops",
+        "layer_norm_ops",
+        "matmul_ops",
+        "misc_ops",
+        "reduce_ops",
+        "softmax_ops",
+    ]
+]
 
 modular_py_library(
     name = "_interpreter_ops",
