@@ -498,7 +498,16 @@ class LineGenerator(Visitor[Line]):
         yield from self.visit_default(leaf)
 
     def _sort_struct_trait_conformances(self, node: Node) -> None:
-        """Sorts the conformance/inheritance list for struct/trait nodes in-place."""
+        """Sorts the conformance/inheritance list for struct/trait nodes in-place.
+
+        Each conformance entry in the arglist is either:
+        - A bare NAME leaf (unconditional conformance), or
+        - An 'argument' node whose first child is a NAME leaf (conditional
+          conformance with a where clause).
+
+        We sort the full entries as units keyed by their trait name so that
+        where clauses stay attached to the correct trait.
+        """
 
         for child in node.children:
             # Find the parentheses group after the struct/trait name.
@@ -508,17 +517,43 @@ class LineGenerator(Visitor[Line]):
             # If there is no arglist, we don't need to sort the conformances.
             return
 
-        # Extract the conformances as strings.
-        conformances = []
-        for c in child.children:
-            if isinstance(c, Leaf) and c.type == token.NAME:
-                conformances.append(c.value)
+        def _conformance_name(entry: LN) -> str | None:
+            """Return the trait name for a conformance entry, or None."""
+            if isinstance(entry, Leaf) and entry.type == token.NAME:
+                return entry.value
+            if isinstance(entry, Node) and entry.type == syms.argument:
+                first = entry.children[0]
+                if isinstance(first, Leaf) and first.type == token.NAME:
+                    return first.value
+            return None
 
-        # Replace the names in the arglist with the sorted conformances.
-        sorted_conformances = (s for s in sorted(conformances))
-        for c in child.children:
-            if isinstance(c, Leaf) and c.type == token.NAME:
-                c.replace(Leaf(token.NAME, next(sorted_conformances)))
+        # Collect (index, entry) pairs for conformance entries (skip commas).
+        entries: list[tuple[int, LN]] = []
+        for i, c in enumerate(child.children):
+            if _conformance_name(c) is not None:
+                entries.append((i, c))
+
+        if len(entries) <= 1:
+            return
+
+        # Sort entries by trait name.
+        sorted_entries = sorted(
+            entries, key=lambda t: _conformance_name(t[1]) or ""
+        )
+
+        # Redistribute: place sorted entries back into the original positions,
+        # preserving whitespace prefixes of each slot.
+        original_indices = [idx for idx, _ in entries]
+        for slot_idx, (_, entry) in zip(
+            original_indices, sorted_entries, strict=False
+        ):
+            target = child.children[slot_idx]
+            if target is not entry:
+                # Preserve the whitespace prefix of the slot we're filling.
+                prefix = target.prefix
+                entry_clone = entry.clone()
+                entry_clone.prefix = prefix
+                target.replace(entry_clone)
 
     def visit_classdef_sorted(  # noqa: ANN201
         self,
