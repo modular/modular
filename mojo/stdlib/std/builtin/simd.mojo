@@ -372,6 +372,7 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
+    ConvertibleToPython,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -842,6 +843,33 @@ struct SIMD[dtype: DType, size: Int](
             self = from_bits.ne(0)._refine[Self.dtype]()
         else:
             self = bitcast[Self.dtype, Self.size](from_bits)
+
+    @always_inline
+    fn __init__(out self: Scalar[Self.dtype], *, py: PythonObject) raises:
+        """Initialize a SIMD value from a PythonObject.
+
+        Args:
+            py: The PythonObject to convert.
+
+        Raises:
+            If the conversion to double fails.
+        """
+
+        @parameter
+        if Self.dtype.is_floating_point():
+            ref cpy = Python().cpython()
+            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
+            if float_value == -1.0 and cpy.PyErr_Occurred():
+                # Note that -1.0 does not guarantee an error, it just means we
+                # need to check if there was an exception.
+                raise cpy.unsafe_get_error()
+            # NOTE: if dtype is not float64, we truncate.
+            self = Scalar[Self.dtype](float_value)
+        elif Self.dtype.is_integral() and bit_width_of[Self.dtype]() <= 64:
+            self = Scalar[Self.dtype](Int(py=py))
+        else:
+            self = Scalar[Self.dtype]()
+            constrained[False, "unsupported dtype"]()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -3235,6 +3263,22 @@ struct SIMD[dtype: DType, size: Int](
             return res
 
         return self.shuffle[mask = indices()]()
+
+    # ===----------------------------------------------------------------------=== #
+    # ConvertibleToPython
+    # ===------------------------------------------------------------------=== #
+
+    fn to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Raises:
+            If the conversion to a PythonObject failed.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        comptime assert Self.size == 1, "only works with scalar values"
+        return PythonObject(self._refine[new_size=1]())
 
 
 comptime U8x16 = SIMD[DType.uint8, 16]
