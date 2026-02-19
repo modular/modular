@@ -1168,80 +1168,124 @@ struct TMEMToSMemWriter[
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
     ):
-        """Transposed output (LayoutTensor path)."""
+        """Transposed output (LayoutTensor path).
+
+        Two paths based on swizzle width:
+        - Large swizzle (SWIZZLE_128B): multiple warps share a swizzle block,
+          requiring warp_offset for correct swizzle/deswizzle addressing.
+        - Small swizzle (SWIZZLE_32B): each warp fragment fits within its own
+          swizzle block, using simple tiles_per_frag tiling.
+        """
+        # SWIZZLE_128B: swizzle_width=64 > data_paths=16 → True
+        # SWIZZLE_32B:  swizzle_width=16 == data_paths=16 → False
+        comptime _large_swizzle = Self.swizzle_width > Self.data_paths
 
         @parameter
-        if is_lower_required:
-            # 2 warps share swizzle blocks
-            comptime tile_width = 32
-            comptime smem_swblock_layout = Layout.row_major(
-                Self.stageN, 2, tile_width
-            )
-            comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
-            comptime smem_logical_layout = Layout(
-                flatten([num_swblocks, smem_swblock_layout.shape]),
-                flatten(
-                    [
-                        Self.stageN * Self.swizzle_width,
-                        smem_swblock_layout.stride,
-                    ]
-                ),
-            )
+        if _large_swizzle:
 
-            var new_smem = SMemTile[
-                Self.c_type,
-                smem_logical_layout,
-                alignment = c_smem_tile.alignment,
-            ](c_smem_tile.ptr)
+            @parameter
+            if is_lower_required:
+                comptime tile_width = 32
+                comptime smem_swblock_layout = Layout.row_major(
+                    Self.stageN, 2, tile_width
+                )
+                comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
+                comptime smem_logical_layout = Layout(
+                    flatten([num_swblocks, smem_swblock_layout.shape]),
+                    flatten(
+                        [
+                            Self.stageN * Self.swizzle_width,
+                            smem_swblock_layout.stride,
+                        ]
+                    ),
+                )
 
-            warp_j, warp_i = divmod(Int(self.warp_id), 2)
-            var _c_smem_warp_tile = new_smem.tile[
-                1, Self.stageN, 1, tile_width
-            ](warp_j, 0, warp_i, 0)
-            var c_smem_warp_tile = _c_smem_warp_tile.reshape[
-                coalesce(_c_smem_warp_tile.layout)
-            ]()
+                var new_smem = SMemTile[
+                    Self.c_type,
+                    smem_logical_layout,
+                    alignment = c_smem_tile.alignment,
+                ](c_smem_tile.ptr)
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](0, 0)
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](0, 1)
+                warp_j, warp_i = divmod(Int(self.warp_id), 2)
+                var _c_smem_warp_tile = new_smem.tile[
+                    1, Self.stageN, 1, tile_width
+                ](warp_j, 0, warp_i, 0)
+                var c_smem_warp_tile = _c_smem_warp_tile.reshape[
+                    coalesce(_c_smem_warp_tile.layout)
+                ]()
 
-            var warp_offset = warp_i * tile_width
-            store_fragment_to_smem[
-                Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
-            ](upper_casted, c_smem_warp_tile_upper, UInt32(warp_offset))
+                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+                    Self.stageN, Self.data_paths
+                ](0, 0)
+                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+                    Self.stageN, Self.data_paths
+                ](0, 1)
 
-            warp_offset += tile_width // 2
-            store_fragment_to_smem[
-                Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
-            ](lower_casted, c_smem_warp_tile_lower, UInt32(warp_offset))
+                var warp_offset = warp_i * tile_width
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile_upper, UInt32(warp_offset))
+
+                warp_offset += tile_width // 2
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](lower_casted, c_smem_warp_tile_lower, UInt32(warp_offset))
+            else:
+                comptime tile_width = 16
+                comptime smem_logical_layout = Layout.row_major(
+                    Self.stageN, 4, tile_width
+                )
+
+                var new_smem = SMemTile[
+                    Self.c_type,
+                    smem_logical_layout,
+                    alignment = c_smem_tile.alignment,
+                ](c_smem_tile.ptr)
+                var _c_smem_warp_tile = new_smem.tile[
+                    Self.stageN, 1, tile_width
+                ](0, Int(self.warp_id), 0)
+                var c_smem_warp_tile = _c_smem_warp_tile.reshape[
+                    coalesce(_c_smem_warp_tile.layout)
+                ]()
+
+                var warp_offset = Int(self.warp_id) * tile_width
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile, UInt32(warp_offset))
         else:
-            # Case 2: transpose_c + !is_lower_frag_required
-            # Layout: row_major(stageN, 4, tile_width=16)
-            comptime tile_width = 16
-            comptime smem_logical_layout = Layout.row_major(
-                Self.stageN, 4, tile_width
+            comptime tiles_per_frag = (
+                Self.stageN * Self.swizzle_width // Self.stage_contiguous_size
             )
 
-            var new_smem = SMemTile[
-                Self.c_type,
-                smem_logical_layout,
-                alignment = c_smem_tile.alignment,
-            ](c_smem_tile.ptr)
-            var _c_smem_warp_tile = new_smem.tile[Self.stageN, 1, tile_width](
-                0, Int(self.warp_id), 0
-            )
-            var c_smem_warp_tile = _c_smem_warp_tile.reshape[
-                coalesce(_c_smem_warp_tile.layout)
-            ]()
+            @parameter
+            if is_lower_required:
+                var c_smem_warp_tile_upper = c_smem_tile.tile[
+                    tiles_per_frag, Self.stage_contiguous_size
+                ](2 * Int(self.warp_id), 0).reshape[
+                    Layout.row_major(Self.stageN, Self.swizzle_width)
+                ]()
+                var c_smem_warp_tile_lower = c_smem_tile.tile[
+                    tiles_per_frag, Self.stage_contiguous_size
+                ](2 * Int(self.warp_id) + 1, 0).reshape[
+                    Layout.row_major(Self.stageN, Self.swizzle_width)
+                ]()
 
-            var warp_offset = Int(self.warp_id) * tile_width
-            store_fragment_to_smem[
-                Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
-            ](upper_casted, c_smem_warp_tile, UInt32(warp_offset))
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile_upper)
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](lower_casted, c_smem_warp_tile_lower)
+            else:
+                var c_smem_warp_tile_upper = c_smem_tile.tile[
+                    tiles_per_frag, Self.stage_contiguous_size
+                ](Int(self.warp_id), 0).reshape[
+                    Layout.row_major(Self.stageN, Self.swizzle_width)
+                ]()
+
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile_upper)
 
     @always_inline
     fn _write_non_transpose_lt[
@@ -1305,81 +1349,124 @@ struct TMEMToSMemWriter[
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
     ):
-        """Transposed output using reshape."""
+        """Transposed output using reshape.
+
+        Two paths based on swizzle width:
+        - Large swizzle (SWIZZLE_128B): multiple warps share a swizzle block,
+          requiring warp_offset for correct swizzle/deswizzle addressing.
+        - Small swizzle (SWIZZLE_32B): each warp fragment fits within its own
+          swizzle block, using simple tiles_per_frag tiling.
+        """
         from layout._coord import Coord, Idx
 
+        # SWIZZLE_128B: swizzle_width=64 > data_paths=16 → True
+        # SWIZZLE_32B:  swizzle_width=16 == data_paths=16 → False
+        comptime _large_swizzle = Self.swizzle_width > Self.data_paths
+
         @parameter
-        if is_lower_required:
-            # 2 warps share swizzle blocks
-            comptime tile_width = 32
-            comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
+        if _large_swizzle:
 
-            # 4D logical layout: (num_swblocks, stageN, 2, tile_width)
-            comptime logical_layout = InternalLayout(
-                Coord(
-                    Idx[num_swblocks](),
-                    Idx[Self.stageN](),
-                    Idx[2](),
-                    Idx[tile_width](),
-                ),
-                Coord(
-                    Idx[Self.stageN * Self.swizzle_width](),
-                    Idx[2 * tile_width](),
-                    Idx[tile_width](),
-                    Idx[1](),
-                ),
-            )
-            var new_smem = c_smem_tile.reshape(logical_layout)
+            @parameter
+            if is_lower_required:
+                comptime tile_width = 32
+                comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
 
-            warp_j, warp_i = divmod(Int(self.warp_id), 2)
-            var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
-                Coord(Idx(warp_j), Idx(0), Idx(warp_i), Idx(0))
-            )
+                # 4D logical layout: (num_swblocks, stageN, 2, tile_width)
+                comptime logical_layout = InternalLayout(
+                    Coord(
+                        Idx[num_swblocks](),
+                        Idx[Self.stageN](),
+                        Idx[2](),
+                        Idx[tile_width](),
+                    ),
+                    Coord(
+                        Idx[Self.stageN * Self.swizzle_width](),
+                        Idx[2 * tile_width](),
+                        Idx[tile_width](),
+                        Idx[1](),
+                    ),
+                )
+                var new_smem = c_smem_tile.reshape(logical_layout)
 
-            # Coalesce: (1, stageN, 1, 32) -> (stageN, 32)
-            comptime coalesced = InternalLayout(
-                Coord(Idx[Self.stageN](), Idx[tile_width]()),
-                Coord(Idx[2 * tile_width](), Idx[1]()),
-            )
-            var c_smem_warp_tile = tiled.reshape(coalesced)
+                warp_j, warp_i = divmod(Int(self.warp_id), 2)
+                var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
+                    Coord(Idx(warp_j), Idx(0), Idx(warp_i), Idx(0))
+                )
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](Coord(Idx(0), Idx(0)))
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](Coord(Idx(0), Idx(1)))
+                # Coalesce: (1, stageN, 1, 32) -> (stageN, 32)
+                comptime coalesced = InternalLayout(
+                    Coord(Idx[Self.stageN](), Idx[tile_width]()),
+                    Coord(Idx[2 * tile_width](), Idx[1]()),
+                )
+                var c_smem_warp_tile = tiled.reshape(coalesced)
 
-            var warp_offset = warp_i * tile_width
-            store_fragment_to_smem[
-                Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
-            ](upper_casted, c_smem_warp_tile_upper, UInt32(warp_offset))
+                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+                    Self.stageN, Self.data_paths
+                ](Coord(Idx(0), Idx(0)))
+                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+                    Self.stageN, Self.data_paths
+                ](Coord(Idx(0), Idx(1)))
 
-            warp_offset += tile_width // 2
-            store_fragment_to_smem[
-                Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
-            ](lower_casted, c_smem_warp_tile_lower, UInt32(warp_offset))
+                var warp_offset = warp_i * tile_width
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile_upper, UInt32(warp_offset))
+
+                warp_offset += tile_width // 2
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](lower_casted, c_smem_warp_tile_lower, UInt32(warp_offset))
+            else:
+                comptime tile_width = 16
+                comptime logical = row_major[Self.stageN, 4, tile_width]()
+                var new_smem = c_smem_tile.reshape(logical)
+
+                var tiled = new_smem.tile[Self.stageN, 1, tile_width](
+                    Coord(Idx(0), Idx(Int(self.warp_id)), Idx(0))
+                )
+
+                # Coalesce: (stageN, 1, 16) -> (stageN, 16)
+                comptime coalesced = InternalLayout(
+                    Coord(Idx[Self.stageN](), Idx[tile_width]()),
+                    Coord(Idx[4 * tile_width](), Idx[1]()),
+                )
+                var c_smem_warp_tile = tiled.reshape(coalesced)
+
+                var warp_offset = Int(self.warp_id) * tile_width
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile, UInt32(warp_offset))
         else:
-            # Case 2: transpose_c + !is_lower_frag_required
-            comptime tile_width = 16
-            comptime logical = row_major[Self.stageN, 4, tile_width]()
-            var new_smem = c_smem_tile.reshape(logical)
-
-            var tiled = new_smem.tile[Self.stageN, 1, tile_width](
-                Coord(Idx(0), Idx(Int(self.warp_id)), Idx(0))
+            comptime tiles_per_frag = (
+                Self.stageN * Self.swizzle_width // Self.stage_contiguous_size
             )
+            comptime reshaped = row_major[Self.stageN, Self.swizzle_width]()
 
-            # Coalesce: (stageN, 1, 16) -> (stageN, 16)
-            comptime coalesced = InternalLayout(
-                Coord(Idx[Self.stageN](), Idx[tile_width]()),
-                Coord(Idx[4 * tile_width](), Idx[1]()),
-            )
-            var c_smem_warp_tile = tiled.reshape(coalesced)
+            @parameter
+            if is_lower_required:
+                var c_smem_warp_tile_upper = c_smem_tile.tile[
+                    tiles_per_frag, Self.stage_contiguous_size
+                ](Coord(Idx(2 * Int(self.warp_id)), Idx(0))).reshape(reshaped)
+                var c_smem_warp_tile_lower = c_smem_tile.tile[
+                    tiles_per_frag, Self.stage_contiguous_size
+                ](Coord(Idx(2 * Int(self.warp_id) + 1), Idx(0))).reshape(
+                    reshaped
+                )
 
-            var warp_offset = Int(self.warp_id) * tile_width
-            store_fragment_to_smem[
-                Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
-            ](upper_casted, c_smem_warp_tile, UInt32(warp_offset))
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile_upper)
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](lower_casted, c_smem_warp_tile_lower)
+            else:
+                var c_smem_warp_tile_upper = c_smem_tile.tile[
+                    tiles_per_frag, Self.stage_contiguous_size
+                ](Coord(Idx(Int(self.warp_id)), Idx(0))).reshape(reshaped)
+
+                store_fragment_to_smem[
+                    Self.swizzle, Self.stageN, Self.transpose_c, Self.c_swizzle
+                ](upper_casted, c_smem_warp_tile_upper)
 
     @always_inline
     fn _write_non_transpose[

@@ -456,6 +456,17 @@ fn copy_accum_to_gmem[
                         (c.ptr + global_n * UInt32(cN) + global_m).store[
                             alignment=smem_alignment
                         ](val_vec)
+
+                # Advance TMA group counter so wait_group properly
+                # drains previous stage's in-flight TMA store.
+                if elect_one_warp and lane == 0:
+                    c_tma_op.commit_group()
+
+                @parameter
+                if stage < num_stages - 1:
+                    c_tma_op.wait_group[1]()
+                else:
+                    c_tma_op.wait_group[0]()
         else:
             if (
                 size_of[c_type]() != 2
@@ -527,6 +538,17 @@ fn copy_accum_to_gmem[
                             dst_ptr.store[width=simd_size, alignment=alignment](
                                 src
                             )
+
+                # Advance TMA group counter so wait_group properly
+                # drains previous stage's in-flight TMA store.
+                if elect_one_warp and lane == 0:
+                    c_tma_op.commit_group()
+
+                @parameter
+                if stage < num_stages - 1:
+                    c_tma_op.wait_group[1]()
+                else:
+                    c_tma_op.wait_group[0]()
             else:
                 var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
                 var cg1_c_smem_coord_m = UInt(0)

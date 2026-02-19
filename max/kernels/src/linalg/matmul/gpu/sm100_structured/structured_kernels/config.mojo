@@ -76,14 +76,16 @@ fn _compute_output_tile_shape(
 
 
 fn _compute_swizzle_modes(
-    output_tile_shape: IndexList[2], AB_swapped: Bool
+    output_tile_shape: IndexList[2],
+    AB_swapped: Bool,
+    c_swizzle_for_AB_swapped: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ) -> Tuple[TensorMapSwizzle, TensorMapSwizzle, TensorMapSwizzle]:
     """Compute A, B, C swizzle modes."""
     var a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     if AB_swapped:
-        c_swizzle = TensorMapSwizzle.SWIZZLE_128B
+        c_swizzle = c_swizzle_for_AB_swapped
     else:
         # When not swapped, output_tile_shape[1] is the N dimension
         var tile_n = output_tile_shape[1]
@@ -546,6 +548,7 @@ struct BlockScaledMatmulConfig[
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
+        c_swizzle_for_AB_swapped: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
         constrained[Self.a_type == Self.b_type]()
 
@@ -584,7 +587,7 @@ struct BlockScaledMatmulConfig[
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
-            self.output_tile_shape, AB_swapped
+            self.output_tile_shape, AB_swapped, c_swizzle_for_AB_swapped
         )
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]

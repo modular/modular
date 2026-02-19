@@ -752,6 +752,28 @@ struct Grouped1D1DMatmulKernel[
                             ctx,
                         )
 
+    @staticmethod
+    @always_inline
+    fn _get_sf_coords(
+        m_coord: UInt32,
+        n_coord: UInt32,
+        expert_id: Int32,
+        a_scale_offset: Scalar[DType.uint32],
+    ) -> Tuple[Int, Int]:
+        """Return (sfa_m_coord, sfb_n_coord), swapped when AB_swapped."""
+        var expert_sf_coord = (
+            Int(n_coord) + Int(expert_id) * Self.static_N
+        ) // SF_MN_GROUP_SIZE
+        var token_sf_coord = Int(m_coord) // SF_MN_GROUP_SIZE + Int(
+            a_scale_offset
+        )
+
+        @parameter
+        if Self.config.AB_swapped:
+            return (expert_sf_coord, token_sf_coord)
+        else:
+            return (token_sf_coord, expert_sf_coord)
+
     # ========== Load Input Tiles ==========
 
     @staticmethod
@@ -787,13 +809,32 @@ struct Grouped1D1DMatmulKernel[
         var expert_id = work_ctx.expert_id()
         var group_idx = work_ctx.group_idx()
 
-        var a_gmem_m_coord = peer_m_rank * UInt(Self.a_tma_rows) + UInt(m_coord)
-        var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + UInt(n_coord)
-            + UInt(expert_id) * UInt(Self.static_N)
-        )
+        var a_gmem_m_coord: UInt
+        var b_gmem_n_coord: UInt
+
+        @parameter
+        if Self.config.AB_swapped:
+            # A loads weights (b_device): use weight coordinate
+            a_gmem_m_coord = (
+                peer_m_rank * UInt(Self.a_tma_rows)
+                + UInt(n_coord)
+                + UInt(expert_id) * UInt(Self.static_N)
+            )
+            # B loads tokens (a_device): use token coordinate
+            b_gmem_n_coord = (
+                peer_rank_m * UInt(Self.b_tma_rows)
+                + peer_rank_n * UInt(Self.BN)
+                + UInt(m_coord)
+            )
+        else:
+            # Normal: A loads tokens, B loads weights
+            a_gmem_m_coord = peer_m_rank * UInt(Self.a_tma_rows) + UInt(m_coord)
+            b_gmem_n_coord = (
+                peer_rank_m * UInt(Self.b_tma_rows)
+                + peer_rank_n * UInt(Self.BN)
+                + UInt(n_coord)
+                + UInt(expert_id) * UInt(Self.static_N)
+            )
 
         if elect_one_sync():
             if elect_one_cta:
@@ -841,9 +882,16 @@ struct Grouped1D1DMatmulKernel[
                 var a_scale_offset = rebind[Scalar[DType.uint32]](
                     a_scale_offsets[Int(group_idx)]
                 )
-                var sfa_m_coord = Int(m_coord) // SF_MN_GROUP_SIZE + Int(
-                    a_scale_offset
+
+                var sfa_m_coord: Int
+                var sfb_n_coord: Int
+                sfa_m_coord, sfb_n_coord = Self._get_sf_coords(
+                    m_coord,
+                    n_coord,
+                    expert_id,
+                    a_scale_offset,
                 )
+
                 sfa_tma_op.async_copy_4d[Self.cta_group](
                     sfa_tt,
                     barrier[0],
@@ -857,9 +905,6 @@ struct Grouped1D1DMatmulKernel[
                     ),
                 )
 
-                var sfb_n_coord = (
-                    Int(n_coord) + Int(expert_id) * Self.static_N
-                ) // SF_MN_GROUP_SIZE
                 sfb_tma_op.async_copy_4d[Self.cta_group](
                     sfb_tt,
                     barrier[0],
@@ -944,24 +989,18 @@ struct Grouped1D1DMatmulKernel[
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
 
         # For 1D-1D, pass absolute coordinates directly (not tile indices)
-        # to handle unaligned expert offsets correctly
-        var m_abs = work_ctx.m()  # Absolute M in contiguous token space
-        var n_abs = work_ctx.n()  # Absolute N in output space
-
-        # Get problem dimensions
-        # M is the end offset for current expert (used for bounds checking)
-        var M = work_ctx.m_end
-        var N = UInt32(Self.static_N)
-
-        # Convert TileTensor to LayoutTensor at output_writer boundary
+        # to handle unaligned expert offsets correctly.
+        # m_abs = token offset, n_abs = weight offset, m_end = token boundary.
+        # When transpose_c (AB_swapped), the writer handles the coordinate
+        # swap internally.
         var c_lt = c_device.to_layout_tensor()
 
         tile_writer.write_absolute_with_bounds_check[type_of(c_lt).layout](
             c_tiles,
             stage,
-            m_abs,
-            n_abs,
-            M,  # m_end for bounds checking
+            work_ctx.m(),  # Absolute M in contiguous token space
+            work_ctx.n(),  # Absolute N in output space
+            work_ctx.m_end,  # Token dim end for bounds checking
             work_ctx.expert_scale,
             c_lt,
         )

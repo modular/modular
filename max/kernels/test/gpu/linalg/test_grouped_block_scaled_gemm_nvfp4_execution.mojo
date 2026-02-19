@@ -438,6 +438,18 @@ fn test_grouped_kernel_nvfp4_single_group[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
+    _ = a_scales_device^
+    _ = b_scales_device^
+    _ = problem_sizes_device^
+    _ = a_ptrs_device^
+    _ = b_ptrs_device^
+    _ = c_ptrs_device^
+    _ = sfa_ptrs_device^
+    _ = sfb_ptrs_device^
 
 
 fn test_grouped_kernel_nvfp4_multi_group[
@@ -869,6 +881,24 @@ fn test_grouped_kernel_nvfp4_multi_group[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
+    _ = a0_device^
+    _ = b0_device^
+    _ = c0_device^
+    _ = c0_ref_device^
+    _ = sfa0_device^
+    _ = sfb0_device^
+    _ = a1_device^
+    _ = b1_device^
+    _ = c1_device^
+    _ = c1_ref_device^
+    _ = sfa1_device^
+    _ = sfb1_device^
+    _ = problem_sizes_device^
+    _ = a_ptrs_device^
+    _ = b_ptrs_device^
+    _ = c_ptrs_device^
+    _ = sfa_ptrs_device^
+    _ = sfb_ptrs_device^
 
 
 def main():
@@ -983,3 +1013,4 @@ def main():
     print("\n" + "=" * 60)
     print("All NVFP4 tests passed!")
     print("=" * 60)
+    _ = ctx^

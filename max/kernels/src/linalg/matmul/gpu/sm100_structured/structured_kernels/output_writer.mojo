@@ -27,7 +27,7 @@ from sys import simd_width_of, size_of, align_of
 from gpu import WARP_SIZE, thread_idx
 from gpu import lane_id
 from gpu import warp_id as get_warp_id
-from gpu.memory import fence_async_view_proxy
+from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout,
@@ -667,51 +667,96 @@ struct TileWriter[
 
             # Phase 4: TMA Store with bounds checking
             comptime TMA_BM = StoreExecutorLocal.TMA_BM
-            var tile_needs_bounds_check = m_abs + UInt32(TMA_BM) > m_end
+            comptime StoreCoordsLocal = TMAStoreCoords[
+                Self.BM,
+                Self.BN,
+                Self.MMA_M,
+                Self.MMA_N,
+                Self.stageN,
+                Self.cta_group,
+                Self.c_smem_dim0,
+                loop_stage,
+                batched=False,
+            ]
 
-            if tile_needs_bounds_check:
-                # Use element-by-element stores with bounds checking
-                # Convert TileTensor to LayoutTensor SMemTile for bounds-check path
-                from memory import LegacyUnsafePointer
-                from linalg.structuring import SMemTile as LTSMemTile
+            # Transpose and non-transpose have different bounds checks
+            # and coordinate conventions:
+            # - Non-transpose: check m_abs (token dim), store_non_transpose
+            #   swaps coords so coord_m→tc1(tokens), coord_n→tc0(weights)
+            # - Transpose: check per-stage token dim (in n_abs position),
+            #   store_transpose_lt passes coord_m→tc0(weights),
+            #   coord_n→tc1(tokens)
+            var tile_needs_bounds_check: Bool
 
-                comptime SMemPtrType = LegacyUnsafePointer[
-                    Scalar[Self.c_type],
-                    address_space = AddressSpace.SHARED,
-                    origin=MutAnyOrigin,
-                ]
-                var c_smem_lt = LTSMemTile[
-                    Self.c_type, Self.c_smem_layout, alignment=128
-                ](rebind[SMemPtrType](c_smem_tile.ptr.mut_cast[True]()))
-                Self._store_with_bounds_check[c_tensor_layout](
-                    c_smem_lt,
-                    c_tensor,
-                    m_abs,
-                    n_abs + UInt32(loop_stage * Self.stageN),
-                    m_end,
-                    UInt32(warp_id),
-                    UInt32(lane),
+            @parameter
+            if Self.transpose_c:
+                # Per-stage bounds check on token dimension (passed as
+                # n_abs). Each stage writes stageN token rows.
+                var stage_token_start = m_abs + UInt32(loop_stage * Self.stageN)
+                tile_needs_bounds_check = (
+                    stage_token_start + UInt32(Self.stageN) > m_end
                 )
             else:
+                tile_needs_bounds_check = m_abs + UInt32(TMA_BM) > m_end
+
+            if tile_needs_bounds_check:
+
+                @parameter
+                if Self.transpose_c:
+                    # CUDA core fallback for unaligned group boundaries
+                    Self._store_with_bounds_check_transpose[c_tensor_layout](
+                        c_smem_tile.ptr,
+                        c_tensor,
+                        m_abs + UInt32(loop_stage * Self.stageN),
+                        n_abs,
+                        m_end,
+                    )
+                else:
+                    # Slow path: element-by-element stores with bounds check
+                    var lt_smem_tile = SMemTile[
+                        Self.c_type, Self.c_smem_layout, alignment=128
+                    ](c_smem_tile.ptr)
+                    Self._store_with_bounds_check[c_tensor_layout](
+                        lt_smem_tile,
+                        c_tensor,
+                        m_abs,
+                        n_abs + UInt32(loop_stage * Self.stageN),
+                        m_end,
+                        UInt32(warp_id),
+                        UInt32(lane),
+                    )
+
+                # Advance TMA group counter so wait_group[1] properly
+                # drains the previous stage's in-flight TMA store.
+                # Without this, the group count stays stale and
+                # wait_group[1] returns immediately, allowing the next
+                # double-buffer stage to overwrite SMEM while TMA reads
+                # it.
+                if warp_id == 0 and lane == 0:
+                    self.c_tma_op[].commit_group()
+            else:
                 # Fast path: TMA store for tiles fully within bounds
-                comptime StoreCoordsLocal = TMAStoreCoords[
-                    Self.BM,
-                    Self.BN,
-                    Self.MMA_M,
-                    Self.MMA_N,
-                    Self.stageN,
-                    Self.cta_group,
-                    Self.c_smem_dim0,
-                    loop_stage,
-                    batched=False,
-                ]
                 var n_tile = n_abs / UInt32(Self.MMA_N)
                 var dummy_m_tile = UInt32(0)
                 var store_coords = StoreCoordsLocal(
                     (dummy_m_tile, n_tile), UInt32(warp_id)
                 )
-                # Override coord_m with absolute M coordinate
-                store_coords.coord_m = UInt(m_abs)
+
+                @parameter
+                if Self.transpose_c:
+                    # Transpose: coord_m→tc0→N(weights),
+                    # coord_n→tc1→M(tokens)
+                    store_coords.coord_m = UInt(n_abs)
+                    store_coords.coord_n = UInt(m_abs) + UInt(
+                        loop_stage * Self.stageN
+                    )
+                else:
+                    # Non-transpose: coord_m→tc1→M(tokens),
+                    # coord_n→tc0→N(weights)
+                    store_coords.coord_m = UInt(m_abs)
+                    store_coords.coord_n = UInt(n_abs) + UInt(
+                        loop_stage * Self.stageN
+                    )
 
                 StoreExecutorLocal.execute[Self.c_layout, Self.c_desc_layout](
                     c_smem_tile,
@@ -721,14 +766,15 @@ struct TileWriter[
                     UInt32(lane),
                 )
 
-            # Phase 5: TMA Wait (only if we did a TMA store)
-            if not tile_needs_bounds_check:
-                tma_wait_pipelined[
-                    Self.c_type,
-                    Self.c_layout,
-                    Self.c_desc_layout,
-                    loop_stage == Self.num_stages - 1,
-                ](self.c_tma_op[])
+            # Phase 5: TMA Wait — unconditional to drain outstanding
+            # TMA stores from earlier stages when the slow path skips
+            # TMA, preventing SMEM races with double-buffered tiles.
+            tma_wait_pipelined[
+                Self.c_type,
+                Self.c_layout,
+                Self.c_desc_layout,
+                loop_stage == Self.num_stages - 1,
+            ](self.c_tma_op[])
 
             @parameter
             if loop_stage > 0 or loop_stage == Self.num_stages - 1:
@@ -847,6 +893,80 @@ struct TileWriter[
                             dst_crd
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
+
+    @staticmethod
+    @always_inline
+    fn _store_with_bounds_check_transpose[
+        c_tensor_layout: Layout,
+    ](
+        c_smem_ptr: UnsafePointer[
+            Scalar[Self.c_type], address_space = AddressSpace.SHARED
+        ],
+        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        m_abs: UInt32,
+        n_abs: UInt32,
+        m_end: UInt32,
+    ):
+        """CUDA core fallback for unaligned group boundaries (transpose).
+
+        With SWIZZLE_32B, each swizzle_width chunk (16 bf16 elements) in
+        SMEM maps to one TMA row. We read flat SMEM with swizzle(simd_size
+        * tidx) and decompose tidx into (vec_chunkM_idx, n_idx, chunk_idx)
+        to compute global coordinates.
+
+        This matches the reference implementation in grouped_matmul_sm100_1d1d.
+
+        Args:
+            c_smem_ptr: Raw pointer to SMEM tile.
+            c_tensor: C tensor in global memory.
+            m_abs: Token start for this stage.
+            n_abs: Weight start (absolute N coordinate).
+            m_end: Token boundary (exclusive).
+        """
+        comptime simd_size = simd_width_of[Self.c_type]()
+        comptime swizzle_width = Self.c_swizzle.bytes() // size_of[
+            Self.c_type
+        ]()
+        comptime chunkM = swizzle_width
+        comptime vec_chunkM = chunkM // simd_size
+        comptime chunk_num = Self.stage_contiguous_size // chunkM
+        comptime logical_size = chunk_num * Self.stageN * vec_chunkM
+        comptime output_threads = Self.num_output_warps * WARP_SIZE
+        comptime assert (
+            logical_size % output_threads == 0
+        ), "logical_size must be divisible by output_threads"
+        comptime value_shape = logical_size // output_threads
+        comptime cN = c_tensor_layout.shape[1].value()
+        comptime smem_alignment = align_of[SIMD[Self.c_type, simd_size]]()
+
+        comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()
+
+        var n_inbound = Int32(m_end) - Int32(m_abs)
+
+        @parameter
+        for v in range(value_shape):
+            comptime thread_offset = v * output_threads
+            var tidx = UInt32(thread_idx.x) + UInt32(thread_offset)
+            var rest, vec_chunkM_idx = divmod(tidx, UInt32(vec_chunkM))
+            var n_idx = rest % UInt32(Self.stageN)
+            if Int32(n_idx) >= min(n_inbound, Int32(Self.stageN)):
+                continue
+            var src_idx = UInt32(simd_size) * tidx
+            var c_smem_idx = swizzle(src_idx)
+            var val_vec = (c_smem_ptr + c_smem_idx).load[
+                width=simd_size,
+                alignment=smem_alignment,
+            ]()
+            var chunk_idx = rest // UInt32(Self.stageN)
+            # m_abs = token index, n_abs = weight index
+            var global_token = m_abs + n_idx
+            var global_weight = n_abs + (
+                chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
+            ) * UInt32(simd_size)
+            if global_weight < UInt32(cN):
+                (
+                    c_tensor.ptr + global_token * UInt32(cN) + global_weight
+                ).store[alignment=smem_alignment](val_vec)
 
     # ========== Residual Add Support ==========
     # Methods for D = lambda(accum) + beta * C residual operations

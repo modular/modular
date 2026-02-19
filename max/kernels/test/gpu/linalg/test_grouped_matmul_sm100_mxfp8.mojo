@@ -28,6 +28,12 @@ from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
+    grouped_matmul_1d1d_nvfp4,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
+)
 from math import ceildiv, align_up
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -51,6 +57,9 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from layout._tile_tensor import TileTensor
+from layout._coord import Coord, Idx, RuntimeInt
+from layout._layout import row_major
 
 
 fn simple_init() -> Bool:
@@ -60,7 +69,8 @@ fn simple_init() -> Bool:
     return False
 
 
-def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _test_kernel_impl[
+    kernel_type: String,  # "old" or "new"
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -97,6 +107,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     print(
         String(
+            "[",
+            kernel_type,
+            " kernel] ",
             "in/out dtypes=(",
             a_type,
             ", ",
@@ -471,37 +484,116 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var expert_scales_tensor = from_ndbuffer_row_major(expert_scales_device_nd)
 
-    comptime matmul_config = BlockScaledMatmulConfig[
-        a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
-    ](
-        scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
-        ),
-        mma_shape=mma_shape,
-        block_swizzle_size=block_swizzle_size,
-        cta_group=cta_group,
-        AB_swapped=swapAB,
-        k_group_size=k_group_size,
-        num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
-    )
+    # Call appropriate kernel based on kernel_type parameter
+    @parameter
+    if kernel_type == "old":
+        # Old kernel using linalg.grouped_matmul_sm100_1d1d
+        comptime matmul_config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+        ](
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            cluster_shape=Index(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
+            mma_shape=mma_shape,
+            block_swizzle_size=block_swizzle_size,
+            cta_group=cta_group,
+            AB_swapped=swapAB,
+            k_group_size=k_group_size,
+            num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
+        )
 
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-    ](
-        c_tensor,
-        a_tensor,
-        a_offsets_tensor,
-        a_scale_offsets_tensor,
-        b_tensor,
-        expert_ids_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
-        expert_scales_tensor,
-        num_active_experts,
-        ctx,
-    )
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            c_tensor,
+            a_tensor,
+            a_offsets_tensor,
+            a_scale_offsets_tensor,
+            b_tensor,
+            expert_ids_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            expert_scales_tensor,
+            num_active_experts,
+            ctx,
+        )
+    elif kernel_type == "new":
+        # New structured kernel using grouped_matmul_1d1d_nvfp4
+        comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+        ](
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            cluster_shape=Index(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
+            mma_shape=mma_shape,
+            block_swizzle_size=block_swizzle_size,
+            cta_group=cta_group,
+            AB_swapped=swapAB,
+            k_group_size=k_group_size,
+            num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
+            c_swizzle_for_AB_swapped=TensorMapSwizzle.SWIZZLE_32B,
+        )
+
+        # Construct scale TileTensors from raw pointers with explicit
+        # row_major layouts (NDBuffer→TileTensor doesn't work for 5D/6D).
+        comptime k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
+        comptime n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
+        var a_scales_tt = TileTensor(
+            a_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+            row_major(
+                Coord(
+                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
+            ),
+        ).as_any_origin()
+        var b_scales_tt = TileTensor(
+            b_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+            row_major(
+                Coord(
+                    Idx[num_experts](),
+                    Idx[n_groups](),
+                    Idx[k_groups](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
+            ),
+        ).as_any_origin()
+        var expert_scales_tt = TileTensor(
+            expert_scales_device.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+            row_major(
+                Coord(
+                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
+                )
+            ),
+        ).as_any_origin()
+
+        grouped_matmul_1d1d_nvfp4[
+            transpose_b=transpose_b,
+            config=new_matmul_config,
+        ](
+            TileTensor(c_device_nd),
+            TileTensor(a_device_nd),
+            TileTensor(a_offsets_device_nd),
+            TileTensor(a_scale_offsets_device_nd),
+            TileTensor(b_device_nd),
+            TileTensor(expert_ids_device_nd),
+            a_scales_tt,
+            b_scales_tt,
+            expert_scales_tt,
+            num_active_experts,
+            ctx,
+        )
+    else:
+        constrained[False, "kernel_type must be 'old' or 'new'"]()
+        pass
 
     constrained[
         a_type != DType.float8_e4m3fn or transpose_b,
@@ -647,6 +739,58 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = expert_scales_device^
 
 
+# Backward-compatible wrapper that maintains the original function name
+def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    scales_dtype: DType,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    cluster_shape: StaticTuple[Int32, 3],
+    cta_group: Int,
+    num_experts: Int,
+    expert_shape: IndexList[2],
+    transpose_b: Bool = True,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    block_swizzle_size: Int = 0,
+    benchmark: Bool = False,
+    swapAB: Bool = False,
+    k_group_size: Int = 1,
+    SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+](
+    num_active_experts: Int,
+    num_tokens_by_expert: List[Int],
+    expert_ids: List[Int],
+    ctx: DeviceContext,
+):
+    """Test old kernel - backward compatible wrapper."""
+    _test_kernel_impl[
+        "old",
+        a_type,
+        b_type,
+        c_type,
+        scales_dtype,
+        block_tile_shape,
+        mma_shape,
+        cluster_shape,
+        cta_group,
+        num_experts,
+        expert_shape,
+        transpose_b,
+        a_swizzle,
+        b_swizzle,
+        c_swizzle,
+        block_swizzle_size,
+        benchmark,
+        swapAB,
+        k_group_size,
+        SF_VECTOR_SIZE,
+    ](num_active_experts, num_tokens_by_expert, expert_ids, ctx)
+
+
 def main():
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
@@ -661,65 +805,97 @@ def main():
         comptime block_tile_shape = Index(bm, bn, BK)
         comptime umma_shape = Index(bm, bn, MMA_K)
 
-        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            dtype,
-            dtype,
-            out_dtype,
-            scale_dtype,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-            cta_group=1,
-            a_swizzle=swizzle,
-            b_swizzle=swizzle,
-            block_swizzle_size=8,
-            num_experts=4,
-            expert_shape = Index(2048, 1024),
-        ](
-            3,
-            [128, 512, 1024],
-            [0, 1, 1],
-            ctx,
-        )
+        @parameter
+        for structured in [False, True]:  # False=old kernel, True=new kernel
 
-        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            dtype,
-            dtype,
-            out_dtype,
-            scale_dtype,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-            cta_group=1,
-            a_swizzle=swizzle,
-            b_swizzle=swizzle,
-            block_swizzle_size=8,
-            num_experts=4,
-            expert_shape = Index(2048, 1024),
-        ](
-            3,
-            [64 + 1, 1024 + 3, 128 * 3 + 2],
-            [2, 0, 1],
-            ctx,
-        )
+            @parameter
+            if structured:
+                print("\n========================================")
+                print(
+                    "Testing NEW kernel (grouped_matmul_1d1d_nvfp4 with MXFP8)"
+                )
+                print("========================================\n")
+            else:
+                print("\n========================================")
+                print(
+                    "Testing OLD kernel"
+                    " (blackwell_block_scaled_matmul_tma_umma_warp_specialized)"
+                )
+                print("========================================\n")
 
-        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            dtype,
-            dtype,
-            out_dtype,
-            scale_dtype,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
-            cta_group=1,
-            a_swizzle=swizzle,
-            b_swizzle=swizzle,
-            block_swizzle_size=8,
-            num_experts=6,
-            expert_shape = Index(2048, 1024),
-        ](
-            4,
-            [512, 1000, 2000, 3000],
-            [0, 3, 2, 4],
-            ctx,
-        )
+            comptime kernel_type = "new" if structured else "old"
+
+            @parameter
+            for swapAB in [False, True]:
+                _test_kernel_impl[
+                    kernel_type,
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=4,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=swapAB,
+                ](
+                    3,
+                    [128, 512, 1024],
+                    [0, 1, 1],
+                    ctx,
+                )
+
+                _test_kernel_impl[
+                    kernel_type,
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=4,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=swapAB,
+                ](
+                    3,
+                    [64 + 1, 1024 + 3, 128 * 3 + 2],
+                    [2, 0, 1],
+                    ctx,
+                )
+
+                _test_kernel_impl[
+                    kernel_type,
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=6,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=swapAB,
+                ](
+                    4,
+                    [512, 1000, 2000, 3000],
+                    [0, 3, 2, 4],
+                    ctx,
+                )
+
+        print("\n========================================")
+        print("ALL TESTS PASSED!")
+        print("========================================")
