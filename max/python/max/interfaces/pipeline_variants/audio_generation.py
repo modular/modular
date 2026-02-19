@@ -75,6 +75,9 @@ class AudioGenerationRequest:
     to the audio decoder.
     """
 
+    def __str__(self) -> str:
+        return str(self.request_id)
+
     def __post_init__(self) -> None:
         if self.prompt is None and self.input is None:
             raise RuntimeError("either token_ids or input must be provided.")

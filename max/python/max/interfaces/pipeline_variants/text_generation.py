@@ -270,6 +270,9 @@ class TextGenerationRequest:
     If not specified, the request will be routed to the default endpoint.
     """
 
+    def __str__(self) -> str:
+        return str(self.request_id)
+
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
         # Convert dict messages to TextGenerationRequestMessage objects

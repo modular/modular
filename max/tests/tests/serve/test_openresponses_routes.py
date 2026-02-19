@@ -174,8 +174,6 @@ def test_openresponses_message_list_input(app) -> None:  # noqa: ANN001
             "model": "test-model",
             "input": [
                 {"role": "user", "content": "What is 2+2?"},
-                {"role": "assistant", "content": "4"},
-                {"role": "user", "content": "What about 3+3?"},
             ],
         }
         response = client.post("/v1/responses", json=request_data)

@@ -52,6 +52,8 @@ class Request(Protocol):
         """Returns the unique identifier for this request."""
         ...
 
+    def __str__(self) -> str: ...
+
 
 RequestType = TypeVar("RequestType", bound=Request, contravariant=True)
 """Type variable for request types.
