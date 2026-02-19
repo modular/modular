@@ -23,10 +23,11 @@ from builtin.builtin_slice import ContiguousSlice
 from reflection import call_location
 from bit._mask import splat
 from bit import pop_count
-from memory import pack_bits
+from memory import memcmp, pack_bits
 from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
+from sys.intrinsics import _type_is_eq
 
 from algorithm import vectorize
 from builtin.device_passable import DevicePassable
@@ -544,6 +545,17 @@ struct Span[
         # same pointer and length, so equal
         if self.unsafe_ptr() == rhs.unsafe_ptr():
             return True
+        # Fast path: use memcmp for byte-comparable types.
+        @parameter
+        if _type_is_eq[_T, Byte]():
+            return (
+                memcmp(
+                    self.unsafe_ptr().bitcast[Byte](),
+                    rhs.unsafe_ptr().bitcast[Byte](),
+                    len(self),
+                )
+                == 0
+            )
         for i in range(len(self)):
             if self[i] != rhs[i]:
                 return False
