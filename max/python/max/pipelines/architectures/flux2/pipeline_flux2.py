@@ -593,13 +593,12 @@ class Flux2Pipeline(DiffusionPipeline):
         
         bs_embed = prompt_embeds.shape[0].dim
         seq_len = prompt_embeds.shape[1].dim
-        batch_size_final = bs_embed * num_images_per_prompt
-        text_ids_key = f"{batch_size_final}"
+        text_ids_key = f"{bs_embed}"
         if text_ids_key in self._cached_text_ids:
             text_ids = self._cached_text_ids[text_ids_key]
         else:
             text_ids_model = self._ensure_text_ids_model(
-                batch_size=batch_size_final,
+                batch_size=bs_embed,
                 seq_len=seq_len,
             )
             text_ids = Tensor.from_dlpack(text_ids_model.execute()[0])
