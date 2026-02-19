@@ -84,7 +84,7 @@ the lambda is immediately executed. Otherwise it is enqueued and run when the
 value becomes available.
 
 The nice thing about this pattern is that it provides the direct ability to
-capture arbitrary state in the the lambda's capture list, and that capture list
+capture arbitrary state in the lambda's capture list, and that capture list
 is kept alive for the duration of the lambdas execution.  This means that any
 other `RCRef` you capture will be alive for the duration as well:
 

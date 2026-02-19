@@ -513,7 +513,7 @@ function asynchronously.
 
 Notably, this can only be done for generators with no result parameters:
 finer-grain parallelism can be achieved even within the parameter use-def graph,
-but result parameters are such an uncommonly-used feature that it isnt
+but result parameters are such an uncommonly-used feature that it isn't
 worthwhile.
 
 Importantly, if any async generator instantiations result in multiple
