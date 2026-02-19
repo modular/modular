@@ -101,6 +101,19 @@ mojo_shared_library(
     ],
 )
 
+mojo_shared_library(
+    name = "transpose_ops",
+    srcs = [
+        "transpose_ops.mojo",
+    ],
+    shared_lib_name = "transpose_ops.so",
+    deps = [
+        ":op_utils",
+        "//max:MOGGKernelAPI",
+        "@mojo//:python",
+    ],
+)
+
 modular_py_library(
     name = "_interpreter_ops",
     srcs = glob(["**/*.py"]),
@@ -112,6 +125,7 @@ modular_py_library(
         ":misc_ops",
         ":reduce_ops",
         ":softmax_ops",
+        ":transpose_ops",
     ],
     deps = [
         "//max/python/max:_core",

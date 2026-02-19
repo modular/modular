@@ -765,23 +765,49 @@ def _handle_merge_dim(
 def _handle_transpose(
     op: mo.TransposeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.transpose."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
-    _check_buffers_on_device(inputs, target_device)
+    """Handle mo.transpose using Mojo kernel.
+
+    Supports both CPU and GPU tensors via the Transpose kernel.
+
+    Args:
+        op: The transpose operation.
+        inputs: Input buffers - first is the tensor to transpose,
+            second is the permutation tensor (int64 on CPU).
+
+    Returns:
+        List containing the transposed tensor buffer.
+    """
+    target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
-    # TransposeOp should have a permutation attribute
-    # For now, use default transpose (reverse axes)
-    if hasattr(op, "permutation"):
-        perm = list(op.permutation)
-        result_np = np.transpose(input_np, axes=perm)
-    else:
-        result_np = np.transpose(input_np)
-    return [Buffer.from_numpy(result_np)]
+    assert isinstance(inputs[1], Buffer)
+
+    # Read permutation from the second input (int64 constant on CPU)
+    perm = inputs[1].to_numpy().tolist()
+    perm = [int(p) for p in perm]
+
+    # Compute output shape by applying permutation to input shape
+    in_shape = list(inputs[0].shape)
+    out_shape = [in_shape[p] for p in perm]
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=out_shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel (supports both CPU and GPU)
+    ops.transpose_ops.Transpose(
+        output,
+        inputs[0],
+        perm,
+        in_shape,
+        out_shape,
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.SliceOp)

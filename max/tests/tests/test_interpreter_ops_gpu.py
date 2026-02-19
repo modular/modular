@@ -2144,6 +2144,7 @@ class TestLayerNormGPU:
         x = Tensor.from_dlpack(x_torch)
         gamma = Tensor.from_dlpack(gamma_torch)
         beta = Tensor.from_dlpack(beta_torch)
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
@@ -2173,6 +2174,7 @@ class TestLayerNormGPU:
         x = Tensor.from_dlpack(x_torch)
         gamma = Tensor.from_dlpack(gamma_torch)
         beta = Tensor.from_dlpack(beta_torch)
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
@@ -2198,6 +2200,7 @@ class TestLayerNormGPU:
         x = Tensor.from_dlpack(x_torch)
         gamma = Tensor.from_dlpack(gamma_torch)
         beta = Tensor.from_dlpack(beta_torch)
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
@@ -2214,3 +2217,84 @@ class TestLayerNormGPU:
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, atol=1e-5, rtol=1e-5
         )
+
+
+class TestTransposeGPU:
+    """Tests for transpose operations on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16, DType.int32],
+    )
+    def test_transpose_2d_gpu(self, dtype: DType) -> None:
+        """Test basic 2D transpose on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(6, dtype=torch_dtype, device="cuda").reshape(
+            2, 3
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.transpose(0, 1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.transpose(0, 1).contiguous()
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_transpose_3d_swap_first_last_gpu(self) -> None:
+        """Test 3D transpose swapping first and last dims on GPU."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.transpose(0, 2)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.transpose(0, 2).contiguous()
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_transpose_3d_swap_adjacent_gpu(self) -> None:
+        """Test 3D transpose swapping adjacent dims on GPU."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.transpose(1, 2)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.transpose(1, 2).contiguous()
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_transpose_4d_gpu(self) -> None:
+        """Test 4D transpose on GPU (e.g., NCHW to NHWC-like)."""
+        x_torch = torch.arange(120, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4, 5
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.transpose(1, 3)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.transpose(1, 3).contiguous()
+        assert result_torch.shape == expected.shape
+        torch.testing.assert_close(result_torch, expected)
