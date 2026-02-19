@@ -69,16 +69,28 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         """
         Write a span of bytes to the file.
 
+        Handles partial writes by looping until all bytes are written.
+
         Args:
             bytes: The byte span to write to this file.
         """
-        written = external_call["write", c_ssize_t](
-            self.value, bytes.unsafe_ptr(), len(bytes)
-        )
-        debug_assert(
-            written == len(bytes),
-            "expected amount of bytes not written",
-        )
+        var total_written = 0
+        while total_written < len(bytes):
+            var bytes_written = external_call["write", c_ssize_t](
+                self.value,
+                bytes.unsafe_ptr() + total_written,
+                len(bytes) - total_written,
+            )
+
+            if bytes_written < 0:
+                abort("write() syscall failed")
+
+            if bytes_written == 0:
+                abort(
+                    "write() returned 0 bytes (file may be full or closed)"
+                )
+
+            total_written += Int(bytes_written)
 
     fn write_string(mut self, string: StringSlice):
         """
