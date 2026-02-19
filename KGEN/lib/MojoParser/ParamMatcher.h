@@ -169,7 +169,7 @@ private:
   /// `*(0, 1)` to the a concrete dummy value before matching. It is important
   /// since both `*(0, 1)`s are bound in the current scope (FnTypeGenerator),
   /// which is NOT the same scope (foo) as we are inferring parameters!
-  ParserParameterEvaluator scopedBinder;
+  ParameterEvaluator scopedBinder;
   void appendLocallyDefinedParam(Type paramType);
 };
 

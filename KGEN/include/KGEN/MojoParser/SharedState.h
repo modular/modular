@@ -12,6 +12,7 @@
 #ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 
@@ -547,6 +548,12 @@ public:
 
   /// Get the attribute evaluation context.
   ParserEvaluationContext &getEvaluationContext();
+
+  /// Create a ParameterEvaluator configured with the parser's evaluation
+  /// context.
+  ParameterEvaluator getParameterEvaluator();
+  ParameterEvaluator getParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                                           ArrayRef<TypedAttr> paramValues);
 
 private:
   /// The internal state of an imported module or package.

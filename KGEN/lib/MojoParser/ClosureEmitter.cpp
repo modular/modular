@@ -1248,7 +1248,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   SmallVector<Type> fieldTypes{opaquePtrType};
 
   SmallVector<ParamDeclAttr> wrapperDecls;
-  ParserParameterEvaluator evaluator(shared);
+  ParameterEvaluator evaluator = shared.getParameterEvaluator();
   SmallVector<TypedAttr> paramValues;
   for (auto [i, type] :
        llvm::enumerate(dependentSignatureType.getInputParamTypes())) {

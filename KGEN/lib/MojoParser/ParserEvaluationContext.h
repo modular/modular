@@ -57,24 +57,6 @@ private:
   SharedState &shared;
 };
 
-/// A convenience ParameterEvaluator that uses ParserEvaluationContext to
-/// evaluate expressions.
-class ParserParameterEvaluator : public ParameterEvaluator {
-public:
-  ParserParameterEvaluator(SharedState &shared) {
-    setEvaluationContext(&shared.getEvaluationContext());
-  }
-  ParserParameterEvaluator(SharedState &shared,
-                           ArrayRef<ParamDeclAttr> paramDecls,
-                           ArrayRef<TypedAttr> paramValues)
-      : ParameterEvaluator(paramDecls, paramValues) {
-    setEvaluationContext(&shared.getEvaluationContext());
-  }
-  ParserParameterEvaluator(SharedState &shared, ArrayRef<TypedAttr> paramValues)
-      : ParameterEvaluator(paramValues) {
-    setEvaluationContext(&shared.getEvaluationContext());
-  }
-};
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_PARSERPARAMETEREVALUATOR_H

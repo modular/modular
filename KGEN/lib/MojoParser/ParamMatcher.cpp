@@ -103,8 +103,8 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 ParamMatcher::ParamMatcher(const ExprNode *expr, ParamInf &state,
                            bool allowImplicitConversions)
     : expr(expr), state(state), shared(state.getShared()),
-      allowImplicitConversions(allowImplicitConversions), scopedBinder(shared) {
-}
+      allowImplicitConversions(allowImplicitConversions),
+      scopedBinder(shared.getParameterEvaluator()) {}
 
 void ParamMatcher::appendLocallyDefinedParam(Type paramType) {
   auto paramIdx = scopedBinder.getIndexBindings().size();
