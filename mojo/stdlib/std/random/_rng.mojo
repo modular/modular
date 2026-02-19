@@ -155,6 +155,10 @@ struct _RandomState(Copyable):
             return min
 
         var range = max - min + 1
+
+        if range == 0:
+            return self._generator.next_uint64()
+
         # Use rejection sampling for uniform distribution
         var threshold = (~range + 1) % range
 
@@ -177,6 +181,10 @@ struct _RandomState(Copyable):
             return min
 
         var range = UInt64(max - min) + 1
+
+        if range == 0:
+            return Int64(self._generator.next_uint64())
+
         var threshold = (~range + 1) % range
 
         while True:

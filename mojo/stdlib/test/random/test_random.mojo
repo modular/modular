@@ -492,5 +492,25 @@ def test_normal_distribution_edge_cases():
     assert_true(abs(large_mean - 1e100) < 10.0)
 
 
+def test_full_range_integers():
+    """Test random integers with full type range don't always return min."""
+    seed(42)
+
+    # Generate multiple samples and verify we don't always get min
+    var got_non_zero = False
+    for _ in range(100):
+        if random_ui64(0, UInt64.MAX) != 0:
+            got_non_zero = True
+            break
+    assert_true(got_non_zero, "Full-range UInt64 should not always return 0")
+
+    var got_non_min = False
+    for _ in range(100):
+        if random_si64(Int64.MIN, Int64.MAX) != Int64.MIN:
+            got_non_min = True
+            break
+    assert_true(got_non_min, "Full-range Int64 should not always return MIN")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
