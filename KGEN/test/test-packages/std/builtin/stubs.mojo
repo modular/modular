@@ -1483,8 +1483,7 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
             index
         )
 
-        @parameter
-        if Self.size == 1:
+        comptime if Self.size == 1:
             self._mlir_value = rebind[Self._mlir_type](s)
         else:
             self._mlir_value = __mlir_op.`pop.simd.splat`[

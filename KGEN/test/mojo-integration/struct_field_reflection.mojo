@@ -17,8 +17,7 @@ trait CanDoSomething:
     fn do_something(self):
         comptime names = struct_field_names[Self]()
 
-        @parameter
-        for i in range(names.size):
+        comptime for i in range(names.size):
             print(materialize[names[i]](), ": ", sep="", end="")
             trait_downcast[CanDoSomething](
                 __struct_field_ref(i, self)

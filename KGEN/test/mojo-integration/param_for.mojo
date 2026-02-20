@@ -10,9 +10,8 @@
 fn test_unroll_warn_threshold():
     var cnt = 0
 
-    @parameter
     # expected-warning @+1 {{comptime for unrolling loop more than 27 times may cause long compilation time and large code size}}
-    for i in range(28):
+    comptime for i in range(28):
         cnt += 1
     debug_assert(cnt == 28)
 
@@ -20,24 +19,21 @@ fn test_unroll_warn_threshold():
 fn test_for_list():
     cnt = 0
 
-    @parameter
-    for i in [1, 2, 3]:
+    comptime for i in [1, 2, 3]:
         cnt += i
     debug_assert(cnt == 6)
 
     # Test for floating point numbers.
     fp_cnt = 0.0
 
-    @parameter
-    for i in [1.0, 2.0, 3.0]:
+    comptime for i in [1.0, 2.0, 3.0]:
         fp_cnt += i
     debug_assert(fp_cnt == 6.0)
 
     # Test for strings
     concated = ""
 
-    @parameter
-    for str in ["a", "b", "c"]:
+    comptime for str in ["a", "b", "c"]:
         var str2 = str  # Work around origin issue.
         concated += str2
     debug_assert(concated == "abc")
@@ -47,8 +43,7 @@ fn test_for_list():
 fn test_critical_edge():
     var a = 0
 
-    @parameter
-    for i in range(10):
+    comptime for i in range(10):
         a = i  # Compiler hung here
     debug_assert(a == 9)
 
@@ -57,15 +52,13 @@ fn test_critical_edge():
 fn test_else_block():
     var a: Int  # Init not required because always assigned in else.
 
-    @parameter
-    for i in range(10):
+    comptime for i in range(10):
         pass
     else:
         a = 1  # This should execute.
     debug_assert(a == 1)
 
-    @parameter
-    for i in range(10):
+    comptime for i in range(10):
         if i == 4:
             break
     else:
@@ -80,12 +73,10 @@ fn test_tuple_unpack():
     var ret = 0
 
     # Additional loop with `i` to make sure the name shadowing works
-    @parameter
-    for i in range(0, 1):
+    comptime for i in range(0, 1):
         debug_assert(i == 0)
 
-        @parameter
-        for _, i, (j, k) in zip(lst0, lst1, lst2):
+        comptime for _, i, (j, k) in zip(lst0, lst1, lst2):
             ret = ret * 1000 + i * 100 + j * 10 + k
 
     debug_assert(ret == 123456)

@@ -12,8 +12,7 @@ fn is_positive(a: Int) -> Bool:
 
 
 fn test_andor[a: Int, b: Int]():
-    @parameter
-    if is_positive(a) and is_positive(b):
+    comptime if is_positive(a) and is_positive(b):
         print(2)
     elif is_positive(a) or is_positive(b):
         print(1)

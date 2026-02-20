@@ -16,8 +16,7 @@ def test0(a: Int, b: Int) -> Bool:
 
 def test1[cmp: Bool](a: Int, b: Int) -> Bool:
     fn select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
-        @parameter
-        if cmp:
+        comptime if cmp:
             return __mlir_attr.`#index<cmp_predicate sle>`
         else:
             return __mlir_attr.`#index<cmp_predicate sgt>`
@@ -108,8 +107,7 @@ fn simd_to_kgen_struct[
         ]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = simd[i]
         st = __mlir_op.`kgen.struct.replace`[
             _type = __mlir_type[
@@ -149,8 +147,7 @@ fn kgen_struct_to_simd_reverse[
 ) -> SIMD[dtype, n]:
     var simd = SIMD[dtype, n]()
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
             _type = __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
             index = __mlir_attr[i._mlir_value, `:index`],

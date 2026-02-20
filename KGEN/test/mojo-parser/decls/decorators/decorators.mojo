@@ -183,8 +183,7 @@ fn kernel_2[x: Int]():
 # CHECK-SAME: data_to_str({{.*}}alias_parametric_fn
 # CHECK-SAME: #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
 fn alias_parametric_fn() -> StaticString:
-    @parameter
-    if True:
+    comptime if True:
         return "nvvm.maxntid"
     else:
         return "rocdl.flat_work_group_size"

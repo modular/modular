@@ -732,9 +732,8 @@ fn variadic_int(*x: Int) -> Bool: pass
 
 # https://github.com/modularml/modular/issues/34675
 fn invalid_call_variadic_int(a: Int):
-    @parameter
     # expected-error @+1 {{cannot use dynamic value in 'comptime if' condition}}
-    if variadic_int(a, a):
+    comptime if variadic_int(a, a):
         pass
 
 fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):

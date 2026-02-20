@@ -36,10 +36,8 @@ fn double_where_clause(
 
 # CHECK-LABEL: lit.fn @"test_nested_double_where_clause
 fn test_nested_double_where_clause(x: PStruct[...], y: PStruct[...]):
-    @parameter
-    if type_of(x).predicate():
+    comptime if type_of(x).predicate():
 
-        @parameter
-        if type_of(y).predicate():
+        comptime if type_of(y).predicate():
             # CHECK: lit.call {{.*}}@"double_where_clause
             double_where_clause(x, y)

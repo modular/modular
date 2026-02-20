@@ -19,8 +19,7 @@ def test0(a: Int, b: Int) -> Bool:
 def test1[cmp: Bool](a: Int, b: Int) -> Bool:
     # CHECK: lit.fn *"select_pred[::Bool]()"<*"cmp`2x": !Bool>() -> !kgen.deferred
     fn select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
-        @parameter
-        if cmp:
+        comptime if cmp:
             return __mlir_attr.`#index<cmp_predicate sle>`
         else:
             return __mlir_attr.`#index<cmp_predicate sgt>`
