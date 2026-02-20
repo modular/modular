@@ -614,6 +614,11 @@ what we publish.
   - `--print-supported-accelerators`: Lists all supported GPU and accelerator
     architectures (NVIDIA, AMD, Apple Metal).
 
+- `mojo format` now only formats Mojo files (`.mojo`, `.🔥`) by default when
+  run on a directory. Previously it would also format Python files, which
+  conflicted with Python-specific formatters in pre-commit hooks. Users who
+  want to format Python files can use `mblack` directly.
+
 ### ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
