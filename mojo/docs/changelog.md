@@ -599,6 +599,9 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
+  or `String.count_codepoints()`.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

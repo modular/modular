@@ -61,7 +61,7 @@ fn validate_username(name: String) raises ValidationError:
     """Validate a username."""
     if not name:
         raise ValidationError(field="username", reason="cannot be empty")
-    if len(name) < 3:
+    if name.count_codepoints() < 3:
         raise ValidationError(
             field="username", reason="must be at least 3 characters"
         )

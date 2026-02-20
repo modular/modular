@@ -255,7 +255,7 @@ def _test_dict_literals(
     # Dict literal with computed keys and values
     var computed_dict = {
         string if cond else static_string: static_string if cond else string,
-        "conditional": string if len(string) > 0 else static_string,
+        "conditional": string if string else static_string,
     }
     assert_equal(computed_dict[string], static_string)
     assert_equal(computed_dict["conditional"], string)
@@ -277,7 +277,8 @@ def _test_list_comprehensions(
     # List comprehension with complex conditional logic and mixed types
     var test_strings: List[String] = ["short", "medium", "a", "long_string"]
     var categorized = [
-        "short" if len(s) < 6 else ("medium" if len(s) < 11 else String("long"))
+        "short" if s.byte_length()
+        < 6 else ("medium" if s.byte_length() < 11 else String("long"))
         for s in test_strings
     ]
     assert_equal(categorized[0], "short")

@@ -243,7 +243,7 @@ fn test_string_substring() raises:
     var string = "Hello"
     var str_slice = StringSlice(string)
 
-    assert_equal(len(str_slice), 5)
+    assert_equal(str_slice.byte_length(), 5)
     assert_equal(str_slice[byte=0], "H")
     assert_equal(str_slice[byte=1], "e")
     assert_equal(str_slice[byte=2], "l")
@@ -256,7 +256,7 @@ fn test_string_substring() raises:
 
     # Slice the whole thing
     var sub1 = str_slice[:5]
-    assert_equal(len(sub1), 5)
+    assert_equal(sub1.byte_length(), 5)
     assert_equal(sub1[byte=0], "H")
     assert_equal(sub1[byte=1], "e")
     assert_equal(sub1[byte=2], "l")
@@ -265,14 +265,14 @@ fn test_string_substring() raises:
 
     # Slice the end
     var sub2 = str_slice[2:5]
-    assert_equal(len(sub2), 3)
+    assert_equal(sub2.byte_length(), 3)
     assert_equal(sub2[byte=0], "l")
     assert_equal(sub2[byte=1], "l")
     assert_equal(sub2[byte=2], "o")
 
     # Slice the first element
     var sub3 = str_slice[0:1]
-    assert_equal(len(sub3), 1)
+    assert_equal(sub3.byte_length(), 1)
     assert_equal(sub3[byte=0], "H")
     assert_equal(sub3[byte= -1], "H")
 
@@ -281,31 +281,31 @@ fn test_string_substring() raises:
     # ----------------------------------
 
     var sub4 = str_slice[0:0]
-    assert_equal(len(sub4), 0)
+    assert_equal(sub4.byte_length(), 0)
 
     var sub5 = str_slice[2:2]
-    assert_equal(len(sub5), 0)
+    assert_equal(sub5.byte_length(), 0)
 
     # Empty slices still have a pointer value
     assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
 
 
 fn test_slice_len() raises:
-    assert_equal(5, len(StringSlice("12345")))
-    assert_equal(4, len(StringSlice("1234")))
-    assert_equal(3, len(StringSlice("123")))
-    assert_equal(2, len(StringSlice("12")))
-    assert_equal(1, len(StringSlice("1")))
-    assert_equal(0, len(StringSlice("")))
+    assert_equal(5, StringSlice("12345").byte_length())
+    assert_equal(4, StringSlice("1234").byte_length())
+    assert_equal(3, StringSlice("123").byte_length())
+    assert_equal(2, StringSlice("12").byte_length())
+    assert_equal(1, StringSlice("1").byte_length())
+    assert_equal(0, StringSlice("").byte_length())
 
     # String length is in bytes, not codepoints.
     var s0 = "ನಮಸ್ಕಾರ"
-    assert_equal(len(s0), 21)
+    assert_equal(s0.byte_length(), 21)
     assert_equal(len(s0.codepoints()), 7)
 
     # For ASCII string, the byte and codepoint length are the same:
     var s1 = "abc"
-    assert_equal(len(s1), 3)
+    assert_equal(s1.byte_length(), 3)
     assert_equal(len(s1.codepoints()), 3)
 
 
@@ -514,21 +514,21 @@ def test_find_mstdl_2258():
 
 def test_is_codepoint_boundary():
     var abc = StringSlice("abc")
-    assert_equal(len(abc), 3)
+    assert_equal(abc.byte_length(), 3)
     assert_true(abc.is_codepoint_boundary(0))
     assert_true(abc.is_codepoint_boundary(1))
     assert_true(abc.is_codepoint_boundary(2))
     assert_true(abc.is_codepoint_boundary(3))
 
     var thumb = StringSlice("👍")
-    assert_equal(len(thumb), 4)
+    assert_equal(thumb.byte_length(), 4)
     assert_true(thumb.is_codepoint_boundary(0))
     assert_false(thumb.is_codepoint_boundary(1))
     assert_false(thumb.is_codepoint_boundary(2))
     assert_false(thumb.is_codepoint_boundary(3))
 
     var empty = StringSlice("")
-    assert_equal(len(empty), 0)
+    assert_equal(empty.byte_length(), 0)
     assert_true(empty.is_codepoint_boundary(0))
     # Also tests that positions greater then the length don't raise/abort.
     assert_false(empty.is_codepoint_boundary(1))
@@ -1045,14 +1045,14 @@ def test_chars_iter():
 def test_string_slice_from_pointer():
     var a = StringSlice("AAA")
     var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
-    assert_equal(3, len(a))
-    assert_equal(3, len(b))
+    assert_equal(3, a.byte_length())
+    assert_equal(3, b.byte_length())
     var c = "ABCD"
     var d = StringSlice(unsafe_from_utf8_ptr=c.as_c_string_slice().unsafe_ptr())
     var e = StringSlice(unsafe_from_utf8_ptr=c.unsafe_ptr())
-    assert_equal(4, len(c))
-    assert_equal(4, len(d))
-    assert_equal(4, len(e))
+    assert_equal(4, c.byte_length())
+    assert_equal(4, d.byte_length())
+    assert_equal(4, e.byte_length())
     assert_equal("A", d[byte=0])
     assert_equal("B", d[byte=1])
     assert_equal("C", d[byte=2])

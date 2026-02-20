@@ -50,23 +50,23 @@ def test_stringable():
 
 def test_constructors():
     # Default construction
-    assert_equal(0, len(String()))
+    assert_equal(0, String().byte_length())
     assert_true(not String())
     assert_not_equal("xyz", "abc")
 
     # Construction from Int
     var s0 = String(0)
     assert_equal("0", String(0))
-    assert_equal(1, len(s0))
+    assert_equal(1, s0.byte_length())
 
     var s1 = String(123)
     assert_equal("123", String(123))
-    assert_equal(3, len(s1))
+    assert_equal(3, s1.byte_length())
 
     # Construction from StringLiteral
     var s2 = "abc"
     assert_equal("abc", String(s2))
-    assert_equal(3, len(s2))
+    assert_equal(3, s2.byte_length())
 
     # Construction with capacity
     var s4 = String(capacity=1)
@@ -90,13 +90,13 @@ def test_len():
     # String length is in bytes, not codepoints.
     var s0 = "ನಮಸ್ಕಾರ"
 
-    assert_equal(len(s0), 21)
+    assert_equal(s0.byte_length(), 21)
     assert_equal(len(s0.codepoints()), 7)
 
     # For ASCII string, the byte and codepoint length are the same:
     var s1 = "abc"
 
-    assert_equal(len(s1), 3)
+    assert_equal(s1.byte_length(), 3)
     assert_equal(len(s1.codepoints()), 3)
 
 
@@ -277,7 +277,7 @@ def test_string_indexing():
 
     assert_equal("H", str[byte=0])
     assert_equal("!", str[byte= -1])
-    assert_equal("H", str[byte = -len(str)])
+    assert_equal("H", str[byte = -str.byte_length()])
     assert_equal("llo Mojo!!", str[2:])
     assert_equal("lo Mojo!", str[3:-1])
     assert_equal("lo Moj", str[3:-3])
@@ -1296,20 +1296,20 @@ def test_format_args():
 
     var vinput = "{} {}"
     var output = vinput.format("123", 456)
-    assert_equal(len(output), 7)
+    assert_equal(output.byte_length(), 7)
 
     var vinput2 = "{1}{0}"
     output = vinput2.format("123", 456)
-    assert_equal(len(output), 6)
+    assert_equal(output.byte_length(), 6)
     assert_equal(output, "456123")
 
     var vinput3 = "123"
     output = vinput3.format()
-    assert_equal(len(output), 3)
+    assert_equal(output.byte_length(), 3)
 
     var vinput4 = ""
     output = vinput4.format()
-    assert_equal(len(output), 0)
+    assert_equal(output.byte_length(), 0)
 
     var res = "🔥 Mojo ❤️‍🔥 Mojo 🔥"
     assert_equal("{0} {1} ❤️‍🔥 {1} {0}".format("🔥", "Mojo"), res)
@@ -1449,7 +1449,7 @@ def test_resize():
 
 
 def test_uninit_ctor():
-    var hello_len = len("hello")
+    var hello_len = "hello".byte_length()
     var s = String(unsafe_uninit_length=hello_len)
     memcpy(
         dest=s.unsafe_ptr_mut(),
@@ -1471,8 +1471,12 @@ def test_uninit_ctor():
 
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
-    s3.resize(unsafe_uninit_length=len(long))
-    memcpy(dest=s3.unsafe_ptr_mut(), src=long.unsafe_ptr(), count=len(long))
+    s3.resize(unsafe_uninit_length=long.byte_length())
+    memcpy(
+        dest=s3.unsafe_ptr_mut(),
+        src=long.unsafe_ptr(),
+        count=long.byte_length(),
+    )
     assert_equal(s3, long)
     assert_equal(s3._is_inline(), False)
 
@@ -1480,26 +1484,26 @@ def test_uninit_ctor():
 def test_as_c_string_slice_empty():
     var string = String()
     var cslice = string.as_c_string_slice()
-    assert_equal(len(string), 0)
+    assert_equal(string.byte_length(), 0)
     assert_true(string.capacity() > 0)
-    # Safe to index `len(string)` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    # Safe to index `string.byte_length()` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
 def test_as_c_string_slice_inlined():
     var string = String("a")
     var cslice = string.as_c_string_slice()
-    # Safe to index `len(string)` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    # Safe to index `string.byte_length()` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
 def test_as_c_string_slice_heap():
     var string = String("abcdefghijlmnopqrstuvwxyz")
     var cslice = string.as_c_string_slice()
-    # Safe to index `len(string)` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    # Safe to index `string.byte_length()` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
@@ -1523,14 +1527,14 @@ def test_sso():
     # String literals are initially stored as indirect regardless of length
     var s = "hello"
     assert_equal(s.capacity(), 5)
-    assert_equal(len(s), 5)
+    assert_equal(s.byte_length(), 5)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Adding a single char should remove the nul terminator and inline it.
     s += "f"
-    assert_equal(len(s), 6)
+    assert_equal(s.byte_length(), 6)
     assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
     assert_equal(s._has_nul_terminator(), False)
@@ -1539,7 +1543,7 @@ def test_sso():
     # Test StringLiterals behave the same when above SSO capacity.
     comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
-    assert_equal(len(s), 55)
+    assert_equal(s.byte_length(), 55)
     assert_equal(s.capacity(), 55)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
@@ -1547,7 +1551,7 @@ def test_sso():
 
     # Modifying it should remove the nul terminator.
     s += "f"
-    assert_equal(len(s), 56)
+    assert_equal(s.byte_length(), 56)
     assert_true(s.capacity() >= 56)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
@@ -1560,7 +1564,7 @@ def test_sso():
     assert_equal(s._has_nul_terminator(), False)
 
     s += "f" * String.INLINE_CAPACITY
-    assert_equal(len(s), String.INLINE_CAPACITY)
+    assert_equal(s.byte_length(), String.INLINE_CAPACITY)
     assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
 
@@ -1601,7 +1605,7 @@ def test_copyinit():
             x += String(i)[byte=0]
         y = x
         assert_equal(test_current_size, current_size)
-        assert_equal(len(y), current_size)
+        assert_equal(y.byte_length(), current_size)
         # TODO: check pointer equality?
         test_current_size *= 2
     assert_equal(test_current_size, 1024)
@@ -1611,12 +1615,12 @@ def test_from_utf8_lossy():
     # Test empty byte span
     var empty = String(from_utf8_lossy=List[Byte]())
     assert_equal(empty, "")
-    assert_equal(len(empty), 0)
+    assert_equal(empty.byte_length(), 0)
 
     # Test single ASCII character
     var single_char = String(from_utf8_lossy=Span([Byte(0x41)]))
     assert_equal(single_char, "A")
-    assert_equal(len(single_char), 1)
+    assert_equal(single_char.byte_length(), 1)
 
     # Test valid 2-byte sequence
     var two_byte = String(from_utf8_lossy=Span([Byte(0xC2), 0xA9]))
@@ -1771,12 +1775,12 @@ def test_from_utf8():
     # Test empty byte span
     var empty = String(from_utf8=List[Byte]())
     assert_equal(empty, "")
-    assert_equal(len(empty), 0)
+    assert_equal(empty.byte_length(), 0)
 
     # Test single ASCII character
     var single_char = String(from_utf8=Span([Byte(0x41)]))
     assert_equal(single_char, "A")
-    assert_equal(len(single_char), 1)
+    assert_equal(single_char.byte_length(), 1)
 
     # Test valid 4-byte sequence
     var four_byte = String(from_utf8=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))

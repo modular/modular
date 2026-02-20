@@ -162,7 +162,7 @@ def test_dict_string_representation_custom_hasher():
     # Just check that __str__ is callable and produces something
     assert_true(
         some_dict._minimum_size_of_string_representation()
-        <= len(dict_as_string)
+        <= dict_as_string.byte_length()
     )
 
 

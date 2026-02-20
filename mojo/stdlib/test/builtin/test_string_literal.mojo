@@ -61,8 +61,8 @@ def test_equality():
 
 
 def test_len():
-    assert_equal(0, StringLiteral.__len__(""))
-    assert_equal(4, StringLiteral.__len__("four"))
+    assert_equal(0, "".byte_length())
+    assert_equal(4, "four".byte_length())
 
 
 def test_bool():

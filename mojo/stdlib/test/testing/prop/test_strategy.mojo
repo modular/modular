@@ -69,14 +69,14 @@ def test_string_ascii_strategy():
     var rng = Rng(seed=1234)
     for _ in range(10):
         var s = s.value(rng)
-        assert_true(1 <= len(s) <= 10)
+        assert_true(1 <= s.byte_length() <= 10)
         assert_true(StringSlice(s).is_ascii_printable())
 
     s = String.ascii_strategy(min_len=1, max_len=10, only_printable=False)
     rng = Rng(seed=1234)
     for _ in range(10):
         var s = s.value(rng)
-        assert_true(1 <= len(s) <= 10)
+        assert_true(1 <= s.byte_length() <= 10)
         for c in s.codepoints():
             assert_true(c.to_u32() <= UInt32(127))
 

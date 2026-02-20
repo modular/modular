@@ -63,7 +63,7 @@ struct PrintChecker(Movable):
             raise _assert_equal_error(
                 String(result), expected, msg, self.call_location
             )
-        self.cursor += UInt64(len(result) + 1)
+        self.cursor += UInt64(result.byte_length() + 1)
 
     fn check_line_starts_with(
         mut self, prefix: String, msg: String = ""
@@ -71,14 +71,14 @@ struct PrintChecker(Movable):
         print(end="", file=self.stream(), flush=True)
         _ = self.tmp.seek(self.cursor)
         var result = self.tmp.read()[:-1]
-        var prefix_len = len(prefix)
-        if len(result) < prefix_len:
+        var prefix_len = prefix.byte_length()
+        if result.byte_length() < prefix_len:
             raise _assert_error(msg, self.call_location)
         if result[:prefix_len] != prefix:
             raise _assert_equal_error(
                 String(result[:prefix_len]), prefix, msg, self.call_location
             )
-        self.cursor += UInt64(len(result) + 1)
+        self.cursor += UInt64(result.byte_length() + 1)
 
 
 def test_print():

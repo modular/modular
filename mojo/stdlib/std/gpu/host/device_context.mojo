@@ -1966,7 +1966,7 @@ struct DeviceFunction[
                 self._func_impl.module_name.unsafe_ptr(),
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
-                UInt(len(self._func_impl.asm)),
+                UInt(self._func_impl.asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
                 Int32(Int(OptimizationLevel)),
@@ -1993,7 +1993,7 @@ struct DeviceFunction[
             ](
                 self._handle,
                 mapping.name.unsafe_ptr(),
-                UInt(len(mapping.name)),
+                UInt(mapping.name.byte_length()),
                 mapping.ptr,
                 UInt(mapping.byte_count),
             )
@@ -3062,7 +3062,7 @@ struct DeviceExternalFunction:
                 module_name.unsafe_ptr(),
                 function_name.unsafe_ptr(),
                 asm.unsafe_ptr(),
-                UInt(len(asm)),
+                UInt(asm.byte_length()),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
                 Int32(Int(OptimizationLevel)),
@@ -3098,7 +3098,7 @@ struct DeviceExternalFunction:
             ](
                 self._handle,
                 mapping.name.unsafe_ptr(),
-                UInt(len(mapping.name)),
+                UInt(mapping.name.byte_length()),
                 mapping.ptr,
                 UInt(mapping.byte_count),
             )

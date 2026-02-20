@@ -20,12 +20,12 @@ from testing import assert_equal, assert_raises, assert_true, TestSuite
 def test_pwuid():
     # Test current process user works
     passwd = pwd.getpwuid(os.getuid())
-    assert_true(len(passwd.pw_dir) > 2)
+    assert_true(passwd.pw_dir.byte_length() > 2)
     assert_true(passwd.pw_uid >= 0)
-    assert_true(len(passwd.pw_name) > 0)
+    assert_true(passwd.pw_name.byte_length() > 0)
     # Test root user works
     passwd = pwd.getpwuid(0)
-    assert_true(len(passwd.pw_dir) > 2)
+    assert_true(passwd.pw_dir.byte_length() > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")
 
@@ -37,7 +37,7 @@ def test_pwuid():
 def test_pwnam():
     # Test root user works
     passwd = pwd.getpwnam("root")
-    assert_true(len(passwd.pw_dir) > 2)
+    assert_true(passwd.pw_dir.byte_length() > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")
 

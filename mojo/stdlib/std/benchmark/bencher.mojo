@@ -1053,11 +1053,11 @@ struct Bench(Stringable, Writable):
         Returns:
             A string padded to the given width.
         """
-        comptime assert len(pad_str) == 1, "pad_str must be length 1."
+        comptime assert pad_str.byte_length() == 1, "pad_str must be length 1."
 
         if self.config.format == Format.csv:
             return ""
-        return pad_str * (width - len(string))
+        return pad_str * (width - string.byte_length())
 
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
@@ -1212,17 +1212,17 @@ struct Bench(Stringable, Writable):
             writer.write("\n")
 
     fn _get_max_name_width(self, label: StaticString) -> Int:
-        var max_val = len(label)
+        var max_val = label.byte_length()
         for i in range(len(self.info_vec)):
-            var namelen = len(self.info_vec[i].name)
+            var namelen = self.info_vec[i].name.byte_length()
             max_val = max(max_val, namelen)
         return max_val
 
     fn _get_max_iters_width(self, label: StaticString) -> Int:
-        var max_val = len(label)
+        var max_val = label.byte_length()
         for i in range(len(self.info_vec)):
             var iters = self.info_vec[i].result.iters()
-            max_val = max(max_val, len(String(iters)))
+            max_val = max(max_val, String(iters).byte_length())
         return max_val
 
     fn _get_metrics(self) -> Dict[String, _Metric]:
@@ -1233,13 +1233,13 @@ struct Bench(Stringable, Writable):
             for j in range(len(run.measures)):
                 var measure = run.measures[j]
                 var rate = measure.compute(run.result.mean(unit=Unit.s))
-                var width = len(String(rate))
+                var width = String(rate).byte_length()
                 var name = measure.metric.unit
                 if self.config.verbose_metric_names:
                     name = String(measure.metric)
                 if name not in metrics:
                     metrics[name] = _Metric(
-                        max(width, len(name)), Dict[Int, Float64]()
+                        max(width, name.byte_length()), Dict[Int, Float64]()
                     )
                     try:
                         metrics[name].rates[i] = rate
@@ -1258,27 +1258,35 @@ struct Bench(Stringable, Writable):
     fn _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
         # If label is larger than any value, will pad to the label length
 
-        var max_met = len(met_label)
-        comptime ConfigType = type_of(self.config)
+        var max_met = met_label.byte_length()
+        comptime byte_length[idx: Int] = BenchConfig.VERBOSE_TIMING_LABELS[
+            idx
+        ].byte_length()
         # NOTE: We insert an explicit materialization for Int here to avoid
-        # materialize a more expensive `VERBOSE_TIMING_LABELS[]` object.
-        var max_min = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[0])]()
-        var max_mean = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[1])]()
-        var max_max = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[2])]()
-        var max_dur = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[3])]()
+        # materializing a more expensive `VERBOSE_TIMING_LABELS[]` object.
+        var max_min = materialize[byte_length[0]]()
+        var max_mean = materialize[byte_length[1]]()
+        var max_max = materialize[byte_length[2]]()
+        var max_dur = materialize[byte_length[3]]()
         for i in range(len(self.info_vec)):
             # TODO: Move met (ms) to the end of the table to align with verbose
             # timing, don't repeat `Mean (ms)`, and make sure it works with
             # kernel benchmarking.
             ref result = self.info_vec[i].result
-            var mean_len = len(String(result.mean(unit=Unit.ms)))
+            var mean_len = String(result.mean(unit=Unit.ms)).byte_length()
             # met == mean execution time == mean
             max_met = max(max_met, mean_len)
 
-            max_min = max(max_min, len(String(result.min(unit=Unit.ms))))
+            max_min = max(
+                max_min, String(result.min(unit=Unit.ms)).byte_length()
+            )
             max_mean = max(max_mean, mean_len)
-            max_max = max(max_max, len(String(result.max(unit=Unit.ms))))
-            max_dur = max(max_dur, len(String(result.duration(unit=Unit.ms))))
+            max_max = max(
+                max_max, String(result.max(unit=Unit.ms)).byte_length()
+            )
+            max_dur = max(
+                max_dur, String(result.duration(unit=Unit.ms)).byte_length()
+            )
         return [max_met, max_min, max_mean, max_max, max_dur]
 
 

@@ -916,7 +916,7 @@ struct IntervalTree[
             # Draw the current node's value
             var node_str = String(node[])
             var start_pos = max(
-                0, pos_x - len(node_str) // 2
+                0, pos_x - node_str.byte_length() // 2
             )  # Center the node text
             var i = 0
             for char in node_str.codepoints():

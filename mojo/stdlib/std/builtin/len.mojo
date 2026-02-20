@@ -162,6 +162,23 @@ trait SizedRaising:
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated(
+    "Using String.__len__() is discouraged, prefer .byte_length() or"
+    " .count_codepoints()"
+)
+@always_inline("nodebug")
+fn len(value: StringSlice[mut=False]) -> Int:
+    """Get the string length.
+
+    Args:
+        value: The object to get the length of.
+
+    Returns:
+        The length of this value.
+    """
+    return value.byte_length()
+
+
 @always_inline
 fn len[T: Sized](value: T) -> Int:
     """Get the length of a value.

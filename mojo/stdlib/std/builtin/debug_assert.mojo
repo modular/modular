@@ -369,9 +369,7 @@ fn debug_assert[
         if cond:
             return
         _debug_assert_msg(
-            message.unsafe_ptr(),
-            len(message) + 1,  # include null terminator
-            call_location(),
+            message.unsafe_ptr(), message.byte_length(), call_location()
         )
     elif _use_compiler_assume:
         assume(cond)
@@ -441,10 +439,7 @@ fn _debug_assert_msg(
         _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
         _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-            loc.file_name.unsafe_ptr(),
-            loc.line,
-            loc.col,
-            message,
+            loc.file_name.unsafe_ptr(), loc.line, loc.col, message
         )
 
     comptime if ASSERT_MODE != "warn":

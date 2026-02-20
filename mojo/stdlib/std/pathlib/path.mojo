@@ -503,7 +503,7 @@ struct Path(
         # For example /a/.foo's suffix is "" but /a/b.foo's suffix is .foo.
         var start = self.path.rfind(DIR_SEPARATOR) + 2
         var i = self.path.rfind(".", start)
-        if 0 < i < (len(self.path) - 1):
+        if 0 < i < (self.path.byte_length() - 1):
             return String(self.path[i:])
 
         return ""

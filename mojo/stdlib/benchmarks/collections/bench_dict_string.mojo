@@ -116,7 +116,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     @always_inline
     fn add(mut self, key: StringSlice):
         var prev_end = 0 if self.count == 0 else self.keys_end[self.count - 1]
-        var key_length = len(key)
+        var key_length = key.byte_length()
         var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
         var needs_realocation = False

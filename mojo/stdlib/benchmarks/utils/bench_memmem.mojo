@@ -201,9 +201,9 @@ fn bench_find_baseline(mut b: Bencher) raises:
     fn call_fn():
         _ = _memmem_baseline(
             local_haystack.unsafe_ptr(),
-            len(local_haystack),
+            local_haystack.byte_length(),
             local_needle.unsafe_ptr(),
-            len(local_needle),
+            local_needle.byte_length(),
         )
 
     b.iter[call_fn]()

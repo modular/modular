@@ -589,7 +589,7 @@ fn tcgen05_cp[
     ), "dst_fmt must be empty or 'b8x16'."
 
     comptime assert not (
-        (len(dst_fmt) == 0) ^ (len(src_fmt) == 0)
+        (dst_fmt.byte_length() == 0) ^ (src_fmt.byte_length() == 0)
     ), "Both or none of dst_fmt and src_fmt must be provided."
 
     comptime assert (
@@ -603,18 +603,18 @@ fn tcgen05_cp[
         datapaths != 32 or bits != 128
     ) or multicast == "warpx4", "For 32x128b, multicast must be 'warpx4'"
 
-    comptime asm_str = (
-        "tcgen05.cp.cta_group::"
-        + String(cta_group)
-        + "."
-        + String(datapaths)
-        + "x"
-        + String(bits)
-        + "b"
-        + ("" if (len(multicast) == 0) else "." + multicast)
-        + ("" if (len(dst_fmt) == 0) else "." + dst_fmt)
-        + ("" if (len(src_fmt) == 0) else "." + src_fmt)
-        + " [$0], $1;"
+    comptime asm_str = String(
+        "tcgen05.cp.cta_group::",
+        String(cta_group),
+        ".",
+        String(datapaths),
+        "x",
+        String(bits),
+        "b",
+        ("" if not multicast else "." + multicast),
+        ("" if not dst_fmt else "." + dst_fmt),
+        ("" if not src_fmt else "." + src_fmt),
+        " [$0], $1;",
     )
 
     inlined_assembly[
