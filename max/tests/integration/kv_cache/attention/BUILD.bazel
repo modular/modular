@@ -121,6 +121,7 @@ modular_py_test(
     name = "attention_no_opaque_tests",
     timeout = "long",
     srcs = ["test_attention_no_opaque.py"],
+    tags = ["skip-external-ci"],  # FIXME: SDLC-3032
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
