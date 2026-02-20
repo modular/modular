@@ -269,18 +269,18 @@ def test_remove():
 
 def test_pop_insertion_order():
     var s = {1, 2, 3}
-    assert_equal(s.pop(), 1)
-    assert_equal(s, {2, 3})
+    assert_equal(s.pop(), 3)
+    assert_equal(s, {1, 2})
 
     s.add(4)
 
-    assert_equal(s.pop(), 2)
-    assert_equal(s, {3, 4})
-
-    assert_equal(s.pop(), 3)
-    assert_equal(s, {4})
-
     assert_equal(s.pop(), 4)
+    assert_equal(s, {1, 2})
+
+    assert_equal(s.pop(), 2)
+    assert_equal(s, {1})
+
+    assert_equal(s.pop(), 1)
     assert_equal(s, {})
 
     with assert_raises():
