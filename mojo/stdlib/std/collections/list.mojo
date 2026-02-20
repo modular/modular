@@ -1462,7 +1462,7 @@ struct List[T: Copyable](
         var length = self._len
         return self.unsafe_ptr() + length
 
-fn flatten[depth: Optional[AnyType] = None](self) -> List:
+fn flatten[depth: Optional[Int] = None](self) -> List:
     """Flattens nested lists up to a specified depth.
 
     Parameters:
