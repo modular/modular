@@ -1063,17 +1063,11 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
     message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
   }
 
-  // Quality-of-life: if the condition is a constant True or False, report
-  // immediately to the user rather than waiting until elaboration.
-  if (auto boolAttr = sugarDynCast<BoolAttr>(propVal.get())) {
-    if (!boolAttr.getValue()) {
-      emitError(kwLoc, "failed comptime assert: condition is always False");
-      return success();
-    }
-    // If the condition is always True, the assertion is redundant and adds no
-    // useful constraint, so skip emitting IR entirely.
+  // If the condition is always True, the assertion is redundant and adds no
+  // useful constraint, so skip emitting IR entirely.
+  if (auto boolAttr = sugarDynCast<BoolAttr>(propVal.get());
+      boolAttr && boolAttr.getValue())
     return success();
-  }
 
   Location loc = translateLocation(kwLoc);
   auto assertOp =
