@@ -2248,8 +2248,8 @@ fn ascii(value: StringSlice) -> String:
         A string containing the ASCII representation of the object.
     """
     comptime ord_squote = UInt8(ord("'"))
-    # Worst case: every byte becomes \xNN (4 chars), plus 2 for quotes.
-    var result = String(capacity=len(value) * 4 + 2)
+    # Worst case: every byte becomes \xNN (4 chars). Quotes added separately.
+    var result = String(capacity=len(value) * 4)
     var use_dquote = False
     var data = value.as_bytes()
 
