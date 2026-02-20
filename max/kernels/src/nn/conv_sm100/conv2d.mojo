@@ -403,8 +403,7 @@ fn conv2d_fprop_with_residual[
     """
 
     # If no residual requested or beta is 0, fall back to standard conv2d
-    @parameter
-    if not has_residual:
+    comptime if not has_residual:
         conv2d_fprop[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,

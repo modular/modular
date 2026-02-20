@@ -379,8 +379,7 @@ fn _lane_group_reduce_launch_helper[
     fn do_lane_group_reduce(
         val: SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width]:
-        @parameter
-        if broadcast:
+        comptime if broadcast:
             return warp.lane_group_sum_and_broadcast[
                 num_lanes=num_lanes, stride=stride
             ](val)
@@ -412,8 +411,7 @@ fn test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
         ctx
     )
 
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         # these two use permlane_shuffle on CDNA4+
         _lane_group_reduce_launch_helper[
             DType.float32, 1, 2, 32, broadcast=True

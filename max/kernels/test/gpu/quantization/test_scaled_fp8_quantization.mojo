@@ -209,8 +209,7 @@ fn test_dynamic_fp8_quant[
 
             var scale_factor: Scalar[scales_dtype]
 
-            @parameter
-            if scales_dtype == DType.float8_e8m0fnu:
+            comptime if scales_dtype == DType.float8_e8m0fnu:
                 scale_factor = max(
                     group_max.cast[accum_dtype]()
                     / Scalar[out_dtype].MAX_FINITE.cast[accum_dtype](),
@@ -534,8 +533,7 @@ def main():
         ](ctx, 128, 1024, 544)
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.bfloat16,

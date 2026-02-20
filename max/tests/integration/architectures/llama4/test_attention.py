@@ -195,7 +195,6 @@ def generate_max_outputs(
             params=kv_params,
             total_num_pages=8,
             session=session,
-            max_batch_size=128,
         )
 
         # Construct input types.

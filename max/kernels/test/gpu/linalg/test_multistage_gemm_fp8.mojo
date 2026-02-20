@@ -61,18 +61,12 @@ fn test_fp8_multistage_gemm[
         c_host_ref_ptr
     )
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
+    comptime for i in range(M):
+        comptime for j in range(K):
             a_host[i, j] = i + j
 
-    @parameter
-    for i in range(static_b_shape.get[0]()):
-
-        @parameter
-        for j in range(static_b_shape.get[1]()):
+    comptime for i in range(static_b_shape.get[0]()):
+        comptime for j in range(static_b_shape.get[1]()):
             b_host[i, j] = i + j
 
     c_host.zero()
@@ -140,8 +134,7 @@ fn test_fp8_multistage_gemm[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         vendor_blas.matmul(
             ctx,
             c_device_ref_nd,

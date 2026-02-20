@@ -194,8 +194,7 @@ def test_tma_block_reduce[
     @parameter
     @always_inline
     fn kernel_launch(ctx: DeviceContext) raises -> None:
-        @parameter
-        if use_tma:
+        comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
                 (rows, cols),

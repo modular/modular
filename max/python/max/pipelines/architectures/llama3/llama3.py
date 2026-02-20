@@ -100,11 +100,15 @@ class Llama3TextModel(
 
         self.norm = create_norm()
 
-        self.lm_head = Linear(
-            in_dim=config.hidden_size,
-            out_dim=config.vocab_size,
-            bias=False,
-        )
+        self.tie_word_embeddings = config.tie_word_embeddings
+        if config.tie_word_embeddings:
+            self.lm_head = None
+        else:
+            self.lm_head = Linear(
+                in_dim=config.hidden_size,
+                out_dim=config.vocab_size,
+                bias=False,
+            )
 
         # Build transformer layers.
         layers = []
@@ -151,6 +155,13 @@ class Llama3TextModel(
         self.embedding_multiplier = config.embedding_multiplier
         self.logits_scaling = config.logits_scaling
 
+    def _compute_logits(self, h: Tensor) -> Tensor:
+        """Compute logits from hidden states, handling weight tying."""
+        if self.tie_word_embeddings:
+            return F.cast(h @ self.embed_tokens.weight.T, DType.float32)
+        assert self.lm_head is not None
+        return F.cast(self.lm_head(h), DType.float32)
+
     def forward(
         self,
         tokens: Tensor,
@@ -177,7 +188,7 @@ class Llama3TextModel(
 
         # Compute logits based on return mode.
         last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = F.cast(self.lm_head(self.norm(last_h)), DType.float32)
+        last_logits = self._compute_logits(self.norm(last_h))
         logits = None
         offsets = None
 
@@ -195,7 +206,7 @@ class Llama3TextModel(
             )
             last_indices = F.reshape(offsets, shape=(-1,))
             last_tokens = F.gather(h, last_indices, axis=0)
-            logits = F.cast(self.lm_head(self.norm(last_tokens)), DType.float32)
+            logits = self._compute_logits(self.norm(last_tokens))
             offsets = ops.range(
                 0,
                 TensorValue(last_indices.shape[0]) + return_n_logits[0],
@@ -205,7 +216,7 @@ class Llama3TextModel(
                 dtype=DType.int64,
             )
         elif self.return_logits == ReturnLogits.ALL:
-            logits = F.cast(self.lm_head(self.norm(h)), DType.float32)
+            logits = self._compute_logits(self.norm(h))
             offsets = input_row_offsets
 
         if self.logits_scaling != 1.0:

@@ -392,12 +392,10 @@ fn _allreduce_2stage_kernel[
 
     var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # --- Define tmp buffers by offseting for Signal struct ---
@@ -405,8 +403,7 @@ fn _allreduce_2stage_kernel[
         uninitialized=True
     )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # Round-robin access pattern to balance NVLink traffic across GPUs.
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
@@ -423,8 +420,7 @@ fn _allreduce_2stage_kernel[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
         ptrs[i] = src_ptrs[target]
 
@@ -484,9 +480,7 @@ fn _allreduce_2stage_kernel[
         rs_config.rank_part(ngpus - 1),
         rs_config.stride,
     ):
-
-        @parameter
-        for gpu_idx in range(ngpus):
+        comptime for gpu_idx in range(ngpus):
             var peer_rank = (my_rank + gpu_idx) % ngpus
 
             var dst_idx = rs_config.rank_start(peer_rank) + idx
@@ -571,8 +565,7 @@ fn _allreduce_1stage_kernel[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
         ptrs[i] = src_ptrs[target]
 
@@ -660,8 +653,7 @@ fn _allreduce_p2p[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
     comptime BLOCK_SIZE = 256
@@ -697,9 +689,7 @@ fn _allreduce_p2p[
             block_dim=BLOCK_SIZE,
         )
     else:
-
-        @parameter
-        if use_quickreduce:
+        comptime if use_quickreduce:
             # Define grid size for stage1 push using fixed tiles over the full vector space.
             comptime atom_size = 8
             # Compute tiles once here and pass to kernel
@@ -880,9 +870,7 @@ fn allreduce[
 
     # Check P2P availability.
     if not can_enable_p2p():
-
-        @parameter
-        if use_multimem:
+        comptime if use_multimem:
             raise Error(
                 "Allreduce with multimem requires P2P access between GPUs"
             )
@@ -979,8 +967,7 @@ fn allreduce_2stage_quickreduce_tile[
         ngpus,
     ](uninitialized=True)
 
-    @parameter
-    for rr in range(ngpus):
+    comptime for rr in range(ngpus):
         var payload_generic = (
             (rank_sigs[rr].address_space_cast[AddressSpace.GENERIC]() + 1)
             .bitcast[Scalar[DType.uint8]]()
@@ -1013,13 +1000,11 @@ fn allreduce_2stage_quickreduce_tile[
         tA: InlineArray[SIMD[dtype, simd_width], atom_size],
         tile_offset: Int,
     ):
-        @parameter
-        for i in range(rank_atoms):
+        comptime for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
             var atom_data = tA[tile_offset + i]
 
-            @parameter
-            if use_bufferio:
+            comptime if use_bufferio:
                 AMDBufferResource(data_buf[r]).store[
                     dtype,
                     width=simd_width,
@@ -1039,12 +1024,10 @@ fn allreduce_2stage_quickreduce_tile[
         base_index: Int,
         tile_offset: Int,
     ):
-        @parameter
-        for i in range(rank_atoms):
+        comptime for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
 
-            @parameter
-            if use_bufferio:
+            comptime if use_bufferio:
                 tA[tile_offset + i] = AMDBufferResource(recv_ptr).load[
                     dtype,
                     width=simd_width,
@@ -1061,24 +1044,18 @@ fn allreduce_2stage_quickreduce_tile[
         # Load this GPU's tile slice: offset by tile index and lane within the tile.
         var src_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
 
-        @parameter
-        if use_bufferio:
-
-            @parameter
-            for i in range(atom_size):
+        comptime if use_bufferio:
+            comptime for i in range(atom_size):
                 tA[i] = AMDBufferResource(local_src).load[
                     dtype, width=simd_width
                 ](Int32(src_offset + i * atom_stride))
         else:
-
-            @parameter
-            for i in range(atom_size):
+            comptime for i in range(atom_size):
                 tA[i] = local_src.load[
                     width=simd_width, alignment=alignment, invariant=True
                 ](src_offset + i * atom_stride)
 
-        @parameter
-        for r in range(ngpus):
+        comptime for r in range(ngpus):
             send(
                 r,
                 comm_data0_offset + my_rank * rank_tile_elems,
@@ -1101,29 +1078,24 @@ fn allreduce_2stage_quickreduce_tile[
     @always_inline
     fn phase1b_reduce():
         if thread_idx.x == UInt(0):
-
-            @parameter
-            for r in range(ngpus):
+            comptime for r in range(ngpus):
                 wait_for_flag(
                     flag_buf[my_rank] + comm_flags0_offset + r,
                     UInt32(flag_color),
                 )
         barrier()
 
-        @parameter
-        for r in range(ngpus):
+        comptime for r in range(ngpus):
             recv(
                 data_buf[my_rank],
                 comm_data0_offset + r * rank_tile_elems,
                 0,
             )
 
-            @parameter
-            for i_red in range(rank_atoms):
+            comptime for i_red in range(rank_atoms):
                 tR_acc[i_red] += tA[i_red].cast[accum_type]()
 
-        @parameter
-        for i_red in range(rank_atoms):
+        comptime for i_red in range(rank_atoms):
             tR[i_red] = tR_acc[i_red].cast[dtype]()
 
     phase1b_reduce()
@@ -1131,8 +1103,7 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     @always_inline
     fn phase2_allgather():
-        @parameter
-        for r in range(ngpus):
+        comptime for r in range(ngpus):
             send(
                 r,
                 comm_data1_offset + my_rank * rank_tile_elems,
@@ -1150,17 +1121,14 @@ fn allreduce_2stage_quickreduce_tile[
         # a barrier after the wait will synchronize the block.
 
         if thread_idx.x == UInt(0):
-
-            @parameter
-            for r in range(ngpus):
+            comptime for r in range(ngpus):
                 wait_for_flag(
                     flag_buf[my_rank] + comm_flags1_offset + r,
                     UInt32(flag_color),
                 )
         barrier()
 
-        @parameter
-        for r in range(ngpus):
+        comptime for r in range(ngpus):
             recv(
                 data_buf[my_rank],
                 comm_data1_offset + r * rank_tile_elems,
@@ -1171,8 +1139,7 @@ fn allreduce_2stage_quickreduce_tile[
 
     var dst_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
 
-    @parameter
-    for i in range(atom_size):
+    comptime for i in range(atom_size):
         var elem_idx_out = dst_offset + i * atom_stride
         output_lambda[width=simd_width, alignment=alignment](
             result.get_nd_index(elem_idx_out), tA[i]
@@ -1257,8 +1224,7 @@ fn allreduce_2stage_quickreduce[
                 iteration,
             )
 
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         if amd_index_fits:
             dispatch_on_bufferio[True]()
         else:

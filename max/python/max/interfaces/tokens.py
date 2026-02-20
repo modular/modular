@@ -673,14 +673,24 @@ class TokenBuffer:
     # Internal Memory Management
     # ============================================================================
 
-    def _expand_capacity(self) -> None:
+    def _expand_capacity(self, min_capacity: int | None = None) -> None:
         """Expand the underlying array capacity when needed.
 
         Automatically called by add_token() when more space is required.
         Uses exponential growth for efficient amortized performance.
+
+        Args:
+            min_capacity: If provided, ensure the array can hold at least
+                this many elements. Otherwise uses ``_current_length``.
         """
-        if self._current_length >= self.array.size:
-            new_array = np.empty(self.array.size * 2, dtype=np.int64)
+        target = (
+            min_capacity if min_capacity is not None else self._current_length
+        )
+        if target >= self.array.size:
+            new_size = self.array.size
+            while new_size <= target:
+                new_size *= 2
+            new_array = np.empty(new_size, dtype=np.int64)
             np.copyto(
                 new_array[: self._current_length],
                 self.array[: self._current_length],

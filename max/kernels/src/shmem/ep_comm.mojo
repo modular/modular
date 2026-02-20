@@ -13,7 +13,8 @@
 
 from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
-from sys.info import align_of, simd_width_of, size_of
+from sys import is_amd_gpu, is_nvidia_gpu
+from sys.info import CompilationTarget, align_of, simd_width_of, size_of
 
 from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
@@ -85,6 +86,34 @@ comptime EP_DATA_READY_FLAG = 1 << 10
 # Maximum number of GPUs per node for P2P signaling.
 # Used to track per-rank expert completion.
 comptime MAX_GPUS_PER_NODE = 8
+
+
+@always_inline
+fn _BLOCK_SCOPE() -> StaticString:
+    comptime if is_nvidia_gpu():
+        return "block"
+    elif is_amd_gpu():
+        return "workgroup"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString, operation = __get_current_function_name()
+        ]()
+
+
+@always_inline
+fn _DEVICE_SCOPE() -> StaticString:
+    comptime if is_nvidia_gpu():
+        return "device"
+    elif is_amd_gpu():
+        return "agent"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString, operation = __get_current_function_name()
+        ]()
+
+
+comptime DEVICE_SCOPE = _DEVICE_SCOPE()
+comptime BLOCK_SCOPE = _BLOCK_SCOPE()
 
 
 @always_inline
@@ -192,9 +221,9 @@ fn ep_signal_completion[
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
         var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
-        var old_count = Atomic[DType.int32].fetch_add(
-            rank_completion_counter + Int(dst_p2p_rank), 1
-        )
+        var old_count = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
+            ordering = Consistency.MONOTONIC
+        ](rank_completion_counter + Int(dst_p2p_rank), 1)
 
         # If this is the last expert for this destination rank,
         # use store_release to flush all pending stores.
@@ -203,16 +232,14 @@ fn ep_signal_completion[
         else:
             # Technically, this store_release only guarantees the arrival of
             # all experts' messages to the target device. It doesn't guarantee
-            # the the arrival of the previous experts' signals to the target
+            # the arrival of the previous experts' signals to the target
             # device. However, this does not matter as we will check the
             # arrival signal individually in the dispatch_wait/combine_wait kernel.
             store_release[scope = Scope.SYSTEM](dst_p2p_ptr, signal)
             # Reset counter for next kernel invocation.
             rank_completion_counter[dst_p2p_rank] = 0
     else:
-
-        @parameter
-        if use_shmem:
+        comptime if use_shmem:
             # This signal operation is sent using the same RC as the one used
             # for token transfer. Since RC guarantees the message is delivered
             # in order, the remote device can confirm all the tokens for the
@@ -725,8 +752,7 @@ struct NVFP4TokenFormat[
         if warp_id() == 0:
             var prev_round_blocks_num: UInt32 = 0
 
-            @parameter
-            for round_i in range(n_rounds):
+            comptime for round_i in range(n_rounds):
                 var per_expert_m: UInt32 = 0
                 var group_idx = UInt(round_i * WARP_SIZE) + tid
                 if group_idx < UInt(n_groups):
@@ -1298,8 +1324,7 @@ struct EPDispatchKernel[
 
         var input_scale = Float32(1.0)
 
-        @parameter
-        if input_scales_wrapper is not None:
+        comptime if input_scales_wrapper is not None:
             comptime input_scale_fn = input_scales_wrapper.value()
             input_scale = input_scale_fn[DType.float32](0)
 
@@ -1363,9 +1388,9 @@ struct EPDispatchKernel[
                 if my_p2p_world == dst_p2p_world:
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
-                        slot_idx = Atomic.fetch_add(
-                            expert_reserved_counter + target_expert, 1
-                        )
+                        slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.MONOTONIC
+                        ](expert_reserved_counter + target_expert, 1)
                     slot_idx = warp.broadcast(slot_idx)
 
                     var dst_recv_buf_ptr = recv_buf_ptrs[
@@ -1388,9 +1413,9 @@ struct EPDispatchKernel[
                     syncwarp()
 
                     if lane_id() == 0:
-                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
-                            expert_finished_counter + target_expert, 1
-                        )
+                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.RELEASE
+                        ](expert_finished_counter + target_expert, 1)
 
             # We set up `n_local_experts` Reliable Communications (RCs) for each
             # remote device. We would like to use the same RC for each expert.
@@ -1399,8 +1424,7 @@ struct EPDispatchKernel[
             # `NVSHMEM_IBGDA_RC_MAP_BY=warp` so that the RC is selected by the
             # warp ID using round-robin. We can then control the RC for each
             # expert by using the correct warp.
-            @parameter
-            if Self.use_shmem:
+            comptime if Self.use_shmem:
                 var rc_map_offset = Int32(
                     (block_idx.x * UInt(Self.n_warps) + warp_id())
                     % UInt(Self.n_local_experts)
@@ -1421,9 +1445,9 @@ struct EPDispatchKernel[
                         rc_map_offset == dst_expert_local_idx
                         and my_p2p_world != dst_p2p_world
                     ):
-                        var slot_idx = Atomic.fetch_add(
-                            expert_reserved_counter + target_expert, 1
-                        )
+                        var slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.MONOTONIC
+                        ](expert_reserved_counter + target_expert, 1)
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
                         ] + recv_buf_layout(
@@ -1441,9 +1465,9 @@ struct EPDispatchKernel[
                             dst_rank,
                         )
 
-                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
-                            expert_finished_counter + target_expert, 1
-                        )
+                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering = Consistency.RELEASE
+                        ](expert_finished_counter + target_expert, 1)
 
     # ===-------------------------------------------------------------------===#
     # Dispatch Callback Kernel Methods
@@ -1492,12 +1516,10 @@ struct EPDispatchKernel[
         if tid == 0:
             row_offsets[0] = 0
 
-            @parameter
-            if Self.fused_shared_expert:
+            comptime if Self.fused_shared_expert:
                 var shared_expert_token_count = reserved_shared_expert_tokens
 
-                @parameter
-                if Self.expert_m_padding != 0:
+                comptime if Self.expert_m_padding != 0:
                     shared_expert_token_count = UInt32(
                         align_up(
                             Int(shared_expert_token_count),
@@ -1545,8 +1567,7 @@ struct EPDispatchKernel[
                 prefix_sum_arr[last_rank_idx] - prev_expert_end
             )
 
-            @parameter
-            if Self.expert_m_padding != 0:
+            comptime if Self.expert_m_padding != 0:
                 local_expert_tok_count = UInt32(
                     align_up(Int(local_expert_tok_count), Self.expert_m_padding)
                 )
@@ -1554,9 +1575,9 @@ struct EPDispatchKernel[
             # Conduct a atomic add to get how many experts have already completed
             # the communication, and the offset where the previous expert end in the
             # output tensor.
-            var packed_expert_idx_offset = Atomic.fetch_add(
-                shared_mem, local_expert_tok_count | 0x00100000
-            )
+            var packed_expert_idx_offset = Atomic[scope=BLOCK_SCOPE].fetch_add[
+                ordering = Consistency.MONOTONIC
+            ](shared_mem, local_expert_tok_count | 0x00100000)
 
             var expert_idx = packed_expert_idx_offset >> 20
             var prev_expert_offset = packed_expert_idx_offset & 0x000FFFFF
@@ -1763,8 +1784,7 @@ struct EPDispatchKernel[
 
         var input_scale = Float32(1.0)
 
-        @parameter
-        if input_scales_wrapper is not None:
+        comptime if input_scales_wrapper is not None:
             comptime input_scale_fn = input_scales_wrapper.value()
             input_scale = input_scale_fn[DType.float32](0)
 
@@ -2003,8 +2023,7 @@ fn dispatch_wait_kernel[
     if block_idx.x < UInt(dispatch_impl.n_offset_sms):
         var reserved_shared_expert_tokens = 0
 
-        @parameter
-        if fused_shared_expert:
+        comptime if fused_shared_expert:
             reserved_shared_expert_tokens = maybe_input_tokens.value().dim(0)
 
         dispatch_impl.wait_for_arrivals_and_compute_offsets(
@@ -2021,8 +2040,7 @@ fn dispatch_wait_kernel[
     else:
         # If we need to pack the shared expert's inputs, we do that before
         # waiting for the arrival of the routed experts' inputs.
-        @parameter
-        if fused_shared_expert:
+        comptime if fused_shared_expert:
             dispatch_impl.pack_shared_expert_inputs[input_scales_wrapper](
                 format_handler, maybe_input_tokens.value()
             )
@@ -2283,9 +2301,7 @@ struct EPCombineKernel[
             # If the target device is on a different node, we need to send the
             # tokens to the target device using the SHMEM API.
             else:
-
-                @parameter
-                if Self.use_shmem:
+                comptime if Self.use_shmem:
                     # The tokens are sent back to the original rank using the
                     # same RC as the one they come from.
                     var rc_map_offset = (
@@ -2512,8 +2528,7 @@ struct EPCombineKernel[
             var accum = SIMD[DType.float32, dst_simd_width](0)
             var recv_chunk = SIMD[output_type, dst_simd_width](0)
 
-            @parameter
-            for topk_idx in range(Self.top_k):
+            comptime for topk_idx in range(Self.top_k):
                 var recv_buf_ptr = recv_buf_p + recv_buf_layout(
                     RtTuple_3(
                         token_idx,
@@ -2531,8 +2546,7 @@ struct EPCombineKernel[
                     )
                 )
 
-                @parameter
-                if router_weights_wrapper:
+                comptime if router_weights_wrapper:
                     comptime router_weights_fn = router_weights_wrapper.value()
 
                     var weight = router_weights_fn[1](token_idx, topk_idx)
@@ -2552,11 +2566,8 @@ struct EPCombineKernel[
                         recv_chunk,
                     )
 
-            @parameter
-            if router_weights_wrapper:
-
-                @parameter
-                if elementwise_lambda_fn:
+            comptime if router_weights_wrapper:
+                comptime if elementwise_lambda_fn:
                     comptime lambda_fn = elementwise_lambda_fn.value()
                     lambda_fn[alignment=_align](
                         (
@@ -2683,8 +2694,7 @@ fn combine_async_kernel[
     )
 
     # Copy the shared expert's outputs to the output tensor.
-    @parameter
-    if fused_shared_expert:
+    comptime if fused_shared_expert:
         combine_impl.copy_shared_expert_outputs(
             input_tokens, maybe_output_tokens.value()
         )
@@ -2924,8 +2934,7 @@ fn dispatch_kernel[
         if block_idx.x < UInt(dispatch_impl.n_offset_sms):
             var reserved_shared_expert_tokens: UInt32 = 0
 
-            @parameter
-            if fused_shared_expert:
+            comptime if fused_shared_expert:
                 reserved_shared_expert_tokens = UInt32(input_tokens.dim(0))
 
             dispatch_impl.wait_for_arrivals_and_compute_offsets(
@@ -2938,9 +2947,7 @@ fn dispatch_kernel[
                 reserved_shared_expert_tokens,
             )
         else:
-
-            @parameter
-            if fused_shared_expert:
+            comptime if fused_shared_expert:
                 dispatch_impl.pack_shared_expert_inputs[input_scales_wrapper](
                     format_handler, input_tokens
                 )
@@ -3042,8 +3049,7 @@ fn combine_kernel[
         my_rank: The rank of the current device.
     """
 
-    @parameter
-    if fused_shared_expert:
+    comptime if fused_shared_expert:
         comptime assert router_weights_wrapper, (
             "EP combine_kernel: fused_shared_expert requires "
             "router_weights_wrapper to be provided. Cannot add shared expert "
@@ -3089,8 +3095,7 @@ fn combine_kernel[
             )
         else:
             # Create an elementwise lambda that adds shared expert output if enabled
-            @parameter
-            if fused_shared_expert:
+            comptime if fused_shared_expert:
                 comptime hid_dim = input_tokens_layout.shape[1].value()
 
                 @always_inline
@@ -3110,8 +3115,7 @@ fn combine_kernel[
                     # Add and store the result
                     var result = combined_val + shared_expert_val
 
-                    @parameter
-                    if epilogue_fn:
+                    comptime if epilogue_fn:
                         comptime epilogue = epilogue_fn.value()
                         epilogue[width=width, alignment=alignment](idx, result)
                     else:

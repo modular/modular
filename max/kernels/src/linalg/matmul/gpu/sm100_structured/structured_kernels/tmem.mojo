@@ -547,8 +547,7 @@ struct TmemFragments[
             Self.dtype, width, Self.data_paths, Self.bits, repeat
         ]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             result.lower = tmem.load_lower[
                 Self.dtype, width, Self.data_paths, Self.bits, repeat
             ]()
@@ -571,8 +570,7 @@ struct TmemFragments[
             Self.dtype, Self.frag_size, Self.data_paths, Self.bits, repeat
         ](self.upper)
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             tmem.store_lower[
                 Self.dtype, Self.frag_size, Self.data_paths, Self.bits, repeat
             ](self.lower)
@@ -591,8 +589,7 @@ struct TmemFragments[
         ]()
         result.upper = self.upper.cast[target_dtype]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             result.lower = self.lower.cast[target_dtype]()
 
         return result

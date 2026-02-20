@@ -26,13 +26,16 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
-from max.interfaces.request import Request, RequestID
+from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from typing_extensions import TypeVar
 
 
 @dataclass(frozen=True)
-class AudioGenerationRequest(Request):
+class AudioGenerationRequest:
+    request_id: RequestID = field()
+    """A unique identifier for the request."""
+
     model: str = field()
     """The name of the model to be used for generating audio chunks. This should match
     the available models on the server and determines the behavior and
@@ -71,6 +74,9 @@ class AudioGenerationRequest(Request):
     When this field is specified, this tensor is used to buffer the tokens sent
     to the audio decoder.
     """
+
+    def __str__(self) -> str:
+        return str(self.request_id)
 
     def __post_init__(self) -> None:
         if self.prompt is None and self.input is None:

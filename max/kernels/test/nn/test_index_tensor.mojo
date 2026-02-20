@@ -465,8 +465,7 @@ fn test_advanced_indexing_getitem() raises:
     fn indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
-        @parameter
-        if indices_index == 0:
+        comptime if indices_index == 0:
             return _index_a_dyn.load[width=1](Coord(coordinates))
         else:
             return _index_b_dyn.load[width=1](Coord(coordinates))
@@ -612,8 +611,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     fn indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
-        @parameter
-        if indices_index == 0:
+        comptime if indices_index == 0:
             return _index_a_dyn.load[width=1](Coord(coordinates))
         else:
             return _index_b_dyn.load[width=1](Coord(coordinates))

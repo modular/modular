@@ -109,8 +109,7 @@ fn check_cublas_error(stat: Result, msg: StringSlice) raises:
 
 @always_inline
 fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
-    @parameter
-    if mojo_type == DType.float32:
+    comptime if mojo_type == DType.float32:
         return DataType.R_32F
     elif mojo_type == DType.float16:
         return DataType.R_16F

@@ -38,8 +38,7 @@ fn test_argmaxmin_gpu[
     var in_shape: IndexList[rank]
     var out_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape = IndexList[rank](1)
         in_shape = IndexList[rank](N)
     elif rank == 2:
@@ -89,8 +88,7 @@ fn test_argmaxmin_gpu[
         row_major(Coord(out_shape)),
     )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax_gpu(
             ctx,
             device_in_tensor,
@@ -113,8 +111,7 @@ fn test_argmaxmin_gpu[
         row_major(Coord(out_shape)),
     )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax(
             in_host,
             rank - 1,

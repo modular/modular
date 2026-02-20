@@ -210,8 +210,7 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """
     var fspath = path.__fspath__()
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _stat_macos(fspath^)._to_stat_result()
     elif CompilationTarget.has_neon():
         return _stat_linux_arm(fspath^)._to_stat_result()
@@ -240,8 +239,7 @@ fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """
     var fspath = path.__fspath__()
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _lstat_macos(fspath^)._to_stat_result()
     elif CompilationTarget.has_neon():
         return _lstat_linux_arm(fspath^)._to_stat_result()

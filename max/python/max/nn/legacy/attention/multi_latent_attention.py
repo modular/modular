@@ -245,9 +245,10 @@ class LatentAttentionWithRope(Module, Shardable):
         if strategy.is_tensor_parallel:
             self._sharding_strategy = strategy
 
-            if (self.n_heads / strategy.num_devices) % 16 != 0:
+            if self.n_heads % strategy.num_devices != 0:
                 raise ValueError(
-                    "MLA head per device must be a multiple of 16."
+                    f"Number of attention heads ({self.n_heads}) must be"
+                    f" divisible by the number of devices ({strategy.num_devices})."
                 )
 
             # Tensor parallelism: shard/replicate weights appropriately

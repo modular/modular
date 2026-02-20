@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import os
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
@@ -71,8 +73,6 @@ class PagedKVCacheManager:
         total_num_pages: int,
         total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
-        *,
-        max_batch_size: int,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
@@ -81,13 +81,8 @@ class PagedKVCacheManager:
             session: The MAX Engine inference session
             total_num_pages: The total number of pages to allocate
             total_num_host_pages: The total number of host pages to allocate
-            max_batch_size: Maximum runtime batch size used to preallocate
-                per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks
         """
-        if max_batch_size < 1:
-            raise ValueError("max_batch_size must be positive")
-
         self.params = params
         self.devices = [d.to_device() for d in params.devices]
 
@@ -101,15 +96,29 @@ class PagedKVCacheManager:
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
-        for devices in self.devices_per_replica:
+        for replica_idx, devices in enumerate(self.devices_per_replica):
+            replica_params = dp_1_params
+            # Give each replica its own disk cache subdirectory to avoid
+            # file collisions, double disk-usage accounting, and metadata
+            # corruption when DP > 1.
+            if (
+                self.num_replicas > 1
+                and dp_1_params.disk_offload_dir is not None
+            ):
+                replica_params = dataclasses.replace(
+                    dp_1_params,
+                    disk_offload_dir=os.path.join(
+                        dp_1_params.disk_offload_dir,
+                        f"replica_{replica_idx}",
+                    ),
+                )
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
-                    params=dp_1_params,
+                    params=replica_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
                     devices=devices,
                     session=session,
-                    max_batch_size=max_batch_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )

@@ -1,0 +1,66 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+_LMCACHE_TEST_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    "//max/python/max/kv_cache",
+    "//max/python/max/nn",
+    "//max/python/max/pipelines/core:core",
+    "//max/tests/integration/test_common:context_utils",
+    requirement("lmcache"),
+    requirement("numpy"),
+    requirement("torch"),
+]
+
+modular_py_test(
+    name = "test_max_gpu_connector",
+    timeout = "moderate",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_max_gpu_connector.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "1.2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = _LMCACHE_TEST_DEPS,
+)
+
+modular_py_test(
+    name = "test_lmcache_kv_connector",
+    timeout = "moderate",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_lmcache_kv_connector.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "1.5",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = _LMCACHE_TEST_DEPS,
+)

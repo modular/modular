@@ -52,8 +52,7 @@ from .arch.mma_amd import _mma_amd
 And dispatches based on compile-time architecture detection:
 
 ```mojo
-@parameter
-if is_nvidia_gpu():
+comptime if is_nvidia_gpu():
     _mma_nvidia(d, a, b, c)
 elif is_amd_gpu():
     _mma_amd[block_size](d, a, b, c)

@@ -31,7 +31,7 @@ from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
-from ..config_enums import SupportedEncoding
+from ..config_enums import supported_encoding_dtype
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
@@ -206,11 +206,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        # TODO: This is no longer necessary inside PipelineModel since it can be
-        # inferred directly from model_config, remove it and from
-        # other PipelineModel methods that depend on it.
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -219,8 +214,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
-        self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -231,12 +224,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         # Initialize `max_seq_len` here to avoid repeated HF config access.
         self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, huggingface_config
+            pipeline_config, self.huggingface_config
         )
 
         if isinstance(self, KVCacheMixin):
             self.kv_params = self.get_kv_params(
-                huggingface_config=huggingface_config,
+                huggingface_config=self.huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=self.device_refs,
                 kv_cache_config=kv_cache_config,
@@ -262,14 +255,38 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 pipeline_config.lora,
                 pipeline_config.model.model_name,
                 self.dtype,
-                huggingface_config.num_attention_heads,
-                huggingface_config.num_key_value_heads,
-                huggingface_config.head_dim,
+                self.huggingface_config.num_attention_heads,
+                self.huggingface_config.num_key_value_heads,
+                self.huggingface_config.head_dim,
                 pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora
             else None
         )
+
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """Returns the HuggingFace config from pipeline config.
+
+        For multimodal models (e.g., Pixtral, Gemma3 multimodal), this
+        returns the top-level config which contains both text_config and
+        vision_config. Models should explicitly access .text_config or
+        .vision_config as needed.
+
+        Returns:
+            The HuggingFace AutoConfig for this model.
+
+        Raises:
+            ValueError: If HuggingFace config could not be loaded.
+        """
+        config = self.pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required but could not be loaded for "
+                f"model '{self.pipeline_config.model.model_path}'. "
+                "Ensure the model repository contains a valid config.json."
+            )
+        return config
 
     @property
     def lora_manager(self) -> LoRAManager | None:
@@ -314,13 +331,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     @property
     def dtype(self) -> DType:
-        """Returns the model data type (from encoding or pipeline config)."""
-        # AudioGeneratorPipeline passes Nones for all args except pipeline config
-        return (
-            self.encoding.dtype
-            if self.encoding is not None
-            else self.pipeline_config.model.quantization_encoding.dtype
-        )
+        """Returns the model data type from pipeline config."""
+        quantization_encoding = self.pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        return supported_encoding_dtype(quantization_encoding)
 
     @classmethod
     @abstractmethod
@@ -340,12 +355,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     try:
                         return upper_bounded_default(
                             upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.max_length,
+                            default=pipeline_config.model.max_length,
                         )
                     except ValueError as e:
                         raise ValueError(
                             "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
                             f"model's max_seq_len ({huggingface_config.max_seq_len})."
                         ) from e
 

@@ -100,14 +100,12 @@ struct TopK:
             # Finish packing the values across threads in this block
             barrier()
 
-            @parameter
-            for i in range(K):
+            comptime for i in range(K):
                 var reduced = top_k_sram[tid]
                 comptime limit = log2_floor(WARP_SIZE)
 
                 # TODO(KERN-1544): `gpu.shuffle.warp_max` support index/value
-                @parameter
-                for j in reversed(range(limit)):
+                comptime for j in reversed(range(limit)):
                     comptime offset = 1 << j
                     # Parallel reduction using warp shuffle. Each thread gets a
                     # value from a thread 'offset' positions higher, keeping the
@@ -131,8 +129,7 @@ struct TopK:
                     var index = reduced.idx % Int32(block_dim.x)
                     top_k_sram[index].val = min_or_neg_inf[dtype]()
 
-        @parameter
-        if target == "gpu":
+        comptime if target == "gpu":
             dev_ctx.enqueue_function_experimental[top_k_gpu[K]](
                 out_vals_tensor,
                 out_idxs_tensor,

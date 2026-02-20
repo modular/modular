@@ -45,12 +45,12 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
     - **Manual state tracking**: Every method in this struct is unsafe. You must
       track whether the memory is initialized or uninitialized at all times.
       Calling a method that assumes the memory is initialized (like
-      `unsafe_assume_initialized_ref()`) when it is not will result in undefined
+      `unsafe_assume_init_ref()`) when it is not will result in undefined
       behavior.
 
     - **Validity requirements**: `UnsafeMaybeUninit[T]` has no validity
       requirements, any bit pattern is valid. However, once you call
-      `unsafe_assume_initialized_ref()`, the contained value must satisfy `T`'s
+      `unsafe_assume_init_ref()`, the contained value must satisfy `T`'s
       validity requirements.
 
     Parameters:
@@ -211,15 +211,13 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
 
 @always_inline
 fn _is_trivially_copyable[T: AnyType]() -> Bool:
-    @parameter
-    if conforms_to(T, Copyable):
+    comptime if conforms_to(T, Copyable):
         return downcast[T, Copyable].__copyinit__is_trivial
     return False
 
 
 @always_inline
 fn _is_trivially_movable[T: AnyType]() -> Bool:
-    @parameter
-    if conforms_to(T, Movable):
+    comptime if conforms_to(T, Movable):
         return downcast[T, Movable].__moveinit__is_trivial
     return False

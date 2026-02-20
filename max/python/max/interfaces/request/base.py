@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
-from typing import TypeVar
+from typing import Protocol, TypeVar, runtime_checkable
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,35 +37,29 @@ class RequestID:
 DUMMY_REQUEST_ID = RequestID("cuda_graph_dummy")
 
 
-@dataclasses.dataclass(frozen=True)
-class Request:
-    """Base class representing a generic request within the MAX API.
+@runtime_checkable
+class Request(Protocol):
+    """Protocol representing a generic request within the MAX API.
 
-    This class provides a unique identifier for each request, ensuring that
+    This protocol defines the interface for request types, ensuring that
     all requests can be tracked and referenced consistently throughout the
-    system. Subclasses can extend this class to include additional fields
-    specific to their request types.
-
+    system. Any class (dataclass, Pydantic model, etc.) that provides a
+    ``request_id`` attribute satisfies this protocol.
     """
 
-    request_id: RequestID = dataclasses.field(
-        metadata={
-            "doc": (
-                "A unique identifier for the request, automatically "
-                "generated using UUID4 if not provided."
-            )
-        },
-    )
+    @property
+    def request_id(self) -> RequestID:
+        """Returns the unique identifier for this request."""
+        ...
 
-    def __str__(self) -> str:
-        return str(self.request_id)
+    def __str__(self) -> str: ...
 
 
 RequestType = TypeVar("RequestType", bound=Request, contravariant=True)
-"""
-Type variable for request types.
+"""Type variable for request types.
 
-This TypeVar is bound to the Request base class, ensuring that any type used
-with this variable must inherit from Request. It is used for generic typing
-in interfaces and implementations that operate on requests.
+This TypeVar is bound to the Request protocol, ensuring that any type used
+with this variable must satisfy the Request protocol interface (have a
+request_id attribute and __str__ method). It is contravariant to allow
+protocols that accept requests to work with more specific request types.
 """

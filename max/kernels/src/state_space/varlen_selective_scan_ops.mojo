@@ -149,8 +149,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                 + ". Expected 4, 8, or 16."
             )
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 varlen_selective_scan_fwd_cpu[
                     dtype,
@@ -649,8 +648,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                 + ". Expected 4, 8, or 16."
             )
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 varlen_selective_state_update_cpu[
                     dtype,

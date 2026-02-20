@@ -32,7 +32,7 @@ import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
-from max.interfaces.request import Request, RequestID
+from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -188,7 +188,10 @@ class TextGenerationRequestMessage(BaseModel):
 
 
 @dataclass(frozen=True)
-class TextGenerationRequest(Request):
+class TextGenerationRequest:
+    request_id: RequestID = field()
+    """A unique identifier for the request."""
+
     model_name: str = field()
     """
     The name of the model to be used for generating tokens. This should match
@@ -266,6 +269,9 @@ class TextGenerationRequest(Request):
     scenarios, when you want to dynamically route to a specific instance.
     If not specified, the request will be routed to the default endpoint.
     """
+
+    def __str__(self) -> str:
+        return str(self.request_id)
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""

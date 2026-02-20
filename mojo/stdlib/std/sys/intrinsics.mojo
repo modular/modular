@@ -61,8 +61,7 @@ fn llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    @parameter
-    if _mlirtype_is_eq[type, NoneType]():
+    comptime if _mlirtype_is_eq[type, NoneType]():
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
@@ -138,18 +137,15 @@ fn gather[
       A SIMD[dtype, size] containing the result of the gather operation.
     """
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
-    @parameter
-    if is_gpu() and invariant:
+    comptime if is_gpu() and invariant:
         var result = SIMD[dtype, size]()
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
@@ -233,8 +229,7 @@ fn scatter[
         the base vector.
     """
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[0])
@@ -490,8 +485,7 @@ fn prefetch[
         params.rw == PrefetchRW.READ or type_of(addr).mut == True
     ), "prefetch pointer mutability must match the prefetch read-write option"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         inlined_assembly[
             "prefetch.global.L2 [$0];",
             NoneType,
@@ -547,8 +541,7 @@ fn masked_load[
     """
     debug_assert(Bool(addr), "masked_load requires a valid (non-null) pointer")
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return addr.load() if mask else passthrough[0]
 
     return llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
@@ -588,8 +581,7 @@ fn masked_store[
     """
     debug_assert(Bool(addr), "masked_store requires a valid (non-null) pointer")
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             addr.store(value[0])
         return
@@ -632,8 +624,7 @@ fn compressed_store[
         Bool(addr), "compressed_store requires a valid (non-null) pointer"
     )
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             addr.store(value[0])
         return
@@ -678,8 +669,7 @@ fn strided_load[
     """
     debug_assert(Bool(addr), "strided_load requires a valid (non-null) pointer")
 
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
     var offset = (
@@ -724,8 +714,7 @@ fn strided_store[
         Bool(addr), "strided_store requires a valid (non-null) pointer"
     )
 
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         if mask:
             addr.store(value[0])
         return

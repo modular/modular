@@ -69,37 +69,31 @@ fn set_priority[priority: Int]():
 
 @always_inline
 fn scheduling_hints_qk[group: Int]():
-    @parameter
-    for i in range(4):
+    comptime for i in range(4):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
-        @parameter
-        for j in range(4):
+        comptime for j in range(4):
             schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, Int32(group))
             schedule_group_barrier(
                 AMDScheduleBarrierMask.TRANS, 1, Int32(group)
             )
 
-    @parameter
-    for i in range(12):
+    comptime for i in range(12):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 6, Int32(group))
 
 
 @always_inline
 fn scheduling_hints_pv[group: Int]():
-    @parameter
-    for i in range(12):
+    comptime for i in range(12):
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 4, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 10, Int32(group))
 
-    @parameter
-    for i in range(4):
+    comptime for i in range(4):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, Int32(group))
             schedule_group_barrier(
                 AMDScheduleBarrierMask.TRANS, 1, Int32(group)
@@ -110,14 +104,12 @@ fn scheduling_hints_pv[group: Int]():
 fn barrier[
     *, schedule_barrier_before: Bool = True, schedule_barrier_after: Bool = True
 ]():
-    @parameter
-    if schedule_barrier_before:
+    comptime if schedule_barrier_before:
         schedule_barrier()
 
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
-    @parameter
-    if schedule_barrier_after:
+    comptime if schedule_barrier_after:
         schedule_barrier()
 
 
@@ -303,8 +295,7 @@ struct KVBuffer[
 
         self.lds_base_ptrs = type_of(self.lds_base_ptrs)(uninitialized=True)
 
-        @parameter
-        for i in range(2):
+        comptime for i in range(2):
             var smem_tile = self.smem_iter.next_unsafe(
                 self.smem_iter.linear_uint_type(i)
             )[]
@@ -323,8 +314,7 @@ struct KVBuffer[
             self.smem_iter.linear_uint_type(buffer_idx)
         )[]
 
-        @parameter
-        if Self.depth == 64:
+        comptime if Self.depth == 64:
             var smem_warp_tile = smem_tile.tile[32, Self.BK](
                 Int(self.warp_id) // 2, Int(self.warp_id) % 2
             )
@@ -339,8 +329,7 @@ struct KVBuffer[
         else:
             comptime num_warps = Self.num_threads // WARP_SIZE
 
-            @parameter
-            for depth_tile in range(Self.depth // 128):
+            comptime for depth_tile in range(Self.depth // 128):
                 var warp_row = self.warp_id // UInt32(4)
                 var warp_col = self.warp_id % UInt32(4)
                 var smem_warp_tile = smem_tile.tile[32, Self.BK](
@@ -375,14 +364,12 @@ struct KVBuffer[
 
     @always_inline
     fn load_from_shared(self, buffer: UInt):
-        @parameter
-        for bk_tile in range(Self.num_k_tiles):
+        comptime for bk_tile in range(Self.num_k_tiles):
             self.load_from_shared[bk_tile](buffer)
 
     @always_inline
     fn load_from_shared[bk_tile: Int](self, buffer: UInt):
-        @parameter
-        if Self.transpose:
+        comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
             var smem_tile = self.smem_iter.next_unsafe(
@@ -406,8 +393,7 @@ struct KVBuffer[
             comptime MMA_M = Self.mma_shape[0]
             comptime MMA_K = Self.mma_shape[2]
 
-            @parameter
-            for k in range(Self.BK // MMA_K):
+            comptime for k in range(Self.BK // MMA_K):
                 var smem_tile = (
                     self.smem_iter.next_unsafe(
                         self.smem_iter.layout_uint_type(buffer)
@@ -425,8 +411,7 @@ struct KVBuffer[
                     .vectorize[1, Self.simd_width]()
                 )
 
-                @parameter
-                for i in range(Self.depth // MMA_M):
+                comptime for i in range(Self.depth // MMA_M):
                     comptime tile_layout = type_of(
                         smem_tile.tile[MMA_K, MMA_M](0, i)
                     ).layout
@@ -471,8 +456,7 @@ __extension Attention:
 
     @always_inline
     fn online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
-        @parameter
-        if mask:
+        comptime if mask:
             self.apply_mask[stage]()
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
@@ -583,11 +567,8 @@ __extension Attention:
             ]()
             self.zero_p_buffer[stage]()
 
-            @parameter
-            for i in range(Self.depth // Self.BK):
-
-                @parameter
-                for k_mma in range(Self.num_k_mmas2):
+            comptime for i in range(Self.depth // Self.BK):
+                comptime for k_mma in range(Self.num_k_mmas2):
                     var q_mma_tile = self.q_buffer.get_mma_tile[
                         Int(i), Int(k_mma)
                     ]()
@@ -610,11 +591,8 @@ __extension Attention:
                 transpose_b=True,
             ]()
 
-            @parameter
-            for i in range(Self.BN // Self.BK):
-
-                @parameter
-                for k_mma in range(v_buffer.num_k_mmas2):
+            comptime for i in range(Self.BN // Self.BK):
+                comptime for k_mma in range(v_buffer.num_k_mmas2):
                     tensor_core_mma.mma[swap_a_b = Self.swap_a_b](
                         self.p_reg_buffer.get_mma_tile[Int(i), k_mma, stage](),
                         v_buffer.get_mma_tile[k_mma, Int(i)](),
@@ -679,8 +657,7 @@ __extension Attention:
 
             set_priority[1]()
 
-            @parameter
-            if break_mask:
+            comptime if break_mask:
                 self.apply_mask[1]()
             mma_pv[0]()
             self.online_softmax_step_0[1, mask = not break_mask]()
@@ -709,8 +686,7 @@ __extension Attention:
 
             set_priority[1]()
 
-            @parameter
-            if break_mask:
+            comptime if break_mask:
                 self.apply_mask[0]()
             mma_pv[1]()
             self.online_softmax_step_0[0, mask = not break_mask]()
@@ -729,8 +705,7 @@ __extension Attention:
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        @parameter
-        if is_causal_mask:
+        comptime if is_causal_mask:
             # for causal mask we can exit early depending on the q_tile_idx
             var num_tiles_causal = ceildiv(
                 Int((self.q_tile_idx() + 1) * Self.BM) + self.start_pos,

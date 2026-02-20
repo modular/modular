@@ -25,8 +25,7 @@ from std.builtin.sort import _heap_sort, _insertion_sort, _small_sort, sort
 fn randomize_list[
     dt: DType
 ](mut list: List[Scalar[dt]], size: Int, max: Scalar[dt] = Scalar[dt].MAX):
-    @parameter
-    if dt.is_integral():
+    comptime if dt.is_integral():
         randint(list.unsafe_ptr(), size, 0, Int(max))
     else:
         for i in range(size):
@@ -70,8 +69,7 @@ fn heap_sort[dtype: DType](mut list: List[Scalar[dtype]]):
 fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
     comptime small_list_size = 5
 
-    @parameter
-    for count in range(2, small_list_size + 1):
+    comptime for count in range(2, small_list_size + 1):
 
         @parameter
         fn bench_sort_list(mut b: Bencher) raises:
@@ -310,17 +308,14 @@ def main():
     var large_counts = [2**12, 2**16, 2**20]
     var deltas = [0, 2, 5, 20, 100]
 
-    @parameter
-    for dtype in dtypes:
+    comptime for dtype in dtypes:
         bench_tiny_list_sort[dtype](m)
 
-    @parameter
-    for dtype in dtypes:
+    comptime for dtype in dtypes:
         for count1 in small_counts:
             bench_small_list_sort[dtype](m, count1)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime dtype = dtypes[i]
         for count2 in large_counts:
             bench_large_list_sort[dtype](m, count2)

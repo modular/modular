@@ -435,3 +435,163 @@ def test_allreduce_graph_capture_replay() -> None:
             expected_output_final,
             rtol=1e-5,
         )
+
+
+def test_multi_device_debug_verify_replay() -> None:
+    """Test that debug_verify_replay validates multi-device captured graphs.
+
+    This verifies that the captured graph traces on multiple GPUs correctly
+    match the eager execution traces, ensuring graph capture fidelity.
+    """
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    host = CPU()
+    device0 = Accelerator(0)
+    device1 = Accelerator(1)
+
+    # Create a graph with operations on both GPUs
+    input_type0 = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.GPU(0)
+    )
+    input_type1 = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.GPU(1)
+    )
+
+    with Graph(
+        "multi_device_debug_verify",
+        input_types=[input_type0, input_type1],
+    ) as graph:
+        # Different operations on each GPU to ensure independent traces
+        result0 = graph.inputs[0].tensor * 2 + 5
+        result1 = graph.inputs[1].tensor * 3 + 10
+        graph.output(result0, result1)
+
+    session = InferenceSession(devices=[host, device0, device1])
+    model = session.load(graph)
+
+    # Create input tensors on each device
+    input0 = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(device0)
+    input1 = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 10).to(device1)
+
+    # Capture the graph on both devices
+    captured_output0, captured_output1 = model.capture(input0, input1)
+
+    # Verify that the captured graphs match eager execution on both devices
+    # This validates that the launch traces on both GPUs are correct
+    model.debug_verify_replay(input0, input1)
+
+    # Ensure the captured graphs still work after verification
+    model.replay(input0, input1)
+
+    # Verify outputs are still correct
+    expected0 = np.arange(4, dtype=np.float32) * 2 + 5
+    expected1 = (np.arange(4, dtype=np.float32) + 10) * 3 + 10
+
+    np.testing.assert_allclose(captured_output0.to_numpy(), expected0)
+    np.testing.assert_allclose(captured_output1.to_numpy(), expected1)
+
+
+def test_multi_device_debug_verify_replay_many_outputs() -> None:
+    """Test debug_verify_replay with 16 independent outputs across 2 GPUs.
+
+    This stress tests the trace verification with many operations, ensuring
+    that all operations on both devices are correctly captured and verified.
+    """
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    host = CPU()
+    device0 = Accelerator(0)
+    device1 = Accelerator(1)
+
+    # Create input types for both GPUs
+    input_type0 = TensorType(
+        dtype=DType.float32, shape=[1024], device=DeviceRef.GPU(0)
+    )
+    input_type1 = TensorType(
+        dtype=DType.float32, shape=[1024], device=DeviceRef.GPU(1)
+    )
+
+    with Graph(
+        "multi_device_many_outputs",
+        input_types=[input_type0, input_type1],
+    ) as graph:
+        # Create 16 independent outputs (8 from each input)
+        # Each output uses different operations to generate unique traces
+        outputs = []
+
+        # 8 outputs from GPU 0 input
+        outputs.append(graph.inputs[0].tensor + 1)
+        outputs.append(graph.inputs[0].tensor * 2)
+        outputs.append(graph.inputs[0].tensor + 3)
+        outputs.append(graph.inputs[0].tensor * 4)
+        outputs.append(graph.inputs[0].tensor + 5)
+        outputs.append(graph.inputs[0].tensor * 2 + 10)
+        outputs.append(graph.inputs[0].tensor * 3 + 5)
+        outputs.append(graph.inputs[0].tensor + 7)
+
+        # 8 outputs from GPU 1 input
+        outputs.append(graph.inputs[1].tensor + 2)
+        outputs.append(graph.inputs[1].tensor * 3)
+        outputs.append(graph.inputs[1].tensor + 4)
+        outputs.append(graph.inputs[1].tensor * 5)
+        outputs.append(graph.inputs[1].tensor + 6)
+        outputs.append(graph.inputs[1].tensor * 4 + 20)
+        outputs.append(graph.inputs[1].tensor * 5 + 15)
+        outputs.append(graph.inputs[1].tensor + 8)
+
+        graph.output(*outputs)
+
+    session = InferenceSession(devices=[host, device0, device1])
+    model = session.load(graph)
+
+    # Create input tensors
+    input_data0 = np.arange(1024, dtype=np.float32)
+    input_data1 = np.arange(1024, dtype=np.float32) + 10
+
+    input0 = Buffer.from_numpy(input_data0).to(device0)
+    input1 = Buffer.from_numpy(input_data1).to(device1)
+
+    # Capture the graph with all 16 outputs
+    captured_outputs = model.capture(input0, input1)
+    assert len(captured_outputs) == 16
+
+    # Verify that the captured graphs match eager execution
+    # This validates all 16 operations across both GPUs
+    model.debug_verify_replay(input0, input1)
+
+    # Replay and verify all outputs
+    model.replay(input0, input1)
+
+    # Compute expected outputs
+    expected = [
+        input_data0 + 1,
+        input_data0 * 2,
+        input_data0 + 3,
+        input_data0 * 4,
+        input_data0 + 5,
+        input_data0 * 2 + 10,
+        input_data0 * 3 + 5,
+        input_data0 + 7,
+        input_data1 + 2,
+        input_data1 * 3,
+        input_data1 + 4,
+        input_data1 * 5,
+        input_data1 + 6,
+        input_data1 * 4 + 20,
+        input_data1 * 5 + 15,
+        input_data1 + 8,
+    ]
+
+    # Verify all 16 outputs are correct
+    for i, (captured, expected_values) in enumerate(
+        zip(captured_outputs, expected, strict=True)
+    ):
+        np.testing.assert_allclose(
+            captured.to_numpy(),
+            expected_values,
+            err_msg=f"Output {i} mismatch",
+        )

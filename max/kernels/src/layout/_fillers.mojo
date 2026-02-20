@@ -70,12 +70,10 @@ fn _filler_impl[
         - Type casting is performed to ensure type compatibility.
     """
 
-    @parameter
-    if not use_runtime_layout:
+    comptime if not use_runtime_layout:
         comptime num_elements = tensor.layout.size() * tensor.element_size
 
-        @parameter
-        for i in range(num_elements):
+        comptime for i in range(num_elements):
             var val = filler(i)
             tensor.ptr[i] = val.cast[tensor.dtype]()
     else:
@@ -136,8 +134,7 @@ fn arange[
         return (Scalar[dtype](i) * step + start) % end
 
     # Use layout info for 2D tensors with simple (non-nested) shapes
-    @parameter
-    if (
+    comptime if (
         len(tensor.layout) != 2
         or len(tensor.layout.shape[0]) != 1
         or len(tensor.layout.shape[1]) != 1
@@ -242,14 +239,12 @@ fn _filler_impl[
         - Type casting is performed to ensure type compatibility.
     """
 
-    @parameter
-    if not use_runtime_layout:
+    comptime if not use_runtime_layout:
         comptime num_elements = type_of(
             tensor.layout.shape_coord()
         ).static_product * tensor.element_size
 
-        @parameter
-        for i in range(num_elements):
+        comptime for i in range(num_elements):
             var val = filler(i)
             tensor.ptr[i] = val.cast[tensor.dtype]()
     else:
@@ -311,8 +306,7 @@ fn arange[
         return (Scalar[dtype](i) * step + start) % end
 
     # Use layout info for 2D tensors with simple (non-nested) shapes
-    @parameter
-    if (
+    comptime if (
         tensor.flat_rank != 2
         or tensor.LayoutType._shape_types[0].__len__() != 1
         or tensor.LayoutType._shape_types[1].__len__() != 1

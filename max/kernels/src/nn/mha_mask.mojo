@@ -712,8 +712,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         )
         comptime align_to = min(page_size, BN)
 
-        @parameter
-        if align_to == 1:
+        comptime if align_to == 1:
             return col
         else:
             return (col // UInt32(align_to)) * UInt32(align_to)
@@ -921,14 +920,12 @@ struct SlidingWindowCausalMask[window_size: Int](
             max(Int32(row) - Int32(Self.window_size) + 1, 0)
         )
 
-        @parameter
-        if page_size <= 1:
+        comptime if page_size <= 1:
             return col
         else:
             comptime align_to = min(page_size, BN)
 
-            @parameter
-            if align_to == 1:
+            comptime if align_to == 1:
                 return col
             else:
                 return (col // UInt32(align_to)) * UInt32(align_to)
@@ -975,8 +972,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         #
         end_tile = ceildiv(partial_exit_end_col - start_col, UInt32(BN))
 
-        @parameter
-        if ((Self.window_size) // BN) > ((BM + BN - 2) // BN):
+        comptime if ((Self.window_size) // BN) > ((BM + BN - 2) // BN):
             # the partial entry region ends when row + BM - 1 is unmasked
             var partial_entry_end_col: UInt32 = row + UInt32(BM)
             if partial_entry_end_col > UInt32(Self.window_size):
@@ -1002,8 +998,7 @@ struct SlidingWindowCausalMask[window_size: Int](
     fn nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
-        @parameter
-        if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
+        comptime if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
             return {
                 TileMaskStatus.PARTIAL_MASK,
                 TileMaskStatus.NO_MASK,
@@ -1018,8 +1013,7 @@ struct SlidingWindowCausalMask[window_size: Int](
     fn mask_strategies[
         BM: Int, BN: Int
     ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
-        @parameter
-        if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
+        comptime if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
             return {
                 MaskStrategy(
                     MaskStrategy.UPPER_TRIANGULAR._value,
@@ -1161,8 +1155,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 
         var start_pos = self.get_start_pos(coord[0])
 
-        @parameter
-        if Self.layout_.rank() == 3:
+        comptime if Self.layout_.rank() == 3:
             adjusted_coord = IndexListType(
                 coord[0], coord[2] - start_pos, coord[3]
             )
@@ -1288,8 +1281,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        @parameter
-        if dtype == DType.bool or dtype.is_integral():
+        comptime if dtype == DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) & self.rhs.mask(
                 coord, score_vec
             )
@@ -1393,8 +1385,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        @parameter
-        if dtype == DType.bool or dtype.is_integral():
+        comptime if dtype == DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) | self.rhs.mask(
                 coord, score_vec
             )

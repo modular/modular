@@ -53,8 +53,7 @@ struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):
     fn value(mut self, mut rng: Rng) raises -> Self.Value:
         var result = SIMD[Self.dtype, Self.size](0)
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             result[i] = rng.rand_scalar[Self.dtype](
                 min=self._min, max=self._max
             )

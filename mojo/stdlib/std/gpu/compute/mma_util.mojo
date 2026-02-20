@@ -157,8 +157,7 @@ fn load_matrix_a[
         The tile dimensions must be m=16, n=8, k=8 or m=16, n=8, k=16.
     """
 
-    @parameter
-    if m == 16 and n == 8 and k == 8:
+    comptime if m == 16 and n == 8 and k == 8:
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -272,15 +271,13 @@ fn load_matrix_a_amd[
         The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
     """
 
-    @parameter
-    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+    comptime if m == 16 and n == 16 and k == 16 and n_blocks == 1:
         var lane = lane_id()
         var thread_x = lane & 15
         var thread_y = lane >> 4
         var a = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var a_idx = (
                 ldm * (tile_row + Int(thread_x))
                 + tile_col
@@ -299,8 +296,7 @@ fn load_matrix_a_amd[
         var batchStrideA = grid_dim.x * UInt(m) * UInt(ldm)
         var a = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             # consecutive threads cover 16 consecutive rows
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
@@ -429,8 +425,7 @@ fn load_matrix_b[
         The tile dimensions must be m=16, n=8, k=8 or m=16, n=8, k=16.
     """
 
-    @parameter
-    if m == 16 and n == 8 and k == 8:
+    comptime if m == 16 and n == 8 and k == 8:
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -530,16 +525,14 @@ fn load_matrix_b_amd[
         The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
     """
 
-    @parameter
-    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+    comptime if m == 16 and n == 16 and k == 16 and n_blocks == 1:
         var lane = lane_id()
         var thread_x = Int(lane & 15)
         var thread_y = Int(lane >> 4)
 
         var b = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var b_idx = (
                 ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
             )
@@ -555,8 +548,7 @@ fn load_matrix_b_amd[
         var batchStrideB = tile_loops * k * ldm
         var b = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var b_idx = (
                 tile_col
                 + thread_x
@@ -654,16 +646,14 @@ fn _store_matrix_d_amd[
         - Each thread stores 4 elements in consecutive positions.
     """
 
-    @parameter
-    if m == 4 and n == 4 and k == 4 and n_blocks == 16:
+    comptime if m == 4 and n == 4 and k == 4 and n_blocks == 16:
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = Int(lane & 3)
         var thread_y = lane >> 2
         var batchStrideD = grid_dim.x * UInt(m) * UInt(ldm)
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             # consecutive threads cover 4 consecutive columns
             # consecutive registers take consecutive rows
             # groups of 4 lanes cover each matrix in batch
@@ -681,8 +671,7 @@ fn _store_matrix_d_amd[
         var thread_x = Int(lane & 15)
         var thread_y = Int(lane >> 4)
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var d_idx = (
                 ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
             )
@@ -725,8 +714,7 @@ fn store_matrix_d[
         - Must be called by all threads in a warp.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _store_matrix_d_nvidia[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
     elif is_amd_gpu():
         _store_matrix_d_amd[m, n, k, n_blocks](

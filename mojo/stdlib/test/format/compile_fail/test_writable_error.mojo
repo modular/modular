@@ -28,8 +28,7 @@ struct NotWritable(ImplicitlyCopyable):
 def main():
     var string = String()
 
-    @parameter
-    if env_get_int["test"]() == 1:
+    comptime if env_get_int["test"]() == 1:
         # CHECK_1: constraint failed: {{.*}}ArcPointer{{.*}}(Writable) conformance requires {{.*}}NotWritable{{.*}} conformance, which is not satisfied.
         var ptr = ArcPointer[NotWritable](NotWritable())
         string.write(ptr)

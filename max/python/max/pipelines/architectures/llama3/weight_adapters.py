@@ -19,6 +19,7 @@ from max.graph.weights import WeightData, Weights
 # The new ModuleV3 model uses "language_model." prefix (matching GPT-OSS pattern).
 LLAMA_SAFETENSOR_MAPPING = {
     "model.": "language_model.",
+    "lm_head": "language_model.lm_head",
 }
 
 
@@ -36,9 +37,6 @@ def convert_safetensor_state_dict(
         max_name: str = weight_name
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
-        # HF safetensors stores lm_head.weight without a "model." prefix.
-        if not max_name.startswith("language_model."):
-            max_name = "language_model." + max_name
         new_state_dict[max_name] = value.data()
     return new_state_dict
 

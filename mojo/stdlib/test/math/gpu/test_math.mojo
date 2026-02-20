@@ -99,8 +99,7 @@ def test_math():
         ](ctx: DeviceContext) raises:
             comptime ls = std.builtin.Variadic.size(kernel_fns)
 
-            @parameter
-            for idx in range(ls):
+            comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]
                 run_func[DType.float32, kernel_fn[]](ctx)
                 run_func[DType.float16, kernel_fn[]](ctx)

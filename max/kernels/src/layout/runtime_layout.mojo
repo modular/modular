@@ -201,8 +201,7 @@ struct RuntimeLayout[
             shape, False otherwise.
         """
 
-        @parameter
-        for i in range(Self.layout.rank()):
+        comptime for i in range(Self.layout.rank()):
             comptime dim_i = Int(Self.layout.shape[i])
             if self.shape.value[i] != dim_i:
                 return True
@@ -272,8 +271,7 @@ struct RuntimeLayout[
         var c_stride = 1
         stride[rank - 1] = c_stride
 
-        @parameter
-        for i in reversed(range(rank - 1)):
+        comptime for i in reversed(range(rank - 1)):
             var dim = shape[i + 1]
             stride[i] = dim * c_stride
             c_stride *= dim
@@ -309,8 +307,7 @@ struct RuntimeLayout[
         var c_stride = 1
         stride[0] = c_stride
 
-        @parameter
-        for i in range(1, rank):
+        comptime for i in range(1, rank):
             var dim = shape[i - 1]
             stride[i] = dim * c_stride
             c_stride *= dim
@@ -424,8 +421,7 @@ fn coalesce[
 
     var idx = 0
 
-    @parameter
-    for i in range(len(flatten(l.shape))):
+    comptime for i in range(len(flatten(l.shape))):
         comptime shape = Int(l.shape[i])
         comptime stride = Int(l.stride[i])
 
@@ -499,13 +495,11 @@ fn make_layout[
     comptime a_length = len(flatten(l1.shape))
     comptime b_length = len(flatten(l2.shape))
 
-    @parameter
-    for i in range(a_length):
+    comptime for i in range(a_length):
         res_shape.value[i] = a.shape.value[i]
         res_stride.value[i] = a.stride.value[i]
 
-    @parameter
-    for i in range(b_length):
+    comptime for i in range(b_length):
         res_shape.value[a_length + i] = b.shape.value[i]
         res_stride.value[a_length + i] = b.stride.value[i]
 

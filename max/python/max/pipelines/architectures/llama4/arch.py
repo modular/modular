@@ -18,9 +18,7 @@ from max.pipelines.core import TextContext
 
 # TODO(bduke): Replace with actual Llama4 model once implemented.
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -36,9 +34,9 @@ llama4_arch = SupportedArchitecture(
         "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
         "meta-llama/Llama-4-Maverick-17B-128E",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,
@@ -47,7 +45,7 @@ llama4_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     # NOTE: Llama 4 interleaves RoPE and NoPE (no positional encodings).
-    rope_type=RopeType.normal,
+    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

@@ -62,7 +62,7 @@ fn _rms_norm_fused_residual_cpu_2d[
     residual_read_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -100,9 +100,7 @@ fn _rms_norm_fused_residual_cpu_2d[
 
             # Apply dropout if enabled
             if dropout_p > zero_scalar:
-
-                @parameter
-                for i in range(simd_width):
+                comptime for i in range(simd_width):
                     var element_offset = row * num_cols + col + i
                     var generator = Random(
                         seed=seed, offset=UInt64(element_offset)
@@ -200,7 +198,7 @@ fn rms_norm_fused_residual_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -414,8 +412,8 @@ fn rms_norm_fused_residual_gpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    shape: IndexList[rank, **_],
-    gamma: LayoutTensor[dtype, **_],
+    shape: IndexList[rank, ...],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -535,7 +533,7 @@ fn _rms_norm_fused_residual_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
@@ -558,8 +556,7 @@ fn _rms_norm_fused_residual_impl[
         # Nothing to do.
         return
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         rms_norm_fused_residual_gpu[
             input_0_fn,
             input_1_fn,
@@ -595,8 +592,7 @@ fn _rms_norm_fused_residual_impl[
                 var last_dim = shape[_rank - 1]
                 var row = coords.flattened_length() // last_dim
 
-                @parameter
-                for i in range(width):
+                comptime for i in range(width):
                     var col_idx = coords[_rank - 1] + i
                     var element_offset = row * last_dim + col_idx
                     var generator = Random(
@@ -655,7 +651,7 @@ fn rms_norm_fused_residual[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,

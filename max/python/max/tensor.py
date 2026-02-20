@@ -115,6 +115,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import (
+    DimLike,
     ShapeLike,
     TensorType,
     TensorValueLike,
@@ -815,6 +816,7 @@ class Tensor(DLPackArray, HasTensorValue):
         start: TensorValueLike = 0,
         stop: TensorValueLike | None = None,
         step: TensorValueLike = 1,
+        out_dim: DimLike | None = None,
         *,
         dtype: DType | None = None,
         device: Device | None = None,
@@ -857,6 +859,10 @@ class Tensor(DLPackArray, HasTensorValue):
             stop: The end value of the sequence (exclusive). If not specified,
                 the sequence ends at ``start`` and begins at 0.
             step: The spacing between values in the sequence. Must be non-zero.
+            out_dim: The expected output dimension. Required when ``start``,
+                ``stop``, or ``step`` are tensors rather than scalar literals.
+                If not specified, the output dimension is computed from the
+                scalar values of the inputs.
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
@@ -873,6 +879,7 @@ class Tensor(DLPackArray, HasTensorValue):
             start,
             stop,
             step,
+            out_dim,
             dtype=dtype,
             device=device,
         )

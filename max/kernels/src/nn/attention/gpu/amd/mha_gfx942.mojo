@@ -66,8 +66,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
-        @parameter
-        if Self.token_gen:
+        comptime if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
             return block_idx.y * UInt(Self.group) + group_idx

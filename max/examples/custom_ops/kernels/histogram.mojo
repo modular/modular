@@ -113,8 +113,7 @@ struct Histogram:
         input: InputTensor[dtype = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             _histogram_cpu(output, input)
         else:
             _histogram_gpu(output, input, ctx)

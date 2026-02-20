@@ -39,6 +39,7 @@ from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.lib.utils import upper_bounded_default
 from typing_extensions import Self, override
 
+from ..config_enums import supported_encoding_dtype
 from ..kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ class ArchConfig(Protocol):
         """Returns the default maximum sequence length for the model.
 
         Subclasses should determine whether this value can be overridden by
-        setting the ``--max-length`` (``pipeline_config.max_length``) flag.
+        setting the ``--max-length`` (``pipeline_config.model.max_length``) flag.
         """
 
 
@@ -113,7 +114,9 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
                 "Quantization encoding is required for ArchConfigWithAttentionKVCache"
             )
         return cls(
-            dtype=pipeline_config.model.quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(
+                pipeline_config.model.quantization_encoding
+            ),
             devices=[
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in pipeline_config.model.device_specs
@@ -121,7 +124,7 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
             cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
             kv_cache=pipeline_config.model.kv_cache,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            user_provided_max_length=pipeline_config.max_length,
+            user_provided_max_length=pipeline_config.model.max_length,
             huggingface_config=pipeline_config.model.huggingface_config,
         )
 
