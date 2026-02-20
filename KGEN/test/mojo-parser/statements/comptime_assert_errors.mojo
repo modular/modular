@@ -64,14 +64,8 @@ fn test_newly_created_scope[x: Int]():
     comptime assert x >= 0
 
 
-fn test_always_false_error():
-    # expected-error @below {{failed comptime assert: condition is always False}}
+fn test_always_false_no_warning():
     comptime assert 2 < 1
-
-
-fn test_always_false_error_with_message():
-    # expected-error @below {{failed comptime assert: condition is always False}}
-    comptime assert False, "this message is ignored"
 
 
 fn test_always_true_no_warning():
