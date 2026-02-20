@@ -317,7 +317,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
     `!kgen.type` type. An optional `addressSpace` argument can be
-    specified (default to 0).
+    specified (default to 0). An optional `nonnull` flag can be specified
+    to indicate the pointer is guaranteed to never be null.
 
     Example:
 
@@ -339,24 +340,30 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
     // The address space also works on parametrized pointers.
     !kgen.pointer<elementType, 5>
+
+    // A non-null pointer with default address space).
+    !kgen.pointer<scalar<f32>, nonnull>
+
+    // A non-null pointer with explicit address space).
+    !kgen.pointer<scalar<f32>, 1, nonnull>
     ```
   }];
 
   let parameters = (ins
     "Type":$elementType,
     DefaultValuedParameter<"TypedAttr",
-                           "$_builder.getIndexAttr(0)">:$addressSpace);
-  let assemblyFormat = [{
-    `<` custom<ParamType>($elementType) ``
-    (`,` custom<IndexParamValue>($addressSpace)^)? `>`
-  }];
+                           "$_builder.getIndexAttr(0)">:$addressSpace,
+    DefaultValuedParameter<"bool", "false">:$isNonNull);
+  let assemblyFormat = "`<` custom<ParamType>($elementType) `` custom<PointerOptionals>($addressSpace, $isNonNull) `>`";
   let genVerifyDecl = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        CArg<"unsigned", "0">:$addressSpace)>,
+                                        CArg<"unsigned", "0">:$addressSpace,
+                                        CArg<"bool", "false">:$isNonNull)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$addressSpace)>,
+                                        "TypedAttr":$addressSpace,
+                                        CArg<"bool", "false">:$isNonNull)>,
   ];
 
   let extraClassDeclaration = [{

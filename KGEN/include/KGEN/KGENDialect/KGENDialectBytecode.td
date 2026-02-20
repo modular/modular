@@ -42,7 +42,8 @@ def FuncType : DialectType<(type
 
 def PointerType : DialectType<(type
   Type:$elementType,
-  TypedAttr:$addressSpace
+  TypedAttr:$addressSpace,
+  Bool:$isNonNull
 )>;
 
 def VariadicType : DialectType<(type

@@ -668,37 +668,88 @@ bool FuncTypeGeneratorType::classof(Type type) {
 // PointerType
 //===----------------------------------------------------------------------===//
 
+// Custom parser for optional addressSpace and isNonNull parameters.
+// Supports: !kgen.pointer<T>, !kgen.pointer<T, addrSpace>,
+//           !kgen.pointer<T, addrSpace, nonnull>, !kgen.pointer<T, nonnull>
+static ParseResult parsePointerOptionals(AsmParser &p, TypedAttr &addressSpace,
+                                         bool &isNonNull) {
+  // Set defaults
+  auto builder = p.getBuilder();
+  addressSpace = builder.getIndexAttr(0);
+  isNonNull = false;
+
+  while (succeeded(p.parseOptionalComma())) {
+    // Try nonnull keyword first before parsing as address space
+    if (succeeded(p.parseOptionalKeyword("nonnull"))) {
+      isNonNull = true;
+      continue;
+    }
+    // AddressSpace (try this after keyword parsing)
+    if (succeeded(parseIndexParamValue(p, addressSpace))) {
+      continue;
+    }
+    // TODO:
+    // dereferenceable<N>
+    // dereferenceable_or_null<N>
+  }
+
+  return success();
+}
+
+static void printPointerOptionals(AsmPrinter &p, TypedAttr addressSpace,
+                                  bool isNonNull) {
+  // Get default values for comparison
+  auto defaultAddrSpace =
+      IntegerAttr::get(IndexType::get(addressSpace.getContext()), 0);
+
+  if (addressSpace != defaultAddrSpace) {
+    p << ", ";
+    printIndexParamValue(p, addressSpace);
+  }
+
+  if (isNonNull) {
+    p << ", nonnull";
+  }
+}
+
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  Type type, TypedAttr addressSpace) {
+                                  Type type, TypedAttr addressSpace,
+                                  bool isNonNull) {
   if (!addressSpace.getType().isIndex()) {
     return emitError() << "pointer address space parameter `" << addressSpace
                        << "` must be an index type";
   }
+  // isNonNull is always valid (bool), no verification needed
   return success();
 }
 
-PointerType PointerType::get(Type elementType, unsigned addressSpace) {
+PointerType PointerType::get(Type elementType, unsigned addressSpace,
+                             bool isNonNull) {
   Builder b(elementType.getContext());
-  return get(elementType, b.getIndexAttr(addressSpace));
+  return get(elementType.getContext(), elementType,
+             b.getIndexAttr(addressSpace), isNonNull);
 }
 
 PointerType
 PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                        Type elementType, unsigned addressSpace) {
+                        Type elementType, unsigned addressSpace,
+                        bool isNonNull) {
   Builder b(elementType.getContext());
-  return getChecked(emitError, elementType, b.getIndexAttr(addressSpace));
+  return getChecked(emitError, elementType.getContext(), elementType,
+                    b.getIndexAttr(addressSpace), isNonNull);
 }
 
-PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
-  return get(elementType.getContext(), elementType, addressSpace);
+PointerType PointerType::get(Type elementType, TypedAttr addressSpace,
+                             bool isNonNull) {
+  return get(elementType.getContext(), elementType, addressSpace, isNonNull);
 }
 
 PointerType
 PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                        Type elementType, TypedAttr addressSpace) {
-  if (failed(verify(emitError, elementType, addressSpace)))
-    return {};
-  return get(elementType, addressSpace);
+                        Type elementType, TypedAttr addressSpace,
+                        bool isNonNull) {
+  return getChecked(emitError, elementType.getContext(), elementType,
+                    addressSpace, isNonNull);
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {

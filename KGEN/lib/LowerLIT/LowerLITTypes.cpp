@@ -369,10 +369,12 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
 
           TypedAttr value = *valueOr;
           // We to check if this is a value for a struct field that is known to
-          // be a pointer type, in which case we erase the element type.
+          // be a pointer type, in which case we erase the element type
+          // but preserve other pointer attributes like nonnull.
           if (isa<PointerType>(type.second)) {
             auto type = cast<PointerType>(value.getType());
-            auto ptrType = PointerType::get(noneType, type.getAddressSpace());
+            auto ptrType = PointerType::get(noneType, type.getAddressSpace(),
+                                            type.getIsNonNull());
             value = ParamOperatorAttr::get(POC::PtrBitcast, value, ptrType);
           }
           values.push_back(value);
@@ -426,7 +428,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
           if (auto ptrType = dyn_cast<PointerType>(type)) {
             fieldTypes.push_back(PointerType::get(
                 noneType,
-                evaluator.getReboundAttribute(ptrType.getAddressSpace())));
+                evaluator.getReboundAttribute(ptrType.getAddressSpace()),
+                ptrType.getIsNonNull()));
           } else {
             fieldTypes.push_back(evaluator.getReboundType(type));
           }
