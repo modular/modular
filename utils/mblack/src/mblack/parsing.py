@@ -23,7 +23,7 @@ from collections.abc import Iterable, Iterator
 from typing import Final
 
 from mblib2to3 import pygram
-from mblib2to3.pgen2 import driver
+from mblib2to3.pgen2 import driver, token
 from mblib2to3.pgen2.grammar import Grammar
 from mblib2to3.pgen2.parse import ParseError
 from mblib2to3.pgen2.tokenize import TokenError
@@ -76,6 +76,35 @@ def get_grammars(target_versions: set[TargetVersion]) -> list[Grammar]:
     return grammars
 
 
+def _leading_spaces(line: str) -> int:
+    """Return the number of leading spaces in a line."""
+    return len(line) - len(line.lstrip(" "))
+
+
+def _parse_error_hint(pe: ParseError, lines: list[str], lineno: int) -> str:
+    """Return a hint string for common parse errors, or empty string."""
+    if pe.type == token.INDENT:
+        cur_indent = (
+            _leading_spaces(lines[lineno - 1]) if lineno <= len(lines) else 0
+        )
+        # Walk backwards to find the previous non-blank line's indentation.
+        prev_indent: int | None = None
+        for i in range(lineno - 2, -1, -1):
+            stripped = lines[i].strip()
+            if stripped and not stripped.startswith("#"):
+                prev_indent = _leading_spaces(lines[i])
+                break
+        if prev_indent is not None:
+            return (
+                f"Unexpected indent: previous line has {prev_indent} spaces"
+                f" but this line has {cur_indent} spaces"
+            )
+        return "Unexpected indent"
+    if pe.type == token.DEDENT:
+        return "Unexpected dedent (unindent does not match any outer indentation level)"
+    return ""
+
+
 def lib2to3_parse(
     src_txt: str, target_versions: Iterable[TargetVersion] = ()
 ) -> Node:
@@ -98,9 +127,11 @@ def lib2to3_parse(
                 faulty_line = lines[lineno - 1]
             except IndexError:
                 faulty_line = "<line number missing in source>"
-            errors[grammar.version] = InvalidInput(
-                f"Cannot parse: {lineno}:{column}: {faulty_line}"
-            )
+            hint = _parse_error_hint(pe, lines, lineno)
+            msg = f"Cannot parse: {lineno}:{column}: {faulty_line}"
+            if hint:
+                msg += f"\n{hint}"
+            errors[grammar.version] = InvalidInput(msg)
 
         except TokenError as te:
             # In edge cases these are raised; and typically don't have a "faulty_line".

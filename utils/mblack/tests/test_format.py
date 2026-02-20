@@ -153,6 +153,18 @@ def test_python_2_hint() -> None:
     exc_info.match(mblack.parsing.PY2_HINT)
 
 
+def test_unexpected_indent_error_message() -> None:
+    source = "fn main():\n  x = 0\n   if x > 0:\n    x = 2\n"
+    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
+    with pytest.raises(mblack.parsing.InvalidInput, match="Unexpected indent"):
+        mblack.format_str(source, mode=mode)
+    with pytest.raises(
+        mblack.parsing.InvalidInput,
+        match="previous line has 2 spaces but this line has 3 spaces",
+    ):
+        mblack.format_str(source, mode=mode)
+
+
 @pytest.mark.filterwarnings("ignore:invalid escape sequence.*:DeprecationWarning")
 def test_docstring_no_string_normalization() -> None:
     """Like test_docstring but with string normalization off."""
