@@ -1382,29 +1382,6 @@ struct Bencher(RegisterPassable):
             var stop = time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    fn iter_with_setup[
-        T: Movable & ImplicitlyDestructible,
-        setup_fn: fn () raises capturing [_] -> T,
-        bench_fn: fn (mut T) raises capturing [_] -> None,
-    ](mut self) raises:
-        """Benchmarks a function with per-iteration setup (raising variant).
-
-        The `setup_fn` creates fresh state for each iteration. Only `bench_fn`
-        is timed. This is useful for benchmarking destructive operations that
-        consume or mutate their input (e.g., `List.pop()`, sorting).
-
-        Parameters:
-            T: The type of state produced by setup and consumed by the benchmark.
-            setup_fn: Called before each iteration (not timed) to produce state.
-            bench_fn: Called each iteration (timed) with the state from `setup_fn`.
-        """
-        for _ in range(self.num_iters):
-            var state = setup_fn()
-            var start = time.perf_counter_ns()
-            bench_fn(state)
-            var stop = time.perf_counter_ns()
-            self.elapsed += Int(stop - start)
-
     fn iter_custom[iter_fn: fn(Int) raises capturing[_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
