@@ -128,6 +128,31 @@ struct Slice(
         write_optional(self.step)
         writer.write(")")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("slice(")
+
+        if self.start:
+            self.start.value().write_repr_to(writer)
+        else:
+            writer.write("None")
+
+        writer.write(", ")
+
+        if self.end:
+            self.end.value().write_repr_to(writer)
+        else:
+            writer.write("None")
+
+        writer.write(", ")
+
+        if self.step:
+            self.step.value().write_repr_to(writer)
+        else:
+            writer.write("None")
+
+        writer.write(")")
+
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
         """Compare this slice to the other.
