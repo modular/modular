@@ -1545,14 +1545,39 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
 
 static bool isClosureWrapperStruct(SharedState &shared, PValue value,
                                    LIT::StructType structTy) {
+  if (!value)
+    return false;
   ASTDecl &decl =
       shared.declResolver->getDeclForTypeSymbol(structTy.getSymbolRef());
   if (StructDeclOp structOp = dyn_cast<StructDeclOp>(decl.getIfOperation())) {
     return structOp.getDefinesClosure() && !structTy.getParamValues().empty() &&
-           structTy.getParamValues().front() == value.get();
+           isEqualCanon(structTy.getParamValues().front(), value.get());
   }
 
   return false;
+}
+
+/// Build the concrete closure-wrapper type instantiated with a function symbol.
+static Type getConcreteClosureWrapperTypeForFnSymbol(SharedState &shared,
+                                                     ASTDecl &moduleDecl,
+                                                     SMLoc loc,
+                                                     FnTypeGeneratorType fnSig,
+                                                     PValue fnPValue) {
+  auto &closureEmitter = shared.getClosureEmitter();
+  auto rvClosureTrait = shared.getOrCreateClosureTrait(loc, moduleDecl, fnSig,
+                                                       InlineLevel::Always);
+  ASTDecl *wrapper = closureEmitter.createFnStructWrapper(
+      moduleDecl, *rvClosureTrait, fnSig, loc);
+  assert(wrapper && "createFnStructWrapper must return a declaration");
+
+  auto structDeclOp = dyn_cast<StructDeclOp>(wrapper->getIfOperation());
+  assert(structDeclOp && "createFnStructWrapper must return a StructDeclOp");
+  assert(!structDeclOp.getInputParams().empty() &&
+         "closure wrapper must have an implementation parameter");
+
+  TypedAttr fnVal = ParamOperatorAttr::getRebind(
+      fnPValue.get(), structDeclOp.getInputParams().front().getType());
+  return structDeclOp.bindReference({fnVal});
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'
@@ -1629,6 +1654,9 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Functions can implicitly convert to their corresponding closure wrapper.
   // This is distinct from converting to a closure trait.
   if (auto fnSig = sugarDynCast<FnTypeGeneratorType>(rvType)) {
+    auto module = declScope.getNearestDeclOfType<FileModuleOp>();
+    auto &closureEmitter = shared.getClosureEmitter();
+
     if (auto structMeta =
             sugarDynCastIfPresent<StructMetaType>(requiredType.getMetaType())) {
       StructType structTy = structMeta.getType();
@@ -1637,13 +1665,18 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     }
 
     // Conversion to a struct wrapper that implements the target closure trait.
-    // FIXME: this is likely too generous.  This needs to line up with
-    // emitImplicitConversionToType but doesn't.
     if (auto anyTrait =
             sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
       TraitType trait = anyTrait.getTraitType();
-      if (getClosureTraitDecl(shared, trait))
-        return cacheAndReturnVal(rvType, requiredType, true);
+      if (auto traitDecl = getClosureTraitDecl(shared, trait)) {
+        if (PValue fnPValue = value.ir.getIfPValue()) {
+          Type concreteWrapperType = getConcreteClosureWrapperTypeForFnSymbol(
+              shared, *module, value.expr->getLoc(), fnSig, fnPValue);
+          bool isCompatible = succeeded(
+              closureEmitter.isCompatibleWith(concreteWrapperType, traitDecl));
+          return cacheAndReturnVal(rvType, requiredType, isCompatible);
+        }
+      }
     }
   }
 
@@ -1795,7 +1828,10 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
         if (auto structDeclOp =
                 dyn_cast<StructDeclOp>(wrapper->getIfOperation())) {
 
-          TypedAttr fnVal = valueExpr.ir.getIfPValue().get();
+          Type wrapperImplType =
+              structDeclOp.getInputParams().front().getType();
+          TypedAttr fnVal = ParamOperatorAttr::getRebind(
+              valueExpr.ir.getIfPValue().get(), wrapperImplType);
 
           auto closureWrapperType = structDeclOp.bindReference({fnVal});
           // Require that the closure wrapper type conform to the target trait.

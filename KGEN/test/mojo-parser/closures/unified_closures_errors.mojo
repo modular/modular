@@ -116,8 +116,7 @@ fn takesClosure[T: fn(Int) unified -> Int](cb: T, x: Int) -> Int:
 
 
 fn useTopLevelClosure():
-    # expected-error @below {{value passed to 'cb' cannot be converted from 'fn(x: String) -> String' to 'T'}}
-    # expected-error @below {{cannot convert 'fn(x: String) -> String' to trait 'fn(Int) -> Int'}}
+    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'fn(Int) -> Int' type, but value has type 'fn(x: String) -> String'}}
     takesClosure[topLevel](topLevel, 1)
 
 
