@@ -37,6 +37,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -146,7 +147,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         )
         encoding = draft_model_config.quantization_encoding
         assert encoding is not None
-        dtype_bytes = encoding.dtype.size_in_bytes
+        dtype_bytes = supported_encoding_dtype(encoding).size_in_bytes
         config = draft_model_config.huggingface_config
         assert config is not None
         n_gpus_per_node = len(draft_model_config.device_specs)

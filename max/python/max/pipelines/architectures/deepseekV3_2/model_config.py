@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from typing_extensions import Self, override
 
 
@@ -58,7 +59,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [

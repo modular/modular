@@ -99,6 +99,7 @@ modular_py_binary(
     },
     deps = [
         ":verify",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),

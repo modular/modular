@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -35,10 +34,10 @@ llama_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

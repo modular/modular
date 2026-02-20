@@ -17,6 +17,7 @@ from max.driver import Device
 from max.dtype.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from pydantic import Field
 
 
@@ -54,7 +55,7 @@ class ClipConfig(ClipConfigBase):
         }
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )

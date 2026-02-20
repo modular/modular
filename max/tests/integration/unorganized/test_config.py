@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.lib import MAXModelConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from test_common.pipeline_model_dummy import (
@@ -40,7 +40,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
     _ = PipelineConfig(
         model=MAXModelConfig(
             model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
-            quantization_encoding=SupportedEncoding.gptq,
+            quantization_encoding="gptq",
             device_specs=[DeviceSpec.accelerator()],
         ),
         use_legacy_module=False,
@@ -51,7 +51,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
         _ = PipelineConfig(
             model=MAXModelConfig(
                 model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
-                quantization_encoding=SupportedEncoding.gptq,
+                quantization_encoding="gptq",
                 device_specs=[DeviceSpec.accelerator()],
             ),
             use_legacy_module=False,
@@ -101,7 +101,7 @@ def test_config__update_weight_paths(
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding=SupportedEncoding.float32,
+                quantization_encoding="float32",
                 max_length=512,
             ),
             max_batch_size=1,
@@ -116,7 +116,7 @@ def test_config__update_weight_paths(
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding=SupportedEncoding.float32,
+                quantization_encoding="float32",
                 max_length=512,
             ),
             max_batch_size=1,
@@ -134,7 +134,7 @@ def test_config__update_weight_paths(
             config = PipelineConfig(
                 model=MAXModelConfig(
                     model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding=SupportedEncoding.q6_k,
+                    quantization_encoding="q6_k",
                     device_specs=[DeviceSpec.cpu()],
                 ),
             )
@@ -144,7 +144,7 @@ def test_config__update_weight_paths(
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 device_specs=[DeviceSpec.accelerator()],
                 max_length=512,
             ),
@@ -159,7 +159,7 @@ def test_config__update_weight_paths(
             config = PipelineConfig(
                 model=MAXModelConfig(
                     model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding=SupportedEncoding.q4_k,
+                    quantization_encoding="q4_k",
                     max_length=512,
                 ),
                 max_batch_size=1,
@@ -173,7 +173,7 @@ def test_config__update_weight_paths(
             config = PipelineConfig(
                 model=MAXModelConfig(
                     model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding=SupportedEncoding.q4_k,
+                    quantization_encoding="q4_k",
                     max_length=512,
                 ),
                 max_batch_size=1,
@@ -186,5 +186,5 @@ def test_config__update_weight_paths(
             ),
             max_batch_size=1,
         )
-        assert config.model.quantization_encoding == SupportedEncoding.float32
+        assert config.model.quantization_encoding == "float32"
         assert config.model.weight_path == [Path("model.safetensors")]

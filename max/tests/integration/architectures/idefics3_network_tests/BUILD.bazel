@@ -30,7 +30,6 @@ modular_py_test(
     deps = [
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         requirement("jinja2"),

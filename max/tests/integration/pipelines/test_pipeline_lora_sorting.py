@@ -45,7 +45,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
     SamplingConfig,
-    SupportedEncoding,
 )
 from max.pipelines.lib.lora import LoRAManager, LoRAModel
 from max.pipelines.lib.pipeline_variants.text_generation import (
@@ -100,7 +99,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
         lora_manager: LoRAManager | None = None,
     ) -> None:
         self.vocab_size = vocab_size
-        self.encoding = SupportedEncoding.float32
+        self.encoding = "float32"
         self.devices = [CPU()]
         self.max_seq_len = 2048
 
@@ -303,7 +302,7 @@ def create_pipeline_with_lora(
     )
 
     mock_config = PipelineConfig.model_construct()
-    mock_config.model.quantization_encoding = SupportedEncoding.float32
+    mock_config.model.quantization_encoding = "float32"
     mock_config.sampling = SamplingConfig()
     mock_config.sampling.enable_structured_output = False
     mock_config.sampling.enable_variable_logits = False

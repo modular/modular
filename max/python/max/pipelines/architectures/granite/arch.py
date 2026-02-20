@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -32,10 +31,10 @@ granite_arch = SupportedArchitecture(
         "ibm-granite/granite-3.1-8b-base",
     ],
     default_weights_format=WeightsFormat.gguf,
-    default_encoding=SupportedEncoding.float32,
+    default_encoding="float32",
     supported_encodings={
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

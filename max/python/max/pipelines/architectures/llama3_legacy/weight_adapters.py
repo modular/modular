@@ -16,7 +16,8 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib import MAXModelConfig, PipelineConfig, SupportedEncoding
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from transformers import LlamaConfig
 
 # Maps from Safetensor to MAX weight names.
@@ -50,7 +51,7 @@ def _convert_safetensor_with_model_config(
                 new_state_dict[key] = WeightData.from_numpy(
                     np.argsort(np_array).astype(np.int32), key
                 )
-    if model_config.quantization_encoding == SupportedEncoding.gptq:
+    if model_config.quantization_encoding == "gptq":
         for key, weight_data in new_state_dict.items():
             # TODO(E2EOPT-243): gptq models actually have a dtype of float16
             # not bfloat16. Sadly, MMA does not support float16 currently, so
@@ -70,8 +71,10 @@ def _convert_safetensor_with_model_config(
             "This should not happen."
         )
         for key, weight_data in new_state_dict.items():
-            if weight_data.dtype == cast_from.dtype:
-                new_state_dict[key] = weight_data.astype(cast_to.dtype)
+            if weight_data.dtype == supported_encoding_dtype(cast_from):
+                new_state_dict[key] = weight_data.astype(
+                    supported_encoding_dtype(cast_to)
+                )
 
     # The GPTQ algorithm only use a subset of its keys based on the specific
     # configuration, while the unused keys remain present in the state dict

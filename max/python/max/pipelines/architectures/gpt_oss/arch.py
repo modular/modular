@@ -17,7 +17,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -32,9 +31,9 @@ gpt_oss_arch = SupportedArchitecture(
         # "openai/gpt-oss-120b",
         "unsloth/gpt-oss-20b-BF16",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=GptOssModel,
     task=PipelineTask.TEXT_GENERATION,

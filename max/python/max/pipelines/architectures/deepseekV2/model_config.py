@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -216,7 +217,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             use_cache=huggingface_config.use_cache,
             v_head_dim=huggingface_config.v_head_dim,
             vocab_size=huggingface_config.vocab_size,
-            dtype=quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(quantization_encoding),
             kv_params=kv_params,
             devices=devices,
             graph_mode=graph_mode,

@@ -157,7 +157,7 @@ def get_max_default_encoding(
     pipeline_oracle: PipelineOracle,
     pipeline_name: str,
     device_specs: list[driver.DeviceSpec],
-) -> str:
+) -> pipelines.SupportedEncoding:
     """Determine a suitable default encoding for MAX given the pipeline and devices.
 
     Preference order:
@@ -189,9 +189,9 @@ def get_max_default_encoding(
         if encodings and len(encodings) > 0:
             return encodings[0]
         # Fall back to architecture default
-        return arch.default_encoding.name
+        return arch.default_encoding
     # Fall back to architecture default if no device_encoding_map
-    return arch.default_encoding.name
+    return arch.default_encoding
 
 
 def run_max_model(

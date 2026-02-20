@@ -19,7 +19,6 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib import MAXModelConfig
-from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from test_common.pipeline_model_dummy import (
@@ -41,9 +40,9 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
         name="LlamaForCausalLM_Legacy",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -57,7 +56,7 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -79,9 +78,9 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
         name="LlamaForCausalLM_Legacy",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -95,7 +94,7 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -119,9 +118,9 @@ def test_registry__retrieve_architecture_new_module() -> None:
         name="LlamaForCausalLM_Legacy",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -137,9 +136,9 @@ def test_registry__retrieve_architecture_new_module() -> None:
         name="LlamaForCausalLM",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -153,7 +152,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -181,9 +180,9 @@ def test_config__use_legacy_module_default_is_true() -> None:
         name="LlamaForCausalLM_Legacy",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -197,7 +196,7 @@ def test_config__use_legacy_module_default_is_true() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -217,9 +216,9 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
         name="LlamaForCausalLM",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -233,7 +232,7 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -251,9 +250,9 @@ def test_config__use_legacy_module_false_falls_back_to_legacy_arch() -> None:
         name="LlamaForCausalLM_Legacy",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -269,7 +268,7 @@ def test_config__use_legacy_module_false_falls_back_to_legacy_arch() -> None:
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             # Use only one GPU since this model does not support multi-GPU inference.
             device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -286,9 +285,9 @@ def test_registry__retrieve_architecture_falls_back_to_non_legacy() -> None:
         name="LlamaForCausalLM",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -302,7 +301,7 @@ def test_registry__retrieve_architecture_falls_back_to_non_legacy() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,
@@ -328,9 +327,9 @@ def test_config__use_legacy_module_with_draft_model() -> None:
         name="LlamaForCausalLM",
         task=PipelineTask.TEXT_GENERATION,
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
-        default_encoding=SupportedEncoding.float32,
+        default_encoding="float32",
         supported_encodings={
-            SupportedEncoding.float32: ["paged"],
+            "float32": ["paged"],
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -343,7 +342,7 @@ def test_config__use_legacy_module_with_draft_model() -> None:
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=128,
         ),
         max_batch_size=1,

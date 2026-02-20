@@ -29,6 +29,7 @@ from typing import TextIO
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
+from max import pipelines
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
@@ -436,7 +437,7 @@ def generate_llm_logits_with_optional_retry(
     framework: str,
     device: str,
     pipeline: str,
-    encoding: str,
+    encoding: pipelines.SupportedEncoding,
     output_path: Path,
     reference: list[ModelOutput] | None = None,
     retry_on_flake: bool = True,
@@ -494,7 +495,7 @@ def run_llm_verification(
     find_tolerances: bool,
     print_suggested_tolerances: bool,
     pipeline: str,
-    encoding: str,
+    encoding: pipelines.SupportedEncoding,
     pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
     absolute_tolerance: float | None = None,
     relative_tolerance: float | None = None,
@@ -599,7 +600,7 @@ def run_pixel_generation_verification(
     find_tolerances: bool,
     print_suggested_tolerances: bool,
     pipeline: str,
-    encoding: str,
+    encoding: pipelines.SupportedEncoding,
     pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
     absolute_tolerance: float | None = None,
     relative_tolerance: float | None = None,
@@ -722,7 +723,7 @@ class PipelineDef:
     # Name of the model / pipeline to verify.
     pipeline: str
     # Weight / activation dtype (e.g. "float32", "bfloat16").
-    encoding: str
+    encoding: pipelines.SupportedEncoding
     tags: Sequence[str] = field(default_factory=list)
     # Paths to the pregenerated torch golden logits. If provided, the torch
     # golden values are read from the file. Otherwise, Torch outputs are

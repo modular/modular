@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -28,8 +27,8 @@ mistral_arch = SupportedArchitecture(
     name="MistralForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
-    default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={SupportedEncoding.bfloat16: ["paged"]},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16": ["paged"]},
     multi_gpu_supported=True,
     pipeline_model=MistralModel,
     tokenizer=TextTokenizer,

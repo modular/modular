@@ -22,7 +22,7 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
 from PIL import Image
 
@@ -30,7 +30,7 @@ pipeline_config = PipelineConfig(
     model=MAXModelConfig(
         model_path="OpenGVLab/InternVL3-1B-Instruct",
         device_specs=[DeviceSpec.accelerator()],
-        quantization_encoding=SupportedEncoding.bfloat16,
+        quantization_encoding="bfloat16",
         trust_remote_code=True,
         max_length=512,
         kv_cache=KVCacheConfig(cache_strategy="paged"),

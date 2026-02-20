@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -36,10 +35,10 @@ olmo2_arch = SupportedArchitecture(
         "allenai/OLMo-2-1124-7B-GGUF",
     ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float32: ["paged"],
+        "bfloat16": ["paged"],
+        "float32": ["paged"],
     },
     pipeline_model=Olmo2Model,
     tokenizer=TextTokenizer,

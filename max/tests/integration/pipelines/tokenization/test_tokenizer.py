@@ -35,7 +35,6 @@ from max.interfaces import (
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
@@ -315,7 +314,7 @@ def test_text_tokenizer_with_constrained_decoding(
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             device_specs=device_specs,
         ),
         sampling=SamplingConfig(enable_structured_output=True),
@@ -452,7 +451,7 @@ def test_tokenizer_stores_eos_token_ids(
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             device_specs=device_specs,
         ),
     )

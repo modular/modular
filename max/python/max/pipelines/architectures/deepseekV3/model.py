@@ -37,6 +37,10 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.config_enums import (
+    is_float4_encoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
@@ -92,7 +96,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         cache_dtype: DType,
     ) -> KVCacheParams:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and encoding.is_float4:
+        if encoding is not None and is_float4_encoding(encoding):
             cache_dtype = DType.bfloat16
         return DeepseekV3Config.construct_kv_params(
             huggingface_config=huggingface_config,
@@ -210,8 +214,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         encoding = pipeline_config.model.quantization_encoding
         assert encoding is not None
-        dtype = encoding.dtype.size_in_bytes
-        packed_factor = 2 if encoding.is_float4 else 1
+        dtype = supported_encoding_dtype(encoding).size_in_bytes
+        packed_factor = 2 if is_float4_encoding(encoding) else 1
         config = model_config.huggingface_config
         assert config is not None
         n_sparse_layers = (
@@ -341,7 +345,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             moe_activation_memory += (
                 max_recv_tokens_per_rank
                 * huggingface_config.moe_intermediate_size
-                * encoding.dtype.size_in_bytes
+                * supported_encoding_dtype(encoding).size_in_bytes
             )
 
             # The output would be of shape [max_recv_tokens_per_rank, hidden_size].
@@ -369,7 +373,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
-                dispatch_dtype_size=encoding.dtype.size_in_bytes,
+                dispatch_dtype_size=supported_encoding_dtype(
+                    encoding
+                ).size_in_bytes,
                 combine_dtype_size=DType.bfloat16.size_in_bytes,
                 max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,

@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -27,13 +26,13 @@ from .weight_adapters import convert_exaone_safetensor_state_dict
 
 exaone_arch = SupportedArchitecture(
     name="ExaoneForCausalLM_Legacy",
-    default_encoding=SupportedEncoding.float32,
+    default_encoding="float32",
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={
-        SupportedEncoding.q4_k: ["paged"],
-        SupportedEncoding.q6_k: ["paged"],
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
+        "q4_k": ["paged"],
+        "q6_k": ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
     },
     example_repo_ids=[
         "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",

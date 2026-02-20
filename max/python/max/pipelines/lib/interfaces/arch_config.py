@@ -39,6 +39,7 @@ from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.lib.utils import upper_bounded_default
 from typing_extensions import Self, override
 
+from ..config_enums import supported_encoding_dtype
 from ..kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
@@ -113,7 +114,9 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
                 "Quantization encoding is required for ArchConfigWithAttentionKVCache"
             )
         return cls(
-            dtype=pipeline_config.model.quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(
+                pipeline_config.model.quantization_encoding
+            ),
             devices=[
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in pipeline_config.model.device_specs

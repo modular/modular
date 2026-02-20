@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -30,9 +29,9 @@ deepseekV2_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V2-Lite-Chat",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16": ["paged"],
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,

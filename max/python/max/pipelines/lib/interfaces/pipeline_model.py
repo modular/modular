@@ -31,6 +31,7 @@ from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
+from ..config_enums import supported_encoding_dtype
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
@@ -334,7 +335,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         quantization_encoding = self.pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        return quantization_encoding.dtype
+        return supported_encoding_dtype(quantization_encoding)
 
     @classmethod
     @abstractmethod

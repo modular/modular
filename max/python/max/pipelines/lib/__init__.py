@@ -23,7 +23,18 @@ from max.config import (
 
 from .bfloat16_utils import float32_to_bfloat16_as_uint16
 from .config import AudioGenerationConfig, PipelineConfig
-from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
+from .config_enums import (
+    PipelineRole,
+    RepoType,
+    RopeType,
+    SupportedEncoding,
+    is_float4_encoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
+)
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .float8 import parse_float8_config
 from .hf_utils import (
@@ -124,11 +135,17 @@ __all__ = [
     "float32_to_bfloat16_as_uint16",
     "generate_local_model_path",
     "get_default_max_config_file_section_name",
+    "is_float4_encoding",
     "max_tokens_to_generate",
     "parse_float8_config",
+    "parse_supported_encoding_from_file_name",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "resolve_max_config_inheritance",
+    "supported_encoding_dtype",
+    "supported_encoding_quantization",
+    "supported_encoding_supported_devices",
+    "supported_encoding_supported_on",
     "token_sampler",
     "try_to_load_from_cache",
     "upper_bounded_default",
