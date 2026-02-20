@@ -22,6 +22,7 @@ from math import ceildiv
 import compiler_internal as compiler
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
+from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 
 from state_space.causal_conv1d import (
@@ -397,29 +398,22 @@ struct CausalConv1D[activation: StaticString]:
 struct CausalConv1DUpdate[activation: StaticString]:
     """Incremental causal conv1d update for autoregressive decoding.
 
-    This operation is designed for token-by-token generation where:
-        1. A sliding window of recent inputs is maintained in conv_state.
-        2. Each new input updates the state and produces an output.
-        3. The conv_state is modified in-place for efficiency.
-
-    Use this for:
-        - Language model inference with autoregressive generation.
-        - Real-time streaming applications.
-        - Efficient incremental convolution without full sequence recomputation.
+    This operation accepts the previous conv_state as an input and produces
+    the updated conv_state as a separate output, compatible with functional
+    graph semantics (no in-place mutation).
 
     Parameters:
         activation: "none" or "silu" - activation function to apply.
 
     Tensor Shapes:
-        - input: (batch, channels, seqlen) - New input tokens (typically seqlen=1).
-        - weight: (channels, width) - Convolution weights.
-        - bias: (channels,) - Per-channel bias.
-        - conv_state: (batch, channels, state_len) - Sliding window state (modified in-place).
-        - output: (batch, channels, seqlen) - Convolution output for new tokens.
-
-    State Management:
-        The conv_state maintains the last (width-1) inputs for each channel.
-        After update, the oldest values are shifted out and new inputs are appended.
+        Outputs:
+            - output: (batch, channels, seqlen) - Convolution output.
+            - conv_state_out: (batch, channels, state_len) - Updated state.
+        Inputs:
+            - input: (batch, channels, seqlen) - New input tokens.
+            - conv_state_in: (batch, channels, state_len) - Previous state.
+            - weight: (channels, width) - Convolution weights.
+            - bias: (channels,) - Per-channel bias.
     """
 
     @staticmethod
@@ -431,6 +425,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
         output: OutputTensor[dtype=dtype, rank=rank],
         conv_state: OutputTensor[dtype=dtype, rank=rank],
         input: InputTensor[dtype=dtype, rank=rank],
+        conv_state_in: InputTensor[dtype=dtype, rank=rank],
         weight: InputTensor[dtype=dtype, rank=2],
         bias: InputTensor[dtype=dtype, rank=1],
         ctx: DeviceContextPtr,
@@ -448,6 +443,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
 
         var X = input.to_layout_tensor()
         var CS = conv_state.to_layout_tensor()
+        var CS_IN = conv_state_in.to_layout_tensor()
         var W = weight.to_layout_tensor()
         var O = output.to_layout_tensor()
         var B = bias.to_layout_tensor()
@@ -457,6 +453,10 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var seqlen: Int = input.dim_size(2)
         var width: Int = weight.dim_size(1)
         var state_len: Int = conv_state.dim_size(2)
+
+        # Copy previous state into the output buffer so the kernel can
+        # read old values and write updates into the same allocation.
+        var total_state_elements = batch_size * dim * state_len
 
         var x_batch_stride: UInt32 = UInt32(input.strides()[0])
         var x_c_stride: UInt32 = UInt32(input.strides()[1])
@@ -515,6 +515,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx.get_device_context()
+            gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
             comptime kNThreads = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_update_gpu[
@@ -568,7 +569,6 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 out_batch_stride,
                 out_c_stride,
                 out_l_stride,
-                bias_stride,
                 silu_activation_int8,
                 grid_dim=(batch_size, ceildiv(dim, kNThreads)),
                 block_dim=(kNThreads),
@@ -582,7 +582,8 @@ struct CausalConv1DUpdate[activation: StaticString]:
         rank: Int,
     ](
         input: InputTensor[dtype=dtype, rank=rank],
+        conv_state_in: InputTensor[dtype=dtype, rank=rank],
         weight: InputTensor[dtype=dtype, rank=2],
         bias: InputTensor[dtype=dtype, rank=1],
-    ) -> IndexList[rank]:
-        return input.shape()
+    ) -> Tuple[IndexList[rank], IndexList[rank]]:
+        return (input.shape(), conv_state_in.shape())
