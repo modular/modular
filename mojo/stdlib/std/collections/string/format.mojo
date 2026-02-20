@@ -72,9 +72,40 @@ methods.
 
 from builtin.globals import global_constant
 from builtin.variadics import Variadic
-from collections.string.string_slice import get_static_string
+from collections.string.string_slice import _memchr, get_static_string
 from compile import get_type_name
+from memory import Span
 from utils import Variant
+
+
+# ===-----------------------------------------------------------------------===#
+# Helpers
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _find_next_brace(
+    ptr: UnsafePointer[mut=False, UInt8], start: Int, length: Int
+) -> Int:
+    """Finds the index of the next `{` or `}` character.
+
+    Delegates to `_memchr` (which uses SIMD internally) to search for both
+    brace characters simultaneously in a single pass.
+
+    Args:
+        ptr: Pointer to the format string bytes.
+        start: The byte offset to start searching from.
+        length: The total byte length of the format string.
+
+    Returns:
+        The index of the next brace character, or -1 if not found.
+    """
+    var remaining = Span[Byte](ptr=ptr + start, length=length - start)
+    var result = _memchr(remaining, UInt8(ord("{")), UInt8(ord("}")))
+    if not result:
+        return -1
+    return Int(result) - Int(ptr)
+
 
 # ===-----------------------------------------------------------------------===#
 # Formatter
@@ -339,24 +370,27 @@ struct _FormatUtils:
 
         var entries = List[EntryType]()
         var start = Optional[Int](None)
-        var skip_next = False
         var fmt_ptr = format.unsafe_ptr()
         var fmt_len = format.byte_length()
         var total_estimated_entry_byte_width = 0
 
-        for i in range(fmt_len):
-            if skip_next:
-                skip_next = False
-                continue
+        var i = 0
+        while True:
+            var next = _find_next_brace(fmt_ptr, i, fmt_len)
+            if next == -1:
+                break
+            i = next
             if fmt_ptr[i] == `{`:
                 if not start:
                     start = i
+                    i += 1
                     continue
                 if i - start.value() != 1:
                     raise Error(l_err)
                 # python escapes double curlies
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
+                i += 1
                 continue
             elif fmt_ptr[i] == `}`:
                 if not start:
@@ -364,7 +398,7 @@ struct _FormatUtils:
                     if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
-                        skip_next = True
+                        i += 2
                         continue
                     # if it is not an escaped one, it is an error
                     raise Error(r_err)
@@ -394,6 +428,7 @@ struct _FormatUtils:
                     total_estimated_entry_byte_width += 8  # guessing
                 entries.append(current_entry^)
                 start = None
+            i += 1
 
         if raised_automatic_index:
             raise Error("Automatic indexing require more args in *args")
