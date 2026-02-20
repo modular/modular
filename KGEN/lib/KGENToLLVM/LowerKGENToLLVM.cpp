@@ -313,6 +313,15 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
                              cast<PointerType>(type).getElementType())));
   };
 
+  // Helper to apply nonnull attribute for non-null pointer types.
+  auto applyNonNullAttributes = [&ids, &b](NamedAttrList &attrs, Type type) {
+    if (auto ptrType = dyn_cast<PointerType>(type);
+        ptrType && ptrType.getIsNonNull()) {
+      attrs.set(ids.noundef, b.getUnitAttr());
+      attrs.set(ids.nonnull, b.getUnitAttr());
+    }
+  };
+
   // For each argument and result, leverage signature information to generate
   // the corresponding LLVM argument and result attributes.
   SmallVector<Attribute> argAttrs;
@@ -351,6 +360,8 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       }
     }
 
+    applyNonNullAttributes(list, type);
+
     switch (conv) {
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
@@ -388,8 +399,21 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     argAttrs.push_back(list.getDictionary(b.getContext()));
   }
 
+  // Handle result attributes for pointer return types.
+  // Only apply result attributes for single-result functions, as multiple
+  // KGEN results are packed into a single LLVM struct, and LLVM expects
+  // result attributes to match the number of LLVM-level results.
+  SmallVector<Attribute> resAttrs;
+  if (sig.getResults().size() == 1) {
+    NamedAttrList list;
+    applyNonNullAttributes(list, sig.getResults()[0]);
+    resAttrs.push_back(list.getDictionary(b.getContext()));
+  }
+
   // Update the attributes.
   attrs.set(func.getArgAttrsAttrName(), b.getArrayAttr(argAttrs));
+  if (!resAttrs.empty())
+    attrs.set(func.getResAttrsAttrName(), b.getArrayAttr(resAttrs));
   func->setAttrs(attrs.getDictionary(func.getContext()));
   func.setPassthroughAttr(b.getArrayAttr(passthrough));
   return success();

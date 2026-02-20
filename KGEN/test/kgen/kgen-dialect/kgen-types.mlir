@@ -123,3 +123,17 @@ kgen.func @func_types() {
 kgen.generator @param_closure_types<capture: !kgen.param_closure<@foo "fn">>() {
   kgen.return
 }
+
+// COM: Non-null pointer types
+
+// CHECK-LABEL: @nonnull_pointer
+// CHECK-SAME: !kgen.pointer<scalar<f32>, nonnull>
+kgen.func @nonnull_pointer(%arg0: !kgen.pointer<scalar<f32>, 0, nonnull>) {
+  kgen.return
+}
+
+// CHECK-LABEL: @nonnull_pointer_addrspace
+// CHECK-SAME: !kgen.pointer<scalar<f32>, 1, nonnull>
+kgen.func @nonnull_pointer_addrspace(%arg0: !kgen.pointer<scalar<f32>, 1, nonnull>) {
+  kgen.return
+}
