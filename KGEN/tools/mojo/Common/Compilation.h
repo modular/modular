@@ -48,6 +48,7 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier disableWarnings;
   llvm::opt::OptSpecifier warningsAsErrors;
   llvm::opt::OptSpecifier noWarningsAsErrors;
+  llvm::opt::OptSpecifier ignoreIncompatiblePackageErrors;
   llvm::opt::OptSpecifier unknown;
   llvm::opt::OptSpecifier input;
 
@@ -161,7 +162,8 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationErrorLimitId = {},
     llvm::opt::OptSpecifier elaborationErrorIncludePreludeId = {},
     llvm::opt::OptSpecifier elaborationErrorVerbose = {},
-    llvm::opt::OptSpecifier elaborationMaxDepth = {});
+    llvm::opt::OptSpecifier elaborationMaxDepth = {},
+    llvm::opt::OptSpecifier ignoreIncompatiblePackagesId = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

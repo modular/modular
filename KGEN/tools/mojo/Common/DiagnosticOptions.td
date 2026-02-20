@@ -78,4 +78,8 @@ def warn_on_unstable_apis : Flag<["--", "-"], "warn-on-unstable-apis">,
   Group<DiagnosticOptionGroup>, Index<12>,
   HelpText<"Warn when using unstable APIs from the standard library.">;
 
+def ignore_incompatible_package_errors : Flag<["--"], "ignore-incompatible-package-errors">,
+  Group<DiagnosticOptionGroup>, Index<13>,
+  HelpText<"Ignore errors encountered when loading incompatible Mojo packages.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

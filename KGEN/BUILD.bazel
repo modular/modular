@@ -972,6 +972,7 @@ modular_cc_library(
     local_defines = CONFIG_SECTION_LOCAL_DEFINES,
     tags = ["no-clang-tidy-headers"],
     deps = [
+        ":DialectChecksum",
         "//MLRT:AsyncRT/Support",
         "//Support:Base",
         "//Support:BinaryID",

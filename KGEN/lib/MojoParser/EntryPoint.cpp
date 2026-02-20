@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/MojoPackage.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
@@ -422,12 +423,21 @@ loadStrippedBinaryPackage(AsyncRT::Runtime &runtime,
     return {nullptr, nullptr};
   unsigned bufferId =
       sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
-  const llvm::MemoryBuffer *memoryBuf = sourceMgr->getMemoryBuffer(bufferId);
+  const llvm::MemoryBuffer *packageMemoryBuf =
+      sourceMgr->getMemoryBuffer(bufferId);
 
   // Parse just the top-level binary package operation and extract out the post
   // parse module.
+  auto mlirBufferOrErr = getMLIRBufferFromPackage(
+      *packageMemoryBuf, /*ignoreIncompatiblePackages=*/false);
+  if (mlirBufferOrErr.isError()) {
+    sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,
+                            mlirBufferOrErr.takeError().get());
+    return {nullptr, nullptr};
+  }
+
   mlir::ParserConfig config(ctx, /*verifyAfterParse=*/false);
-  mlir::BytecodeReader bytecodeReader(memoryBuf->getMemBufferRef(), config,
+  mlir::BytecodeReader bytecodeReader(*mlirBufferOrErr, config,
                                       /*lazyLoad=*/true, sourceMgr);
   auto finalizeReader = [&] {
     return bytecodeReader.finalize([](Operation *) { return false; });
