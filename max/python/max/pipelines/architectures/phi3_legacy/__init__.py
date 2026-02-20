@@ -11,15 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from __future__ import annotations
+from .arch import phi3_legacy_arch
 
-from typing import Literal
-
-from ..llama3.model import Llama3Model
-
-
-class Phi3Model(Llama3Model):
-    """Phi 3 pipeline model implementation."""
-
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
-    """Normalization layer."""
+__all__ = ["phi3_legacy_arch"]

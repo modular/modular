@@ -92,6 +92,8 @@ V3_MODELS: dict[str, set[str]] = {
     "tbmod/Meta-Llama-3.1-8B-Instruct": MULTI, # unsloth/
     "tbmod/Llama-3.2-1B-Instruct": MULTI, # unsloth/
     "tbmod/gpt-oss-20b-BF16": XL | {"max@H100"}, # unsloth/
+    "tbmod/Phi-3.5-mini-instruct": MULTI, # microsoft/
+    "tbmod/phi-4": MULTI, # microsoft/
 }
 
 MODELS = {**MODELS, **V3_MODELS}
