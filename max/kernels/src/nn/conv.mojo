@@ -3261,30 +3261,30 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable, RegisterPassable):
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
     var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct]
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct]
-    
+
     # Workspace size cache (actual buffer is allocated per-call via ctx)
     var workspace_size: Int
-    
+
     # Algo Cache
     var best_algo: cudnnConvolutionFwdAlgo_t
-    
+
     # Cache key fields
     var is_set: Bool
     var in_n: Int
     var in_h: Int
     var in_w: Int
     var in_c: Int
-    
+
     var filt_k: Int
     var filt_c: Int
     var filt_r: Int
     var filt_s: Int
-    
+
     var out_n: Int
     var out_h: Int
     var out_w: Int
     var out_c: Int
-    
+
     var pad_h: Int
     var pad_w: Int
     var stride_h: Int
@@ -3317,10 +3317,12 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable, RegisterPassable):
         check_cudnn_error(
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
         )
-        
+
         self.workspace_size = 0
-        self.best_algo = cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
-        
+        self.best_algo = (
+            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+        )
+
         self.is_set = False
         self.in_n = 0
         self.in_h = 0
@@ -3342,10 +3344,14 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable, RegisterPassable):
         self.dil_w = 0
 
 
-fn _get_cached_cudnn_meta_nhwc_full(ctx: DeviceContext) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull]:
+fn _get_cached_cudnn_meta_nhwc_full(
+    ctx: DeviceContext,
+) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key).bitcast[CachedCuDNNMetaNHWCFull]():
+    if ptr_meta := _get_global_or_null(cache_key).bitcast[
+        CachedCuDNNMetaNHWCFull
+    ]():
         check_cudnn_error(
             cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
         )
@@ -3358,11 +3364,11 @@ fn _get_cached_cudnn_meta_nhwc_full(ctx: DeviceContext) raises -> UnsafePointer[
         StringSlice(cache_key),
         new_ptr_meta.bitcast[NoneType](),
     )
-    
+
     check_cudnn_error(
         cudnnSetStream(new_ptr_meta[].ptr_handle, CUDA(ctx.stream()))
     )
-    
+
     return new_ptr_meta
 
 
@@ -3411,11 +3417,26 @@ fn _conv_cudnn[
     var params_match = ptr_meta[].is_set
 
     if params_match:
-        if ptr_meta[].in_n != in_n or ptr_meta[].in_h != in_h or ptr_meta[].in_w != in_w or ptr_meta[].in_c != in_c:
+        if (
+            ptr_meta[].in_n != in_n
+            or ptr_meta[].in_h != in_h
+            or ptr_meta[].in_w != in_w
+            or ptr_meta[].in_c != in_c
+        ):
             params_match = False
-        elif ptr_meta[].filt_k != filt_k or ptr_meta[].filt_c != filt_c or ptr_meta[].filt_r != filt_r or ptr_meta[].filt_s != filt_s:
+        elif (
+            ptr_meta[].filt_k != filt_k
+            or ptr_meta[].filt_c != filt_c
+            or ptr_meta[].filt_r != filt_r
+            or ptr_meta[].filt_s != filt_s
+        ):
             params_match = False
-        elif ptr_meta[].out_n != out_n or ptr_meta[].out_h != out_h or ptr_meta[].out_w != out_w or ptr_meta[].out_c != out_c:
+        elif (
+            ptr_meta[].out_n != out_n
+            or ptr_meta[].out_h != out_h
+            or ptr_meta[].out_w != out_w
+            or ptr_meta[].out_c != out_c
+        ):
             params_match = False
         elif ptr_meta[].pad_h != pad_h or ptr_meta[].pad_w != pad_w:
             params_match = False
@@ -3431,7 +3452,10 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_input_desc,
                 cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
                 get_cudnn_dtype[input_type](),
-                Int16(in_n), Int16(in_c), Int16(in_h), Int16(in_w),
+                Int16(in_n),
+                Int16(in_c),
+                Int16(in_h),
+                Int16(in_w),
             )
         )
 
@@ -3441,7 +3465,10 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_filter_desc,
                 get_cudnn_dtype[filter_type](),
                 cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-                Int16(filt_k), Int16(filt_c), Int16(filt_r), Int16(filt_s)
+                Int16(filt_k),
+                Int16(filt_c),
+                Int16(filt_r),
+                Int16(filt_s),
             )
         )
 
@@ -3449,9 +3476,12 @@ fn _conv_cudnn[
         check_cudnn_error(
             cudnnSetConvolution2dDescriptor(
                 ptr_meta[].ptr_conv_desc,
-                Int16(pad_h), Int16(pad_w),
-                Int16(stride_h), Int16(stride_w),
-                Int16(dil_h), Int16(dil_w),
+                Int16(pad_h),
+                Int16(pad_w),
+                Int16(stride_h),
+                Int16(stride_w),
+                Int16(dil_h),
+                Int16(dil_w),
                 cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
                 cudnnDataType_t.CUDNN_DATA_FLOAT,
             )
@@ -3459,8 +3489,7 @@ fn _conv_cudnn[
 
         check_cudnn_error(
             cudnnSetConvolutionGroupCount(
-                ptr_meta[].ptr_conv_desc,
-                Int16(num_groups)
+                ptr_meta[].ptr_conv_desc, Int16(num_groups)
             )
         )
 
@@ -3470,7 +3499,10 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_output_desc,
                 cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
                 get_cudnn_dtype[output_type](),
-                Int16(out_n), Int16(out_c), Int16(out_h), Int16(out_w),
+                Int16(out_n),
+                Int16(out_c),
+                Int16(out_h),
+                Int16(out_w),
             )
         )
 
@@ -3511,7 +3543,9 @@ fn _conv_cudnn[
             var algo_val = perf_buf.bitcast[Int32]()[]
             ptr_meta[].best_algo = cudnnConvolutionFwdAlgo_t(Int(algo_val))
         else:
-            ptr_meta[].best_algo = cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+            ptr_meta[].best_algo = (
+                cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+            )
 
         perf_buf.free()
 
@@ -3525,19 +3559,31 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_conv_desc,
                 ptr_meta[].ptr_output_desc,
                 ptr_meta[].best_algo,
-                UnsafePointer(to=ws_size)
+                UnsafePointer(to=ws_size),
             )
         )
         ptr_meta[].workspace_size = ws_size
 
         # Update Cache State
         ptr_meta[].is_set = True
-        ptr_meta[].in_n = in_n; ptr_meta[].in_h = in_h; ptr_meta[].in_w = in_w; ptr_meta[].in_c = in_c
-        ptr_meta[].filt_k = filt_k; ptr_meta[].filt_c = filt_c; ptr_meta[].filt_r = filt_r; ptr_meta[].filt_s = filt_s
-        ptr_meta[].out_n = out_n; ptr_meta[].out_h = out_h; ptr_meta[].out_w = out_w; ptr_meta[].out_c = out_c
-        ptr_meta[].pad_h = pad_h; ptr_meta[].pad_w = pad_w
-        ptr_meta[].stride_h = stride_h; ptr_meta[].stride_w = stride_w
-        ptr_meta[].dil_h = dil_h; ptr_meta[].dil_w = dil_w
+        ptr_meta[].in_n = in_n
+        ptr_meta[].in_h = in_h
+        ptr_meta[].in_w = in_w
+        ptr_meta[].in_c = in_c
+        ptr_meta[].filt_k = filt_k
+        ptr_meta[].filt_c = filt_c
+        ptr_meta[].filt_r = filt_r
+        ptr_meta[].filt_s = filt_s
+        ptr_meta[].out_n = out_n
+        ptr_meta[].out_h = out_h
+        ptr_meta[].out_w = out_w
+        ptr_meta[].out_c = out_c
+        ptr_meta[].pad_h = pad_h
+        ptr_meta[].pad_w = pad_w
+        ptr_meta[].stride_h = stride_h
+        ptr_meta[].stride_w = stride_w
+        ptr_meta[].dil_h = dil_h
+        ptr_meta[].dil_w = dil_w
 
     # Allocate workspace per-call using ctx (runtime-managed buffer)
     var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
