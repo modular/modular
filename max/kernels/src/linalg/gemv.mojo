@@ -267,10 +267,10 @@ fn gemv_split_k[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
-    simd_width: UInt,
-    tile_m: UInt,
-    tile_n: UInt,
-    num_threads: UInt,
+    simd_width: Int,
+    tile_m: Int,
+    tile_n: Int,
+    num_threads: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
@@ -294,13 +294,13 @@ fn gemv_split_k[
     # Nvidia vectorized load is 16B.
     comptime tile_k = simd_width * num_threads
     # which rows of the activation matrix each thread will process
-    var tile_id_m = block_idx.x * tile_m
+    var tile_id_m = Int(block_idx.x) * tile_m
     # which rows of the weight matrix each thread will process
-    var tile_id_n = block_idx.y * tile_n
-    var tid = thread_idx.x
+    var tile_id_n = Int(block_idx.y) * tile_n
+    var tid = Int(thread_idx.x)
     var tile_w = LayoutTensor[
         b_type,
-        Layout.row_major(Int(tile_n), Int(simd_width)),
+        Layout.row_major(tile_n, simd_width),
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -309,28 +309,26 @@ fn gemv_split_k[
     var acc = (
         LayoutTensor[
             s_type,
-            Layout.row_major(Int(tile_m), Int(tile_n)),
+            Layout.row_major(tile_m, tile_n),
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
     )
-    var output_idx = tile_id_m * UInt(n) + tile_id_n
+    var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
-    comptime WeightVecType = SIMD[b_type, Int(simd_width)]
+    comptime WeightVecType = SIMD[b_type, simd_width]
 
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # Each thread sums local data in K.
     for _ in range(tid * simd_width, k, tile_k):
-        var weight_tile = weight.tile[Int(tile_n), Int(tile_k)](
+        var weight_tile = weight.tile[tile_n, tile_k](
             Int(block_idx.y), iteration
         )
-        var act_tile = act.tile[Int(tile_m), Int(tile_k)](
-            Int(block_idx.x), iteration
-        )
+        var act_tile = act.tile[tile_m, tile_k](Int(block_idx.x), iteration)
 
         comptime for i in range(tile_n):
             # Here we load data @ thread_idx.x from the weight matrix
@@ -338,14 +336,10 @@ fn gemv_split_k[
             # row we are reading from (i + tile_id_n) is greater than the number
             # of rows in the weight matrix.
             comptime if check_bounds:
-                if i + tile_id_n >= UInt(n):
+                if i + tile_id_n >= n:
                     continue
-            var b_vec = weight_tile.vectorize[1, Int(simd_width)]()[
-                i, thread_idx.x
-            ]
-            tile_w.store[Int(simd_width)](
-                Int(i), 0, rebind[WeightVecType](b_vec)
-            )
+            var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+            tile_w.store(i, 0, rebind[WeightVecType](b_vec))
 
         comptime for i in range(tile_m):
             # Here we load data @ thread_idx.x from the activation matrix
@@ -354,36 +348,33 @@ fn gemv_split_k[
             # of rows in the activation matrix. This should never be the case if
             # tile_m is 1.
             comptime if check_bounds:
-                if i + tile_id_m >= UInt(m):
+                if i + tile_id_m >= m:
                     continue
-            var act_vec = act_tile.vectorize[1, Int(simd_width)]()[
-                i, thread_idx.x
-            ]
+            var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 
             # Now we multiply tile_a by tile_w and store the partials
             # in acc
             comptime for j in range(tile_n):
-                var weight_vec = tile_w.vectorize[1, Int(simd_width)]()[j, 0]
+                var weight_vec = tile_w.vectorize[1, simd_width]()[j, 0]
 
                 var local_accum = rebind[Scalar[s_type]](acc[i, j])
 
                 comptime for l in range(simd_width):
                     local_accum += (
-                        act_vec[Int(l)].cast[s_type]()
-                        * weight_vec[Int(l)].cast[s_type]()
+                        act_vec[l].cast[s_type]() * weight_vec[l].cast[s_type]()
                     )
 
-                acc.store[1](Int(i), Int(j), local_accum)
+                acc.store(i, j, local_accum)
 
         iteration += 1
 
     # Warps are arranged along K.
-    comptime k_warp_num = num_threads // UInt(WARP_SIZE)
-    var warp_id = warp_id()
+    comptime k_warp_num = num_threads // WARP_SIZE
+    var warp_id = Int(warp_id())
     var lane_id = lane_id()
     var shmem = LayoutTensor[
         s_type,
-        Layout.row_major(1, Int(tile_m * tile_n * k_warp_num)),
+        Layout.row_major(1, tile_m * tile_n * k_warp_num),
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
@@ -407,17 +398,16 @@ fn gemv_split_k[
         comptime for jj in range(k_warp_num):
             val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
 
+        var idx = output_idx + mid * n + nid
+
+        comptime if check_bounds:
+            if idx >= n:
+                continue
+
         comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](
-                Index(0, output_idx + mid * UInt(n) + nid), val.cast[c_type]()
-            )
+            elementwise_lambda(Index(0, idx), val.cast[c_type]())
         else:
-            var idx = output_idx + mid * UInt(n) + nid
-
-            comptime if check_bounds:
-                if idx >= UInt(n):
-                    continue
             output[0, idx] = val.cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
@@ -526,10 +516,10 @@ fn gemv_gpu_dispatch[
             c_tensor.layout,
             a_tensor.layout,
             b_tensor.layout,
-            simd_width = UInt(simd_width),
-            tile_m = UInt(tile_m),
-            tile_n = UInt(tile_n),
-            num_threads = UInt(num_threads),
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=num_threads,
             elementwise_lambda_fn=elementwise_lambda_fn,
             check_bounds=check_bounds,
             pdl_level=pdl_level,
