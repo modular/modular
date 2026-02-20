@@ -23,6 +23,25 @@ what we publish.
 
 ### MAX framework {#26-2-max}
 
+- To support use on an expanded range of older NVIDIA hardware and driver
+  versions, you can now set the `MODULAR_NVPTX_COMPILER_PATH` environment
+  variable to point to a system `ptxas` binary, instead of using the bundled
+  `libnvptxcompiler`. This decouples the use of Mojo and MAX from the packaged
+  version of `libnvptxcompiler` we provide.
+
+- Upgraded the bundled `libnvptxcompiler` from CUDA 12.9 to CUDA 13.1. This
+  brings the latest bug fixes and performance improvements from NVIDIA's PTX
+  compiler, as well as fully supporting new hardware like the DGX Spark and
+  Jetson Thor. **This raises the minimum NVIDIA driver requirement to 580 and
+  means the out-of-the-box Mojo and MAX installations support Turing (sm_75)
+  GPU and newer hardware.** To use Mojo and MAX with older NVIDIA drivers and
+  hardware, you can set the above-mentioned environment variable to your
+  system-provided `ptxas`.
+
+- The Mojo `DeviceContext()` constructor now checks NVIDIA driver compatibility
+  at creation time and provides a clear error message when the driver version
+  is too old, matching the behavior of the Python `Accelerator()` API.
+
 #### Inference server {#26-2-max-serve}
 
 - Enabled overlap scheduling for select model architectures like
