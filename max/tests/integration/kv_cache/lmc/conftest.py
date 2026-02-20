@@ -327,6 +327,7 @@ def _make_kv_cache_manager(
         session=session,
         total_num_pages=64,
         total_num_host_pages=0,
+        max_batch_size=64,
     )
 
 

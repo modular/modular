@@ -91,6 +91,7 @@ def test_kv_cache_radd_basic() -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Calculate total length and offsets

@@ -128,6 +128,7 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
             params=kv_params,
             total_num_pages=total_num_pages,
             session=session,
+            max_batch_size=pipeline_config.max_batch_size or 1,
         )
 
         contexts = []
