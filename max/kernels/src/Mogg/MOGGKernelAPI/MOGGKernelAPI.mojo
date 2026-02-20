@@ -49,7 +49,7 @@ import compiler_internal as compiler
 from algorithm import max as reduce_max
 from algorithm import mean
 from algorithm import min as reduce_min
-from algorithm import elementwise, product, sum
+from algorithm import elementwise, parallelize, product, sum
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -6566,6 +6566,186 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
             bias,
             ctx,
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# Fused Q/K RoPE for Vision Models (no KV cache)
+#
+# Expected kernel name format:
+# mo.fused_qk_rope_vision
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.fused_qk_rope_vision")
+struct Struct_fused_qk_rope_vision:
+    """Fused Q/K RoPE for vision models.
+
+    Applies RoPE to query and key tensors simultaneously.
+    Input shapes:
+        - query: [B, S, num_heads, head_dim]
+        - key: [B, S, num_heads, head_dim]
+        - freqs_cos: [S, head_dim]  (cos values, interleaved pairs)
+        - freqs_sin: [S, head_dim]  (sin values, interleaved pairs)
+    Output shapes:
+        - q_out: same as query
+        - k_out: same as key
+    """
+
+    @always_inline
+    @staticmethod
+    fn _rope[
+        dtype: DType,
+        freq_dtype: DType,
+        width: Int,
+    ](
+        val: SIMD[dtype, width],
+        cos_v: SIMD[freq_dtype, width],
+        sin_v: SIMD[freq_dtype, width],
+    ) -> SIMD[dtype, width]:
+        """Apply RoPE rotation using complex multiplication."""
+        var x_complex = val.cast[freq_dtype]().deinterleave()
+        var x_re = x_complex[0]
+        var x_im = x_complex[1]
+
+        var cos_parts = cos_v.deinterleave()
+        var sin_parts = sin_v.deinterleave()
+
+        var cos_half = cos_parts[0]
+        var sin_half = sin_parts[0]
+
+        var out_re = x_re * cos_half - x_im * sin_half
+        var out_im = x_re * sin_half + x_im * cos_half
+
+        return rebind[SIMD[dtype, width]](
+            out_re.interleave(out_im).cast[dtype]()
+        )
+
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_out: OutputTensor[dtype=dtype, rank=4],
+        k_out: OutputTensor[dtype=dtype, rank=4],
+        query: InputTensor[dtype=dtype, rank=4],
+        key: InputTensor[dtype=dtype, rank=4],
+        freqs_cos: InputTensor[dtype=freq_dtype, rank=2],
+        freqs_sin: InputTensor[dtype=freq_dtype, rank=2],
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Execute the fused RoPE kernel with CPU/GPU dispatch."""
+        # Extract dimensions
+        var batch_size = query.dim_size(0)
+        var seq_len = query.dim_size(1)
+        var num_q_heads = query.dim_size(2)
+        var head_dim = query.dim_size(3)
+        var num_k_heads = key.dim_size(2)
+
+        # Determine SIMD width based on target
+        # Use gcd with head_dim to ensure proper alignment, but minimum 2 for deinterleave
+        comptime compile_target = _current_target() if is_cpu[
+            target
+        ]() else get_gpu_target()
+        comptime target_simd_width = simd_width_of[
+            dtype, target=compile_target
+        ]()
+        comptime rope_dim = 128  # Flux2 uses axes_dim=(32,32,32,32) so rope_dim = 128
+        comptime kernel_simd_width = gcd(target_simd_width, rope_dim) if gcd(
+            target_simd_width, rope_dim
+        ) >= 2 else 2
+
+        comptime assert (
+            kernel_simd_width >= 2
+        ), "kernel_simd_width must be >= 2 for RoPE deinterleave"
+
+        # Define the RoPE worker function for Q output
+        @parameter
+        @__copy_capture(query, freqs_cos, freqs_sin, q_out, seq_len, head_dim)
+        @always_inline
+        fn rope_fn_q[
+            width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            """Process one element of the Q tensor with RoPE."""
+            comptime assert rank == 4, "Expected rank 4 for Q tensor"
+
+            @parameter
+            if width == 1:
+                # Cannot apply RoPE with width=1, this should not happen with proper simd_width
+                return
+            else:
+                var s = idx[1]
+                var v = idx[3]
+
+                # Load cos/sin for this position (indexed by [s, v])
+                var cos_val = freqs_cos.load[width=width](IndexList[2](s, v))
+                var sin_val = freqs_sin.load[width=width](IndexList[2](s, v))
+
+                # Cast to input dtype for computation
+                var cos_casted = cos_val.cast[dtype]()
+                var sin_casted = sin_val.cast[dtype]()
+
+                # Load Q value and apply RoPE
+                var val = query.load[width=width](idx)
+                var res = Self._rope(val, cos_casted, sin_casted)
+                q_out.store[width=width](idx, res)
+
+        # Define the RoPE worker function for K output
+        @parameter
+        @__copy_capture(key, freqs_cos, freqs_sin, k_out, seq_len, head_dim)
+        @always_inline
+        fn rope_fn_k[
+            width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            """Process one element of the K tensor with RoPE."""
+            comptime assert rank == 4, "Expected rank 4 for K tensor"
+
+            @parameter
+            if width == 1:
+                # Cannot apply RoPE with width=1, this should not happen with proper simd_width
+                return
+            else:
+                var s = idx[1]
+                var v = idx[3]
+
+                # Load cos/sin for this position (indexed by [s, v])
+                var cos_val = freqs_cos.load[width=width](IndexList[2](s, v))
+                var sin_val = freqs_sin.load[width=width](IndexList[2](s, v))
+
+                # Cast to input dtype for computation
+                var cos_casted = cos_val.cast[dtype]()
+                var sin_casted = sin_val.cast[dtype]()
+
+                # Load K value and apply RoPE
+                var val = key.load[width=width](idx)
+                var res = Self._rope(val, cos_casted, sin_casted)
+                k_out.store[width=width](idx, res)
+
+        # Launch shape for Q: [batch, seq_len, num_q_heads, head_dim]
+        var q_shape = IndexList[4](batch_size, seq_len, num_q_heads, head_dim)
+        # Launch shape for K: [batch, seq_len, num_k_heads, head_dim]
+        var k_shape = IndexList[4](batch_size, seq_len, num_k_heads, head_dim)
+
+        @parameter
+        if is_cpu[target]():
+            # CPU path
+            elementwise[
+                func=rope_fn_q, simd_width=kernel_simd_width, target=target
+            ](q_shape)
+            elementwise[
+                func=rope_fn_k, simd_width=kernel_simd_width, target=target
+            ](k_shape)
+        elif is_gpu[target]():
+            # GPU path - pass device context
+            var dev_ctx = ctx.get_device_context()
+            elementwise[
+                func=rope_fn_q, simd_width=kernel_simd_width, target=target
+            ](q_shape, dev_ctx)
+            elementwise[
+                func=rope_fn_k, simd_width=kernel_simd_width, target=target
+            ](k_shape, dev_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
