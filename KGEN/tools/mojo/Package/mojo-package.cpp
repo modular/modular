@@ -14,6 +14,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/Support/MojoPackage.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
@@ -272,9 +273,17 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  if (auto err =
-          parseCompilationOptions(state, args, pkgArgs.compileOptions,
-                                  sourceMgr, pkgArgs.ctx, options::OPT_I))
+  if (auto err = parseCompilationOptions(
+          state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
+          options::OPT_I, /*optimizationLevelId=*/{}, /*debugLevelId=*/{},
+          /*sanitizeId=*/{}, /*sharedLibasan=*/{}, /*externalLibasan=*/{},
+          /*bitcodeLibs=*/{}, /*debugInfoLanguageId=*/{}, /*numThreadsId=*/{},
+          /*stdLibPath=*/{}, /*loopUnrollingWarnThresholdId=*/{},
+          /*elaborationErrorLimitId=*/{},
+          /*elaborationErrorIncludePreludeId=*/{},
+          /*elaborationErrorVerbose=*/{}, /*elaborationMaxDepth=*/{},
+          /*ignoreIncompatiblePackageErrorsId=*/
+          options::OPT_ignore_incompatible_package_errors))
     return err.takeError();
 
   // Packages are built with the intention of being agnostic, so use
@@ -531,7 +540,7 @@ static int package(const State &subcommandState) {
         return state.reportError(res.getError());
     }
 
-    if (failed(mlir::writeBytecodeToFile(**module, out->os())))
+    if (failed(writeBinaryPackage(**module, out->os())))
       return state.reportError("serialization failed");
     out->keep();
 
@@ -550,7 +559,7 @@ static int package(const State &subcommandState) {
   OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();
 
   // Write the new package op as serialized bytecode to the output file.
-  if (failed(mlir::writeBytecodeToFile(&**builtPackageModule, out->os())))
+  if (failed(writeBinaryPackage(&**builtPackageModule, out->os())))
     return state.reportError("failed to write package bytecode to a file");
 
   out->keep();

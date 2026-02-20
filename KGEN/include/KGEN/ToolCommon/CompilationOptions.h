@@ -150,6 +150,7 @@ public:
   bool disableWarnings = false;
   bool warningsAsErrors = false;
   bool warnOnUnstableAPIs = false;
+  bool ignoreIncompatiblePackageErrors = false;
 
   // Whether or not to run the MOGGPreElab pipeline. This is necessary to avoid
   // false errors like a missing `execute` function on graph generated mojo

@@ -12,6 +12,7 @@
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
+#include "KGEN/Support/MojoPackage.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -25,6 +26,7 @@
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
 
@@ -42,6 +44,62 @@ struct TestAlwaysFailPass
 
   void runOnOperation() override { return signalPassFailure(); }
 };
+
+LogicalResult runMlirOptMain(int argc, char **argv,
+                             llvm::StringRef inputFilename,
+                             llvm::StringRef outputFilename,
+                             DialectRegistry &registry,
+                             bool ignoreIncompatiblePackageErrs) {
+  llvm::InitLLVM y(argc, argv);
+  mlir::MlirOptMainConfig config =
+      mlir::MlirOptMainConfig::createFromCLOptions();
+
+  // When reading from stdin and the input is a tty, it is often a user
+  // mistake and the process "appears to be stuck". Print a message to let the
+  // user know about it!
+  if (inputFilename == "-" &&
+      llvm::sys::Process::FileDescriptorIsDisplayed(fileno(stdin)))
+    llvm::errs() << "(processing input from stdin now, hit ctrl-c/ctrl-d to "
+                    "interrupt)\n";
+
+  // Set up the input file.
+  std::string errorMessage;
+  auto file = mlir::openInputFile(inputFilename, &errorMessage);
+  if (!file) {
+    llvm::errs() << errorMessage << "\n";
+    return failure();
+  }
+
+  // If this is a Mojo package file, verify the header and skip past it to get
+  // to the MLIR within.
+  llvm::MemoryBufferRef mlirBuffer = *file;
+  if (KGEN::isMojoPackage(*file)) {
+    auto mlirBufferOrErr =
+        M::KGEN::getMLIRBufferFromPackage(*file, ignoreIncompatiblePackageErrs);
+    if (mlirBufferOrErr.isError()) {
+      llvm::errs() << mlirBufferOrErr.takeError().get() << "\n";
+      return failure();
+    }
+    mlirBuffer = *mlirBufferOrErr;
+  }
+
+  auto mlirBuff =
+      llvm::MemoryBuffer::getMemBuffer(mlirBuffer,
+                                       /*RequiresNullTerminator=*/true);
+
+  auto output = mlir::openOutputFile(outputFilename, &errorMessage);
+  if (!output) {
+    llvm::errs() << errorMessage << "\n";
+    return failure();
+  }
+
+  if (failed(MlirOptMain(output->os(), std::move(mlirBuff), registry, config)))
+    return failure();
+
+  // Keep the output file if the invocation of MlirOptMain was successful.
+  output->keep();
+  return success();
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -112,6 +170,12 @@ int main(int argc, char **argv) {
                      "traced by time profiler."),
       llvm::cl::init(0)};
 
+  static llvm::cl::opt<bool> ignoreIncompatiblePackageErrs{
+      "ignore-incompatible-package-errors",
+      llvm::cl::desc(
+          "Ignore errors encountered when loading incompatible Mojo packages."),
+      llvm::cl::init(false)};
+
   KGEN::registerKGENCommandLineOptions();
   KGEN::initializeDebugOptions();
   KGEN::KGENPassCLOptions::registerOptions();
@@ -126,6 +190,6 @@ int main(int argc, char **argv) {
 
   KGEN::TraceProfiler tracer(timeTrace, timeTraceGranularity);
 
-  return failed(
-      MlirOptMain(argc, argv, inputFilename, outputFilename, registry));
+  return failed(runMlirOptMain(argc, argv, inputFilename, outputFilename,
+                               registry, ignoreIncompatiblePackageErrs));
 }

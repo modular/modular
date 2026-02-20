@@ -33,6 +33,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
+#include "KGEN/Support/MojoPackage.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
@@ -1531,13 +1532,20 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   {
     CompilerTimeTraceScope timeScope("readBytecodeFile");
+    // Create a source manager to extend the lifetime of the package buffer.
     auto sourceMgr = std::make_shared<llvm::SourceMgr>();
     sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
     const llvm::MemoryBuffer *memoryBuf =
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
+
+    auto mlirBufferOrErr = getMLIRBufferFromPackage(
+        *memoryBuf, options.ignoreIncompatiblePackageErrors);
+    if (mlirBufferOrErr.isError())
+      return makeError(mlirBufferOrErr.takeError().get());
+
     // TODO(MOCO-522): Arcana docs on this lazy loading.
     bytecodeReader = std::make_unique<mlir::BytecodeReader>(
-        memoryBuf->getMemBufferRef(), impl->bytecodeParserContext,
+        *mlirBufferOrErr, impl->bytecodeParserContext,
         /*lazyLoad=*/true, sourceMgr);
 
     // Read in the cached bytecode.
