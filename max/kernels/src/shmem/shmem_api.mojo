@@ -200,8 +200,7 @@ fn shmem_init() raises:
         If SHMEM initialization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_init()
     else:
         return CompilationTarget.unsupported_target_error[
@@ -223,8 +222,7 @@ fn shmem_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
         If SHMEM initialization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_init_thread(ctx, gpus_per_node)
     else:
         CompilationTarget.unsupported_target_error[
@@ -264,8 +262,7 @@ fn shmem_init_thread(
         If SHMEM initialization fails on any thread.
     """
 
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         rocshmem_init_thread(ctx, uid, node_id, total_nodes, gpus_per_node)
     else:
         CompilationTarget.unsupported_target_error[
@@ -301,8 +298,7 @@ fn shmem_finalize():
     library resources that have been released.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_hostlib_finalize()
     elif has_amd_gpu_accelerator():
         rocshmem_finalize()
@@ -321,8 +317,7 @@ fn shmem_my_pe() -> c_int:
         program.
     """
 
-    @parameter
-    if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return nvshmem_my_pe()
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return rocshmem_my_pe()
@@ -339,8 +334,7 @@ fn shmem_n_pes() -> c_int:
         Number of PEs running in the OpenSHMEM program.
     """
 
-    @parameter
-    if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return nvshmem_n_pes()
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return rocshmem_n_pes()
@@ -387,8 +381,7 @@ fn shmem_malloc[
     symmetric heap allocation and won't error.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         return nvshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
     elif has_amd_gpu_accelerator():
         return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
@@ -435,8 +428,7 @@ fn shmem_calloc[
     symmetric heap allocation and won't error.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         return nvshmem_calloc[dtype](count, size)
     elif has_amd_gpu_accelerator():
         return rocshmem_calloc[dtype](count, size)
@@ -468,8 +460,7 @@ fn shmem_free[
     PEs; otherwise, the behavior is undefined.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmem_free(ptr)
     elif has_amd_gpu_accelerator():
         rocshmem_free(ptr)
@@ -504,8 +495,7 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
         if the team handle compares equal to SHMEM_TEAM_INVALID.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         return c_int(Int(nvshmem_team_my_pe(c_int(team))))
     elif has_amd_gpu_accelerator():
         return c_int(Int(rocshmem_team_my_pe(c_int(team))))
@@ -544,8 +534,7 @@ fn shmem_get[
     local PE.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_get[scope](dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
@@ -578,8 +567,7 @@ fn shmem_get_nbi[
     shmem_quiet, the data has been delivered to the dest array on the local PE.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_get_nbi[scope](dest, source, nelems, pe)
     elif is_amd_gpu():
         rocshmem_get_nbi(dest, source, nelems, pe)
@@ -605,8 +593,7 @@ fn shmem_g[
         A single element of dtype.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return nvshmem_g(source, pe)
     elif is_amd_gpu():
         return rocshmem_g(source, pe)
@@ -643,8 +630,7 @@ fn shmem_put[
     introduced between the two calls.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_put[kind](dest, source, nelems, pe)
     elif is_amd_gpu():
         rocshmem_put(dest, source, nelems, pe)
@@ -683,8 +669,7 @@ fn shmem_put_nbi[
     introduced between the two calls.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_put_nbi[kind](dest, source, nelems, pe)
     elif is_amd_gpu():
         rocshmem_put_nbi(dest, source, nelems, pe)
@@ -715,8 +700,7 @@ fn shmem_p[
             the device.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_p(dest, value, pe)
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         rocshmem_p(dest, value, pe)
@@ -792,8 +776,7 @@ fn shmem_put_signal_nbi[
     heap.  sig_addr and dest may not be overlapping in memory
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_put_signal_nbi(
             dest, source, nelems, sig_addr, signal, sig_op, pe
         )
@@ -828,8 +811,7 @@ fn shmem_barrier_all():
     shmem_get_nbi.
     """
 
-    @parameter
-    if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         nvshmem_barrier_all()
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         rocshmem_barrier_all()
@@ -868,8 +850,7 @@ fn shmem_signal_wait_until(
     complete.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     elif is_amd_gpu():
         rocshmem_signal_wait_until(sig_addr, cmp, cmp_value)
@@ -895,8 +876,7 @@ fn shmem_fence():
     values fetched by nonblocking AMO routines.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_fence()
     elif is_amd_gpu():
         rocshmem_fence()
@@ -934,8 +914,7 @@ fn shmem_signal_op(
         pe: PE number of the remote PE.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
     elif is_amd_gpu():
         rocshmemx_signal_op(sig_addr, signal, sig_op, pe)
@@ -963,8 +942,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
         If the barrier operation fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_barrier_all_on_stream(CUDA(stream))
     elif has_amd_gpu_accelerator():
         rocshmem_barrier_all_on_stream(HIP(stream))
@@ -990,8 +968,7 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
         String: If module initialization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
         var status = nvshmemx_cumodule_init(func)
         if status != 0:
@@ -1019,8 +996,7 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
         String: If module finalization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
         _ = nvshmemx_cumodule_finalize(func)
     elif has_amd_gpu_accelerator():

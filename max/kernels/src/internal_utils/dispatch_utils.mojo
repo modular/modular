@@ -76,8 +76,7 @@ struct Table[type: TuningConfig](Stringable):
     ](self) -> List[Int]:
         var flag: List[Bool]
 
-        @parameter
-        if len(domain):
+        comptime if len(domain):
             flag = List[Bool](length=Int(self.num_configs), fill=False)
             for idx in materialize[domain]():
                 flag[idx] = True

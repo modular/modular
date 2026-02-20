@@ -133,8 +133,7 @@ struct Struct_ep_init:
         var dispatch_msg_size: Int
 
         # Infer message sizes for dispatch phases
-        @parameter
-        if dispatch_fmt_str == "BlockwiseFP8":
+        comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
@@ -213,8 +212,7 @@ struct Struct_ep_init:
         var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
         var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        @parameter
-        if n_nodes > 1:
+        comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
             shmem_init_thread(gpu_ctx, n_gpus_per_node)
 
@@ -280,8 +278,7 @@ struct Struct_ep_init:
         # Store current device's rank
         var my_rank: Int32
 
-        @parameter
-        if n_nodes > 1:
+        comptime if n_nodes > 1:
             my_rank = Int32(shmem_my_pe())
         else:
             my_rank = Int32(gpu_ctx.id())
@@ -322,8 +319,7 @@ struct Struct_ep_dispatch_async:
         transferred in either Blockwise FP8 or BF16 format.
         """
 
-        @parameter
-        if dispatch_fmt_str == "BlockwiseFP8":
+        comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype = DType.float32,

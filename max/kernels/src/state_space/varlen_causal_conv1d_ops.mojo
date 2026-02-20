@@ -124,8 +124,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
         comptime PAD_SLOT_ID: Int32 = -1
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_fwd_cpu[
                 x_lt.dtype,
                 x_lt.layout,
@@ -585,8 +584,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
         comptime PAD_SLOT_ID: Int32 = -1
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_update_cpu[
                 x_lt.dtype,
                 x_lt.layout,
@@ -992,8 +990,7 @@ struct CausalConv1DVarlenStates:
         var states_dim_stride = UInt32(states_strides[1])
         var states_seqlen_stride = UInt32(states_strides[2])
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_states_cpu[
                 x_lt.dtype,
                 x_lt.layout,

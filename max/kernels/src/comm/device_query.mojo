@@ -115,8 +115,7 @@ fn _dispatch_max_num_blocks[
     # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
     comptime arch = _accelerator_arch()
 
-    @parameter
-    if "gfx950" in arch:  # MI355 family
+    comptime if "gfx950" in arch:  # MI355 family
         default_num_blocks = 64
     elif "gfx942" in arch:  # MI300 family
         default_num_blocks = 32
@@ -128,8 +127,7 @@ fn _dispatch_max_num_blocks[
 
     comptime search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
 
-    @parameter
-    if not search_domain:
+    comptime if not search_domain:
         return default_num_blocks
 
     # get all static num_bytes values in table within the search space
@@ -141,8 +139,7 @@ fn _dispatch_max_num_blocks[
         Int, rule_get_num_bytes, search_domain
     ]()
 
-    @parameter
-    for nb in all_num_bytes_values:
+    comptime for nb in all_num_bytes_values:
 
         @parameter
         fn rule_eq_nb(x: TuningConfigAllreduce) -> Bool:
@@ -154,8 +151,7 @@ fn _dispatch_max_num_blocks[
                 rule_eq_nb, domain=search_domain
             ]()
 
-            @parameter
-            if idx_list:
+            comptime if idx_list:
                 comptime entry = allreduce_table.configs[idx_list[0]]
                 return entry.num_blocks
             else:

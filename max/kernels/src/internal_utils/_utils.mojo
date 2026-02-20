@@ -135,8 +135,7 @@ fn bench_compile_time[
         @always_inline
         @parameter
         fn bench_iter() raises:
-            @parameter
-            if emission_kind == "asm" or emission_kind == "llvm":
+            comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
@@ -184,13 +183,11 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
-    @parameter
-    for i in range(len(name)):
+    comptime for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
         comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
-        @parameter
-        if name_unsafe_ptr[i] == x_ptr:
+        comptime if name_unsafe_ptr[i] == x_ptr:
             vals.append(sum)
             sum = 0
             continue
@@ -224,8 +221,7 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
 fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
     return t
@@ -394,11 +390,8 @@ fn init_vector_gpu[
 
     @parameter
     fn apply(values: SIMD[dtype, 4]):
-        @parameter
-        for i in range(4):
-
-            @parameter
-            if i == 3:
+        comptime for i in range(4):
+            comptime if i == 3:
                 if tid >= UInt(len):
                     return
             x[tid] = values[i]

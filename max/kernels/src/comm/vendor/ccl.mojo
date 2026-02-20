@@ -89,8 +89,7 @@ comptime NCCL_LIBRARY_PATHS: List[Path] = [
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
 fn _init_ccl_dylib() -> OwnedDLHandle:
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
     else:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())
@@ -219,8 +218,7 @@ fn _ccl_broadcast(
 
 @always_inline
 fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return HIP(ctx.stream()).bitcast[NoneType]()
     else:
         return CUDA(ctx.stream()).bitcast[NoneType]()
@@ -237,8 +235,7 @@ struct Communicators(ImplicitlyCopyable):
 
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return ncclDataType_t.ncclFloat32
     elif dtype == DType.bfloat16:
         return ncclDataType_t.ncclBfloat16

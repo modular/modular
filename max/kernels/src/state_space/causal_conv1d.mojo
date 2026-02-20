@@ -239,9 +239,7 @@ fn causal_conv1d_channel_first_fwd_cpu[
             var out_offset: UInt32 = out_base + UInt32(UInt32(l) * out_l_stride)
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_activation:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -367,9 +365,7 @@ fn causal_conv1d_channel_first_fwd_cpu_no_bias[
             var out_offset: UInt32 = out_base + UInt32(UInt32(l) * out_l_stride)
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_activation:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -456,9 +452,7 @@ fn causal_conv1d_channel_last_fwd_cpu[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -536,9 +530,7 @@ fn causal_conv1d_channel_last_fwd_cpu_no_bias[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -643,9 +635,7 @@ fn causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -745,9 +735,7 @@ fn causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -921,9 +909,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
     var prev_chunk_col: Int = (seq_start - 1) // kNElts
     prev_input_chunk = 0
     if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var prev_seq_idx: Int = prev_chunk_col * kNElts + i
             if prev_seq_idx >= 0 and prev_seq_idx < nSeqLen:
                 var prev_offset: UInt32 = (
@@ -936,9 +922,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
     var current_chunk_col: Int = seq_start // kNElts
     input_chunk = 0
     if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var curr_seq_idx: Int = current_chunk_col * kNElts + i
             if curr_seq_idx < nSeqLen:
                 var curr_offset: UInt32 = (
@@ -951,8 +935,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
     x_vals = prev_input_chunk.join(input_chunk)
     var silu_active = Bool(Int(silu_activation) != 0)
 
-    @parameter
-    for i in range(kNElts):
+    comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
@@ -961,8 +944,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
         # This avoids SIMD slice issues while maintaining correctness
         var conv_result: Scalar[x_dtype] = 0
 
-        @parameter
-        if kWidth == 1:
+        comptime if kWidth == 1:
             if seq_idx >= 0 and seq_idx < nSeqLen:
                 var load_offset: UInt32 = (
                     UInt32(batch_id) * x_batch_stride
@@ -974,8 +956,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
         elif kWidth == 2:
             var input_window: SIMD[x_dtype, 2] = 0
 
-            @parameter
-            for w in range(2):
+            comptime for w in range(2):
                 var input_l: Int = seq_idx - (1 - w)
                 if input_l >= 0 and input_l < nSeqLen:
                     var load_offset: UInt32 = (
@@ -989,8 +970,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
         elif kWidth == 4:
             var input_window: SIMD[x_dtype, 4] = 0
 
-            @parameter
-            for w in range(4):
+            comptime for w in range(4):
                 var input_l: Int = seq_idx - (3 - w)
                 if input_l >= 0 and input_l < nSeqLen:
                     var load_offset: UInt32 = (
@@ -1036,9 +1016,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
             cur_bias
         ) + Scalar[output_dtype](conv_result)
         if silu_active:
-
-            @parameter
-            if output_dtype.is_floating_point():
+            comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -1046,8 +1024,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
                 ]()
         out_vals[i] = out_val
 
-    @parameter
-    for i in range(kNElts):
+    comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
@@ -1174,9 +1151,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
     var prev_chunk_col: Int = (seq_start - 1) // kNElts
     prev_input_chunk = 0
     if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var prev_seq_idx: Int = prev_chunk_col * kNElts + i
             if prev_seq_idx >= 0 and prev_seq_idx < nSeqLen:
                 var prev_offset: UInt32 = (
@@ -1190,9 +1165,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
     var current_chunk_col: Int = seq_start // kNElts
     input_chunk = 0
     if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var curr_seq_idx: Int = current_chunk_col * kNElts + i
             if curr_seq_idx < nSeqLen:
                 var curr_offset: UInt32 = (
@@ -1204,8 +1177,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
 
     var silu_active = Bool(Int(silu_activation) != 0)
 
-    @parameter
-    for i in range(kNElts):
+    comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
@@ -1213,8 +1185,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
         # Build input window by loading directly from memory
         var conv_result: Scalar[x_dtype] = 0
 
-        @parameter
-        if kWidth == 1:
+        comptime if kWidth == 1:
             if seq_idx >= 0 and seq_idx < nSeqLen:
                 var load_offset: UInt32 = (
                     UInt32(batch_id) * x_batch_stride
@@ -1226,8 +1197,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
         elif kWidth == 2:
             var input_window: SIMD[x_dtype, 2] = 0
 
-            @parameter
-            for w in range(2):
+            comptime for w in range(2):
                 var input_l: Int = seq_idx - (1 - w)
                 if input_l >= 0 and input_l < nSeqLen:
                     var load_offset: UInt32 = (
@@ -1241,8 +1211,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
         elif kWidth == 4:
             var input_window: SIMD[x_dtype, 4] = 0
 
-            @parameter
-            for w in range(4):
+            comptime for w in range(4):
                 var input_l: Int = seq_idx - (3 - w)
                 if input_l >= 0 and input_l < nSeqLen:
                     var load_offset: UInt32 = (
@@ -1286,16 +1255,13 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
 
         var out_val: Scalar[x_dtype] = conv_result
         if silu_active:
-
-            @parameter
-            if x_dtype.is_floating_point():
+            comptime if x_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[DType.float32]()).cast[x_dtype]()
         out_vals[i] = out_val
 
-    @parameter
-    for i in range(kNElts):
+    comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
@@ -1432,8 +1398,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
                     # Load SIMD vector manually using pointer arithmetic
                     prev_input_chunk = 0
 
-                    @parameter
-                    for i in range(kNElts):
+                    comptime for i in range(kNElts):
                         var c_idx_load: Int = channel_start + i
                         if c_idx_load < nChannels:
                             var prev_offset: UInt32 = (
@@ -1463,8 +1428,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
                     # Load SIMD vector manually using pointer arithmetic
                     input_chunk = 0
 
-                    @parameter
-                    for i in range(kNElts):
+                    comptime for i in range(kNElts):
                         var c_idx_load: Int = channel_start + i
                         if c_idx_load < nChannels:
                             var current_offset: UInt32 = (
@@ -1482,8 +1446,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
@@ -1494,8 +1457,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
             # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             var input_window: SIMD[x_dtype, kWidth] = 0
 
-            @parameter
-            for w in range(kWidth):
+            comptime for w in range(kWidth):
                 var input_l: Int = seq_idx - (kWidth - 1 - w)
                 if input_l >= 0 and input_l < nSeqLen:
                     var load_offset: UInt32 = (
@@ -1512,9 +1474,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
 
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -1522,8 +1482,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
                     ]()
             out_vals_channel[i] = out_val
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
@@ -1631,8 +1590,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
                     # Load SIMD vector manually using pointer arithmetic
                     prev_input_chunk = 0
 
-                    @parameter
-                    for i in range(kNElts):
+                    comptime for i in range(kNElts):
                         var c_idx_load: Int = channel_start + i
                         if c_idx_load < nChannels:
                             var prev_offset: UInt32 = (
@@ -1662,8 +1620,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
                     # Load SIMD vector manually using pointer arithmetic
                     input_chunk = 0
 
-                    @parameter
-                    for i in range(kNElts):
+                    comptime for i in range(kNElts):
                         var c_idx_load: Int = channel_start + i
                         if c_idx_load < nChannels:
                             var current_offset: UInt32 = (
@@ -1681,8 +1638,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
@@ -1693,8 +1649,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
             # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             var input_window: SIMD[x_dtype, kWidth] = 0
 
-            @parameter
-            for w in range(kWidth):
+            comptime for w in range(kWidth):
                 var input_l: Int = seq_idx - (kWidth - 1 - w)
                 if input_l >= 0 and input_l < nSeqLen:
                     var load_offset: UInt32 = (
@@ -1711,9 +1666,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
 
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -1721,8 +1674,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
                     ]()
             out_vals_channel[i] = out_val
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
@@ -1863,32 +1815,28 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
         var w2: Scalar[weight_dtype] = 0
         var w3: Scalar[weight_dtype] = 0
 
-        @parameter
-        if kWidth >= 1:
+        comptime if kWidth >= 1:
             w0 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 2:
+        comptime if kWidth >= 2:
             w1 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 3:
+        comptime if kWidth >= 3:
             w2 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 4:
+        comptime if kWidth >= 4:
             w3 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
@@ -1898,8 +1846,7 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -1916,8 +1863,7 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
             # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
-            @parameter
-            if kWidth == 1:
+            comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
                     var input_seq_idx_offset: UInt32 = (
@@ -2092,9 +2038,7 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -2102,8 +2046,7 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
                     ]()
             out_vals_channel[i] = out_val
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -2206,32 +2149,28 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
         var w2: Scalar[weight_dtype] = 0
         var w3: Scalar[weight_dtype] = 0
 
-        @parameter
-        if kWidth >= 1:
+        comptime if kWidth >= 1:
             w0 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 2:
+        comptime if kWidth >= 2:
             w1 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 3:
+        comptime if kWidth >= 3:
             w2 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 4:
+        comptime if kWidth >= 4:
             w3 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
@@ -2241,8 +2180,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -2259,8 +2197,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
             # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
-            @parameter
-            if kWidth == 1:
+            comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
                     var input_seq_idx_offset: UInt32 = (
@@ -2435,9 +2372,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -2445,8 +2380,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
                     ]()
             out_vals_channel[i] = out_val
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -2577,32 +2511,28 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
         var w2: Scalar[weight_dtype] = 0
         var w3: Scalar[weight_dtype] = 0
 
-        @parameter
-        if kWidth >= 1:
+        comptime if kWidth >= 1:
             w0 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 2:
+        comptime if kWidth >= 2:
             w1 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 3:
+        comptime if kWidth >= 3:
             w2 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 4:
+        comptime if kWidth >= 4:
             w3 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
@@ -2611,8 +2541,7 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -2629,8 +2558,7 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
             # For channel-first (B, C, L): offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
-            @parameter
-            if kWidth == 1:
+            comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
                     var input_seq_idx_offset: UInt32 = (
@@ -2805,9 +2733,7 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -2815,8 +2741,7 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
                     ]()
             out_vals_channel[i] = out_val
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -2914,32 +2839,28 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
         var w2: Scalar[weight_dtype] = 0
         var w3: Scalar[weight_dtype] = 0
 
-        @parameter
-        if kWidth >= 1:
+        comptime if kWidth >= 1:
             w0 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 2:
+        comptime if kWidth >= 2:
             w1 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 3:
+        comptime if kWidth >= 3:
             w2 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
                 ]
             )
 
-        @parameter
-        if kWidth >= 4:
+        comptime if kWidth >= 4:
             w3 = Scalar[weight_dtype](
                 weight.ptr[
                     UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
@@ -2948,8 +2869,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -2966,8 +2886,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
             # For channel-first (B, C, L): offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
-            @parameter
-            if kWidth == 1:
+            comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
                     var input_seq_idx_offset: UInt32 = (
@@ -3142,9 +3061,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-
-                @parameter
-                if output_dtype.is_floating_point():
+                comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
                     out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -3152,8 +3069,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
                     ]()
             out_vals_channel[i] = out_val
 
-        @parameter
-        for i in range(kNElts):
+        comptime for i in range(kNElts):
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
@@ -3308,9 +3224,7 @@ fn causal_conv1d_update_cpu[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -3453,9 +3367,7 @@ fn causal_conv1d_update_cpu_no_bias[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -3630,9 +3542,7 @@ fn causal_conv1d_update_gpu[
         )
         var out_val: Scalar[output_dtype] = conv_sum
         if silu_active:
-
-            @parameter
-            if output_dtype.is_floating_point():
+            comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -3798,9 +3708,7 @@ fn causal_conv1d_update_gpu_no_bias[
         )
         var out_val: Scalar[output_dtype] = conv_sum
         if silu_active:
-
-            @parameter
-            if output_dtype.is_floating_point():
+            comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[DType.float32]()).cast[

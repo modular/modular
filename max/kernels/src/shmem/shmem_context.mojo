@@ -104,8 +104,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
     the exception.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         _shmem_launch_mpi[func]()
     elif has_amd_gpu_accelerator():
         _shmem_launch_tcp[func]()

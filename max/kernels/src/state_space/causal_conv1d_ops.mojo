@@ -102,8 +102,7 @@ struct CausalConv1D[activation: StaticString]:
 
         var silu_activation = Self.activation == "silu"
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_channel_first_fwd_cpu[
                 X.dtype,
                 X.layout,
@@ -478,8 +477,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
 
         var silu_activation = Self.activation == "silu"
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_update_cpu[
                 X.dtype,
                 X.layout,

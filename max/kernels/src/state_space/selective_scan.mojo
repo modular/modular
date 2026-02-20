@@ -152,8 +152,7 @@ fn selective_scan_fwd_gpu[
     var has_out_z = out_z.dim(0) > 0
 
     # Pre-multiply A by LOG2E for exp2 optimization
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -224,8 +223,7 @@ fn selective_scan_fwd_gpu[
         for i in range(TILE_SIZE):
             var b_base = curr_B_offset + UInt32(i * B_strides[3])
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 B_tiles[n][i] = Scalar[kernel_dtype](
                     B.ptr[b_base + UInt32(n * B_strides[2])]
                 ).cast[DType.float32]()
@@ -234,8 +232,7 @@ fn selective_scan_fwd_gpu[
         for i in range(TILE_SIZE):
             var c_base = curr_C_offset + UInt32(i * C_strides[3])
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 C_tiles[n][i] = Scalar[kernel_dtype](
                     C.ptr[c_base + UInt32(n * C_strides[2])]
                 ).cast[DType.float32]()
@@ -264,8 +261,7 @@ fn selective_scan_fwd_gpu[
             var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 B_vals[n] = B_tiles[n][i]
                 C_vals[n] = C_tiles[n][i]
 
@@ -295,9 +291,7 @@ fn selective_scan_fwd_gpu[
             var is_last_step = current_t == seqlen - 1
 
             if is_chunk_boundary or is_last_step:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var x_offset_a = UInt32(
                         b * x_strides[0]
                         + d * x_strides[1]
@@ -371,8 +365,7 @@ fn selective_scan_fwd_gpu[
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
             ).cast[DType.float32]()
@@ -411,9 +404,7 @@ fn selective_scan_fwd_gpu[
         var is_chunk_boundary = t_in_chunk == chunk_size
         var is_last_step = t == seqlen - 1
         if is_chunk_boundary or is_last_step:
-
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
                     b * x_strides[0]
                     + d * x_strides[1]
@@ -494,8 +485,7 @@ fn selective_scan_fwd_gpu_minimal[
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -530,8 +520,7 @@ fn selective_scan_fwd_gpu_minimal[
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
             ).cast[DType.float32]()
@@ -560,9 +549,7 @@ fn selective_scan_fwd_gpu_minimal[
         var is_chunk_boundary = t_in_chunk == chunk_size
         var is_last_step = t == seqlen - 1
         if is_chunk_boundary or is_last_step:
-
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
                     b * x_strides[0]
                     + d * x_strides[1]
@@ -697,8 +684,7 @@ fn selective_scan_update_gpu[
     # Load A values for this dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -710,8 +696,7 @@ fn selective_scan_update_gpu[
     # Load B values using group_id
     var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var B_offset = UInt32(
             b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
         )
@@ -723,8 +708,7 @@ fn selective_scan_update_gpu[
     # Load current state from state_in
     var state_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var state_offset = UInt32(
             b * state_in_strides[0]
             + d * state_in_strides[1]
@@ -738,8 +722,7 @@ fn selective_scan_update_gpu[
     state_vals = state_vals * dA + dB * x_val
 
     # Store updated state to state_out
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var state_offset = UInt32(
             b * state_out_strides[0]
             + d * state_out_strides[1]
@@ -751,8 +734,7 @@ fn selective_scan_update_gpu[
     # Load C values using group_id
     var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var C_offset = UInt32(
             b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
         )
@@ -863,8 +845,7 @@ fn selective_scan_update_cpu[
         # Load A values and pre-multiply by LOG2E
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
@@ -877,8 +858,7 @@ fn selective_scan_update_cpu[
         # Load B values using group_id
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var B_offset = UInt32(
                 b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
             )
@@ -892,8 +872,7 @@ fn selective_scan_update_cpu[
         # Load current state from state_in
         var state_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var state_offset = UInt32(
                 b * state_in_strides[0]
                 + d * state_in_strides[1]
@@ -907,8 +886,7 @@ fn selective_scan_update_cpu[
         state_vals = state_vals * dA + dB * x_val
 
         # Store updated state to state_out
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var state_offset = UInt32(
                 b * state_out_strides[0]
                 + d * state_out_strides[1]
@@ -921,8 +899,7 @@ fn selective_scan_update_cpu[
         # Load C values using group_id
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var C_offset = UInt32(
                 b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
             )
@@ -1038,8 +1015,7 @@ fn selective_scan_fwd_cpu[
         var has_z = z.dim(0) > 0
         var has_out_z = out_z.dim(0) > 0
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
@@ -1112,8 +1088,7 @@ fn selective_scan_fwd_cpu[
                 var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
                 var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var b_off = (
                         curr_B_offset
                         + UInt32(i * B_strides[3])
@@ -1162,9 +1137,7 @@ fn selective_scan_fwd_cpu[
                 var is_last_step = current_t == seqlen - 1
 
                 if is_chunk_boundary or is_last_step:
-
-                    @parameter
-                    for n in range(DSTATE):
+                    comptime for n in range(DSTATE):
                         var x_offset_a = UInt32(
                             b * x_strides[0]
                             + d * x_strides[1]
@@ -1216,8 +1189,7 @@ fn selective_scan_fwd_cpu[
             var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
                 ).cast[DType.float32]()
@@ -1256,9 +1228,7 @@ fn selective_scan_fwd_cpu[
             var is_chunk_boundary = t_in_chunk == chunk_size
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var x_offset_a = UInt32(
                         b * x_strides[0]
                         + d * x_strides[1]
@@ -1338,8 +1308,7 @@ fn selective_scan_fwd_cpu_minimal[
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
@@ -1376,8 +1345,7 @@ fn selective_scan_fwd_cpu_minimal[
             var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
                 ).cast[DType.float32]()
@@ -1406,9 +1374,7 @@ fn selective_scan_fwd_cpu_minimal[
             var is_chunk_boundary = t_in_chunk == chunk_size
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var x_offset_a = UInt32(
                         b * x_strides[0]
                         + d * x_strides[1]
@@ -1572,8 +1538,7 @@ fn ssd_combined_gpu[
     var has_out_z = out_z.dim(0) > 0
 
     # Pre-multiply A by LOG2E
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var A_offset = UInt32(d) * A_d_stride + UInt32(n) * A_n_stride
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -1671,8 +1636,7 @@ fn ssd_combined_gpu[
             var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 var b_off = (
                     curr_B_offset
                     + UInt32(i) * B_t_stride
@@ -1730,9 +1694,7 @@ fn ssd_combined_gpu[
             var is_last_step = current_t == seqlen - 1
 
             if is_chunk_boundary or is_last_step:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var x_offset_a = UInt32(
                         b * Int(x_b_stride)
                         + d * Int(x_d_stride)
@@ -1791,8 +1753,7 @@ fn ssd_combined_gpu[
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.ptr[curr_B_offset + UInt32(n) * B_n_stride]
             ).cast[DType.float32]()
@@ -1842,9 +1803,7 @@ fn ssd_combined_gpu[
         var is_chunk_boundary = t_in_chunk == chunk_size
         var is_last_step = t == seqlen - 1
         if is_chunk_boundary or is_last_step:
-
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
                     b * Int(x_b_stride)
                     + d * Int(x_d_stride)
@@ -1984,8 +1943,7 @@ fn ssd_combined_cpu[
         var has_z = z.dim(0) > 0
         var has_out_z = out_z.dim(0) > 0
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var A_offset = UInt32(d) * A_d_stride + UInt32(n) * A_n_stride
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
@@ -2082,8 +2040,7 @@ fn ssd_combined_cpu[
                 var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
                 var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var b_off = (
                         curr_B_offset
                         + UInt32(i) * B_t_stride
@@ -2137,9 +2094,7 @@ fn ssd_combined_cpu[
                 var is_last_step = current_t == seqlen - 1
 
                 if is_chunk_boundary or is_last_step:
-
-                    @parameter
-                    for n in range(DSTATE):
+                    comptime for n in range(DSTATE):
                         var x_offset_a = UInt32(
                             b * Int(x_b_stride)
                             + d * Int(x_d_stride)
@@ -2197,8 +2152,7 @@ fn ssd_combined_cpu[
             var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.ptr[curr_B_offset + UInt32(n) * B_n_stride]
                 ).cast[DType.float32]()
@@ -2247,9 +2201,7 @@ fn ssd_combined_cpu[
             var is_chunk_boundary = t_in_chunk == chunk_size
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var x_offset_a = UInt32(
                         b * Int(x_b_stride)
                         + d * Int(x_d_stride)
@@ -2460,8 +2412,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
         # Pre-load A values
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var A_offset = UInt32(h) * A_stride
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
@@ -2566,8 +2517,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
             var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 # B channel: dim + group_id * dstate + n
                 var B_channel_in_xBC = dim + group_id * DSTATE + n
                 var B_channel_in_zxbcdt = xBC_start + B_channel_in_xBC
@@ -2767,9 +2717,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
             var is_last_step = t == seqlen - 1
 
             if is_chunk_boundary or is_last_step:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var x_offset_a = UInt32(
                         b * Int(x_b_stride)
                         + d * Int(x_d_stride)
@@ -2936,8 +2884,7 @@ fn mamba_split_conv1d_scan_combined_gpu[
     # Pre-load A values
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var A_offset = UInt32(h) * A_stride
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -3034,8 +2981,7 @@ fn mamba_split_conv1d_scan_combined_gpu[
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             # B channel
             var B_channel_in_xBC = dim + group_id * DSTATE + n
             var B_channel_in_zxbcdt = xBC_start + B_channel_in_xBC
@@ -3229,9 +3175,7 @@ fn mamba_split_conv1d_scan_combined_gpu[
         var is_last_step = t == seqlen - 1
 
         if is_chunk_boundary or is_last_step:
-
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
                     b * Int(x_b_stride)
                     + d * Int(x_d_stride)

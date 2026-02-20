@@ -23,16 +23,14 @@ fn roundeven_to_int32[
     # Use the AVX512 instruction `vcvtps2dq` with embedded rounding control
     # set to do rounding to nearest with ties to even (roundeven). This
     # replaces a `vrndscaleps` and `vcvttps2dq` instruction pair.
-    @parameter
-    if (
+    comptime if (
         CompilationTarget.has_avx512f()
         and dtype == DType.float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[DType.int32, simd_width]()
 
-        @parameter
-        for i in range(0, simd_width, native_width):
+        comptime for i in range(0, simd_width, native_width):
             var part = llvm_intrinsic[
                 "llvm.x86.avx512.mask.cvtps2dq.512",
                 SIMD[DType.int32, native_width],
@@ -50,16 +48,14 @@ fn roundeven_to_int32[
     # Use the NEON instruction `fcvtns` to fuse the conversion to int32
     # with rounding to nearest with ties to even (roundeven). This
     # replaces a `frintn` and `fcvtzs` instruction pair.
-    @parameter
-    if (
+    comptime if (
         CompilationTarget.has_neon()
         and dtype == DType.float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[DType.int32, simd_width]()
 
-        @parameter
-        for i in range(0, simd_width, native_width):
+        comptime for i in range(0, simd_width, native_width):
             var part = llvm_intrinsic[
                 "llvm.aarch64.neon.fcvtns.v4i32.v4f32",
                 SIMD[DType.int32, native_width],

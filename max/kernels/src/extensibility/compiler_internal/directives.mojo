@@ -41,8 +41,7 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
     """Return a `DimList` of strides for data laid out in row-major order, from
     a `DimList` representing the shape."""
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         return 1
     elif rank == 2:
         return DimList(shape.get[1](), 1)

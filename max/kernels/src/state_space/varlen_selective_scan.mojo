@@ -113,8 +113,7 @@ fn varlen_selective_state_update_gpu[
     var group_id = pid_h_int // nheads_ngroups_ratio
 
     # Process BLOCK_SIZE_M dims per thread
-    @parameter
-    for local_m in range(BLOCK_SIZE_M):
+    comptime for local_m in range(BLOCK_SIZE_M):
         var m = pid_m_int * BLOCK_SIZE_M + local_m
         if m >= dim:
             continue
@@ -154,8 +153,7 @@ fn varlen_selective_state_update_gpu[
         var out_val = Float32(0.0)
 
         # Process each dstate element
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             # Load A value
             var A_offset = UInt32(
                 pid_h_int * A_strides[0] + m * A_strides[1] + n * A_strides[2]
@@ -350,8 +348,7 @@ fn varlen_selective_scan_fwd_gpu[
     # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -371,9 +368,7 @@ fn varlen_selective_scan_fwd_gpu[
         use_initial_state = Bool(init_state_val)
 
     if use_initial_state:
-
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var state_offset = UInt32(
                 cache_idx * ssm_states_strides[0]
                 + d * ssm_states_strides[1]
@@ -413,8 +408,7 @@ fn varlen_selective_scan_fwd_gpu[
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var B_offset = UInt32(
                 group_id * B_strides[0]
                 + n * B_strides[1]
@@ -467,8 +461,7 @@ fn varlen_selective_scan_fwd_gpu[
             )
 
     # Store final state to cache
-    @parameter
-    for n in range(DSTATE):
+    comptime for n in range(DSTATE):
         var state_offset = UInt32(
             cache_idx * ssm_states_strides[0]
             + d * ssm_states_strides[1]
@@ -581,8 +574,7 @@ fn varlen_selective_state_update_cpu[
         var out_val = Float32(0.0)
 
         # Process each dstate element
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             # Load A value
             var A_offset = UInt32(
                 h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
@@ -745,8 +737,7 @@ fn varlen_selective_scan_fwd_cpu[
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        @parameter
-        for n in range(DSTATE):
+        comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
@@ -779,9 +770,7 @@ fn varlen_selective_scan_fwd_cpu[
                 use_initial_state = Bool(init_state_val)
 
             if use_initial_state:
-
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var state_offset = UInt32(
                         cache_idx * ssm_states_strides[0]
                         + d * ssm_states_strides[1]
@@ -823,8 +812,7 @@ fn varlen_selective_scan_fwd_cpu[
                 var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
                 var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-                @parameter
-                for n in range(DSTATE):
+                comptime for n in range(DSTATE):
                     var B_offset = UInt32(
                         group_id * B_strides[0]
                         + n * B_strides[1]
@@ -871,8 +859,7 @@ fn varlen_selective_scan_fwd_cpu[
                     )
 
             # Store final state
-            @parameter
-            for n in range(DSTATE):
+            comptime for n in range(DSTATE):
                 var state_offset = UInt32(
                     cache_idx * ssm_states_strides[0]
                     + d * ssm_states_strides[1]

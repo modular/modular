@@ -31,8 +31,7 @@ comptime MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn mpi_lib_name() -> String:
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         return "nvshmem_bootstrap_mpi.so.3"
     else:
         return "libmpi.so"
@@ -51,8 +50,7 @@ fn _init_mpi_dylib() -> OwnedDLHandle:
     var flags = RTLD.NOW | RTLD.GLOBAL
 
     # AMD interaction with libmpi needs the handle to stay alive after MPI_Finalize
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         flags = flags | RTLD.NODELETE
 
     try:

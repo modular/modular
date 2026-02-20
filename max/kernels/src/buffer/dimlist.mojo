@@ -514,8 +514,7 @@ struct DimList(
 
         var res = 1
 
-        @parameter
-        for i in range(start, end):
+        comptime for i in range(start, end):
             res *= self.value[i].get()
         return res
 
@@ -539,8 +538,7 @@ struct DimList(
 
     @always_inline
     fn _contains_impl[i: Int, length: Int](self, value: Dim) -> Bool:
-        @parameter
-        if i >= length:
+        comptime if i >= length:
             return False
         else:
             return self.at[i]() == value or self._contains_impl[i + 1, length](
@@ -613,8 +611,7 @@ struct DimList(
         )
         var index_list = IndexList[rank]()
 
-        @parameter
-        for idx in range(rank):
+        comptime for idx in range(rank):
             index_list[idx] = Int(self.at[idx]())
 
         return index_list
@@ -712,8 +709,7 @@ fn _make_tuple[
     """
     var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
 
-    @parameter
-    for idx in range(size):
+    comptime for idx in range(size):
         tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
 
     return {tup}
@@ -736,11 +732,8 @@ fn _make_partially_static_index_list[
     """
     var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
 
-    @parameter
-    for idx in range(size):
-
-        @parameter
-        if static_list.at[idx]().is_dynamic():
+    comptime for idx in range(size):
+        comptime if static_list.at[idx]().is_dynamic():
             tup = tup._replace[idx](result._int_type(dynamic_list[idx]))
         else:
             tup = tup._replace[idx](
