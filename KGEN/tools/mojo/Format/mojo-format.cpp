@@ -65,15 +65,13 @@ static int format(const State &state) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
 
-  // Check that the inputs are all valid Mojo/Python files, or directories.
+  // Check that the inputs are all valid Mojo files, or directories.
   std::error_code ec;
-  bool hasStdin = false;
   for (const std::string &input : inputs) {
     // Allow "-" to represent stdin.
     if (input == "-") {
       if (inputs.size() > 1)
         return state.reportError("cannot mix '-' with other inputs");
-      hasStdin = true;
       break;
     }
 
@@ -88,10 +86,10 @@ static int format(const State &state) {
     if (ec)
       return state.reportError(ec.message());
 
-    if (!llvm::is_contained(ArrayRef<StringRef>{".mojo", ".🔥", ".py"},
+    if (!llvm::is_contained(ArrayRef<StringRef>{".mojo", ".🔥"},
                             inputPath.extension().string())) {
       return state.reportError(
-          llvm::formatv("invalid input '{0}', expected a source .mojo/.🔥/.py "
+          llvm::formatv("invalid input '{0}', expected a source .mojo/.🔥 "
                         "file, or a directory",
                         input));
     }
@@ -135,9 +133,8 @@ static int format(const State &state) {
     mblackArgs.push_back("--line-length");
     mblackArgs.push_back(lineLengthArg);
   }
-  // If we're formatting stdin, we need to tell mblack to expect a Mojo file.
-  if (hasStdin)
-    llvm::append_range(mblackArgs, ArrayRef<StringRef>{"-t", "mojo"});
+  // Tell mblack to only format Mojo files, not Python files.
+  llvm::append_range(mblackArgs, ArrayRef<StringRef>{"-t", "mojo"});
   if (isQuiet)
     mblackArgs.push_back("-q");
   llvm::append_range(mblackArgs, inputs);
