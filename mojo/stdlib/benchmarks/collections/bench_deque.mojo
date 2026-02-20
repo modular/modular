@@ -115,7 +115,7 @@ def main():
     var m = Bench(BenchConfig(num_repetitions=20))
     comptime sizes = (100, 1_000, 10_000, 100_000)
 
-    @parameter
+    comptime
     for i in range(len(sizes)):
         comptime size = sizes[i]
         m.bench_function[bench_deque_copy_int[size]](
