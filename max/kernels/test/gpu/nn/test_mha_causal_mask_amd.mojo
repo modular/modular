@@ -415,6 +415,5 @@ def main():
             128,
         ]
 
-        @parameter
-        for depth in depths:
+        comptime for depth in depths:
             test_helper[depth](ctx)

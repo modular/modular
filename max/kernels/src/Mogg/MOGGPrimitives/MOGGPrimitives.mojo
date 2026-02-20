@@ -217,8 +217,7 @@ fn create_tensor_spec_async[
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
     var storage = InlineArray[Int, spec_rank](uninitialized=True)
 
-    @parameter
-    for i in range(spec_rank):
+    comptime for i in range(spec_rank):
         storage[i] = spec[i]
 
     external_call["MGP_RT_CreateAsyncTensorShape", NoneType](
@@ -392,8 +391,7 @@ fn unpack_tensor[
         tensor_async_ptr,
     )
 
-    @parameter
-    if tensor_rank == 0:
+    comptime if tensor_rank == 0:
         shapes[0] = 1
 
     return NDBuffer[dtype, buffer_rank](
@@ -413,8 +411,7 @@ fn unpack_tensor_spec[
     ](storage.unsafe_ptr(), spec_rank, async_ptr)
     var shape = IndexList[spec_rank]()
 
-    @parameter
-    for i in range(spec_rank):
+    comptime for i in range(spec_rank):
         shape[i] = storage[i]
 
     return shape
@@ -457,8 +454,7 @@ fn mgp_tensor_create[
     buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
     spec: IndexList[spec_rank],
 ) -> NDBuffer[dtype, buffer_rank, MutAnyOrigin]:
-    @parameter
-    if spec_rank == 0:
+    comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
         return NDBuffer[dtype, buffer_rank](
@@ -482,8 +478,7 @@ fn mgp_tensor_extract_tensor_spec[
 ](buffer: NDBuffer[dtype, buffer_rank, ImmutAnyOrigin]) -> IndexList[
     tensor_rank
 ]:
-    @parameter
-    if tensor_rank == 0:
+    comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
@@ -685,8 +680,7 @@ fn mgp_buffer_device_to_host[
     host_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
+    comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             host_buf.data,
             DeviceBuffer[DType.int8](
@@ -711,8 +705,7 @@ fn mgp_buffer_device_to_device[
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
+    comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dst_dev_ctx[],
@@ -746,8 +739,7 @@ fn mgp_buffer_host_to_device[
     dev_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
+    comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dev_ctx[],
@@ -1085,8 +1077,7 @@ fn get_simd_width_for_dtypes[
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 
-    @parameter
-    for i in range(dtypes.size - 1):
+    comptime for i in range(dtypes.size - 1):
         width = max(get_kernel_simd_width[dtypes[i + 1], target](), width)
 
     return width
@@ -1148,8 +1139,7 @@ fn to_managed_tensor_slice[
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
         shape_tuple[i] = shape_ptr[i]
         stride_tuple[i] = stride
@@ -1228,8 +1218,7 @@ fn _to_managed_tensor_slice_index_list_shape[
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
@@ -1274,8 +1263,7 @@ fn to_managed_tensor_slice_list[
 
         var dims = IndexList[rank]()
 
-        @parameter
-        for dim in range(rank):
+        comptime for dim in range(rank):
             dims[dim] = dim_values[dim + i * rank].__int__()
 
         var buffer = _to_managed_tensor_slice_index_list_shape[
@@ -1534,8 +1522,7 @@ fn mogg_async_pack_borrow[
     value to the given async value in that it's a simple refcount increment.
     """
 
-    @parameter
-    if is_tensor:
+    comptime if is_tensor:
         external_call["MGP_RT_TensorBorrowV2", NoneType](
             borrower,
             buffer.data,
@@ -1721,11 +1708,8 @@ fn split_dim_indices[
     # Or [21 // 8, 21 % 8, ...old dims...].
     # In this case, the axis = 0 and the new_shape_dim = 8.
 
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i == axis:
+    comptime for i in range(rank + 1):
+        comptime if i == axis:
             out[i] = indices[axis] // Int(new_shape_dim)
         elif i == axis + 1:
             out[i] = indices[axis] % Int(new_shape_dim)
@@ -1751,11 +1735,8 @@ fn merge_dim_indices[
     # Or [2 * 8 + 5, 16, 1].
     # In this case, the axis = 0 and the old_shape_dim = 8.
 
-    @parameter
-    for i in range(rank - 1):
-
-        @parameter
-        if i == axis:
+    comptime for i in range(rank - 1):
+        comptime if i == axis:
             out[i] = fma(indices[i], Int(old_shape_dim), indices[i + 1])
         elif i < axis:
             out[i] = indices[i]
@@ -1772,11 +1753,8 @@ fn insert_index[
 ](indices: IndexList[rank]) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i < axis:
+    comptime for i in range(rank + 1):
+        comptime if i < axis:
             out[i] = indices[i]
         elif i > axis:
             out[i] = indices[i - 1]
@@ -1787,8 +1765,7 @@ fn insert_index[
 
 
 fn all_zeros(indices: IndexList) -> Bool:
-    @parameter
-    for i in range(indices.size):
+    comptime for i in range(indices.size):
         if indices[i] != 0:
             return False
     return True

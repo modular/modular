@@ -17,7 +17,6 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
     PixelGenerationTokenizer,
     SupportedArchitecture,
-    SupportedEncoding,
 )
 
 from .model_config import FluxConfig
@@ -26,8 +25,8 @@ from .pipeline_flux import FluxPipeline
 flux1_arch = SupportedArchitecture(
     name="FluxPipeline",
     task=PipelineTask.PIXEL_GENERATION,
-    default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={SupportedEncoding.bfloat16: []},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16": []},
     example_repo_ids=[
         "black-forest-labs/FLUX.1-dev",
         "black-forest-labs/FLUX.1-schnell",

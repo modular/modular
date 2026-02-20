@@ -66,11 +66,8 @@ fn outer_product_acc(
     comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
     comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             res[i, j] += rebind[res.element_type](
                 lhs[i].cast[dtype]()
             ) * rebind[res.element_type](rhs[j].cast[dtype]())
@@ -91,21 +88,15 @@ fn _reduce[
         inp.rank - 1 == outp.rank
     ), "_reduce expects output of rank = inp.rank - 1"
 
-    @parameter
-    for dim in range(axis):
-
-        @parameter
-        if dim != axis:
+    comptime for dim in range(axis):
+        comptime if dim != axis:
             comptime assert dim != UNKNOWN_VALUE
             comptime assert (
                 inp.shape[dim]() == outp.shape[dim]()
             ), "_reduce expects none reduction dims to be the same"
 
-    @parameter
-    for dim in range(axis + 1, inp.rank):
-
-        @parameter
-        if dim != axis:
+    comptime for dim in range(axis + 1, inp.rank):
+        comptime if dim != axis:
             comptime assert dim != UNKNOWN_VALUE
             comptime assert (dim - 1) != UNKNOWN_VALUE
             comptime assert (
@@ -115,15 +106,11 @@ fn _reduce[
     # TODO(KERN-777): We need to relax this constraine.
     comptime assert inp.rank == 2, "Only rank-2 _reduce is supported"
 
-    @parameter
-    if inp.rank == 2 and axis == 1:
-
-        @parameter
-        for i in range(inp.shape[0]()):
+    comptime if inp.rank == 2 and axis == 1:
+        comptime for i in range(inp.shape[0]()):
             var reduce_val = init_func[outp.dtype, outp.element_size]()
 
-            @parameter
-            for j in range(inp.shape[1]()):
+            comptime for j in range(inp.shape[1]()):
                 reduce_val = func(
                     reduce_val,
                     rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
@@ -132,13 +119,10 @@ fn _reduce[
             outp[i] = reduce_val
 
     elif inp.rank == 2 and axis == 0:
-
-        @parameter
-        for j in range(inp.shape[1]()):
+        comptime for j in range(inp.shape[1]()):
             var reduce_val = init_func[outp.dtype, outp.element_size]()
 
-            @parameter
-            for i in range(inp.shape[0]()):
+            comptime for i in range(inp.shape[0]()):
                 reduce_val = func(
                     reduce_val,
                     rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
@@ -314,8 +298,7 @@ fn max[
     ), "max expects tensor of statically know shape"
     var res_tensor = type_of(x).stack_allocation()
 
-    @parameter
-    for i in range(res_tensor.layout.size()):
+    comptime for i in range(res_tensor.layout.size()):
         comptime idx = x.layout(i)
         res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
     return res_tensor
@@ -423,8 +406,7 @@ fn mean[
 
     comptime src_dtype = src.dtype
 
-    @parameter
-    if dst.dtype.is_integral():
+    comptime if dst.dtype.is_integral():
 
         @always_inline
         fn normalize_integral[

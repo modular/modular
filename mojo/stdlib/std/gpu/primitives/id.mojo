@@ -84,8 +84,7 @@ fn lane_id() -> UInt:
     """
     comptime assert is_gpu(), "This function only applies to GPUs."
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return UInt(
             Int(
                 llvm_intrinsic[
@@ -167,8 +166,7 @@ fn sm_id() -> UInt:
         The SM ID of the current thread.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return broadcast(
             UInt(
                 Int(
@@ -204,8 +202,7 @@ struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
     @always_inline("nodebug")
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
         elif is_amd_gpu():
             return "llvm.amdgcn.workitem.id." + dim
@@ -251,8 +248,7 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
     @always_inline("nodebug")
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
         elif is_amd_gpu():
             return "llvm.amdgcn.workgroup.id." + dim
@@ -304,8 +300,7 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
             return UInt(
                 Int(
@@ -328,8 +323,7 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
 
             @parameter
             fn _get_offset() -> Int:
-                @parameter
-                if dim == "x":
+                comptime if dim == "x":
                     return 6
                 elif dim == "y":
                     return 7
@@ -374,8 +368,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
             return UInt(
                 Int(
@@ -388,8 +381,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
 
             @parameter
             fn _get_offset() -> Int:
-                @parameter
-                if dim == "x":
+                comptime if dim == "x":
                     return 0
                 elif dim == "y":
                     return 1

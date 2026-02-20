@@ -92,8 +92,7 @@ fn inlined_assembly[
     comptime asm_kgen_string = _get_kgen_string[asm]()
     comptime constraints_kgen_string = _get_kgen_string[constraints]()
 
-    @parameter
-    if _mlirtype_is_eq[result_type, NoneType]():
+    comptime if _mlirtype_is_eq[result_type, NoneType]():
         __mlir_op.`pop.inline_asm`[
             _type=None,
             assembly=asm_kgen_string,

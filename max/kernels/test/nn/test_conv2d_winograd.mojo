@@ -32,8 +32,7 @@ fn matmul[
     B: NDBuffer[dtype, 2, _, _],
 ):
     # TODO: Add constrained[]?
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(N):
             for j in range(K):
                 var sum = Scalar[dtype](0)
@@ -116,11 +115,8 @@ fn winograd_2d_convolution_3x3[
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
             # Extract 4x4 input tile
-            @parameter
-            for di in range(4):
-
-                @parameter
-                for dj in range(4):
+            comptime for di in range(4):
+                comptime for dj in range(4):
                     var v = Scalar[dtype](0)
                     if (i + di) < H and (j + dj) < W:
                         v = signal[i + di, j + dj]
@@ -140,11 +136,8 @@ fn winograd_2d_convolution_3x3[
             matmul[2, 2, 4, True](y, scratch, A)
 
             # Store results
-            @parameter
-            for di in range(2):
-
-                @parameter
-                for dj in range(2):
+            comptime for di in range(2):
+                comptime for dj in range(2):
                     if i + di < Oh and j + dj < Ow:
                         output[i + di, j + dj] = y[di, dj]
 

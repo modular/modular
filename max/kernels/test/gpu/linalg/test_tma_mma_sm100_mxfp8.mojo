@@ -340,9 +340,7 @@ fn block_scaled_mxfp8_kernel[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for i in range(BM // SF_MN_GROUP_SIZE):
+            comptime for i in range(BM // SF_MN_GROUP_SIZE):
                 comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                 comptime a_scales_offset = a_scales_smem_layout(idx) * size_of[
                     a_scales_type
@@ -357,8 +355,7 @@ fn block_scaled_mxfp8_kernel[
                     cta_group=1, datapaths=32, bits=128, multicast="warpx4"
                 ](a_scales_tmem_addr, a_scales_desc)
 
-            @parameter
-            for i in range(BN // SF_MN_GROUP_SIZE):
+            comptime for i in range(BN // SF_MN_GROUP_SIZE):
                 comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                 comptime b_scales_offset = b_scales_smem_layout(idx) * size_of[
                     b_scales_type
@@ -394,8 +391,7 @@ fn block_scaled_mxfp8_kernel[
                     c_scale=0,
                 )
 
-                @parameter
-                for j in range(1, num_k_mmas):
+                comptime for j in range(1, num_k_mmas):
                     runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
                     ].update_desc_with_sf_id[UInt32(j)](
@@ -414,9 +410,7 @@ fn block_scaled_mxfp8_kernel[
                         c_scale=1,
                     )
             else:
-
-                @parameter
-                for j in range(num_k_mmas):
+                comptime for j in range(num_k_mmas):
                     var runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
                     ].update_desc_with_sf_id[UInt32(j)](
@@ -461,11 +455,8 @@ fn block_scaled_mxfp8_kernel[
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
@@ -479,11 +470,8 @@ fn block_scaled_mxfp8_kernel[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
 
                     c_gmem_frag[m_vec, n_vec] = rebind[

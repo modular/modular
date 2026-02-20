@@ -138,7 +138,9 @@ def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
     model.vision_model = Mock()
     model.language_model = Mock()
     model.model_config = mock_model_config
-    model.huggingface_config = mock_config
+    mock_pipeline_config = Mock()
+    mock_pipeline_config.model.huggingface_config = mock_config
+    model.pipeline_config = mock_pipeline_config
 
     # Mock the _batch_image_token_indices method to avoid complex image processing
     def mock_batch_image_token_indices(

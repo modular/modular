@@ -496,6 +496,9 @@ async def chat_session_driver(
     chat_session: ChatSession,
     max_chat_len: int,
     delay_between_chat_turns: int | None,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
     skip_session_count: int | None = None,
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
@@ -503,9 +506,9 @@ async def chat_session_driver(
     request_func_input = RequestFuncInput(
         model=model_id,
         session_id=str(chat_session.id),
-        temperature=None,
-        top_p=None,
-        top_k=None,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
         prompt=[],
         images=[],
         api_url=api_url,
@@ -681,6 +684,9 @@ async def run_multiturn_benchmark(
     lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
     max_concurrency: int | None,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
 ) -> list[RequestFuncOutput]:
     """Run multi-turn chat benchmark scenario."""
 
@@ -711,6 +717,9 @@ async def run_multiturn_benchmark(
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
                 delay_between_chat_turns=delay_between_chat_turns,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
@@ -724,6 +733,9 @@ async def run_multiturn_benchmark(
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
                 delay_between_chat_turns=delay_between_chat_turns,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
                 skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
@@ -863,7 +875,7 @@ async def benchmark(
     lora_manager: LoRABenchmarkManager | None,
     trace_path: str | None = None,
     trace_session: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], BenchmarkMetrics]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set."
@@ -1021,6 +1033,9 @@ async def benchmark(
                     lora_manager=lora_manager,
                     warmup_delay_ms=warmup_delay_ms,
                     max_concurrency=max_concurrency,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
                 )
 
             # Close pbar if it was created
@@ -1376,7 +1391,7 @@ async def benchmark(
             "decode_batch_count": metrics.decode_batch_count,
         }
 
-    return result
+    return result, metrics
 
 
 def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
@@ -1656,7 +1671,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
-    benchmark_result: dict[str, Any] = asyncio.run(
+    benchmark_result, benchmark_metrics = asyncio.run(
         benchmark(
             backend=backend,
             api_url=api_url,
@@ -1690,8 +1705,11 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
     )
 
-    # Benchmark run failed if any failed requests
-    if benchmark_result["failures"] != 0:
+    # Validate that metrics are meaningful (no failures, not 0 or NaN)
+    ok, validation_errors = benchmark_metrics.validate()
+    if not ok:
+        for err in validation_errors:
+            logger.error(f"Benchmark result validation failed: {err}")
         logger.info("finished benchmark run: Failed.")
         sys.exit(1)
 
@@ -1773,6 +1791,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             "request_rate",
             "seed",
             "temperature",
+            "top_k",
             "top_p",
         )
         output_lens_dict = {}

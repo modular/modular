@@ -529,12 +529,10 @@ struct Codepoint(
 
         var num_bytes = self.utf8_byte_length()
 
-        @parameter
-        if not branchless:
+        comptime if not branchless:
             var is_ascii: Bool
 
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 is_ascii = likely(num_bytes == 1)
             else:
                 is_ascii = num_bytes == 1
@@ -563,9 +561,7 @@ struct Codepoint(
                 ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
                 ptr[3] = Byte((c & cont_mask) | cont_marker)
         else:
-
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 if likely(num_bytes == 1):
                     ptr[0] = UInt8(c)
                     return 1

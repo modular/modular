@@ -329,8 +329,7 @@ fn stsm_helper[
     var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
-    @parameter
-    for i in range(shape0 // stsmx4_row_size):
+    comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
         var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
         var v = vec.slice[
@@ -401,8 +400,7 @@ fn multi_stage_store_C[
 
     var warp_id = get_warp_id()
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
         var stage_tmem_addr = tmem_addr + UInt32(stage * stageN)
@@ -454,16 +452,14 @@ fn multi_stage_store_C[
             )
             c_tma_op.commit_group()
 
-        @parameter
         # Keep one tma store in fly
-        if stage < num_stages - 1:
+        comptime if stage < num_stages - 1:
             c_tma_op.wait_group[1]()
         # Last stage guard all tma store to finish
         else:
             c_tma_op.wait_group[0]()
 
-        @parameter
-        if stage > 0 and stage < num_stages - 1:
+        comptime if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
@@ -627,8 +623,7 @@ fn kernel_7[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
@@ -672,13 +667,11 @@ fn kernel_7[
     var a_multicast_mask: UInt16 = 0x0
     var b_multicast_mask: UInt16 = 0x0
 
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -1118,8 +1111,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("============================================")
     print("M, N, K, time(ms), TFLOPS")
 
-    @parameter
-    for i in range(len(shapes_dict)):
+    comptime for i in range(len(shapes_dict)):
         comptime shape = get_shapes_dict(i, shapes_dict)
         try:
             test_blackwell_kernel_7[

@@ -46,8 +46,7 @@ def test_constant_mem(ctx: DeviceContext):
             n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
-        @parameter
-        for i in range(n):
+        comptime for i in range(n):
             ptr[i] = Float32(i)
         return ptr
 
@@ -78,8 +77,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
             n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
-        @parameter
-        for i in range(n):
+        comptime for i in range(n):
             ptr[i] = Float32(i)
         return ptr
 

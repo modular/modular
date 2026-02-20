@@ -210,8 +210,7 @@ fn byte_swap[
     """
     comptime assert dtype.is_integral(), "must be integral"
 
-    @parameter
-    if bit_width_of[dtype]() < 16:
+    comptime if bit_width_of[dtype]() < 16:
         return val
     return llvm_intrinsic["llvm.bswap", type_of(val), has_side_effect=False](
         val
@@ -332,8 +331,7 @@ fn bit_width[
     comptime assert dtype.is_integral(), "must be integral"
     comptime bitwidth = bit_width_of[dtype]()
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return SIMD[dtype, width](bitwidth) - count_leading_zeros(val)
     else:
         # For signed integers, handle positive and negative separately
@@ -382,8 +380,7 @@ fn log2_floor[
     comptime bitwidth = bit_width_of[dtype]()
     var res = SIMD[dtype, width](bitwidth) - count_leading_zeros(val) - 1
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         return res | is_negative(val)
     else:
         return res
@@ -558,8 +555,7 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         -bit_width_of[Int]() <= shift < bit_width_of[Int]()
     ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_right[-shift](x)
@@ -593,8 +589,7 @@ fn rotate_bits_left[
         SIMD vector with each element rotated left by `shift` bits.
     """
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_right[-shift](x)
@@ -631,8 +626,7 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         -bit_width_of[Int]() <= shift < bit_width_of[Int]()
     ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_left[-shift](x)
@@ -666,8 +660,7 @@ fn rotate_bits_right[
         SIMD vector with each element rotated right by `shift` bits.
     """
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_left[-shift](x)

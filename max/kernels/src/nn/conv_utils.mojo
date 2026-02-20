@@ -74,8 +74,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     fn d(self) -> Int:
         """Input depth."""
 
-        @parameter
-        if Self.rank >= 3:
+        comptime if Self.rank >= 3:
             return self.input_dims[Self.rank - 3]
         else:
             return 1
@@ -84,8 +83,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     fn h(self) -> Int:
         """Input height."""
 
-        @parameter
-        if Self.rank >= 2:
+        comptime if Self.rank >= 2:
             return self.input_dims[Self.rank - 2]
         else:
             return 1
@@ -99,8 +97,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     fn do(self) -> Int:
         """Output depth."""
 
-        @parameter
-        if Self.rank >= 3:
+        comptime if Self.rank >= 3:
             return self.output_dims[Self.rank - 3]
         else:
             return 1
@@ -109,8 +106,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     fn ho(self) -> Int:
         """Output height."""
 
-        @parameter
-        if Self.rank >= 2:
+        comptime if Self.rank >= 2:
             return self.output_dims[Self.rank - 2]
         else:
             return 1
@@ -124,8 +120,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     fn q(self) -> Int:
         """Filter window depth."""
 
-        @parameter
-        if Self.rank >= 3:
+        comptime if Self.rank >= 3:
             return self.filter_dims[Self.rank - 3]
         else:
             return 1
@@ -134,8 +129,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     fn r(self) -> Int:
         """Filter window height."""
 
-        @parameter
-        if Self.rank >= 2:
+        comptime if Self.rank >= 2:
             return self.filter_dims[Self.rank - 2]
         else:
             return 1
@@ -169,8 +163,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             Self.rank == 1 or Self.rank == 2 or Self.rank == 3
         ), "Only support 1d, 2d, and 3d convolution."
 
-        @parameter
-        if Self.rank == 1:
+        comptime if Self.rank == 1:
             var w = output_flat_coord * self.stride[0] - self.pad_w[0]
 
             return self.c * w
@@ -282,13 +275,11 @@ fn get_conv_shape[
     var input_dims = IndexList[rank](0)
     var filter_dims = IndexList[rank](0)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = output.dim[i + 1]()
         input_dims[i] = input.dim[i + 1]()
 
-        @parameter
-        if filter_packed:
+        comptime if filter_packed:
             filter_dims[i] = filter.dim[i + 1]()
         else:
             filter_dims[i] = filter.dim[i]()
@@ -328,13 +319,11 @@ fn get_conv_shape[
     var input_dims = IndexList[rank](0)
     var filter_dims = IndexList[rank](0)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = Int(output.dim[i + 1]())
         input_dims[i] = Int(input.dim[i + 1]())
 
-        @parameter
-        if filter_packed:
+        comptime if filter_packed:
             filter_dims[i] = Int(filter.dim[i + 1]())
         else:
             filter_dims[i] = Int(filter.dim[i]())
@@ -382,8 +371,7 @@ fn get_conv2d_shape[
 
     var filter_dims: IndexList[2]
 
-    @parameter
-    if filter_layout == Image2DLayout.RSCF:
+    comptime if filter_layout == Image2DLayout.RSCF:
         filter_dims = Index(filter.dim[0](), filter.dim[1]())
     else:
         filter_dims = Index(filter.dim[1](), filter.dim[2]())
@@ -412,16 +400,13 @@ fn get_conv_tile_size[dtype: DType]() -> Int:
     comptime KB = 1024
 
     # See MatmulUtils for context on tile size for debug built and macos.
-    @parameter
-    if is_debug_build():
+    comptime if is_debug_build():
         return 4 * KB // size_of[dtype]()
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return 64 * KB // size_of[dtype]()
 
-    @parameter
-    if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
+    comptime if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         #  Graviton 2 and Skylake server
         # have a 1 MiB L2 cache
         return 576 * KB // size_of[dtype]()
@@ -470,8 +455,7 @@ fn extend_shape[
     out_shape[0] = first
     out_shape[rank + 1] = last
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         out_shape[i + 1] = in_shape[i]
 
     return out_shape
@@ -486,8 +470,7 @@ fn append_shape[
     out_shape[rank] = last2nd
     out_shape[rank + 1] = last
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         out_shape[i] = in_shape[i]
 
     return out_shape
@@ -495,8 +478,7 @@ fn append_shape[
 
 @always_inline
 fn reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         return IntTuple(pad).flatten()
     elif rank == 2:
         return IntTuple(pad[0], pad[2], pad[1], pad[3])
@@ -583,8 +565,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
 
 
 fn get_direct_conv_micro_kernel_height() -> Int:
-    @parameter
-    if CompilationTarget.has_avx512f():
+    comptime if CompilationTarget.has_avx512f():
         return 6
     elif CompilationTarget.is_neoverse_n1():
         return 8
@@ -594,8 +575,7 @@ fn get_direct_conv_micro_kernel_height() -> Int:
 
 
 fn get_direct_conv_micro_kernel_width() -> Int:
-    @parameter
-    if CompilationTarget.has_avx512f():
+    comptime if CompilationTarget.has_avx512f():
         return 4
     elif CompilationTarget.is_neoverse_n1():
         return 2
@@ -614,8 +594,7 @@ fn get_micro_kernel_shape[
     comptime num_avx512_registers = 32
     comptime num_avx2_registers = 16
 
-    @parameter
-    if optimize_static_shapes:
+    comptime if optimize_static_shapes:
         # TODO: extend to 1d/3d.
         comptime pad_h_val = Index(conv_attr.pad[0], conv_attr.pad[2])
         comptime pad_w_val = Index(conv_attr.pad[1], conv_attr.pad[3])
@@ -623,8 +602,7 @@ fn get_micro_kernel_shape[
             0, 0
         )
 
-        @parameter
-        if CompilationTarget.has_avx512f():
+        comptime if CompilationTarget.has_avx512f():
             # The micro tile is m rows by n*simd_size columns.
             # The register usage in tiling for avx512/avx2:
             #   (1) load n registers in F dimension.
@@ -650,8 +628,7 @@ fn get_micro_kernel_shape[
             # Use 6x4 by default as it achieves the best performance for most shapes.
             return Index(6, 4)
 
-        @parameter
-        if CompilationTarget.has_avx2():
+        comptime if CompilationTarget.has_avx2():
             if has_padding:
                 # Register usage formula is the same as avx512.
                 # There are in total 16 named simd registers, the viable micro kernels
@@ -673,8 +650,7 @@ fn get_micro_kernel_shape[
                 return Index(micro_kernel_height, micro_kernel_width)
             return Index(4, 3)
 
-        @parameter
-        if CompilationTarget.is_neoverse_n1():
+        comptime if CompilationTarget.is_neoverse_n1():
             return Index(8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)
@@ -682,9 +658,7 @@ fn get_micro_kernel_shape[
         return Index(6, 2)
 
     else:  # Default options for dynamic shapes.
-
-        @parameter
-        if CompilationTarget.has_avx512f():
+        comptime if CompilationTarget.has_avx512f():
             return Index(6, 4)
         elif CompilationTarget.is_neoverse_n1():
             return Index(8, 2)

@@ -49,13 +49,10 @@ def run_elementwise[
         var rng_state = Random(seed=UInt64(idx0[0]))
         var rng = rng_state.step_uniform()
 
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             out_buffer[idx] = rng[0].cast[dtype]()
         else:
-
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 out_buffer[idx + IndexList[1](i)] = rng[i % len(rng)].cast[
                     dtype
                 ]()
@@ -70,19 +67,15 @@ def run_elementwise[
         var rng_state = NormalRandom(seed=UInt64(idx0[0]))
         var rng = rng_state.step_normal()
 
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             out_buffer[idx] = rng[0].cast[dtype]()
         else:
-
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 out_buffer[idx + IndexList[1](i)] = rng[i % len(rng)].cast[
                     dtype
                 ]()
 
-    @parameter
-    if distribution == "uniform":
+    comptime if distribution == "uniform":
         elementwise[func_uniform, 4, target="gpu"](Index(length), ctx)
     else:
         elementwise[func_normal, 4, target="gpu"](Index(length), ctx)

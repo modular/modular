@@ -290,8 +290,7 @@ fn main() raises:
     print("Running fused RMSNorm + FP8 tests...")
     var ctx = DeviceContext()
 
-    @parameter
-    for scales_dtype in [DType.float32, DType.bfloat16]:
+    comptime for scales_dtype in [DType.float32, DType.bfloat16]:
         print("\nTesting scales dtype: ", scales_dtype)
         # Rank-2 tests: Small sizes (warp-tiling)
         test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](

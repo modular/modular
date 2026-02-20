@@ -91,8 +91,7 @@ fn kl_div[
 
         # TODO: should use VDPBF16PS when applicable
         # (i.e., host has avx512_bf16, type = bf16, out_type = float32)
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             accum_scalar += kl[0]
         else:
             accum_simd += rebind[type_of(accum_simd)](kl)
@@ -162,8 +161,7 @@ fn correlation[
             var uw = ui
             var vw = vi
 
-            @parameter
-            if weighted:
+            comptime if weighted:
                 var wi = w_val.load[width=simd_width](idx).cast[out_type]()
                 uw *= wi
                 vw *= wi
@@ -172,8 +170,7 @@ fn correlation[
             var uuw = ui * uw
             var vvw = vi * vw
 
-            @parameter
-            if simd_width == 1:
+            comptime if simd_width == 1:
                 uv += uvw[0]
                 uu += uuw[0]
                 vv += vvw[0]
@@ -385,8 +382,7 @@ fn _dot[
 
         # TODO: should use VDPBF16PS when applicable
         # (i.e., host has avx512_bf16, type = bf16, out_type = float32)
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             accum_scalar += xi[0] * yi[0]
         else:
             accum_simd += rebind[type_of(accum_simd)](xi * yi)

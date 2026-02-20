@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
@@ -39,7 +39,7 @@ MAX_READ_SIZE = 10 * 1024
             model=MAXModelConfig(
                 model_path="HuggingFaceTB/SmolLM2-135M",
                 device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 kv_cache=KVCacheConfig(cache_strategy="paged"),
                 max_length=512,
             ),
@@ -87,7 +87,7 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:  # type: ignore
             model=MAXModelConfig(
                 model_path="HuggingFaceTB/SmolLM2-135M",
                 device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 kv_cache=KVCacheConfig(cache_strategy="paged"),
                 max_length=512,
             ),
@@ -131,7 +131,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
             model=MAXModelConfig(
                 model_path="HuggingFaceTB/SmolLM2-135M",
                 device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 kv_cache=KVCacheConfig(cache_strategy="paged"),
                 max_length=512,
             ),

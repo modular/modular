@@ -221,8 +221,7 @@ fn mha_sm90_dispatch[
     ](ctx)
 
     # materialize scheduler, call max prompt len
-    @parameter
-    if persistent == 0:
+    comptime if persistent == 0:
         comptime SchedulerType = TransientScheduler[
             UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
         ]
@@ -432,8 +431,7 @@ fn _mha_sm90_sink_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    if sink:
+    comptime if sink:
         comptime SinkType = NonNullPointer[KVLUTType.dtype]
         var sink_ptr: SinkType = {sink_weights.value().ptr}
         _mha_sm90_kv_input_row_offset_dispatch[
@@ -704,8 +702,7 @@ fn _mha_sm90_valid_length_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    if ragged:
+    comptime if ragged:
         comptime ValidLengthType = NonNullPointer[DType.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm90_enqueue[
@@ -1184,8 +1181,7 @@ fn _mha_sm90[
     # Handle sink_weights
     var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
 
-    @parameter
-    if not SinkType.is_null:
+    comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
             UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
         ](sink_weights.value())
@@ -1236,12 +1232,9 @@ fn _mha_sm90[
 
     initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
 
-    @parameter
-    if not decoding:
+    comptime if not decoding:
         if not initial_seq_info.is_valid():
-
-            @parameter
-            if persistent:
+            comptime if persistent:
                 seq_info = advance[True, MHASchedulerSynchronization.ALL](1)
                 if seq_info:
                     initial_seq_info = seq_info.value()
@@ -1251,17 +1244,12 @@ fn _mha_sm90[
                 return
 
     if tid == 0:
-
-        @parameter
-        for i in range(pipeline_stages):
+        comptime for i in range(pipeline_stages):
             produced_mbar_kv[i].init(1)
             consumed_mbar_kv[i].init(Int32(num_consumer_threads))
 
-        @parameter
-        if persistent:
-
-            @parameter
-            for i in range(2):
+        comptime if persistent:
+            comptime for i in range(2):
                 produced_mbar_q[i].init(1)
                 consumed_mbar_q[i].init(Int32(num_consumer_threads))
 
@@ -1375,12 +1363,10 @@ fn _mha_sm90[
 
         # arrive to unblock the producers
         # TODO: skip this by not waiting on the first set
-        @parameter
-        for i in range(pipeline_stages):
+        comptime for i in range(pipeline_stages):
             _ = consumed_mbar_kv[i].arrive()
 
-        @parameter
-        if persistent:
+        comptime if persistent:
             _ = consumed_mbar_q[0].arrive()
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
@@ -1565,14 +1551,12 @@ fn _mha_sm90[
             # We could avoid this on the first iter
             # if we specialize and unswitch on `first_iter`
             # otherwise, the branch requires synchronization
-            @parameter
-            for row in range(num_rows_per_warp):
+            comptime for row in range(num_rows_per_warp):
                 c = SIMD[accum_type, element_layout.size()](
                     rebind[Scalar[accum_type]](correction[row])
                 )
 
-                @parameter
-                for col in range(num_cols_output):
+                comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
         @always_inline
@@ -1580,8 +1564,7 @@ fn _mha_sm90[
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
-            @parameter
-            for row in range(num_rows_per_warp):
+            comptime for row in range(num_rows_per_warp):
                 old = old_rowsum[row]
                 new = new_rowsum[row]
                 new_rowsum[row] = recip(old)[0]
@@ -1597,20 +1580,17 @@ fn _mha_sm90[
             vout = vectorize_o_reg_tile()
 
             # Apply softmax denumerator.
-            @parameter
-            for row in range(num_rows_per_warp):
+            comptime for row in range(num_rows_per_warp):
                 rs_inv = vout.element_type(rowsum_inv[row][0])
 
-                @parameter
-                for col in range(num_cols_output):
+                comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
 
             var output_ptr: UnsafePointer[
                 Scalar[output_type], MutAnyOrigin
             ] = o_ptr_arg
 
-            @parameter
-            if decoding and PartitionType.do_partition:
+            comptime if decoding and PartitionType.do_partition:
                 output_ptr = output_ptr + (
                     UInt32(depth * num_heads)
                     * batch_size
@@ -1661,8 +1641,7 @@ fn _mha_sm90[
         var kv_tile_start_row: UInt32 = startend[0]
         var end: UInt32 = startend[1]
 
-        @parameter
-        if decoding and PartitionType.do_partition:
+        comptime if decoding and PartitionType.do_partition:
             if kv_tile_start_row >= end:
                 if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
                     4 * min(group, 8) + 128
@@ -1672,8 +1651,7 @@ fn _mha_sm90[
                     )
                     var q_heads = get_q_head_idx(position, lane)
 
-                    @parameter
-                    for i in range(q_heads.size):
+                    comptime for i in range(q_heads.size):
                         var q_head_idx = q_heads[i]
                         exp_sum_ptr[q_head_idx] = Scalar[
                             PartitionType.accum_dtype
@@ -1710,15 +1688,11 @@ fn _mha_sm90[
         var sink_weight: Scalar[accum_type] = 0.0
 
         # Include sink_weights in rowmax computation if present
-        @parameter
-        if not SinkType.is_null:
+        comptime if not SinkType.is_null:
             var q_head_indices = get_q_head_idx(position, lane)
 
-            @parameter
-            if decoding:
-
-                @parameter
-                for i in range(q_head_indices.size):
+            comptime if decoding:
+                comptime for i in range(q_head_indices.size):
                     var head_idx = q_head_indices[i]
                     sink_weight = (
                         sink_weights_ptr[head_idx].cast[accum_type]() * log2e
@@ -1730,8 +1704,7 @@ fn _mha_sm90[
                     * log2e
                 )
 
-                @parameter
-                for i in range(num_rows_per_warp):
+                comptime for i in range(num_rows_per_warp):
                     rowmax[i] = sink_weight
 
         # Compute initial rowmax
@@ -1750,22 +1723,16 @@ fn _mha_sm90[
         )
 
         # Add sink weight contribution to rowsum
-        @parameter
-        if not SinkType.is_null:
+        comptime if not SinkType.is_null:
             var q_head_indices = get_q_head_idx(position, lane)
 
-            @parameter
-            if decoding:
-
-                @parameter
-                for i in range(q_head_indices.size):
+            comptime if decoding:
+                comptime for i in range(q_head_indices.size):
                     var sink_contribution = exp2(sink_weight - rowmax[i])
                     attention_rowsum[i] += sink_contribution[0]
 
             else:
-
-                @parameter
-                for i in range(num_rows_per_warp):
+                comptime for i in range(num_rows_per_warp):
                     # Compute exp2((sink_weight - rowmax[j]) * log2e)
                     var sink_contribution = exp2(sink_weight - rowmax[i])
                     attention_rowsum[i] += sink_contribution[0]
@@ -1780,14 +1747,11 @@ fn _mha_sm90[
         # Preheader: Q0, K0
         # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
         # Exit: V{-1}
-        @parameter
-        if persistent:
+        comptime if persistent:
             kv_tile_start_row += UInt32(BN)
         while True:
             while True:
-
-                @parameter
-                if not persistent:
+                comptime if not persistent:
                     kv_tile_start_row += UInt32(BN)
                 if kv_tile_start_row >= end:
                     break
@@ -1795,9 +1759,7 @@ fn _mha_sm90[
                 # this loops over num_keys
                 mask_status = position.mask_status(mask, kv_tile_start_row)
                 if mask_status == TileMaskStatus.FULL_MASK:
-
-                    @parameter
-                    if persistent:
+                    comptime if persistent:
                         kv_tile_start_row += UInt32(BN)
                     continue
                 p_frag.vectorize[
@@ -1839,9 +1801,7 @@ fn _mha_sm90[
 
                 score_frag_rowmax = current_rowmax
                 if new_q:
-
-                    @parameter
-                    if decoding and PartitionType.do_partition:
+                    comptime if decoding and PartitionType.do_partition:
                         if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
                             4 * min(group, 8) + 128
                         ):
@@ -1852,8 +1812,7 @@ fn _mha_sm90[
                             )
                             var q_heads = get_q_head_idx(position, lane)
 
-                            @parameter
-                            for i in range(q_heads.size):
+                            comptime for i in range(q_heads.size):
                                 var q_head_idx = q_heads[i]
                                 exp_sum_ptr[q_head_idx] = rebind[
                                     Scalar[PartitionType.accum_dtype]
@@ -1915,8 +1874,7 @@ fn _mha_sm90[
                     # rowmax now holds score_frag_rowmax
                     # score_frag_rowmax now holds the correction
 
-                    @parameter
-                    for i in range(num_rows_per_warp):
+                    comptime for i in range(num_rows_per_warp):
                         rowsum[i] = (
                             rowsum[i] * score_frag_rowmax[i]
                             + score_frag_rowsum[i]
@@ -1925,12 +1883,10 @@ fn _mha_sm90[
                     wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
                     scale_output(score_frag_rowmax)  # scale output
 
-                @parameter
-                if persistent:
+                comptime if persistent:
                     kv_tile_start_row += UInt32(BN)
 
-            @parameter
-            if persistent:
+            comptime if persistent:
                 var q_idx_old: UInt32 = q_pipeline_state.index()
                 var q_phase_old: UInt32 = q_pipeline_state.phase()
                 q_pipeline_state.step()
@@ -1959,8 +1915,7 @@ fn _mha_sm90[
             read_pipeline_states.phase(),
         )
 
-        @parameter
-        if decoding and PartitionType.do_partition:
+        comptime if decoding and PartitionType.do_partition:
             if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
                 4 * min(group, 8) + 128
             ):
@@ -1969,8 +1924,7 @@ fn _mha_sm90[
                 )
                 var q_heads = get_q_head_idx(position, lane)
 
-                @parameter
-                for i in range(q_heads.size):
+                comptime for i in range(q_heads.size):
                     var q_head_idx = q_heads[i]
                     exp_sum_ptr[q_head_idx] = rebind[
                         Scalar[PartitionType.accum_dtype]
@@ -1979,8 +1933,7 @@ fn _mha_sm90[
                         Scalar[PartitionType.accum_dtype]
                     ](rowmax[i])
 
-        @parameter
-        for row in range(num_rows_per_warp):
+        comptime for row in range(num_rows_per_warp):
             rowsum[row] = recip(rowsum[row])[0]
         wgmma_1.wait_group()
         write_output(position, q_pipeline_state.index(), rowsum)

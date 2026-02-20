@@ -32,11 +32,8 @@ def main():
     with DeviceContext() as ctx:
         comptime wgmma_n: List[Int] = [128, 256]
 
-        @parameter
-        for i in range(len(wgmma_n)):
-
-            @parameter
-            for j in range(1, 3):
+        comptime for i in range(len(wgmma_n)):
+            comptime for j in range(1, 3):
                 test_matmul_sm90[
                     DType.bfloat16,
                     DType.bfloat16,

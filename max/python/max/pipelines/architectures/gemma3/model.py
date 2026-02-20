@@ -96,20 +96,16 @@ class Gemma3Model(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         """
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -117,24 +113,20 @@ class Gemma3Model(
             weights: The model weights (:obj:`max.graph.weights.Weights`).
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
-            text_huggingface_config: The text configuration loaded from HuggingFace
-                if it differs from the base huggingface_config (:obj:`transformers.AutoConfig`).
             return_logits: The number of top logits to return from the model
                 execution.
         """
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
         )
-        self._is_multimodal = text_huggingface_config is not None
-        if self._is_multimodal:
-            self.huggingface_config = text_huggingface_config
+        # Detect multimodal models by presence of text_config
+        self._is_multimodal = hasattr(self.huggingface_config, "text_config")
 
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
@@ -289,11 +281,15 @@ class Gemma3Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        huggingface_config = self.huggingface_config
+        text_config = (
+            self.huggingface_config.text_config
+            if self._is_multimodal
+            else self.huggingface_config
+        )
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
-                huggingface_config=huggingface_config,
+                huggingface_config=text_config,
                 pipeline_config=self.pipeline_config,
             )
         else:
@@ -303,7 +299,7 @@ class Gemma3Model(
 
         state_dict_prefix = "language_model." if self._is_multimodal else ""
         float8_config = parse_float8_config(
-            huggingface_config,
+            text_config,
             state_dict,
             self.dtype,
             state_dict_name_prefix=state_dict_prefix,
@@ -311,10 +307,10 @@ class Gemma3Model(
         )
 
         model_config = Gemma3Config.initialize_from_config(
-            self.pipeline_config, huggingface_config
+            self.pipeline_config, text_config
         )
         model_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=text_config,
             state_dict=state_dict,
             return_logits=self.return_logits,
             float8_config=float8_config,
@@ -338,7 +334,7 @@ class Gemma3Model(
         ]
 
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"),
+            getattr(text_config, "model_type", "Gemma3"),
             input_types=[
                 tokens_type,
                 return_n_logits_type,

@@ -684,8 +684,7 @@ def test_compile_time_dict():
 
     comptime my_dict = _get_dict()
 
-    @parameter
-    for i in range(N):
+    comptime for i in range(N):
         comptime val = my_dict.get(String(i)).value()
         assert_equal(val, Int32(i))
 

@@ -328,6 +328,18 @@ what we publish.
 
 ### Library changes
 
+- `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
+  `issubset()` traversal instead of two full traversals.
+
+- Added `uninit_move_n()`, `uninit_copy_n()`, and `destroy_n()` functions to the
+  `memory` module for efficient bulk memory operations. These functions handle
+  moving, copying, and destroying multiple values in contiguous memory, with
+  automatic optimization for trivial types using `memcpy`. They encapsulate the
+  common pattern of checking `__moveinit__is_trivial`, `__copyinit__is_trivial`,
+  or `__del__is_trivial` and selecting the appropriate implementation. The `List`
+  collection now uses these functions internally for improved code clarity and
+  maintainability.
+
 - `Dict` internals have been replaced with a Swiss Table implementation using
   SIMD group probing for lookups. This improves lookup, insertion, and deletion
   performance — especially when looking up keys not in the dict — while
@@ -629,3 +641,6 @@ what we publish.
 - `StringSlice.find`: Fixed integer overflow bug in SIMD string search that
   caused searches to fail when searching for strings longer than
   `simd_width_of[DType.bool]()` and haystacks larger than UInt16.MAX.
+
+- `LinkedList.reverse()`: Fixed missing `prev` pointer updates, which caused
+  `__reversed__()` to produce wrong results after reversing.

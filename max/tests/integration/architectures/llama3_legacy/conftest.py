@@ -31,7 +31,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheParams,
 )
 from max.pipelines.architectures.llama3_legacy.model import Llama3Inputs
-from max.pipelines.lib import ModelOutputs, SupportedEncoding
+from max.pipelines.lib import ModelOutputs
 from test_common.context_utils import create_text_context
 from test_common.mocks import DummyPipelineConfig
 from transformers import LlamaForCausalLM
@@ -86,7 +86,7 @@ def make_pipeline_config(
             model_path=LLAMA_3_1_HF_REPO_ID,
             max_batch_size=max_batch_size,
             max_length=hf_config.max_position_embeddings,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             kv_cache_strategy="paged",
             device_specs=device_specs,
         )

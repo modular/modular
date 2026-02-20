@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -29,10 +28,10 @@ phi3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["microsoft/phi-4", "microsoft/Phi-3.5-mini-instruct"],
     default_weights_format=WeightsFormat.gguf,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,

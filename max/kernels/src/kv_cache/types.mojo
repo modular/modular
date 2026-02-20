@@ -69,13 +69,11 @@ fn _compute_kv_cache_dynamic_shape_strides[
     var out_index = kv_cache_rank - 1
     var stride = 1
 
-    @parameter
-    for i in reversed(range(blocks.rank)):
+    comptime for i in reversed(range(blocks.rank)):
         var dim = blocks.dim[i]()
 
         # Skip dimensions in the drop list (kv_idx and layer_idx).
-        @parameter
-        if i not in drop_list:
+        comptime if i not in drop_list:
             kv_cache_shape[out_index] = dim
             kv_cache_strides[out_index] = stride
             out_index = out_index - 1
@@ -974,8 +972,7 @@ struct PagedKVCache[
     ]:
         """Loads an element from the given index."""
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             comptime assert output_dtype != Self.dtype, (
                 "Output type should not be FP8 when KVCache quantization is"
                 " disabled"
@@ -983,8 +980,7 @@ struct PagedKVCache[
 
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             var quantized_val = self.blocks.load[width=width](idx)
             var scale = self.load_scale[width=1](
                 bs, head_idx, tok_idx, head_dim_idx
@@ -1044,8 +1040,7 @@ struct PagedKVCache[
     ):
         """Stores the quantization scales at the given index."""
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             comptime assert (
                 Self.scale_dtype != DType.invalid
             ), "Valid quantization scale data type needed"
@@ -1390,8 +1385,7 @@ struct PagedKVCacheCollection[
             ]
         ] = None
 
-        @parameter
-        if Self.CacheType.quantization_enabled:
+        comptime if Self.CacheType.quantization_enabled:
             if self.scales is not None:
                 scales_block = Self.CacheType.scales_block_type(
                     self.scales.value().ptr

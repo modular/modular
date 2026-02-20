@@ -33,8 +33,7 @@ fn _fill_strides_indexlist[
     comptime assert rank > 0
     strides[rank - 1] = 1
 
-    @parameter
-    for idx in range(rank - 1):
+    comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = input_shape[axis + 1]
@@ -244,8 +243,7 @@ fn pad_constant[
 
     var output_size: Int = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_size *= output_shape[i]
 
     var output_buffer = DeviceBuffer[dtype](

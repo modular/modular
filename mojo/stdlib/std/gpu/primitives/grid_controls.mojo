@@ -51,8 +51,7 @@ fn _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
-    @parameter
-    if (
+    comptime if (
         has_nvidia_gpu_accelerator()
         and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
     ):
@@ -108,8 +107,7 @@ fn launch_dependent_grids():
           should trigger the execution of other grids.
     """
 
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
+    comptime if _SUPPORT_PDL_LAUNCH:
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
@@ -129,8 +127,7 @@ fn wait_on_dependent_grids():
           with subsequent operations in the parent grid.
     """
 
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
+    comptime if _SUPPORT_PDL_LAUNCH:
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 

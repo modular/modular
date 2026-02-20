@@ -171,8 +171,7 @@ fn _supported_mma_shape[
 
     # Ideally this check should be input/output type dependent as mma_shape depends on input/output types
     # (https://mlir.llvm.org/docs/Dialects/NVVMDialect/#nvvmwgmmamma_async-nvvmwgmmammaasyncop).
-    @parameter
-    if mma_shape[0] == 64 and mma_shape[2] == 8:
+    comptime if mma_shape[0] == 64 and mma_shape[2] == 8:
         return (
             mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
         )
@@ -238,8 +237,7 @@ fn warpgroup_fence[
             reg
         )
 
-    @parameter
-    for i in range(accum_layout.size()):
+    comptime for i in range(accum_layout.size()):
         _warpgroup_fence_operand(accum.ptr[i])
 
 
@@ -278,8 +276,7 @@ fn _checked_tile_shape[
     BM: Int,
     BK: Int,
 ]() -> IntTuple:
-    @parameter
-    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime k_bytes = BK * size_of[dtype]()
         comptime assert (k_bytes % swizzle_mode.bytes()) == 0, (
             "K dim "
@@ -373,8 +370,7 @@ fn tile_to_descriptor[
         `Layout - A transformed layout compatible with WGMMA descriptors.
     """
 
-    @parameter
-    if is_k_major:
+    comptime if is_k_major:
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
         comptime T = _CM_ROW_BYTES // size_of[dtype]()
         comptime tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
@@ -659,8 +655,7 @@ fn _wgmma_descriptor[
     comptime stride01 = layout[0].stride[1].value()
     comptime stride11 = layout[1].stride[1].value()
 
-    @parameter
-    if is_k_major:
+    comptime if is_k_major:
         comptime assert (
             shape00 == 8 and shape11 % 2 == 0
         ), "Tile shape must be ((8, _), (_, multiple of 2)), get " + String(
@@ -756,8 +751,7 @@ fn _convert_cfrags_to_tuple[
 ) -> StaticTuple[Scalar[c_type], c_frag_size]:
     var c_frags_in_tuple = StaticTuple[Scalar[c_type], c_frag_size]()
 
-    @parameter
-    for i in range(c_frag_size):
+    comptime for i in range(c_frag_size):
         c_frags_in_tuple[i] = rebind[Scalar[c_type]](c_frags[0, i])
 
     return c_frags_in_tuple
@@ -772,8 +766,7 @@ fn _convert_cfrags_to_simd[
         mut=True, c_type, _, address_space = AddressSpace.LOCAL, ...
     ],
 ):
-    @parameter
-    for i in range(c_frag_size):
+    comptime for i in range(c_frag_size):
         c_frags[0, i] = c_frags_in_tuple[i]
 
 
@@ -929,15 +922,13 @@ struct TensorCoreAsync[
             b_canonical_layout, Self.transpose_b, Self.b_swizzle
         ](b_smem_tile.ptr)
 
-        @parameter
-        if num_warp_groups > 1:
+        comptime if num_warp_groups > 1:
             a_desc += a_m_stride * num_m_mmas * wg_idx
 
         comptime layout_b = "col" if Self.transpose_b else "row"
         comptime c_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // 128
 
-        @parameter
-        for k_mma in range(num_k_mmas):
+        comptime for k_mma in range(num_k_mmas):
             comptime scale_d = scale_c if k_mma == 0 else 1
 
             # Offsets when K is multiple of canonical layouts.
@@ -957,13 +948,11 @@ struct TensorCoreAsync[
                 k_mma % b_num_k_mmas_per_tile
             ) * b_k_stride
 
-            @parameter
-            for m_mma in range(num_m_mmas):
+            comptime for m_mma in range(num_m_mmas):
                 comptime a_offset = m_mma * a_m_stride + a_k_mma_offset + a_offset_bytes
                 a_desc_m = a_desc + a_offset
 
-                @parameter
-                for n_mma in range(num_n_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     comptime b_offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
@@ -1089,8 +1078,7 @@ struct TensorCoreAsync[
         ](b_smem_tile.ptr)
         comptime layout_b = "col" if Self.transpose_b else "row"
 
-        @parameter
-        for k_mma in range(num_k_mmas):
+        comptime for k_mma in range(num_k_mmas):
             comptime b_offset_bytes = (
                 k_mma // b_num_k_mmas_per_tile
             ) * b_canonical_layout.size() * size_of[
@@ -1100,12 +1088,10 @@ struct TensorCoreAsync[
                 k_mma % b_num_k_mmas_per_tile
             ) * b_k_stride
 
-            @parameter
-            for m_mma in range(num_m_mmas):
+            comptime for m_mma in range(num_m_mmas):
                 a_frag = a_frags[m_mma + k_mma * num_m_mmas, 0]
 
-                @parameter
-                for n_mma in range(num_n_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride

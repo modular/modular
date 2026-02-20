@@ -24,7 +24,7 @@ from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
 from max.entrypoints.cli.config import parse_task_flags
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
+from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -527,7 +527,7 @@ def test_validate_model_path__correct_repo_id_provided(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
         ),
         use_legacy_module=False,
     )
@@ -546,7 +546,7 @@ def test_config__test_incompatible_quantization_encoding(
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding=SupportedEncoding.q4_k,
+                quantization_encoding="q4_k",
                 weight_path=[
                     Path(
                         "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
@@ -562,7 +562,7 @@ def test_config__test_incompatible_quantization_encoding(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             weight_path=[
                 Path(
                     "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
@@ -593,7 +593,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding=SupportedEncoding.float32,
+                quantization_encoding="float32",
                 max_length=1,
             ),
             max_batch_size=1,
@@ -616,7 +616,7 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
@@ -641,7 +641,7 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
@@ -686,7 +686,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             max_length=1,
         ),
         max_batch_size=1,
@@ -738,7 +738,7 @@ def test_config_is_picklable(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=modular_ai_llama_3_1_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
         ),
         use_legacy_module=False,
     )
@@ -770,7 +770,7 @@ def test_config__validates_supported_device(
         model=MAXModelConfig(
             model_path=modular_ai_llama_3_1_local_path,
             device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             max_length=1,
         ),
         use_legacy_module=False,
@@ -782,7 +782,7 @@ def test_config__validates_supported_device(
                 model=MAXModelConfig(
                     model_path=modular_ai_llama_3_1_local_path,
                     device_specs=[DeviceSpec.accelerator()],
-                    quantization_encoding=SupportedEncoding.float32,
+                    quantization_encoding="float32",
                     max_length=1,
                 ),
                 use_legacy_module=False,
@@ -792,7 +792,7 @@ def test_config__validates_supported_device(
             model=MAXModelConfig(
                 model_path=modular_ai_llama_3_1_local_path,
                 device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 max_length=1,
             ),
             use_legacy_module=False,
@@ -806,7 +806,7 @@ def test_config__validates_supported_device(
             model=MAXModelConfig(
                 model_path=modular_ai_llama_3_1_local_path,
                 device_specs=[DeviceSpec.cpu()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 max_length=1,
             ),
             use_legacy_module=False,
@@ -827,7 +827,7 @@ def test_config__validates_lora_configuration(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             kv_cache=KVCacheConfig(enable_prefix_caching=False),
             max_length=1,
         ),
@@ -860,7 +860,7 @@ def test_config__validates_lora_only_supported_for_llama(
             model=MAXModelConfig(
                 model_path=gemma_3_1b_it_local_path,
                 device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 kv_cache=KVCacheConfig(enable_prefix_caching=False),
                 max_length=1,
             ),
@@ -884,7 +884,7 @@ def test_config__validates_lora_works_for_llama(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             kv_cache=KVCacheConfig(enable_prefix_caching=False),
             max_length=1,
@@ -916,7 +916,7 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
             model=MAXModelConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
                 device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 kv_cache=KVCacheConfig(enable_prefix_caching=True),
                 max_length=1,
             ),
@@ -939,7 +939,7 @@ def test_config__validates_lora_single_device_only(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             kv_cache=KVCacheConfig(enable_prefix_caching=False),
             max_length=1,
@@ -974,7 +974,7 @@ def test_config__validates_lora_fails_with_multiple_devices(
                     DeviceSpec.accelerator(),
                     DeviceSpec.accelerator(),
                 ],
-                quantization_encoding=SupportedEncoding.bfloat16,
+                quantization_encoding="bfloat16",
                 allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
                 kv_cache=KVCacheConfig(enable_prefix_caching=False),
                 max_length=1,
@@ -987,7 +987,7 @@ def test_config__validates_lora_fails_with_multiple_devices(
         model=MAXModelConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),

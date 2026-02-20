@@ -31,7 +31,6 @@ from test_common.mocks.pipeline_model import (
     MockModelInputs,
     MockPipelineModel,
 )
-from transformers import AutoConfig
 
 
 class DummyModel:
@@ -78,14 +77,10 @@ def test_pipeline_model_capture_replay() -> None:
         max_length=128,
     )
     pipeline_config.device_graph_capture = True
-    huggingface_config = AutoConfig.from_pretrained(
-        "trl-internal-testing/tiny-random-LlamaForCausalLM"
-    )
     session = MagicMock()
     model = CapturePipelineModel(
         pipeline_config=pipeline_config,
         session=session,
-        huggingface_config=huggingface_config,
         devices=[CPU()],
         kv_cache_config=MagicMock(),
         weights=MagicMock(),
@@ -116,14 +111,10 @@ def test_pipeline_model_replay_miss_raises() -> None:
         max_length=128,
     )
     pipeline_config.device_graph_capture = True
-    huggingface_config = AutoConfig.from_pretrained(
-        "trl-internal-testing/tiny-random-LlamaForCausalLM"
-    )
     session = MagicMock()
     model = CapturePipelineModel(
         pipeline_config=pipeline_config,
         session=session,
-        huggingface_config=huggingface_config,
         devices=[CPU()],
         kv_cache_config=MagicMock(),
         weights=MagicMock(),

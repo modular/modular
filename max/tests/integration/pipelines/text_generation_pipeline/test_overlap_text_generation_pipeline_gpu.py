@@ -142,7 +142,7 @@ class FakeModelConfig(ConfigFileModel):
     huggingface_config: Any
     device_specs: list[DeviceSpec]
     kv_cache: Any
-    quantization_encoding: SupportedEncoding = SupportedEncoding.float32
+    quantization_encoding: SupportedEncoding = "float32"
 
 
 class FakePipelineConfig(ConfigFileModel):

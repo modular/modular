@@ -200,8 +200,7 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
         + "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'"
     )
 
-    @parameter
-    if emission_kind == "llvm":
+    comptime if emission_kind == "llvm":
         return _EMISSION_KIND_LLVM
     elif emission_kind == "llvm-bitcode":
         return _EMISSION_KIND_LLVM_BITCODE

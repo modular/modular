@@ -197,8 +197,7 @@ def main():
     var m = Bench(BenchConfig(num_repetitions=10))
     comptime sizes = (10, 100, 1000, 10_000)
 
-    @parameter
-    for i in range(len(sizes)):
+    comptime for i in range(len(sizes)):
         comptime size = sizes[i]
 
         # Equality benchmarks

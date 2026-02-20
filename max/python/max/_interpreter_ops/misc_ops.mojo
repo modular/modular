@@ -242,12 +242,8 @@ fn range_op[
             use_blocking_impl=True,
         ](output_tensor, start, stop, step, DeviceContextPtr())
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 # Range.execute uses iota with auto-selected SIMD width,
                 # which triggers llvm.stepvector with 64-bit integers that
                 # the Metal shader compiler cannot handle. Use elementwise
@@ -476,12 +472,8 @@ fn random_normal_op[
             IndexList[1](size)
         )
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=8, target="gpu"](
                     IndexList[1](size), device_ctx
@@ -609,12 +601,8 @@ fn random_uniform_op[
             IndexList[1](size)
         )
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=4, target="gpu"](
                     IndexList[1](size), device_ctx

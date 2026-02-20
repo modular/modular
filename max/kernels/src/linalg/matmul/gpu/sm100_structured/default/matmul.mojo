@@ -100,8 +100,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    @parameter
-    if config.cta_group == 2:
+    comptime if config.cta_group == 2:
         comptime assert (
             MMA_M == 256 or MMA_M == 128
         ), "Only support cta_group == 2 with MMA_M == 128 or 256"
@@ -231,8 +230,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     var workspace: Span[UInt64, MutAnyOrigin]
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
         ].get_workspace(ctx)
@@ -260,8 +258,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         attributes=pdl_launch_attributes(pdl_level),
     )
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         ctx.synchronize()
         MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
@@ -284,8 +281,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     b_device: TileTensor,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    if config.AB_swapped:
+    comptime if config.AB_swapped:
         # Swap the a_type, b_type in signature
         # TODO: Do this without creating a new instance.
         comptime new_config = config.swap_AB_type()
@@ -297,8 +293,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         # Note that D' = (B @ A')' = A'' @ B' = A @ B' which is the same as the
         # original math. Therefore, when we swap A and B, we need to transpose
         # the result for consistency and correctness.
-        @parameter
-        if config.num_split_k > 1:
+        comptime if config.num_split_k > 1:
             _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 transpose_b,
                 config=new_config,
@@ -316,9 +311,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, b_device, a_device, ctx)
     else:
-
-        @parameter
-        if config.num_split_k > 1:
+        comptime if config.num_split_k > 1:
             _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 transpose_b,
                 config=config,
@@ -370,8 +363,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         2,
     ), "Only support cta_group == 1 or 2"
 
-    @parameter
-    if config.cta_group == 2:
+    comptime if config.cta_group == 2:
         comptime assert (
             MMA_M == 256 or MMA_M == 128
         ), "Only support cta_group == 2 with MMA_M == 128 or 256"
@@ -538,8 +530,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
     ctx.enqueue_memset(locks_buffer, 0)
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
         ].get_workspace(ctx)
@@ -569,8 +560,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     _ = reduction_workspace^
     _ = locks_buffer^
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         ctx.synchronize()
         MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles

@@ -156,12 +156,8 @@ fn layer_norm_op[
             epsilon,
         )
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype in (DType.float32, DType.float16, DType.bfloat16):
+        comptime if has_accelerator():
+            comptime if dtype in (DType.float32, DType.float16, DType.bfloat16):
                 # GPU path: use nn.normalization.layer_norm kernel via
                 # callback functions (similar to softmax_ops.mojo pattern)
 

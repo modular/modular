@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -30,10 +29,10 @@ qwen3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-8B", "Qwen/Qwen3-30B-A3B"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float32: ["paged"],
+        "bfloat16": ["paged"],
+        "float32": ["paged"],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,
@@ -53,10 +52,10 @@ qwen3_moe_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-30B-A3B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float32: ["paged"],
+        "bfloat16": ["paged"],
+        "float32": ["paged"],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,

@@ -200,9 +200,7 @@ fn _printf[
     if is_compile_time():
         _printf_cpu[fmt](args, file)
     else:
-
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             # The argument pack will contain references for each value in the pack,
             # but we want to pass their values directly into the C printf call. Load
             # all the members of the pack.
@@ -218,8 +216,7 @@ fn _printf[
             # AMD printf calls:
             # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
             fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
-                @parameter
-                if _type_is_eq[T, UInt64]():
+                comptime if _type_is_eq[T, UInt64]():
                     return rebind[UInt64](value)
                 elif _type_is_eq[T, UInt32]():
                     return UInt64(rebind[UInt32](value))
@@ -259,15 +256,13 @@ fn _printf[
             )
             comptime k_args_per_group = 7
 
-            @parameter
-            for group in range(0, args_len, k_args_per_group):
+            comptime for group in range(0, args_len, k_args_per_group):
                 comptime bound = min(group + k_args_per_group, args_len)
                 comptime num_args = bound - group
 
                 var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
 
-                @parameter
-                for i in range(num_args):
+                comptime for i in range(num_args):
                     arguments[i] = _to_uint64(args[group + i])
                 message = printf_append_args(
                     message,
@@ -397,8 +392,7 @@ fn print[
         var buffer = _WriteBufferStack(file)
         comptime length = values.__len__()
 
-        @parameter
-        for i in range(length):
+        comptime for i in range(length):
             values[i].write_to(buffer)
             if i < length - 1:
                 sep.write_to(buffer)
@@ -408,14 +402,11 @@ fn print[
         if flush:
             _flush(file=file)
     else:
-
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             var buffer = _WriteBufferHeap()
             comptime length = values.__len__()
 
-            @parameter
-            for i in range(length):
+            comptime for i in range(length):
                 values[i].write_to(buffer)
                 if i < length - 1:
                     sep.write_to(buffer)
@@ -425,8 +416,7 @@ fn print[
 
             var slice = buffer.as_string_slice()
 
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 _printf["%s"](slice.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
@@ -439,12 +429,10 @@ fn print[
             var buffer = _WriteBufferStack(file)
             comptime length = values.__len__()
 
-            @parameter
-            for i in range(length):
+            comptime for i in range(length):
                 values[i].write_to(buffer)
 
-                @parameter
-                if i < length - 1:
+                comptime if i < length - 1:
                     sep.write_to(buffer)
 
             end.write_to(buffer)

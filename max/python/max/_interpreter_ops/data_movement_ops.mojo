@@ -138,12 +138,8 @@ fn static_broadcast_to_op[
             use_blocking_impl=True,
         ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 StaticBroadcastTo.execute[
                     target="gpu",
@@ -368,12 +364,8 @@ fn transpose_op[
             rank=MAX_RANK,
         ](output_tensor, input_tensor, perm_tensor, DeviceContextPtr())
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 Transpose.execute[
                     target="gpu",
@@ -762,11 +754,8 @@ fn memcpy_op[
         ](IndexList[1](count))
     else:
         # GPU execution
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](count), device_ctx
@@ -856,12 +845,8 @@ fn slice_op[
             DeviceContextPtr(),
         )
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 Slice.execute[
                     target="gpu",

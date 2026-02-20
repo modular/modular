@@ -134,8 +134,7 @@ fn gemm_kernel[
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_i in range(BK):
+        comptime for k_i in range(BK):
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](warp_m, 0).slice[
                 :, k_i : k_i + 1
             ]()

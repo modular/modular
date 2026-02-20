@@ -89,15 +89,13 @@ def _test_range_scalar_bounds[dtype: DType]():
     _test_range_iter_bounds(range(scalar(0), scalar(10), scalar(2)), 5)
     _test_range_iter_bounds(range(scalar(0), scalar(11), scalar(2)), 6)
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         _test_range_iter_bounds(range(scalar(10), scalar(0), scalar(-1)), 10)
         _test_range_iter_bounds(range(scalar(38), scalar(-13), scalar(-23)), 3)
 
 
 def test_range_scalar_bounds():
-    @parameter
-    for dtype in DTYPES:
+    comptime for dtype in DTYPES:
         _test_range_scalar_bounds[dtype]()
 
 
@@ -197,8 +195,7 @@ def _test_range_len_scalar[dtype: DType]():
 
 
 def test_range_len_scalar():
-    @parameter
-    for dtype in DTYPES:
+    comptime for dtype in DTYPES:
         _test_range_len_scalar[dtype]()
 
 
@@ -338,36 +335,28 @@ def test_range_compile_time():
     various scalar types.
     """
 
-    @parameter
-    for i in range(10):
+    comptime for i in range(10):
         assert_true(i >= 0)
 
-    @parameter
-    for i in reversed(range(10)):
+    comptime for i in reversed(range(10)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(UInt8(10)):
+    comptime for i in range(UInt8(10)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(Int32(10)):
+    comptime for i in range(Int32(10)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(1, UInt16(10), 2):
+    comptime for i in range(1, UInt16(10), 2):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(1, Int16(10), 2):
+    comptime for i in range(1, Int16(10), 2):
         assert_true(i >= 0)
 
-    @parameter
-    for i in reversed(range(1, Int16(10), 2)):
+    comptime for i in reversed(range(1, Int16(10), 2)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(Int64(10), 1, -2):
+    comptime for i in range(Int64(10), 1, -2):
         assert_true(i > 0)
         assert_true(i <= 10)
 

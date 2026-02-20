@@ -85,8 +85,7 @@ fn gemm_kernel_rdna[
     matmul that iterates over the K dimension with scalar accumulation.
     """
 
-    @parameter
-    if _is_amd_rdna2_or_earlier():
+    comptime if _is_amd_rdna2_or_earlier():
         _naive_matmul_kernel[
             c_type,
             a_type,
@@ -141,8 +140,7 @@ fn _naive_matmul_kernel[
     var tid = Int(thread_idx.x)
 
     # 128 threads handle 64*64 = 4096 elements → 32 elements per thread
-    @parameter
-    for elem in range(32):
+    comptime for elem in range(32):
         var linear = tid * 32 + elem
         var local_row = linear // BLOCK_N
         var local_col = linear % BLOCK_N
@@ -152,8 +150,7 @@ fn _naive_matmul_kernel[
         if global_row < m and global_col < n:
             var accum = Scalar[s_type](0)
 
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 for i in range(k):
                     accum += rebind[Scalar[s_type]](
                         a[global_row, i].cast[s_type]()
@@ -164,8 +161,7 @@ fn _naive_matmul_kernel[
                         a[global_row, i].cast[s_type]()
                     ) * rebind[Scalar[s_type]](b[i, global_col].cast[s_type]())
 
-            @parameter
-            if elementwise_lambda_fn:
+            comptime if elementwise_lambda_fn:
                 comptime elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
                     Index(global_row, global_col),
@@ -240,8 +236,7 @@ fn _wmma_matmul_kernel[
         # --- Cooperative load of A tile to shared memory ---
         # 128 threads load BLOCK_M * BLOCK_K = 64 * 16 = 1024 elements
         # Each thread loads 1024 / 128 = 8 elements
-        @parameter
-        for i in range(8):
+        comptime for i in range(8):
             var elem_idx = tid * 8 + i
             var row = elem_idx // BLOCK_K
             var col = elem_idx % BLOCK_K
@@ -254,8 +249,7 @@ fn _wmma_matmul_kernel[
             a_shared[row * BLOCK_K + col] = val
 
         # --- Cooperative load of B tile to shared memory ---
-        @parameter
-        for i in range(8):
+        comptime for i in range(8):
             var elem_idx = tid * 8 + i
             var row = elem_idx // BLOCK_K
             var col = elem_idx % BLOCK_K
@@ -264,8 +258,7 @@ fn _wmma_matmul_kernel[
 
             var val = Scalar[b_type](0)
 
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 # B is stored as (N, K) in memory
                 if global_row < n and global_col < k:
                     val = rebind[Scalar[b_type]](b[global_row, global_col])
@@ -286,29 +279,22 @@ fn _wmma_matmul_kernel[
         )
 
         # Load A fragments: each lane loads one row of 16 elements
-        @parameter
-        for m_mma in range(NUM_M_MMAS):
+        comptime for m_mma in range(NUM_M_MMAS):
             var a_row = warp_m * WARP_M + m_mma * MMA_M + effective_lane
 
-            @parameter
-            for ki in range(MMA_K):
+            comptime for ki in range(MMA_K):
                 a_frag[m_mma][ki] = a_shared[a_row * BLOCK_K + ki]
 
         # Load B fragments: each lane loads one row of 16 elements
-        @parameter
-        for n_mma in range(NUM_N_MMAS):
+        comptime for n_mma in range(NUM_N_MMAS):
             var b_row = warp_n * WARP_N + n_mma * MMA_N + effective_lane
 
-            @parameter
-            for ki in range(MMA_K):
+            comptime for ki in range(MMA_K):
                 b_frag[n_mma][ki] = b_shared[b_row * BLOCK_K + ki]
 
         # Issue 4 WMMA operations (2x2 MMA tiles)
-        @parameter
-        for m_mma in range(NUM_M_MMAS):
-
-            @parameter
-            for n_mma in range(NUM_N_MMAS):
+        comptime for m_mma in range(NUM_M_MMAS):
+            comptime for n_mma in range(NUM_N_MMAS):
                 var c_idx = m_mma * NUM_N_MMAS + n_mma
                 _mma_intrinsic(
                     c_accum[c_idx],
@@ -324,15 +310,11 @@ fn _wmma_matmul_kernel[
     var lane_col = lid % 16
     var lane_row_offset = lid // 16  # 0 for lanes 0-15, 1 for lanes 16-31
 
-    @parameter
-    for m_mma in range(NUM_M_MMAS):
-
-        @parameter
-        for n_mma in range(NUM_N_MMAS):
+    comptime for m_mma in range(NUM_M_MMAS):
+        comptime for n_mma in range(NUM_N_MMAS):
             var c_idx = m_mma * NUM_N_MMAS + n_mma
 
-            @parameter
-            for v in range(CD_FRAG_SIZE):
+            comptime for v in range(CD_FRAG_SIZE):
                 var global_row = (
                     block_m_offset
                     + warp_m * WARP_M
@@ -345,9 +327,7 @@ fn _wmma_matmul_kernel[
                 )
 
                 if global_row < m and global_col < n:
-
-                    @parameter
-                    if elementwise_lambda_fn:
+                    comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = (
                             elementwise_lambda_fn.value()
                         )

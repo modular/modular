@@ -54,109 +54,120 @@ PipelineRole = Literal["prefill_and_decode", "prefill_only", "decode_only"]
 """Indicates whether the pipeline should do prefill and/or decode."""
 
 
-class SupportedEncoding(str, Enum):
-    """All possible encodings which may be supported by a particular model."""
-
-    float32 = "float32"
-    bfloat16 = "bfloat16"
-    q4_k = "q4_k"
-    q4_0 = "q4_0"
-    q6_k = "q6_k"
-    float8_e4m3fn = "float8_e4m3fn"
-    float4_e2m1fnx2 = "float4_e2m1fnx2"
-    gptq = "gptq"
-
-    @classmethod
-    def parse_from_file_name(cls, name: str):  # noqa: ANN206
-        """Infers a SupportedEncoding from a file name string."""
-        # TODO(AITLIB-127): Robustify detection of quantization encoding
-        name = name.lower()
-        if "f32" in name or "fp32" in name or "float32" in name:
-            return SupportedEncoding.float32
-        elif "bf16" in name or "bfloat16" in name:
-            return SupportedEncoding.bfloat16
-        elif "q4_k_m" in name:
-            return SupportedEncoding.q4_k
-        elif "q4_0" in name:
-            return SupportedEncoding.q4_0
-        elif "q6_k" in name:
-            return SupportedEncoding.q6_k
-        elif "gptq" in name:
-            return SupportedEncoding.gptq
-        elif "f8" in name or "fp8" in name or "float8" in name:
-            # For now, default float8 to e4m3. It is the dtype is used for inference.
-            return SupportedEncoding.float8_e4m3fn
-        elif (
-            "fp4" in name or "f4" in name or "float4" in name or "nvfp4" in name
-        ):
-            return SupportedEncoding.float4_e2m1fnx2
-        else:
-            return None
-
-    @property
-    def quantization_encoding(self) -> QuantizationEncoding | None:
-        """Returns the QuantizationEncoding for this encoding, or None if unsupported."""
-        if self not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
-            raise ValueError(
-                f"SupportedEncoding({self}) does not have corresponding QuantizationEncoding."
-            )
-        return _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING[self]
-
-    @property
-    def dtype(self) -> DType:
-        """The underlying model dtype associated with a quantization_encoding."""
-        if self not in _SUPPORTED_ENCODING_TO_DTYPE:
-            raise ValueError(
-                f"SupportedEncoding({self}) does not have corresponding dtype."
-            )
-        return _SUPPORTED_ENCODING_TO_DTYPE[self]
-
-    @property
-    def is_float4(self) -> bool:
-        """Returns True if this encoding represents FP4 (NVFP4)."""
-        return self == SupportedEncoding.float4_e2m1fnx2
-
-    def supported_on(self, device_spec: DeviceSpec) -> bool:
-        """Returns whether this quantization encoding is supported on a device."""
-        return device_spec.device_type in self.supported_devices
-
-    @property
-    def supported_devices(self) -> tuple[str, ...]:
-        """Returns the devices that this quantization encoding is supported on."""
-        return _SUPPORTED_DEVICES[self]
+SupportedEncoding = Literal[
+    "float32",
+    "bfloat16",
+    "q4_k",
+    "q4_0",
+    "q6_k",
+    "float8_e4m3fn",
+    "float4_e2m1fnx2",
+    "gptq",
+]
+"""All possible encodings which may be supported by a particular model."""
 
 
-_SUPPORTED_ENCODING_TO_DTYPE = {
-    SupportedEncoding.float32: DType.float32,
-    SupportedEncoding.bfloat16: DType.bfloat16,
-    SupportedEncoding.float8_e4m3fn: DType.float8_e4m3fn,
-    SupportedEncoding.float4_e2m1fnx2: DType.uint8,
-    SupportedEncoding.q4_k: DType.uint8,
-    SupportedEncoding.q4_0: DType.uint8,
-    SupportedEncoding.q6_k: DType.uint8,
-    SupportedEncoding.gptq: DType.uint8,
+_SUPPORTED_ENCODING_TO_DTYPE: dict[SupportedEncoding, DType] = {
+    "float32": DType.float32,
+    "bfloat16": DType.bfloat16,
+    "float8_e4m3fn": DType.float8_e4m3fn,
+    "float4_e2m1fnx2": DType.uint8,
+    "q4_k": DType.uint8,
+    "q4_0": DType.uint8,
+    "q6_k": DType.uint8,
+    "gptq": DType.uint8,
 }
 
-_SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {
-    SupportedEncoding.float32: None,
-    SupportedEncoding.bfloat16: None,
-    SupportedEncoding.float8_e4m3fn: None,
-    SupportedEncoding.float4_e2m1fnx2: None,
-    SupportedEncoding.q4_k: QuantizationEncoding.Q4_K,
-    SupportedEncoding.q4_0: QuantizationEncoding.Q4_0,
-    SupportedEncoding.q6_k: QuantizationEncoding.Q6_K,
-    SupportedEncoding.gptq: QuantizationEncoding.GPTQ,
+_SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING: dict[
+    SupportedEncoding, QuantizationEncoding | None
+] = {
+    "float32": None,
+    "bfloat16": None,
+    "float8_e4m3fn": None,
+    "float4_e2m1fnx2": None,
+    "q4_k": QuantizationEncoding.Q4_K,
+    "q4_0": QuantizationEncoding.Q4_0,
+    "q6_k": QuantizationEncoding.Q6_K,
+    "gptq": QuantizationEncoding.GPTQ,
 }
-
 
 # Basic validation for supported devices for each type of encoding.
 _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
-    SupportedEncoding.float32: ("cpu", "gpu"),
-    SupportedEncoding.bfloat16: ("gpu",),
-    SupportedEncoding.float8_e4m3fn: ("gpu",),
-    SupportedEncoding.float4_e2m1fnx2: ("gpu",),
-    SupportedEncoding.q4_k: ("cpu",),
-    SupportedEncoding.q4_0: ("cpu",),
-    SupportedEncoding.q6_k: ("cpu",),
-    SupportedEncoding.gptq: ("gpu",),
+    "float32": ("cpu", "gpu"),
+    "bfloat16": ("gpu",),
+    "float8_e4m3fn": ("gpu",),
+    "float4_e2m1fnx2": ("gpu",),
+    "q4_k": ("cpu",),
+    "q4_0": ("cpu",),
+    "q6_k": ("cpu",),
+    "gptq": ("gpu",),
 }
+
+
+def supported_encoding_dtype(encoding: SupportedEncoding) -> DType:
+    """Returns the underlying model dtype for the given encoding."""
+    if encoding not in _SUPPORTED_ENCODING_TO_DTYPE:
+        raise ValueError(
+            f"SupportedEncoding '{encoding}' does not have corresponding dtype."
+        )
+    return _SUPPORTED_ENCODING_TO_DTYPE[encoding]
+
+
+def supported_encoding_quantization(
+    encoding: SupportedEncoding,
+) -> QuantizationEncoding | None:
+    """Returns the QuantizationEncoding for the given encoding."""
+    if encoding not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
+        raise ValueError(
+            f"SupportedEncoding '{encoding}' does not have corresponding"
+            " QuantizationEncoding."
+        )
+    return _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING[encoding]
+
+
+def parse_supported_encoding_from_file_name(
+    name: str,
+) -> SupportedEncoding | None:
+    """Infers a SupportedEncoding from a file name string."""
+    # TODO(AITLIB-127): Robustify detection of quantization encoding
+    name = name.lower()
+    if "f32" in name or "fp32" in name or "float32" in name:
+        return "float32"
+    elif "bf16" in name or "bfloat16" in name:
+        return "bfloat16"
+    elif "q4_k_m" in name:
+        return "q4_k"
+    elif "q4_0" in name:
+        return "q4_0"
+    elif "q6_k" in name:
+        return "q6_k"
+    elif "gptq" in name:
+        return "gptq"
+    elif "f8" in name or "fp8" in name or "float8" in name:
+        # For now, default float8 to e4m3. It is the dtype used for inference.
+        return "float8_e4m3fn"
+    elif "fp4" in name or "f4" in name or "float4" in name or "nvfp4" in name:
+        return "float4_e2m1fnx2"
+    else:
+        return None
+
+
+def supported_encoding_supported_on(
+    encoding: SupportedEncoding, device_spec: DeviceSpec
+) -> bool:
+    """Returns whether the given encoding is supported on a device."""
+    return device_spec.device_type in supported_encoding_supported_devices(
+        encoding
+    )
+
+
+def supported_encoding_supported_devices(
+    encoding: SupportedEncoding,
+) -> tuple[str, ...]:
+    """Returns the devices that the given encoding is supported on."""
+    return _SUPPORTED_DEVICES[encoding]
+
+
+def is_float4_encoding(encoding: SupportedEncoding) -> bool:
+    """Returns whether the given encoding is a float4 type."""
+    return encoding == "float4_e2m1fnx2"

@@ -295,8 +295,7 @@ fn pad_shape[
     # compute and return the output shape
     var output_shape = IndexList[input_buf.rank]()
 
-    @parameter
-    for axis in range(input_buf.rank):
+    comptime for axis in range(input_buf.rank):
         var pre_pad = Int(paddings_buf[2 * axis])
         var post_pad = Int(paddings_buf[2 * axis + 1])
         output_shape[axis] = pre_pad + Int(input_buf.dim[axis]()) + post_pad
@@ -347,8 +346,7 @@ fn _do_pad[
 
     var output_shape = IndexList[output.rank]()
 
-    @parameter
-    for axis in range(output.rank):
+    comptime for axis in range(output.rank):
         output_shape[axis] = Int(output.dim[axis]())
 
     return pad_impl_fn(
@@ -463,8 +461,7 @@ fn _pad_constant_axis[
     input_strides: UnsafePointer[Scalar[DType.int]],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
 ):
-    @parameter
-    if axis == (rank - 1):
+    comptime if axis == (rank - 1):
         axis_params[axis].base(output, input, constant, output_shape[axis])
     else:
         var output_axis_stride = Int(output_strides[axis])
@@ -520,8 +517,7 @@ fn _pad_constant_impl[
         _AxisParams[rank, dtype, paddings_type], rank
     ]()
 
-    @parameter
-    for r in range(rank):
+    comptime for r in range(rank):
         axis_params[r] = _AxisParams[rank, dtype, paddings_type](
             r, paddings, output_shape
         )
@@ -571,8 +567,7 @@ fn _memcpy_regions_fast[
         for curr in range(num_iters):
             var copy_from: Int
 
-            @parameter
-            if singleton:  # non_pad == 1
+            comptime if singleton:  # non_pad == 1
                 # handle singleton case
                 copy_from = pre_pad
             else:
@@ -711,8 +706,7 @@ fn _pad_reflect_axis[
     var input_offset: Int
     var output_offset: Int
 
-    @parameter
-    if axis == 0:
+    comptime if axis == 0:
         input_offset = 0
         output_offset = 0
         # CRITICAL: setting output_offset, input_offset, output and input pointers for the first axis in padding.
@@ -725,8 +719,7 @@ fn _pad_reflect_axis[
         output_offset = axis_params[axis - 1].next_output_offset
         input_offset = axis_params[axis - 1].next_input_offset
 
-    @parameter
-    if axis == rank - 1:
+    comptime if axis == rank - 1:
         axis_params[axis].base(output_offset, input_offset, output, input)
     else:
         var output_axis_stride_next = Int(output_strides[axis + 1])
@@ -840,8 +833,7 @@ fn pad_repeat[
         fill=IndexList[2](0)
     )
 
-    @parameter
-    for i in range(output.rank):
+    comptime for i in range(output.rank):
         loop_bounds[i] = IndexList[2](0, input.layout.shape[i]().value())
 
     var non_pad_iter = _NestedLoopIter[output.rank](loop_bounds)

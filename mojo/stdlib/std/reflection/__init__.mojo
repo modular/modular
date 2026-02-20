@@ -33,8 +33,7 @@ struct Point:
 
 fn print_fields[T: AnyType]():
     comptime names = struct_field_names[T]()
-    @parameter
-    for i in range(struct_field_count[T]()):
+    comptime for i in range(struct_field_count[T]()):
         print(names[i])
 
 fn main():

@@ -69,8 +69,7 @@ fn _get_nd_indices_from_flat_index(
 
     # The inner dimensions ([outer, outer, inner]) are not traversed if
     # drop last is set.
-    @parameter
-    if shape.size == 2:
+    comptime if shape.size == 2:
         if skip_dim == 1:
             return {flat_index, 0}
         else:
@@ -79,8 +78,7 @@ fn _get_nd_indices_from_flat_index(
     res = {}
     var curr_index = flat_index
 
-    @parameter
-    for i in reversed(range(shape.size)):
+    comptime for i in reversed(range(shape.size)):
         # There is one dimension we skip, this represents the inner loop that
         # is being traversed.
         if i == skip_dim:
@@ -404,8 +402,7 @@ fn _reduce_generator[
         if shape[i] == 0:
             return
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         _reduce_generator_cpu[
             num_reductions,
             init_type,
@@ -527,8 +524,7 @@ fn _reduce_generator_cpu[
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
-    @parameter
-    if shape.size == 1:
+    comptime if shape.size == 1:
         _reduce_along_inner_dimension[
             num_reductions,
             init_type,
@@ -717,8 +713,7 @@ fn _reduce_along_inner_dimension[
 
     var num_workers: Int
 
-    @parameter
-    if single_thread_blocking_override:
+    comptime if single_thread_blocking_override:
         num_workers = 1
     else:
         num_workers = _get_num_workers(total_size)
@@ -746,8 +741,7 @@ fn _reduce_along_inner_dimension[
             SIMD[init_type, out_width], num_reductions
         ]()
 
-        @parameter
-        for i in range(num_reductions):
+        comptime for i in range(num_reductions):
             out_acc_tup[i] = in_acc_tup[i].reduce[
                 reduce_function[init_type, reduction_idx=i], out_width
             ]()
@@ -780,8 +774,7 @@ fn _reduce_along_inner_dimension[
                     indices[reduce_dim] = idx
                     var load_value = input_0_fn[init_type, width](indices)
 
-                    @parameter
-                    for i in range(num_reductions):
+                    comptime for i in range(num_reductions):
                         acc[i] = reduce_function[init_type, width, i](
                             load_value, acc[i]
                         )
@@ -797,8 +790,7 @@ fn _reduce_along_inner_dimension[
                 num_reductions,
             ]()
 
-            @parameter
-            for i in range(num_reductions):
+            comptime for i in range(num_reductions):
                 acc_unrolled_simd_tup[i] = SIMD[
                     init_type,
                     unrolled_simd_width,
@@ -849,8 +841,7 @@ fn _reduce_along_inner_dimension[
 
         reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
 
-    @parameter
-    if single_thread_blocking_override:
+    comptime if single_thread_blocking_override:
         reduce_rows_unrolled(0, parallelism_size)
     else:
         sync_parallelize[reduce_rows](num_workers)
@@ -921,8 +912,7 @@ fn _reduce_along_outer_dimension[
 
     var num_workers: Int
 
-    @parameter
-    if single_thread_blocking_override:
+    comptime if single_thread_blocking_override:
         num_workers = 1
     else:
         num_workers = _get_num_workers(total_size)
@@ -947,8 +937,7 @@ fn _reduce_along_outer_dimension[
                     SIMD[init_type, simd_width], num_reductions
                 ]()
 
-                @parameter
-                for i in range(num_reductions):
+                comptime for i in range(num_reductions):
                     acc_simd_tup[i] = SIMD[init_type, simd_width](init[i])
 
                 var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
@@ -961,8 +950,7 @@ fn _reduce_along_outer_dimension[
                         init_type, simd_width, shape.size
                     ](indices)
 
-                    @parameter
-                    for i in range(num_reductions):
+                    comptime for i in range(num_reductions):
                         acc_simd_tup[i] = reduce_function[
                             init_type, simd_width, i
                         ](load_value, acc_simd_tup[i])
@@ -974,8 +962,7 @@ fn _reduce_along_outer_dimension[
 
             vectorize[simd_width](inner_dim, reduce_chunk)
 
-    @parameter
-    if single_thread_blocking_override:
+    comptime if single_thread_blocking_override:
         reduce_slices(0)
     else:
         sync_parallelize[reduce_slices](num_workers)
@@ -1629,8 +1616,7 @@ fn mean[
             return input_fn[width, rank](idx)._refine[_dtype, width]()
 
         # For floats apply the reciprocal as a multiply.
-        @parameter
-        if dtype.is_floating_point():
+        comptime if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
             var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
 
@@ -1710,8 +1696,7 @@ fn mean[
     """
     var total = sum[dtype, input_fn_1d](length)
 
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return total // Scalar[dtype](length)
     else:
         return total / Scalar[dtype](length)
@@ -1960,8 +1945,7 @@ fn cumsum[
     for i in range(0, div_size, simd_width):
         var x_simd = src.unsafe_ptr().load[width=simd_width](i)
 
-        @parameter
-        for i in range(rep):
+        comptime for i in range(rep):
             x_simd += x_simd.shift_right[2**i]()
 
         dst.unsafe_ptr().store(i, x_simd)
