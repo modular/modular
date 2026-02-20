@@ -101,8 +101,7 @@ fn _softmax_cpu[
             sum_val += exp_val
 
         # Pass 3: normalize
-        @parameter
-        if is_logsoftmax:
+        comptime if is_logsoftmax:
             var log_sum = log(sum_val)
             for i in range(axis_dim):
                 out_ptr[offset + i] = in_ptr[offset + i] - max_val - log_sum
@@ -144,12 +143,8 @@ fn softmax_op[
         # available in the interpreter context)
         _softmax_cpu[dtype, is_logsoftmax](out_ptr, in_ptr, batch_dim, axis_dim)
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype in (DType.float32, DType.float16, DType.bfloat16):
+        comptime if has_accelerator():
+            comptime if dtype in (DType.float32, DType.float16, DType.bfloat16):
                 # GPU path: use nn.softmax kernel via input_fn + LayoutTensor
                 @always_inline
                 @parameter
@@ -173,8 +168,7 @@ fn softmax_op[
 
                 var device_ctx = DeviceContextPtr(ctx)
 
-                @parameter
-                if is_logsoftmax:
+                comptime if is_logsoftmax:
                     nn_logsoftmax[
                         dtype,
                         simd_width_of[dtype](),

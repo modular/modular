@@ -106,8 +106,7 @@ fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
         An bool parameter value.
     """
 
-    @parameter
-    if is_defined[name]():
+    comptime if is_defined[name]():
         return env_get_bool[name]()
     else:
         return default
@@ -165,8 +164,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
     Note: useful for parameterizing SIMD vector sizes.
     """
 
-    @parameter
-    if is_defined[name]():
+    comptime if is_defined[name]():
         return env_get_int[name]()
     else:
         return default
@@ -202,8 +200,7 @@ fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
         A string parameter value.
     """
 
-    @parameter
-    if is_defined[name]():
+    comptime if is_defined[name]():
         return env_get_string[name]()
     else:
         return default
@@ -221,8 +218,7 @@ fn env_get_dtype[name: StaticString, default: DType]() -> DType:
         An DType parameter value.
     """
 
-    @parameter
-    if is_defined[name]():
+    comptime if is_defined[name]():
         return DType._from_str(env_get_string[name]())
     else:
         return default

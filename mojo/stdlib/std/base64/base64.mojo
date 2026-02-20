@@ -64,9 +64,7 @@ fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
     elif char == `/`:
         return Byte(63)
     else:
-
-        @parameter
-        if validate:
+        comptime if validate:
             raise Error(
                 "ValueError: Unexpected character '",
                 chr(Int(char)),
@@ -149,8 +147,7 @@ fn b64decode[
     var data = str.as_bytes()
     var n = str.byte_length()
 
-    @parameter
-    if validate:
+    comptime if validate:
         if n % 4 != 0:
             raise Error(
                 "ValueError: Input length '", n, "' must be divisible by 4"

@@ -14,7 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import SupportedArchitecture
 
 from .model import InternVLModel
 from .model_config import InternVLConfig
@@ -24,8 +24,8 @@ internvl_arch = SupportedArchitecture(
     name="InternVLChatModel_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["OpenGVLab/InternVL3-8B-Instruct"],
-    default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={SupportedEncoding.bfloat16: ["paged"]},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16": ["paged"]},
     pipeline_model=InternVLModel,
     tokenizer=InternVLTokenizer,
     context_type=TextAndVisionContext,

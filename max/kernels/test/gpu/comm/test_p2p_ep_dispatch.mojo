@@ -1021,8 +1021,7 @@ fn test_dispatch_common[
 
     # We don't enable e2e benchmarking by default because it would hang
     # if AsyncRT has less than n_ranks worker threads.
-    @parameter
-    if bench_e2e:
+    comptime if bench_e2e:
         for dev_i in range(n_ranks):
             clean_up(dev_i)
             list_of_ctx[dev_i].synchronize()
@@ -1307,8 +1306,7 @@ def main():
     ), "Only NVIDIA and AMD GPUs are supported"
     comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
@@ -1340,8 +1338,7 @@ def main():
 
         comptime device_info = DeviceContext.default_device_info
 
-        @parameter
-        if has_nvidia_gpu_accelerator() and device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and device_info == B200:
             test_dispatch_nvfp4[
                 hidden_size=7168,
                 top_k=8,

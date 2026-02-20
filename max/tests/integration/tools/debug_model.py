@@ -18,11 +18,12 @@ import sys
 
 # Standard library
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 # 3rd-party
 import click
 import torch
+from max import pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
@@ -68,6 +69,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--encoding",
     "encoding_name",
+    type=click.Choice(get_args(pipelines.SupportedEncoding)),
     required=False,
     help="Quantization encoding to run pipeline with.",
 )
@@ -133,7 +135,7 @@ def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str | None,
+    encoding_name: pipelines.SupportedEncoding | None,
     output_path: Path,
     max_batch_size: int | None,
     log_hf_downloads: bool,

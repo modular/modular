@@ -85,8 +85,7 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
-        @parameter
-        if rank == 1:
+        comptime if rank == 1:
             in_shape = [n]
             out_shape = [n + d]
         elif rank == 2:
@@ -120,8 +119,7 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     )
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         paddings[2 * i] = d_pre
         paddings[2 * i + 1] = d_post
 
@@ -159,8 +157,7 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
-        @parameter
-        if rank == 1:
+        comptime if rank == 1:
             in_shape = [n]
             out_shape = [n + d]
         elif rank == 2:
@@ -194,8 +191,7 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     )
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         paddings[2 * i] = d_pre
         paddings[2 * i + 1] = d_post
 

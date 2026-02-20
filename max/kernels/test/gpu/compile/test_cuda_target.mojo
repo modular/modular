@@ -48,8 +48,7 @@ from utils.index import IndexList
 
 
 fn parameterized_on_cuda() -> Int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return 42
     else:
         return -1
@@ -335,8 +334,7 @@ fn gemm(
         barrier()
 
         # Loop within the tile.
-        @parameter
-        for idx in range(TILE_SZ_RATIO):
+        comptime for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Float32
             if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
@@ -384,8 +382,7 @@ fn test_warp_shuffle_up(val: Float32) -> Float32:
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         res += warp.shuffle_up(res, UInt32(1 << mask))
     return res
 
@@ -415,8 +412,7 @@ fn test_warp_shuffle_down(val: Int32) -> Int32:
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         res += warp.shuffle_down(res, UInt32(1 << mask))
     return res
 
@@ -451,8 +447,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         res += warp.shuffle_xor(res, UInt32(1 << mask))
     return res
 

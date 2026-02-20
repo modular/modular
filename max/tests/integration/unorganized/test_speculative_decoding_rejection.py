@@ -25,7 +25,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TokenBuffer,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.kv_cache_config import KVCacheConfig
 from max.pipelines.lib.model_config import MAXModelConfig
@@ -61,7 +61,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path=model_name,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             device_specs=[DeviceSpec.accelerator()],
             kv_cache=kv_cache_config,
             max_length=1024,

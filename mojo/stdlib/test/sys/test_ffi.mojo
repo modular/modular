@@ -267,8 +267,7 @@ comptime error_message_macos: List[Tuple[ErrNo, String]] = [
 
 
 def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
-    @parameter
-    for i in range(len(error_message)):
+    comptime for i in range(len(error_message)):
         errno, msg = materialize[error_message[i]]()
         set_errno(errno)
         assert_equal(get_errno(), errno)
@@ -277,8 +276,7 @@ def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
 
 
 def test_errno_message():
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         _test_errno_message[error_message_linux]()
     elif CompilationTarget.is_macos():
         _test_errno_message[error_message_macos]()

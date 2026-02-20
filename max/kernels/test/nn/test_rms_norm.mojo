@@ -130,6 +130,5 @@ fn run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
 def main():
     run_rms_norm_tests[DType.float32]()
 
-    @parameter
-    if not CompilationTarget.has_neon():
+    comptime if not CompilationTarget.has_neon():
         run_rms_norm_tests[DType.bfloat16](rtol=1e-2)

@@ -237,8 +237,7 @@ struct MatmulConfig[
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
         comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
-        @parameter
-        if static_info_match:
+        comptime if static_info_match:
             return (
                 self.block_tile_shape == rhs.block_tile_shape
                 and self.num_pipeline_stages == rhs.num_pipeline_stages
@@ -299,16 +298,12 @@ struct MatmulConfig[
 # Actual BK should be multiple of BK_base.
 fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
     if type.is_float8():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 128
         else:
             return 64
     elif type.is_half_float():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 64
         else:
             return 32

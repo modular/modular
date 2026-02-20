@@ -148,9 +148,7 @@ fn gemv_tma_kernel[
     )
 
     if thread_idx.x == 0:
-
-        @parameter
-        for i in range(NUM_PIPELINE_STAGES):
+        comptime for i in range(NUM_PIPELINE_STAGES):
             tma_mbar[i].init()
 
     barrier()
@@ -213,8 +211,7 @@ fn gemv_tma_kernel[
             if col_idx < Int(current_block_size):
                 var b_val = current_b_tile[col_idx]
 
-                @parameter
-                for i in range(ROWS_PER_WARP):
+                comptime for i in range(ROWS_PER_WARP):
                     var row_idx = warp_row_offset + i
                     if global_row_idx + i < M:
                         var a_val = current_a_tile[row_idx, col_idx]
@@ -224,8 +221,7 @@ fn gemv_tma_kernel[
 
         consumer_phase.step()
 
-    @parameter
-    for i in range(ROWS_PER_WARP):
+    comptime for i in range(ROWS_PER_WARP):
         var global_row = global_row_idx + i
         if global_row < M:
             var final_dot_product = warp.sum(dot_products[i])

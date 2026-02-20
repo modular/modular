@@ -583,7 +583,6 @@ def main(
             "no_context": no_context,
         },
         "metrics": metrics,
-        "results": results,
     }
 
     # Save results

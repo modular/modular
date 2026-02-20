@@ -51,7 +51,6 @@ def test_build_compile_and_execute_llama3_graph(
     model = Llama3Model(
         pipeline_config=pipeline_config,
         session=session,
-        huggingface_config=hf_config,
         devices=devices,
         kv_cache_config=pipeline_config.model.kv_cache,
         weights=weights,

@@ -243,7 +243,6 @@ class SpeculativeDecodingPipelineBase(
         self._target_model = pipeline_model(
             pipeline_config=self.pipeline_config,
             session=target_session,
-            huggingface_config=target_config,
             devices=self.target_devices,
             kv_cache_config=self.pipeline_config.model.kv_cache,
             weights=target_weights,
@@ -401,7 +400,6 @@ class SpeculativeDecodingPipelineBase(
         self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
             session=draft_session,
-            huggingface_config=draft_config,
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model.kv_cache,
             weights=draft_weights,

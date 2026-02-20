@@ -93,8 +93,7 @@ fn run_cublas[
 
         @parameter
         fn get_bench_id() -> String:
-            @parameter
-            if enable_tc:
+            comptime if enable_tc:
                 return "cublas_tensorcore"
             else:
                 return "cublas"
@@ -433,8 +432,7 @@ fn gemm_kernel_3[
         barrier()
 
         # Perform matrix multiplication on the tiles in shared memory
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             dst_reg += a_smem[row, k] * b_smem[k, col]
 
         # Synchronize threads before loading the next tiles
@@ -596,16 +594,14 @@ fn gemm_kernel_4[
         barrier()
 
         # Iterate over the elements in the K dimension within the tiles.
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             # Get the corresponding tiles from shared memory.
             var a_tile = a_smem.tile[TM, 1](Int(row), k)
             var b_tile = b_smem.tile[1, BN](k, 0)
             var b_val = b_tile[0, col]
 
             # Multiply the elements and accumulate the partial results.
-            @parameter
-            for t in range(TM):
+            comptime for t in range(TM):
                 dst_reg[t] += a_tile[t, 0] * b_val
 
         # Synchronize all threads before loading the next tiles.
@@ -770,8 +766,7 @@ fn gemm_kernel_5[
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
             a_reg.copy_from(a_tile)
@@ -959,8 +954,7 @@ fn gemm_kernel_6[
         barrier()
 
         # Iterate over the elements in the K dimension within the tiles.
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             # Load the corresponding tiles from shared memory into registers.
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
@@ -1157,14 +1151,9 @@ fn matmul_kernel_tc[
         B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Iterate over the elements in the K dimension within the tiles
-        @parameter
-        for mma_k in range(BK // MMA_K):
-
-            @parameter
-            for mma_m in range(WM // MMA_M):
-
-                @parameter
-                for mma_n in range(WN // MMA_N):
+        comptime for mma_k in range(BK // MMA_K):
+            comptime for mma_m in range(WM // MMA_M):
+                comptime for mma_n in range(WN // MMA_N):
                     # Get the register tile for the current MMA operation
                     c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
 
@@ -1187,11 +1176,8 @@ fn matmul_kernel_tc[
                     c_reg_m_n.copy_from(d_reg_m_n)
 
     # Write the final accumulated results to the output matrix
-    @parameter
-    for mma_m in range(WM // MMA_M):
-
-        @parameter
-        for mma_n in range(WN // MMA_N):
+    comptime for mma_m in range(WM // MMA_M):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
             mma_op.store_d(C_mma_tile, c_reg_m_n)

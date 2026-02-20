@@ -677,8 +677,7 @@ def main():
     ), "Only NVIDIA and AMD GPUs are supported"
     comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue

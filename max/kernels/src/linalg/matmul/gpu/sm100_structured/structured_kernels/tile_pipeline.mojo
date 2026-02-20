@@ -591,8 +591,7 @@ struct InputTilePipeline[
         This is the linear type equivalent of InputProducer.drain().
         """
 
-        @parameter
-        for _ in range(Self.num_group_stages):
+        comptime for _ in range(Self.num_group_stages):
             self.pipeline.wait_consumer()
             self.pipeline.producer_step()
 
@@ -821,8 +820,7 @@ struct InputProducer[
     fn drain(mut self):
         """Drain pipeline to prevent CTA exit while peer is still working."""
 
-        @parameter
-        for _ in range(Self.num_group_stages):
+        comptime for _ in range(Self.num_group_stages):
             self.pipeline_ptr[].pipeline.wait_consumer()
             self.pipeline_ptr[].pipeline.producer_step()
 
@@ -1364,8 +1362,7 @@ struct StandardTileProducer[
     fn drain(mut self):
         """Drain pipeline to prevent CTA exit while peer is still working."""
 
-        @parameter
-        for _ in range(Self.num_group_stages):
+        comptime for _ in range(Self.num_group_stages):
             self.pipeline_ptr[].pipeline.wait_consumer()
             self.pipeline_ptr[].pipeline.producer_step()
 
@@ -1575,9 +1572,7 @@ struct OutputTilePipeline[
         )
 
         if elect_one_sync():
-
-            @parameter
-            if Self.cta_group == 1:
+            comptime if Self.cta_group == 1:
                 mma_arrive[Self.cta_group](
                     self.pipeline.producer_mbar(stage.index)
                 )
@@ -2126,8 +2121,7 @@ struct PerKConsumerStage[
         # barrier before each K iteration.
         from gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
-        @parameter
-        if Self.cta_group == 1:
+        comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(
                 self.pipeline_ptr[].pipeline.consumer_mbar(self.stage.index)
             )
@@ -2273,8 +2267,7 @@ struct EpilogueKContext[
         # Signal output pipeline consumer barrier (for MMA synchronization)
         from gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
-        @parameter
-        if Self.cta_group == 1:
+        comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(
                 self.output_pipeline_ptr[].pipeline.consumer_mbar(
                     self.output_stage.index

@@ -74,8 +74,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     for i in range(size):
         var expected: Scalar[dtype]
 
-        @parameter
-        if exclusive:
+        comptime if exclusive:
             expected = UInt64(i * (i - 1) // 2)
         else:
             expected = UInt64(i * (i + 1) // 2)
@@ -149,8 +148,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     for i in range(size):
         var expected: Scalar[dtype]
 
-        @parameter
-        if exclusive:
+        comptime if exclusive:
             expected = UInt64(i * (i - 1) // 2)
         else:
             expected = UInt64(i * (i + 1) // 2)

@@ -5,6 +5,12 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "kv_cache",
     srcs = glob(["**/*.py"]),
+    ignore_unresolved_imports = [
+        # torch and lmcache are optional runtime deps for LMCacheConnector.
+        # They are intentionally excluded so the MAX package does not depend on them.
+        "lmcache",
+        "torch",
+    ],
     deps = [
         requirement("numpy"),
         requirement("msgspec"),

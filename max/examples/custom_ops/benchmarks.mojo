@@ -136,8 +136,7 @@ def top_k():
 
     b.bench_function[top_k_cpu](BenchId("top_k_custom", "cpu"), metrics)
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         var gpu_ctx = DeviceContext()
 
         var out_vals_dev = Tensor[Output, val_spec](gpu_ctx).rand()
@@ -192,8 +191,7 @@ def matmul():
 
     bench.bench_function[matmul_cpu](BenchId("cpu", "naive"), metrics)
 
-    @parameter
-    if (
+    comptime if (
         has_amd_gpu_accelerator()
         or has_apple_gpu_accelerator()
         or has_nvidia_gpu_accelerator()
@@ -222,8 +220,7 @@ def matmul():
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
 
-        @parameter
-        if not has_apple_gpu_accelerator():
+        comptime if not has_apple_gpu_accelerator():
             bench_matmul_kernel["tensor_core"]()
 
     bench.config.verbose_metric_names = False
@@ -258,15 +255,13 @@ def tensor_core_mma():
 
     comptime perform_validation = False
 
-    @parameter
-    if perform_validation:
+    comptime if perform_validation:
         bench.config.max_iters = 1
         bench.config.max_batch_size = 1
         bench.config.num_repetitions = 1
 
     # TODO: Add NVIDIA GPU support
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()

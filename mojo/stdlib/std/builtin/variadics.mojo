@@ -640,8 +640,7 @@ struct VariadicListMem[
         # Destroy each element if this variadic has owned elements, destroy
         # them.  We destroy in backwards order to match how arguments are
         # normally torn down when CheckLifetimes is left to its own devices.
-        @parameter
-        if Self.is_owned:
+        comptime if Self.is_owned:
             _constrained_conforms_to[
                 conforms_to(Self.element_type, ImplicitlyDestructible),
                 Parent=Self,
@@ -781,8 +780,7 @@ struct VariadicPack[
         var total = 0
 
         # Must use @parameter for loop because args is a VariadicPack
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             # Each args[i] has a different concrete type from *ArgTypes
             # The compiler generates specific code for each iteration
             total += Int(args[i])
@@ -837,11 +835,8 @@ struct VariadicPack[
     fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
-        @parameter
-        if Self.is_owned:
-
-            @parameter
-            for i in reversed(range(Self.__len__())):
+        comptime if Self.is_owned:
+            comptime for i in reversed(range(Self.__len__())):
                 # FIXME(MOCO-2953):
                 #   Due to a compiler limitation, we can't use
                 #   conforms_to() here, meaning the `trait_downcast` below
@@ -877,8 +872,7 @@ struct VariadicPack[
             Self.is_owned
         ), "consume_elements may only be called on owned variadic packs"
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
@@ -1018,15 +1012,11 @@ struct VariadicPack[
         """
         writer.write_string(start)
 
-        @parameter
-        for i in range(self.__len__()):
-
-            @parameter
-            if i != 0:
+        comptime for i in range(self.__len__()):
+            comptime if i != 0:
                 writer.write_string(sep)
 
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 self[i].write_repr_to(writer)
             else:
                 self[i].write_to(writer)

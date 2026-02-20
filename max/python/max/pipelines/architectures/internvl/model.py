@@ -204,7 +204,6 @@ class InternVLModel(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -214,7 +213,6 @@ class InternVLModel(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
             devices,
             kv_cache_config,
             weights,

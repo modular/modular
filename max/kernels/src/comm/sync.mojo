@@ -184,8 +184,7 @@ fn _multi_gpu_barrier[
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
-    @parameter
-    if not is_start:
+    comptime if not is_start:
         barrier()
 
     comptime assert not (
@@ -235,8 +234,7 @@ fn _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        @parameter
-        if need_fence:
+        comptime if need_fence:
             # broadcast the value to all peers that I reached the barrier
             store_release(peer_counter_ptr, val)
             while load_acquire(self_counter_ptr) != val:
@@ -246,6 +244,5 @@ fn _multi_gpu_barrier[
             while self_counter_ptr.load[volatile=True]() != val:
                 pass
 
-    @parameter
-    if is_start or need_fence:
+    comptime if is_start or need_fence:
         barrier()

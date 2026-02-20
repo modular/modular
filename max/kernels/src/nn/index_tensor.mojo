@@ -71,12 +71,10 @@ fn index_tensor_shape[
     comptime combined_indices_rank = batch_dims + indices_buf.rank
     var indices_shape = IndexList[combined_indices_rank]()
 
-    @parameter
-    for i in range(batch_dims):
+    comptime for i in range(batch_dims):
         indices_shape[i] = input_buf.layout.shape[i]().value()
 
-    @parameter
-    for i in range(indices_buf.rank):
+    comptime for i in range(indices_buf.rank):
         indices_shape[batch_dims + i] = indices_buf.layout.shape[i]().value()
 
     var index_size = indices_shape[combined_indices_rank - 1]
@@ -98,13 +96,11 @@ fn index_tensor_shape[
 
     var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
 
-    @parameter
-    for i in range(batch_dims):
+    comptime for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
-    @parameter
-    for i in range(batch_dims, combined_indices_rank - 1):
+    comptime for i in range(batch_dims, combined_indices_rank - 1):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
@@ -178,8 +174,7 @@ fn index_tensor[
 
     """
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         return _index_tensor_1d[
             batch_dims,
             target=target,
@@ -223,8 +218,7 @@ fn _index_tensor_1d[
     var data_shape = coord_to_index_list(data.layout.shape_coord())
     var batch_volume: Int = 1
 
-    @parameter
-    for i in range(batch_dims):
+    comptime for i in range(batch_dims):
         batch_volume *= data_shape[i]
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
@@ -307,13 +301,11 @@ fn _index_tensor_impl[
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
 
         # Fill in the known dimensions in our batch_dim
-        @parameter
-        for i in range(batch_dims):
+        comptime for i in range(batch_dims):
             data_idx[i] = output_idx[i]
 
         # Start filling in the index into the indices buffer
-        @parameter
-        for i in range(0, indices.rank - 1):
+        comptime for i in range(0, indices.rank - 1):
             indices_idx[i] = output_idx[batch_dims + i]
 
         # walk the last dimensions, which are the slices we're gathering
@@ -360,8 +352,7 @@ fn _index_tensor_impl[
         == 0
     )
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         if use_simd:
             elementwise[
                 index_tensor_elementwise_fn,
@@ -522,11 +513,8 @@ fn advanced_indexing_getitem[
         input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
-        @parameter
-        for input_dim in range(input_rank):
-
-            @parameter
-            if input_dim < start_axis:
+        comptime for input_dim in range(input_rank):
+            comptime if input_dim < start_axis:
                 input_index[input_dim] = output_index[input_dim]
             elif input_dim >= start_axis + num_index_tensors:
                 input_index[input_dim] = output_index[
@@ -536,8 +524,7 @@ fn advanced_indexing_getitem[
                 comptime index_tensor_offset = input_dim - start_axis
                 var index_tensor_indices = IndexList[index_rank]()
 
-                @parameter
-                for offset in range(index_rank):
+                comptime for offset in range(index_rank):
                     index_tensor_indices[offset] = output_index[
                         offset + start_axis
                     ]
@@ -610,8 +597,7 @@ fn advanced_indexing_getitem_shape[
     comptime output_rank = input_rank + index_rank - num_index_tensors
     var answer = IndexList[output_rank]()
 
-    @parameter
-    for i in range(output_rank):
+    comptime for i in range(output_rank):
         if i < start_axis:
             answer[i] = input_shape[i]
         elif i >= start_axis + index_rank:
@@ -728,11 +714,8 @@ fn advanced_indexing_setitem_inplace[
     var iteration_shape = IndexList[iteration_rank]()
 
     # Find the common iteration space
-    @parameter
-    for i in range(iteration_rank):
-
-        @parameter
-        if i < start_axis:
+    comptime for i in range(iteration_rank):
+        comptime if i < start_axis:
             iteration_shape[i] = input_tensor.layout.shape[i]().value()
         elif i >= start_axis + index_rank:
             iteration_shape[i] = input_tensor.layout.shape[
@@ -749,18 +732,14 @@ fn advanced_indexing_setitem_inplace[
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
-        @parameter
-        for i in range(index_rank):
+        comptime for i in range(index_rank):
             index_tensor_indices[i] = iteration_indices[i + start_axis]
 
         # Find the index into the inputs from the common index
         var input_tensor_indices = IndexList[input_tensor.rank]()
 
-        @parameter
-        for i in range(input_tensor.rank):
-
-            @parameter
-            if i < start_axis:
+        comptime for i in range(input_tensor.rank):
+            comptime if i < start_axis:
                 input_tensor_indices[i] = iteration_indices[i]
             elif i >= start_axis + num_index_tensors:
                 input_tensor_indices[i] = iteration_indices[

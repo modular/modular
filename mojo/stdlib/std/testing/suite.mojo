@@ -75,8 +75,7 @@ fn _format_nsec(nanoseconds: UInt) -> String:
 fn _writeln[
     *Ts: Writable
 ](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
-    @parameter
-    for i in range(args.__len__()):
+    comptime for i in range(args.__len__()):
         args[i].write_to(writer)
         sep.write_to(writer)
     writer.write("\n")
@@ -408,15 +407,11 @@ struct TestSuite(Movable):
     fn _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""
 
-        @parameter
-        for idx in range(len(test_funcs)):
+        comptime for idx in range(len(test_funcs)):
             comptime test_func = test_funcs[idx]
 
-            @parameter
-            if get_function_name[test_func]().startswith("test_"):
-
-                @parameter
-                if _type_is_eq[type_of(test_func), _Test.fn_type]():
+            comptime if get_function_name[test_func]().startswith("test_"):
+                comptime if _type_is_eq[type_of(test_func), _Test.fn_type]():
                     self.test[rebind[_Test.fn_type](test_func)]()
                 else:
                     raise Error(

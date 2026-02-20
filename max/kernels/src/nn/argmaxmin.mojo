@@ -53,8 +53,7 @@ fn _argn[
     if canonical_axis != rank - 1:
         raise Error("axis other than innermost not supported yet")
 
-    @parameter
-    for subaxis in range(rank):
+    comptime for subaxis in range(rank):
         var output_subaxis = output.dim(subaxis)
         var input_subaxis = output.dim(subaxis)
         if subaxis == canonical_axis:
@@ -69,8 +68,7 @@ fn _argn[
     var chunk_size: Int
     var parallel_size = 1
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         input_stride = input.numel()
         output_stride = output.numel()
         chunk_size = 1
@@ -100,8 +98,7 @@ fn _argn[
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            @parameter
-            if is_max:
+            comptime if is_max:
                 return a.le(b)
             else:
                 return a.ge(b)
@@ -113,8 +110,7 @@ fn _argn[
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            @parameter
-            if is_max:
+            comptime if is_max:
                 return a.lt(b)
             else:
                 return a.gt(b)
@@ -130,8 +126,7 @@ fn _argn[
             var global_val: Scalar[input.dtype]
 
             # initialize limits
-            @parameter
-            if is_max:
+            comptime if is_max:
                 global_val = Scalar[input.dtype].MIN
             else:
                 global_val = Scalar[input.dtype].MAX
@@ -155,8 +150,7 @@ fn _argn[
                 global_indices = mask.select(global_indices, indices)
                 global_values = mask.select(global_values, curr_values)
 
-            @parameter
-            if is_max:
+            comptime if is_max:
                 global_val = global_values.reduce_max()
             else:
                 global_val = global_values.reduce_min()

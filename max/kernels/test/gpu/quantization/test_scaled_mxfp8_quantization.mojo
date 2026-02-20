@@ -247,8 +247,7 @@ def main():
             N = Int(128),
         ](ctx, 258, 128)
 
-        @parameter
-        for N in range(576, 16384, 1024):
+        comptime for N in range(576, 16384, 1024):
             test_dynamic_mxfp8_quant[
                 DType.bfloat16,
                 MXFP8_SF_DTYPE,

@@ -15,7 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import SupportedArchitecture
 
 from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel
@@ -75,11 +75,11 @@ qwen2_5_vl_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float8_e4m3fn: ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,

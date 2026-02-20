@@ -50,8 +50,7 @@ fn _get_offset[
         The offset value for the given index.
     """
 
-    @parameter
-    if runtime_layout.layout.all_dims_known():
+    comptime if runtime_layout.layout.all_dims_known():
         comptime offset = runtime_layout.layout(i)
         return Scalar[runtime_layout.linear_idx_type](offset)
     else:
@@ -75,8 +74,7 @@ fn _get_offset[
         The offset value for the given indices.
     """
 
-    @parameter
-    if runtime_layout.layout.all_dims_known():
+    comptime if runtime_layout.layout.all_dims_known():
         comptime offset = runtime_layout.layout([i, j])
         return Scalar[runtime_layout.linear_idx_type](offset)
     else:
@@ -190,12 +188,10 @@ struct Element[
 
         var element_data = Self.element_data_type()
 
-        @parameter
-        if flat_layout.rank() == 1:
+        comptime if flat_layout.rank() == 1:
             comptime size = flat_layout.size()
 
-            @parameter
-            if is_contiguous_dim(flat_layout, 0):
+            comptime if is_contiguous_dim(flat_layout, 0):
                 comptime alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
@@ -203,20 +199,17 @@ struct Element[
                     ]()
                 )
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 element_data[i] = ptr[_get_offset[i](runtime_layout)]
             return Element(element_data, runtime_layout)
 
-        @parameter
-        if is_contiguous_dim(flat_layout, 0):
+        comptime if is_contiguous_dim(flat_layout, 0):
             comptime size = Int(flat_layout.shape[0])
             comptime elements = Int(flat_layout.shape[1])
             comptime vec_type = SIMD[Self.dtype, size]
             comptime alignment = align_of[vec_type]()
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 var vec_i = ptr.load[width=size, alignment=alignment](
                     _get_offset[0, i](runtime_layout)
                 )
@@ -229,8 +222,7 @@ struct Element[
             comptime vec_type = SIMD[Self.dtype, size]
             comptime alignment = align_of[vec_type]()
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 var vec_i = ptr.load[width=size, alignment=alignment](
                     _get_offset[i, 0](runtime_layout)
                 )
@@ -240,11 +232,8 @@ struct Element[
         comptime dim_0 = Int(flat_layout.shape[0])
         comptime dim_1 = Int(flat_layout.shape[1])
 
-        @parameter
-        for i in range(dim_0):
-
-            @parameter
-            for j in range(dim_1):
+        comptime for i in range(dim_0):
+            comptime for j in range(dim_1):
                 element_data[i + j * dim_0] = ptr[
                     _get_offset[i, j](runtime_layout)
                 ]
@@ -282,17 +271,13 @@ struct Element[
         comptime assert Self.layout.rank() <= 2, "Only supports rank <= 2"
         var element_data = Self.element_data_type()
 
-        @parameter
-        if Self.layout.rank() == 1:
+        comptime if Self.layout.rank() == 1:
             comptime size = Self.layout.size()
 
-            @parameter
-            if Self.layout.stride[0] == 1:
+            comptime if Self.layout.stride[0] == 1:
                 comptime alignment = align_of[Self.element_data_type]()
                 if runtime_layout.dim(0) < size:
-
-                    @parameter
-                    for i in range(size):
+                    comptime for i in range(size):
                         if i >= runtime_layout.dim(0):
                             break
                         element_data[i] = ptr[_get_offset[i](runtime_layout)]
@@ -304,16 +289,14 @@ struct Element[
                     ](0)
                 )
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 if i >= runtime_layout.dim(0):
                     break
                 element_data[i] = ptr[_get_offset[i](runtime_layout)]
             return Element(element_data, runtime_layout)
 
         # rank-2 element.
-        @parameter
-        if Self.layout.stride[0] == 1:
+        comptime if Self.layout.stride[0] == 1:
             comptime size = Int(Self.layout.shape[0])
             comptime elements = Int(Self.layout.shape[1])
             comptime vec_type = SIMD[dtype, size]
@@ -323,13 +306,11 @@ struct Element[
                 comptime dim_0 = Int(Self.layout.shape[0])
                 comptime dim_1 = Int(Self.layout.shape[1])
 
-                @parameter
-                for i in range(dim_0):
+                comptime for i in range(dim_0):
                     if i >= runtime_layout.dim(0):
                         break
 
-                    @parameter
-                    for j in range(dim_1):
+                    comptime for j in range(dim_1):
                         if j >= runtime_layout.dim(1):
                             break
                         element_data[i + j * dim_0] = ptr[
@@ -337,8 +318,7 @@ struct Element[
                         ]
                 return Element(element_data, runtime_layout)
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 if i >= runtime_layout.dim(0):
                     break
                 var vec_i = ptr.load[width=size](
@@ -357,13 +337,11 @@ struct Element[
                 comptime dim_0 = Int(Self.layout.shape[0])
                 comptime dim_1 = Int(Self.layout.shape[1])
 
-                @parameter
-                for i in range(dim_0):
+                comptime for i in range(dim_0):
                     if i >= runtime_layout.dim(0):
                         break
 
-                    @parameter
-                    for j in range(dim_1):
+                    comptime for j in range(dim_1):
                         if j >= runtime_layout.dim(1):
                             break
                         element_data[i + j * dim_0] = ptr[
@@ -371,8 +349,7 @@ struct Element[
                         ]
                 return Element(element_data, runtime_layout)
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 if i >= runtime_layout.dim(0):
                     break
                 var vec_i = ptr.load[width=size](
@@ -384,13 +361,11 @@ struct Element[
         comptime dim_0 = Int(Self.layout.shape[0])
         comptime dim_1 = Int(Self.layout.shape[1])
 
-        @parameter
-        for i in range(dim_0):
+        comptime for i in range(dim_0):
             if i >= runtime_layout.dim(0):
                 break
 
-            @parameter
-            for j in range(dim_1):
+            comptime for j in range(dim_1):
                 if j >= runtime_layout.dim(1):
                     break
                 element_data[i + j * dim_0] = ptr[
@@ -423,30 +398,25 @@ struct Element[
         """
         comptime assert Self.layout.rank() <= 2, "Only supports rank <= 2"
 
-        @parameter
-        if Self.layout.rank() == 1:
+        comptime if Self.layout.rank() == 1:
             comptime size = Self.layout.size()
 
-            @parameter
-            if Self.layout.stride[0] == 1:
+            comptime if Self.layout.stride[0] == 1:
                 comptime alignment = align_of[Self.element_data_type]()
                 ptr.store[alignment=alignment](self.element_data)
                 return
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 ptr[_get_offset[i](self.runtime_layout)] = self.element_data[i]
             return
 
-        @parameter
-        if Self.layout.stride[0] == 1:
+        comptime if Self.layout.stride[0] == 1:
             comptime size = Int(Self.layout.shape[0])
             comptime elements = Int(Self.layout.shape[1])
             comptime vec_type = SIMD[Self.dtype, size]
             comptime alignment = align_of[vec_type]()
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 ptr.store[alignment=alignment](
                     _get_offset[0, i](self.runtime_layout),
                     self.element_data.slice[size, offset = i * size](),
@@ -459,8 +429,7 @@ struct Element[
             comptime vec_type = SIMD[Self.dtype, size]
             comptime alignment = align_of[vec_type]()
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 ptr.store[alignment=alignment](
                     _get_offset[i, 0](self.runtime_layout),
                     self.element_data.slice[size, offset = i * size](),
@@ -470,11 +439,8 @@ struct Element[
         comptime dim_0 = Int(Self.layout.shape[0])
         comptime dim_1 = Int(Self.layout.shape[1])
 
-        @parameter
-        for i in range(dim_0):
-
-            @parameter
-            for j in range(dim_1):
+        comptime for i in range(dim_0):
+            comptime for j in range(dim_1):
                 (ptr + _get_offset[i, j](self.runtime_layout)).store(
                     self.element_data[i + j * dim_0]
                 )
@@ -502,16 +468,12 @@ struct Element[
         """
         comptime assert Self.layout.rank() <= 2, "Only supports rank <= 2"
 
-        @parameter
-        if Self.layout.rank() == 1:
+        comptime if Self.layout.rank() == 1:
             comptime size = Self.layout.size()
 
-            @parameter
-            if Self.layout.stride[0] == 1:
+            comptime if Self.layout.stride[0] == 1:
                 if self.runtime_layout.dim(0) < size:
-
-                    @parameter
-                    for i in range(size):
+                    comptime for i in range(size):
                         if i >= self.runtime_layout.dim(0):
                             break
                         ptr[
@@ -523,15 +485,13 @@ struct Element[
                 ptr.store(self.element_data)
                 return
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 if i >= self.runtime_layout.dim(0):
                     break
                 ptr[_get_offset[i](self.runtime_layout)] = self.element_data[i]
             return
 
-        @parameter
-        if Self.layout.stride[0] == 1:
+        comptime if Self.layout.stride[0] == 1:
             comptime size = Int(Self.layout.shape[0])
             comptime elements = Int(Self.layout.shape[1])
             comptime vec_type = SIMD[Self.dtype, size]
@@ -540,13 +500,11 @@ struct Element[
                 comptime dim_0 = Int(Self.layout.shape[0])
                 comptime dim_1 = Int(Self.layout.shape[1])
 
-                @parameter
-                for i in range(dim_0):
+                comptime for i in range(dim_0):
                     if i >= self.runtime_layout.dim(0):
                         break
 
-                    @parameter
-                    for j in range(dim_1):
+                    comptime for j in range(dim_1):
                         if j >= self.runtime_layout.dim(1):
                             break
                         (ptr + _get_offset[i, j](self.runtime_layout)).store(
@@ -554,8 +512,7 @@ struct Element[
                         )
                 return
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 if i >= self.runtime_layout.dim(0):
                     break
                 (ptr + _get_offset[i, 0](self.runtime_layout)).store[
@@ -574,13 +531,11 @@ struct Element[
                 comptime dim_0 = Int(Self.layout.shape[0])
                 comptime dim_1 = Int(Self.layout.shape[1])
 
-                @parameter
-                for i in range(dim_0):
+                comptime for i in range(dim_0):
                     if i >= self.runtime_layout.dim(0):
                         break
 
-                    @parameter
-                    for j in range(dim_1):
+                    comptime for j in range(dim_1):
                         if j >= self.runtime_layout.dim(1):
                             break
                         (ptr + _get_offset[i, j](self.runtime_layout)).store(
@@ -588,8 +543,7 @@ struct Element[
                         )
                 return
 
-            @parameter
-            for i in range(elements):
+            comptime for i in range(elements):
                 if i >= self.runtime_layout.dim(0):
                     break
                 (ptr + _get_offset[i, 0](self.runtime_layout)).store[
@@ -602,13 +556,11 @@ struct Element[
         comptime dim_0 = Int(Self.layout.shape[0])
         comptime dim_1 = Int(Self.layout.shape[1])
 
-        @parameter
-        for i in range(dim_0):
+        comptime for i in range(dim_0):
             if i >= self.runtime_layout.dim(0):
                 break
 
-            @parameter
-            for j in range(dim_1):
+            comptime for j in range(dim_1):
                 if j >= self.runtime_layout.dim(1):
                     break
                 (ptr + _get_offset[i, j](self.runtime_layout)).store(

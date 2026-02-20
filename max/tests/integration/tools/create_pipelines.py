@@ -114,7 +114,7 @@ class VLLMPipeline:
 
     model_path: str
     trust_remote_code: bool = False
-    encoding: str | None = None
+    encoding: pipelines.SupportedEncoding | None = None
     tensor_parallel_size: int = 1
 
 
@@ -144,20 +144,29 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Instantiate a MAX pipeline for the given encoding/device."""
         raise NotImplementedError
 
     @abstractmethod
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device | str
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device | str,
     ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
 
     def create_vllm_pipeline(
-        self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         """Instantiate a vLLM pipeline config."""
         path = getattr(self, "model_path", None)
@@ -225,7 +234,7 @@ class _PipelineConfigExtras(TypedDict):
 
 def _create_vision_max_pipeline(
     model_path: str,
-    encoding: str,
+    encoding: pipelines.SupportedEncoding,
     device_specs: list[driver.DeviceSpec],
     *,
     max_length: int = 8192,
@@ -246,7 +255,7 @@ def _create_vision_max_pipeline(
         kv_cache = pipelines.KVCacheConfig(cache_strategy="paged")
     model = pipelines.MAXModelConfig(
         device_specs=device_specs,
-        quantization_encoding=pipelines.SupportedEncoding[encoding],
+        quantization_encoding=encoding,
         model_path=model_path,
         huggingface_model_revision=revision,
         trust_remote_code=trust_remote_code,
@@ -297,7 +306,10 @@ class InternVLPipelineOracle(PipelineOracle):
         )
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         return _create_vision_max_pipeline(
             self.model_path,
@@ -308,7 +320,10 @@ class InternVLPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -378,7 +393,10 @@ class Idefics3PipelineOracle(PipelineOracle):
         )
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         return _create_vision_max_pipeline(
             self.model_path,
@@ -390,7 +408,10 @@ class Idefics3PipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = transformers.AutoConfig.from_pretrained(
@@ -463,7 +484,10 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         return qwen2_5vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         return _create_vision_max_pipeline(
             self.model_path,
@@ -476,7 +500,10 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = transformers.AutoConfig.from_pretrained(
@@ -552,7 +579,10 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         return qwen3vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         return _create_vision_max_pipeline(
             self.model_path,
@@ -565,7 +595,10 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = transformers.AutoConfig.from_pretrained(
@@ -633,7 +666,10 @@ class PixtralPipelineOracle(PipelineOracle):
         }
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
@@ -641,7 +677,7 @@ class PixtralPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             model=pipelines.MAXModelConfig(
                 device_specs=device_specs,
-                quantization_encoding=pipelines.SupportedEncoding[encoding],
+                quantization_encoding=encoding,
                 model_path=self.model_path,
                 huggingface_model_revision=revision,
                 max_length=self.max_length,
@@ -655,7 +691,10 @@ class PixtralPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = transformers.AutoProcessor.from_pretrained(
@@ -704,7 +743,7 @@ class GenericOracle(PipelineOracle):
     def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
 
-    def weight_path(self, encoding: str) -> str | None:
+    def weight_path(self, encoding: pipelines.SupportedEncoding) -> str | None:
         if self._weight_path_map and encoding in self._weight_path_map:
             return self._weight_path_map[encoding]
         return None
@@ -722,7 +761,7 @@ class GenericOracle(PipelineOracle):
     def create_max_pipeline(
         self,
         *,
-        encoding: str,
+        encoding: pipelines.SupportedEncoding,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
@@ -740,9 +779,7 @@ class GenericOracle(PipelineOracle):
         config = pipelines.PipelineConfig.model_validate(
             {
                 "device_specs": device_specs if device_specs else None,
-                "quantization_encoding": pipelines.SupportedEncoding[encoding]
-                if encoding
-                else None,
+                "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": model_revision,
                 "huggingface_weight_revision": weight_revision,
@@ -763,7 +800,10 @@ class GenericOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         trust_remote_code = self.config_params.get("trust_remote_code", False)
         processor = self.auto_processor_cls.from_pretrained(
@@ -911,7 +951,10 @@ class LoRAOracle(PipelineOracle):
         return self._adapter_path
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Create MAX pipeline with LoRA adapter."""
 
@@ -921,7 +964,7 @@ class LoRAOracle(PipelineOracle):
         config = pipelines.PipelineConfig.model_validate(
             {
                 "device_specs": device_specs,
-                "quantization_encoding": pipelines.SupportedEncoding[encoding],
+                "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "max_num_steps": 1,
@@ -943,7 +986,10 @@ class LoRAOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         """Create PyTorch pipeline with LoRA adapter using PEFT."""
 
@@ -1021,7 +1067,10 @@ class ImageGenerationOracle(PipelineOracle):
         return test_data.DEFAULT_PIXEL_GENERATION
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Create MAX FLUX pixel generation pipeline."""
 
@@ -1054,7 +1103,10 @@ class ImageGenerationOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         """Create diffusers FLUX pipeline."""
 

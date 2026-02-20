@@ -128,8 +128,7 @@ comptime MAX_PATH = _get_max_path()
 
 
 fn _get_max_path() -> Int:
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         return 4096
     elif CompilationTarget.is_macos():
         return 1024
@@ -141,8 +140,7 @@ fn _get_max_path() -> Int:
 fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
-    @parameter
-    if is_64bit() and (
+    comptime if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         # LP64: long is 64-bit on 64-bit systems (e.g. x86_64 or aarch64)
@@ -159,8 +157,7 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
     # `long long` is 64 bits on all common platforms (LP64, LLP64, ILP32).
 
-    @parameter
-    if is_64bit() or is_32bit():
+    comptime if is_64bit() or is_32bit():
         return DType.uint64 if unsigned else DType.int64
     else:
         constrained[False, "size of C `long long` is unknown on this target"]()
@@ -814,9 +811,7 @@ fn _find_dylib[
     try:
         return _try_find_dylib[name](paths)
     except e:
-
-        @parameter
-        if abort_on_failure:
+        comptime if abort_on_failure:
             abort(String(e))
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
@@ -846,9 +841,7 @@ fn _find_dylib[
     try:
         return _try_find_dylib(paths)
     except e:
-
-        @parameter
-        if abort_on_failure:
+        comptime if abort_on_failure:
             abort[prefix="ERROR:"](msg())
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
@@ -906,8 +899,7 @@ struct _Global[
             Self.name, Self._init_wrapper, Self._deinit_wrapper
         ]()
 
-        @parameter
-        if Self.on_error_msg:
+        comptime if Self.on_error_msg:
             if not ptr:
                 raise Self.on_error_msg.value()()
 
@@ -935,8 +927,7 @@ struct _Global[
             Self._deinit_wrapper,
         )
 
-        @parameter
-        if Self.on_error_msg:
+        comptime if Self.on_error_msg:
             if not ptr:
                 raise Self.on_error_msg.value()()
 
@@ -1016,8 +1007,7 @@ fn external_call[
     var loaded_pack = args.get_loaded_kgen_pack()
     comptime callee_kgen_string = _get_kgen_string[callee]()
 
-    @parameter
-    if _mlirtype_is_eq[return_type, NoneType]():
+    comptime if _mlirtype_is_eq[return_type, NoneType]():
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )

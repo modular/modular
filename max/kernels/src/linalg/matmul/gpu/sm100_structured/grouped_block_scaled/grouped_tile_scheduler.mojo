@@ -261,8 +261,7 @@ struct GroupedWorkIterator[
 
         # Compute cumulative tile counts
         # Explicitly zero-initialize ALL slots to avoid stale memory issues
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -678,8 +677,7 @@ struct GroupedCLCWorkIterator[
         self.problem_k = StaticTuple[UInt32, Self.max_groups]()
 
         # Initialize cumulative tiles
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -957,8 +955,7 @@ struct GroupedCLCSchedulerIterator[
         self.signal_count = UInt32(0)
 
         # Initialize cumulative tiles
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -1059,8 +1056,7 @@ struct GroupedCLCSchedulerIterator[
             var response_ptr = self.clc_response + self.producer_state.index()
             response_ptr[] = UInt128(Int(next_linear_idx))
 
-            @parameter
-            for cta in range(Self.cta_group):
+            comptime for cta in range(Self.cta_group):
                 self.full_mbar[self.producer_state.index()].arrive_cluster(
                     UInt32(cta)
                 )

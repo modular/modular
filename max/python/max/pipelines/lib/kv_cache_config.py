@@ -83,6 +83,37 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
 
+    disk_offload_dir: str | None = Field(
+        default=None,
+        description=(
+            "Directory for disk-based KV cache offloading. When set (together "
+            "with kvcache_swapping_to_host), blocks are written through from "
+            "CPU to disk for persistence across restarts."
+        ),
+    )
+
+    disk_offload_max_gb: float = Field(
+        default=50.0,
+        description="Maximum disk space (GB) for KV cache offloading.",
+    )
+
+    disk_offload_direct_io: bool = Field(
+        default=False,
+        description=(
+            "Use O_DIRECT for disk I/O (bypasses OS page cache). "
+            "Requires block sizes aligned to the filesystem block size. "
+            "Falls back to buffered I/O if alignment is not met."
+        ),
+    )
+
+    lmcache_config_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to an LMCache YAML configuration file. When set, enables "
+            "LMCache-based external KV cache tiering (CPU, disk, remote)."
+        ),
+    )
+
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
     """The amount of available cache memory in bytes. This should only be set by internal code."""
@@ -137,4 +168,8 @@ class KVCacheConfig(ConfigFileModel):
             is_mla=is_mla,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            disk_offload_dir=self.disk_offload_dir,
+            disk_offload_max_gb=self.disk_offload_max_gb,
+            disk_offload_direct_io=self.disk_offload_direct_io,
+            lmcache_config_file=self.lmcache_config_file,
         )

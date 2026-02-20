@@ -253,8 +253,7 @@ def main():
 
         comptime is_sm100_kernel_applicable = ctx.default_device_info == B200
 
-        @parameter
-        if not is_sm100_kernel_applicable:
+        comptime if not is_sm100_kernel_applicable:
             return
 
         test[

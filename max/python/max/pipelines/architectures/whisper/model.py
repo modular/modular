@@ -29,7 +29,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from transformers import AutoConfig
 
 from .graph import build_graph
 
@@ -62,7 +61,6 @@ class Whisper(PipelineModel[Any]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -72,7 +70,6 @@ class Whisper(PipelineModel[Any]):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
             devices,
             kv_cache_config,
             weights,

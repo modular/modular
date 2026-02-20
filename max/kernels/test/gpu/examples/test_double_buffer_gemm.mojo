@@ -244,8 +244,7 @@ fn sgemm_double_buffer[
         # The shared memory buffer to be prefetched
         var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
 
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             var next_k = (k + 1) % BK
 
             # Buffer id for the double register buffers. They alternate.

@@ -1025,8 +1025,7 @@ def _test_copyinit_trivial_types[dt: DType]():
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
+    comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
@@ -1053,8 +1052,7 @@ def test_copyinit_trivial_types_dtypes():
         DType.bool,
     )
 
-    @parameter
-    for index_dtype in range(len(dtypes)):
+    comptime for index_dtype in range(len(dtypes)):
         _test_copyinit_trivial_types[dtypes[index_dtype]]()
 
 

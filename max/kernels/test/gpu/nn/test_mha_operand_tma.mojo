@@ -807,15 +807,13 @@ def main():
 
         print("Testing TMA copy with different tile configurations")
 
-        @parameter
-        for i in range(6, 9):
+        comptime for i in range(6, 9):
             comptime head_size = 1 << i  # 64, 128, 256
             comptime kv_params = KVCacheStaticParams(
                 num_heads=8, head_size=UInt(head_size)
             )
 
-            @parameter
-            for j in range(6, 15 - i):
+            comptime for j in range(6, 15 - i):
                 comptime block_m = 1 << j  # 64, ..., (64 * 256) // block_m
 
                 comptime msg = "\nTesting block_m=" + String(

@@ -68,8 +68,7 @@ def run_elementwise[
                 in_host[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_almost_equal(
                     out_host[i],
                     exp(in_host[i]),

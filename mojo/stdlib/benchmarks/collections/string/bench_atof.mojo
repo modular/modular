@@ -50,8 +50,7 @@ def main():
     var bench = Bench()
     comptime files = ["canada", "mesh"]
 
-    @parameter
-    for filename in files:
+    comptime for filename in files:
         var file_path = _dir_of_current_file() / "data" / (filename + ".txt")
         var items_to_parse = file_path.read_text().splitlines()
         var nb_of_bytes = 0

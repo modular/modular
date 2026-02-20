@@ -87,8 +87,7 @@ fn fp8_quantize[
     comptime assert out_dtype.is_float8(), "out_dtype must be float8"
     var result = values * scale_recip
 
-    @parameter
-    if use_clamp:
+    comptime if use_clamp:
         comptime min_val = SIMD[values.dtype, values.size](
             min_finite[out_dtype]()
         )

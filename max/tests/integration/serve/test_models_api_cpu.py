@@ -16,7 +16,7 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
@@ -38,7 +38,7 @@ assert SMOLLM_135M_REVISION is not None
                 model_path=SMOLLM_135M_REPO_ID,
                 huggingface_model_revision=SMOLLM_135M_REVISION,
                 device_specs=[DeviceSpec.cpu()],
-                quantization_encoding=SupportedEncoding.float32,
+                quantization_encoding="float32",
                 kv_cache=KVCacheConfig(cache_strategy="paged"),
                 max_length=512,
             ),
@@ -76,7 +76,7 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
                 model_path=MODEL_NAME,
                 served_model_name=MODEL_ALIAS,
                 device_specs=[DeviceSpec.cpu()],
-                quantization_encoding=SupportedEncoding.float32,
+                quantization_encoding="float32",
                 kv_cache=KVCacheConfig(cache_strategy="paged"),
                 max_length=512,
             ),

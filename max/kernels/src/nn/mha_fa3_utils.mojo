@@ -252,16 +252,14 @@ struct MHAPosition[
 
     @always_inline
     fn q_head_idx(self) -> UInt32:
-        @parameter
-        if Self.decoding:
+        comptime if Self.decoding:
             return self.head_idx * UInt32(Self.group)
         else:
             return self.head_idx
 
     @always_inline
     fn kv_head_idx(self) -> UInt32:
-        @parameter
-        if Self.decoding:
+        comptime if Self.decoding:
             return self.head_idx
         else:
             return self.head_idx // UInt32(Self.group)
@@ -288,8 +286,7 @@ struct MHAPosition[
 
     @always_inline
     fn q_tile_num_rows(self) -> UInt32:
-        @parameter
-        if Self.decoding:
+        comptime if Self.decoding:
             return UInt32(Self.group)
         else:
             return min(self.seq_len - self.prompt_offset, UInt32(Self.BM))
@@ -331,11 +328,8 @@ struct MHAPosition[
     fn mask_status[
         MaskType: MHAMask
     ](self, mask: MaskType, kv_tile_start_row: UInt32) -> TileMaskStatus:
-        @parameter
-        if Self.decoding:
-
-            @parameter
-            if MaskType.check_mask_during_decoding:
+        comptime if Self.decoding:
+            comptime if MaskType.check_mask_during_decoding:
                 # In context encoding, we have BM rows of Q
                 # In decoding, we have `group` rows, but these
                 # correspond to the same position w/ respect to the mask.
@@ -359,8 +353,7 @@ struct MHAPosition[
 
     @always_inline
     fn get_score_row(self) -> UInt32:
-        @parameter
-        if Self.decoding:
+        comptime if Self.decoding:
             return self.num_keys - 1
         else:
             return self.prompt_offset + self.start_pos
@@ -393,8 +386,7 @@ struct MHAPosition[
             self.get_score_row()
         )
 
-        @parameter
-        if PartitionType.do_partition:
+        comptime if PartitionType.do_partition:
             start, end = get_start_and_end_for_partitions[Self.BN](
                 Int(self.num_keys - start_col),
                 Int(partition.num_partitions()),
@@ -411,8 +403,7 @@ struct MHAPosition[
     ](seq_info: SeqInfo, max_seq_len: MaxSeqLenType) -> UInt32:
         var q_row: UInt32
 
-        @parameter
-        if ragged:
+        comptime if ragged:
             q_row = seq_info.start_of_seq
 
         # NDBuffer inputs, homogeneous batching.
@@ -421,8 +412,7 @@ struct MHAPosition[
             # prefix preceding the input seq_len.
             q_row = seq_info.prompt_idx * max_seq_len.as_uint32()
 
-        @parameter
-        if _is_decoding[MaxSeqLenType]():
+        comptime if _is_decoding[MaxSeqLenType]():
             # q matrix view is rows x depth
             return q_row * UInt32(
                 Self.q_num_heads
@@ -438,8 +428,7 @@ struct MHAPosition[
     ](seq_info: SeqInfo, max_seq_len: UInt32) -> UInt32:
         var q_row: UInt32
 
-        @parameter
-        if ragged:
+        comptime if ragged:
             q_row = seq_info.start_of_seq
 
         # NDBuffer inputs, homogeneous batching.
@@ -500,8 +489,7 @@ struct PositionSummary(TrivialRegisterPassable):
         ragged: Bool,
         _is_cache_length_accurate: Bool,
     ](kv_lut: KVLUTType, seq_info: SeqInfo, num_keys_arg: UInt32) -> UInt32:
-        @parameter
-        if not ragged:
+        comptime if not ragged:
             return num_keys_arg - seq_info.seq_len
         elif _is_cache_length_accurate:
             return 0
@@ -525,14 +513,12 @@ struct PositionSummary(TrivialRegisterPassable):
         num_keys_arg: UInt32,
         start_pos: UInt32,
     ) -> UInt32:
-        @parameter
-        if not ragged:
+        comptime if not ragged:
             return num_keys_arg
         else:
             var batch_idx: UInt32 = seq_info.prompt_idx
 
-            @parameter
-            if KVInputRowOffsetsType.is_null:
+            comptime if KVInputRowOffsetsType.is_null:
                 return seq_info.seq_len + start_pos
             else:
                 var kv_row_offsets = kv_input_row_offsets.value()
@@ -550,8 +536,7 @@ struct PositionSummary(TrivialRegisterPassable):
     fn get_score_row[
         *, ragged: Bool, _is_cache_length_accurate: Bool, decoding: Bool
     ](seq_info: SeqInfo, num_keys: UInt32, start_pos: UInt32) -> UInt32:
-        @parameter
-        if decoding:
+        comptime if decoding:
             return num_keys - 1
         elif ragged and _is_cache_length_accurate:
             return seq_info.prompt_offset
@@ -633,11 +618,8 @@ fn _get_position[
     var start_pos: UInt32
     var q_row: UInt32
 
-    @parameter
-    if ragged:
-
-        @parameter
-        if not _is_cache_length_accurate:
+    comptime if ragged:
+        comptime if not _is_cache_length_accurate:
             start_pos = UInt32(
                 warp.broadcast(kv_lut.cache_length(Int(batch_idx)))
             )
@@ -646,8 +628,7 @@ fn _get_position[
 
         # this is used for cross attention where we get the num_keys
         # from kv_input_row_offsets. This is when num_keys != seq_len
-        @parameter
-        if KVInputRowOffsetsType.is_null:
+        comptime if KVInputRowOffsetsType.is_null:
             num_keys = seq_len + UInt32(Int(start_pos))
         else:
             var kv_row_offsets = kv_input_row_offsets.value()
@@ -669,8 +650,7 @@ fn _get_position[
     var q_offset: Int
     var q_col: UInt32
 
-    @parameter
-    if _is_decoding[MaxSeqLenType]():
+    comptime if _is_decoding[MaxSeqLenType]():
         # q matrix view is rows x depth
         q_col = 0
         q_offset = depth * Int(
@@ -698,11 +678,8 @@ fn q_smem_shape[
     comptime assert L in (3, 4)
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
-    @parameter
-    if L == 3:  # prefill
-
-        @parameter
-        if num_qk_stages == 1:
+    comptime if L == 3:  # prefill
+        comptime if num_qk_stages == 1:
             return {BM, 1, depth}
         else:
             return {
@@ -726,8 +703,7 @@ fn q_gmem_shape[
     comptime L = res.size
     comptime assert L in (3, 4)
 
-    @parameter
-    if L == 3:  # prefill
+    comptime if L == 3:  # prefill
         return {UNKNOWN_VALUE, q_num_heads, depth}
     else:
         return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
@@ -831,15 +807,13 @@ fn get_q_head_idx[
     lane: UInt32,
     out indices: StaticTuple[UInt32, type_of(position).num_q_heads_per_thread],
 ):
-    @parameter
-    if decoding:
+    comptime if decoding:
         var q_head_idx_0: UInt32 = UInt32(group) * position.head_idx + lane // 4
 
         indices = {}
         indices[0] = q_head_idx_0
 
-        @parameter
-        for i in range(1, position.num_q_heads_per_thread):
+        comptime for i in range(1, position.num_q_heads_per_thread):
             indices[i] = q_head_idx_0 + UInt32(8 * i)
 
     else:
@@ -892,8 +866,7 @@ fn _apply_mask[
     ) if decoding else 2
     var batch_cache_valid_length: UInt32
 
-    @parameter
-    if decoding:
+    comptime if decoding:
         if warp.broadcast((thread_idx.x - 128) // 32) > UInt((group - 1) // 16):
             return
         if lane >= UInt32(4 * group):
@@ -915,21 +888,16 @@ fn _apply_mask[
     @parameter
     @always_inline
     fn _apply_mask_capture[masked: Bool]():
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
                 mask_frag_row = mask_warp_row + UInt32(m_mma * WM)
                 mask_frag_col = mask_warp_col + UInt32(n_mma * WN)
 
-                @parameter
-                for i in range(num_groups_per_thread):
+                comptime for i in range(num_groups_per_thread):
                     var q_head_idx: UInt32 = position.head_idx
 
-                    @parameter
-                    if decoding:
+                    comptime if decoding:
                         group_idx = UInt32(i * 8) + fragment_row
                         q_head_idx = UInt32(group) * q_head_idx + group_idx
                     # The row in score matrix of shape seq_len x num_keys.
@@ -937,8 +905,7 @@ fn _apply_mask[
                     var score_row: UInt32
                     var score_row_with_start_pos: UInt32
 
-                    @parameter
-                    if decoding:
+                    comptime if decoding:
                         score_row = batch_cache_valid_length
                         score_row_with_start_pos = score_row
                     else:
@@ -951,13 +918,11 @@ fn _apply_mask[
                             score_row + position.start_pos
                         )
 
-                    @parameter
-                    for j in range(WN // 8):
+                    comptime for j in range(WN // 8):
                         score_col = mask_frag_col + UInt32(j * 8)
                         p = p_reg_tile[i, m_mma, j, n_mma]
 
-                        @parameter
-                        if masked:
+                        comptime if masked:
                             p = mask.mask(
                                 IndexList[4, element_type = DType.uint32](
                                     Int(position.prompt_idx),
@@ -970,8 +935,7 @@ fn _apply_mask[
                         else:
                             p *= scale_log2e
 
-                        @parameter
-                        if use_score_mod:
+                        comptime if use_score_mod:
                             p = (
                                 score_mod.score_mod(
                                     IndexList[4, element_type = DType.uint32](
@@ -990,8 +954,7 @@ fn _apply_mask[
 
                         var bound: IndexList[2, element_type = DType.uint32]
 
-                        @parameter
-                        if decoding:
+                        comptime if decoding:
                             bound = IndexList[2, element_type = DType.uint32](
                                 Int(position.num_keys),
                                 Int(position.num_keys),
@@ -1017,8 +980,7 @@ fn _apply_mask[
                             )
                         p_reg_tile[i, m_mma, j, n_mma] = p
 
-    @parameter
-    if decoding:
+    comptime if decoding:
         _apply_mask_capture[True]()
     else:
         unswitch[_apply_mask_capture](
@@ -1055,8 +1017,7 @@ fn q_coord[
 
     res = {}
 
-    @parameter
-    for i in range(rank - 2):
+    comptime for i in range(rank - 2):
         res[i] = 0
 
     res[rank - 2] = head_idx
@@ -1219,8 +1180,7 @@ fn produce[
         ref p_mbar = produced_mbar_kv[write_idx]
         k_sub = kv_tile(write_idx)
 
-        @parameter
-        if wait:
+        comptime if wait:
             consumed_mbar_kv[write_idx].wait(write_phase)
             comptime bytes = BN * padded_depth * size_of[qkv_type]()
             p_mbar.expect_bytes(Int32(bytes))
@@ -1282,8 +1242,7 @@ fn produce[
     write_pipeline_states = PipelineState[pipeline_stages]()
     q_pipeline_state = PipelineState[2 if persistent else 1]()
 
-    @parameter
-    if PartitionType.do_partition:
+    comptime if PartitionType.do_partition:
         startend = position.get_start_and_end_for_partitions[
             page_size = KVLUTType.page_size
         ](partition, mask)
@@ -1298,13 +1257,11 @@ fn produce[
 
     produced_mbar_kv[0].expect_bytes(Int32(qk_bytes))
 
-    @parameter
-    if decoding:
+    comptime if decoding:
         ref q_mbar = produced_mbar_kv[0]
         var q_idx: UInt32 = q_pipeline_state.index()
 
-        @parameter
-        for d_idx in range(ceildiv(depth, swizzle_granularity)):
+        comptime for d_idx in range(ceildiv(depth, swizzle_granularity)):
             comptime d: Int = d_idx * swizzle_granularity
             comptime smem_offset = q_smem_layout_consumer(IntTuple(0, d))
 
@@ -1329,8 +1286,7 @@ fn produce[
             ](position.q_row, position.head_idx),
         )
 
-    @parameter
-    if not PartitionType.do_partition:
+    comptime if not PartitionType.do_partition:
         startend = position.get_start_and_end_for_partitions[
             page_size = KVLUTType.page_size
         ](partition, mask)
@@ -1368,9 +1324,7 @@ fn produce[
         # this loops over num_keys
         kv_tile_start_row += UInt32(BN)
         if kv_tile_start_row >= end:
-
-            @parameter
-            if persistent:
+            comptime if persistent:
                 kv_tile_start_row = 0
                 var q_idx_old: UInt32 = q_pipeline_state.index()
                 var q_phase_old: UInt32 = q_pipeline_state.phase()
@@ -1392,8 +1346,7 @@ fn produce[
                     Int32(q_copy_rows * padded_depth * size_of[qkv_type]())
                 )
 
-                @parameter
-                if not decoding:
+                comptime if not decoding:
                     q_tma_op.async_copy(
                         q_producer(q_idx),
                         pq_mbar,
@@ -1405,9 +1358,7 @@ fn produce[
                     )
 
                 else:
-
-                    @parameter
-                    for d_idx in range(depth // 64):
+                    comptime for d_idx in range(depth // 64):
                         comptime d: UInt = UInt(d_idx * 64)
                         q_tma_op.async_copy_4d(
                             q_producer(q_idx),
@@ -1481,11 +1432,8 @@ fn output_reg_to_smem_st_matrix[
         linear_idx_type = DType.int32,
     ]()
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for i in range(padded_depth // 16):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for i in range(padded_depth // 16):
             var st_matrix_args = RuntimeTuple[
                 IntTuple(UNKNOWN_VALUE, IntTuple(i, m_mma, UNKNOWN_VALUE))
             ](
@@ -1543,8 +1491,7 @@ fn output_reg_to_smem[
         output_type
     ]() == 2 and o_frag_size % 8 == 0
 
-    @parameter
-    if use_stmatrix:
+    comptime if use_stmatrix:
         var warp_group_thread_idx = tid % UInt32(WARPGROUP_SIZE)
         comptime reg_layout = row_major[num_m_mmas, o_frag_size]()
         comptime smem_layout = row_major[BM, padded_depth]()

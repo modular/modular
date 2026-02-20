@@ -293,8 +293,7 @@ fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         ```
     """
 
-    @parameter
-    if dtype == DType.float16:
+    comptime if dtype == DType.float16:
         return (1e-3, 1e-5)
     elif dtype == DType.bfloat16:
         return (1.6e-2, 1e-5)

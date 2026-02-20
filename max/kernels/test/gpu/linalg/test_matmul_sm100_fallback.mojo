@@ -226,12 +226,8 @@ def test_matmul_sm100_fallback[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        for dtype in [DType.float8_e4m3fn, DType.bfloat16]:
-
-            @parameter
-            for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+        comptime for dtype in [DType.float8_e4m3fn, DType.bfloat16]:
+            comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
                 comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
                 comptime BK = (swizzle.bytes() // size_of[dtype]())
 
@@ -297,8 +293,7 @@ def main():
 
                 comptime BK_list: List[Int] = [BK, BK * 2]
 
-                @parameter
-                for _BK in BK_list:
+                comptime for _BK in BK_list:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
