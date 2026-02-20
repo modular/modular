@@ -64,20 +64,15 @@ class EagleHiddenStateManager:
         self._request_info: dict[RequestID, tuple[int, int, int]] = {}
         self._free_slots: list[int] = list(range(max_batch_size - 1, -1, -1))
 
-        self._gather_scatter_models: list[Model] = []
-        self._gather_models: list[Model] = []
-        for dev in devices:
-            dev_ref = DeviceRef.from_device(dev)
-            self._gather_scatter_models.append(
-                session.load(
-                    build_gather_scatter_graph(
-                        dev_ref, dtype, hidden_dim, max_tg_rows
-                    )
-                )
+        device_refs = [DeviceRef.from_device(dev) for dev in devices]
+        self._gather_scatter_model: Model = session.load(
+            build_gather_scatter_graph(
+                device_refs, dtype, hidden_dim, max_tg_rows
             )
-            self._gather_models.append(
-                session.load(build_gather_graph(dev_ref, dtype, hidden_dim))
-            )
+        )
+        self._gather_model: Model = session.load(
+            build_gather_graph(device_refs, dtype, hidden_dim)
+        )
 
     def release(self, request_id: RequestID) -> None:
         """Releases the hidden state slot for a completed request."""
@@ -98,6 +93,7 @@ class EagleHiddenStateManager:
         data_parallel_splits_np: npt.NDArray[np.int64],
     ) -> None:
         """Saves the last hidden state from prefill into per-request slots."""
+        model_args: list[Buffer] = []
         for dev_idx in range(len(self._devices)):
             start_batch = int(data_parallel_splits_np[dev_idx])
             end_batch = int(data_parallel_splits_np[dev_idx + 1])
@@ -118,20 +114,27 @@ class EagleHiddenStateManager:
                         1,
                     )
 
-            if not src_indices:
-                continue
-
             dev = self._devices[dev_idx]
-            gather_np = np.array(src_indices, dtype=np.int64)
+            if src_indices:
+                gather_np = np.array(src_indices, dtype=np.int64)
+                scatter_np = np.array(dst_indices, dtype=np.int64).reshape(
+                    -1, 1
+                )
+            else:
+                gather_np = np.array([], dtype=np.int64)
+                scatter_np = np.array([], dtype=np.int64).reshape(0, 1)
             gather_buf = Buffer.from_numpy(gather_np).to(dev)
-            scatter_np = np.array(dst_indices, dtype=np.int64).reshape(-1, 1)
             scatter_buf = Buffer.from_numpy(scatter_np).to(dev)
-            self._gather_scatter_models[dev_idx](
-                draft_hs[dev_idx],
-                gather_buf,
-                self._hs_storage[dev_idx],
-                scatter_buf,
+            model_args.extend(
+                [
+                    draft_hs[dev_idx],
+                    gather_buf,
+                    self._hs_storage[dev_idx],
+                    scatter_buf,
+                ]
             )
+
+        self._gather_scatter_model(*model_args)
 
     def save_extracted(
         self,
@@ -142,6 +145,7 @@ class EagleHiddenStateManager:
         data_parallel_splits_np: npt.NDArray[np.int64],
     ) -> None:
         """Saves accepted hidden states from target verification."""
+        model_args: list[Buffer] = []
         for dev_idx in range(len(self._devices)):
             start_batch = int(data_parallel_splits_np[dev_idx])
             end_batch = int(data_parallel_splits_np[dev_idx + 1])
@@ -167,29 +171,34 @@ class EagleHiddenStateManager:
                     num_rows,
                 )
 
-            if not gather_indices:
-                continue
-
             dev = self._devices[dev_idx]
-            gather_np = np.array(gather_indices, dtype=np.int64)
+            if gather_indices:
+                gather_np = np.array(gather_indices, dtype=np.int64)
+                scatter_np = np.array(scatter_indices, dtype=np.int64).reshape(
+                    -1, 1
+                )
+            else:
+                gather_np = np.array([], dtype=np.int64)
+                scatter_np = np.array([], dtype=np.int64).reshape(0, 1)
             gather_buf = Buffer.from_numpy(gather_np).to(dev)
-            scatter_np = np.array(scatter_indices, dtype=np.int64).reshape(
-                -1, 1
-            )
             scatter_buf = Buffer.from_numpy(scatter_np).to(dev)
-            self._gather_scatter_models[dev_idx](
-                target_hidden_states[dev_idx],
-                gather_buf,
-                self._hs_storage[dev_idx],
-                scatter_buf,
+            model_args.extend(
+                [
+                    target_hidden_states[dev_idx],
+                    gather_buf,
+                    self._hs_storage[dev_idx],
+                    scatter_buf,
+                ]
             )
+
+        self._gather_scatter_model(*model_args)
 
     def get_draft_input(
         self,
         replica_batches: list[list[TextContext]],
     ) -> list[Buffer]:
         """Gathers stored hidden states as input for the draft model."""
-        result: list[Buffer] = []
+        model_args: list[Buffer] = []
         for dev_idx, replica_batch in enumerate(replica_batches):
             gather_indices: list[int] = []
             for ctx in replica_batch:
@@ -210,16 +219,20 @@ class EagleHiddenStateManager:
                 for r in range(num_rows):
                     gather_indices.append(slot_start + r)
 
-            if not gather_indices:
-                result.append(self._hs_storage[dev_idx][:0, :])
-                continue
-
             dev = self._devices[dev_idx]
-            indices_np = np.array(gather_indices, dtype=np.int64)
+            if gather_indices:
+                indices_np = np.array(gather_indices, dtype=np.int64)
+            else:
+                indices_np = np.array([], dtype=np.int64)
             indices_buf = Buffer.from_numpy(indices_np).to(dev)
-            (gathered,) = self._gather_models[dev_idx](
-                self._hs_storage[dev_idx], indices_buf
-            )
-            assert isinstance(gathered, Buffer)
-            result.append(gathered)
+            model_args.extend([self._hs_storage[dev_idx], indices_buf])
+
+        outputs = self._gather_model(*model_args)
+        # Single-device returns a single Buffer; multi-device returns a tuple.
+        if isinstance(outputs, Buffer):
+            return [outputs]
+        result: list[Buffer] = []
+        for out in outputs:
+            assert isinstance(out, Buffer)
+            result.append(out)
         return result
