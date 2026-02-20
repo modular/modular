@@ -2562,6 +2562,20 @@ static SymbolRefAttr getOptionalTypeSymbolRef(Type type) {
   return {};
 }
 
+static TypedAttr stripUpcast(TypedAttr a) {
+  while (auto u = sugarDynCast<UpcastAttr>(a))
+    a = u.getInputTypeValue();
+  return a;
+}
+
+static Type getTypeValueAsType(TypedAttr a) {
+  if (auto tp = dyn_cast<TypeParamAttr>(a))
+    return tp.getTypeValue();
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(a))
+    return ParamType::get(ref);
+  return {};
+}
+
 /// Compute the result of == for the two specified attributes, handling the
 /// index truncation issue but otherwise relying on MLIR's canonicalization of
 /// attributes to do the job for us.  Both operands may be null, and this
@@ -2578,6 +2592,11 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   // Folding to True is easy: If the values have pointer equality, we know they
   // are equal.
   if (lhs == rhs)
+    return BoolAttr::get(rhs.getContext(), true);
+
+  Type lhsTypeVal = getTypeValueAsType(stripUpcast(lhs));
+  Type rhsTypeVal = getTypeValueAsType(stripUpcast(rhs));
+  if (lhsTypeVal && rhsTypeVal && isEqualCanon(lhsTypeVal, rhsTypeVal))
     return BoolAttr::get(rhs.getContext(), true);
 
   // Folding to False is a lot harder:
