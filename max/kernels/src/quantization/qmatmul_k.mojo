@@ -1381,7 +1381,7 @@ fn _matmul_Q6_K_columns[
             a_q_bits_ptr: UnsafePointer[Int8],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
-            _matmul_group_packed_Q6_K[zero_point=b_zero_point](
+            _matmul_group_packed_Q6_K[zero_point = UInt8(b_zero_point)](
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
             )
 
@@ -1409,7 +1409,7 @@ fn _matmul_Q6_K_columns[
     var b_q_bits = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
-    b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
+    b_tile_ptr[].q_bits.unpack[zero_point = UInt8(b_zero_point)](b_q_bits)
 
     @parameter
     @__copy_capture(b_tile_ptr, b_q_bits)
@@ -1579,7 +1579,7 @@ fn matmul_Q4_K[
             b_type = _block_Q4_K_packed[],
             columns_fn=_matmul_Q4_K_columns,
             interleave_group_sums=True,
-            elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value()),
+            elementwise_lambda_fn = OptionalReg(elementwise_lambda_fn.value()),
         ](a, b, c)
     else:
         _matmul_Qb_K[
@@ -1608,7 +1608,7 @@ fn matmul_Q6_K[
             group_size = _block_Q6_K.group_size,
             b_type = _block_Q6_K_packed[],
             columns_fn=_matmul_Q6_K_columns,
-            elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value()),
+            elementwise_lambda_fn = OptionalReg(elementwise_lambda_fn.value()),
         ](a, b, c)
     else:
         _matmul_Qb_K[
