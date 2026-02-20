@@ -64,8 +64,7 @@ fn calculate_coordinate[
 
     var prev = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         comptime index = rank - i - 1
         comptime dimension = zipped_shape[index].value()
 
@@ -75,8 +74,7 @@ fn calculate_coordinate[
     var current_coordinate = linear_index
     comptime tile_dims = to_index_list[rank, DType.uint32](coalesced_tile)
 
-    @parameter
-    for index in range(rank):
+    comptime for index in range(rank):
         indices[index] = current_coordinate // elements_per_dimension[index]
         current_coordinate = current_coordinate % elements_per_dimension[index]
 
@@ -98,9 +96,7 @@ fn shared_to_global_2D[
     comptime global_dim1 = product(dst.layout.shape[1])
 
     if thread_idx.x == 0:
-
-        @parameter
-        if OOB_access:
+        comptime if OOB_access:
             var end_row = min(global_dim0, smem_dim0 + tiled_coordinate[0])
             var end_col = min(global_dim1, smem_dim1 + tiled_coordinate[1])
 
@@ -144,9 +140,7 @@ fn shared_to_global_3D[
     comptime global_dim2 = product(dst.layout.shape[2])
 
     if thread_idx.x == 0:
-
-        @parameter
-        if OOB_access:
+        comptime if OOB_access:
             var end_block = min(global_dim0, smem_dim0 + tiled_coordinate[0])
             var end_row = min(global_dim1, smem_dim1 + tiled_coordinate[1])
             var end_col = min(global_dim2, smem_dim2 + tiled_coordinate[2])
@@ -233,8 +227,7 @@ fn test_tma_load_kernel[
     )
     var tiled_coordinate = coordinate
 
-    @parameter
-    if coordinate.size == 2:
+    comptime if coordinate.size == 2:
         shared_to_global_2D[OOB_access](
             smem_tile, dst, rebind[UInt32Indices[2]](tiled_coordinate)
         )
@@ -417,8 +410,7 @@ def test_tma_load[
 
     var total_errors = 0
 
-    @parameter
-    if swizzle_mode == SwizzleMode.NONE:
+    comptime if swizzle_mode == SwizzleMode.NONE:
         for i in range(total_global_elements):
             if global_buffer_host_reference[i] != global_buffer_host_result[i]:
                 total_errors += 1
@@ -432,8 +424,7 @@ def test_tma_load[
         var reference_tensor = GlobalTensorType(global_buffer_host_reference)
         var result_tensor = GlobalTensorType(global_buffer_host_result)
 
-        @parameter
-        if len(global_shape) == 2:
+        comptime if len(global_shape) == 2:
             total_errors += test_2D_swizzle[
                 swizzle_mode, global_shape, load_shape
             ](reference_tensor, result_tensor)

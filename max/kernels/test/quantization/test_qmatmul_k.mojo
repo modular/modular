@@ -595,8 +595,7 @@ def test_cases[qgemm: QuantizedGemm]():
         test_case[qgemm](m, 128, 256)
         test_case[qgemm](m, 128, 1024)
 
-        @parameter
-        if qgemm.k_group_size() == 32:
+        comptime if qgemm.k_group_size() == 32:
             test_case[qgemm](m, 256, 32)
 
     # Typical LLM use case.

@@ -17,7 +17,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -30,9 +29,9 @@ olmo3_arch = SupportedArchitecture(
     example_repo_ids=[
         "allenai/Olmo-3-7B-Instruct",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Olmo3Model,
     task=PipelineTask.TEXT_GENERATION,

@@ -2510,8 +2510,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
 
 
 fn _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
-    @parameter
-    if reason:
+    comptime if reason:
         return Error(
             "String is not convertible to float: '",
             str_ref,
@@ -2629,13 +2628,11 @@ fn _calc_initial_buffer_size(n: Float64) -> Int:
 
 
 fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         var n = abs(n0)
         var sign = 0 if n0 >= 0 else 1
 
-        @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        comptime if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
@@ -2655,8 +2652,7 @@ fn _calc_format_buffer_size[dtype: DType]() -> Int:
     # TODO:
     #   Use a smaller size based on the `dtype`, e.g. we don't need as much
     #   space to store a formatted int8 as a float64.
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return 64 + 1
     else:
         return 128 + 1  # Add 1 for the terminator

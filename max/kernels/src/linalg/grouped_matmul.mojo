@@ -187,8 +187,7 @@ fn naive_grouped_matmul_kernel[
                 * b_by_expert[n * UInt(K) + UInt(k)].cast[accum_type]()
             )
 
-    @parameter
-    if elementwise_lambda_fn:
+    comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
             Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
@@ -437,8 +436,7 @@ fn grouped_matmul_kernel_sm100[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            @parameter
-            for j in range(
+            comptime for j in range(
                 BK // 64
             ):  # so we do the copy in 64 chunks or 64 elements at a time (BK // 64). but hmm, we said that the K atom can only be 32 bytes (16 elements)
                 comptime k = 64 * j
@@ -524,11 +522,8 @@ fn grouped_matmul_kernel_sm100[
     )
     comptime c_coord_type = type_of(ctile_coords)
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
@@ -552,11 +547,8 @@ fn grouped_matmul_kernel_sm100[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
@@ -571,8 +563,7 @@ fn grouped_matmul_kernel_sm100[
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
 
-                        @parameter
-                        if elementwise_lambda_fn:
+                        comptime if elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()
                             comptime epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](
@@ -747,8 +738,7 @@ fn grouped_matmul_amd_kernel_launcher[
     fn elementwise_epilogue_fn_wrapper[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
             var batch_idx = IndexList[2](
                 Int(a_start_row + UInt32(idx[0])), idx[1]
@@ -782,8 +772,7 @@ fn grouped_matmul_amd_kernel_launcher[
     else:
         _ = c.fill(0.0)
 
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
 
             comptime BM = config.block_tile_shape[0]
@@ -863,8 +852,7 @@ fn dispatch_amd_matmul_by_block_shape[
     """Dispatches to the best kernel configuration based on runtime M dimension.
     """
 
-    @parameter
-    if use_heuristic:
+    comptime if use_heuristic:
         comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[N]()
 
         # Auto-tune block shape selection: Find the configuration that minimizes
@@ -874,8 +862,7 @@ fn dispatch_amd_matmul_by_block_shape[
         var best_score = Int.MAX
         var sm_count = ctx.default_device_info.sm_count
 
-        @parameter
-        for i in range(len(block_shape_list)):
+        comptime for i in range(len(block_shape_list)):
             comptime block_shape = block_shape_list[i]
             comptime block_m = block_shape[0]
             comptime block_n = block_shape[1]
@@ -891,8 +878,7 @@ fn dispatch_amd_matmul_by_block_shape[
                 best_score = score
 
         # Dispatch to the best configuration if found
-        @parameter
-        for i in range(len(block_shape_list)):
+        comptime for i in range(len(block_shape_list)):
             if best_idx == i:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     c_type,
@@ -1071,8 +1057,7 @@ fn grouped_matmul[
     comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
 
-    @parameter
-    if is_sm90_kernel_applicable:
+    comptime if is_sm90_kernel_applicable:
         comptime static_N = c.shape.get[1]()
         comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
         comptime wgmma_shape = IndexList[3](64, BN, 16)

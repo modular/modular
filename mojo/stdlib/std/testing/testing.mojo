@@ -478,8 +478,7 @@ fn assert_almost_equal[
     if not all(almost_equal):
         var err = String(lhs, " is not close to ", rhs)
 
-        @parameter
-        if dtype.is_integral() or dtype.is_floating_point():
+        comptime if dtype.is_integral() or dtype.is_floating_point():
             err += String(" with a diff of ", abs(lhs - rhs))
 
         if msg:

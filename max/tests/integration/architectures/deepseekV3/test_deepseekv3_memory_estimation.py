@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, NonCallableMock
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.pipelines.architectures.deepseekV3 import deepseekV3_arch
-from max.pipelines.lib import PipelineConfig, PipelineRole, SupportedEncoding
+from max.pipelines.lib import PipelineConfig, PipelineRole
 
 MAX_SEND_TOKENS_PER_RANK = 128
 NUM_RANKS = 8
@@ -27,9 +27,7 @@ NUM_RANKS = 8
 def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
-    pipeline_config.model.quantization_encoding = (
-        SupportedEncoding.float8_e4m3fn
-    )
+    pipeline_config.model.quantization_encoding = "float8_e4m3fn"
     pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
     pipeline_config.model.data_parallel_degree = NUM_RANKS
     pipeline_config.model.device_specs = [
@@ -120,9 +118,7 @@ def mock_weights_pipeline_config(
 
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
-    pipeline_config.model.quantization_encoding = (
-        SupportedEncoding.float8_e4m3fn
-    )
+    pipeline_config.model.quantization_encoding = "float8_e4m3fn"
     pipeline_config.model.data_parallel_degree = dp_degree
     pipeline_config.model.device_specs = [
         NonCallableMock(spec=DeviceSpec) for _ in range(n_gpus)

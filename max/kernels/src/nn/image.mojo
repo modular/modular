@@ -183,8 +183,7 @@ struct ImageData[
             idx = idx * image_shape.C + c
             return idx
 
-        @parameter
-        if Self.static_image_layout == Image2DLayout.NCHW:
+        comptime if Self.static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
         elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
@@ -235,8 +234,7 @@ struct ImageData[
             var n_idx = lidx
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
-        @parameter
-        if Self.static_image_layout == Image2DLayout.NCHW:
+        comptime if Self.static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
         elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()

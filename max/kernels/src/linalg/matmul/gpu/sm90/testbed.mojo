@@ -252,8 +252,7 @@ fn test_matmul_sm90[
     ctx.enqueue_copy(c_host_ref_ptr, c_dev_ref_buffer)
     ctx.synchronize()
 
-    @parameter
-    if elementwise_compute_lambda_fn:
+    comptime if elementwise_compute_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
         comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
@@ -263,8 +262,7 @@ fn test_matmul_sm90[
                     c_host_ref[Index(i, j)],
                 )
 
-    @parameter
-    if measure_threshold:
+    comptime if measure_threshold:
         assert_with_measure[relative_difference](
             c_host.data,
             c_host_ref.data,

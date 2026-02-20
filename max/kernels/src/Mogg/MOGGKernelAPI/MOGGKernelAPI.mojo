@@ -165,6 +165,7 @@ from nn.index_tensor import (
     index_tensor,
 )
 from nn.irfft import irfft
+from kv_cache.lmcache_transfer import lmcache_offload, lmcache_onload
 from nn.kv_cache import (
     copy_kv_pages_d2h,
     generic_flash_attention_kv_cache_padded,
@@ -378,14 +379,12 @@ fn _unsafe_str_to_coord[
     comptime size = len(str_slice.split("_"))
     var coord = DynamicCoord[DType.int64, size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         comptime sub_string = str_slice.split("_")[i]
         comptime str_len = sub_string.byte_length()
         var result = 0
 
-        @parameter
-        for pos in range(str_len):
+        comptime for pos in range(str_len):
             result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
         coord[i] = rebind[coord.element_types[i]](Int64(result))
 
@@ -1766,8 +1765,7 @@ struct BroadcastShape:
 
 
 fn tuple_to_dimlist[size: Int](tuple: StaticTuple[Dim, size]) -> DimList:
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return DimList(VariadicList[Dim](tuple[0]))
     elif size == 2:
         return DimList(VariadicList[Dim](tuple[0], tuple[1]))
@@ -1796,11 +1794,8 @@ struct StaticBroadcastTo:
         var new_strides = IndexList[out_rank]()
         comptime delta = out_rank - x.rank
 
-        @parameter
-        for i in range(out_rank):
-
-            @parameter
-            if i < delta:
+        comptime for i in range(out_rank):
+            comptime if i < delta:
                 new_strides[i] = 0
             else:
                 if x.dim_size[i - delta]() <= 1:
@@ -1818,11 +1813,8 @@ struct StaticBroadcastTo:
         var new_strides = StaticTuple[Dim, out_rank]()
         comptime delta = out_rank - in_rank
 
-        @parameter
-        for i in range(out_rank):
-
-            @parameter
-            if i < delta:
+        comptime for i in range(out_rank):
+            comptime if i < delta:
                 new_strides[i] = 0
             else:
                 if input_shape.at[i - delta]().is_dynamic():
@@ -1895,8 +1887,7 @@ struct StaticReshape:
 
         var stride = Dim(1)
 
-        @parameter
-        for i in reversed(range(out_rank)):
+        comptime for i in reversed(range(out_rank)):
             # Start from the back so we can accumulate the strides.
             new_strides[i] = stride
             stride *= out_shape.at[i]()
@@ -1993,8 +1984,7 @@ struct Transpose:
         var new_shape = IndexList[input.rank]()
         var new_stride = IndexList[input.rank]()
 
-        @parameter
-        for i in range(input.rank):
+        comptime for i in range(input.rank):
             var dim = Int(permutations[i])
             new_shape[i] = input.dim_size(dim)
             new_stride[i] = input.stride_length(dim)
@@ -2007,12 +1997,10 @@ struct Transpose:
     ](input_strides: DimList) -> DimList:
         var new_strides = StaticTuple[Dim, rank]()
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             comptime perm = permutations.at[i]()
 
-            @parameter
-            if perm.is_dynamic():
+            comptime if perm.is_dynamic():
                 new_strides[i] = Dim()
             else:
                 new_strides[i] = input_strides.at[Int(perm)]()
@@ -2073,8 +2061,7 @@ struct Transpose:
         if permutations.dim_size[0]() != input.rank:
             raise Error("[transpose] permutation size must match input rank")
 
-        @parameter
-        for i in range(input.rank):
+        comptime for i in range(input.rank):
             var perm = Int(permutations[i])
             if perm < 0 or input.rank <= perm:
                 raise Error(
@@ -2085,8 +2072,7 @@ struct Transpose:
         shape, _ = Self.transpose_in_place(input, permutations)
         var out = IndexList[input.rank]()
 
-        @parameter
-        for i in range(input.rank):
+        comptime for i in range(input.rank):
             out[i] = shape[i]
 
         return out
@@ -2108,8 +2094,7 @@ struct Slice:
     ](input_strides: DimList, steps: DimList) -> DimList:
         var new_strides = StaticTuple[Dim, rank]()
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             new_strides[i] = input_strides.at[i]() * steps.at[i]()
 
         return tuple_to_dimlist(new_strides)
@@ -2256,8 +2241,7 @@ struct SliceDim:
     ](input_strides: DimList, step: Dim) -> DimList:
         var new_strides = StaticTuple[Dim, rank]()
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             if i == axis:
                 new_strides[i] = input_strides.at[i]() * step
             else:
@@ -2395,9 +2379,7 @@ struct ArgMax:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
-
-            @parameter
-            if target == "cpu":
+            comptime if target == "cpu":
                 argmax(
                     input.to_tile_tensor[DType.int64](),
                     axis_val,
@@ -2436,9 +2418,7 @@ struct ArgMin:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
-
-            @parameter
-            if target == "cpu":
+            comptime if target == "cpu":
                 argmin(
                     input.to_tile_tensor[DType.int64](),
                     axis_val,
@@ -2827,8 +2807,7 @@ struct ReduceMinMax:
         ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
             comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-            @parameter
-            if reduction_idx == 0:
+            comptime if reduction_idx == 0:
                 return min(left, right)
             else:
                 return max(left, right)
@@ -3088,8 +3067,7 @@ struct PadConstant:
     ) raises:
         var paddings_ptr = padding._ptr
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             pad_constant(
                 output.to_tile_tensor[DType.int64](),
                 input.to_tile_tensor[DType.int64](),
@@ -3952,8 +3930,7 @@ struct BatchMatmul:
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
-            @parameter
-            if has_compute_lambda:
+            comptime if has_compute_lambda:
                 var output = c._fused_compute_output_lambda(
                     rebind[IndexList[c.rank]](coords),
                     rebind[SIMD[c.dtype, _width]](val),
@@ -4491,16 +4468,14 @@ fn concat_shape_impl[
     fn shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
     ) -> Bool:
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             if i != axis and s1[i] != s2[i]:
                 return False
         return True
 
     var concat_axis_dim_sum = 0
 
-    @parameter
-    for i in range(inputs.size):
+    comptime for i in range(inputs.size):
         concat_axis_dim_sum += inputs[i].dim_size(axis)
         if not shape_equal_ignore_axis(
             inputs[0].shape(),
@@ -4547,8 +4522,7 @@ struct Concat:
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
-        @parameter
-        for i in range(inputs.size):
+        comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
         @always_inline
@@ -4676,8 +4650,7 @@ struct Split:
             output.size,
         ]()
 
-        @parameter
-        for i in range(output.size):
+        comptime for i in range(output.size):
             output_bufs[i] = rebind[output_bufs.element_type](
                 TileTensor(
                     output[i].unsafe_ptr().as_any_origin(),
@@ -4803,8 +4776,7 @@ struct Conv:
         var stride_tuple = IndexList[input.rank - 2](0)
         var dilation_tuple = IndexList[input.rank - 2](0)
 
-        @parameter
-        for i in range(input.rank - 2):
+        comptime for i in range(input.rank - 2):
             stride_tuple[i] = Int(strides._ptr[i])
             dilation_tuple[i] = Int(dilation._ptr[i])
 
@@ -4815,8 +4787,7 @@ struct Conv:
         var pad_h_tuple = IndexList[2](0)
         var pad_w_tuple = IndexList[2](0)
 
-        @parameter
-        if input.rank == 3:
+        comptime if input.rank == 3:
             pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
         elif input.rank == 4:
             pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
@@ -4850,9 +4821,7 @@ struct Conv:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
-
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 comptime assert (
                     not filter_is_fcrs
                 ), "Filter layout FCRS is not supported on CPU"
@@ -4890,8 +4859,7 @@ struct Conv:
 
                 var pad_tuple = IndexList[2 * (input.rank - 2)](0)
 
-                @parameter
-                for i in range(2 * (input.rank - 2)):
+                comptime for i in range(2 * (input.rank - 2)):
                     pad_tuple[i] = Int(paddings._ptr[i])
 
                 conv_gpu[
@@ -4987,8 +4955,7 @@ struct ConvTranspose:
             type_of(input.to_tile_tensor[DType.int64]()).rank - 2
         ](0)
 
-        @parameter
-        for i in range(input.rank - 2):
+        comptime for i in range(input.rank - 2):
             stride_tuple[i] = Int(strides._ptr[i])
             dilation_tuple[i] = Int(dilation._ptr[i])
 
@@ -4996,8 +4963,7 @@ struct ConvTranspose:
         var pad_h = IndexList[2](0)
         var pad_w = IndexList[2](0)
 
-        @parameter
-        if input.rank == 3:
+        comptime if input.rank == 3:
             pad_w = Index(paddings[0], paddings[1])
         elif input.rank == 4:
             pad_h = Index(paddings[0], paddings[1])
@@ -5020,8 +4986,7 @@ struct ConvTranspose:
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         comptime filter_is_cfrs = filter_layout == "CFRS"
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             conv_transposed_cpu[
                 filter_packed,
                 filter_is_cfrs,
@@ -5050,8 +5015,7 @@ struct ConvTranspose:
                 type_of(input.to_tile_tensor[DType.int64]()).rank - 2
             ](0)
 
-            @parameter
-            if input.rank == 4:
+            comptime if input.rank == 4:
                 pad_tuple[0] = pad_h[0]
                 pad_tuple[1] = pad_w[0]
 
@@ -6877,8 +6841,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
 
         var device_ctx: Optional[DeviceContext] = None
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             device_ctx = ctx.get_device_context()
 
         with Trace[TraceLevel.OP, target=target](
@@ -8104,16 +8067,14 @@ struct Struct_kv_cache_store_paged:
         comptime KVCacheT = paged_kv_collection.CacheType
         var cache: KVCacheT
 
-        @parameter
-        if key_or_value == 0:
+        comptime if key_or_value == 0:
             cache = paged_kv_collection.get_key_cache(Int(layer_idx))
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
         var cuda_ctx: Optional[DeviceContext] = None
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             cuda_ctx = context.get_device_context()
 
         @parameter
@@ -8160,16 +8121,14 @@ struct Struct_kv_cache_store_padded:
         comptime KVCacheT = paged_kv_collection.CacheType
         var cache: KVCacheT
 
-        @parameter
-        if key_or_value == 0:
+        comptime if key_or_value == 0:
             cache = paged_kv_collection.get_key_cache(Int(layer_idx))
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
         var cuda_ctx: Optional[DeviceContext] = None
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             cuda_ctx = context.get_device_context()
 
         @parameter
@@ -8392,8 +8351,7 @@ struct LayoutTransformMatmulKN2KNkni:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
-        @parameter
-        if a_shape.at[0]().has_value():
+        comptime if a_shape.at[0]().has_value():
             kernel_type_m = a_shape.at[0]().get()
         _pack_b_ndbuffer_impl[
             a_type,
@@ -8428,8 +8386,7 @@ struct LayoutTransformMatmulNK2KNkni:
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
-        @parameter
-        if a_shape.at[0]().has_value():
+        comptime if a_shape.at[0]().has_value():
             kernel_type_m = a_shape.at[0]().get()
         _pack_b_ndbuffer_impl[
             a_type,
@@ -8551,8 +8508,7 @@ fn print_kv_cache_paged_generic_kernel_api[
     is_print_compact: InputTensor[dtype = DType.bool, rank=1],
     context: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         print_kv_cache_paged_generic_gpu[target](
             valid_lengths.to_layout_tensor(),
             kv_collection,
@@ -8814,9 +8770,7 @@ struct Struct_fused_token_sampling:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
-
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
                 # However, switching to just using our topk_fused_sampling leads to a -37% perf
                 # drop in q4_k benchmarking for llama 3.
@@ -8889,9 +8843,7 @@ struct Struct_min_p_sampling:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
-
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 min_p_sampling_cpu(
                     min_ps.to_tile_tensor[DType.int64](),
                     input.to_tile_tensor[DType.int64](),
@@ -9080,8 +9032,7 @@ struct DistributedAllReduceSum:
             NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
-        @parameter
-        for i in range(inputs.size):
+        comptime for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         # Marshal output tensor
@@ -9092,8 +9043,7 @@ struct DistributedAllReduceSum:
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        @parameter
-        for i in range(signal_buffers.size):
+        comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
@@ -9168,8 +9118,7 @@ struct DistributedReduceScatterSum:
             NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
-        @parameter
-        for i in range(inputs.size):
+        comptime for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         # Marshal output tensor
@@ -9180,8 +9129,7 @@ struct DistributedReduceScatterSum:
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        @parameter
-        for i in range(signal_buffers.size):
+        comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
@@ -9250,24 +9198,21 @@ struct DistributedAllGather:
             NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
-        @parameter
-        for i in range(inputs.size):
+        comptime for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutAnyOrigin], num_devices * num_devices
         ](fill={})
 
-        @parameter
-        for i in range(num_devices * num_devices):
+        comptime for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        @parameter
-        for i in range(signal_buffers.size):
+        comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
@@ -9343,8 +9288,7 @@ struct DistributedBroadcast:
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        @parameter
-        for i in range(signal_buffers.size):
+        comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
@@ -9431,8 +9375,7 @@ struct DistributedMatmulAllReduce:
             NDBuffer[b_type, 2, MutAnyOrigin, B_static_shape], num_devices
         ](fill={})
 
-        @parameter
-        for i in range(num_devices):
+        comptime for i in range(num_devices):
             in_bufs[i] = rebind[
                 NDBuffer[a_type, 2, MutAnyOrigin, A_static_shape]
             ](managed_tensor_slice_to_ndbuffer(inputs[i]))
@@ -9442,8 +9385,7 @@ struct DistributedMatmulAllReduce:
             NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
         ](fill={})
 
-        @parameter
-        for i in range(num_devices):
+        comptime for i in range(num_devices):
             out_bufs[i] = rebind[
                 NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
@@ -9452,8 +9394,7 @@ struct DistributedMatmulAllReduce:
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        @parameter
-        for i in range(signal_buffers.size):
+        comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
@@ -9478,8 +9419,7 @@ struct DistributedMatmulAllReduce:
             NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
         ](uninitialized=True)
 
-        @parameter
-        for i in range(num_devices):
+        comptime for i in range(num_devices):
             var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
                 out_bufs[i].num_elements()
             )
@@ -9744,8 +9684,7 @@ struct ArgSort[*, ascending: Bool]:
         var indices_tensor = indices.to_tile_tensor[DType.int64]()
         var input_tensor = input.to_tile_tensor[DType.int64]()
 
-        @parameter
-        if target == "cpu":
+        comptime if target == "cpu":
             argsort[ascending = Self.ascending](indices_tensor, input_tensor)
         else:
             var cuda_ctx = ctx.get_device_context()
@@ -10249,9 +10188,7 @@ struct Struct_sliced_add_ragged:
             "sliced-add",
             task_id=get_safe_task_id(context),
         ):
-
-            @parameter
-            if is_gpu[target]():
+            comptime if is_gpu[target]():
                 ctx: Optional[DeviceContext] = context.get_device_context()
                 sliced_add[target=target](
                     c_tile_tensor,
@@ -10318,6 +10255,133 @@ struct KVCacheCopyPagesD2H:
                 ),
             ),
             Int(layer_idx),
+            gpu_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache External Gather/Scatter Operations (for LMCache integration)
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.lmcache.offload")
+struct LMCacheOffload:
+    """Offload KV cache data from paged format to external contiguous format.
+
+    Used by LMCache connector to copy KV data from MAX's paged cache layout
+    to LMCache's contiguous KV_2LTD format for external storage.
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        page_size: Int,
+        num_kv_heads: Int,
+        head_dim: Int,
+        kv_dim: Int,
+        target: StaticString,
+    ](
+        output: MutableInputTensor[dtype=dtype, rank=4],
+        paged_cache: InputTensor[dtype=dtype, rank=6],
+        slot_mapping: InputTensor[dtype = DType.int64, rank=1],
+        start_token: InputTensor[dtype = DType.int64, rank=1],
+        end_token: InputTensor[dtype = DType.int64, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+        var start = Int(start_token[0])
+        var end = Int(end_token[0])
+
+        lmcache_offload[
+            dtype,
+            page_size,
+            num_kv_heads,
+            head_dim,
+            kv_dim,
+            target,
+        ](
+            LayoutTensor[dtype, Layout.row_major[4](), MutAnyOrigin](
+                output.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[4]()].row_major(
+                    output.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                paged_cache.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    paged_cache.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                slot_mapping.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    slot_mapping.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            start,
+            end,
+            gpu_ctx,
+        )
+
+
+@compiler.register("mo.lmcache.onload")
+struct LMCacheOnload:
+    """Onload KV cache data from external contiguous format to paged format.
+
+    Used by LMCache connector to copy KV data from LMCache's contiguous
+    KV_2LTD format into MAX's paged cache layout.
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        page_size: Int,
+        num_kv_heads: Int,
+        head_dim: Int,
+        kv_dim: Int,
+        target: StaticString,
+    ](
+        paged_cache: MutableInputTensor[dtype=dtype, rank=6],
+        input: InputTensor[dtype=dtype, rank=4],
+        slot_mapping: InputTensor[dtype = DType.int64, rank=1],
+        start_token: InputTensor[dtype = DType.int64, rank=1],
+        end_token: InputTensor[dtype = DType.int64, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+        var start = Int(start_token[0])
+        var end = Int(end_token[0])
+
+        lmcache_onload[
+            dtype,
+            page_size,
+            num_kv_heads,
+            head_dim,
+            kv_dim,
+            target,
+        ](
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                paged_cache.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    paged_cache.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[4](), MutAnyOrigin](
+                input.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[4]()].row_major(
+                    input.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                slot_mapping.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    slot_mapping.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            start,
+            end,
             gpu_ctx,
         )
 

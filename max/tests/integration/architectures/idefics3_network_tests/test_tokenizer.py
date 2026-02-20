@@ -25,7 +25,6 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
-from max.pipelines.lib import SupportedEncoding
 from PIL import Image
 from test_common.mocks import DummyPipelineConfig
 
@@ -40,7 +39,7 @@ async def test_idefics3_tokenizer_image_token_indices() -> None:
         model_path=IDEFICS3_REPO_ID,
         max_batch_size=None,
         max_length=None,
-        quantization_encoding=SupportedEncoding.float32,
+        quantization_encoding="float32",
     )
     # DummyPipelineConfig seeds a MagicMock HuggingFace config; set the
     # `image_token_id` that Idefics3Tokenizer reads.

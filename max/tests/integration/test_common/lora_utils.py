@@ -24,7 +24,6 @@ from max.driver import DeviceSpec
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    SupportedEncoding,
     TextGenerationPipeline,
     TextTokenizer,
 )
@@ -225,7 +224,7 @@ def create_pipeline_config_with_lora(
     return PipelineConfig(
         model=MAXModelConfig(
             model_path=model_path,
-            quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
+            quantization_encoding="bfloat16",  # Use bfloat16 for GPU
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             device_specs=[DeviceSpec(device_type="gpu", id=0)],
             kv_cache=KVCacheConfig(
@@ -256,7 +255,7 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
     return PipelineConfig(
         model=MAXModelConfig(
             model_path=model_path,
-            quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
+            quantization_encoding="bfloat16",  # Use bfloat16 for GPU
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             device_specs=[DeviceSpec(device_type="gpu", id=0)],
             kv_cache=KVCacheConfig(cache_strategy="paged"),

@@ -24,6 +24,7 @@ from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -187,7 +188,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [

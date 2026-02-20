@@ -83,8 +83,7 @@ fn test_case_sampling[
     var output_shape: IndexList[rank]
     var output_idxs_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         output_shape = IndexList[rank](K)
         output_idxs_shape = IndexList[rank](1)
     elif rank == 2:
@@ -105,8 +104,7 @@ fn test_case_sampling[
 
     var max_k = K
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]

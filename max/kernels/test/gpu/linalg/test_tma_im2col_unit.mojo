@@ -116,8 +116,7 @@ fn im2col_load_kernel[
     barrier()
 
     # Copy loaded data to output (all threads participate)
-    @parameter
-    for i in range(tile_size // 128 + 1):
+    comptime for i in range(tile_size // 128 + 1):
         var idx = thread_idx.x + i * 128
         if idx < tile_size:
             output_ptr[idx] = smem_ptr[idx]

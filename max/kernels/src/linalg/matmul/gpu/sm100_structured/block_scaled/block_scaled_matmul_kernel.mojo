@@ -880,8 +880,7 @@ struct BlackwellBlockScaledMatmulKernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages):
+            comptime for i in range(Self.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
@@ -912,9 +911,7 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
             with MatmulProfilerType[0](workspace, 0):
-
-                @parameter
-                if Self.pdl_level > PDLLevel.OFF:
+                comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 with input_pipeline.producer() as producer:
@@ -952,17 +949,13 @@ struct BlackwellBlockScaledMatmulKernel[
 
         # ===== SCHEDULER WARP =====
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-
-            @parameter
-            if Self.num_clc_pipeline_stages == 0:
+            comptime if Self.num_clc_pipeline_stages == 0:
                 return
 
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
-
-                @parameter
-                if Self.pdl_level > PDLLevel.OFF:
+                comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 while sched_iter.has_work():
@@ -1018,8 +1011,7 @@ struct BlackwellBlockScaledMatmulKernel[
                                                     0,
                                                 )
 
-                    @parameter
-                    if Self.pdl_level > PDLLevel.OFF:
+                    comptime if Self.pdl_level > PDLLevel.OFF:
                         launch_dependent_grids()
 
         # ===== EPILOGUE WARPS =====

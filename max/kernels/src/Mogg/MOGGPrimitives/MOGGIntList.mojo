@@ -50,8 +50,7 @@ struct IntList[static_values: DimList = DimList()](
         self.data = UnsafePointer[Int, MutExternalOrigin]()
         self.stack_alloc_data = IndexList[Self._safe_len]()
 
-        @parameter
-        if Self.is_fully_static():
+        comptime if Self.is_fully_static():
             # Fully static case stores nothing. Will just resolve to the
             # parameter values. Can just keep the default runtime values.
             return
@@ -59,8 +58,7 @@ struct IntList[static_values: DimList = DimList()](
             # 2nd best case, we know the length but not all the values.
             # We can store the values in memory which doesn't need to be heap
             # allocated.
-            @parameter
-            for i in range(Self._length):
+            comptime for i in range(Self._length):
                 self.stack_alloc_data[i] = other[i]
         else:
             # Worst case we allocate the memory on the heap.
@@ -78,8 +76,7 @@ struct IntList[static_values: DimList = DimList()](
         self.data = UnsafePointer[Int, MutExternalOrigin]()
         self.stack_alloc_data = IndexList[Self._safe_len]()
 
-        @parameter
-        if Self.is_fully_static():
+        comptime if Self.is_fully_static():
             # Fully static case stores nothing. Will just resolve to the
             # parameter values. Can just keep the default runtime values.
             return
@@ -89,8 +86,7 @@ struct IntList[static_values: DimList = DimList()](
             # allocated.
             self.stack_alloc_data = IndexList[Self._safe_len]()
 
-            @parameter
-            for i in range(Self._length):
+            comptime for i in range(Self._length):
                 self.stack_alloc_data[i] = elems[i]
         else:
             # Worst case we allocate the memory on the heap.
@@ -113,8 +109,7 @@ struct IntList[static_values: DimList = DimList()](
         self.length = copy.length
         self.data = UnsafePointer[Int, MutExternalOrigin]()
 
-        @parameter
-        if not Self.has_static_length():
+        comptime if not Self.has_static_length():
             self.data = alloc[Int](self.length)
             for i in range(self.length):
                 self.data[i] = copy[i]
@@ -127,11 +122,8 @@ struct IntList[static_values: DimList = DimList()](
         """
         var new = Self()
 
-        @parameter
-        if Self.has_static_length():
-
-            @parameter
-            for i in range(Self._length):
+        comptime if Self.has_static_length():
+            comptime for i in range(Self._length):
                 new.stack_alloc_data[i] = 0
         else:
             # Worst case we allocate the memory on the heap.
@@ -143,8 +135,7 @@ struct IntList[static_values: DimList = DimList()](
     @staticmethod
     @always_inline
     fn shape_idx_statically_known[idx: Int]() -> Bool:
-        @parameter
-        if not Self.has_static_length():
+        comptime if not Self.has_static_length():
             return False
         else:
             return Self.static_values.at[idx]().has_value()
@@ -152,8 +143,7 @@ struct IntList[static_values: DimList = DimList()](
     @staticmethod
     @always_inline
     fn is_fully_static() -> Bool:
-        @parameter
-        if not Self.has_static_length():
+        comptime if not Self.has_static_length():
             return False
         else:
             return Self.static_values.all_known[Self._length]()
@@ -170,8 +160,7 @@ struct IntList[static_values: DimList = DimList()](
             " static tuple"
         )
 
-        @parameter
-        if Self.is_fully_static():
+        comptime if Self.is_fully_static():
             return _make_tuple[Self._safe_len](Self.static_values)
         else:
             return self.stack_alloc_data
@@ -187,8 +176,7 @@ struct IntList[static_values: DimList = DimList()](
           The value at the specified indices.
         """
 
-        @parameter
-        if Self.is_fully_static():
+        comptime if Self.is_fully_static():
             var v = _make_tuple[Self._length](Self.static_values)
             return v[index]
         elif Self.has_static_length():
@@ -200,11 +188,8 @@ struct IntList[static_values: DimList = DimList()](
     fn nelems(self) -> Int:
         var num_elms: Int = 1
 
-        @parameter
-        if Self.has_static_length():
-
-            @parameter
-            for i in range(Self._length):
+        comptime if Self.has_static_length():
+            comptime for i in range(Self._length):
                 num_elms *= self[i]
 
         else:
@@ -218,8 +203,7 @@ struct IntList[static_values: DimList = DimList()](
             not Self.is_fully_static()
         ), "Fully static int lists can't be modified"
 
-        @parameter
-        if Self.has_static_length():
+        comptime if Self.has_static_length():
             self.stack_alloc_data[index] = value
         else:
             self.data[index] = value
@@ -230,8 +214,7 @@ struct IntList[static_values: DimList = DimList()](
         var x = IntList[Self._size_but_unknown]()
         x.length = length
 
-        @parameter
-        if not Self.has_static_length():
+        comptime if not Self.has_static_length():
             x.data = alloc[Int](length)
             for i in range(length):
                 x.data[i] = 0
@@ -248,13 +231,11 @@ struct IntList[static_values: DimList = DimList()](
 
     @always_inline
     fn __len__(self) -> Int:
-        @parameter
-        if Self.has_static_length():
+        comptime if Self.has_static_length():
             return Self._length
         return self.length
 
     @always_inline
     fn __del__(deinit self):
-        @parameter
-        if not Self.has_static_length():
+        comptime if not Self.has_static_length():
             self.data.free()

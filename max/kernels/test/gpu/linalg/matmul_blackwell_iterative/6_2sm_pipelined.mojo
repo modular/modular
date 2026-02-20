@@ -422,8 +422,7 @@ fn store_C[
         width = c_lower_pow_2_main.size,
     ](tmem_addr | UInt32((warp_id * 32 + 16) << 16))
 
-    @parameter
-    if MMA_N != prev_power_of_two(MMA_N):
+    comptime if MMA_N != prev_power_of_two(MMA_N):
         # no mma_n can be larger than 256, so if there's a remainder,
         # we've loaded the smallest power of 2, 128, and the rem is after
         # 128. this is why tmem address is offset by 128
@@ -472,8 +471,7 @@ fn store_C[
         Int(split_coord_x), 0
     )
 
-    @parameter
-    for tma_n in range(NUM_ST_MATRIX):
+    comptime for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
             Int(warp_id % 2 if MMA_M == 128 else warp_id), 0
@@ -484,11 +482,8 @@ fn store_C[
         var d_reg_upper: SIMD[DType.bfloat16, 8]
         var d_reg_lower: SIMD[DType.bfloat16, 8]
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range((TMA_BN // 16)):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for i in range((TMA_BN // 16)):
                 var st_matrix_args = RuntimeTuple[
                     IntTuple(
                         UNKNOWN_VALUE,
@@ -507,8 +502,7 @@ fn store_C[
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists
                 # and for last iteration we load remainder registers (for the remainder 32 )
-                @parameter
-                if (
+                comptime if (
                     MMA_N == prev_power_of_two(MMA_N)
                     or tma_n < NUM_ST_MATRIX - 1
                 ):
@@ -722,8 +716,7 @@ fn kernel_6[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
@@ -767,13 +760,11 @@ fn kernel_6[
     var a_multicast_mask: UInt16 = 0x0
     var b_multicast_mask: UInt16 = 0x0
 
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -1180,8 +1171,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("============================================")
     print("M, N, K, time(ms), TFLOPS")
 
-    @parameter
-    for i in range(len(dic_of_shapes)):
+    comptime for i in range(len(dic_of_shapes)):
         comptime shape = get_dic_of_shapes(i, dic_of_shapes)
         try:
             test_blackwell_kernel_6[

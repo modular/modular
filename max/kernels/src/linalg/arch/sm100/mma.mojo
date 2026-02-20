@@ -74,8 +74,7 @@ fn max_contiguous_tile_shape[
 
     comptime assert rank == 2, "Only 2D tensors are supported!"
 
-    @parameter
-    if major == Major.K:
+    comptime if major == Major.K:
         # Tile shape is (MN, K), max K is based on swizzle.
         return IntTuple(tile_shape[0], swizzle_mode.bytes() // size_of[dtype]())
     elif major == Major.MN:
@@ -196,8 +195,7 @@ struct MmaOpSM100_SS[
         # Here we compute the mask inside mma object to hide the complexity.
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
-        @parameter
-        if product(Self.cluster_shape) > 1:
+        comptime if product(Self.cluster_shape) > 1:
             comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
             comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
 
@@ -218,8 +216,7 @@ struct MmaOpSM100_SS[
             #             x x x x
             #             o x o o
             #             o x o o
-            @parameter
-            if Self.cta_group == 2:
+            comptime if Self.cta_group == 2:
                 self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
@@ -254,8 +251,7 @@ struct MmaOpSM100_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -360,8 +356,7 @@ struct MmaOpSM100_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -386,8 +381,7 @@ struct MmaOpSM100_SS[
         self,
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     ):
-        @parameter
-        if product(Self.cluster_shape) == 1:
+        comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
@@ -398,8 +392,7 @@ struct MmaOpSM100_SS[
 
     @staticmethod
     fn _get_umma_kind[dtype: DType]() -> UMMAKind:
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return UMMAKind.KIND_TF32
         elif dtype in (DType.float16, DType.bfloat16):
             return UMMAKind.KIND_F16
@@ -481,8 +474,7 @@ struct MmaOpSM100_BlockScaled_SS[
         # Here we compute the mask inside mma object to hide the complexity.
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
-        @parameter
-        if product(Self.cluster_shape) > 1:
+        comptime if product(Self.cluster_shape) > 1:
             comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
             comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
 
@@ -503,8 +495,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             x x x x
             #             o x o o
             #             o x o o
-            @parameter
-            if Self.cta_group == 2:
+            comptime if Self.cta_group == 2:
                 self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
 
     @always_inline
@@ -549,8 +540,7 @@ struct MmaOpSM100_BlockScaled_SS[
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
         # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
-        @parameter
-        if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
             self.copy_sf_to_tmem[
                 Self.sfa_dtype, sfa_smem.layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
@@ -561,8 +551,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 0,
             ](sfb_smem, sfb_tmem)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -581,8 +570,7 @@ struct MmaOpSM100_BlockScaled_SS[
             fn _get_sfb_tmem_offset[
                 mma_n: Int,
             ](sfb_tmem: UInt32, work_tile_coord: Tuple[UInt, UInt],) -> UInt32:
-                @parameter
-                if mma_n in (64, 192):
+                comptime if mma_n in (64, 192):
                     return sfb_tmem + UInt32(work_tile_coord[1] % 2) * 2
                 else:
                     return sfb_tmem
@@ -591,8 +579,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 sfb_tmem, work_tile_coord
             )
 
-            @parameter
-            if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
                 ].update_desc_with_sf_id[UInt32(sf_idx)](
@@ -826,8 +813,7 @@ struct MmaOpSM100_BlockScaled_SS[
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
         # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
-        @parameter
-        if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
             self._copy_sf_to_tmem_tt[
                 Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
@@ -835,8 +821,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 Self.sfb_dtype, sfb_layout, Self.mma_shape[1], 0
             ](sfb_smem, sfb_tmem)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -848,8 +833,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 1
             )
 
-            @parameter
-            if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
                 comptime sf_idx = k // Self.mma_shape[2]
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
@@ -893,8 +877,7 @@ struct MmaOpSM100_BlockScaled_SS[
         self,
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     ):
-        @parameter
-        if product(Self.cluster_shape) == 1:
+        comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
@@ -916,8 +899,7 @@ struct MmaOpSM100_BlockScaled_SS[
     ):
         comptime sf_smem_size = sf_smem_layout.size()
 
-        @parameter
-        for i in range(TILE_MN // SF_MN_GROUP_SIZE):
+        comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
             comptime idx = IntTuple(
                 i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
             )
@@ -951,8 +933,7 @@ struct MmaOpSM100_BlockScaled_SS[
         """TileTensor overload for copying scale factors to TMEM."""
         comptime sf_smem_size = sf_smem_layout.size()
 
-        @parameter
-        for i in range(TILE_MN // SF_MN_GROUP_SIZE):
+        comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
             comptime idx = IntTuple(
                 i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
             )

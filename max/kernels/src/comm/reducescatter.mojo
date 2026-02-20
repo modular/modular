@@ -74,8 +74,7 @@ fn _load_reduce[
         1 if use_multimem else ngpus,
     ],
 ) -> SIMD[dtype, simd_width]:
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         # Multimem mode: use optimized reduction
         return multimem_ld_reduce[
             dtype,
@@ -97,8 +96,7 @@ fn _load_reduce[
             .cast[accum_type]()
         )
 
-        @parameter
-        for gpu_idx in range(1, ngpus):
+        comptime for gpu_idx in range(1, ngpus):
             accum += (
                 ptrs[gpu_idx]
                 .address_space_cast[_target_address_space]()
@@ -255,12 +253,10 @@ fn _reducescatter_kernel[
         num_elements, threads_per_gpu
     )
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # Round-robin access pattern to balance NVLink traffic across GPUs.
@@ -268,8 +264,7 @@ fn _reducescatter_kernel[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
         ptrs[i] = src_ptrs[target]
 
@@ -338,8 +333,7 @@ fn _reducescatter_p2p[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
     # Block size configuration

@@ -59,7 +59,6 @@ class MockPipelineModel(PipelineModel):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         devices: list[Device] = [],  # noqa: B006
@@ -68,7 +67,6 @@ class MockPipelineModel(PipelineModel):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
-        self.huggingface_config = huggingface_config
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
         self.kv_cache_config = kv_cache_config
@@ -90,22 +88,33 @@ class MockPipelineModel(PipelineModel):
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
         self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, huggingface_config
+            pipeline_config, self.huggingface_config
         )
         self._lora_manager = (
             LoRAManager(
                 config=self.pipeline_config.lora,
                 base_model_path=pipeline_config.model.model_path,
                 base_dtype=self.dtype,
-                n_heads=huggingface_config.num_attention_heads,
-                n_kv_heads=huggingface_config.num_key_value_heads,
-                head_dim=huggingface_config.head_dim,
+                n_heads=self.huggingface_config.num_attention_heads,
+                n_kv_heads=self.huggingface_config.num_key_value_heads,
+                head_dim=self.huggingface_config.head_dim,
                 zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
             )
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora
             else None
         )
+
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """Returns the HuggingFace config from pipeline config."""
+        config = self.pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required but could not be loaded for "
+                f"model '{self.pipeline_config.model.model_path}'."
+            )
+        return config
 
     @classmethod
     def calculate_max_seq_len(

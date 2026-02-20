@@ -181,10 +181,10 @@ class SupportedArchitecture:
                 example_repo_ids=[
                     "your-org/your-model-name",  # Add example model repository IDs
                 ],
-                default_encoding=SupportedEncoding.q4_k,
+                default_encoding="q4_k",
                 supported_encodings={
-                    SupportedEncoding.q4_k: ["paged"],
-                    SupportedEncoding.bfloat16: ["paged"],
+                    "q4_k": ["paged"],
+                    "bfloat16": ["paged"],
                     # Add other encodings your model supports
                 },
                 pipeline_model=MyModel,

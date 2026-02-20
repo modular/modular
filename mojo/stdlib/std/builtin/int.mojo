@@ -1131,8 +1131,7 @@ struct Int(
 
         var n = abs(self)
 
-        @parameter
-        if is_32bit():
+        comptime if is_32bit():
             return _calc_initial_buffer_size_int32(n)
 
         # The value only has low-bits.

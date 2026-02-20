@@ -610,8 +610,7 @@ struct VBufferTransposeLoads[
             self.current_stage
         ]
 
-        @parameter
-        for depth_idx in range(Self.depth // Self.depth_tile_size):
+        comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
             # every lane loads 2 elements (=8B for depth=64 and 16B for depth=128)
             # we transpose the global tile when writing to shared memory
             # the load pattern here is such that it enables us to use 16B loads
@@ -642,8 +641,7 @@ struct VBufferTransposeLoads[
             # interleaved and second 8 will be interleaved independently and use for two different mma operations.
             # This explanation will likely be clearer with a diagram, I will come back to this later.
 
-            @parameter
-            for i in range(Self.loads_per_thread_per_depth_tile):
+            comptime for i in range(Self.loads_per_thread_per_depth_tile):
                 var warp_tile = (
                     global_tile.tile[16, Self.depth](
                         Int(warp_id) // 2,
@@ -693,8 +691,7 @@ struct VBufferTransposeLoads[
         var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
         var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
 
-        @parameter
-        for depth_idx in range(Self.depth // Self.depth_tile_size):
+        comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
             var smem_warp_tile = smem_iter_tensor.tile[
                 Self.pad[Self.depth](),
                 Self.simd_width,
@@ -713,8 +710,7 @@ struct VBufferTransposeLoads[
                 .vectorize[1, 2]()
             )
 
-            @parameter
-            for j in range(Self.load_width):
+            comptime for j in range(Self.load_width):
                 # each thread loads 2x8 elements from gmem
                 # they are interleaved and written to smem
                 var reg_tile_0 = load_tile[0 + depth_idx * 2, j][0]
@@ -732,8 +728,7 @@ struct VBufferTransposeLoads[
         var col_idx, lane = divmod(lane_id(), 32)
         var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
 
-        @parameter
-        for depth_idx in range(Self.num_depth_tiles):
+        comptime for depth_idx in range(Self.num_depth_tiles):
             # TODO: document and parameterize this magic
             var smem_fragment = (
                 smem_iter_tensor.tile[Self.pad[Self.depth](), 8](
@@ -815,8 +810,7 @@ struct QRegisterBuffer[
         )
         var mma_tiles = self.reg_tile.split[Self.num_tiles]()
 
-        @parameter
-        for i in range(Self.num_tiles):
+        comptime for i in range(Self.num_tiles):
             var reg_tile = mma_tiles[i]
             copy_dram_to_local[
                 src_thread_layout = Self.thread_layout,
@@ -884,15 +878,11 @@ struct OutputRegisterBuffer[
 
     @always_inline
     fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
             var rowsum_inv = recip(rowsum[m_mma, 0])
 
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
-
-                @parameter
-                for i in range(Self.output_frag_size):
+            comptime for n_mma in range(Self.num_n_mmas):
+                comptime for i in range(Self.output_frag_size):
                     self.reg_tile[n_mma * Self.num_m_mmas + m_mma, i] *= rebind[
                         Self.RegisterTileType.element_type
                     ](rowsum_inv)
@@ -990,19 +980,16 @@ struct PRegisterBuffer[
 
         var reg_tile = self.reg_tile.split[Self.num_stages]()[stage]
 
-        @parameter
-        if Self.tr_load_enabled:
+        comptime if Self.tr_load_enabled:
             # if tr loads are used then we don't need any packing logic
             # just convert the registers to bf16
 
-            @parameter
-            if Self.mma_shape[0] == 32:
+            comptime if Self.mma_shape[0] == 32:
                 comptime assert (
                     Self.output_frag_size == 16
                 ), "output_frag_size must be 16 for 32x32 mma shape"
 
-                @parameter
-                for j in range(Self.output_frag_size):
+                comptime for j in range(Self.output_frag_size):
                     out[0, j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
             elif Self.mma_shape[0] == 16:
                 comptime assert (
@@ -1014,8 +1001,7 @@ struct PRegisterBuffer[
                     tile_idx
                 ]
 
-                @parameter
-                for m, j in itertools.product(
+                comptime for m, j in itertools.product(
                     range(Self.num_m_mmas), range(Self.output_frag_size)
                 ):
                     mma_reg_tile[m, j] = reg_tile_split[m, j].cast[
@@ -1033,8 +1019,7 @@ struct PRegisterBuffer[
         else:
             # this is special packing, the pattern here depends on how we load
             # and transpose the v tile when writing to the shared memory
-            @parameter
-            for j in range(4):
+            comptime for j in range(4):
                 out[0, 2 * j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
                 out[0, 2 * j + 1] = reg_tile[tile_idx, 4 + j].cast[
                     Self.mma_dtype
@@ -1141,8 +1126,7 @@ struct PRegisterBuffer[
 
         var p_reg_vectorized = self.vectorize()
 
-        @parameter
-        for i in range(Self.WN // Self.BK):
+        comptime for i in range(Self.WN // Self.BK):
             var p_smem_tile = self.get_shared_memory_tile(
                 i + warp_col * (Self.WN // Self.BK)
             )
@@ -1150,8 +1134,7 @@ struct PRegisterBuffer[
                 warp_row, i
             )
 
-            @parameter
-            for m_mma, n_mma in itertools.product(
+            comptime for m_mma, n_mma in itertools.product(
                 range(Self.num_m_mmas), range(num_n_mmas_per_bk)
             ):
                 var p_smem_mma_tile = p_smem_warp_tile.tile[

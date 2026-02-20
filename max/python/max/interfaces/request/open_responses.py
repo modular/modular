@@ -25,12 +25,16 @@ Spec: https://www.openresponses.org/reference
 from __future__ import annotations
 
 import base64
+import json
+import logging
+import mimetypes
 import time
-from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
+from urllib.parse import urlparse
 
+import httpx
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.provider_options import (
@@ -40,7 +44,9 @@ from max.interfaces.provider_options import (
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .base import Request, RequestID
+from .base import RequestID
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from max.interfaces.generation import GenerationOutput
@@ -228,6 +234,28 @@ class InputImageContent(BaseModel):
         description="The detail level for image processing. Controls how the model "
         "processes the image.",
     )
+
+    @model_validator(mode="after")
+    def validate_data_uri_only(self) -> InputImageContent:
+        """Validate that image_url is a data URI.
+
+        Web URLs (http/https) should have been converted to base64 data URIs
+        during request preprocessing. Only data URIs are accepted at validation time.
+
+        Raises:
+            ValueError: If image_url is not a data URI.
+
+        Returns:
+            The validated InputImageContent instance.
+        """
+        if not self.image_url.startswith("data:"):
+            raise ValueError(
+                f"Only data URIs are allowed in image_url field. "
+                f"Expected format: 'data:image/[type];base64,[data]', "
+                f"but got: {self.image_url[:50]}... "
+                f"Web URLs are automatically converted during request processing."
+            )
+        return self
 
 
 class InputFileContent(BaseModel):
@@ -1207,6 +1235,28 @@ class OpenResponsesRequestBody(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_single_message_only(self) -> OpenResponsesRequestBody:
+        """Validate that only a single message is provided when using list input.
+
+        The current implementation only supports single-turn requests with one
+        message. Multi-turn conversations with multiple messages are not yet
+        supported for pixel generation pipelines.
+
+        Raises:
+            ValueError: If input is a list with more than one message.
+
+        Returns:
+            The validated OpenResponsesRequestBody instance.
+        """
+        if isinstance(self.input, list) and len(self.input) > 1:
+            raise ValueError(
+                f"Only single-message input is currently supported. "
+                f"Received {len(self.input)} messages. "
+                f"Please provide exactly one message in the input list."
+            )
+        return self
+
 
 # ============================================================================
 # Section 9: Main Response Type
@@ -1461,16 +1511,135 @@ class FastAPIRequestProtocol(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class OpenResponsesRequest(Request):
+def _is_web_url(url: str) -> bool:
+    """Check if a URL is a web URL (http or https).
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        True if the URL starts with http:// or https://, False otherwise.
+    """
+    parsed = urlparse(url)
+    return parsed.scheme in ("http", "https")
+
+
+async def _download_and_encode_image(url: str) -> str:
+    """Download an image from a URL and encode it as a base64 data URI.
+
+    Args:
+        url: The URL of the image to download.
+
+    Returns:
+        A data URI string containing the base64-encoded image.
+
+    Raises:
+        httpx.HTTPError: If the download fails due to HTTP errors.
+        httpx.RequestError: If the download fails due to network errors.
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, timeout=30.0, follow_redirects=True)
+        response.raise_for_status()
+
+        # Get image bytes
+        image_bytes = response.content
+
+        # Determine MIME type from Content-Type header or URL extension
+        content_type = response.headers.get("content-type")
+        if not content_type or not content_type.startswith("image/"):
+            # Fall back to guessing from URL
+            guessed_type, _ = mimetypes.guess_type(url)
+            content_type = guessed_type or "image/png"
+
+        # Encode as base64
+        base64_data = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Return as data URI
+        return f"data:{content_type};base64,{base64_data}"
+
+
+async def _process_image_urls_in_dict(
+    body_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """Process image URLs in raw dict before Pydantic validation.
+
+    Downloads images from web URLs (http/https) and converts them to
+    base64-encoded data URIs. This ensures downstream processors don't
+    need to download images individually.
+
+    Args:
+        body_dict: Raw request body as dict.
+
+    Returns:
+        Modified dict with web URLs replaced by base64 data URIs.
+
+    Raises:
+        ValueError: If any image URL cannot be downloaded, with details
+            about which URL failed and why.
+    """
+    # Only process if input is a list
+    input_value = body_dict.get("input")
+    if not isinstance(input_value, list):
+        return body_dict
+
+    for message in input_value:
+        # Only process user messages with list content
+        if message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+
+        for content_item in content:
+            # Only process input_image types
+            if content_item.get("type") != "input_image":
+                continue
+
+            image_url = content_item.get("image_url")
+            if image_url and _is_web_url(image_url):
+                logger.info(f"Downloading image from URL: {image_url}")
+                try:
+                    # Download and convert to data URI
+                    data_uri = await _download_and_encode_image(image_url)
+                    content_item["image_url"] = data_uri
+                    logger.info(
+                        "Successfully converted image URL to base64 data URI"
+                    )
+                except httpx.HTTPStatusError as e:
+                    raise ValueError(
+                        f"Failed to download image from '{image_url}': "
+                        f"HTTP {e.response.status_code} {e.response.reason_phrase}"
+                    ) from e
+                except httpx.RequestError as e:
+                    raise ValueError(
+                        f"Failed to download image from '{image_url}': "
+                        f"Network error - {str(e)}"
+                    ) from e
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to download image from '{image_url}': {str(e)}"
+                    ) from e
+
+    return body_dict
+
+
+class OpenResponsesRequest(BaseModel):
     """General request container for OpenResponses API requests.
 
     This class wraps an OpenResponsesRequestBody and adheres to the Request schema.
     All request fields are accessed directly from the body.
     """
 
-    body: OpenResponsesRequestBody = field()
+    model_config = ConfigDict(frozen=True)
+
+    request_id: RequestID
+    """A unique identifier for the request."""
+
+    body: OpenResponsesRequestBody
     """The complete OpenResponses request body."""
+
+    def __str__(self) -> str:
+        return str(self.request_id)
 
     @classmethod
     async def from_fastapi_request(
@@ -1480,17 +1649,21 @@ class OpenResponsesRequest(Request):
         """Create an OpenResponsesRequest from a FastAPI/Starlette Request.
 
         Extracts the request_id from request.state.request_id and parses the
-        request body as an OpenResponsesRequestBody.
+        request body as an OpenResponsesRequestBody. If the request contains
+        image URLs (http/https), they will be downloaded and converted to
+        base64 data URIs before validation.
 
         Args:
             request: A request object with state.request_id and body() method.
                 Compatible with FastAPI/Starlette Request objects.
 
         Returns:
-            An OpenResponsesRequest instance.
+            An OpenResponsesRequest instance with all web image URLs converted
+            to base64 data URIs.
 
         Raises:
-            ValueError: If request.state.request_id is not set.
+            ValueError: If request.state.request_id is not set, or if any
+                image URL cannot be downloaded.
             pydantic.ValidationError: If the request body is invalid.
         """
         if not hasattr(request.state, "request_id"):
@@ -1500,9 +1673,19 @@ class OpenResponsesRequest(Request):
             )
 
         request_id = RequestID(value=request.state.request_id)
-        body = OpenResponsesRequestBody.model_validate_json(
-            await request.body()
-        )
+
+        # Get raw JSON bytes
+        raw_body = await request.body()
+
+        # Parse to dict (not validated yet)
+        body_dict = json.loads(raw_body)
+
+        # Process image URLs in the dict BEFORE validation (async)
+        # This downloads images and converts to base64 data URIs
+        body_dict = await _process_image_urls_in_dict(body_dict)
+
+        # NOW validate and create immutable Pydantic model
+        body = OpenResponsesRequestBody.model_validate(body_dict)
 
         return cls(
             request_id=request_id,

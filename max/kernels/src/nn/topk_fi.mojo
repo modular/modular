@@ -178,8 +178,7 @@ fn TopKMaskLogitsKernel[
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
                 var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
 
-                @parameter
-                for j in range(vec_size):
+                comptime for j in range(vec_size):
                     # Calculate the global index for this element in the row.
                     # Will only count if the index is within the valid range [0, d).
                     var idx = (i * block_size + tx) * vec_size + j
@@ -320,8 +319,7 @@ fn topk_mask_logits[
         )
 
     # Runtime dispatch to compile-time parameter.
-    @parameter
-    for param_vec_size in [16, 8, 4, 2, 1]:
+    comptime for param_vec_size in [16, 8, 4, 2, 1]:
         if vec_size == param_vec_size:
             return launch_kernel[param_vec_size]()
 
@@ -355,8 +353,7 @@ fn device_sampling_from_prob[
     var prob_gt_threshold = SIMD[DType.float32, vec_size]()
     var valid = SIMD[DType.bool, vec_size]()
 
-    @parameter
-    for j in range(vec_size):
+    comptime for j in range(vec_size):
         var idx = (i * block_size + tx) * vec_size + j
         var passes_pred = prob_vec[j] > Float32(low)
         prob_gt_threshold[j] = prob_vec[j] if passes_pred else 0.0
@@ -376,8 +373,7 @@ fn device_sampling_from_prob[
         # Intra-SIMD prefix sum using shift operations.
         var local_inclusive_cdf = prob_gt_threshold  # Start with the values
 
-        @parameter
-        for i in range(log2_floor(vec_size)):
+        comptime for i in range(log2_floor(vec_size)):
             # Shift right by 2^i positions (filling with zeros)
             # and add to accumulate prefix sums.
             local_inclusive_cdf += local_inclusive_cdf.shift_right[2**i]()
@@ -396,8 +392,7 @@ fn device_sampling_from_prob[
         )
 
         # Step 7: Find first index where cumulative > u using atomic min.
-        @parameter
-        for j in range(vec_size):
+        comptime for j in range(vec_size):
             var idx = (i * block_size + tx) * vec_size + j
             if (global_inclusive_cdf[j] + aggregate > u) and valid[j]:
                 # Atomic min to ensure we get the smallest index across all threads.
@@ -409,8 +404,7 @@ fn device_sampling_from_prob[
     # Step 8: Update last valid index using atomic max.
     var max_valid_idx = -1
 
-    @parameter
-    for j in range(vec_size):
+    comptime for j in range(vec_size):
         var idx = (i * block_size + tx) * vec_size + j
         if valid[j]:
             max_valid_idx = idx
@@ -482,8 +476,7 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     comptime limit = log2_floor(WARP_SIZE)
 
     # Reduce across warp lanes using shuffle_down.
-    @parameter
-    for i in reversed(range(limit)):
+    comptime for i in reversed(range(limit)):
         comptime offset = 1 << i
         result.value += warp.shuffle_down(result.value, UInt32(offset))
         result.count += warp.shuffle_down(result.count, UInt32(offset))
@@ -563,8 +556,7 @@ fn _block_reduce_value_count[
     # Perform final warp-level reduction.
     var result = _warp_reduce_value_count(block_accum)
 
-    @parameter
-    if broadcast:
+    comptime if broadcast:
         if thread_idx.x == 0:
             value_sram[0] = result.value
             count_sram[0] = result.count
@@ -709,8 +701,7 @@ fn TopKSamplingFromProbKernel[
             var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
             var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
 
-            @parameter
-            for j in range(vec_size):
+            comptime for j in range(vec_size):
                 var idx = (i * block_size + tx) * vec_size + j
                 var is_valid = idx < d
 
@@ -878,8 +869,7 @@ fn topk_sampling_from_prob[
     # Runtime dispatch to compile-time parameter.
     @parameter
     fn dispatch_vec_size[deterministic: Bool]() raises:
-        @parameter
-        for param_vec_size in [16, 8, 4, 2, 1]:
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size, deterministic]()
 
@@ -985,8 +975,7 @@ fn TopKSoftmaxSampleKernel[
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
                 var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
 
-                @parameter
-                for j in range(vec_size):
+                comptime for j in range(vec_size):
                     var idx = (i * block_size + tx) * vec_size + j
 
                     probs_gt_pivot_0_count[j] = Int32(1) if (
@@ -1231,7 +1220,6 @@ fn topk_softmax_sample[
         )
 
     # Runtime dispatch to compile-time parameter.
-    @parameter
-    for param_vec_size in [16, 8, 4, 2, 1]:
+    comptime for param_vec_size in [16, 8, 4, 2, 1]:
         if vec_size == param_vec_size:
             return launch_kernel[param_vec_size]()

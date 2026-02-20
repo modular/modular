@@ -175,8 +175,7 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
     fn signal_peer(self):
         """Signal peer CTA in cluster (cta_group=2 only)."""
 
-        @parameter
-        if Self.cta_group == 2:
+        comptime if Self.cta_group == 2:
             _ = self.barrier.ptr[].arrive_cluster(block_rank_in_cluster() ^ 1)
 
     @always_inline

@@ -91,8 +91,7 @@ fn _to_int_tuple[*vals: Int]() -> IntTuple:
 
     comptime num_vals = std.builtin.Variadic.size(vals)
 
-    @parameter
-    for i in range(num_vals):
+    comptime for i in range(num_vals):
         res.append(vals[i])
     return res
 
@@ -111,8 +110,7 @@ fn _tma_desc_tile_layout[
         rank == 2 or rank == 3 or rank == 4 or rank == 5
     ), "Only support 2D/3D/4D/5D TMA descriptor for now."
 
-    @parameter
-    if rank == 2:
+    comptime if rank == 2:
         comptime dim0 = tile_shape[0]
         comptime dim1 = tile_shape[1]
 
@@ -316,8 +314,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
 
         comptime constraints = "r,r" + (",r" if ticks else "")
 
-        @parameter
-        if ticks:
+        comptime if ticks:
             inlined_assembly[asm, NoneType, constraints=constraints](
                 Int32(Int(self.unsafe_ptr())), phase, ticks.value()
             )
@@ -609,16 +606,14 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
         pipeline, implementing circular buffer semantics.
         """
 
-        @parameter
-        if Self.num_stages > 1:
+        comptime if Self.num_stages > 1:
             self._index += 1
             self._count += 1
             if self._index == UInt32(Self.num_stages):
                 self._index = 0
                 self._phase ^= 1
 
-        @parameter
-        if Self.num_stages == 1:
+        comptime if Self.num_stages == 1:
             self._count += 1
             self._phase ^= 1
 
@@ -814,11 +809,8 @@ struct TMATensorTile[
             Self.layout.shape[Int(Self.is_k_major)]
         ) // copy_dim1
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
@@ -885,11 +877,8 @@ struct TMATensorTile[
             Self.layout.shape[Int(Self.is_k_major)]
         ) // copy_dim1
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
@@ -974,14 +963,9 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2
         )
 
-        @parameter
-        for m in range(num_copies_dim0):
-
-            @parameter
-            for i in range(num_copies_dim1):
-
-                @parameter
-                for j in range(num_copies_dim2):
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         layout_of_descs(IntTuple(m, i, j)) * copy_size
                     )
@@ -1065,17 +1049,10 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2, num_copies_dim3
         )
 
-        @parameter
-        for n in range(num_copies_dim0):
-
-            @parameter
-            for m in range(num_copies_dim1):
-
-                @parameter
-                for i in range(num_copies_dim2):
-
-                    @parameter
-                    for j in range(num_copies_dim3):
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             layout_of_descs(IntTuple(n, m, i, j)) * copy_size
                         )
@@ -1152,17 +1129,10 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2, num_copies_dim3
         )
 
-        @parameter
-        for n in range(num_copies_dim0):
-
-            @parameter
-            for m in range(num_copies_dim1):
-
-                @parameter
-                for i in range(num_copies_dim2):
-
-                    @parameter
-                    for j in range(num_copies_dim3):
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             layout_of_descs(IntTuple(n, m, i, j)) * copy_size
                         )
@@ -1262,20 +1232,11 @@ struct TMATensorTile[
             num_copies_dim4,
         )
 
-        @parameter
-        for o in range(num_copies_dim0):
-
-            @parameter
-            for n in range(num_copies_dim1):
-
-                @parameter
-                for m in range(num_copies_dim2):
-
-                    @parameter
-                    for i in range(num_copies_dim3):
-
-                        @parameter
-                        for j in range(num_copies_dim4):
+        comptime for o in range(num_copies_dim0):
+            comptime for n in range(num_copies_dim1):
+                comptime for m in range(num_copies_dim2):
+                    comptime for i in range(num_copies_dim3):
+                        comptime for j in range(num_copies_dim4):
                             comptime copy_offset: UInt32 = UInt32(
                                 layout_of_descs(IntTuple(o, n, m, i, j))
                                 * copy_size
@@ -1366,20 +1327,11 @@ struct TMATensorTile[
             num_copies_dim4,
         )
 
-        @parameter
-        for o in range(num_copies_dim0):
-
-            @parameter
-            for n in range(num_copies_dim1):
-
-                @parameter
-                for m in range(num_copies_dim2):
-
-                    @parameter
-                    for i in range(num_copies_dim3):
-
-                        @parameter
-                        for j in range(num_copies_dim4):
+        comptime for o in range(num_copies_dim0):
+            comptime for n in range(num_copies_dim1):
+                comptime for m in range(num_copies_dim2):
+                    comptime for i in range(num_copies_dim3):
+                        comptime for j in range(num_copies_dim4):
                             comptime copy_offset: UInt32 = UInt32(
                                 layout_of_descs(IntTuple(o, n, m, i, j))
                                 * copy_size
@@ -1443,8 +1395,7 @@ struct TMATensorTile[
         """
         comptime assert rank in (2, 3, 4, 5)
 
-        @parameter
-        if rank == 2:
+        comptime if rank == 2:
             self.async_copy[eviction_policy=eviction_policy](
                 dst, mem_barrier, (Int(coords[0]), Int(coords[1]))
             )
@@ -1510,8 +1461,7 @@ struct TMATensorTile[
         """
         comptime assert rank in (2, 3, 4, 5)
 
-        @parameter
-        if rank == 2:
+        comptime if rank == 2:
             self.async_store(dst, (UInt(coords[0]), UInt(coords[1])))
         elif rank == 3:
             self.async_store_3d(
@@ -1565,8 +1515,7 @@ struct TMATensorTile[
         """
         comptime assert rank in (2, 3)
 
-        @parameter
-        if rank == 2:
+        comptime if rank == 2:
             self.async_store(dst, (UInt(coords[0]), UInt(coords[1])))
         elif rank == 3:
             self.async_store_3d(
@@ -1623,11 +1572,8 @@ struct TMATensorTile[
         comptime num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
         comptime num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
@@ -1682,11 +1628,8 @@ struct TMATensorTile[
         comptime num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
         comptime num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
@@ -1776,14 +1719,9 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2
         )
 
-        @parameter
-        for m in range(num_copies_dim0):
-
-            @parameter
-            for i in range(num_copies_dim1):
-
-                @parameter
-                for j in range(num_copies_dim2):
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         layout_of_descs(IntTuple(m, i, j)) * copy_size
                     )
@@ -1853,14 +1791,9 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2
         )
 
-        @parameter
-        for m in range(num_copies_dim0):
-
-            @parameter
-            for i in range(num_copies_dim1):
-
-                @parameter
-                for j in range(num_copies_dim2):
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         layout_of_descs(IntTuple(m, i, j)) * copy_size
                     )
@@ -1975,11 +1908,8 @@ struct TMATensorTile[
             Self.layout.shape[Int(Self.is_k_major)]
         ) // copy_dim1
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
@@ -2021,11 +1951,8 @@ struct TMATensorTile[
             Self.layout.shape[Int(Self.is_k_major)]
         ) // copy_dim1
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
@@ -2098,14 +2025,9 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2
         )
 
-        @parameter
-        for m in range(num_copies_dim0):
-
-            @parameter
-            for i in range(num_copies_dim1):
-
-                @parameter
-                for j in range(num_copies_dim2):
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         layout_of_descs(IntTuple(m, i, j)) * copy_size
                     )
@@ -2158,14 +2080,9 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2
         )
 
-        @parameter
-        for m in range(num_copies_dim0):
-
-            @parameter
-            for i in range(num_copies_dim1):
-
-                @parameter
-                for j in range(num_copies_dim2):
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         layout_of_descs(IntTuple(m, i, j)) * copy_size
                     )
@@ -2233,17 +2150,10 @@ struct TMATensorTile[
             num_copies_dim0, num_copies_dim1, num_copies_dim2, num_copies_dim3
         )
 
-        @parameter
-        for n in range(num_copies_dim0):
-
-            @parameter
-            for m in range(num_copies_dim1):
-
-                @parameter
-                for i in range(num_copies_dim2):
-
-                    @parameter
-                    for j in range(num_copies_dim3):
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             layout_of_descs(IntTuple(n, m, i, j)) * copy_size
                         )
@@ -2326,20 +2236,11 @@ struct TMATensorTile[
             num_copies_dim4,
         )
 
-        @parameter
-        for o in range(num_copies_dim0):
-
-            @parameter
-            for n in range(num_copies_dim1):
-
-                @parameter
-                for m in range(num_copies_dim2):
-
-                    @parameter
-                    for i in range(num_copies_dim3):
-
-                        @parameter
-                        for j in range(num_copies_dim4):
+        comptime for o in range(num_copies_dim0):
+            comptime for n in range(num_copies_dim1):
+                comptime for m in range(num_copies_dim2):
+                    comptime for i in range(num_copies_dim3):
+                        comptime for j in range(num_copies_dim4):
                             comptime copy_offset: UInt32 = UInt32(
                                 layout_of_descs(IntTuple(o, n, m, i, j))
                                 * copy_size
@@ -2461,8 +2362,7 @@ struct TMATensorTile[
 
         comptime descriptor_bytes = 128
 
-        @parameter
-        for src_idx in range(descriptor_bytes // simd_width):
+        comptime for src_idx in range(descriptor_bytes // simd_width):
             var src_vec = (src_desc).load[
                 width=simd_width, alignment=src_align
             ](src_idx * simd_width)
@@ -2694,8 +2594,7 @@ struct TMATensorTile[
 
         var desc_ptr = smem_tma_descriptor_ptr.bitcast[UInt64]()
 
-        @parameter
-        if only_update_dim_0:
+        comptime if only_update_dim_0:
             comptime temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
                 rank - 1
             ) + ", $1;"
@@ -2708,8 +2607,7 @@ struct TMATensorTile[
 
         else:
             # Replace dimensions
-            @parameter
-            for i in range(rank):
+            comptime for i in range(rank):
                 comptime temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
                     i
                 ) + ", $1;"
@@ -2722,8 +2620,7 @@ struct TMATensorTile[
 
             # Replace strides - note: stride for innermost dimension is implicitly 1
             # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
-            @parameter
-            for i in range(1, rank):
+            comptime for i in range(1, rank):
                 comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
                     i - 1
                 ) + ", $1;"
@@ -2785,8 +2682,7 @@ struct TMATensorTile[
 
         # Replace strides - note: stride for innermost dimension is implicitly 1
         # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
-        @parameter
-        if dim_idx > 0:
+        comptime if dim_idx > 0:
             debug_assert(
                 dim_stride is not None,
                 " dim_stride must be provided if dim_idx > 0",
@@ -2849,8 +2745,7 @@ def create_tma_tile[
         tensor.dtype
     ]()
 
-    @parameter
-    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
             "Current swizzle bytes is "
             + String(swizzle_rows_bytes)
@@ -2930,8 +2825,7 @@ def _create_tma_descriptor_helper[
     var global_shape_list = runtime_tuple_to_index_list[rank](global_shape)
     var global_strides_list = runtime_tuple_to_index_list[rank](global_strides)
 
-    @parameter
-    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
             "Current swizzle bytes is "
             + String(swizzle_rows_bytes)
@@ -3027,8 +2921,7 @@ def create_tensor_tile[
     comptime desc_bytes_size = __desc_layout.size() * size_of[dtype]()
     comptime layout_size = __tile_layout.size() * size_of[dtype]()
 
-    @parameter
-    if desc_bytes_size < layout_size:
+    comptime if desc_bytes_size < layout_size:
         # When we do multiple TMA copy, every address has to be align to 128.
         comptime assert desc_bytes_size % 128 == 0, (
             "desc layout byte size has to be  align to 128 bytes for"
@@ -3042,11 +2935,8 @@ def create_tensor_tile[
             + String(__tile_layout.shape[1].value())
         )
 
-    @parameter
-    if rank == 2:
-
-        @parameter
-        if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+    comptime if rank == 2:
+        comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             comptime assert (
                 tile_shape[1] * size_of[dtype]()
             ) % swizzle_mode.bytes() == 0, (
@@ -3071,9 +2961,7 @@ def create_tensor_tile[
         )
 
     elif rank == 3:
-
-        @parameter
-        if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             comptime assert (
                 tile_shape[2] * size_of[dtype]()
             ) % swizzle_mode.bytes() == 0, (
@@ -3102,9 +2990,7 @@ def create_tensor_tile[
         )
 
     elif rank == 4:
-
-        @parameter
-        if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             comptime assert (
                 tile_shape[3] * size_of[dtype]()
             ) % swizzle_mode.bytes() == 0, (
@@ -3141,9 +3027,7 @@ def create_tensor_tile[
         )
 
     else:  # rank == 5
-
-        @parameter
-        if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             comptime assert (
                 tile_shape[4] * size_of[dtype]()
             ) % swizzle_mode.bytes() == 0, (
@@ -3233,16 +3117,14 @@ def create_tensor_tile[
     comptime desc_bytes_size = __desc_layout.size() * size_of[dtype]()
     comptime layout_size = __tile_layout.size() * size_of[dtype]()
 
-    @parameter
-    if desc_bytes_size < layout_size:
+    comptime if desc_bytes_size < layout_size:
         comptime assert desc_bytes_size % 128 == 0, (
             "desc layout byte size has to be align to 128 bytes for"
             " multiple TMA copies."
         )
 
     # Swizzle constraint applies to all ranks - check once here
-    @parameter
-    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime assert (
             tile_shape[rank - 1] * size_of[dtype]()
         ) % swizzle_mode.bytes() == 0, (
@@ -3252,8 +3134,7 @@ def create_tensor_tile[
             + "B."
         )
 
-    @parameter
-    if rank == 2:
+    comptime if rank == 2:
         return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
@@ -3468,8 +3349,7 @@ fn _split_tma_gmem_tensor[
     var runtime_shape: IndexList[split_rank] = {}
     runtime_shape[0] = dim0
 
-    @parameter
-    for i in range(1, split_rank):
+    comptime for i in range(1, split_rank):
         comptime dim_i: Int = ret.layout.shape[i].value()
         runtime_shape[i] = dim_i
     ret = {ptr, RuntimeLayout[ret.layout].row_major(runtime_shape)}
@@ -3497,8 +3377,7 @@ fn _split_tma_gmem_tensor[
     runtime_shape[0] = dim0
     runtime_shape[1] = dim1
 
-    @parameter
-    for i in range(2, rank):
+    comptime for i in range(2, rank):
         runtime_shape[i] = shape[i]
 
     comptime assert rank == len(flatten(ret.layout.shape)), (
@@ -3918,8 +3797,7 @@ struct RaggedTMA3DTile[
         var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
         var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
 
-        @parameter
-        for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
+        comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
             comptime copy_offset = col * Self.BM * Self.swizzle_granularity
 
             cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
@@ -3964,8 +3842,7 @@ struct RaggedTMA3DTile[
         var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
         var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
 
-        @parameter
-        for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
+        comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
             comptime copy_offset = col * Self.BM * Self.swizzle_granularity
 
             cp_async_bulk_tensor_global_shared_cta[
@@ -4046,8 +3923,7 @@ struct RaggedTensorMap[
         var idx_list = IndexList[Self.descriptor_rank + 1](fill=0)
         idx_list[0] = 1
 
-        @parameter
-        for idx in range(Self.descriptor_rank):
+        comptime for idx in range(Self.descriptor_rank):
             idx_list[idx + 1] = Self.descriptor_shape[idx]
 
         return idx_list
@@ -4060,8 +3936,7 @@ struct RaggedTensorMap[
             IntTuple(num_elems=Self.global_rank),
         )
 
-        @parameter
-        for idx in range(Self.global_rank):
+        comptime for idx in range(Self.global_rank):
             layout.shape.replace_entry(idx, int_value=UNKNOWN_VALUE)
             layout.stride.replace_entry(idx, int_value=UNKNOWN_VALUE)
 
@@ -4114,8 +3989,7 @@ struct RaggedTensorMap[
         global_stride[Self.global_rank - 2] = ragged_stride
         global_stride[Self.global_rank - 1] = 1
 
-        @parameter
-        for idx in range(1, 1 + Self.remaining_global_dim_rank):
+        comptime for idx in range(1, 1 + Self.remaining_global_dim_rank):
             global_stride[idx] = remaining_global_stride[idx - 1]
 
         return global_stride
@@ -4131,8 +4005,7 @@ struct RaggedTensorMap[
         var global_shape = IndexList[Self.global_rank](fill=0)
         global_shape[0] = cumulative_length
 
-        @parameter
-        for idx in range(1, 1 + Self.remaining_global_dim_rank):
+        comptime for idx in range(1, 1 + Self.remaining_global_dim_rank):
             global_shape[idx] = remaining_global_shape[idx - 1]
 
         global_shape[Self.global_rank - 2] = max_length
@@ -4344,8 +4217,7 @@ struct RaggedTensorMap[
 
         # starting us at (75 + 32) - 64 = 43, and allowing us to only load 32 sequences
 
-        @parameter
-        if using_max_descriptor_size:
+        comptime if using_max_descriptor_size:
             # if the max length is the same as the descriptor size we dont need to do
             # multiple stores and generate multiple coords so we can avoid unnessecary
             # branching in this case.
@@ -4606,18 +4478,14 @@ struct TMATensorTileIm2col[
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
 
                 # K recomputation only needed when j > 0 (rare in practice)
-                @parameter
-                if j > 0:
+                comptime if j > 0:
                     k_coord = coords[0] + UInt(j * copy_dim1)
                     filter_idx, c = divmod(k_coord, num_channels)
                     r, s = divmod(filter_idx, filter_w)
@@ -4722,18 +4590,14 @@ struct TMATensorTileIm2col[
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
 
                 # K recomputation only needed when j > 0
-                @parameter
-                if j > 0:
+                comptime if j > 0:
                     k_coord = coords[0] + UInt(j * copy_dim1)
                     filter_idx, c = divmod(k_coord, num_channels)
                     r, s = divmod(filter_idx, filter_w)
@@ -4835,18 +4699,14 @@ struct TMATensorTileIm2col[
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
 
                 # K recomputation only needed when j > 0
-                @parameter
-                if j > 0:
+                comptime if j > 0:
                     k_coord = coords[0] + UInt(j * copy_dim1)
                     filter_idx, c = divmod(k_coord, num_channels)
                     r, s = divmod(filter_idx, filter_w)
@@ -4949,18 +4809,14 @@ struct TMATensorTileIm2col[
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
 
-        @parameter
-        for i in range(num_copies_dim0):
-
-            @parameter
-            for j in range(num_copies_dim1):
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
                 comptime copy_offset: UInt32 = UInt32(
                     (i * num_copies_dim1 + j) * copy_size
                 )
 
                 # K recomputation only needed when j > 0
-                @parameter
-                if j > 0:
+                comptime if j > 0:
                     k_coord = coords[0] + UInt(j * copy_dim1)
                     filter_idx, c = divmod(k_coord, num_channels)
                     r, s = divmod(filter_idx, filter_w)

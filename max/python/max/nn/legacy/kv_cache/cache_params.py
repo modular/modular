@@ -158,6 +158,18 @@ class KVCacheParams(KVCacheParamInterface):
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
 
+    disk_offload_dir: str | None = None
+    """Directory for disk-based KV cache offloading."""
+
+    disk_offload_max_gb: float = 50.0
+    """Maximum disk space (GB) for KV cache offloading."""
+
+    disk_offload_direct_io: bool = False
+    """Use O_DIRECT for disk I/O (bypasses OS page cache). Requires block sizes aligned to FS block size."""
+
+    lmcache_config_file: str | None = None
+    """Path to LMCache YAML config file. Enables LMCache external KV cache tiering."""
+
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
 
@@ -396,6 +408,10 @@ class KVCacheParams(KVCacheParamInterface):
             is_mla=self.is_mla,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
+            disk_offload_dir=self.disk_offload_dir,
+            disk_offload_max_gb=self.disk_offload_max_gb,
+            disk_offload_direct_io=self.disk_offload_direct_io,
+            lmcache_config_file=self.lmcache_config_file,
         )
 
     def _get_symbolic_inputs_for_replica(

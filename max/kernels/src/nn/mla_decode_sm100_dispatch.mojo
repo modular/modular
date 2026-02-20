@@ -99,8 +99,7 @@ fn mla_decode_sm100_dispatch[
     # between how the dispatcher divides work and how the kernel sees it.
     var effective_max_cache_len = max_cache_valid_length
 
-    @parameter
-    if not _is_cache_length_accurate:
+    comptime if not _is_cache_length_accurate:
         effective_max_cache_len += q_max_seq_len
 
     # =========================================================================
@@ -530,8 +529,7 @@ fn _mla_decode_sm100_dispatch_impl[
             #   bs=128, cl=128:  np=2, wph=1, 2048 CTAs (14 waves)
             #   bs=256, cl=2048: effective ~2049 > 1280, wph=4 (excluded by guard)
 
-            @parameter
-            for i in range(2, max_num_splits + 1):
+            comptime for i in range(2, max_num_splits + 1):
                 if num_partitions == i:
                     launch_combine[i, 1]()
         elif combine_ctas_base >= 2048 and num_partitions > 4:
@@ -539,8 +537,7 @@ fn _mla_decode_sm100_dispatch_impl[
             # number of combine CTAs. Each CTA has enough reduction work
             # (>4 splits) to amortize launch overhead.
 
-            @parameter
-            for i in range(5, max_num_splits + 1):
+            comptime for i in range(5, max_num_splits + 1):
                 if num_partitions == i:
                     launch_combine[i, 2]()
         elif combine_ctas_base >= 512:
@@ -549,8 +546,7 @@ fn _mla_decode_sm100_dispatch_impl[
             # with np=2), the combine work per CTA is tiny and wph=4 hides
             # per-CTA latency better than wph=2.
 
-            @parameter
-            for i in range(2, max_num_splits + 1):
+            comptime for i in range(2, max_num_splits + 1):
                 if num_partitions == i:
                     launch_combine[i, 4]()
         else:
@@ -558,8 +554,7 @@ fn _mla_decode_sm100_dispatch_impl[
             # parallelism with wph=8. The extra CTAs from higher wph are not
             # a concern since the grid is small.
 
-            @parameter
-            for i in range(2, max_num_splits + 1):
+            comptime for i in range(2, max_num_splits + 1):
                 if num_partitions == i:
                     launch_combine[i, 8]()
     else:

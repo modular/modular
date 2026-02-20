@@ -431,12 +431,8 @@ fn reduce_op[
             target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype in (
+        comptime if has_accelerator():
+            comptime if dtype in (
                 DType.float32,
                 DType.float16,
                 DType.bfloat16,

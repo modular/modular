@@ -28,7 +28,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.nn.legacy.kv_cache import RaggedKVCacheInputs
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.model_config import MAXModelConfig
 from max.pipelines.lib.speculative_config import SpeculativeConfig
@@ -60,7 +60,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path=model_name,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             device_specs=[DeviceSpec.accelerator()],
             max_length=1024,
         ),
@@ -151,7 +151,7 @@ def test_config__validate_device_and_encoding_combinations(
     config = PipelineConfig(
         model=MAXModelConfig(
             model_path=smollm_135m_local_path,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             device_specs=[DeviceSpec.cpu()],
         ),
         draft_model=MAXModelConfig(
@@ -197,7 +197,7 @@ def test_config__validate_target_and_draft_architecture(
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path=deepseek_r1_distill_llama_8b_local_path,
-                quantization_encoding=SupportedEncoding.q6_k,
+                quantization_encoding="q6_k",
                 device_specs=[DeviceSpec.accelerator()],
                 weight_path=[
                     Path(
@@ -225,7 +225,7 @@ def test_draft_model_encoding_selection() -> None:
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path=model_name,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             device_specs=[DeviceSpec.accelerator()],
             max_length=1024,
         ),
@@ -246,9 +246,7 @@ def test_draft_model_encoding_selection() -> None:
 
     # Set draft model quantization encoding explicitly
     assert pipeline_config.draft_model is not None
-    pipeline_config.draft_model.quantization_encoding = (
-        SupportedEncoding.float32
-    )
+    pipeline_config.draft_model.quantization_encoding = "float32"
 
     _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
@@ -258,7 +256,7 @@ def test_draft_model_encoding_selection() -> None:
     pipeline_config2 = PipelineConfig(
         model=MAXModelConfig(
             model_path=model_name,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             device_specs=[DeviceSpec.accelerator()],
             max_length=1024,
         ),
@@ -299,7 +297,7 @@ def test_kv_cache_claiming_protocol() -> None:
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path=model_name,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding="float32",
             device_specs=[DeviceSpec.accelerator()],
             max_length=1024,
         ),

@@ -135,11 +135,8 @@ fn _mask_apply_rdna[
     var lane_seq_offset = Int(lane % UInt(16))
     var lane_key_group = Int(lane // UInt(16))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
             p_reg_vectorized[mma_id, 0] = (
                 p_reg_vectorized[mma_id, 0] * scale_log2e
@@ -160,11 +157,8 @@ fn _mask_apply_rdna[
             )
             var score_seq_with_start_pos = score_seq + start_pos
 
-            @parameter
-            if masked:
-
-                @parameter
-                for j in range(output_frag_size):
+            comptime if masked:
+                comptime for j in range(output_frag_size):
                     # Interleaved key: elem j at lane group g → key = j*2 + g
                     var score_key = mma_key_base + UInt32(
                         j * 2 + lane_key_group
@@ -189,8 +183,7 @@ fn _mask_apply_rdna[
                         p_reg_vectorized[mma_id, 0][j],
                     )
 
-            @parameter
-            if mask_t.apply_log2e_after_mask:
+            comptime if mask_t.apply_log2e_after_mask:
                 p_reg_vectorized[mma_id, 0] = (
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
@@ -202,9 +195,7 @@ fn _mask_apply_rdna[
             var bound_seq = num_keys if token_gen else seq_len
 
             if score_seq >= bound_seq:
-
-                @parameter
-                for j in range(output_frag_size):
+                comptime for j in range(output_frag_size):
                     p_reg_vectorized[mma_id, 0][j] = Scalar[accum_type](-10000)
             elif not not_last_iter or token_gen:
                 var bound_key = (
@@ -212,8 +203,7 @@ fn _mask_apply_rdna[
                     + kv_tile_num_rows if token_gen else num_keys
                 )
 
-                @parameter
-                for j in range(output_frag_size):
+                comptime for j in range(output_frag_size):
                     var score_key = mma_key_base + UInt32(
                         j * 2 + lane_key_group
                     )
@@ -493,8 +483,7 @@ struct AttentionRDNA[
         self,
         kv_tile_start_row: UInt32,
     ) -> TileMaskStatus:
-        @parameter
-        if Self.token_gen:
+        comptime if Self.token_gen:
             return self.mask.status(
                 Index[dtype = DType.uint32](
                     Int(self.num_keys - 1),
@@ -513,8 +502,7 @@ struct AttentionRDNA[
 
     @always_inline
     fn mask_advance(mut self):
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
     @always_inline
@@ -526,8 +514,7 @@ struct AttentionRDNA[
         mut self,
         kv_tile_start_row: UInt32,
     ) -> Bool:
-        @parameter
-        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
+        comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -573,8 +560,7 @@ struct AttentionRDNA[
                 UInt32(self.cache_start_pos),
             )
 
-        @parameter
-        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
+        comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -626,8 +612,7 @@ struct AttentionRDNA[
             self.smem_manager.get_warp_scratch_ptr[Self.accum_type]()
         )
 
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             # In prefill mode, P needs BM*BK elements of shared memory.
             # K only has BN*BK elements, and BM can exceed BN (e.g. depth=64:
             # BM=128, BN=64), so we allocate a dedicated P buffer.
@@ -664,8 +649,7 @@ struct AttentionRDNA[
         self.start_pos = start_pos
         self.cache_start_pos = cache_start_pos
 
-        @parameter
-        if Self.sink:
+        comptime if Self.sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -723,17 +707,13 @@ struct AttentionRDNA[
         ) * Int(Self.output_depth)
         var row_bound = Int(Self.group) if Self.token_gen else self.seq_len
 
-        @parameter
-        for depth_tile in range(Self.num_n_mmas_output):
-
-            @parameter
-            for seq_tile in range(Self.num_m_mmas):
+        comptime for depth_tile in range(Self.num_n_mmas_output):
+            comptime for seq_tile in range(Self.num_m_mmas):
                 comptime mma_idx = Int(depth_tile) * Int(Self.num_m_mmas) + Int(
                     seq_tile
                 )
 
-                @parameter
-                for elem in range(8):
+                comptime for elem in range(8):
                     # RDNA WMMA C/D: lane l, elem v → D[row=v*2+l//16, col=l%16]
                     # O^T[depth, seq]: depth = elem*2 + row_group (interleaved)
                     var seq_in_mma = col_within_mma
@@ -779,8 +759,7 @@ struct AttentionRDNA[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
     ):
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             return
 
         var q_head_idx = self.q_head_idx()

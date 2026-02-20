@@ -137,16 +137,13 @@ fn test_matmul[
 
 fn test_matmul[input_types: List[DType]]() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        for input_type in input_types:
+        comptime for input_type in input_types:
             test_matmul[input_type, 64, 16, 32](ctx)
             test_matmul[input_type, 512, 2560, 512](ctx)
 
 
 def main():
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
     elif has_nvidia_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()

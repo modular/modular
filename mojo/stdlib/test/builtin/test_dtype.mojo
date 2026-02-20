@@ -88,8 +88,7 @@ fn test_is_xxx() raises:
         test: fn(DType) -> Bool,
         true_dtypes: List[DType],
     ]() raises:
-        @parameter
-        for dt in all_dtypes:
+        comptime for dt in all_dtypes:
             comptime res = dt in true_dtypes
             assert_equal(test(dt), res)
 
@@ -121,17 +120,13 @@ def test_from_str():
     assert_equal(DType._from_str("blahblah"), DType.invalid)
     assert_equal(DType._from_str("DType.blahblah"), DType.invalid)
 
-    @parameter
-    for dt in all_dtypes:
+    comptime for dt in all_dtypes:
         assert_equal(DType._from_str(String(dt)), dt)
 
 
 def test_get_dtype():
-    @parameter
-    for dt in all_dtypes:
-
-        @parameter
-        for i in range(6):
+    comptime for dt in all_dtypes:
+        comptime for i in range(6):
             assert_equal(DType.get_dtype[SIMD[dt, 2**i], 2**i](), dt)
 
 

@@ -19,7 +19,6 @@ from max.pipelines.core import TextContext
 # TODO(bduke): Replace with actual Llama4 model once implemented.
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -35,9 +34,9 @@ llama4_arch = SupportedArchitecture(
         "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
         "meta-llama/Llama-4-Maverick-17B-128E",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,

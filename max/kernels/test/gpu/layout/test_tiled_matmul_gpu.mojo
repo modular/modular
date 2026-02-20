@@ -161,8 +161,7 @@ fn sram_blocked_matmul[
 
         barrier()
 
-        @parameter
-        for kk in range(BK):
+        comptime for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -410,8 +409,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
         barrier()
 
-        @parameter
-        for kk in range(BK):
+        comptime for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](

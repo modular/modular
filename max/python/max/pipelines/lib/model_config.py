@@ -38,7 +38,15 @@ from pydantic import (
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
-from .config_enums import RepoType, RopeType, SupportedEncoding
+from .config_enums import (
+    RepoType,
+    RopeType,
+    SupportedEncoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
+)
 from .device_specs import coerce_device_specs_input
 from .hf_utils import (
     HuggingFaceRepo,
@@ -55,8 +63,8 @@ logger = logging.getLogger("max.pipelines")
 # Encodings that can be casted to/from each other.
 # We currently only support float32 <-> bfloat16 weight type casting.
 _ALLOWED_CAST_ENCODINGS = {
-    SupportedEncoding.float32,
-    SupportedEncoding.bfloat16,
+    "float32",
+    "bfloat16",
 }
 
 
@@ -385,7 +393,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 "can't convert `None` CLI encoding to graph quantization encoding"
             )
 
-        return self.quantization_encoding.quantization_encoding
+        return supported_encoding_quantization(self.quantization_encoding)
 
     def weights_size(self) -> int:
         """Calculates the total size in bytes of all weight files in ``weight_path``.
@@ -776,7 +784,9 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"We only support float32 <-> bfloat16 weight type casting."
             )
 
-        if not to_encoding.supported_on(device_spec=self.default_device_spec):
+        if not supported_encoding_supported_on(
+            to_encoding, self.default_device_spec
+        ):
             raise ValueError(
                 f"Cannot cast from '{from_encoding}' to '{to_encoding}' on device '{self.default_device_spec}' because '{to_encoding}' is not supported on this device."
                 f"Please use a different device or a different encoding."
@@ -796,7 +806,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if self.weight_path:
             # Get the encoding of the first weight path file.
             if os.path.exists(self.weight_path[0]):
-                file_encoding = SupportedEncoding.parse_from_file_name(
+                file_encoding = parse_supported_encoding_from_file_name(
                     str(self.weight_path[0])
                 )
             else:
@@ -870,7 +880,7 @@ class MAXModelConfig(MAXModelConfigBase):
                         "If a local safetensors file is provided, please provide a quantization_encoding."
                     )
 
-                if encoding := SupportedEncoding.parse_from_file_name(
+                if encoding := parse_supported_encoding_from_file_name(
                     str(self.weight_path[0])
                 ):
                     msg = f"encoding inferred from weights file: {encoding}"
@@ -903,14 +913,12 @@ class MAXModelConfig(MAXModelConfigBase):
             ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantization encoding is not set, override to bfloat16.
-                if SupportedEncoding.float4_e2m1fnx2 in supported_encodings:
-                    self.quantization_encoding = (
-                        SupportedEncoding.float4_e2m1fnx2
-                    )
-                elif SupportedEncoding.float8_e4m3fn in supported_encodings:
-                    self.quantization_encoding = SupportedEncoding.float8_e4m3fn
-                elif SupportedEncoding.bfloat16 in supported_encodings:
-                    self.quantization_encoding = SupportedEncoding.bfloat16
+                if "float4_e2m1fnx2" in supported_encodings:
+                    self.quantization_encoding = "float4_e2m1fnx2"
+                elif "float8_e4m3fn" in supported_encodings:
+                    self.quantization_encoding = "float8_e4m3fn"
+                elif "bfloat16" in supported_encodings:
+                    self.quantization_encoding = "bfloat16"
             else:
                 msg = f"encoding not provided, using default encoding of {default_encoding}"
                 logger.debug(msg)
@@ -931,9 +939,9 @@ class MAXModelConfig(MAXModelConfigBase):
         # GPU, switch to CPU automatically. This "downcast" is possible. Going
         # the other way (CPU -> GPU) is not supported and will error out in the
         # loop check below.
-        if self.quantization_encoding.supported_devices == ("cpu",) and all(
-            d.device_type == "gpu" for d in self.device_specs
-        ):
+        if supported_encoding_supported_devices(self.quantization_encoding) == (
+            "cpu",
+        ) and all(d.device_type == "gpu" for d in self.device_specs):
             logger.warning(
                 f"Encoding '{self.quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
             )
@@ -941,7 +949,9 @@ class MAXModelConfig(MAXModelConfigBase):
         # Check that the quantization encoding is supported on the specified
         # devices.
         for device_spec in self.device_specs:
-            if not self.quantization_encoding.supported_on(device_spec):
+            if not supported_encoding_supported_on(
+                self.quantization_encoding, device_spec
+            ):
                 raise ValueError(
                     f"The encoding '{self.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
                     f"You have two options to resolve this:\n"
@@ -1067,7 +1077,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         assert self.quantization_encoding, "quantization_encoding must be set."
 
-        if self.quantization_encoding == SupportedEncoding.gptq:
+        if self.quantization_encoding == "gptq":
             if self.huggingface_config is None:
                 raise ValueError(
                     f"GPTQ quantization requires a HuggingFace config for '{self.model_path}', "
@@ -1209,14 +1219,14 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Otherwise select the default KV cache dtype based on the quantization encoding.
         supported_encoding_to_cache_dtype = {
-            SupportedEncoding.float32: DType.float32,
-            SupportedEncoding.bfloat16: DType.bfloat16,
-            SupportedEncoding.float8_e4m3fn: DType.bfloat16,
-            SupportedEncoding.float4_e2m1fnx2: DType.bfloat16,
-            SupportedEncoding.q4_k: DType.float32,
-            SupportedEncoding.q4_0: DType.float32,
-            SupportedEncoding.q6_k: DType.float32,
-            SupportedEncoding.gptq: DType.bfloat16,
+            "float32": DType.float32,
+            "bfloat16": DType.bfloat16,
+            "float8_e4m3fn": DType.bfloat16,
+            "float4_e2m1fnx2": DType.bfloat16,
+            "q4_k": DType.float32,
+            "q4_0": DType.float32,
+            "q6_k": DType.float32,
+            "gptq": DType.bfloat16,
         }
         if self.quantization_encoding in supported_encoding_to_cache_dtype:
             self.kv_cache._cache_dtype = supported_encoding_to_cache_dtype[

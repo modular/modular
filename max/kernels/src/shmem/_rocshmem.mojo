@@ -240,8 +240,7 @@ fn _dtype_to_rocshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    @parameter
-    if dtype == DType.float16:
+    comptime if dtype == DType.float16:
         return get_static_string[prefix, "half", suffix]()
     elif dtype == DType.float32:
         return get_static_string[prefix, "float", suffix]()
@@ -449,8 +448,7 @@ fn rocshmemx_hipmodule_init[T: AnyType](module: T) raises:
 
 
 fn rocshmem_my_pe() -> c_int:
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         return external_call["rocshmem_my_pe", c_int]()
     else:
         return _get_rocshmem_function[
@@ -460,8 +458,7 @@ fn rocshmem_my_pe() -> c_int:
 
 
 fn rocshmem_n_pes() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_n_pes", c_int]()
     elif is_amd_gpu():
         return external_call["rocshmem_n_pes", c_int]()
@@ -586,8 +583,7 @@ fn rocshmem_p[
 ):
     comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_p"]()
 
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         external_call[symbol, NoneType](dest, value, pe)
     else:
         _get_rocshmem_function[
@@ -693,8 +689,7 @@ fn rocshmem_sync_all():
 
 
 fn rocshmem_barrier_all():
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         external_call["rocshmem_barrier_all", NoneType]()
     else:
         _get_rocshmem_function[

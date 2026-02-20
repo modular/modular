@@ -99,6 +99,7 @@ modular_py_binary(
     },
     deps = [
         ":verify",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
@@ -242,6 +243,26 @@ modular_py_test(
         ":pipelines-lm-eval",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "dataset_eval_matrix",
+    srcs = ["dataset_eval_matrix.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_dataset_eval_matrix",
+    size = "small",
+    srcs = ["test_dataset_eval_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":dataset_eval_matrix",
         requirement("click"),
     ],
 )

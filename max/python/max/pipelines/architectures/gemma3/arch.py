@@ -17,7 +17,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -35,9 +34,9 @@ gemma3_arch = SupportedArchitecture(
         # We have a different architecture for >=4B models. See gemma3multimodal
         # for more information.
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Gemma3Model,
     task=PipelineTask.TEXT_GENERATION,

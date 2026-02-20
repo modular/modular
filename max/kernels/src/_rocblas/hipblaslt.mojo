@@ -488,8 +488,7 @@ fn _check_hipblas_error(status: Status) raises:
 
 @always_inline
 fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return hipDataType_t.R_32F
     elif dtype == DType.float16:
         return hipDataType_t.R_16F

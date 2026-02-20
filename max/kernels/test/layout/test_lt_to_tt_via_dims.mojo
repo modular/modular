@@ -228,17 +228,13 @@ fn test_lt_to_tt_function() raises:
         var shape = Coord[*ShapeTypes]()
         var stride = Coord[*StrideTypes]()
 
-        @parameter
-        for i in range(2):
-
-            @parameter
-            if not shape.element_types[i].is_static_value:
+        comptime for i in range(2):
+            comptime if not shape.element_types[i].is_static_value:
                 shape[i] = rebind[shape.element_types[i]](
                     Scalar[DType.int64](lt.runtime_layout.shape.value[i])
                 )
 
-            @parameter
-            if not stride.element_types[i].is_static_value:
+            comptime if not stride.element_types[i].is_static_value:
                 stride[i] = rebind[stride.element_types[i]](
                     Scalar[DType.int64](lt.runtime_layout.stride.value[i])
                 )

@@ -711,8 +711,7 @@ struct DType(
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @parameter
-        if dtype == DType.float4_e2m1fn:
+        comptime if dtype == DType.float4_e2m1fn:
             return 2
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
@@ -741,8 +740,7 @@ struct DType(
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @parameter
-        if dtype == DType.float4_e2m1fn:
+        comptime if dtype == DType.float4_e2m1fn:
             return 2
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 4
@@ -768,8 +766,7 @@ struct DType(
             The exponent bias.
         """
 
-        @parameter
-        if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+        comptime if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
             return DType.max_exponent[dtype]()
         else:
             return DType.max_exponent[dtype]() - 1
@@ -862,8 +859,7 @@ struct DType(
             The `DType` if matched, otherwise `DType.invalid`.
         """
 
-        @parameter
-        if _type_is_eq[T, SIMD[DType.bool, size]]():
+        comptime if _type_is_eq[T, SIMD[DType.bool, size]]():
             return DType.bool
         elif _type_is_eq[T, SIMD[DType.int, size]]():
             return DType.int
@@ -947,8 +943,7 @@ struct DType(
 fn _integral_type_of[dtype: DType]() -> DType:
     """Gets the integral type which has the same bitwidth as the input type."""
 
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return dtype
 
     elif dtype.is_float8():
@@ -973,8 +968,7 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
     """Gets the unsigned integral type which has the same bitwidth as
     the input type."""
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return dtype
     elif dtype.is_integral():
         return _uint_type_of_width[bit_width_of[dtype]()]()
@@ -1003,8 +997,7 @@ fn _scientific_notation_digits[
     representation of a float.
     """
 
-    @parameter
-    if dtype.is_float8():
+    comptime if dtype.is_float8():
         return "2"
     elif dtype.is_half_float():
         return "4"
@@ -1030,8 +1023,7 @@ fn _int_type_of_width[width: Int]() -> DType:
         256,
     ), "width must be either 8, 16, 32, 64, 128, or 256"
 
-    @parameter
-    if width == 8:
+    comptime if width == 8:
         return DType.int8
     elif width == 16:
         return DType.int16
@@ -1077,8 +1069,7 @@ fn _uint_type_of_width[width: Int]() -> DType:
 
 @always_inline
 fn _index_printf_format() -> StaticString:
-    @parameter
-    if bit_width_of[Int]() == 32:
+    comptime if bit_width_of[Int]() == 32:
         return "%d"
     else:
         return "%ld"
@@ -1086,8 +1077,7 @@ fn _index_printf_format() -> StaticString:
 
 @always_inline
 fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
-    @parameter
-    if dtype in (DType.bool, DType.int, DType.uint):
+    comptime if dtype in (DType.bool, DType.int, DType.uint):
         return _index_printf_format()
 
     elif dtype == DType.uint8:

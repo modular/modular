@@ -319,8 +319,7 @@ def execute_ragged_flash_attention[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None
 
-    @parameter
-    if sink:
+    comptime if sink:
         sink_weights_device_tensor = LayoutTensor[
             dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
@@ -436,9 +435,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     comptime dtypes = (DType.float32, DType.bfloat16)
 
     for bs in [1, 16]:
-
-        @parameter
-        for dtype_idx in range(len(dtypes)):
+        comptime for dtype_idx in range(len(dtypes)):
             comptime dtype = dtypes[dtype_idx]
 
             ce_cache_sizes = List[Int]()

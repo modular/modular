@@ -28,7 +28,6 @@ from max.interfaces import (
 )
 from max.pipelines import (
     PipelineConfig,
-    SupportedEncoding,
     TextGenerationPipeline,
 )
 from max.pipelines.core import TextContext
@@ -48,7 +47,7 @@ def test_smollm_with_structured_output_gpu(
     pipeline_config = PipelineConfig(
         model=MAXModelConfig(
             model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
             huggingface_model_revision=revision,
             max_length=8192,
