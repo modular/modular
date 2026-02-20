@@ -112,7 +112,7 @@ fn bench_deque_append_int[size: Int](mut b: Bencher) raises:
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main():
-    var m = Bench(BenchConfig(num_repetitions=5))
+    var m = Bench(BenchConfig(num_repetitions=20))
     comptime sizes = (100, 1_000, 10_000, 100_000)
 
     @parameter
