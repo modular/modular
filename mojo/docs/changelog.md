@@ -328,9 +328,6 @@ what we publish.
 
 ### Library changes
 
-- Removed redundant `lseek()` syscall when opening files in append mode, as
-  `O_APPEND` already guarantees writes go to the end.
-
 - `Dict` internals have been replaced with a Swiss Table implementation using
   SIMD group probing for lookups. This improves lookup, insertion, and deletion
   performance — especially when looking up keys not in the dict — while
