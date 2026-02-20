@@ -24,24 +24,22 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
+from ..config_enums import supported_encoding_dtype
+from ..kv_cache_config import KVCacheConfig
+from ..lora import LoRAManager
+from .kv_cache import KVCacheMixin
+
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
-
-from max.graph import DeviceRef
-
-from ..config_enums import SupportedEncoding
-from ..graph_capture import DeviceGraphExecutor
-from ..kv_cache_config import KVCacheConfig
-from ..lora import LoRAManager
-from .kv_cache import KVCacheMixin
 
 
 class AlwaysSignalBuffersMixin:
@@ -94,20 +92,49 @@ class AlwaysSignalBuffersMixin:
 
 @dataclass
 class ModelOutputs:
+    """Pipeline model outputs.
+
+    Shape conventions below are for text-generation pipelines:
+
+    - ``B``: batch size
+    - ``V``: vocabulary size
+    - ``H``: hidden-state width
+    - ``T``: number of returned logit rows (depends on return mode)
+
+    The shape depends on the value of the `ReturnLogits` and `ReturnHiddenStates`
+    enums. Unless we are running with spec decoding, we use `ReturnLogits.LAST_TOKEN`
+    and `ReturnHiddenStates.NONE`.
+    """
+
     logits: Buffer
-    """Logits for a variable number of tokens per sequence."""
+    """Primary logits buffer.
+
+    For text generation this has shape ``[T, V]`` where:
+    - last-token mode: ``T = B`` (default)
+    - all-token mode: ``T = total_input_tokens``
+    - variable mode: ``T = logit_offsets[-1]`` (typically ``B * return_n_logits``)
+    """
 
     next_token_logits: Buffer | None = None
-    """Logits for just the next token."""
+    """Next-token logits for text generation, shape ``[B, V]`` when present."""
 
     logit_offsets: Buffer | None = None
-    """Offsets to access variable length logits for each sequence."""
+    """Cumulative row offsets into ``logits`` for text generation.
+
+    Shape is ``[B + 1]``. Per-sequence logits are:
+    ``logits[logit_offsets[i]:logit_offsets[i + 1], :]``.
+    """
 
     hidden_states: Buffer | list[Buffer] | None = None
-    """Hidden states for a variable number of tokens per sequence.
+    """Optional hidden states for text generation.
+
+    Single-device shape is ``[T_h, H]`` where:
+    - none mode: NONE (default)
+    - last-token mode: ``T_h = B``
+    - all-token mode: ``T_h = total_input_tokens``
 
     For data parallel models, this can be a list of Buffers where each Buffer
-    contains hidden states for the sequences assigned to that device.
+    has shape ``[T_h_device, H]`` for the sequences assigned to that device.
     """
 
 
@@ -179,11 +206,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        # TODO: This is no longer necessary inside PipelineModel since it can be
-        # inferred directly from model_config, remove it and from
-        # other PipelineModel methods that depend on it.
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -192,8 +214,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
-        self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -204,12 +224,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         # Initialize `max_seq_len` here to avoid repeated HF config access.
         self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, huggingface_config
+            pipeline_config, self.huggingface_config
         )
 
         if isinstance(self, KVCacheMixin):
             self.kv_params = self.get_kv_params(
-                huggingface_config=huggingface_config,
+                huggingface_config=self.huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=self.device_refs,
                 kv_cache_config=kv_cache_config,
@@ -235,21 +255,38 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 pipeline_config.lora,
                 pipeline_config.model.model_name,
                 self.dtype,
-                huggingface_config.num_attention_heads,
-                huggingface_config.num_key_value_heads,
-                huggingface_config.head_dim,
+                self.huggingface_config.num_attention_heads,
+                self.huggingface_config.num_key_value_heads,
+                self.huggingface_config.head_dim,
                 pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora
             else None
         )
-        self._device_graph_capture_enabled = (
-            pipeline_config.device_graph_capture
-        )
 
-        self._device_graph_executor = DeviceGraphExecutor(
-            self._execution_trace_inputs
-        )
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """Returns the HuggingFace config from pipeline config.
+
+        For multimodal models (e.g., Pixtral, Gemma3 multimodal), this
+        returns the top-level config which contains both text_config and
+        vision_config. Models should explicitly access .text_config or
+        .vision_config as needed.
+
+        Returns:
+            The HuggingFace AutoConfig for this model.
+
+        Raises:
+            ValueError: If HuggingFace config could not be loaded.
+        """
+        config = self.pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required but could not be loaded for "
+                f"model '{self.pipeline_config.model.model_path}'. "
+                "Ensure the model repository contains a valid config.json."
+            )
+        return config
 
     @property
     def lora_manager(self) -> LoRAManager | None:
@@ -294,13 +331,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     @property
     def dtype(self) -> DType:
-        """Returns the model data type (from encoding or pipeline config)."""
-        # AudioGeneratorPipeline passes Nones for all args except pipeline config
-        return (
-            self.encoding.dtype
-            if self.encoding is not None
-            else self.pipeline_config.model.quantization_encoding.dtype
-        )
+        """Returns the model data type from pipeline config."""
+        quantization_encoding = self.pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        return supported_encoding_dtype(quantization_encoding)
 
     @classmethod
     @abstractmethod
@@ -320,12 +355,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     try:
                         return upper_bounded_default(
                             upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.max_length,
+                            default=pipeline_config.model.max_length,
                         )
                     except ValueError as e:
                         raise ValueError(
                             "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
                             f"model's max_seq_len ({huggingface_config.max_seq_len})."
                         ) from e
 
@@ -371,15 +406,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         del pipeline_config, huggingface_config  # Unused.
         return 0
 
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration.
-
-        This method is called after the pipeline configuration is resolved.
-        It can be overridden to perform any finalization steps that are needed.
-        """
-        del pipeline_config  # Unused.
-
     @abstractmethod
     def execute(
         self,
@@ -397,58 +423,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         This is an abstract method that must be implemented by concrete PipelineModels
         to define their specific execution logic.
         """
-
-    def _execution_trace_inputs(
-        self, model_inputs: ModelInputs
-    ) -> list[Buffer]:
-        raise NotImplementedError(
-            "Device graph inputs not implemented for model. "
-            "Override _execution_trace_inputs to enable capture."
-        )
-
-    def pre_capture_execution_trace(
-        self,
-        model_inputs: list[ModelInputs],
-        batch_size: int,
-    ) -> None:
-        """Pre-captures device graphs for the given model inputs.
-
-        Args:
-            model_inputs: List of model inputs to capture graphs for.
-            batch_size: The batch size for execution.
-        """
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "capture"):
-            return
-
-        self._device_graph_executor.capture(model, model_inputs)
-
-    def execute_with_capture(
-        self,
-        model_inputs: ModelInputs,
-        batch_size: int,
-    ) -> ModelOutputs:
-        """Executes the model with optional capture handling.
-
-        Subclasses can override this to integrate device graph capture/replay.
-        """
-        if not getattr(self, "_device_graph_capture_enabled", False):
-            return self.execute(model_inputs)
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "replay"):
-            raise RuntimeError(
-                "Device graph capture is enabled but model does not support capture."
-            )
-
-        if batch_size > 1:
-            return self.execute(model_inputs)
-
-        self._device_graph_executor.capture(model, [model_inputs])
-
-        return ModelOutputs(
-            *self._device_graph_executor.replay(model, model_inputs)
-        )
 
     @abstractmethod
     def prepare_initial_token_inputs(

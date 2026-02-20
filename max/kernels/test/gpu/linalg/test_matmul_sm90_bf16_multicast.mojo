@@ -266,8 +266,7 @@ def main():
             static[7168](),
         )
 
-        @parameter
-        for multicast_mode in range(2):
+        comptime for multicast_mode in range(2):
             test_matmul_sm90[
                 DType.bfloat16,
                 DType.bfloat16,

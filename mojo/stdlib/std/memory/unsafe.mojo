@@ -21,6 +21,9 @@ from memory import bitcast
 
 from sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
 
+from builtin.dtype import _uint_type_of_width
+
+
 # ===-----------------------------------------------------------------------===#
 # bitcast
 # ===-----------------------------------------------------------------------===#
@@ -75,9 +78,8 @@ fn bitcast[
 
     # TODO(MOCO-2179): Change this to be more precise check for Arm devices, or
     # generate different ops on Arm.
-    @parameter
-    if not is_nvidia_gpu() and not is_amd_gpu():
-        # Arm doesnt support casting between float16 and two ints.
+    comptime if not is_nvidia_gpu() and not is_amd_gpu():
+        # Arm doesn't support casting between float16 and two ints.
         comptime assert not (
             src_dtype == DType.float16
             and src_width == 1
@@ -103,31 +105,12 @@ fn bitcast[
             and width == 1
         ), "Can't cast a 2 x ui8 directly to a float16"
 
-    @parameter
-    if dtype == src_dtype:
+    comptime if dtype == src_dtype:
         return val._refine[dtype, width]()
     var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val._mlir_value
     )
     return SIMD(mlir_value=res)
-
-
-@always_inline("builtin")
-fn _uint(n: Int) -> DType:
-    # fmt: off
-    return (
-        DType._uint1 if n == 1 else
-        DType._uint2 if n == 2 else
-        DType._uint4 if n == 4 else
-        DType.uint8 if n == 8 else
-        DType.uint16 if n == 16 else
-        DType.uint32 if n == 32 else
-        DType.uint64 if n == 64 else
-        DType.uint128 if n == 128 else
-        DType.uint256 if n == 256 else
-        DType.invalid
-    )
-    # fmt: on
 
 
 fn _llvm_bitwidth(dtype: DType) -> Int:
@@ -151,7 +134,7 @@ fn _llvm_bitwidth(dtype: DType) -> Int:
 fn pack_bits[
     src_width: Int,
     //,
-    dtype: DType = _uint(src_width),
+    dtype: DType = _uint_type_of_width[src_width](),
     width: Int = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.

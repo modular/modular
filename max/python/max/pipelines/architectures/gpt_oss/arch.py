@@ -14,12 +14,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -34,9 +31,9 @@ gpt_oss_arch = SupportedArchitecture(
         # "openai/gpt-oss-120b",
         "unsloth/gpt-oss-20b-BF16",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16": ["paged"],
     },
     pipeline_model=GptOssModel,
     task=PipelineTask.TEXT_GENERATION,
@@ -44,7 +41,7 @@ gpt_oss_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    rope_type=RopeType.yarn,
+    rope_type="yarn",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

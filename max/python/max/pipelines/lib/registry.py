@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
+from .config_enums import RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -142,7 +142,7 @@ def get_pipeline_for_task(
         role = pipeline_config.pipeline_role
         if (
             task == PipelineTask.TEXT_GENERATION
-            and role == PipelineRole.PrefillAndDecode
+            and role == "prefill_and_decode"
         ):
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
@@ -181,10 +181,10 @@ class SupportedArchitecture:
                 example_repo_ids=[
                     "your-org/your-model-name",  # Add example model repository IDs
                 ],
-                default_encoding=SupportedEncoding.q4_k,
+                default_encoding="q4_k",
                 supported_encodings={
-                    SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-                    SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+                    "q4_k": ["paged"],
+                    "bfloat16": ["paged"],
                     # Add other encodings your model supports
                 },
                 pipeline_model=MyModel,
@@ -192,7 +192,7 @@ class SupportedArchitecture:
                 context_type=TextContext,
                 config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
-                rope_type=RopeType.none,
+                rope_type="none",
                 weight_adapters={
                     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
                     # Add other weight formats if needed
@@ -243,7 +243,7 @@ class SupportedArchitecture:
     implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
     """
 
-    rope_type: RopeType = RopeType.none
+    rope_type: RopeType = "none"
     """The type of RoPE (Rotary Position Embedding) used by the model."""
 
     weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(

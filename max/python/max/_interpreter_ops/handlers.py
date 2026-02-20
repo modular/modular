@@ -248,7 +248,7 @@ def _handle_transfer(
             dtype=input_buffer.dtype,
             device=target_device,
         )
-        ops.mojo_ops.StaticBroadcastTo(
+        ops.data_movement_ops.StaticBroadcastTo(
             output,
             input_buffer,
             list(input_buffer.shape),
@@ -317,7 +317,7 @@ def _handle_static_broadcast_to(
     )
 
     # Call Mojo kernel
-    ops.mojo_ops.StaticBroadcastTo(
+    ops.data_movement_ops.StaticBroadcastTo(
         output, inputs[0], target_shape, target_device._device_context_ptr()
     )
 
@@ -372,7 +372,7 @@ def _handle_broadcast_to(
     )
 
     # Call Mojo kernel (supports both CPU and GPU)
-    ops.mojo_ops.StaticBroadcastTo(
+    ops.data_movement_ops.StaticBroadcastTo(
         output, inputs[0], target_shape, target_device._device_context_ptr()
     )
 
@@ -561,7 +561,38 @@ def _handle_matmul(
 
     output = Buffer(shape=(m, n), dtype=lhs.dtype, device=target_device)
 
-    ops.mojo_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
+    ops.matmul_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
+    return [output]
+
+
+@register_op_handler(mo.BatchMatmulOp)
+def _handle_batch_matmul(
+    op: mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.batch_matmul by dispatching to Mojo batched matmul kernel."""
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_buffers_on_device(inputs, target_device)
+
+    lhs = inputs[0]
+    rhs = inputs[1]
+    assert isinstance(lhs, Buffer)
+    assert isinstance(rhs, Buffer)
+
+    # Compute output shape - try static first, fall back to Mojo shape fn
+    shape = result_type.shape
+    if graph.Shape.is_static(shape):
+        output_shape = graph.Shape(shape).static_dims
+    else:
+        shape_result = ops.matmul_ops.BatchMatmulShape(lhs, rhs)
+        output_shape = [int(shape_result[i]) for i in range(len(shape_result))]
+
+    output = Buffer(shape=output_shape, dtype=lhs.dtype, device=target_device)
+
+    ops.matmul_ops.BatchMatmul(
+        output, lhs, rhs, target_device._device_context_ptr()
+    )
     return [output]
 
 
@@ -765,61 +796,117 @@ def _handle_merge_dim(
 def _handle_transpose(
     op: mo.TransposeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.transpose."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
-    _check_buffers_on_device(inputs, target_device)
+    """Handle mo.transpose using Mojo kernel.
+
+    Supports both CPU and GPU tensors via the Transpose kernel.
+
+    Args:
+        op: The transpose operation.
+        inputs: Input buffers - first is the tensor to transpose,
+            second is the permutation tensor (int64 on CPU).
+
+    Returns:
+        List containing the transposed tensor buffer.
+    """
+    target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
-    # TransposeOp should have a permutation attribute
-    # For now, use default transpose (reverse axes)
-    if hasattr(op, "permutation"):
-        perm = list(op.permutation)
-        result_np = np.transpose(input_np, axes=perm)
-    else:
-        result_np = np.transpose(input_np)
-    return [Buffer.from_numpy(result_np)]
+    assert isinstance(inputs[1], Buffer)
+
+    # Read permutation from the second input (int64 constant on CPU)
+    perm = inputs[1].to_numpy().tolist()
+    perm = [int(p) for p in perm]
+
+    # Compute output shape by applying permutation to input shape
+    in_shape = list(inputs[0].shape)
+    out_shape = [in_shape[p] for p in perm]
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=out_shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel (supports both CPU and GPU)
+    ops.data_movement_ops.Transpose(
+        output,
+        inputs[0],
+        perm,
+        in_shape,
+        out_shape,
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.SliceOp)
 def _handle_slice(
     op: mo.SliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.slice - tensor slicing with start/stop/step.
+    """Handle mo.slice by dispatching to Mojo slice kernel.
 
-    The op takes (input, start, stop, step) tensors where start/stop/step
-    are 1D tensors with one element per dimension of the input.
+    Args:
+        op: The slice operation.
+        inputs: Input buffers - (input, starts, stops, steps) where
+            starts/stops/steps are 1D tensors with one element per dimension.
+
+    Returns:
+        List containing the sliced tensor buffer.
     """
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
-    _check_buffers_on_device(inputs, target_device)
+    target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     assert isinstance(inputs[2], Buffer)
     assert isinstance(inputs[3], Buffer)
-    input_np = inputs[0].to_numpy()
-    start_np = inputs[1].to_numpy().astype(np.int64)
-    stop_np = inputs[2].to_numpy().astype(np.int64)
-    step_np = inputs[3].to_numpy().astype(np.int64)
 
-    # Build slice objects for each dimension
-    slices = []
-    for i in range(len(start_np)):
-        start_i = int(start_np[i])
-        stop_i = int(stop_np[i])
-        step_i = int(step_np[i])
-        slices.append(slice(start_i, stop_i, step_i))
+    input_buffer = inputs[0]
+    starts_buffer = inputs[1]
+    stops_buffer = inputs[2]
+    steps_buffer = inputs[3]
 
-    result_np = input_np[tuple(slices)]
-    # Ensure we have a contiguous array
-    result_np = np.ascontiguousarray(result_np)
-    return [Buffer.from_numpy(result_np)]
+    # Read starts/stops/steps to compute output shape
+    # .to_numpy() handles GPU→CPU transfer transparently
+    start_np = starts_buffer.to_numpy().astype(np.int64)
+    stop_np = stops_buffer.to_numpy().astype(np.int64)
+    step_np = steps_buffer.to_numpy().astype(np.int64)
+
+    rank = len(start_np)
+    output_shape = tuple(
+        int(max(0, int(np.ceil((stop_np[i] - start_np[i]) / step_np[i]))))
+        for i in range(rank)
+    )
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    # Pad starts/stops/steps to MAX_RANK=5 for Mojo kernel
+    max_rank = 5
+    pad_count = max_rank - rank
+    padded_starts = np.zeros(max_rank, dtype=np.int64)
+    padded_stops = np.ones(max_rank, dtype=np.int64)
+    padded_steps = np.ones(max_rank, dtype=np.int64)
+    padded_starts[pad_count:] = start_np
+    padded_stops[pad_count:] = stop_np
+    padded_steps[pad_count:] = step_np
+
+    # Call Mojo kernel
+    ops.data_movement_ops.Slice(
+        output,
+        input_buffer,
+        Buffer.from_numpy(padded_starts),
+        Buffer.from_numpy(padded_stops),
+        Buffer.from_numpy(padded_steps),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 # Shape/parameter operations
@@ -1031,6 +1118,51 @@ for op_type in ops.SOFTMAX:
     register_op_handler(op_type)(softmax_handler(op_type))
 
 
+# Layer norm operations
+
+
+@register_op_handler(mo.LayerNormOp)
+def _handle_layer_norm(
+    op: mo.LayerNormOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.layer_norm by dispatching to Mojo layer_norm kernel.
+
+    Args:
+        op: The layer_norm operation.
+        inputs: Input buffers - input tensor, gamma, beta, epsilon.
+            Note: epsilon is always on CPU (MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the normalized tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # gamma
+    assert isinstance(inputs[2], Buffer)  # beta
+    assert isinstance(inputs[3], Buffer)  # epsilon (always CPU)
+
+    # Output shape = input shape (trivial, no Mojo shape delegation)
+    output = Buffer(
+        shape=inputs[0].shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    ops.layer_norm_ops.LayerNorm(
+        output,
+        inputs[0],
+        inputs[1],
+        inputs[2],
+        inputs[3],
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
 # Range operations
 
 
@@ -1056,32 +1188,31 @@ def _handle_range(
     assert isinstance(inputs[2], Buffer)
 
     start_buffer = inputs[0]
-    limit_buffer = inputs[1]
+    stop_buffer = inputs[1]
     step_buffer = inputs[2]
 
-    # Compute output size from inputs: ceil((limit - start) / step)
+    # Compute output size from inputs
     shape = result_type.shape
     if graph.Shape.is_static(shape):
         output_shape = graph.Shape(shape).static_dims
     else:
-        import math
-
-        start_val = start_buffer.to_numpy().item()
-        limit_val = limit_buffer.to_numpy().item()
-        step_val = step_buffer.to_numpy().item()
-        size = max(0, math.ceil((limit_val - start_val) / step_val))
+        size = int(
+            ops.misc_ops.RangeShape(start_buffer, stop_buffer, step_buffer)
+        )
         output_shape = [size]
 
     # Allocate output buffer
     output = Buffer(
-        shape=tuple(output_shape),
-        dtype=result_type.dtype,
-        device=target_device,
+        shape=output_shape, dtype=result_type.dtype, device=target_device
     )
 
     # Call Mojo kernel
-    ops.mojo_ops.Range(
-        output, start_buffer, step_buffer, target_device._device_context_ptr()
+    ops.misc_ops.Range(
+        output,
+        start_buffer,
+        stop_buffer,
+        step_buffer,
+        target_device._device_context_ptr(),
     )
 
     return [output]
@@ -1112,7 +1243,7 @@ def _handle_random_normal(
     assert isinstance(inputs[3], Buffer)  # seed
 
     # Extract output shape from shape tensor (on CPU)
-    output_shape = tuple(inputs[0].to_numpy().tolist())
+    output_shape = inputs[0].to_numpy().tolist()
 
     # Extract scalar params from CPU buffers
     mean_val = float(inputs[1].to_numpy().item())
@@ -1130,7 +1261,7 @@ def _handle_random_normal(
         device=target_device,
     )
 
-    ops.mojo_ops.RandomNormal(
+    ops.misc_ops.RandomNormal(
         output,
         mean_val,
         variance_val,
@@ -1162,7 +1293,7 @@ def _handle_random_uniform(
     assert isinstance(inputs[3], Buffer)  # seed
 
     # Extract output shape from shape tensor (on CPU)
-    output_shape = tuple(inputs[0].to_numpy().tolist())
+    output_shape = inputs[0].to_numpy().tolist()
 
     # Extract scalar params from CPU buffers
     lower_val = float(inputs[1].to_numpy().item())
@@ -1180,7 +1311,7 @@ def _handle_random_uniform(
         device=target_device,
     )
 
-    ops.mojo_ops.RandomUniform(
+    ops.misc_ops.RandomUniform(
         output,
         lower_val,
         upper_val,
@@ -1223,7 +1354,7 @@ def _handle_select(
         device=target_device,
     )
 
-    ops.mojo_ops.Select(
+    ops.elementwise_ops.Select(
         output,
         inputs[0],
         inputs[1],
@@ -1283,9 +1414,7 @@ def _handle_concat(
     output_shape[axis] = sum(inp.shape[axis] for inp in tensor_inputs)
 
     output = Buffer(
-        shape=tuple(output_shape),
-        dtype=tensor_inputs[0].dtype,
-        device=target_device,
+        shape=output_shape, dtype=tensor_inputs[0].dtype, device=target_device
     )
     ctx_ptr = target_device._device_context_ptr()
 
@@ -1300,7 +1429,7 @@ def _handle_concat(
         inner_count = inp.shape[axis] * suffix_size
         inp_stride = inner_count
         for outer_idx in range(outer_size):
-            ops.mojo_ops.Memcpy(
+            ops.data_movement_ops.Memcpy(
                 output,
                 inp,
                 outer_idx * out_axis_stride + dst_axis_offset * suffix_size,

@@ -80,9 +80,7 @@ def decode_and_strip(text: bytes, prefix: str | None):  # noqa: ANN201
 
 @pytest.fixture(scope="function")
 def stream_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
-    settings = Settings(
-        api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
-    )
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=EchoTokenGenerator,
         pipeline_config=mock_pipeline_config,

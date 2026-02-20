@@ -351,8 +351,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
     )
 
-    @parameter
-    for dtype_idx in range(len(dtypes)):
+    comptime for dtype_idx in range(len(dtypes)):
         comptime dtype = dtypes[dtype_idx]
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128

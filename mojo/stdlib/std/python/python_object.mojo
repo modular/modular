@@ -240,8 +240,7 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
@@ -348,8 +347,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
 
-        @parameter
-        for i in range(Variadic.size(Ts)):
+        comptime for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
             if errno == -1:
@@ -573,8 +571,7 @@ struct PythonObject(
         else:
             key_ptr = cpy.PyTuple_New(size)
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 var arg = args[i].copy().to_python_object()
                 _ = cpy.PyTuple_SetItem(key_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
                 _ = arg^
@@ -1527,8 +1524,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             var arg = args[i].copy().to_python_object()
 
             _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
@@ -1905,32 +1901,3 @@ fn _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
     cpy.Py_DecRef(stop)
     cpy.Py_DecRef(step)
     return res
-
-
-__extension SIMD:
-    @always_inline
-    fn __init__(out self: Scalar[dtype], *, py: PythonObject) raises:
-        """Initialize a SIMD value from a PythonObject.
-
-        Args:
-            py: The PythonObject to convert.
-
-        Raises:
-            If the conversion to double fails.
-        """
-
-        @parameter
-        if dtype.is_floating_point():
-            ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
-            if float_value == -1.0 and cpy.PyErr_Occurred():
-                # Note that -1.0 does not guarantee an error, it just means we
-                # need to check if there was an exception.
-                raise cpy.unsafe_get_error()
-            # NOTE: if dtype is not float64, we truncate.
-            self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Scalar[dtype](Int(py=py))
-        else:
-            self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()

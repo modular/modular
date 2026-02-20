@@ -60,29 +60,6 @@ fn compute_dynamic_fp8_scale[
 
 
 @always_inline
-fn compute_static_fp8_scale_recip[
-    accum_type: DType,
-    out_dtype: DType,
-](static_scale: Float32) -> Scalar[accum_type]:
-    """Compute reciprocal scale for static FP8 quantization.
-
-    Parameters:
-        accum_type: The accumulation dtype.
-        out_dtype: The FP8 output dtype.
-
-    Args:
-        static_scale: The static scale value.
-
-    Returns:
-        The reciprocal scale: fp8_max / static_scale.
-    """
-    comptime assert out_dtype.is_float8(), "out_dtype must be float8"
-
-    comptime fp8_max = max_finite[out_dtype]()
-    return fp8_max.cast[accum_type]() / static_scale.cast[accum_type]()
-
-
-@always_inline
 fn fp8_quantize[
     out_dtype: DType,
     *,
@@ -110,8 +87,7 @@ fn fp8_quantize[
     comptime assert out_dtype.is_float8(), "out_dtype must be float8"
     var result = values * scale_recip
 
-    @parameter
-    if use_clamp:
+    comptime if use_clamp:
         comptime min_val = SIMD[values.dtype, values.size](
             min_finite[out_dtype]()
         )

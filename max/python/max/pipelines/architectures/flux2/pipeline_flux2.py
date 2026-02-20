@@ -105,13 +105,24 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
+        # Convert numpy array back to PIL.Image temporarily for Flux2ModelInputs
+        pil_image = None
         if context.input_image is not None and isinstance(
             context.input_image, np.ndarray
         ):
-            context.input_image = Image.fromarray(
-                context.input_image.astype(np.uint8)
-            )
-        return Flux2ModelInputs.from_context(context)
+            pil_image = Image.fromarray(context.input_image.astype(np.uint8))
+
+        # Temporarily set PIL image for from_context
+        original_input_image = context.input_image
+        if pil_image is not None:
+            context.input_image = pil_image  # type: ignore[assignment]
+
+        result = Flux2ModelInputs.from_context(context)
+
+        # Restore original numpy array
+        context.input_image = original_input_image
+
+        return result
 
     @staticmethod
     def _prepare_image_ids(

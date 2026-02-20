@@ -340,9 +340,13 @@ fn bench_rms_norm_fused_fp8[
                 ),
                 rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
             )
-            var fused_scales_ndbuf = NDBuffer[DType.float32, 1, MutAnyOrigin](
+            var fused_scale_shape = shape
+            fused_scale_shape[rank - 1] = 1
+            var fused_scales_ndbuf = NDBuffer[
+                DType.float32, rank, MutAnyOrigin
+            ](
                 UnsafePointer[Scalar[DType.float32]](scales_base_ptr_fused),
-                Index(rows),
+                fused_scale_shape,
             )
 
             # DeviceContextPtr has an @implicit constructor from DeviceContext
@@ -353,7 +357,6 @@ fn bench_rms_norm_fused_fp8[
                 DType.float32,
                 rank,
                 input_fn_fused,
-                use_dynamic_scaling=True,
             ](
                 shape,
                 fused_output_ndbuf,
@@ -362,7 +365,7 @@ fn bench_rms_norm_fused_fp8[
                 weight_offset,
                 ctx_ptr,
                 Float32(448.0),
-                scale_output=fused_scales_ndbuf,
+                fused_scales_ndbuf,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -467,9 +470,11 @@ fn bench_rms_norm_fused_fp8[
         UnsafePointer[Scalar[out_dtype]](fused_verify_base_ptr),
         rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
     )
-    var fused_scales_ndbuf_verify = NDBuffer[DType.float32, 1, MutAnyOrigin](
+    var verify_scale_shape = shape
+    verify_scale_shape[rank - 1] = 1
+    var fused_scales_ndbuf_verify = NDBuffer[DType.float32, rank, MutAnyOrigin](
         UnsafePointer[Scalar[DType.float32]](scales_base_ptr_fused),
-        Index(rows),
+        verify_scale_shape,
     )
 
     var ctx_ptr_verify = DeviceContextPtr(ctx)
@@ -479,7 +484,6 @@ fn bench_rms_norm_fused_fp8[
         DType.float32,
         rank,
         input_fn_fused_verify,
-        use_dynamic_scaling=True,
     ](
         shape,
         fused_output_ndbuf_verify,
@@ -488,7 +492,7 @@ fn bench_rms_norm_fused_fp8[
         weight_offset,
         ctx_ptr_verify,
         Float32(448.0),
-        scale_output=fused_scales_ndbuf_verify,
+        fused_scales_ndbuf_verify,
     )
 
     ctx.synchronize()

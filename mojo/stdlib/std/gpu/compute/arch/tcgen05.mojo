@@ -234,8 +234,7 @@ fn tcgen05_ld[
         return UnsafePointer(to=r).bitcast[SIMD[dtype, width]]()[]
 
     # fmt: off
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         return call_ld_intrinsic[UInt32]()
     elif width == 2:
         return call_ld_intrinsic[
@@ -387,8 +386,7 @@ fn tcgen05_st[
     )
 
     # fmt: off
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
             data[0],
             tmem_addr)

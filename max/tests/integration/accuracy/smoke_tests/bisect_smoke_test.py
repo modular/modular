@@ -51,7 +51,7 @@ def find_repo_root() -> Path:
 def clear_caches() -> None:
     """Clear build caches to ensure clean state after switching commits."""
     repo_root = find_repo_root()
-    cache_dir = repo_root / ".derived" / "cache"
+    cache_dir = repo_root / ".derived/cache"
     if cache_dir.exists():
         print(f"Clearing cache: {cache_dir}")
         shutil.rmtree(cache_dir)

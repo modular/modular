@@ -356,8 +356,7 @@ struct SchedulerWorkIteratorSplitK[
     fn drain(mut self):
         """Drain all pending CLC requests before kernel exit."""
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             # Split-K wraps underlying scheduler, so access via scheduler.scheduler
             self.scheduler.scheduler.empty_mbar[
                 self.producer_state.index()
@@ -722,8 +721,7 @@ struct TileScheduler[
         )
         var stage_addr = tmem  # Track address for iteration
 
-        @parameter
-        for stage in range(num_widths):
+        comptime for stage in range(num_widths):
             comptime stage_width = widths[stage]
             comptime stage_rep = stage_width // 8
 
@@ -750,11 +748,8 @@ struct TileScheduler[
             comptime num_m = type_of(ws_upper).static_shape[0]
             comptime num_n = type_of(ws_upper).static_shape[1]
 
-            @parameter
-            for m in range(num_m):
-
-                @parameter
-                for n in range(num_n):
+            comptime for m in range(num_m):
+                comptime for n in range(num_n):
                     comptime i = m * num_n + n
 
                     var v2_upper = rebind[type_of(ws_upper).ElementType](
@@ -768,13 +763,11 @@ struct TileScheduler[
                         )
                     )
 
-                    @parameter
-                    if do_reduction:
+                    comptime if do_reduction:
                         v2_upper += ws_upper[m, n]
                         v2_lower += ws_lower[m, n]
 
-                    @parameter
-                    if write_back:
+                    comptime if write_back:
                         ws_upper[m, n] = v2_upper
                         ws_lower[m, n] = v2_lower
                     else:
@@ -784,8 +777,7 @@ struct TileScheduler[
                         frags.lower[2 * i + 1] = v2_lower[1]
 
             # Store modified fragments back to TMEM
-            @parameter
-            if not write_back:
+            comptime if not write_back:
                 stage_tmem.store_fragments[stage_rep](frags)
                 AccumTmem.wait_store()
 

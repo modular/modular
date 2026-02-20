@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
@@ -34,6 +34,18 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
     them, and processes through a single decoder layer to predict the next token.
     """
 
+    def __post_init__(self) -> None:
+        # Call parent validation first
+        super().__post_init__()
+
+        # NextN requires data parallel degree to exactly match device count
+        num_devices = len(self.devices)
+        if self.data_parallel_degree != num_devices:
+            raise ValueError(
+                f"DeepseekV3 NextN requires data_parallel_degree ({self.data_parallel_degree}) "
+                f"to exactly match the number of devices ({num_devices})."
+            )
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -41,7 +53,6 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        page_size: int = 128,
     ) -> KVCacheParams:
         """Get KV cache parameters for the NextN model.
 
@@ -53,18 +64,13 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
             raise ValueError(
                 f"Number of devices {len(devices)} must match data parallel degree: {data_parallel_degree}"
             )
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=1,
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
             num_layers=1,  # MTP only has a single decoder layer
-            cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
-            page_size=page_size,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
         )

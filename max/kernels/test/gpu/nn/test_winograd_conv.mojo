@@ -116,8 +116,7 @@ fn matmul[
     comptime N = Int(c_layout.shape[1])
     comptime K = Int(a_layout.shape[1])
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(M):
             for j in range(N):
                 var sum: SIMD[s_type, C.element_size] = 0

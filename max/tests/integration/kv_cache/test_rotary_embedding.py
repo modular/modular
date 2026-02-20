@@ -552,7 +552,6 @@ def test_kv_cache_ragged_rope(
     from max.nn.legacy.kernels import fused_qk_ragged_rope
     from max.nn.legacy.kv_cache import (
         KVCacheParams,
-        KVCacheStrategy,
         PagedCacheValues,
     )
     from test_common.context_utils import create_text_context
@@ -564,7 +563,7 @@ def test_kv_cache_ragged_rope(
         n_kv_heads=8,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )

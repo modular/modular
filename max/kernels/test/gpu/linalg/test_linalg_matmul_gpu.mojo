@@ -27,8 +27,7 @@ from utils import IndexList
 fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
     var size = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         size *= dims[i]
     return size
 

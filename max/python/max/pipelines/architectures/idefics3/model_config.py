@@ -24,6 +24,7 @@ from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
@@ -87,7 +88,7 @@ class Idefics3VisionConfig:
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must be set")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
 
         vision_config = getattr(huggingface_config, "vision_config", None)
         if vision_config is None:

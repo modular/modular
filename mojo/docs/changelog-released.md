@@ -7766,7 +7766,7 @@ Special thanks to our community contributors:
     into the `List`. ([@whym1here](https://github.com/whym1here), fixes
     [#2134](https://github.com/modular/modular/issues/2134))
 
-  - A new constructor `List(ptr, size, capacity)` to to avoid needing to
+  - A new constructor `List(ptr, size, capacity)` to avoid needing to
     do a deep copy of an existing contiguous memory allocation when constructing
     a new `List`. ([@StandinKP](https://github.com/StandinKP), fixes
     [#2170](https://github.com/modular/modular/issues/2170))
@@ -8415,7 +8415,7 @@ This release doesn't include any changes to Mojo.
 
 - The signature of the
   [`elementwise()`](/mojo/std/algorithm/functional/elementwise) function has
-  been changed. The new order is is `function`, `simd_width`, and then `rank`.
+  been changed. The new order is `function`, `simd_width`, and then `rank`.
   As a result, the rank parameter can now be inferred and one can call
   `elementwise()` without it:
 

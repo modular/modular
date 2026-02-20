@@ -28,8 +28,7 @@ fn _collapse_dims_around_axis(
     if axis >= shape.size:
         raise Error("axis larger than provided shape")
 
-    @parameter
-    if shape.size == 0:
+    comptime if shape.size == 0:
         return IndexList[3](1, 1, 1)
 
     var split = shape[axis]

@@ -16,18 +16,25 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 from collections.abc import Callable
 from enum import Enum
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
+import PIL.Image
 from max.interfaces import (
     PipelineTokenizer,
     TokenBuffer,
 )
 from max.interfaces.request import OpenResponsesRequest
+from max.interfaces.request.open_responses import (
+    InputImageContent,
+    InputTextContent,
+)
 from max.pipelines.core import PixelContext
 from transformers import AutoTokenizer
 
@@ -528,22 +535,117 @@ class PixelGenerationTokenizer(
         pixel_data = (output * 0.5 + 0.5).clip(min=0.0, max=1.0)
         return pixel_data
 
+    @staticmethod
+    def _retrieve_prompt(request: OpenResponsesRequest) -> str:
+        """Retrieve the text prompt from an OpenResponsesRequest.
+
+        Supports three input formats:
+        1. input is a string - use directly as prompt
+        2. input is a list of messages where first message content is a string - use as prompt
+        3. input is a list of messages where first message content is a list - extract InputTextContent.text
+
+        Args:
+            request: The OpenResponsesRequest to extract the prompt from.
+
+        Returns:
+            The extracted text prompt.
+
+        Raises:
+            ValueError: If no valid prompt can be extracted from the request.
+        """
+        # Case 1: input is a string
+        if isinstance(request.body.input, str):
+            return request.body.input
+
+        # Cases 2 & 3: input is a list of messages
+        if isinstance(request.body.input, list):
+            if not request.body.input:
+                raise ValueError("Input message list cannot be empty.")
+
+            first_message = request.body.input[0]
+
+            # Case 2: message.content is a string
+            if isinstance(first_message.content, str):
+                return first_message.content
+
+            # Case 3: message.content is a list
+            if isinstance(first_message.content, list):
+                # Extract text from all InputTextContent items
+                text_parts = [
+                    item.text
+                    for item in first_message.content
+                    if isinstance(item, InputTextContent)
+                ]
+                if not text_parts:
+                    raise ValueError(
+                        "No text content found in message. Please include at least one "
+                        "InputTextContent item with a text prompt."
+                    )
+                return " ".join(text_parts)
+
+            raise ValueError(
+                f"Unexpected message content type: {type(first_message.content).__name__}"
+            )
+
+        raise ValueError(
+            f"Input must be a string or list of messages, got {type(request.body.input).__name__}"
+        )
+
+    @staticmethod
+    def _retrieve_image(
+        request: OpenResponsesRequest,
+    ) -> PIL.Image.Image | None:
+        """Retrieve the input image from an OpenResponsesRequest.
+
+        Extracts InputImageContent from the first message's content list and converts
+        the data URI to a PIL Image.
+
+        Args:
+            request: The OpenResponsesRequest to extract the image from.
+
+        Returns:
+            PIL Image if found, None otherwise.
+        """
+        # Only check list inputs
+        if not isinstance(request.body.input, list):
+            return None
+
+        if not request.body.input:
+            return None
+
+        first_message = request.body.input[0]
+
+        # Only check list content
+        if not isinstance(first_message.content, list):
+            return None
+
+        # Find first InputImageContent item
+        for item in first_message.content:
+            if isinstance(item, InputImageContent):
+                # Parse data URI and convert to PIL Image
+                image_url = item.image_url
+                if image_url.startswith("data:"):
+                    # Extract base64 data from data URI
+                    # Format: data:image/png;base64,<base64_data>
+                    _, base64_data = image_url.split(",", 1)
+                    image_bytes = base64.b64decode(base64_data)
+                    return PIL.Image.open(BytesIO(image_bytes))
+
+        return None
+
     async def new_context(
         self,
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
         """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
-        # Extract prompt from request.body.input (must be a string)
-        if isinstance(request.body.input, list):
-            raise ValueError(
-                "Pixel generation does not support message list input. "
-                "Please provide a single string prompt via the 'input' field."
-            )
-
-        prompt = request.body.input
+        # Extract prompt from request using the helper method
+        prompt = self._retrieve_prompt(request)
         if not prompt:
             raise ValueError("Prompt must be a non-empty string.")
+
+        # Extract input image from request content (takes precedence over input_image parameter)
+        input_image = self._retrieve_image(request) or input_image
 
         # Extract image provider options (always available via defaults)
         image_options = request.body.provider_options.image
@@ -631,13 +733,18 @@ class PixelGenerationTokenizer(
         width = image_options.width or default_sample_size * vae_scale_factor
 
         # 2. Preprocess input image if provided
-        preprocessed_image = None
+        preprocessed_image_array = None
         if input_image is not None:
             preprocessed_image = self._preprocess_input_image(
                 input_image, height, width
             )
             height = preprocessed_image.height
             width = preprocessed_image.width
+            # Convert PIL.Image to numpy array for serialization
+            # Use .copy() to ensure no references to the PIL.Image object are retained
+            preprocessed_image_array = np.array(
+                preprocessed_image, dtype=np.uint8
+            ).copy()
 
         # 3. Resolve image dimensions using cached static values
         latent_height = 2 * (int(height) // (self._vae_scale_factor * 2))
@@ -681,7 +788,7 @@ class PixelGenerationTokenizer(
             true_cfg_scale=image_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
-            input_image=preprocessed_image,
+            input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
         )
 
         for validator in self._context_validators:

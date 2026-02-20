@@ -26,8 +26,7 @@ fn _to_StaticTuple[
 
     var res = StaticTuple[Scalar[dtype], size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
@@ -39,8 +38,7 @@ fn _to_SIMD[
     """Convert StaticTuple to SIMD."""
     var res = SIMD[dtype, size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
@@ -481,8 +479,7 @@ fn q4_k_dequantize_impl(
         var b_min = src_ptr[].base_min.cast[DType.float32]()
 
         # Process 2 groups at a time to load 6-bit scales/mins.
-        @parameter
-        for group_idx in range(0, block_Q4_K.group_count, 2):
+        comptime for group_idx in range(0, block_Q4_K.group_count, 2):
             var q_scale: Float32
             var q_min: Float32
 
@@ -500,8 +497,7 @@ fn q4_k_dequantize_impl(
             var dst_idx = group_idx * group_nelems
 
             # Dequantize 1st group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + elem_idx] = (
                     d1
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] & 0xF).cast[
@@ -511,8 +507,7 @@ fn q4_k_dequantize_impl(
                 )
 
             # Dequantize 2nd group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + group_nelems + elem_idx] = (
                     d2
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] >> 4).cast[
@@ -564,11 +559,8 @@ fn q6_k_dequantize_impl(
         var sc = src_ptr[].q_scales.unsafe_ptr()
 
         # Process 8 groups at a time.
-        @parameter
-        for _ in range(0, block_Q6_K.group_count, 8):
-
-            @parameter
-            for l in range(32):
+        comptime for _ in range(0, block_Q6_K.group_count, 8):
+            comptime for l in range(32):
                 var sc_idx = l // 16
                 var q1 = ((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)).cast[
                     DType.int8

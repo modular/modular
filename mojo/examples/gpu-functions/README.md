@@ -82,7 +82,7 @@ mojo reduction.mojo
 
 ## Example walkthroughs
 
-Writing individual thread-based functions in Mojo is is powered by the [`gpu`
+Writing individual thread-based functions in Mojo is powered by the [`gpu`
 module](https://docs.modular.com/mojo/std/gpu/), which handles all the
 hardware-specific details of allocating and transferring memory between host
 and accelerator, as well as compilation and execution of accelerator-targeted

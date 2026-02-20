@@ -44,15 +44,26 @@ def test_set_config_overrides() -> None:
         )
 
 
+def _make_max_model_config_with_hf_config(
+    model_path: str, hf_config: Any
+) -> MAXModelConfig:
+    """Construct a MAXModelConfig with a pre-seeded HuggingFace config.
+
+    The custom __init__ that accepts _huggingface_config is hidden from type
+    checkers (guarded by ``if not TYPE_CHECKING``), so we set the private
+    attribute directly after construction to keep mypy happy.
+    """
+    cfg = MAXModelConfig(model_path=model_path)
+    cfg._huggingface_config = hf_config
+    return cfg
+
+
 def test_apply_hf_config_override() -> None:
     """Test apply_hf_config_override context manager."""
     base_cfg = transformers.AutoConfig.for_model("gpt2")
     orig_prop = MAXModelConfig.huggingface_config
 
-    real_cfg = MAXModelConfig(
-        model_path="dummy/text",
-        _huggingface_config=base_cfg,
-    )
+    real_cfg = _make_max_model_config_with_hf_config("dummy/text", base_cfg)
 
     original_n_layer = base_cfg.n_layer
 
@@ -66,17 +77,13 @@ def test_apply_hf_config_override() -> None:
     assert MAXModelConfig.huggingface_config is orig_prop
 
     fresh_cfg = transformers.AutoConfig.for_model("gpt2")
-    real_cfg2 = MAXModelConfig(
-        model_path="dummy/text",
-        _huggingface_config=fresh_cfg,
-    )
+    real_cfg2 = _make_max_model_config_with_hf_config("dummy/text", fresh_cfg)
     cfg_after = real_cfg2.huggingface_config
     assert cfg_after is not None
     assert cfg_after.n_embd == fresh_cfg.n_embd
 
-    real_cfg3 = MAXModelConfig(
-        model_path="dummy/text",
-        _huggingface_config=transformers.AutoConfig.for_model("gpt2"),
+    real_cfg3 = _make_max_model_config_with_hf_config(
+        "dummy/text", transformers.AutoConfig.for_model("gpt2")
     )
     with pytest.raises(ValueError, match=r"Invalid override key"):
         with hf_overrides.apply_hf_config_override({"not_a_key": 1}):

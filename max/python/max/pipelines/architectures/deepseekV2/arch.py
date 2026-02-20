@@ -13,11 +13,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -31,11 +29,11 @@ deepseekV2_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V2-Lite-Chat",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16": ["paged"],
     },
-    multi_gpu_supported=False,  # TODO(MODELS-1032): Re-enable multi-GPU
+    multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,

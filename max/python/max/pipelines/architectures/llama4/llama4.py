@@ -243,9 +243,13 @@ class Llama4TextModel(Module):
 
         input_row_offsets = kwargs["input_row_offsets"]
         cache_positions = TensorValue(cache_positions)
-        distributed_cache_positions = [
-            cache_positions.to(device) for device in self.devices
-        ]
+        if not cache_positions.device == self.devices[0]:
+            raise ValueError(
+                f"cache_positions must be located on {self.devices[0]}"
+            )
+        distributed_cache_positions = ops.distributed_broadcast(
+            cache_positions, signal_buffers
+        )
         for _, layer in enumerate(self.layers):
             h = layer(
                 h,

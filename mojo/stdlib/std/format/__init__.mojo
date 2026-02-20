@@ -139,8 +139,7 @@ trait Writer(ImplicitlyDestructible):
             args: Sequence of arguments to write to this Writer.
         """
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(self)
 
 
@@ -270,8 +269,7 @@ fn _reflection_write_to[
     writer.write_string(type_name)
     writer.write_string("(")
 
-    @parameter
-    for i in range(names.size):
+    comptime for i in range(names.size):
         comptime FieldType = types[i]
         _constrained_field_conforms_to[
             conforms_to(FieldType, Writable),
@@ -280,8 +278,7 @@ fn _reflection_write_to[
             ParentConformsTo="Writable",
         ]()
 
-        @parameter
-        if i > 0:
+        comptime if i > 0:
             writer.write_string(", ")
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")

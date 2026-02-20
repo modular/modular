@@ -84,8 +84,7 @@ fn cumsum[
     for outer_index in range(outer):
         var outer_index_adj: Int
 
-        @parameter
-        if reverse:
+        comptime if reverse:
             outer_index_adj = (outer - 1) - outer_index
         else:
             outer_index_adj = outer_index
@@ -94,8 +93,7 @@ fn cumsum[
             var accumulator: Scalar[accum_type] = 0
             var inner_index_adj: Int
 
-            @parameter
-            if reverse:
+            comptime if reverse:
                 inner_index_adj = (inner - 1) - inner_index
             else:
                 inner_index_adj = inner_index
@@ -103,8 +101,7 @@ fn cumsum[
             for depth_index in range(depth):
                 var depth_index_adj: Int
 
-                @parameter
-                if reverse:
+                comptime if reverse:
                     depth_index_adj = (depth - 1) - depth_index
                 else:
                     depth_index_adj = depth_index
@@ -115,8 +112,7 @@ fn cumsum[
                     + depth_index_adj * outer
                 )
 
-                @parameter
-                if exclusive:
+                comptime if exclusive:
                     output_data[index] = accumulator.cast[dtype]()
                     accumulator = (
                         accumulator + input_data[index].cast[accum_type]()

@@ -116,8 +116,7 @@ fn _bmm0_bs[
             var k_val = k_ptr.load[width=width, alignment=alignment](offset)
             var qk_val = (q_val * k_val).cast[p_type]()
 
-            @parameter
-            if width == 1:
+            comptime if width == 1:
                 accum += rebind[type_of(accum)](qk_val)
             else:
                 accum_vec += rebind[type_of(accum_vec)](qk_val)

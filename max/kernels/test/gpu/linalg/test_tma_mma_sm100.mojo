@@ -74,15 +74,13 @@ fn cpu_matmul_naive[
             for k in range(K):
                 var a_idx: Int
 
-                @parameter
-                if transpose_a:
+                comptime if transpose_a:
                     a_idx = k * M + m
                 else:
                     a_idx = m * K + k
                 var b_idx: Int
 
-                @parameter
-                if transpose_b:
+                comptime if transpose_b:
                     b_idx = n * K + k
                 else:
                     b_idx = k * N + n
@@ -224,8 +222,7 @@ fn tma_umma_kernel_ss[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    @parameter
-    if num_threads > 128:
+    comptime if num_threads > 128:
         if thread_idx.x >= 128:
             tmem_addr += 1 << 20  # offset for lane 16
 
@@ -294,8 +291,7 @@ fn tma_umma_kernel_ss[
             if i == 0:
                 mma[c_scale=0](adesc, bdesc, tmem_addr, idesc)
 
-                @parameter
-                for j in range(1, num_k_mmas):
+                comptime for j in range(1, num_k_mmas):
                     comptime idx = IntTuple(0, MMA_K * j)
                     comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                     comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
@@ -303,9 +299,7 @@ fn tma_umma_kernel_ss[
                         adesc + a_offset, bdesc + b_offset, tmem_addr, idesc
                     )
             else:
-
-                @parameter
-                for j in range(num_k_mmas):
+                comptime for j in range(num_k_mmas):
                     comptime idx = IntTuple(0, MMA_K * j)
                     comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                     comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
@@ -336,17 +330,13 @@ fn tma_umma_kernel_ss[
     comptime num_warps = num_threads // UInt(WARP_SIZE)
     var warp_id = get_warp_id()
 
-    @parameter
-    if num_threads > 128:
+    comptime if num_threads > 128:
         warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
@@ -360,11 +350,8 @@ fn tma_umma_kernel_ss[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
 
                     c_gmem_frag[m_vec, n_vec] = rebind[
@@ -476,8 +463,7 @@ fn tma_umma_kernel_ts[
 
     var tmem_addr = ptr_tmem_addr[0]
 
-    @parameter
-    if num_threads > 128:
+    comptime if num_threads > 128:
         if thread_idx.x >= 128:
             tmem_addr += 1 << 20  # offset for lane 16
     var c_tmem: UInt32 = tmem_addr
@@ -508,8 +494,7 @@ fn tma_umma_kernel_ts[
     comptime num_warps = num_threads // UInt(WARP_SIZE)
     var warp_id = get_warp_id()
 
-    @parameter
-    if num_threads > 128:
+    comptime if num_threads > 128:
         warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // Int(num_threads)
@@ -530,11 +515,8 @@ fn tma_umma_kernel_ts[
         comptime num_vecs_m = a_gmem_frag.layout.shape[0].value()
         comptime num_vecs_k = a_gmem_frag.layout.shape[1].value()
 
-        @parameter
-        for k in range(num_vecs_k):
-
-            @parameter
-            for j in range(num_vecs_m):
+        comptime for k in range(num_vecs_k):
+            comptime for j in range(num_vecs_m):
                 vec = a_gmem_frag[j, k]
                 comptime idx = k * num_vecs_m + j
                 a_frag[2 * idx] = bitcast[DType.uint32, 1](vec.split()[0])
@@ -574,8 +556,7 @@ fn tma_umma_kernel_ts[
             if i == 0:
                 mma[c_scale=0](a_tmem, bdesc, c_tmem, idesc)
 
-                @parameter
-                for j in range(1, BK // mma_shape[2]):
+                comptime for j in range(1, BK // mma_shape[2]):
                     comptime b_idx = IntTuple(MMA_N * 0, MMA_K * j)
                     comptime b_offset = b_smem_layout(b_idx) * size_of[b_type]()
                     mma[c_scale=1](
@@ -585,9 +566,7 @@ fn tma_umma_kernel_ts[
                         idesc,
                     )
             else:
-
-                @parameter
-                for j in range(BK // mma_shape[2]):
+                comptime for j in range(BK // mma_shape[2]):
                     comptime b_idx = IntTuple(MMA_N * 0, MMA_K * j)
                     comptime b_offset = b_smem_layout(b_idx) * size_of[b_type]()
                     mma[c_scale=1](
@@ -621,11 +600,8 @@ fn tma_umma_kernel_ts[
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
@@ -639,11 +615,8 @@ fn tma_umma_kernel_ts[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
 
                     c_gmem_frag[m_vec, n_vec] = rebind[
@@ -757,8 +730,7 @@ def test_tma_umma[
 
     comptime block_dim = UInt(2 * MMA_M)
 
-    @parameter
-    if a_smem:
+    comptime if a_smem:
         comptime smem_use = (BM + BN) * size_of[a_type]() * BK + 24
         comptime kernel = tma_umma_kernel_ss[
             a_type,
@@ -821,8 +793,7 @@ def test_tma_umma[
             ),
         )
 
-    @parameter
-    if a_type == DType.float8_e4m3fn and (not transpose_b):
+    comptime if a_type == DType.float8_e4m3fn and (not transpose_b):
         # NOTE: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major = b_col_major.tensor()
         var b_tensor = b.tensor()
@@ -885,29 +856,19 @@ def test_tma_umma[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
-
-            @parameter
-            for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-
-                @parameter
-                for BK_scale in range(0, 2):
+        comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
+            comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+                comptime for BK_scale in range(0, 2):
                     comptime BK = (swizzle.bytes() // size_of[dtype]()) * (
                         1 + BK_scale
                     )
 
-                    @parameter
-                    for mma_size_scale in range(0, 2):
+                    comptime for mma_size_scale in range(0, 2):
                         comptime MMA_M = 64 * (1 + mma_size_scale)
                         comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
 
-                        @parameter
-                        for size_scale in range(1, 3):
-
-                            @parameter
-                            for transpose_b in range(0, 2):
+                        comptime for size_scale in range(1, 3):
+                            comptime for transpose_b in range(0, 2):
                                 test_tma_umma[
                                     dtype,
                                     dtype,
@@ -924,8 +885,7 @@ def main():
                                     transpose_b = Bool(transpose_b),
                                 ](ctx)
 
-                                @parameter
-                                if dtype == DType.bfloat16:
+                                comptime if dtype == DType.bfloat16:
                                     test_tma_umma[
                                         dtype,
                                         dtype,
@@ -992,14 +952,9 @@ def main():
                                         transpose_b = Bool(transpose_b),
                                     ](ctx)
 
-        @parameter
-        for size_scale in range(1, 3):
-
-            @parameter
-            for transpose_a in range(0, 2):
-
-                @parameter
-                for transpose_b in range(0, 2):
+        comptime for size_scale in range(1, 3):
+            comptime for transpose_a in range(0, 2):
+                comptime for transpose_b in range(0, 2):
                     test_tma_umma[
                         DType.bfloat16,
                         DType.bfloat16,

@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -140,8 +139,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -157,8 +154,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -191,58 +186,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             kv_cache_config,
             cache_dtype,
         )
-
-    def _execution_trace_inputs(
-        self, model_inputs: ModelInputs
-    ) -> list[Buffer]:
-        assert isinstance(model_inputs, Llama3Inputs)
-        inputs: list[Buffer] = [
-            model_inputs.tokens,
-            model_inputs.input_row_offsets,
-            model_inputs.return_n_logits,
-        ]
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        if self.pipeline_config.model.data_parallel_degree > 1:
-            data_parallel_splits = model_inputs.data_parallel_splits
-            if data_parallel_splits is None:
-                raise RuntimeError(
-                    "Missing data_parallel_splits for execution trace."
-                )
-            if not isinstance(data_parallel_splits, Buffer):
-                splits_array = np.concatenate(
-                    [np.array(s, dtype=np.int64) for s in data_parallel_splits]
-                )
-                data_parallel_splits = Buffer.from_numpy(splits_array)
-            inputs.append(data_parallel_splits)
-            inputs.extend(list(curr_kv_cache_inputs))
-            return inputs
-        if self._lora_manager:
-            assert model_inputs.lora_ids is not None
-            assert model_inputs.lora_ranks is not None
-            assert model_inputs.lora_grouped_offsets is not None
-            assert model_inputs.num_active_loras is not None
-            assert model_inputs.lora_end_idx is not None
-            assert model_inputs.batch_seq_len is not None
-            assert model_inputs.lora_ids_kv is not None
-            assert model_inputs.lora_grouped_offsets_kv is not None
-            inputs.extend(
-                [
-                    model_inputs.lora_ids,
-                    model_inputs.lora_ranks,
-                    model_inputs.lora_grouped_offsets,
-                    model_inputs.num_active_loras,
-                    model_inputs.lora_end_idx,
-                    model_inputs.batch_seq_len,
-                    model_inputs.lora_ids_kv,
-                    model_inputs.lora_grouped_offsets_kv,
-                ]
-            )
-            inputs.extend(model_inputs.signal_buffers)
-            inputs.extend(list(curr_kv_cache_inputs))
-            return inputs
-        inputs.extend(model_inputs.signal_buffers)
-        inputs.extend(list(curr_kv_cache_inputs))
-        return inputs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
@@ -744,8 +687,6 @@ class Llama3Model(LlamaModelBase):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -756,8 +697,6 @@ class Llama3Model(LlamaModelBase):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

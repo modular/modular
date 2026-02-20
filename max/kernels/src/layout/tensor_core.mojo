@@ -272,8 +272,7 @@ struct TensorCore[
             for different combinations of input and output types.
         """
 
-        @parameter
-        if _out_type == DType.float32 and _in_type == DType.float32:
+        comptime if _out_type == DType.float32 and _in_type == DType.float32:
             return [shape_16x8x4, shape_16x8x8]
         elif _out_type == DType.float32 and _in_type == DType.bfloat16:
             return [shape_16x8x8, shape_16x8x16]
@@ -319,8 +318,7 @@ struct TensorCore[
             The loaded matrix fragments as a `LayoutTensor`.
         """
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             comptime assert (
                 swizzle is None
             ), "Swizzle is not supported on NVIDIA"
@@ -355,8 +353,7 @@ struct TensorCore[
         comptime fp8_dtype = get_amd_fp8_dtype()
         comptime bf8_dtype = get_amd_bf8_dtype()
 
-        @parameter
-        if Self.in_type in (
+        comptime if Self.in_type in (
             DType.float32,
             DType.bfloat16,
             DType.float16,
@@ -421,8 +418,7 @@ struct TensorCore[
             DType.float8_e5m2,
         ), "No valid type to load matrix fragment a"
 
-        @parameter
-        if Self.in_type == DType.float32:
+        comptime if Self.in_type == DType.float32:
             comptime assert reg_per_thread in (
                 2,
                 4,
@@ -499,8 +495,7 @@ struct TensorCore[
             This is more efficient than transposing the matrix in memory.
         """
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             comptime assert (
                 swizzle is None
             ), "Swizzle is not supported on NVIDIA"
@@ -537,8 +532,7 @@ struct TensorCore[
             mma_n, WARP_SIZE // mma_n
         ) if Self.transpose_b else Layout.row_major(WARP_SIZE // mma_n, mma_n)
 
-        @parameter
-        if Self.in_type in (
+        comptime if Self.in_type in (
             DType.float32,
             DType.bfloat16,
             DType.float16,
@@ -559,8 +553,7 @@ struct TensorCore[
 
             comptime simd_width = reg_per_thread * k_group_size
 
-            @parameter
-            if Self.transpose_b:
+            comptime if Self.transpose_b:
                 var b_ram_frags = b.vectorize[1, simd_width]().distribute[
                     warp_layout, swizzle=swizzle
                 ](lane_id())
@@ -605,8 +598,7 @@ struct TensorCore[
             8, 4
         ) if Self.transpose_b else Layout.col_major(4, 8)
 
-        @parameter
-        if Self.in_type == DType.float32:
+        comptime if Self.in_type == DType.float32:
             comptime assert reg_per_thread in (
                 1,
                 2,
@@ -622,8 +614,7 @@ struct TensorCore[
                 4,
             ), "No valid mma shape to load matrix fragment b"
 
-            @parameter
-            if Self.transpose_b:
+            comptime if Self.transpose_b:
                 var b_ram_frags = b.vectorize[1, 2]().distribute[warp_layout](
                     lane_id()
                 )
@@ -674,8 +665,7 @@ struct TensorCore[
             The loaded matrix fragments as a `LayoutTensor`.
         """
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             return self._load_c_nvidia(c)
         else:
             return self._load_c_amd(c)
@@ -689,8 +679,7 @@ struct TensorCore[
         comptime reg_per_thread = num_matrix_reg[mma_m, mma_n]()
         comptime warp_layout = Layout.row_major(mma_m // reg_per_thread, mma_n)
 
-        @parameter
-        if Self.out_type == DType.float32:
+        comptime if Self.out_type == DType.float32:
             comptime assert reg_per_thread in (
                 4,
                 16,
@@ -712,8 +701,7 @@ struct TensorCore[
         var c_reg_tile = type_of(res).stack_allocation()
         comptime reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
-        @parameter
-        if Self.out_type == DType.float32:
+        comptime if Self.out_type == DType.float32:
             comptime assert (
                 reg_per_thread == 4
             ), "No valid shape to load matrix fragment c"
@@ -747,8 +735,7 @@ struct TensorCore[
             d_src: The source tensor containing the computed result.
         """
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             self._store_d_nvidia(d_dst, d_src)
         else:
             self._store_d_amd(d_dst, d_src)
@@ -766,16 +753,14 @@ struct TensorCore[
         comptime reg_per_thread = num_matrix_reg[mma_m, mma_n]()
         comptime warp_layout = Layout.row_major(mma_m // reg_per_thread, mma_n)
 
-        @parameter
-        if Self.out_type == DType.float32:
+        comptime if Self.out_type == DType.float32:
             comptime assert reg_per_thread in (
                 4,
                 8,
                 16,
             ), "No valid shape to store to LayoutTensor d"
 
-            @parameter
-            if _is_amd_rdna():
+            comptime if _is_amd_rdna():
                 # RDNA 16x16x16 uses 8 registers per thread
                 var dst = d_dst.vectorize[8, 1]().distribute[warp_layout](
                     lane_id()
@@ -805,8 +790,7 @@ struct TensorCore[
         comptime mma_n = Self.shape[1]
         comptime reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
-        @parameter
-        if Self.out_type == DType.float32:
+        comptime if Self.out_type == DType.float32:
             comptime assert (
                 reg_per_thread == 4
             ), "No valid shape to store to LayoutTensor d"
@@ -889,8 +873,7 @@ struct TensorCore[
             warp_tile.address_space == AddressSpace.SHARED
         ), "warp_tile must be in shared memory"
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             self._load_a_nvidia[swizzle](warp_tile, fragments, mma_tile_coord_k)
         else:
             self._load_a_amd[swizzle](warp_tile, fragments, mma_tile_coord_k)
@@ -914,8 +897,7 @@ struct TensorCore[
             M, K
         ]()
 
-        @parameter
-        for i in range(num_frags):
+        comptime for i in range(num_frags):
             var mma_tile = warp_tile.tile[M, K * k_group_size](
                 i, Int(mma_tile_coord_k)
             )
@@ -940,8 +922,7 @@ struct TensorCore[
             mma_tile_coord_k * UInt(Self.shape[2]) // UInt(simd_size)
         )
 
-        @parameter
-        for i in range(num_frags):
+        comptime for i in range(num_frags):
             var mma_tile = warp_tile.tile[Self.shape[0], warp_tile.shape[1]()](
                 i, 0
             )
@@ -987,8 +968,7 @@ struct TensorCore[
             warp_tile.address_space == AddressSpace.SHARED
         ), "warp_tile must be in shared memory"
 
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             comptime assert (
                 swizzle is None
             ), "Swizzle is not supported on NVIDIA for load_b"
@@ -1020,20 +1000,15 @@ struct TensorCore[
             N, K
         ]()
 
-        @parameter
-        if Self.transpose_b:
-
-            @parameter
-            for i in range(num_frags):
+        comptime if Self.transpose_b:
+            comptime for i in range(num_frags):
                 var mma_tile = warp_tile.tile[N, K * k_group_size](
                     i, Int(mma_tile_coord_k)
                 )
                 var frag = load_to_simd(self.load_b[swizzle](mma_tile))
                 fragments[i, 0] = rebind[frag_type](frag)
         else:
-
-            @parameter
-            for i in range(num_frags):
+            comptime for i in range(num_frags):
                 var mma_tile = warp_tile.tile[K * k_group_size, N](
                     Int(mma_tile_coord_k), i
                 )
@@ -1056,17 +1031,13 @@ struct TensorCore[
             warp_tile.dtype, warp_tile.stride[0]()
         ]()
 
-        @parameter
-        if Self.transpose_b:
-
-            @parameter
-            if Self.in_type == DType.float32:
+        comptime if Self.transpose_b:
+            comptime if Self.in_type == DType.float32:
                 var swizzle_offset = (
                     mma_tile_coord_k * UInt(Self.shape[2]) // UInt(simd_size)
                 )
 
-                @parameter
-                for i in range(0, num_frags, 2):
+                comptime for i in range(0, num_frags, 2):
                     var mma_tile = warp_tile.tile[
                         2 * Self.shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
@@ -1089,8 +1060,7 @@ struct TensorCore[
                     mma_tile_coord_k * UInt(Self.shape[2]) // UInt(simd_size)
                 )
 
-                @parameter
-                for i in range(0, num_frags, 2):
+                comptime for i in range(0, num_frags, 2):
                     var mma_tile = warp_tile.tile[
                         2 * Self.shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
@@ -1102,12 +1072,8 @@ struct TensorCore[
                     fragments[i + 1, 0] = rebind[frag_type](high_low[1])
 
         else:
-
-            @parameter
-            if Self.in_type == DType.float32:
-
-                @parameter
-                for i in range(num_frags):
+            comptime if Self.in_type == DType.float32:
+                comptime for i in range(num_frags):
                     var mma_tile = warp_tile.tile[Self.shape[2], Self.shape[1]](
                         Int(mma_tile_coord_k), i
                     )
@@ -1121,9 +1087,7 @@ struct TensorCore[
                         )
                     )
             elif Self.in_type.is_float8():
-
-                @parameter
-                for i in range(num_frags):
+                comptime for i in range(num_frags):
                     var mma_tile = warp_tile.tile[Self.shape[2], Self.shape[1]](
                         Int(mma_tile_coord_k), i
                     )
@@ -1152,14 +1116,12 @@ struct TensorCore[
                 # The potential fix is to have both base pointer and offset inside
                 # Layout tensor so the warp_tile has the original address of the
                 # shared memory tile.
-                @parameter
-                if WN == 32:  # 32 is the min in practice.
+                comptime if WN == 32:  # 32 is the min in practice.
                     var mma_tile_shifted = type_of(mma_tile)(
                         mma_tile.ptr - warp_tile_coord_n * UInt(WN)
                     )
 
-                    @parameter
-                    for i in range(0, num_frags, 2):
+                    comptime for i in range(0, num_frags, 2):
                         var swizzle_offset = i + Int(
                             warp_tile_coord_n * UInt(WN) // UInt(simd_size)
                         )
@@ -1172,8 +1134,7 @@ struct TensorCore[
                 else:
                     comptime num_frags_round_even = align_down(num_frags, 2)
 
-                    @parameter
-                    for i in range(0, num_frags_round_even, 2):
+                    comptime for i in range(0, num_frags_round_even, 2):
                         # load using x4 layout
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True
@@ -1183,8 +1144,7 @@ struct TensorCore[
                         fragments[i, 0] = rebind[frag_type](high_low[0])
                         fragments[i + 1, 0] = rebind[frag_type](high_low[1])
 
-                    @parameter
-                    if num_frags % 2:
+                    comptime if num_frags % 2:
                         # load using x2 for the last fragment if necessary
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True, num_matrices=2
@@ -1267,8 +1227,7 @@ struct TensorCore[
             mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % UInt(WARP_SIZE))]
         )
 
-        @parameter
-        for i in range(0, num_frags, 2):
+        comptime for i in range(0, num_frags, 2):
             var q_int = vec[i // 2]
             var v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
             q_int >>= 4
@@ -1319,11 +1278,8 @@ struct TensorCore[
             + String(c_frag.shape[0]())
         )
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for n_mma in range(num_n_mmas):
                 mma(
                     c_frag[n_mma * num_m_mmas + m_mma, 0],
                     a_frag[m_mma, 0],
@@ -1430,30 +1386,21 @@ fn get_mma_shape[
         where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
-
-        @parameter
-        if accum_type == DType.float32 and input_type == DType.float32:
-
-            @parameter
-            if shape_id == 0:
+    comptime if has_nvidia_gpu_accelerator():
+        comptime if accum_type == DType.float32 and input_type == DType.float32:
+            comptime if shape_id == 0:
                 return shape_16x8x8
             else:
                 return shape_16x8x4
 
         elif accum_type == DType.float32 and input_type == DType.bfloat16:
-
-            @parameter
-            if shape_id == 0:
+            comptime if shape_id == 0:
                 return shape_16x8x16
             else:
                 return shape_16x8x8
 
         elif accum_type == DType.float32 and input_type == DType.float16:
-
-            @parameter
-            if shape_id == 0:
+            comptime if shape_id == 0:
                 return shape_16x8x16
             elif shape_id == 1:
                 return shape_16x8x8
@@ -1468,12 +1415,8 @@ fn get_mma_shape[
             constrained[False, "Unsupported mma shape."]()
             return shape_null
     else:
-
-        @parameter
-        if _is_amd_rdna():
-
-            @parameter
-            if _is_amd_rdna2_or_earlier():
+        comptime if _is_amd_rdna():
+            comptime if _is_amd_rdna2_or_earlier():
                 constrained[
                     False,
                     (
@@ -1483,8 +1426,7 @@ fn get_mma_shape[
                 ]()
                 return shape_null
 
-            @parameter
-            if accum_type == DType.float32 and input_type == DType.float32:
+            comptime if accum_type == DType.float32 and input_type == DType.float32:
                 constrained[
                     False,
                     (
@@ -1511,9 +1453,7 @@ fn get_mma_shape[
                 constrained[False, "Unsupported RDNA mma shape."]()
                 return shape_null
         else:
-
-            @parameter
-            if accum_type == DType.float32 and input_type == DType.float32:
+            comptime if accum_type == DType.float32 and input_type == DType.float32:
                 return shape_16x16x4
             elif accum_type == DType.float32 and input_type.is_half_float():
                 return shape_16x16x16
@@ -1635,11 +1575,8 @@ struct TiledTensorCore[
                 + String(c_frag.shape[0]())
             )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime c_idx = c_linear_map(IntTuple(m_mma, n_mma))
                     mma(
                         c_frag[c_idx, 0],
@@ -1649,8 +1586,7 @@ struct TiledTensorCore[
                     )
 
         # FIXME: this might be more efficient using an iterator
-        @parameter
-        for k in range(Self.group_size):
+        comptime for k in range(Self.group_size):
             var a_reg_k = a_reg_tile.tile[num_m_mmas, a_frag_size](0, k)
             var b_reg_k = b_reg_tile.tile[num_n_mmas, b_frag_size](0, k)
             _inner_loop(
@@ -1699,8 +1635,7 @@ fn _load_tr16_b64_row[
     # The 8-byte read remains contiguous because:
     # - Swizzle(1, 5, 4) XORs bit 9 into bits 5-8
     # - Within a 512-byte block (same bit 9), swizzle preserves contiguity
-    @parameter
-    if swizzle:
+    comptime if swizzle:
         # Convert element offset to byte offset, swizzle, convert back
         var byte_offset = Int(offset) * size_of[tile.dtype]()
         var swizzled_bytes = swizzle.value()(byte_offset)

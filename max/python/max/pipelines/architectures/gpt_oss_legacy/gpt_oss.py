@@ -34,6 +34,9 @@ from max.nn.legacy.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
+from max.nn.legacy.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+)
 
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
@@ -41,7 +44,7 @@ from .layers.transformer_block import GptOssTransformerBlock
 from .model_config import GptOssConfig
 
 
-class GptOssTextModel(Module):
+class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
     """The GPT OSS language model.
 
     Decoder-only Transformer with MoE feed-forward, rotary embeddings (YARN),
@@ -165,29 +168,9 @@ class GptOssTextModel(Module):
                 **kwargs,
             )
 
-        # Get last token logits only (no variable logits support).
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        last_token_h = []
-        if h:
-            last_token_h = [
-                ops.gather(h_device, indices, axis=0)
-                for h_device, indices in zip(h, last_token_indices, strict=True)
-            ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        # For now, simplified to return last token only
-        # TODO: Handle VARIABLE and ALL logits cases for distributed processing
-        return (last_logits,)
 
 
 class GptOss(Module):

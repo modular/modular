@@ -14,7 +14,7 @@
 from sys.info import size_of
 
 from compile import compile_info
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
 from testing import assert_equal, assert_true, assert_false, TestSuite
 
@@ -91,14 +91,9 @@ def test_array_int():
     def test_init_fill_scalars[
         *dts: DType, sizes: List[Int], batch_sizes: List[Int]
     ]():
-        @parameter
-        for current_batch_size in range(len(batch_sizes)):
-
-            @parameter
-            for current_size in range(len(sizes)):
-
-                @parameter
-                for current_type in range(Variadic.size(dts)):
+        comptime for current_batch_size in range(len(batch_sizes)):
+            comptime for current_size in range(len(sizes)):
+                comptime for current_type in range(Variadic.size(dts)):
                     test_init_fill[
                         sizes[current_size], batch_sizes[current_batch_size]
                     ](Scalar[dts[current_type]].MAX)
@@ -180,12 +175,12 @@ def test_array_int_pointer():
 
 
 def test_array_unsafe_assume_initialized_constructor_string():
-    var maybe_uninitialized_arr = InlineArray[
-        UnsafeMaybeUninitialized[String], 3
-    ](uninitialized=True)
-    maybe_uninitialized_arr[0].write("hello")
-    maybe_uninitialized_arr[1].write("mojo")
-    maybe_uninitialized_arr[2].write("world")
+    var maybe_uninitialized_arr = InlineArray[UnsafeMaybeUninit[String], 3](
+        uninitialized=True
+    )
+    maybe_uninitialized_arr[0].init_from("hello")
+    maybe_uninitialized_arr[1].init_from("mojo")
+    maybe_uninitialized_arr[2].init_from("world")
 
     var initialized_arr = InlineArray[String, 3](
         unsafe_assume_initialized=maybe_uninitialized_arr^
@@ -396,8 +391,7 @@ def test_inline_array_triviality():
 fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
     var arr = InlineArray[Int32, 4](fill=0)
 
-    @parameter
-    if copy:
+    comptime if copy:
         return arr.copy()
     else:
         return arr^

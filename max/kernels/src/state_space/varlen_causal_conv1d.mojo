@@ -299,9 +299,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                 # Apply activation
                 var out_val = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -499,9 +497,7 @@ fn causal_conv1d_varlen_update_cpu[
                 # Apply activation
                 var out_val = conv_sum
                 if silu_activation:
-
-                    @parameter
-                    if output_dtype.is_floating_point():
+                    comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
                         out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -775,8 +771,7 @@ fn causal_conv1d_varlen_fwd_gpu[
         var conv_sum = bias_val
 
         # Gather inputs and compute convolution
-        @parameter
-        for w_idx in range(WIDTH):
+        comptime for w_idx in range(WIDTH):
             var input_l = l - (WIDTH_MINUS_1 - w_idx)
             var input_val: Scalar[x_dtype] = 0
 
@@ -803,9 +798,7 @@ fn causal_conv1d_varlen_fwd_gpu[
         # Apply activation
         var out_val = conv_sum
         if silu_activation != 0:
-
-            @parameter
-            if output_dtype.is_floating_point():
+            comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[DType.float32]()).cast[
@@ -821,9 +814,7 @@ fn causal_conv1d_varlen_fwd_gpu[
 
     # Update conv_states
     if has_conv_states != 0:
-
-        @parameter
-        for s in range(WIDTH_MINUS_1):
+        comptime for s in range(WIDTH_MINUS_1):
             var src_l = seqlen - WIDTH_MINUS_1 + s
             var val: Scalar[conv_states_dtype] = 0
 
@@ -945,8 +936,7 @@ fn causal_conv1d_varlen_update_gpu[
         # Gather inputs and compute
         var conv_sum = bias_val
 
-        @parameter
-        for w_idx in range(WIDTH):
+        comptime for w_idx in range(WIDTH):
             var rel_pos = w_idx - WIDTH_MINUS_1
             var input_val: Scalar[x_dtype] = 0
 
@@ -984,9 +974,7 @@ fn causal_conv1d_varlen_update_gpu[
         # Apply activation
         var out_val = conv_sum
         if silu_activation != 0:
-
-            @parameter
-            if output_dtype.is_floating_point():
+            comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[DType.float32]()).cast[

@@ -23,7 +23,6 @@ Here is the CPU and GPU timeline for overlap scheduling:
    O3: Output processing for batch 3
    K3: GPU kernel execution for batch 3
 
-   Time:
     CPU: [I1][I2]          [O1][I3]      [O2][I4]      [O3][I5]      ...
     GPU:     [     K1     ][     K2     ][     K3     ][     K4     ][ ...
 
@@ -70,7 +69,12 @@ from max.driver import Buffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
-from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.graph.weights import (
+    WeightsAdapter,
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.interfaces import (
     PipelineOutputsDict,
     PipelineTokenizer,
@@ -341,9 +345,6 @@ class OverlapTextGenerationPipeline(
 
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
-        # Initialize Session.
-        from max.engine import InferenceSession  # local import to avoid cycles
-
         session = InferenceSession(devices=self._devices)
         self.session = session
 
@@ -357,19 +358,13 @@ class OverlapTextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        # late imports to minimize header deps
-        from max.graph.weights import load_weights as _load_weights
-        from max.graph.weights import weights_format as _weights_format
-
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=huggingface_config,
-            encoding=model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=model_config.kv_cache,
-            weights=_load_weights(weight_paths),
-            adapter=weight_adapters.get(_weights_format(weight_paths)),
+            weights=load_weights(weight_paths),
+            adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,

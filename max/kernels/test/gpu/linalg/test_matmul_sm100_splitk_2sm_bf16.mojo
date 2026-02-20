@@ -237,16 +237,12 @@ def main():
     with DeviceContext() as ctx:
         comptime dtype = DType.bfloat16
 
-        @parameter
-        for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+        comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
             comptime BK = (swizzle.bytes() // size_of[dtype]())
             comptime MMA_K = 16
 
-            @parameter
-            for mma_m_scale in range(1, 3):
-
-                @parameter
-                for mma_n_scale in range(1, 17):
+            comptime for mma_m_scale in range(1, 3):
+                comptime for mma_n_scale in range(1, 17):
                     # from 16*1 till 16*16 which is 256
                     # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
 
@@ -275,11 +271,8 @@ def main():
                         static[1024 + 16](),
                     )
 
-                    @parameter
-                    for swapAB in [False, True]:
-
-                        @parameter
-                        if swapAB and mma_m_scale != 2:
+                    comptime for swapAB in [False, True]:
+                        comptime if swapAB and mma_m_scale != 2:
                             continue
 
                         test_blackwell_matmul_tma_umma_warp_specialized[

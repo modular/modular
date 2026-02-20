@@ -23,7 +23,6 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kernels import kv_cache_ragged_radd
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from test_common.context_utils import create_text_context
@@ -82,7 +81,7 @@ def test_kv_cache_radd_basic() -> None:
         n_kv_heads=8,
         head_dim=128,
         dtype=dtype,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         num_layers=num_layers,
         page_size=128,
         devices=[DeviceRef.GPU()],

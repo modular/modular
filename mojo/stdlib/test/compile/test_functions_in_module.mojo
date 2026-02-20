@@ -36,8 +36,7 @@ def main():
         "test_functions_in_module::foobar(::SIMD[::DType(float64), ::Int(1)])",
     ]
 
-    @parameter
-    for i in range(len(funcs)):
+    comptime for i in range(len(funcs)):
         comptime name = get_linkage_name[funcs[i]]()
         assert_equal(name, expected_names[i])
 

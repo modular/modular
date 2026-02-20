@@ -73,16 +73,13 @@ fn tile[
     var num_depth_input = 1
     var num_rows_input = 1
 
-    @parameter
-    if input.rank == 4:
+    comptime if input.rank == 4:
         num_dp_input = Int(input.dim(input.rank - 4))
 
-    @parameter
-    if input.rank >= 3:
+    comptime if input.rank >= 3:
         num_depth_input = Int(input.dim(input.rank - 3))
 
-    @parameter
-    if input.rank >= 2:
+    comptime if input.rank >= 2:
         num_rows_input = Int(input.dim(input.rank - 2))
     var num_cols_input = Int(input.dim(input.rank - 1))
 
@@ -95,16 +92,13 @@ fn tile[
     var repeat_depth = 1
     var repeat_dp = 1
 
-    @parameter
-    if input.rank >= 2:
+    comptime if input.rank >= 2:
         repeat_rows = Int(repeats[repeats_len - 2])
 
-    @parameter
-    if input.rank >= 3:
+    comptime if input.rank >= 3:
         repeat_depth = Int(repeats[repeats_len - 3])
 
-    @parameter
-    if input.rank >= 4:
+    comptime if input.rank >= 4:
         repeat_dp = Int(repeats[repeats_len - 4])
 
     # Initializes output by first copying in the original input to the
@@ -163,8 +157,7 @@ fn tile[
     #            [4, 5, 6, 4, 5, 6]]
     # Moving from the inner to the outermost dimension, we can memcpy to
     # replicate contiguous memory areas (representing a dimension to be tiled).
-    @parameter
-    if input.rank >= 2:
+    comptime if input.rank >= 2:
         var src_index_stride = num_rows_input * num_cols_input * repeat_cols
         var count = src_index_stride
         for dp in range(num_dp_input):
@@ -191,8 +184,7 @@ fn tile[
                     memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
-    @parameter
-    if input.rank >= 3:
+    comptime if input.rank >= 3:
         var src_index_stride = (
             num_depth_input
             * repeat_rows
@@ -219,8 +211,7 @@ fn tile[
                 memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the fourth dimension from the end (if tensor rank == 4)
-    @parameter
-    if input.rank == 4:
+    comptime if input.rank == 4:
         var src_index_stride = (
             num_dp_input
             * repeat_depth
@@ -276,8 +267,7 @@ fn tile_shape[
     # Compute and return the output shape.
     var output_shape = IndexList[input_buf.rank]()
 
-    @parameter
-    for i in range(input_buf.rank):
+    comptime for i in range(input_buf.rank):
         output_shape[i] = Int(input_buf.dim(i)) * Int(repeats_buf[i])
 
     return output_shape

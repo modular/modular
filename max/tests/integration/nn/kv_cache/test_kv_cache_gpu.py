@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -34,7 +34,7 @@ async def _test_kv_cache_gpu() -> None:
         head_dim=128,
         dtype=DType.bfloat16,
         num_layers=32,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.GPU()],
     )

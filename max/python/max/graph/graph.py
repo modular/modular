@@ -353,7 +353,7 @@ class Graph:
     When creating a graph, a global sequence of chains is initialized and stored
     in Graph._current_chain. Every side-effecting op, e.g. buffer_load,
     store_buffer, load_slice_buffer, store_slice_buffer, will use the current
-    chain to perform the op and and update Graph._current_chain with a new
+    chain to perform the op and update Graph._current_chain with a new
     chain. Currently, the input/output chains for mutable ops can be used at
     most once. The goal of this design choice is to prevent data races.
 

@@ -322,23 +322,19 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
         var shape = IndexList[shape_rank]()
 
-        @parameter
-        if shape_rank == self.kv_cache_rank:
+        comptime if shape_rank == self.kv_cache_rank:
             # Unsqueeze the output shape with a 1-dim.
             shape[0] = 1
 
-            @parameter
-            for i in range(Self.batch_rank):
+            comptime for i in range(Self.batch_rank):
                 shape[i + 1] = self.batch_dims[i]
         else:
             # Copy the batch dims without unsqueezing.
-            @parameter
-            for i in range(Self.batch_rank):
+            comptime for i in range(Self.batch_rank):
                 shape[i] = self.batch_dims[i]
 
         # Replace the number of query heads with the number of KV heads.
-        @parameter
-        if is_kv and Self.batch_rank == 2:
+        comptime if is_kv and Self.batch_rank == 2:
             shape[shape_rank - 3] = self.kv_num_heads
 
         shape[shape_rank - 2] = x
@@ -352,26 +348,22 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
         var shape = IndexList[shape_rank]()
 
-        @parameter
-        if shape_rank == self.kv_cache_rank:
+        comptime if shape_rank == self.kv_cache_rank:
             # Unsqueeze the output shape with a 1-dim.
             shape[0] = 1
             shape[1] = self.batch_dims[0]
 
-            @parameter
-            for i in range(1, Self.batch_rank):
+            comptime for i in range(1, Self.batch_rank):
                 shape[i + 2] = self.batch_dims[i]
         else:
             shape[0] = self.batch_dims[0]
 
             # Copy the batch dims without unsqueezing.
-            @parameter
-            for i in range(1, Self.batch_rank):
+            comptime for i in range(1, Self.batch_rank):
                 shape[i + 1] = self.batch_dims[i]
 
         # Replace the number of query heads with the number of KV heads.
-        @parameter
-        if is_kv and Self.batch_rank == 2:
+        comptime if is_kv and Self.batch_rank == 2:
             shape[shape_rank - 2] = self.kv_num_heads
 
         shape[1] = x

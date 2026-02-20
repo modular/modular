@@ -31,8 +31,7 @@ Example iterating over all fields (works with generics):
 ```mojo
 fn print_fields[T: AnyType]():
     comptime names = struct_field_names[T]()
-    @parameter
-    for i in range(struct_field_count[T]()):
+    comptime for i in range(struct_field_count[T]()):
         print(names[i])
 
 fn main():
@@ -74,8 +73,7 @@ fn inspect(ref c: Container):
 # Works in generic contexts with parameter indices
 fn print_all_fields[T: AnyType](ref s: T):
     comptime names = struct_field_names[T]()
-    @parameter
-    for i in range(struct_field_count[T]()):
+    comptime for i in range(struct_field_count[T]()):
         print(names[i], "=", __struct_field_ref(i, s))
 ```
 
@@ -297,8 +295,7 @@ fn struct_field_types[
 
         fn print_field_types[T: AnyType]():
             comptime types = struct_field_types[T]()
-            @parameter
-            for i in range(struct_field_count[T]()):
+            comptime for i in range(struct_field_count[T]()):
                 print(get_type_name[types[i]]())
 
         fn main():
@@ -344,8 +341,7 @@ fn struct_field_names[
         ```mojo
         fn print_field_names[T: AnyType]():
             comptime names = struct_field_names[T]()
-            @parameter
-            for i in range(struct_field_count[T]()):
+            comptime for i in range(struct_field_count[T]()):
                 print(names[i])
 
         fn main():
@@ -359,8 +355,7 @@ fn struct_field_names[
     # guarantees complete initialization of all elements at compile time.
     var result = InlineArray[StaticString, count](uninitialized=True)
 
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         result[i] = StaticString(raw[i])
 
     return result^
@@ -405,8 +400,7 @@ fn is_struct_type[T: AnyType]() -> Bool:
         from reflection import get_type_name
 
         fn process_type[T: AnyType]():
-            @parameter
-            if is_struct_type[T]():
+            comptime if is_struct_type[T]():
                 # Safe to use struct reflection APIs
                 comptime count = struct_field_count[T]()
                 print("Struct with", count, "fields")

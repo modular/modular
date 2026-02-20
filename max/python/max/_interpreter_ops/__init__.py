@@ -24,8 +24,16 @@ from max import _core
 from max._core.dialects import mo
 from max._core.driver import Buffer
 
-# Import op bindings from Mojo module
-from . import mojo_ops  # type: ignore[attr-defined]
+# Import op bindings from categorized Mojo modules
+from . import (  # type: ignore[attr-defined]
+    data_movement_ops,
+    elementwise_ops,
+    layer_norm_ops,
+    matmul_ops,
+    misc_ops,
+    reduce_ops,
+    softmax_ops,
+)
 
 # Arithmetic binary ops: output dtype matches input dtype
 # Dtype dispatch is handled in Mojo
@@ -34,62 +42,62 @@ from . import mojo_ops  # type: ignore[attr-defined]
 BINARY_ELEMENTWISE: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
 ] = {
-    mo.AddOp: mojo_ops.Add,
-    mo.SubOp: mojo_ops.Sub,
-    mo.MulOp: mojo_ops.Mul,
-    mo.DivOp: mojo_ops.Div,
-    mo.ModOp: mojo_ops.Mod,
-    mo.MaxOp: mojo_ops.Max,
-    mo.MinOp: mojo_ops.Min,
-    mo.AndOp: mojo_ops.And,
-    mo.OrOp: mojo_ops.Or,
-    mo.XorOp: mojo_ops.Xor,
-    mo.PowOp: mojo_ops.Pow,
+    mo.AddOp: elementwise_ops.Add,
+    mo.SubOp: elementwise_ops.Sub,
+    mo.MulOp: elementwise_ops.Mul,
+    mo.DivOp: elementwise_ops.Div,
+    mo.ModOp: elementwise_ops.Mod,
+    mo.MaxOp: elementwise_ops.Max,
+    mo.MinOp: elementwise_ops.Min,
+    mo.AndOp: elementwise_ops.And,
+    mo.OrOp: elementwise_ops.Or,
+    mo.XorOp: elementwise_ops.Xor,
+    mo.PowOp: elementwise_ops.Pow,
 }
 
 # Comparison binary ops: output dtype is always bool
 BINARY_ELEMENTWISE_COMPARISON: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
 ] = {
-    mo.EqualOp: mojo_ops.Equal,
-    mo.GreaterOp: mojo_ops.Greater,
-    mo.GreaterEqualOp: mojo_ops.GreaterEqual,
-    mo.NotEqualOp: mojo_ops.NotEqual,
+    mo.EqualOp: elementwise_ops.Equal,
+    mo.GreaterOp: elementwise_ops.Greater,
+    mo.GreaterEqualOp: elementwise_ops.GreaterEqual,
+    mo.NotEqualOp: elementwise_ops.NotEqual,
 }
 
 # Unary elementwise ops: output dtype matches input dtype
 UNARY_ELEMENTWISE: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
-    mo.NegativeOp: mojo_ops.Negative,
-    mo.AbsOp: mojo_ops.Abs,
-    mo.ReluOp: mojo_ops.ReLU,
-    mo.CeilOp: mojo_ops.Ceil,
-    mo.FloorOp: mojo_ops.Floor,
-    mo.RoundOp: mojo_ops.Round,
-    mo.ExpOp: mojo_ops.Exp,
-    mo.LogOp: mojo_ops.Log,
-    mo.Log1pOp: mojo_ops.Log1p,
-    mo.SqrtOp: mojo_ops.Sqrt,
-    mo.RsqrtOp: mojo_ops.Rsqrt,
-    mo.TanhOp: mojo_ops.Tanh,
-    mo.AtanhOp: mojo_ops.ATanh,
-    mo.TruncOp: mojo_ops.Trunc,
-    mo.SinOp: mojo_ops.Sin,
-    mo.CosOp: mojo_ops.Cos,
-    mo.ErfOp: mojo_ops.Erf,
-    mo.NotOp: mojo_ops.Not,
+    mo.NegativeOp: elementwise_ops.Negative,
+    mo.AbsOp: elementwise_ops.Abs,
+    mo.ReluOp: elementwise_ops.ReLU,
+    mo.CeilOp: elementwise_ops.Ceil,
+    mo.FloorOp: elementwise_ops.Floor,
+    mo.RoundOp: elementwise_ops.Round,
+    mo.ExpOp: elementwise_ops.Exp,
+    mo.LogOp: elementwise_ops.Log,
+    mo.Log1pOp: elementwise_ops.Log1p,
+    mo.SqrtOp: elementwise_ops.Sqrt,
+    mo.RsqrtOp: elementwise_ops.Rsqrt,
+    mo.TanhOp: elementwise_ops.Tanh,
+    mo.AtanhOp: elementwise_ops.ATanh,
+    mo.TruncOp: elementwise_ops.Trunc,
+    mo.SinOp: elementwise_ops.Sin,
+    mo.CosOp: elementwise_ops.Cos,
+    mo.ErfOp: elementwise_ops.Erf,
+    mo.NotOp: elementwise_ops.Not,
 }
 
 # Reduce ops: reduce along an axis, output shape has reduced dim = 1
 REDUCE: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
 ] = {
-    mo.ReduceMaxOp: mojo_ops.ReduceMax,
-    mo.ReduceMinOp: mojo_ops.ReduceMin,
-    mo.ReduceAddOp: mojo_ops.ReduceAdd,
-    mo.MeanOp: mojo_ops.Mean,
-    mo.ReduceMulOp: mojo_ops.ReduceMul,
+    mo.ReduceMaxOp: reduce_ops.ReduceMax,
+    mo.ReduceMinOp: reduce_ops.ReduceMin,
+    mo.ReduceAddOp: reduce_ops.ReduceAdd,
+    mo.MeanOp: reduce_ops.Mean,
+    mo.ReduceMulOp: reduce_ops.ReduceMul,
 }
 
 # Unary mixed-dtype ops: output dtype differs from input dtype
@@ -98,17 +106,17 @@ REDUCE: dict[
 UNARY_MIXED: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
-    mo.CastOp: mojo_ops.Cast,
-    mo.IsNanOp: mojo_ops.IsNan,
-    mo.IsInfOp: mojo_ops.IsInf,
+    mo.CastOp: elementwise_ops.Cast,
+    mo.IsNanOp: elementwise_ops.IsNan,
+    mo.IsInfOp: elementwise_ops.IsInf,
 }
 
 # Softmax ops: output shape matches input, applied along an axis
 SOFTMAX: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
 ] = {
-    mo.SoftmaxOp: mojo_ops.Softmax,
-    mo.LogsoftmaxOp: mojo_ops.LogSoftmax,
+    mo.SoftmaxOp: softmax_ops.Softmax,
+    mo.LogsoftmaxOp: softmax_ops.LogSoftmax,
 }
 
 # Import handlers after defining kernels to avoid circular import issues.

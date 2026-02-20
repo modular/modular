@@ -119,7 +119,7 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
     # PipelineConfig constructor.
     # KV Cache configuration (throughput-specific)
     cache_strategy: KVCacheStrategy = Field(
-        default=KVCacheStrategy.PAGED,
+        default="paged",
     )
     """The KVCache strategy to use."""
 
@@ -148,7 +148,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
     def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
         """Get the enum mapping for ThroughputBenchmarkConfig."""
         return {
-            "KVCacheStrategy": KVCacheStrategy,
             "PipelineTask": PipelineTask,
         }
 
@@ -532,7 +531,7 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
         else:
             sample_requests_func = sample_requests  # type: ignore
-            optional_kwargs["max_length"] = pipeline_config.max_length
+            optional_kwargs["max_length"] = pipeline_config.model.max_length
 
         requests = sample_requests_func(
             dataset_path=dataset_path,
@@ -598,13 +597,13 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
                 f"task#{i}: [{prompt_len}, {output_real}({output_len})]", end=""
             )
             if (
-                pipeline_config.max_length is not None
-                and output_real + prompt_len >= pipeline_config.max_length
+                pipeline_config.model.max_length is not None
+                and output_real + prompt_len >= pipeline_config.model.max_length
             ):
                 print(
                     (
                         "  # [WARNING] limited by maximum sequence length"
-                        f" ({pipeline_config.max_length}) from the pipeline config."
+                        f" ({pipeline_config.model.max_length}) from the pipeline config."
                     ),
                     end="",
                 )
@@ -685,7 +684,7 @@ def main() -> None:
         # Validate cache strategy
         if (
             benchmark_config.enable_prefix_caching
-            and benchmark_config.cache_strategy != KVCacheStrategy.PAGED
+            and benchmark_config.cache_strategy != "paged"
         ):
             raise ValueError(
                 "prefix caching is only supported with paged attention"

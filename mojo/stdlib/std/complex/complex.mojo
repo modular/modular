@@ -143,8 +143,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         # buf.reserve(initial_buffer_size)
 
         # Print an opening `[`.
-        @parameter
-        if Self.size > 1:
+        comptime if Self.size > 1:
             writer.write("[")
 
         # Print each element.
@@ -161,8 +160,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
                 writer.write(" + ", im, "i")
 
         # Print a closing `]`.
-        @parameter
-        if Self.size > 1:
+        comptime if Self.size > 1:
             writer.write("]")
 
     @always_inline

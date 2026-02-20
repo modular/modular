@@ -46,8 +46,7 @@ from ..os import sep
 
 @always_inline
 fn _get_stat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
@@ -57,8 +56,7 @@ fn _get_stat_st_mode(var path: String) raises -> Int:
 
 @always_inline
 fn _get_lstat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)

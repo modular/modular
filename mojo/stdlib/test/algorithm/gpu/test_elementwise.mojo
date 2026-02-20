@@ -28,8 +28,7 @@ fn _linear_index[
     var linear_idx = 0
     var stride = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         linear_idx += coords[i] * stride
         stride *= shape[i]
     return linear_idx
@@ -42,8 +41,7 @@ fn _strided_index[
     """
     var linear_idx = 0
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         linear_idx += coords[i] * strides[i]
     return linear_idx
 

@@ -19,6 +19,7 @@ from max.graph.weights import WeightData, Weights
 # The new ModuleV3 model uses "language_model." prefix (matching GPT-OSS pattern).
 LLAMA_SAFETENSOR_MAPPING = {
     "model.": "language_model.",
+    "lm_head": "language_model.lm_head",
 }
 
 

@@ -30,7 +30,6 @@ from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
 from max.nn.legacy.float8_config import Float8WeightScaleSpec
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
@@ -92,7 +91,7 @@ def _create_kv_manager(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
     )
 

@@ -38,7 +38,11 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
 
-from .config_enums import RepoType, SupportedEncoding
+from .config_enums import (
+    RepoType,
+    SupportedEncoding,
+    parse_supported_encoding_from_file_name,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -438,7 +442,7 @@ class HuggingFaceRepo:
 
         # Parse gguf file names.
         for gguf_path in self.weight_files.get(WeightsFormat.gguf, []):
-            encoding = SupportedEncoding.parse_from_file_name(gguf_path)
+            encoding = parse_supported_encoding_from_file_name(gguf_path)
             if encoding:
                 supported_encodings.add(encoding)
 
@@ -463,11 +467,11 @@ class HuggingFaceRepo:
                 if not supported_encodings and re.search(
                     r"FP8|fp8", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                    supported_encodings.add("float8_e4m3fn")
                 if not supported_encodings and re.search(
                     r"FP4|fp4", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                    supported_encodings.add("float4_e2m1fnx2")
 
             elif self.repo_type == RepoType.online:
                 safetensors_info = self.info.safetensors
@@ -479,26 +483,22 @@ class HuggingFaceRepo:
                 if safetensors_info is None and re.search(
                     r"FP8|fp8", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                    supported_encodings.add("float8_e4m3fn")
                 if safetensors_info is None and re.search(
                     r"FP4|fp4", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                    supported_encodings.add("float4_e2m1fnx2")
 
                 if safetensors_info:
                     for params in safetensors_info.parameters:
                         if "F8_E4M3" in params:
-                            supported_encodings.add(
-                                SupportedEncoding.float8_e4m3fn
-                            )
+                            supported_encodings.add("float8_e4m3fn")
                         elif "U8" in params:
-                            supported_encodings.add(
-                                SupportedEncoding.float4_e2m1fnx2
-                            )
+                            supported_encodings.add("float4_e2m1fnx2")
                         elif "BF16" in params:
-                            supported_encodings.add(SupportedEncoding.bfloat16)
+                            supported_encodings.add("bfloat16")
                         elif "F32" in params:
-                            supported_encodings.add(SupportedEncoding.float32)
+                            supported_encodings.add("float32")
                 else:
                     fs = huggingface_hub.HfFileSystem()
                     for weight_file in self.weight_files[
@@ -516,7 +516,7 @@ class HuggingFaceRepo:
                         "quantization_config"
                     ):
                         if quant_config["quant_method"] == "gptq":
-                            supported_encodings.add(SupportedEncoding.gptq)
+                            supported_encodings.add("gptq")
             else:
                 raise ValueError(f"Unsupported repo_type: {self.repo_type}")
 
@@ -534,17 +534,17 @@ class HuggingFaceRepo:
         # Interpret the bytes as a JSON object
         header = json.loads(header_bytes)
 
-        supported_encodings = set([])
+        supported_encodings: set[SupportedEncoding] = set()
         for weight_value in header.values():
             if weight_dtype := weight_value.get("dtype", None):
                 if weight_dtype == "F32":
-                    supported_encodings.add(SupportedEncoding.float32)
+                    supported_encodings.add("float32")
                 elif weight_dtype == "BF16":
-                    supported_encodings.add(SupportedEncoding.bfloat16)
+                    supported_encodings.add("bfloat16")
                 elif weight_dtype == "F8_E4M3":
-                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                    supported_encodings.add("float8_e4m3fn")
                 elif weight_dtype == "U8":
-                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                    supported_encodings.add("float4_e2m1fnx2")
                 else:
                     logger.warning(
                         f"unknown dtype found in safetensors file: {weight_dtype}"
@@ -556,7 +556,7 @@ class HuggingFaceRepo:
     ) -> dict[WeightsFormat, list[Path]]:
         files = []
         for gguf_file in self.weight_files.get(WeightsFormat.gguf, []):
-            file_encoding = SupportedEncoding.parse_from_file_name(gguf_file)
+            file_encoding = parse_supported_encoding_from_file_name(gguf_file)
             if file_encoding == encoding:
                 files.append(Path(gguf_file))
 
@@ -616,7 +616,7 @@ class HuggingFaceRepo:
             # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
             return self.supported_encodings[0]
         elif str(file).endswith(".gguf"):
-            encoding = SupportedEncoding.parse_from_file_name(str(file))
+            encoding = parse_supported_encoding_from_file_name(str(file))
             if encoding:
                 return encoding
 

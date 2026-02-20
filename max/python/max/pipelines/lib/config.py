@@ -30,6 +30,7 @@ from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
+    ConfigDict,
     Field,
     ModelWrapValidatorHandler,
     PrivateAttr,
@@ -68,12 +69,16 @@ class PipelineConfig(ConfigFileModel):
     default.
     """
 
-    max_length: int | None = Field(
-        default=None, description="Maximum sequence length of the model."
-    )
+    # PipelineConfig intentionally accepts kwargs that belong to sub-configs
+    # (MAXModelConfig, KVCacheConfig, etc.) and routes them via the
+    # _preprocess_kwargs wrap validator.  Allow extras so pydantic (and its
+    # mypy plugin) don't reject those unmatched kwargs.
+    # TODO: This should be removed though, but only after we've fully unrolled
+    # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
+    model_config = ConfigDict(extra="ignore")
 
     pipeline_role: PipelineRole = Field(
-        default=PipelineRole.PrefillAndDecode,
+        default="prefill_and_decode",
         description=(
             "Whether the pipeline should serve both a prefill or decode role or "
             "both."
@@ -236,8 +241,9 @@ class PipelineConfig(ConfigFileModel):
     max_batch_total_tokens: int | None = Field(
         default=None,
         description=(
-            "Ensures that the sum of the context length in a batch does not "
-            "exceed max_batch_total_tokens. If None, the sum is not limited."
+            "Ensures the sum of page-aligned context lengths in a batch does "
+            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
+            "page size. If None, the sum is not limited."
         ),
     )
 
@@ -511,7 +517,12 @@ class PipelineConfig(ConfigFileModel):
                 memory_util = kv_cache_kwargs.get(
                     "device_memory_utilization", 0.9
                 )
-                main_model_util = memory_util * 0.7
+
+                if self.speculative and self.speculative.is_mtp():
+                    main_model_util = memory_util * 0.95
+                else:
+                    main_model_util = memory_util * 0.7
+
                 draft_model_util = memory_util - main_model_util
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
@@ -593,9 +604,15 @@ class PipelineConfig(ConfigFileModel):
         This runs after all fields have been validated and set.
         """
         # Get unmatched kwargs that were stored during preprocessing
-        unmatched_kwargs = self._unmatched_kwargs
-        if hasattr(self, "_unmatched_kwargs"):
-            delattr(self, "_unmatched_kwargs")
+        try:
+            unmatched_kwargs = self._unmatched_kwargs
+        except AttributeError:
+            # Pydantic re-validates 'after' validators when placed inside
+            # another model, at which point _postprocess_configs will have
+            # already run once and _unmatched_kwargs won't be set.  We don't
+            # need to run again in this case.
+            return self
+        delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
         self._create_lora_config_if_needed(unmatched_kwargs)
@@ -620,6 +637,27 @@ class PipelineConfig(ConfigFileModel):
         }
         if not should_defer:
             self.resolve()
+        return self
+
+    @model_validator(mode="after")
+    def _sync_max_length_for_speculative_decoding(self) -> Self:
+        """Sync max_length between target and draft models for speculative decoding.
+
+        When speculative decoding is enabled with a draft model, ensure both models
+        have a max_length value. If only one is set, copy it to the other.
+        """
+        if self.draft_model is not None:
+            if (
+                self.model.max_length is not None
+                and self.draft_model.max_length is None
+            ):
+                self.draft_model.max_length = self.model.max_length
+            elif (
+                self.draft_model.max_length is not None
+                and self.model.max_length is None
+            ):
+                self.model.max_length = self.draft_model.max_length
+
         return self
 
     def retrieve_chat_template(self) -> str | None:
@@ -790,9 +828,7 @@ class PipelineConfig(ConfigFileModel):
 
         self.model.resolve()
 
-        # Validate if a provided max_length is non-negative.
-        if self.max_length is not None and self.max_length < 0:
-            raise ValueError("max_length must be non-negative.")
+        # Validation for max_length is handled in MAXModelConfig
 
         self._validate_and_resolve_max_num_steps()
 
@@ -851,7 +887,7 @@ class PipelineConfig(ConfigFileModel):
                     "DeepseekV3_2ForCausalLM_Legacy",
                     "DeepseekV3ForCausalLMNextN_Legacy",
                 )
-                and self.pipeline_role == PipelineRole.PrefillAndDecode
+                and self.pipeline_role == "prefill_and_decode"
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
                 and not self.speculative
@@ -867,7 +903,7 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.enable_overlap_scheduler:
-            if self.pipeline_role != PipelineRole.PrefillAndDecode:
+            if self.pipeline_role != "prefill_and_decode":
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
                     "It is only supported with the PrefillAndDecode pipeline role. "
@@ -1111,10 +1147,6 @@ class PipelineConfig(ConfigFileModel):
             default_weights_format=arch.default_weights_format,
         )
 
-        # Resolve final pipeline-specific changes to the config before doing
-        # memory estimations.
-        arch.pipeline_model.finalize_pipeline_config(self)
-
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
             # since they don't use KV cache.
@@ -1150,13 +1182,13 @@ class PipelineConfig(ConfigFileModel):
             devices,
             arch_config,
         ):
-            if self.max_length is None:
-                self.max_length = clamped_max_seq_len
-            elif self.max_length > clamped_max_seq_len:
+            if self.model.max_length is None:
+                self.model.max_length = clamped_max_seq_len
+            elif self.model.max_length > clamped_max_seq_len:
                 logging.warning(
-                    f"Clamping max_length from {self.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
+                    f"Clamping max_length from {self.model.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
                 )
-                self.max_length = clamped_max_seq_len
+                self.model.max_length = clamped_max_seq_len
 
         # Validate whether the architecture requires a max batch total tokens to be specified.
         # This needs to be done after max_length is resolved.
@@ -1166,9 +1198,9 @@ class PipelineConfig(ConfigFileModel):
         ):
             logger.warning(
                 f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
-                f"Defaulting to the max sequence length of the model: {self.max_length}"
+                f"Defaulting to the max sequence length of the model: {self.model.max_length}"
             )
-            self.max_batch_total_tokens = self.max_length
+            self.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1267,7 +1299,7 @@ class PipelineConfig(ConfigFileModel):
             logger.info(line)
 
         pipeline_entries: list[tuple[str, Any]] = [
-            ("max_seq_len", self.max_length),
+            ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
             ("chunked_prefill", self.enable_chunked_prefill),
             ("max_batch_input_tokens", self.max_batch_input_tokens),
@@ -1353,7 +1385,7 @@ class PipelineConfig(ConfigFileModel):
                 ("pipeline", pipeline_class.__name__),
                 ("devices", devices_str),
                 ("max_batch_size", self.max_batch_size),
-                ("max_seq_len", self.max_length),
+                ("max_seq_len", self.model.max_length),
             ]
             + [("cache_memory", memory_str)]
             if memory_str

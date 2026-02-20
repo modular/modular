@@ -50,7 +50,7 @@ from ..kernels import (
     quantize_static_scaled_float8,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
-from ..kv_cache import KVCacheParams, PagedCacheValues
+from ..kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..no_opaque_kernels import (
@@ -175,7 +175,7 @@ class AttentionWithRope(Module, Shardable):
                 "Float8 static scaling with stacked_qkv=True is not supported yet."
             )
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy is not supported in the Attention layer."
             )
@@ -800,7 +800,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             raise ValueError(
                 f"Only GGUF quantization encoding is supported for GGUFQAttentionWithRope. Found: {quantization_encoding}"
             )
-        if not kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(kv_params.cache_strategy):
             raise ValueError(
                 f"{kv_params.cache_strategy} cache strategy is not supported in the Attention layer."
             )
@@ -948,7 +948,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
             if scale is not None
             else math.sqrt(1.0 / self.kv_params.head_dim)
         )
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy is not supported in the Attention layer."
             )

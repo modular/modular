@@ -44,6 +44,7 @@ modular_py_library(
         "//max/tests/integration/architectures/qwen3vl:generate_utils",
         "//max/tests/integration/test_common",
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
         requirement("peft"),  # Required for LoRA support
         requirement("pillow"),
@@ -77,22 +78,26 @@ modular_py_library(
     imports = ["."],
     deps = [
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/architectures/idefics3:torch_utils",
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
         "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common:test_data",
         "//max/tests/integration/test_common:torch_utils",
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
+        requirement("huggingface-hub"),
+        requirement("peft"),  # Required for LoRA support
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
-        requirement("huggingface-hub"),
         requirement("transformers"),
-        requirement("peft"),  # Required for LoRA support
-        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("typing-extensions"),
     ],
 )
 
@@ -151,6 +156,7 @@ modular_py_binary(
         "//max/tests/integration/test_common",
         requirement("click"),
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
         requirement("peft"),  # Required for LoRA support
         requirement("pillow"),

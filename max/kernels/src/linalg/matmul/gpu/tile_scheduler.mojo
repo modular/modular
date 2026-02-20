@@ -165,8 +165,7 @@ struct TileScheduler[
 
     @always_inline
     fn __init__(out self, prob_shape: IndexList[3]):
-        @parameter
-        if Self.schedule == MatmulSchedule.TILE2D:
+        comptime if Self.schedule == MatmulSchedule.TILE2D:
             constrained[
                 _check_cluster(Self.cluster, Self.raster_dim),
                 "Only support block cluster in along raster dimension.",
@@ -196,8 +195,7 @@ struct TileScheduler[
         )
         self.num_blocks = self.num_aligned_m_blocks * Self.kNumNBlocks
 
-        @parameter
-        if Self.raster_dim == 0:  # rasterize along M
+        comptime if Self.raster_dim == 0:  # rasterize along M
             self.idx = UInt32(block_idx.x) * UInt32(grid_dim.y) + UInt32(
                 block_idx.y
             )
@@ -208,8 +206,7 @@ struct TileScheduler[
 
     @always_inline
     fn get_current_work_info(mut self) -> WorkInfo:
-        @parameter
-        if Self.schedule == MatmulSchedule.DS_SCHEDULER:
+        comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             var m_block_idx: UInt32 = 0
             var n_block_idx: UInt32 = 0
             var is_valid = self._get_next_block(m_block_idx, n_block_idx)
@@ -242,8 +239,7 @@ struct TileScheduler[
 
     @always_inline
     fn fetch_next_work(mut self) -> WorkInfo:
-        @parameter
-        if Self.schedule == MatmulSchedule.DS_SCHEDULER:
+        comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             return self.fetch_next_work_ds()
         else:
             self.advance()
@@ -253,8 +249,7 @@ struct TileScheduler[
     fn _index_to_mn(self) -> Tuple[UInt, UInt]:
         """Map the thread block's index to coordinates of work tile."""
 
-        @parameter
-        if Self.schedule == MatmulSchedule.TILE2D:
+        comptime if Self.schedule == MatmulSchedule.TILE2D:
             return self._index_to_mn_tile2d()
 
         return self._index_to_mn_tile1d()
@@ -392,8 +387,7 @@ struct TileScheduler[
 fn _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
-    @parameter
-    for i in range(3):
+    comptime for i in range(3):
         if cluster_dims[i] > 1 and i != Int(raster_dim):
             return False
 

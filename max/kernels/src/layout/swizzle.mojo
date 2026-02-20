@@ -554,8 +554,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime if mode in (
         TensorMapSwizzle.SWIZZLE_128B,
         TensorMapSwizzle.SWIZZLE_64B,
         TensorMapSwizzle.SWIZZLE_32B,
@@ -702,13 +701,11 @@ fn eval_composed[
     var b_idx = 0
 
     # layout or composed layout
-    @parameter
-    if composed_layout.layout_a.has_shape:
+    comptime if composed_layout.layout_a.has_shape:
         comptime shape_a = flatten(composed_layout.layout_a.shape)
         comptime stride_a = flatten(composed_layout.layout_a.stride)
 
-        @parameter
-        for i in range(len(stride_a)):
+        comptime for i in range(len(stride_a)):
             comptime s = shape_a[i].value()
             comptime st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))

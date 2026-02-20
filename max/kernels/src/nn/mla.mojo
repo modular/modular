@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from collections import OptionalReg
-from math import ceildiv, recip
+from math import align_up, ceildiv, recip
 from nn.mha_utils import DynamicInt
 from math.constants import log2e
 from sys import (
@@ -376,8 +375,7 @@ fn flare_mla_decoding_dispatch[
 
     var batch_size: Int
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         batch_size = valid_length.dim[0]() - 1
     # This branch holds for both KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
@@ -387,8 +385,7 @@ fn flare_mla_decoding_dispatch[
     if batch_size == 0:
         return
 
-    @parameter
-    if ctx.default_device_info == B200:
+    comptime if ctx.default_device_info == B200:
         mla_decode_sm100_dispatch[
             q.dtype,
             q.layout,
@@ -424,9 +421,12 @@ fn flare_mla_decoding_dispatch[
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
-        comptime BM = 16 if (
-            num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
-        ) else 32  # for deepseek-v2 lite
+        comptime preferred_BM = 16 if (
+            not has_enough_smem or has_amd_gpu_accelerator()
+        ) else 32
+        comptime BM = preferred_BM if UInt(preferred_BM) <= num_heads else Int(
+            num_heads
+        )
         comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
         comptime BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
         comptime WM = BM
@@ -587,8 +587,7 @@ fn mla_decoding[
     var seq_len: Int
     var q_batch_offset: Int
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         # treat valid_lengths as a input_row_offsets
         start_of_seq = Int(valid_length[batch_idx])
         end_of_seq = Int(valid_length[batch_idx + 1])
@@ -604,12 +603,10 @@ fn mla_decoding[
 
     var num_keys = k.cache_length(Int(batch_idx))
 
-    @parameter
-    if not _is_cache_length_accurate:
+    comptime if not _is_cache_length_accurate:
         num_keys += seq_len
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         mla_decoding_single_batch[
             BM=BM,
             BN=BN,
@@ -865,8 +862,7 @@ fn mla_decoding_single_batch[
         Int(WM), accum_type, alignment=row_alignment
     ]()
 
-    @parameter
-    for i in range(WM):
+    comptime for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
@@ -917,8 +913,7 @@ fn mla_decoding_single_batch[
         Int(BK // UInt(simd_size)),
     )
 
-    @parameter
-    for q_id in range(depth // BK):
+    comptime for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(
             q_smem_iter.layout_uint_type(q_id)
         )[]
@@ -990,8 +985,7 @@ fn mla_decoding_single_batch[
             k_rope_smem_iter.layout.shape[1].value() // simd_size,
         )
 
-        @parameter
-        for k_id in range(rope_dim // BK):
+        comptime for k_id in range(rope_dim // BK):
             var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(
                 k_rope_smem_iter.layout_uint_type(k_id)
             )[]
@@ -1066,11 +1060,8 @@ fn mla_decoding_single_batch[
                 * log2e
             )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -1083,8 +1074,7 @@ fn mla_decoding_single_batch[
                     # Offset to current thread's head idx
                     q_head_idx += lane // UInt(MMA_N // p_frag_simdwidth)
 
-                    @parameter
-                    for i in range(2):
+                    comptime for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_col = mask_frag_col
@@ -1096,8 +1086,7 @@ fn mla_decoding_single_batch[
                             0  # this is a decoding kernel with seq_len = 1
                         )
 
-                        @parameter
-                        if masked:
+                        comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
@@ -1112,8 +1101,7 @@ fn mla_decoding_single_batch[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        @parameter
-                        if use_score_mod:
+                        comptime if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
                                     IndexList[4, element_type = DType.uint32](
@@ -1223,16 +1211,12 @@ fn mla_decoding_single_batch[
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](start, end)
 
     # Apply softmax denumerator.
-    @parameter
-    for m_mma in range(num_m_mmas):
+    comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
         var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
-        @parameter
-        for n_mma in range(WN_O // 8):
-
-            @parameter
-            for i in range(p_frag_size // 2):
+        comptime for n_mma in range(WN_O // 8):
+            comptime for i in range(p_frag_size // 2):
                 output_reg_tile[
                     n_mma * Int(num_m_mmas) + Int(m_mma), i
                 ] *= rowsum_inv0
@@ -1253,8 +1237,7 @@ fn mla_decoding_single_batch[
     )
 
     # Write to global memory.
-    @parameter
-    if output_type.is_half_float():
+    comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size = Int(nope_dim), access_size=MMA_N
         ]()
@@ -1316,7 +1299,6 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1459,7 +1441,6 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth = Int(cache_depth),
             config=mha_config,
-            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1486,7 +1467,6 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1519,7 +1499,12 @@ fn flare_mla_prefill[
     comptime assert rank == 3, "only support ragged inputs"
     comptime assert (
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+    ) if k_rope.dtype == DType.bfloat16 else (
+        q.dtype == k.dtype == v.dtype == output.dtype
+    ), (
+        "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
+        " otherwise only Q, K, V should have same type."
+    )
     comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
@@ -1608,7 +1593,6 @@ fn flare_mla_prefill[
             cache_depth=cache_depth,
             config=mha_config,
             _ndbuffer_mha_operand=True,
-            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1645,7 +1629,6 @@ fn flare_mla_prefill_dispatch[
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     },
     _ndbuffer_mha_operand: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1705,10 +1688,12 @@ fn flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime fa4_enabled = ctx.default_device_info == B200 and use_fa4
+    comptime if ctx.default_device_info == B200:
+        comptime assert (
+            k_rope_t.dtype == DType.bfloat16
+            or k_rope_t.dtype == DType.float8_e4m3fn
+        ), "Only support bfloat16 or float8_e4m3fn for SM100"
 
-    @parameter
-    if fa4_enabled:
         mla_sm100_prefill[
             config=config,
             group = Int(group),
@@ -1732,6 +1717,10 @@ fn flare_mla_prefill_dispatch[
         )
 
     else:
+        comptime assert (
+            k_rope_t.dtype == DType.bfloat16
+        ), "Only support bfloat16 for non-B200 devices"
+
         comptime kernel = mla_prefill[
             config.dtype,
             k_t,
@@ -1847,13 +1836,13 @@ fn mla_prefill[
     if seq_len < Int(q_block_idx() * config.block_m()):
         return
 
-    num_keys = k.cache_length(Int(batch_idx))
+    comptime if _ndbuffer_mha_operand:
+        num_keys = k_rope.cache_length(Int(batch_idx))
+        start_pos = UInt32(num_keys - seq_len)
 
-    @parameter
-    if _ndbuffer_mha_operand:
-        start_pos = UInt32(k_rope.cache_length(Int(batch_idx)) - seq_len)
     else:
         start_pos = UInt32(k_rope.cache_length(Int(batch_idx)))
+        num_keys = Int(start_pos) + seq_len
 
     if cache_offsets:
         var cache_offsets_nd = cache_offsets.value()
@@ -1862,8 +1851,7 @@ fn mla_prefill[
     q_batch_offset = start_of_seq * q_depth * Int(config.num_heads)
     o_batch_offset = start_of_seq * Int(depth) * Int(config.num_heads)
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         mla_prefill_single_batch[
             config=config,
             group=group,
@@ -2117,8 +2105,7 @@ fn mla_prefill_single_batch[
         Int(WM), accum_type, alignment=row_alignment
     ]()
 
-    @parameter
-    for i in range(0, Int(WM), 2):
+    comptime for i in range(0, Int(WM), 2):
         rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
         rowsum.store(i, SIMD[accum_type, 2](0))
 
@@ -2160,8 +2147,7 @@ fn mla_prefill_single_batch[
         Int(BK // UInt(simd_size)),
     )
 
-    @parameter
-    for q_id in range(q_depth // Int(BK)):
+    comptime for q_id in range(q_depth // Int(BK)):
         var q_smem_tile = q_smem_iter.next_unsafe(
             q_smem_iter.linear_uint_type(q_id)
         )[]
@@ -2323,8 +2309,7 @@ fn mla_prefill_single_batch[
         )
 
         # load K tile into smem
-        @parameter
-        for k_id in range(depth // BK):
+        comptime for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(
                 k_smem_iter.layout_uint_type(k_id)
             )[]
@@ -2342,8 +2327,7 @@ fn mla_prefill_single_batch[
 
             k_gmem_iter._incr()
 
-        @parameter
-        for k_id in range(depth // BK, q_depth // Int(BK)):
+        comptime for k_id in range(depth // BK, q_depth // Int(BK)):
             var k_smem_tile = k_smem_iter.next_unsafe(
                 k_smem_iter.linear_uint_type(k_id)
             )[]
@@ -2398,11 +2382,8 @@ fn mla_prefill_single_batch[
                 * log2e
             )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2419,8 +2400,7 @@ fn mla_prefill_single_batch[
                         lane * UInt32(p_frag_simdwidth) % UInt32(MMA_N)
                     )
 
-                    @parameter
-                    for i in range(2):
+                    comptime for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_row = (
@@ -2435,8 +2415,7 @@ fn mla_prefill_single_batch[
                             score_col + cache_start_pos
                         )
 
-                        @parameter
-                        if masked:
+                        comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
@@ -2451,8 +2430,7 @@ fn mla_prefill_single_batch[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        @parameter
-                        if use_score_mod:
+                        comptime if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
                                     IndexList[4, element_type = DType.uint32](
@@ -2533,14 +2511,12 @@ fn mla_prefill_single_batch[
         )
 
         # load V tile into smem
-        @parameter
-        for v_id in range(BN // BK):
+        comptime for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(
                 v_smem_iter.layout_uint_type(v_id)
             )[]
 
-            @parameter
-            if not not_last_iter:
+            comptime if not not_last_iter:
                 var num_rows_bound = min(
                     Int(BK), end - (kv_tile_start_row + Int(v_id * BK))
                 )
@@ -2561,8 +2537,7 @@ fn mla_prefill_single_batch[
 
             v_gmem_iter._incr()
 
-        @parameter
-        if num_warps_n > 1:
+        comptime if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
                 BM,
@@ -2668,24 +2643,19 @@ fn mla_prefill_single_batch[
     )
 
     # Apply softmax denumerator.
-    @parameter
-    for m_mma in range(num_m_mmas):
+    comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
         var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
-        @parameter
-        for n_mma in range(num_n_mmas_output):
-
-            @parameter
-            for i in range(p_frag_size // 2):
+        comptime for n_mma in range(num_n_mmas_output):
+            comptime for i in range(p_frag_size // 2):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= rowsum_inv0
                 output_reg_tile[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
                 ] *= rowsum_inv1
 
     # Write to global memory.
-    @parameter
-    if output_type.is_half_float():
+    comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size = Int(depth), access_size=MMA_N
         ]()
@@ -2743,8 +2713,7 @@ fn set_buffer_lengths_to_zero[
 ):
     comptime MAX_CHUNKS = Int(buffer_lengths_layout.shape[0])
 
-    @parameter
-    for chunk_idx in range(MAX_CHUNKS):
+    comptime for chunk_idx in range(MAX_CHUNKS):
         buffer_lengths[chunk_idx] = 0
 
 
@@ -2801,7 +2770,7 @@ fn mla_prefill_plan[
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,
-            input_row_offsets,
+            input_row_offsets.get_immutable(),
             k_cache,
             buffer_token_size,
             grid_dim=(ceildiv(batch_size, 128), 1, 1),
@@ -2835,7 +2804,7 @@ fn mla_prefill_plan_kernel[
     input_row_offsets: LayoutTensor[
         DType.uint32,
         input_row_offsets_layout,
-        MutAnyOrigin,
+        ImmutExternalOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -2847,27 +2816,40 @@ fn mla_prefill_plan_kernel[
     var buffer_size: Int = Int(buffer_token_size)
 
     comptime MAX_CHUNKS = Int(buffer_lengths.layout.shape[0])
+    comptime page_size = cache_t.page_size_
+    comptime assert page_size != 0, "Only PagedKVCache is supported."
 
     if seq_idx >= UInt(batch_size):
         return
 
-    # Calculate starting position for this sequence
+    # Calculate starting position for this sequence.
+    # Note: the total cache length of each sequence is aligned to the page size.
+    var prev_row_offset = Int(input_row_offsets[0])
     for i in range(seq_idx):
-        seq_start_pos += k_cache.cache_length(Int(i))
-    seq_start_pos += Int(input_row_offsets[seq_idx])
+        # The cache length that has been prefilled in previous forward passes.
+        var cache_length = k_cache.cache_length(Int(i))
+
+        # account for the new input tokens.
+        var row_offset_i = Int(input_row_offsets[i + 1])
+        cache_length += row_offset_i - prev_row_offset
+        prev_row_offset = row_offset_i
+
+        seq_start_pos += align_up(cache_length, page_size)
+
+    var curr_seq_len = align_up(
+        k_cache.cache_length(Int(seq_idx))
+        + Int(input_row_offsets[seq_idx + 1])
+        - prev_row_offset,
+        page_size,
+    )
 
     # which chunk this sequence starts in
     var start_chunk = seq_start_pos // buffer_size
-
     var processed_seq_len = UInt32(0)
-    var curr_seq_len = k_cache.cache_length(Int(seq_idx)) + Int(
-        input_row_offsets[seq_idx + 1] - input_row_offsets[seq_idx]
-    )
     var seq_len_left = curr_seq_len
 
     # Fill buffer offsets for this sequence
-    @parameter
-    for chunk_idx in range(MAX_CHUNKS):
+    comptime for chunk_idx in range(MAX_CHUNKS):
         if chunk_idx < start_chunk:
             buffer_row_offsets[chunk_idx, seq_idx] = UInt32(buffer_size)
         elif chunk_idx == start_chunk:
@@ -2889,19 +2871,19 @@ fn mla_prefill_plan_kernel[
     # If this is the last sequence in the batch
     if seq_idx == UInt(batch_size - 1):
         seq_end_pos = seq_start_pos + curr_seq_len
-        var end_chunk = seq_end_pos // buffer_size
+        var end_chunk = (seq_end_pos + buffer_size - 1) // buffer_size - 1
 
         # Set buffer lengths for all chunks
-        @parameter
-        for chunk_idx in range(MAX_CHUNKS):
+        comptime for chunk_idx in range(MAX_CHUNKS):
             if chunk_idx < end_chunk:
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(buffer_size)
                 buffer_lengths[chunk_idx] = Int32(buffer_size)
             elif chunk_idx == end_chunk:
+                var last_chunk_len = seq_end_pos - end_chunk * buffer_size
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
-                    seq_end_pos % buffer_size
+                    last_chunk_len
                 )
-                buffer_lengths[chunk_idx] = Int32(seq_end_pos % buffer_size)
+                buffer_lengths[chunk_idx] = Int32(last_chunk_len)
             else:
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
                 buffer_lengths[chunk_idx] = -1

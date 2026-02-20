@@ -63,16 +63,11 @@ class Olmo2Config(Llama3Config):
             raise ValueError(
                 "Data parallelism is not supported for Olmo2 models"
             )
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
             head_dim=Olmo2Config.get_head_dim(huggingface_config),
             num_layers=Olmo2Config.get_num_layers(huggingface_config),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
         )

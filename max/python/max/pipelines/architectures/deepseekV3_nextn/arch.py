@@ -13,11 +13,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -31,10 +29,10 @@ deepseekV3_nextn_arch = SupportedArchitecture(
     example_repo_ids=[
         "SGLang/DeepSeek-V3-NextN",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        "bfloat16": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3NextNModel,

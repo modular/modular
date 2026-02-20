@@ -49,8 +49,9 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     ]()
 
     # FIXME: Enable assertions on Apple GPU after MOCO-2405 is fixed
-    @parameter
-    if ASSERT_MODE == "none" or (is_gpu() and cpu_only) or is_apple_gpu():
+    comptime if ASSERT_MODE == "none" or (
+        is_gpu() and cpu_only
+    ) or is_apple_gpu():
         return False
     elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True
@@ -147,15 +148,13 @@ fn debug_assert[
             arguments to convert to a `String` message.
     """
 
-    @parameter
-    if _assert_enabled[assert_mode, cpu_only]():
+    comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond():
             return
 
         var message = _WriteBufferHeap()
 
-        @parameter
-        for i in range(messages.__len__()):
+        comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
         message.nul_terminate()
@@ -258,15 +257,13 @@ fn debug_assert[
             arguments to convert to a `String` message.
     """
 
-    @parameter
-    if _assert_enabled[assert_mode, cpu_only]():
+    comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
 
         var message = _WriteBufferHeap()
 
-        @parameter
-        for i in range(messages.__len__()):
+        comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
         message.nul_terminate()
@@ -368,8 +365,7 @@ fn debug_assert[
         message: A static string message.
     """
 
-    @parameter
-    if _assert_enabled[assert_mode, cpu_only]():
+    comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
         _debug_assert_msg(
@@ -397,15 +393,13 @@ fn _debug_assert_msg(
     if is_compile_time():
         print("At: ", loc, ": Assert Error: ", message, sep="")
 
-        @parameter
-        if ASSERT_MODE != "warn":
+        comptime if ASSERT_MODE != "warn":
             abort()
         return
 
     comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         from gpu.primitives.id import block_idx, thread_idx
 
         _printf[fmt](
@@ -453,6 +447,5 @@ fn _debug_assert_msg(
             message,
         )
 
-    @parameter
-    if ASSERT_MODE != "warn":
+    comptime if ASSERT_MODE != "warn":
         abort()

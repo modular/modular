@@ -26,6 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -36,7 +37,10 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.config_enums import (
+    is_float4_encoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
@@ -79,32 +83,8 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     """Tensor containing the data parallel splits for the MLA layer."""
 
 
-def _choose_correct_data_parallel_degree(
-    pipeline_config: PipelineConfig, num_devices: int
-) -> None:
-    """Ensures the data parallel degree is set correctly in the PipelineConfig.
-
-    For DeepSeekV3, DP attention requires DP degree to match device count.
-    TP attention requires DP degree to be 1.
-    """
-    data_parallel_degree = pipeline_config.model.data_parallel_degree
-    if data_parallel_degree not in (1, num_devices):
-        raise ValueError(
-            f"--data-parallel-degree for DeepSeekV3 ({data_parallel_degree}) must be "
-            f"1 (TP attention) or equal to the number of devices ({num_devices})."
-        )
-    pipeline_config.model.data_parallel_degree = data_parallel_degree
-
-
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
-
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration."""
-        _choose_correct_data_parallel_degree(
-            pipeline_config, len(pipeline_config.model.device_specs)
-        )
 
     @classmethod
     def get_kv_params(
@@ -116,7 +96,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         cache_dtype: DType,
     ) -> KVCacheParams:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and encoding.is_float4:
+        if encoding is not None and is_float4_encoding(encoding):
             cache_dtype = DType.bfloat16
         return DeepseekV3Config.construct_kv_params(
             huggingface_config=huggingface_config,
@@ -136,14 +116,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+        if self.pipeline_config.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+        elif self.pipeline_config.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
 
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             float8_config = parse_float8_config(config, state_dict, dtype)
         else:
@@ -234,8 +214,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         encoding = pipeline_config.model.quantization_encoding
         assert encoding is not None
-        dtype = encoding.dtype.size_in_bytes
-        packed_factor = 2 if encoding.is_float4 else 1
+        dtype = supported_encoding_dtype(encoding).size_in_bytes
+        packed_factor = 2 if is_float4_encoding(encoding) else 1
         config = model_config.huggingface_config
         assert config is not None
         n_sparse_layers = (
@@ -331,12 +311,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
         # should be limited by max_batch_total_tokens.
-        if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
+        if pipeline_config.pipeline_role != "decode_only":
             max_kv_length: int = 0
 
             if pipeline_config.max_batch_total_tokens is None:
                 # If max_batch_total_tokens is not set, we use max_length.
-                max_kv_length = pipeline_config.max_length or 0
+                max_kv_length = pipeline_config.model.max_length or 0
             else:
                 max_kv_length = pipeline_config.max_batch_total_tokens
 
@@ -365,7 +345,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             moe_activation_memory += (
                 max_recv_tokens_per_rank
                 * huggingface_config.moe_intermediate_size
-                * encoding.dtype.size_in_bytes
+                * supported_encoding_dtype(encoding).size_in_bytes
             )
 
             # The output would be of shape [max_recv_tokens_per_rank, hidden_size].
@@ -383,6 +363,34 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # We only need to consider the maximum of the MLA and MoE activation
         # memories, because the MLA and MoE layers are executed sequentially.
         activation_memory = max(mla_activation_memory, moe_activation_memory)
+
+        # EP SHMEM communication buffers are persistent (allocated once at
+        # model init, not freed between layers), so add on top of the
+        # per-layer activation peak.
+        ep_buffer_memory = 0
+        if pipeline_config.ep_size > 1:
+            n_gpus_per_node = len(pipeline_config.model.device_specs)
+
+            per_device_ep_memory = estimate_ep_memory_usage(
+                hidden_size=huggingface_config.hidden_size,
+                dispatch_dtype_size=supported_encoding_dtype(
+                    encoding
+                ).size_in_bytes,
+                combine_dtype_size=DType.bfloat16.size_in_bytes,
+                max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
+                n_experts=huggingface_config.n_routed_experts,
+                top_k=huggingface_config.num_experts_per_tok,
+            )
+            ep_buffer_memory = (
+                per_device_ep_memory * NUM_GROUPS * n_gpus_per_node
+            )
+
+            logger.info(
+                "Estimated EP SHMEM buffer memory: "
+                f"{to_human_readable_bytes(ep_buffer_memory)}"
+            )
+
+        activation_memory += ep_buffer_memory
 
         if activation_memory != 0:
             logger.info(
@@ -448,6 +456,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         nn_model = DeepseekV3(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        self.state_dict = nn_model.state_dict()
 
         # Create the graph
         with Graph(
@@ -501,7 +510,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             graph.output(*outputs)
 
         timer.mark_build_complete()
-        model = session.load(graph, weights_registry=nn_model.state_dict())
+        model = session.load(graph, weights_registry=self.state_dict)
         timer.done()
 
         return model
@@ -605,10 +614,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Need by MLA
         # prefill.
-        if self.pipeline_config.pipeline_role is not PipelineRole.DecodeOnly:
+        if self.pipeline_config.pipeline_role != "decode_only":
+
+            def align_length(length: int) -> int:
+                page_size = self.kv_cache_config.kv_cache_page_size
+                return (length + page_size - 1) // page_size * page_size
+
             for i, batch in enumerate(replica_batches):
                 curr_length = sum(
-                    [ctx.tokens.current_position for ctx in batch]
+                    [align_length(ctx.tokens.current_position) for ctx in batch]
                 )
                 self._batch_context_lengths_prealloc_cpu[i][0] = curr_length
 

@@ -39,8 +39,7 @@ fn normalize_index[
 
     comptime assert_mode = "safe" if assert_always else "none"
 
-    @parameter
-    if (
+    comptime if (
         _type_is_eq[I, UInt]()
         or _type_is_eq[I, UInt8]()
         or _type_is_eq[I, UInt16]()

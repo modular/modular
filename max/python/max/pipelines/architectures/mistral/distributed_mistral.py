@@ -20,7 +20,6 @@ import logging
 
 from max.nn.legacy.attention import TensorParallelAttentionWithRope
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.nn.legacy.linear import MLP, ColumnParallelLinear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
@@ -103,7 +102,7 @@ class DistributedMistral(DistributedTransformer):
             quantization_encoding=None,
         )
 
-        if config.kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        if config.kv_params.cache_strategy != "paged":
             raise ValueError(
                 "Unsupported caching strategy "
                 + str(config.kv_params.cache_strategy)

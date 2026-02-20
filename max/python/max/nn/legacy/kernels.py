@@ -47,7 +47,7 @@ from .attention.mask_config import (
     MHAMaskVariant,
     PositionalEncodingVariant,
 )
-from .kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from .kv_cache import KVCacheParams, PagedCacheValues, kernel_substring
 
 _MHA_MASK_CONFIG_DICT = {
     MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
@@ -147,12 +147,12 @@ def fused_qkv_padded_matmul(
             f"expected valid_lengths to have rank 1 [batch], was rank {valid_lengths.rank}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for fused_qkv_padded_matmul: {kv_params.cache_strategy}"
         )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.fused_qkv_matmul.padded.{cache_strategy_str}"
 
     return ops.inplace_custom(
@@ -178,15 +178,27 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
+    _output_dim: int | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
-    tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [total_seq_len, hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            request in the input tensor with shape [batch_size + 1].
+        wqkv: The concatenated Q, K and V projection weights.
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of Query attention heads.
+        bias: Optional bias vector concatenated as [q, k, v].
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
 
-    Raises:
-        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    Returns:
+        Query projection tensor.
     """
     if input.dtype != wqkv.dtype:
         raise ValueError(
@@ -211,20 +223,22 @@ def fused_qkv_ragged_matmul(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
     values = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
 
     if bias is not None:
         op_name += ".bias"
         values.append(bias)
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
 
     return ops.inplace_custom(
         op_name,
@@ -233,7 +247,7 @@ def fused_qkv_ragged_matmul(
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                shape=input.shape[:-1] + [output_dim],
                 device=input.device,
             )
         ],
@@ -580,7 +594,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {KVCacheStrategy.PAGED}:
+    if kv_params.cache_strategy not in {"paged"}:
         raise ValueError(
             f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         )
@@ -601,7 +615,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
         "quantization_encoding_v": quantization_encoding_v.name,
     }
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     return ops.inplace_custom(
         name=f"mo.unfused_qkv_matmul.ragged.{cache_strategy_str}.gguf_quantized",
         device=input.device,
@@ -665,9 +679,7 @@ def fused_qkv_ragged_matmul_quantized(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         )
@@ -711,7 +723,7 @@ def fused_qkv_ragged_matmul_quantized(
             ],
         )[0].tensor
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
 
     args = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
     if bias is not None:
@@ -770,12 +782,12 @@ def matmul_kv_cache_ragged(
             f" {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.kv_matmul.ragged.{cache_strategy_str}"
 
     ops.inplace_custom(
@@ -824,12 +836,12 @@ def matmul_k_cache_ragged(
             f" {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.k_matmul.ragged.{cache_strategy_str}"
 
     ops.inplace_custom(
@@ -904,12 +916,12 @@ def matmul_k_cache_ragged_scaled_float8(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.k_matmul.ragged.{cache_strategy_str}.scale"
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -984,9 +996,7 @@ def fused_qk_ragged_rope(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for fused_qk_ragged_rope: {kv_params.cache_strategy}"
         )
@@ -1024,7 +1034,7 @@ def fused_qk_ragged_rope(
         else:
             parameters["mrope_section"] = ""
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
 
     if position_ids is not None:
         op_name = (
@@ -1105,7 +1115,7 @@ def fused_qk_padded_rope(
             f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for fused_qk_padded_rope: {kv_params.cache_strategy}"
         )
@@ -1573,7 +1583,7 @@ def flash_attention_padded_kv_cache(
             f"q batch size ({q.shape[0]})"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for flash_attention_padded_kv_cache: "
             f"{kv_params.cache_strategy}"
@@ -1586,7 +1596,7 @@ def flash_attention_padded_kv_cache(
         "local_window_size": local_window_size,
     }
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.mha.padded.{cache_strategy_str}"
 
     return ops.inplace_custom(
@@ -1747,9 +1757,7 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         )
@@ -1766,7 +1774,7 @@ def flash_attention_ragged(
                 f"got {sink_weights.shape}"
             )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
 
     # Select kernel based on whether sink_weights is provided
@@ -1948,7 +1956,7 @@ def flare_mla_decode_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         )
@@ -2049,7 +2057,7 @@ def flare_mla_prefill_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for flare_mla_prefill_ragged: {kv_params.cache_strategy}"
         )
@@ -2124,7 +2132,7 @@ def flare_mla_prefill_plan(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for flare_mla_prefill_plan: {kv_params.cache_strategy}"
         )
@@ -2245,7 +2253,7 @@ def mla_prefill_branch_fp8(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
         )
@@ -2373,7 +2381,7 @@ def mla_decode_branch_fp8(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
         )
@@ -2463,7 +2471,7 @@ def _validate_mla_prefill_decode_graph_inputs(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for {op_name}: {kv_params.cache_strategy}"
         )
@@ -2697,7 +2705,7 @@ def flare_mla_decompress_k_cache(
             f"expected uint32 cache_offsets but got {cache_offsets_1d.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for flare_mla_decompress_k_cache: {kv_params.cache_strategy}"
         )
@@ -2791,9 +2799,7 @@ def cross_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for cross_attention_ragged: {kv_params.cache_strategy}"
         )
@@ -2810,7 +2816,7 @@ def cross_attention_ragged(
         "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.cross_attention.ragged.{cache_strategy_str}"
 
     return ops.inplace_custom(
@@ -2916,7 +2922,7 @@ def kv_cache_ragged_radd(
             f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"Expected kv_params to have cache strategy PAGED but got {kv_params.cache_strategy}"
         )
@@ -2931,7 +2937,7 @@ def kv_cache_ragged_radd(
     )
 
     op_name = (
-        f"mo.kv_cache.ragged.{kv_params.cache_strategy.kernel_substring()}.radd"
+        f"mo.kv_cache.ragged.{kernel_substring(kv_params.cache_strategy)}.radd"
     )
 
     ops.inplace_custom(
@@ -2979,7 +2985,7 @@ def rms_norm_key_cache(
     until cache length increment, which happens after model forward.
     So use `input_row_offsets` to do this bookkeeping.
     """
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.rms_norm_kv_cache.ragged.{cache_strategy_str}"
 
     gamma_rank_expected = 1
@@ -3015,7 +3021,7 @@ def rms_norm_key_cache(
         "multiply_before_cast": multiply_before_cast,
         "per_head_norm": per_head_norm,
     }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy == "paged":
         assert kv_params.page_size is not None
 
     ops.inplace_custom(
@@ -5161,7 +5167,7 @@ def sgmv_qkv_lora_kernel(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"unsupported cache strategy for sgmv_qkv_lora_kernel: {kv_params.cache_strategy}"
         )
@@ -5271,7 +5277,7 @@ def kv_cache_ragged_2m_iadd(
             f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy != "paged":
         raise ValueError(
             f"Expected kv_params to have cache strategy PAGED but got {kv_params.cache_strategy}"
         )
@@ -5462,4 +5468,98 @@ def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
         device=device_ref,
         values=[duration_sec],
         out_types=[],
+    )
+
+
+def lmcache_offload(
+    output: BufferValue,
+    paged_cache: TensorValue,
+    slot_mapping: TensorValue,
+    start_token: TensorValue,
+    end_token: TensorValue,
+    page_size: int,
+    num_kv_heads: int,
+    head_dim: int,
+    kv_dim: int,
+    device_ref: DeviceRef,
+) -> None:
+    """Offload KV cache data from paged format to external contiguous format.
+
+    Used by LMCache connector to copy KV data from MAX's paged cache layout
+    to LMCache's contiguous KV_2LTD format for external storage.
+
+    Args:
+        output: Output buffer [kv_dim, num_layers, num_tokens, hidden_dim]
+            where hidden_dim = num_kv_heads * head_dim.
+        paged_cache: Input tensor [total_num_blocks, kv_dim, num_layers, page_size, num_kv_heads, head_dim].
+        slot_mapping: Token to slot mapping [total_tokens].
+        start_token: Starting token index scalar [1].
+        end_token: Ending token index (exclusive) scalar [1].
+        page_size: Number of tokens per page in the paged cache.
+        num_kv_heads: Number of KV attention heads.
+        head_dim: Dimension of each attention head.
+        kv_dim: KV dimension (2 for standard K/V, 1 for MLA).
+        device_ref: Device reference for the operation.
+    """
+    parameters: dict[str, int | str | DType] = {
+        "page_size": page_size,
+        "num_kv_heads": num_kv_heads,
+        "head_dim": head_dim,
+        "kv_dim": kv_dim,
+    }
+    ops.inplace_custom(
+        name="mo.lmcache.offload",
+        device=device_ref,
+        values=[output, paged_cache, slot_mapping, start_token, end_token],
+        parameters=parameters,
+    )
+
+
+def lmcache_onload(
+    paged_cache: BufferValue,
+    input_tensor: TensorValue,
+    slot_mapping: TensorValue,
+    start_token: TensorValue,
+    end_token: TensorValue,
+    page_size: int,
+    num_kv_heads: int,
+    head_dim: int,
+    kv_dim: int,
+    device_ref: DeviceRef,
+) -> None:
+    """Onload KV cache data from external contiguous format to paged format.
+
+    Used by LMCache connector to copy KV data from LMCache's contiguous
+    KV_2LTD format into MAX's paged cache layout.
+
+    Args:
+        paged_cache: Output buffer [total_num_blocks, kv_dim, num_layers, page_size, num_kv_heads, head_dim].
+        input_tensor: Input tensor [kv_dim, num_layers, num_tokens, hidden_dim]
+            where hidden_dim = num_kv_heads * head_dim.
+        slot_mapping: Token to slot mapping [total_tokens].
+        start_token: Starting token index scalar [1].
+        end_token: Ending token index (exclusive) scalar [1].
+        page_size: Number of tokens per page in the paged cache.
+        num_kv_heads: Number of KV attention heads.
+        head_dim: Dimension of each attention head.
+        kv_dim: KV dimension (2 for standard K/V, 1 for MLA).
+        device_ref: Device reference for the operation.
+    """
+    parameters: dict[str, int | str | DType] = {
+        "page_size": page_size,
+        "num_kv_heads": num_kv_heads,
+        "head_dim": head_dim,
+        "kv_dim": kv_dim,
+    }
+    ops.inplace_custom(
+        name="mo.lmcache.onload",
+        device=device_ref,
+        values=[
+            paged_cache,
+            input_tensor,
+            slot_mapping,
+            start_token,
+            end_token,
+        ],
+        parameters=parameters,
     )

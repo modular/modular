@@ -80,8 +80,7 @@ fn fused_reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
@@ -100,8 +99,7 @@ fn fused_reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= out_shape[i]
         output_buf_device0.unsafe_ptr().store[width=width](
@@ -194,8 +192,7 @@ fn reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
@@ -214,8 +211,7 @@ fn reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= out_shape[i]
         output_buf_device.unsafe_ptr().store[width=width](

@@ -145,14 +145,12 @@ fn multicast_tma_wgmma_kernel[
         if thread_idx.x == 0:
             mbar[0].expect_bytes(expected_bytes)
 
-            @parameter
-            if CLUSTER_N > 1:
+            comptime if CLUSTER_N > 1:
                 var multicast_mask = ((1 << CLUSTER_N) - 1) << (
                     rank_m * CLUSTER_N
                 )
 
-                @parameter
-                if partitioned_multicast:
+                comptime if partitioned_multicast:
                     var a_gmem_slice_coord = (
                         block_idx.y * BM + Int(rank_n) * a_tma_rows
                     )
@@ -183,14 +181,12 @@ fn multicast_tma_wgmma_kernel[
                     (Int(i) * BK, Int(block_idx.y) * BM),
                 )
 
-            @parameter
-            if CLUSTER_M > 1:
+            comptime if CLUSTER_M > 1:
                 var multicast_mask = 0
                 for i in range(CLUSTER_M):
                     multicast_mask |= 1 << (i * CLUSTER_N)
 
-                @parameter
-                if partitioned_multicast:
+                comptime if partitioned_multicast:
                     var b_gmem_slice_coord = (
                         block_idx.x * BN + Int(rank_m) * b_tma_rows
                     )
@@ -257,11 +253,8 @@ fn multicast_tma_wgmma_kernel[
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     warp_id = get_warp_id()
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # (m_mma, n_mma) is coordinates for a warp group's tile.
@@ -473,8 +466,7 @@ def main():
             transpose_b=True,
         ](ctx)
 
-        @parameter
-        for multicast_mode in range(2):
+        comptime for multicast_mode in range(2):
             test_multicast_tma_wgmma[
                 DType.bfloat16,
                 DType.bfloat16,
@@ -582,8 +574,7 @@ def main():
             transpose_b=True,
         ](ctx)
 
-        @parameter
-        for multicast_mode in range(2):
+        comptime for multicast_mode in range(2):
             test_multicast_tma_wgmma[
                 DType.bfloat16,
                 DType.bfloat16,
@@ -691,8 +682,7 @@ def main():
             transpose_b=True,
         ](ctx)
 
-        @parameter
-        for multicast_mode in range(2):
+        comptime for multicast_mode in range(2):
             test_multicast_tma_wgmma[
                 DType.bfloat16,
                 DType.bfloat16,

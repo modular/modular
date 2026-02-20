@@ -135,8 +135,7 @@ struct MatmulTileWriter[
         var max_row: UInt32
         var max_col: UInt32
 
-        @parameter
-        if Self.swapAB:
+        comptime if Self.swapAB:
             # swapAB: tile covers rows [block_x * BN, ...] and cols [block_y * BM, ...]
             max_row = min(UInt32((self.block_x + 1) * Self.BN), UInt32(rows))
             max_col = min(UInt32((self.block_y + 1) * Self.BM), UInt32(Self.N))
@@ -181,8 +180,7 @@ struct MatmulTileWriter[
 
         comptime num_elements_per_thread = output_fragment.layout.size()
 
-        @parameter
-        for i in range(num_elements_per_thread):
+        comptime for i in range(num_elements_per_thread):
             comptime smem_idx = shared_fragment.layout(i)
             comptime output_idx = output_fragment.layout(i)
             comptime row_offset = output_idx // Self.N
@@ -235,8 +233,7 @@ struct MatmulTileWriter[
         var tile_coords: OptionalReg[TileCoordinates] = None
         var max_row: OptionalReg[UInt32] = None
 
-        @parameter
-        if (
+        comptime if (
             Self.elementwise_lambda_fn is not None
             or Self.elementwise_compute_lambda_fn is not None
         ):
@@ -262,8 +259,7 @@ struct MatmulTileWriter[
             max_row,
         )
 
-        @parameter
-        for row_tile, col_tile in itertools.product(
+        comptime for row_tile, col_tile in itertools.product(
             range(Self.num_m_mmas), range(Self.num_n_mmas)
         ):
             reg_writer.write_tile(
@@ -330,8 +326,7 @@ struct MatmulTileWriter[
         comptime num_tile = num_column_tiles if not Self.swapAB else num_row_tile
         comptime last_tile = Self.BN // Self.WG_BN if not Self.swapAB else Self.BN // Self.WG_BM
 
-        @parameter
-        for tile_idx in range(num_tile):
+        comptime for tile_idx in range(num_tile):
             comptime is_partial_tile = needs_x2 and tile_idx == last_tile
 
             # Write fragments to shared memory
@@ -343,8 +338,7 @@ struct MatmulTileWriter[
                 self.local_warp_group_idx,
             )
 
-            @parameter
-            for tma_chunk in range(
+            comptime for tma_chunk in range(
                 (Self.WG_BN if not Self.swapAB else Self.WG_BM) // TMA_BN
             ):
                 fragment_writer.write_tile(reg_tile, (UInt(0), UInt(tma_chunk)))
@@ -376,8 +370,7 @@ struct MatmulTileWriter[
                     max_col,
                 )
 
-            @parameter
-            if Self.elementwise_compute_lambda_fn:
+            comptime if Self.elementwise_compute_lambda_fn:
                 comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
 
                 @parameter
@@ -391,8 +384,7 @@ struct MatmulTileWriter[
                 apply_epilogue[_compute]()
                 named_barrier[Int32(Self.num_consumer_threads)](10)
 
-            @parameter
-            if Self.elementwise_lambda_fn:
+            comptime if Self.elementwise_lambda_fn:
                 comptime epilogue_fn = Self.elementwise_lambda_fn.value()
 
                 @parameter
@@ -405,9 +397,7 @@ struct MatmulTileWriter[
 
                 apply_epilogue[_epilogue]()
             else:
-
-                @parameter
-                if Self.use_tma_store and not is_partial_tile:
+                comptime if Self.use_tma_store and not is_partial_tile:
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
                     if self.local_thread_idx < UInt(Self.WG_BN // TMA_BN):
@@ -511,8 +501,7 @@ struct MatmulTileWriter[
         # fmt: on
         comptime can_use_stmatrix = can_use_stmatrix_swapAB if Self.swapAB else can_use_stmatrix_normal
 
-        @parameter
-        if can_use_stmatrix:
+        comptime if can_use_stmatrix:
             self._write_tile_stmatrix(
                 tma_op,
                 reg_tile,

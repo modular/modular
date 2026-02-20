@@ -144,7 +144,7 @@ def _test_inplace_dunder_methods(mut python: Python):
     var list_obj: PythonObject = [1, 2]
 
     # FIXME: list literal can be converted to `PythonObject`? We might turn list
-    # into `non-materializable-target` too early?
+    # into nonmaterializable target too early?
     # Given:
     #
     # @always_inline

@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import os
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
@@ -94,10 +96,25 @@ class PagedKVCacheManager:
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
-        for devices in self.devices_per_replica:
+        for replica_idx, devices in enumerate(self.devices_per_replica):
+            replica_params = dp_1_params
+            # Give each replica its own disk cache subdirectory to avoid
+            # file collisions, double disk-usage accounting, and metadata
+            # corruption when DP > 1.
+            if (
+                self.num_replicas > 1
+                and dp_1_params.disk_offload_dir is not None
+            ):
+                replica_params = dataclasses.replace(
+                    dp_1_params,
+                    disk_offload_dir=os.path.join(
+                        dp_1_params.disk_offload_dir,
+                        f"replica_{replica_idx}",
+                    ),
+                )
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
-                    params=dp_1_params,
+                    params=replica_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
                     devices=devices,

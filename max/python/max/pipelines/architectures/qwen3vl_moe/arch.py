@@ -13,8 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import SupportedArchitecture
 
 from .context import Qwen3VLTextAndVisionContext
 from .model import Qwen3VLModel
@@ -30,11 +29,11 @@ qwen3vl_moe_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
@@ -56,11 +55,11 @@ qwen3vl_arch = SupportedArchitecture(
     example_repo_ids=["Qwen/Qwen3-VL-4B-Instruct", "Qwen/Qwen3-VL-2B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,

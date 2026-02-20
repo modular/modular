@@ -90,11 +90,6 @@ class DiffusionPipeline(ABC):
             f"execute is not implemented for {self.__class__.__name__}"
         )
 
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Hook for finalizing pipeline configuration. Override if needed."""
-        del pipeline_config
-
     def _load_sub_models(
         self, weight_paths: list[Path]
     ) -> dict[str, ComponentModel]:
@@ -219,19 +214,6 @@ class PixelModelInputs:
     """
     Negative prompt tokens for the secondary encoder (for dual-encoder models).
     If the model is single-encoder or you do not use negative prompts, leave as None.
-    """
-
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """
-    A bag of model-specific numeric parameters not represented as explicit fields.
-
-    Typical uses:
-    - Architecture-specific knobs (e.g., cfg_normalization arrays, scaling vectors)
-    - Precomputed per-step values not worth standardizing across all models
-    - Small numeric tensors that are easier to carry as named extras than formal fields
-
-    Values are expected to be numpy arrays (ndarray) to keep the contract consistent,
-    but you can relax this if your codebase needs non-array values.
     """
 
     timesteps: npt.NDArray[np.float32] = field(

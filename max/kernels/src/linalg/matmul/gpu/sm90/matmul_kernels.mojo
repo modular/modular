@@ -391,8 +391,7 @@ struct HopperMatmulSM90Kernel[
         For single block, uses a simple barrier.
         """
 
-        @parameter
-        if Self.cluster_size > 1:
+        comptime if Self.cluster_size > 1:
             fence_mbarrier_init()
             cluster_sync_relaxed()
         else:
@@ -403,14 +402,12 @@ struct HopperMatmulSM90Kernel[
     fn finalize_kernel():
         """Common finalization for all kernel variants."""
 
-        @parameter
-        if Self.pdl_level >= PDLLevel.OVERLAP_AT_END:
+        comptime if Self.pdl_level >= PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
         # Synchronize all thread blocks in the cluster before kernel exit
         # to ensure shared memory isn't deallocated while other blocks are still using it
-        @parameter
-        if Self.cluster_size > 1:
+        comptime if Self.cluster_size > 1:
             cluster_sync()
 
     @staticmethod
@@ -422,8 +419,7 @@ struct HopperMatmulSM90Kernel[
         # Setup multicast masks for cluster-wide data distribution
         var multicast_column_mask = 0
 
-        @parameter
-        for i in range(CLUSTER_M):
+        comptime for i in range(CLUSTER_M):
             multicast_column_mask |= Int(1 << (i * CLUSTER_N))
         multicast_column_mask <<= Int(rank_n)
 
@@ -524,11 +520,8 @@ struct HopperMatmulSM90Kernel[
         the producer knows it can start filling stages.
         """
 
-        @parameter
-        for i in range(Self.adjusted_num_pipeline_stages):
-
-            @parameter
-            if Self.cluster_size > 1:
+        comptime for i in range(Self.adjusted_num_pipeline_stages):
+            comptime if Self.cluster_size > 1:
                 if warp_group_thread_idx < UInt(Self.cluster_size):
                     _ = pipeline.empty[i].arrive_cluster(
                         UInt32(warp_group_thread_idx)
@@ -552,11 +545,8 @@ struct HopperMatmulSM90Kernel[
         """
         comptime use_cluster = Self.cluster_size > 1
 
-        @parameter
-        if not use_cluster:
-
-            @parameter
-            if Self.hilbert_swizzle:
+        comptime if not use_cluster:
+            comptime if Self.hilbert_swizzle:
                 # Hilbert curve ordering maximizes spatial locality
                 var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
                 var packed = lut_ptr[linear]
@@ -742,8 +732,7 @@ struct HopperMatmulSM90Kernel[
         fn producer_loop[
             num_pipeline_stages_to_unroll: Int,
         ](k_iter: Int):
-            @parameter
-            for j in range(num_pipeline_stages_to_unroll):
+            comptime for j in range(num_pipeline_stages_to_unroll):
                 var k_offset = k_coord + UInt(
                     k_iter * Self.num_pipeline_stages + (j * Self.k_group_size)
                 )
@@ -790,8 +779,7 @@ struct HopperMatmulSM90Kernel[
                     address_space = AddressSpace.SHARED,
                 ]
 
-                @parameter
-                for k in range(Self.k_group_size):
+                comptime for k in range(Self.k_group_size):
                     # Convert TileTensor to LayoutTensor via ptr (cheap wrap)
                     a_loader.load_tile(
                         ATileLT(rebind[ATileLT_ptr](a_tile_slice[k].ptr)),
@@ -817,8 +805,7 @@ struct HopperMatmulSM90Kernel[
         # Handle uneven division: the last iteration may have fewer stages
         comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
-        @parameter
-        if num_remaining_k_iters == 0:
+        comptime if num_remaining_k_iters == 0:
             for k_iter in range(num_full_k_iters):
                 producer_loop[Self.adjusted_num_pipeline_stages](k_iter)
         else:
@@ -916,8 +903,7 @@ struct HopperMatmulSM90Kernel[
             # Producer warp group
 
             # Check and wait for PDL grids if needed
-            @parameter
-            if (
+            comptime if (
                 Self.pdl_level > PDLLevel.OFF
                 and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
             ):
@@ -1335,8 +1321,7 @@ struct HopperMatmulSM90Kernel[
             fn elementwise_epilogue_fn_wrapper[
                 dtype: DType, width: Int, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
-                @parameter
-                if Self.elementwise_lambda_fn:
+                comptime if Self.elementwise_lambda_fn:
                     comptime elementwise_epilogue = Self.elementwise_lambda_fn.value()
                     var batch_idx = IndexList[2](
                         Int(a_start_row + UInt32(idx[0])), idx[1]
@@ -1393,8 +1378,7 @@ struct HopperMatmulSM90Kernel[
             warp_group_thread_idx: Thread index within the warp group.
         """
 
-        @parameter
-        if Self.a_type == DType.float8_e4m3fn:
+        comptime if Self.a_type == DType.float8_e4m3fn:
             _ = final_c_reg_tile.fill(0.0)
         else:
             _ = c_reg_tile.fill(0.0)
@@ -1411,8 +1395,7 @@ struct HopperMatmulSM90Kernel[
         fn consumer_loop[
             num_pipeline_stages_to_unroll: Int,
         ]():
-            @parameter
-            for _ in range(num_pipeline_stages_to_unroll):
+            comptime for _ in range(num_pipeline_stages_to_unroll):
                 # Acquire consumer stage (waits for producer)
                 var stage = pipeline.acquire_consumer()
                 var slot = Int(stage.index())
@@ -1425,8 +1408,7 @@ struct HopperMatmulSM90Kernel[
                     slot * Self.k_group_size
                 )
 
-                @parameter
-                for k in range(Self.k_group_size):
+                comptime for k in range(Self.k_group_size):
                     var a_tile = a_tile_slice[k]
                     var b_tile = b_tile_slice[k]
 
@@ -1439,8 +1421,7 @@ struct HopperMatmulSM90Kernel[
                     )
 
                 # SM90-specific: cluster-aware barrier arrive
-                @parameter
-                if Self.cluster_size > 1:
+                comptime if Self.cluster_size > 1:
                     if warp_group_thread_idx < UInt(Self.cluster_size):
                         _ = stage.mbar()[].arrive_cluster(
                             UInt32(warp_group_thread_idx)
@@ -1452,15 +1433,13 @@ struct HopperMatmulSM90Kernel[
                 # Release stage (advance to next) - signal already done above
                 stage^.release_without_signal()
 
-                @parameter
-                if Self.a_type == DType.float8_e4m3fn:
+                comptime if Self.a_type == DType.float8_e4m3fn:
                     fp8_promotion_iter += 1
                     if fp8_promotion_iter == Self.promotion_frequency:
                         Self.promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
                         fp8_promotion_iter -= Self.promotion_frequency
 
-        @parameter
-        if num_remaining_k_iters == 0:
+        comptime if num_remaining_k_iters == 0:
             for k_iter in range(num_full_k_iters):
                 consumer_loop[Self.adjusted_num_pipeline_stages]()
         else:
@@ -1469,8 +1448,7 @@ struct HopperMatmulSM90Kernel[
             consumer_loop[num_remaining_k_iters // Self.k_group_size]()
 
         # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
-        @parameter
-        if Self.a_type == DType.float8_e4m3fn:
+        comptime if Self.a_type == DType.float8_e4m3fn:
             if fp8_promotion_iter != 0:
                 Self.promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
@@ -1506,11 +1484,8 @@ struct HopperMatmulSM90Kernel[
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()
 
         # Add tensor core results to higher-precision accumulator
-        @parameter
-        for mma_id in range(num_mma):
-
-            @parameter
-            for i in range(c_frag_size):
+        comptime for mma_id in range(num_mma):
+            comptime for i in range(c_frag_size):
                 final_c_reg_tile[mma_id, i] = rebind[Scalar[Self.accum_type]](
                     final_c_reg_tile[mma_id, i]
                 ) + rebind[Scalar[Self.accum_type]](c_reg_tile[mma_id, i])
@@ -1567,8 +1542,7 @@ fn find_K_alignment_upto_16B(row_bytes_arg: Int) -> Int:
     var row_bytes = row_bytes_arg
     var alignment = 1
 
-    @parameter
-    for i in range(4):
+    comptime for i in range(4):
         # Check if current alignment divides evenly
         if row_bytes & 1 == 1:
             return alignment

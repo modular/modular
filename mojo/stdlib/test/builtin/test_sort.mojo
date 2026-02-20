@@ -31,9 +31,7 @@ fn random_numbers[
 ](size: Int, max: Int = 3000) -> List[Scalar[dtype]]:
     var result = List[Scalar[dtype]](capacity=size)
     for _ in range(size):
-
-        @parameter
-        if (
+        comptime if (
             dtype == DType.int8
             or dtype == DType.int16
             or dtype == DType.int32

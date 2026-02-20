@@ -375,8 +375,7 @@ struct Process:
             Error: If the process fails to spawn.
         """
 
-        @parameter
-        if CompilationTarget.is_linux() or CompilationTarget.is_macos():
+        comptime if CompilationTarget.is_linux() or CompilationTarget.is_macos():
             var file_name = String(path.split(sep)[-1])
 
             var arg_count = len(argv)

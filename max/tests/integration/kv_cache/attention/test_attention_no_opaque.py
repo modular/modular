@@ -39,7 +39,6 @@ from max.nn.legacy.attention.attention_with_rope import (
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     NestedIterableDataclass,
     PagedCacheValues,
 )
@@ -136,7 +135,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         dtype=DType.float32,
         num_layers=1,
         page_size=page_size,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         devices=[DeviceRef.from_device(device)],
     )
 
