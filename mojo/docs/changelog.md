@@ -326,6 +326,9 @@ what we publish.
 - Unstable `__comptime_assert` syntax is now finalized as `comptime assert`. A
   deprecation warning is emitted with a fixit for the old syntax.
 
+- `comptime assert` no longer errors on always false conditions. The assertion
+  will only trigger if its parent scope is concretized.
+
 ### Library changes
 
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
