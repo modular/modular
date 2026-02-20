@@ -995,15 +995,15 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         new_data = alloc[Self.ElementType](new_capacity)
 
-        uninit_move_n[overlapping=False](
-            dest=new_data, src=self._data + self._head, count=head_len
-        )
-        if tail_len > 0:
-            uninit_move_n[overlapping=False](
-                dest=new_data + head_len,
-                src=self._data,
-                count=tail_len,
-            )
+        src = self._data + self._head
+        dsc = new_data
+        for i in range(head_len):
+            (dsc + i).init_pointee_move_from(src + i)
+
+        src = self._data
+        dsc = new_data + head_len
+        for i in range(tail_len):
+            (dsc + i).init_pointee_move_from(src + i)
 
         self._head = 0
         self._tail = deque_len
