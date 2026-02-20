@@ -100,18 +100,12 @@ fn check_ldmatrix_fp8[
     var c_host = UnsafePointer[Float32].alloc(M * N)
     var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
-    @parameter
-    for m in range(M):
-
-        @parameter
-        for k in range(K):
+    comptime for m in range(M):
+        comptime for k in range(K):
             a_host[m * K + k] = Scalar[input_type](m + k)
 
-    @parameter
-    for k in range(K):
-
-        @parameter
-        for n in range(N):
+    comptime for k in range(K):
+        comptime for n in range(N):
             b_host[n * K + k] = Scalar[input_type](k + n)
 
     for i in range(M * N):

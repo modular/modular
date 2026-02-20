@@ -62,12 +62,10 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
     comptime expected_m_values: List[Int] = [1, 2, 16]
     comptime assert len(m_values) == len(expected_m_values)
 
-    @parameter
-    for i in range(len(m_values)):
+    comptime for i in range(len(m_values)):
         comptime assert m_values[i] == expected_m_values[i]
 
-    @parameter
-    for i in range(1, len(m_values)):
+    comptime for i in range(1, len(m_values)):
 
         @parameter
         @always_inline
@@ -88,8 +86,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
                 rule_m, domain=nk_idx_list
             ]()
 
-            @parameter
-            if idx_list:
+            comptime if idx_list:
                 print("Found dispatch for next value of m", m)
                 print(
                     String(materialize[TuningTableAMD.configs[idx_list[0]]]())
@@ -144,12 +141,10 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     ]
     comptime assert len(m_values) == len(expected_m_values)
 
-    @parameter
-    for i in range(len(m_values)):
+    comptime for i in range(len(m_values)):
         comptime assert m_values[i] == expected_m_values[i]
 
-    @parameter
-    for i in range(1, len(m_values)):
+    comptime for i in range(1, len(m_values)):
 
         @parameter
         @always_inline
@@ -170,8 +165,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 rule_m, domain=nk_idx_list
             ]()
 
-            @parameter
-            if idx_list:
+            comptime if idx_list:
                 print("Found dispatch for next value of m", m)
                 print(
                     String(

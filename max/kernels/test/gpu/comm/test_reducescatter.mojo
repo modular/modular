@@ -171,8 +171,7 @@ fn reducescatter_test[
         )
 
     # Perform reduce-scatter
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         reducescatter[
             ngpus=ngpus,
             output_lambda = Optional[elementwise_epilogue_type](
@@ -202,8 +201,7 @@ fn reducescatter_test[
             var accum = Scalar[accum_t](0)
             var global_idx = rs_config.rank_start(gpu_idx) + j
 
-            @parameter
-            for k in range(ngpus):
+            comptime for k in range(ngpus):
                 var term_dtype = test_value_for_gpu_element[dtype](
                     k, global_idx
                 )
@@ -245,8 +243,7 @@ fn run_reducescatter_sweep[
     for i in range(DeviceContext.number_of_devices()):
         list_of_ctx.append(DeviceContext(i))
 
-    @parameter
-    for dtype_idx, ngpus_idx, length_idx, epilogue_idx in product(
+    comptime for dtype_idx, ngpus_idx, length_idx, epilogue_idx in product(
         range(len(test_dtypes)),
         range(len(test_gpu_counts)),
         range(len(test_lengths)),

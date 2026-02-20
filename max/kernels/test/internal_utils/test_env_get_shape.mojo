@@ -16,8 +16,7 @@ from testing import assert_true
 
 
 fn print_static_shape[x: List[Int]]():
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         print("dim", i, "=", xi)
 

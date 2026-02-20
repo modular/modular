@@ -85,11 +85,8 @@ fn print_element[
 ):
     var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)
 
-    @parameter
-    for i in range(element_shape[0]):
-
-        @parameter
-        for j in range(element_shape[1]):
+    comptime for i in range(element_shape[0]):
+        comptime for j in range(element_shape[1]):
             simd_element[i * element_shape[1] + j] = element_ptr[
                 i * element_layout.stride[0] + j * element_layout.stride[1]
             ]
@@ -115,8 +112,7 @@ fn print_vectorized_buff[
 fn and_all[rank: Int](mask: StaticTuple[Bool, rank]) -> Bool:
     var res = True
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         res &= mask[i]
 
     return res

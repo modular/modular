@@ -136,8 +136,7 @@ def test_matmul[
             c[IndexList[2]((i, j))] = 0
             golden[IndexList[2]((i, j))] = c[IndexList[2]((i, j))]
 
-    @parameter
-    if b_packed:
+    comptime if b_packed:
         if kernel_type_m != 0:
             _pack_b_ndbuffer_impl[
                 a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
@@ -189,8 +188,7 @@ def test_matmul[
                 c_type,
             )
 
-            @parameter
-            if c_type.is_floating_point():
+            comptime if c_type.is_floating_point():
                 assert_almost_equal(c[i, j], golden[i, j], msg)
             else:
                 assert_equal(c[i, j], golden[i, j], msg)
@@ -263,8 +261,7 @@ def test_shapes[
 
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
-    @parameter
-    if b_packed and CompilationTarget.is_macos():
+    comptime if b_packed and CompilationTarget.is_macos():
         return
 
     test_shapes[

@@ -152,8 +152,7 @@ fn broadcast_test[
         list_of_ctxs[i].synchronize()
 
     # Launch broadcast per device
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         broadcast[ngpus,](in_buf, out_bufs[i], rank_sigs, list_of_ctxs[i], root)
 
     # Synchronize all GPUs
@@ -191,8 +190,7 @@ fn broadcast_test[
 @parameter
 fn run_broadcast_sweep[]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
+    comptime for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),

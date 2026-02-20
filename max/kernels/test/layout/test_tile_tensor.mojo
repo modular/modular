@@ -190,11 +190,8 @@ fn test_tile() raises:
 
     var counter = 0
 
-    @parameter
-    for tile_i in range(2):
-
-        @parameter
-        for tile_j in range(2):
+    comptime for tile_i in range(2):
+        comptime for tile_j in range(2):
             var current_tile = layout_tensor.tile[2, 2](
                 (Idx(tile_i), Idx(tile_j)),
             )

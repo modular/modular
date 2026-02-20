@@ -378,8 +378,7 @@ def execute_fused_qkv_matmul[
 def execute_fused_matmul_suite(ctx: DeviceContext):
     comptime dtypes = (DType.float32, DType.bfloat16)
 
-    @parameter
-    for dtype_idx in range(2):
+    comptime for dtype_idx in range(2):
         comptime dtype = dtypes[dtype_idx]
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()

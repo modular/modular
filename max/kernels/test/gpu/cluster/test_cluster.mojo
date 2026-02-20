@@ -142,9 +142,7 @@ fn pipeline_test_kernel[
     var pipeline_state_write = PipelineState[num_stages](0, 1, 0)
 
     if elect_one_sync():
-
-        @parameter
-        for i in range(num_stages):
+        comptime for i in range(num_stages):
             full_mbar[i].init(producer_arv_count)
             empty_mbar[i].init(consumer_arv_count)
 
