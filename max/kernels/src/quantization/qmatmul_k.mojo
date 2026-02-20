@@ -119,8 +119,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _unpack_int4(self, var dst_ptr: UnsafePointer[mut=True, UInt8]):
-        __comptime_assert Self.bit_width == 4
-        __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
+        comptime assert Self.bit_width == 4
+        comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -177,8 +177,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     fn _unpack_int6[
         zero_point: UInt8
     ](self, var dst_ptr: UnsafePointer[mut=True, UInt8]):
-        __comptime_assert Self.bit_width == 6
-        __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
+        comptime assert Self.bit_width == 6
+        comptime assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -1568,16 +1568,27 @@ fn matmul_Q4_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert c.rank == 2
-    _matmul_Qb_K[
-        group_size = _block_Q4_K.group_size,
-        b_type = _block_Q4_K_packed[],
-        columns_fn=_matmul_Q4_K_columns,
-        interleave_group_sums=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c)
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert c.rank == 2
+
+    @parameter
+    if elementwise_lambda_fn:
+        _matmul_Qb_K[
+            group_size = _block_Q4_K.group_size,
+            b_type = _block_Q4_K_packed[],
+            columns_fn=_matmul_Q4_K_columns,
+            interleave_group_sums=True,
+            elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value()),
+        ](a, b, c)
+    else:
+        _matmul_Qb_K[
+            group_size = _block_Q4_K.group_size,
+            b_type = _block_Q4_K_packed[],
+            columns_fn=_matmul_Q4_K_columns,
+            interleave_group_sums=True,
+            elementwise_lambda_fn=None,
+        ](a, b, c)
 
 
 fn matmul_Q6_K[
@@ -1587,12 +1598,22 @@ fn matmul_Q6_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert c.rank == 2
-    _matmul_Qb_K[
-        group_size = _block_Q6_K.group_size,
-        b_type = _block_Q6_K_packed[],
-        columns_fn=_matmul_Q6_K_columns,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c)
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert c.rank == 2
+
+    @parameter
+    if elementwise_lambda_fn:
+        _matmul_Qb_K[
+            group_size = _block_Q6_K.group_size,
+            b_type = _block_Q6_K_packed[],
+            columns_fn=_matmul_Q6_K_columns,
+            elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value()),
+        ](a, b, c)
+    else:
+        _matmul_Qb_K[
+            group_size = _block_Q6_K.group_size,
+            b_type = _block_Q6_K_packed[],
+            columns_fn=_matmul_Q6_K_columns,
+            elementwise_lambda_fn=None,
+        ](a, b, c)
