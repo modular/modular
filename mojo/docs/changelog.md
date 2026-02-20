@@ -328,6 +328,9 @@ what we publish.
 
 ### Library changes
 
+- `Span.__eq__` now uses `memcmp` for trivially equality-comparable types
+  instead of an element-by-element loop.
+
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
   `issubset()` traversal instead of two full traversals.
 
