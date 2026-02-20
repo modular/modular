@@ -25,6 +25,7 @@ from collections import Deque
 from bit import next_power_of_two
 from builtin.constrained import _constrained_conforms_to
 import format._utils as fmt
+from memory import uninit_copy_n, uninit_move_n
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -198,11 +199,23 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             maxlen=copy._maxlen,
             shrink=copy._shrink,
         )
-        for i in range(len(copy)):
-            offset = copy._physical_index(copy._head + i)
-            (self._data + i).init_pointee_copy((copy._data + offset)[])
+        var copy_len = len(copy)
+        var head_start = copy._head
+        var head_len = min(copy._capacity - head_start, copy_len)
+        var tail_len = copy_len - head_len
+        uninit_copy_n[overlapping=False](
+            dest=self._data,
+            src=copy._data + head_start,
+            count=head_len,
+        )
+        if tail_len > 0:
+            uninit_copy_n[overlapping=False](
+                dest=self._data + head_len,
+                src=copy._data,
+                count=tail_len,
+            )
 
-        self._tail = len(copy)
+        self._tail = copy_len
 
     fn __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
@@ -572,9 +585,17 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         # move remaining elements from `values`
         src = values_data + n_pop_values
-        for i in range(n_move_values):
-            (self._data + self._tail).init_pointee_move_from(src + i)
-            self._tail = self._physical_index(self._tail + 1)
+        var space_to_end = self._capacity - self._tail
+        var first_chunk = min(space_to_end, n_move_values)
+        var second_chunk = n_move_values - first_chunk
+        uninit_move_n[overlapping=False](
+            dest=self._data + self._tail, src=src, count=first_chunk
+        )
+        if second_chunk > 0:
+            uninit_move_n[overlapping=False](
+                dest=self._data, src=src + first_chunk, count=second_chunk
+            )
+        self._tail = self._physical_index(self._tail + n_move_values)
 
         # free the list backing buffer
         values_data.free()
@@ -933,9 +954,18 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         new_data = alloc[Self.ElementType](new_capacity)
 
-        for i in range(n_retain):
-            offset = self._physical_index(self._head + i)
-            (new_data + i).init_pointee_move_from(self._data + offset)
+        var head_start = self._head
+        var head_len = min(self._capacity - head_start, n_retain)
+        var tail_len = n_retain - head_len
+        uninit_move_n[overlapping=False](
+            dest=new_data, src=self._data + head_start, count=head_len
+        )
+        if tail_len > 0:
+            uninit_move_n[overlapping=False](
+                dest=new_data + head_len,
+                src=self._data,
+                count=tail_len,
+            )
 
         if self._data:
             self._data.free()
@@ -965,15 +995,15 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         new_data = alloc[Self.ElementType](new_capacity)
 
-        src = self._data + self._head
-        dsc = new_data
-        for i in range(head_len):
-            (dsc + i).init_pointee_move_from(src + i)
-
-        src = self._data
-        dsc = new_data + head_len
-        for i in range(tail_len):
-            (dsc + i).init_pointee_move_from(src + i)
+        uninit_move_n[overlapping=False](
+            dest=new_data, src=self._data + self._head, count=head_len
+        )
+        if tail_len > 0:
+            uninit_move_n[overlapping=False](
+                dest=new_data + head_len,
+                src=self._data,
+                count=tail_len,
+            )
 
         self._head = 0
         self._tail = deque_len
