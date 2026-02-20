@@ -2903,3 +2903,175 @@ class TestSliceOp:
 
         expected = x_np[0:3, 0:4]
         np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+
+class TestCumsumOps:
+    """Tests for cumsum Mojo ops."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_1d(self, dtype: DType) -> None:
+        """Test cumsum on a 1D tensor."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0)
+
+        expected = np.cumsum(x_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_2d_last_axis(self, dtype: DType) -> None:
+        """Test cumsum on the last axis of a 2D tensor."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=-1)
+
+        expected = np.cumsum(x_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_2d_first_axis(self, dtype: DType) -> None:
+        """Test cumsum on the first axis of a 2D tensor."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0)
+
+        expected = np.cumsum(x_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_3d_middle_axis(self, dtype: DType) -> None:
+        """Test cumsum on the middle axis of a 3D tensor."""
+        shape = [2, 3, 4]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=1)
+
+        expected = np.cumsum(x_np, axis=1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_4d(self, dtype: DType) -> None:
+        """Test cumsum on a 4D tensor along axis 2."""
+        shape = [2, 3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(120, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=2)
+
+        expected = np.cumsum(x_np, axis=2)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_5d(self, dtype: DType) -> None:
+        """Test cumsum on a 5D tensor along axis 3."""
+        shape = [2, 3, 2, 4, 2]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(96, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=3)
+
+        expected = np.cumsum(x_np, axis=3)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_exclusive(self, dtype: DType) -> None:
+        """Test cumsum with exclusive=True."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0, exclusive=True)
+
+        # exclusive cumsum: [0, 1, 3]
+        expected = np.array([0, 1, 3], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_reverse(self, dtype: DType) -> None:
+        """Test cumsum with reverse=True."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0, reverse=True)
+
+        # reverse cumsum: [6, 5, 3]
+        expected = np.array([6, 5, 3], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_exclusive_reverse(self, dtype: DType) -> None:
+        """Test cumsum with both exclusive=True and reverse=True."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0, exclusive=True, reverse=True)
+
+        # exclusive reverse cumsum: [5, 3, 0]
+        expected = np.array([5, 3, 0], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.int32, DType.int64])
+    def test_cumsum_integer(self, dtype: DType) -> None:
+        """Test cumsum with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0)
+
+        expected = np.cumsum(x_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
