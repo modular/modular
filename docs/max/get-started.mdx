@@ -52,6 +52,23 @@ For the most reliable experience, we recommend installing with `pixi`.
 
 <InstallModular folder="quickstart" />
 
+## Start a model endpoint
+
+Now you'll serve an LLM from a local endpoint using [`max
+serve`](/max/cli/serve).
+
+First, pick whether you want to perform text-to-text inference or image-to-text
+(multimodal) inference, and then select a model size. We've included a small
+number of model options to keep it simple, but you can explore more models in
+our [model repository](https://builds.modular.com/?category=models).
+
+<ModelDropdownTabs groupId="inference" sticky dropdownOptions={allModelOptions}>
+<TabItem value="text" label="Text to text">
+
+<div className="model-selector-container">
+
+Select a model to change the code below:
+
 export const textModelOptions = [
   {
     label: 'gemma-3-4b-it',
@@ -104,23 +121,6 @@ export const allModelOptions = {
   text: textModelOptions,
   image: imageModelOptions
 }
-
-## Start a model endpoint
-
-Now you'll serve an LLM from a local endpoint using [`max
-serve`](/max/cli/serve).
-
-First, pick whether you want to perform text-to-text inference or image-to-text
-(multimodal) inference, and then select a model size. We've included a small
-number of model options to keep it simple, but you can explore more models in
-our [model repository](https://builds.modular.com/?category=models).
-
-<ModelDropdownTabs groupId="inference" sticky dropdownOptions={allModelOptions}>
-<TabItem value="text" label="Text to text">
-
-<div className="model-selector-container">
-
-Select a model to change the code below:
 
 <ModelSelector modelOptions={allModelOptions} variableName="text" />
 
