@@ -353,14 +353,6 @@ struct String(
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    @deprecated(
-        "Strings must contain valid utf8, use `String(unsafe_from_utf8=...)`"
-        " instead"
-    )
-    @doc_private
-    fn __init__(out self, *, bytes: Span[Byte, ...]):
-        self = Self(unsafe_from_utf8=bytes)
-
     fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
@@ -931,22 +923,6 @@ struct String(
         (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
         self.set_byte_length(length + 1)
 
-    @deprecated(
-        "Appending arbitrary bytes can create invalid UTF-8, breaking String's"
-        " safety guarantees. Use `append(Codepoint)` instead."
-    )
-    fn append_byte(mut self, byte: Byte):
-        """Append a byte to the string.
-
-        Args:
-            byte: The byte to append.
-        """
-        self._clear_nul_terminator()
-        var len = self.byte_length()
-        self.reserve(len + 1)
-        self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(len + 1)
-
     fn append(mut self, codepoint: Codepoint):
         """Append a codepoint to the string.
 
@@ -1318,26 +1294,6 @@ struct String(
 
         # Safety: we ensure the string is null-terminated above.
         return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
-
-    @deprecated("Use `String.as_c_string_slice()` instead.")
-    fn unsafe_cstr_ptr(
-        mut self,
-    ) -> UnsafePointer[c_char, ImmutOrigin(origin_of(self))]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be null, or NUL terminated.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        # Add a nul terminator, making the string mutable if not already
-        if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
-            var len = self.byte_length()
-            ptr[len] = 0
-            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
-
-        return self.unsafe_ptr().bitcast[c_char]()
 
     fn as_bytes(self) -> Span[Byte, origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.

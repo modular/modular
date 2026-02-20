@@ -1505,52 +1505,6 @@ struct LegacyUnsafePointer[
             self.address
         ) = __get_address_as_owned_value(src.address)
 
-    @deprecated(
-        "Use `lhs_ptr.init_pointee_move_from(rhs_ptr)` instead, which uses "
-        "`LHS = RHS` argument ordering for readability."
-    )
-    @always_inline
-    fn move_pointee_into[
-        T: Movable,
-        //,
-    ](
-        self: LegacyUnsafePointer[
-            mut=True, T, address_space = AddressSpace.GENERIC, ...
-        ],
-        dst: LegacyUnsafePointer[
-            mut=True, T, address_space = AddressSpace.GENERIC, ...
-        ],
-    ):
-        """Moves the value `self` points to into the memory location pointed to by
-        `dst`.
-
-        This performs a consuming move (using `__moveinit__()`) out of the
-        memory location pointed to by `self`. Subsequent reads of this
-        pointer are not valid unless and until a new, valid value has been
-        moved into this pointer's memory location using `init_pointee_move()`.
-
-        This transfers the value out of `self` and into `dest` using at most one
-        `__moveinit__()` call.
-
-        **Safety:**
-
-        * `self` must be non-null
-        * `self` must contain a valid, initialized instance of `T`
-        * `dst` must not be null
-        * The contents of `dst` should be uninitialized. If `dst` was
-            previously written with a valid value, that value will be be
-            overwritten and its destructor will NOT be run.
-
-        Parameters:
-            T: The type the pointer points to, which must be `Movable`.
-
-        Args:
-            dst: Destination pointer that the value will be moved into.
-        """
-        __get_address_as_uninit_lvalue(
-            dst.address
-        ) = __get_address_as_owned_value(self.address)
-
 
 comptime LegacyOpaquePointer = LegacyUnsafePointer[
     NoneType, origin=MutAnyOrigin

@@ -45,7 +45,6 @@ from io.io import input, print
 from builtin.anytype import (
     AnyType,
     Some,
-    UnknownDestructibility,
     ImplicitlyDestructible,
 )
 from builtin.bool import Bool, Boolable, all, any
@@ -141,7 +140,6 @@ from builtin.type_aliases import (
 from builtin.value import (
     Copyable,
     Defaultable,
-    ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
     materialize,

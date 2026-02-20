@@ -16,11 +16,6 @@ from builtin.range import _ZeroStartingRange
 from reflection import struct_field_names, struct_field_types
 
 
-@deprecated(use=Equatable)
-comptime EqualityComparable = Equatable
-"""Deprecated alias for `Equatable`."""
-
-
 trait Equatable(ImplicitlyDestructible):
     """A type which can be compared for equality with other instances of itself.
 

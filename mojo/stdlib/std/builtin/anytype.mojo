@@ -194,13 +194,6 @@ trait ImplicitlyDestructible:
     """
 
 
-# A temporary alias to help with the linear types transition, see
-# https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
-@deprecated(use=AnyType)
-comptime UnknownDestructibility = AnyType
-"""Temporary alias for types that can be implicitly destroyed."""
-
-
 comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
 
 comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait]
