@@ -244,8 +244,7 @@ fn kernel_3[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            @parameter
-            for j in range(
+            comptime for j in range(
                 BK // 64
             ):  # so we do the copy in 64 chunks or 64 elements at a time (BK // 64). but hmm, we said that the K atom can only be 32 bytes (16 elements)
                 comptime k = 64 * j
@@ -281,9 +280,7 @@ fn kernel_3[
 
         # now we do the mma, again only one thread issues the instruction
         if elect_one_thread:
-
-            @parameter
-            for j in range(
+            comptime for j in range(
                 num_k_mmas
             ):  # BK by MMA_K chunks for the mma acc required this time, since you can only do MMA_K at a time (16 elements)
                 comptime idx = IntTuple(0, MMA_K * j)
@@ -327,11 +324,8 @@ fn kernel_3[
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
@@ -345,11 +339,8 @@ fn kernel_3[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
 
                     c_gmem_frag[m_vec, n_vec] = rebind[
@@ -475,8 +466,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("transpose_b:", transpose_b)
     print()
 
-    @parameter
-    for i in range(len(dict_of_shapes)):
+    comptime for i in range(len(dict_of_shapes)):
         comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(

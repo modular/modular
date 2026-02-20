@@ -130,8 +130,7 @@ fn gemm_kernel[
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
+        comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
                 (Idx(warp_m), Idx(0))
             ).slice[:, k_j : k_j + 1]()
@@ -522,8 +521,7 @@ fn matmul_kernel_naive[
 
     var accum = Scalar[s_type]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(k):
             accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
                 Scalar[s_type]
@@ -570,11 +568,8 @@ fn outer_product_acc(
     comptime M = res.static_shape[0]
     comptime N = res.static_shape[1]
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             res[i, j] += rebind[res.ElementType](
                 (lhs[(Idx[i](),)]).cast[dtype]()
             ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())

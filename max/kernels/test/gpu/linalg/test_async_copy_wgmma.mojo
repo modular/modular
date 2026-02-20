@@ -158,12 +158,10 @@ fn cpasync_wgmma_kernel[
     comptime T = c_reg_tile_vec2.element_type
     c_gmem_ptr = c_gmem_tile.ptr + t_idx
 
-    @parameter
-    for mma_id in range(tile_to_idx.size()):
+    comptime for mma_id in range(tile_to_idx.size()):
         comptime mma_idx = tile_to_idx(mma_id)
 
-        @parameter
-        for local_idx_v2 in range(c_reg_tile_vec2.layout[1].size()):
+        comptime for local_idx_v2 in range(c_reg_tile_vec2.layout[1].size()):
             comptime local_idx = local_idx_v2 * 2
             comptime v_idx = v_to_idx(local_idx)
             comptime c_idx = v_idx + mma_idx

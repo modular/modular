@@ -317,8 +317,7 @@ def main():
         comptime out_dtype = DType.bfloat16
 
         # Part B: mma_m_scale = 2 only (128xN MMA shapes)
-        @parameter
-        for mma_n_scale in [
+        comptime for mma_n_scale in [
             1,
             2,
             3,

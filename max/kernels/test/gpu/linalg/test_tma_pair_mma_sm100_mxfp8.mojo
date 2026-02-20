@@ -319,12 +319,10 @@ fn blockscaled_pair_cta_mxfp8[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -398,9 +396,7 @@ fn blockscaled_pair_cta_mxfp8[
 
             if elect_one_warp:
                 if elect_one_thread:
-
-                    @parameter
-                    for i in range(BM // SF_MN_GROUP_SIZE):
+                    comptime for i in range(BM // SF_MN_GROUP_SIZE):
                         comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                         comptime a_scales_offset = a_scales_smem_layout(
                             idx
@@ -419,8 +415,7 @@ fn blockscaled_pair_cta_mxfp8[
                             multicast="warpx4",
                         ](a_scales_tmem_addr, a_scales_desc)
 
-                    @parameter
-                    for i in range(MMA_N // SF_MN_GROUP_SIZE):
+                    comptime for i in range(MMA_N // SF_MN_GROUP_SIZE):
                         comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                         comptime b_scales_offset = b_scales_smem_layout(
                             idx
@@ -464,8 +459,7 @@ fn blockscaled_pair_cta_mxfp8[
                             c_scale=0,
                         )
 
-                    @parameter
-                    for j in range(1, BK // mma_shape[2]):
+                    comptime for j in range(1, BK // mma_shape[2]):
                         adesc += mma_shape[2] * size_of[a_type]()
                         bdesc += b_k_stride
                         if elect_one_thread:
@@ -484,9 +478,7 @@ fn blockscaled_pair_cta_mxfp8[
                                 c_scale=1,
                             )
                 else:
-
-                    @parameter
-                    for j in range(BK // mma_shape[2]):
+                    comptime for j in range(BK // mma_shape[2]):
                         if elect_one_thread:
                             var runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
@@ -531,14 +523,12 @@ fn blockscaled_pair_cta_mxfp8[
     )
     var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
 
-    @parameter
-    if MMA_M == 128:
+    comptime if MMA_M == 128:
         var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
             Int(warp_id) % 2, Int(warp_id) // 2
         ).vectorize[1, 2]()
 
-        @parameter
-        for i in range(c_frag_size // 2):
+        comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
                 SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
                     c_type
@@ -549,8 +539,7 @@ fn blockscaled_pair_cta_mxfp8[
             Int(warp_id), 0
         ).vectorize[1, 2]()
 
-        @parameter
-        for i in range(c_frag_size // 2):
+        comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
                 SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
                     c_type

@@ -262,8 +262,7 @@ fn kernel_4[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            @parameter
-            for j in range(BK // 64):
+            comptime for j in range(BK // 64):
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
@@ -292,9 +291,7 @@ fn kernel_4[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for j in range(num_k_mmas):
+            comptime for j in range(num_k_mmas):
                 comptime idx = IntTuple(0, MMA_K * j)
                 comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                 comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
@@ -340,14 +337,9 @@ fn kernel_4[
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
 
-    @parameter
-    for tma_n in range(BN // TMA_BN):
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range(TMA_BN // 16):
+    comptime for tma_n in range(BN // TMA_BN):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for i in range(TMA_BN // 16):
                 var d_reg = c_frag.slice[
                     8, offset = (i + tma_n * (TMA_BN // 16)) * 8
                 ]().cast[DType.bfloat16]()
@@ -524,8 +516,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("transpose_b:", transpose_b)
     print()
 
-    @parameter
-    for i in range(len(dict_of_shapes)):
+    comptime for i in range(len(dict_of_shapes)):
         comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(

@@ -423,14 +423,9 @@ def main():
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
-        for cta_group in [1, 2]:
-
-            @parameter
-            for bm in [128]:
-
-                @parameter
-                for mma_n in [64, 128, 192, 256]:
+        comptime for cta_group in [1, 2]:
+            comptime for bm in [128]:
+                comptime for mma_n in [64, 128, 192, 256]:
                     comptime block_tile_shape = Index(
                         bm, mma_n // cta_group, BK
                     )

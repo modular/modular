@@ -50,8 +50,7 @@ def test_ping_pong_kernel_amd[
 
     with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b:
         # Use deterministic pattern for FP8, random for BF16
-        @parameter
-        if in_dtype == DType.float8_e4m3fn:
+        comptime if in_dtype == DType.float8_e4m3fn:
             for i in range(M * K):
                 # Alternate between 1 and 2
                 host_a[i] = Scalar[in_dtype](Float32(1 + (i % 2)))

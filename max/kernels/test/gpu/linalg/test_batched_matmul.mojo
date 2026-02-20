@@ -101,8 +101,7 @@ fn run_bmm_and_check_result[
 
         c_device.store(coord, update_val.cast[c_device.dtype]())
 
-    @parameter
-    if lambda_fn:
+    comptime if lambda_fn:
         _batched_matmul_gpu[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=epilogue_fn,
@@ -126,8 +125,7 @@ fn run_bmm_and_check_result[
         # AMD doesn't support matmul with M=0
         return
 
-    @parameter
-    if check_against_naive_kernel:
+    comptime if check_against_naive_kernel:
         # erase static dimensions so that the naive kernel can be used
         _batched_matmul_gpu[transpose_b=transpose_b](
             c_device_ref.make_dynamic[DType.int64](),
@@ -182,8 +180,7 @@ fn run_bmm_and_check_result[
             update_val,
         )
 
-    @parameter
-    if lambda_fn:
+    comptime if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
             IndexList[3](b, m, n),
             ctx,
@@ -287,8 +284,7 @@ fn test_static_NK[
         c_host_ref_ptr, row_major((Idx(b), Idx(m), Idx[N]()))
     )
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         var b_host = TileTensor(
             b_host_ptr, row_major((Idx(b), Idx[N](), Idx[K]()))
         )
@@ -410,8 +406,7 @@ def main():
             lambda_fn=elementwise_epilogue_fn,
         ](ctx, 64, 256, 512, 128)
 
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             # NOTE: these tests should be run on a100 and above
 
             # tests kernels.ampere_128x128_4

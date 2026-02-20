@@ -247,12 +247,10 @@ fn kernel_5[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -294,8 +292,7 @@ fn kernel_5[
                 + block_idx.y * UInt(MMA_N)
             )
 
-            @parameter
-            for j in range(BK // 64):
+            comptime for j in range(BK // 64):
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
@@ -397,8 +394,7 @@ fn kernel_5[
         Int(split_coord_x), 0
     )
 
-    @parameter
-    for tma_n in range(NUM_ST_MATRIX):
+    comptime for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
             Int(warp_id() % 2 if MMA_M == 128 else warp_id()), 0
@@ -406,8 +402,7 @@ fn kernel_5[
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
-        @parameter
-        for i in range(TMA_BN // 16):
+        comptime for i in range(TMA_BN // 16):
             var d_reg_upper = c_frag_upper.slice[
                 8, offset = (i + tma_n * (TMA_BN // 16)) * 8
             ]().cast[DType.bfloat16]()
@@ -779,8 +774,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     comptime block_tile_shape = Index(128, 128, 64)
     comptime umma_shape = Index(256, 256, 16)
 
-    @parameter
-    for i in range(len(dic_of_shapes)):
+    comptime for i in range(len(dic_of_shapes)):
         comptime shape = get_dic_of_shapes(i, dic_of_shapes)
         print(
             "Benchmarking shape: [",

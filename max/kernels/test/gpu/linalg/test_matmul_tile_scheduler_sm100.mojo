@@ -81,8 +81,7 @@ fn test_kernel[
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
-    @parameter
-    for i in range(num_stages):
+    comptime for i in range(num_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
         clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
@@ -173,8 +172,7 @@ fn test_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        for i in range(num_stages):
+        comptime for i in range(num_stages):
             clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                 clc_pipe_producer_state.phase()
             )

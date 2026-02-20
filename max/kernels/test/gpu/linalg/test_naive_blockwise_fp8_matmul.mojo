@@ -251,9 +251,7 @@ fn test_naive_blockwise_fp8_matmul[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        for transpose_b in range(0, 2):
+        comptime for transpose_b in range(0, 2):
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),

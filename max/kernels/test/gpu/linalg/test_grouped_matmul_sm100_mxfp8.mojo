@@ -485,8 +485,7 @@ def _test_kernel_impl[
     var expert_scales_tensor = from_ndbuffer_row_major(expert_scales_device_nd)
 
     # Call appropriate kernel based on kernel_type parameter
-    @parameter
-    if kernel_type == "old":
+    comptime if kernel_type == "old":
         # Old kernel using linalg.grouped_matmul_sm100_1d1d
         comptime matmul_config = BlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -805,11 +804,11 @@ def main():
         comptime block_tile_shape = Index(bm, bn, BK)
         comptime umma_shape = Index(bm, bn, MMA_K)
 
-        @parameter
-        for structured in [False, True]:  # False=old kernel, True=new kernel
-
-            @parameter
-            if structured:
+        comptime for structured in [
+            False,
+            True,
+        ]:  # False=old kernel, True=new kernel
+            comptime if structured:
                 print("\n========================================")
                 print(
                     "Testing NEW kernel (grouped_matmul_1d1d_nvfp4 with MXFP8)"
@@ -825,8 +824,7 @@ def main():
 
             comptime kernel_type = "new" if structured else "old"
 
-            @parameter
-            for swapAB in [False, True]:
+            comptime for swapAB in [False, True]:
                 _test_kernel_impl[
                     kernel_type,
                     dtype,

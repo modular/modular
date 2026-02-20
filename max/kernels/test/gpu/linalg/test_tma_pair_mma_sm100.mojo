@@ -221,12 +221,10 @@ fn tma_umma_kernel_pair_cta[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -286,8 +284,7 @@ fn tma_umma_kernel_pair_cta[
                             adesc, bdesc, tmem_addr, idesc
                         )
 
-                    @parameter
-                    for j in range(1, BK // mma_shape[2]):
+                    comptime for j in range(1, BK // mma_shape[2]):
                         adesc += mma_shape[2] * size_of[a_type]()
                         bdesc += b_k_stride
                         if elect_one_thread:
@@ -295,9 +292,7 @@ fn tma_umma_kernel_pair_cta[
                                 adesc, bdesc, tmem_addr, idesc
                             )
                 else:
-
-                    @parameter
-                    for j in range(BK // mma_shape[2]):
+                    comptime for j in range(BK // mma_shape[2]):
                         if elect_one_thread:
                             mma[cta_group, c_scale=1](
                                 adesc, bdesc, tmem_addr, idesc
@@ -329,14 +324,12 @@ fn tma_umma_kernel_pair_cta[
     )
     var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
 
-    @parameter
-    if MMA_M == 128:
+    comptime if MMA_M == 128:
         var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
             Int(warp_id() % 2), Int(warp_id() // 2)
         ).vectorize[1, 2]()
 
-        @parameter
-        for i in range(c_frag_size // 2):
+        comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
                 SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
                     c_type
@@ -347,8 +340,7 @@ fn tma_umma_kernel_pair_cta[
             Int(warp_id()), 0
         ).vectorize[1, 2]()
 
-        @parameter
-        for i in range(c_frag_size // 2):
+        comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
                 SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
                     c_type
@@ -486,8 +478,7 @@ def test_tma_umma_pair_cta[
         ),
     )
 
-    @parameter
-    if a_type == DType.float8_e4m3fn and (not transpose_b):
+    comptime if a_type == DType.float8_e4m3fn and (not transpose_b):
         # NOTE: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major = b_col_major.tensor()
         var b_tensor = b.tensor()
@@ -539,13 +530,10 @@ def test_tma_umma_pair_cta[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
+        comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
             comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
 
-            @parameter
-            for swizzle in [
+            comptime for swizzle in [
                 TensorMapSwizzle.SWIZZLE_32B,
                 TensorMapSwizzle.SWIZZLE_64B,
                 TensorMapSwizzle.SWIZZLE_128B,

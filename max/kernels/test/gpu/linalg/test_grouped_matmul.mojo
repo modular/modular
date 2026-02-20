@@ -217,8 +217,7 @@ fn test[
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
         ptr = c_dev_ndbuffer.data + idx[0] * N + idx[1]
@@ -268,8 +267,7 @@ fn test[
 
     rtol = 1e-2
 
-    @parameter
-    if qkv_perm_dim:
+    comptime if qkv_perm_dim:
         for qkv_idx, m, n in itertools.product(
             range(3), range(total_num_tokens), range(N)
         ):
@@ -297,8 +295,7 @@ fn test[
         for m, n in itertools.product(range(total_num_tokens), range(N)):
             var expect: Scalar[out_type]
 
-            @parameter
-            if has_epilogue:
+            comptime if has_epilogue:
                 expect = test_epilogue(m, n, c_ref_host[m, n][0])
             else:
                 expect = c_ref_host[m, n][0]
@@ -633,8 +630,7 @@ def main():
             expert_shape = Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
-        @parameter
-        if ctx.default_device_info == B200:
+        comptime if ctx.default_device_info == B200:
             test[
                 DType.bfloat16,
                 DType.bfloat16,
@@ -661,19 +657,13 @@ def main():
         comptime ns = [16, 256]
         comptime ms = [16, 512]
 
-        @parameter
-        for n_idx in range(len(ns)):
-
-            @parameter
-            for m_idx in range(len(ms)):
+        comptime for n_idx in range(len(ns)):
+            comptime for m_idx in range(len(ms)):
                 comptime n = ns[n_idx]
                 comptime m = ms[m_idx]
 
-                @parameter
-                if m == 16 or n == 16:
-
-                    @parameter
-                    if ctx.default_device_info != B200:
+                comptime if m == 16 or n == 16:
+                    comptime if ctx.default_device_info != B200:
                         continue
                 # Test that expert id of -1 results in 0s in the output
                 test[

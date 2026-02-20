@@ -244,17 +244,13 @@ def main():
     with DeviceContext() as ctx:
         comptime dtype = DType.bfloat16
 
-        @parameter
-        for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+        comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
             comptime BK = (swizzle.bytes() // size_of[dtype]())
             comptime MMA_K = 16
 
             # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
-            @parameter
-            for mma_m in [64, 128]:
-
-                @parameter
-                for mma_n in [
+            comptime for mma_m in [64, 128]:
+                comptime for mma_n in [
                     8,
                     16,
                     32,

@@ -60,8 +60,7 @@ fn epilogue_test_fn[
 ]:
     var bias = SIMD[dtype, width](0)
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         bias[i] = (
             0.5
             + Float64(idx[0] + idx[1] + i)
@@ -77,9 +76,7 @@ fn select_max_ulp_distance[
     if max_ulp_distance:
         return max_ulp_distance.value()
     else:
-
-        @parameter
-        if lambda_fn:
+        comptime if lambda_fn:
             return 4
         return 2
 
@@ -185,14 +182,12 @@ fn test[
     )
 
     # Initialize matmul operands
-    @parameter
-    if arange_a:
+    comptime if arange_a:
         arange(a_host)
     else:
         random(a_host)
 
-    @parameter
-    if arange_b:
+    comptime if arange_b:
         arange(b_host)
     else:
         random(b_host)
@@ -219,16 +214,14 @@ fn test[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var update_val: SIMD[_dtype, width] = val
 
-        @parameter
-        if lambda_fn:
+        comptime if lambda_fn:
             comptime func = lambda_fn.value()
             update_val = func(idx, (m, n), update_val)
         c_tensor.store[alignment=alignment](
             idx, rebind[SIMD[dtype, width]](update_val)
         )
 
-    @parameter
-    if lambda_fn:
+    comptime if lambda_fn:
         _matmul_gpu[
             use_tensor_core=True,
             transpose_b=transpose_b,
@@ -278,8 +271,7 @@ fn test[
 
         var update_val = val
 
-        @parameter
-        if lambda_fn:
+        comptime if lambda_fn:
             comptime element_lambda = lambda_fn.value()
             update_val = element_lambda(idx, (m, n), val)
 
@@ -288,8 +280,7 @@ fn test[
             update_val,
         )
 
-    @parameter
-    if lambda_fn:
+    comptime if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
             IndexList[2](m, n),
             ctx,
@@ -306,8 +297,7 @@ fn test[
             var expect = c_host_ref[mi, ni][0]
             var actual = c_host[mi, ni][0]
 
-            @parameter
-            if bit_width_of[dtype]() <= 16:
+            comptime if bit_width_of[dtype]() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue
@@ -387,8 +377,7 @@ def main():
             ctx, 1024, 3072, 3072
         )
 
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             test[
                 DType.bfloat16,
                 transpose_b=True,

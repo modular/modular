@@ -371,8 +371,7 @@ def main():
             var result = val
 
             # Iterate through each element in SIMD vector with correct per-element column
-            @parameter
-            for i in range(width):
+            comptime for i in range(width):
                 var col = Scalar[_dtype](base_col + i)
                 result[i] = val[i] + row + col * Scalar[_dtype](0.5)
             return result
