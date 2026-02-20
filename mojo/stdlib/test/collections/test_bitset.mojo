@@ -193,6 +193,27 @@ def test_bitset_str_repr():
     )
 
 
+def test_bitset_repr():
+    var bs = BitSet[16]()
+    bs.set(1)
+    bs.set(5)
+
+    var repr_str = repr(bs)
+
+    assert_equal(
+        repr_str,
+        "BitSet[16]({1, 5})",
+        msg="repr should include type parameter and elements",
+    )
+
+    var empty_bs = BitSet[8]()
+    assert_equal(
+        repr(empty_bs),
+        "BitSet[8]({})",
+        msg="repr of empty BitSet should include size",
+    )
+
+
 def test_bitset_edge_cases():
     # Test with minimum size
     var bs_min = BitSet[1]()
