@@ -21,6 +21,32 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports `comptime if` and `comptime for` as the preferred syntax
+  for compile-time conditional and loop constructs, replacing the legacy
+  `@parameter if` and `@parameter for` decorator forms:
+
+  ```mojo
+  # Old syntax (still accepted, deprecated in a future release)
+  @parameter
+  if some_condition:
+      ...
+
+  @parameter
+  for i in range(10):
+      ...
+
+  # New syntax
+  comptime if some_condition:
+      ...
+
+  comptime for i in range(10):
+      ...
+  ```
+
+  Both syntaxes are accepted in this release. The `@parameter` forms will be
+  deprecated soon, and the parser will generate a warning and a fixit suggestion
+  to migrate to the new syntax.
+
 - `@register_passable("trivial")` is now deprecated,
    conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
