@@ -32,18 +32,37 @@ mojo_library(
     ]
 ]
 
+_SHARED_LIBS = [
+    ":data_movement_ops",
+    ":elementwise_ops",
+    ":layer_norm_ops",
+    ":matmul_ops",
+    ":misc_ops",
+    ":reduce_ops",
+    ":softmax_ops",
+]
+
+# Wrap .mojo sources in a filegroup for macOS runtime compilation.
+# On macOS (cross-compiled from Linux CI), the mojo_shared_library targets
+# crash with SIGILL, so we fall back to runtime compilation via mojo.importer.
+# Using a filegroup avoids the duplicate-srcs lint (find_duplicate_srcs.py
+# ignores filegroup targets).
+filegroup(
+    name = "_mojo_srcs",
+    srcs = glob(["**/*.mojo"]),
+)
+
 modular_py_library(
     name = "_interpreter_ops",
     srcs = glob(["**/*.py"]),
-    data = [
-        ":data_movement_ops",
-        ":elementwise_ops",
-        ":layer_norm_ops",
-        ":matmul_ops",
-        ":misc_ops",
-        ":reduce_ops",
-        ":softmax_ops",
-    ],
+    data = select({
+        "@platforms//os:macos": [
+            ":_mojo_srcs",
+            "//max:MOGGKernelAPI",
+            "@mojo//:std",
+        ],
+        "//conditions:default": _SHARED_LIBS,
+    }),
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",
