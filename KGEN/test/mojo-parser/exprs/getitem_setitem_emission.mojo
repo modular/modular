@@ -171,8 +171,7 @@ fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
 
 struct XYZ:
    fn __getattr__[name: StringLiteral](self) -> Int:
-      @parameter
-      if name == "x":
+      comptime if name == "x":
         return 4
       elif name == "y":
         return 6

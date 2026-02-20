@@ -38,17 +38,13 @@ fn test_and_bool[x: Int, y: Int, z: Int]() where bool_pred(x) and bool_pred(y) a
 fn call_test_and_bool():
     # There should still be a `cond` here.
     # CHECK-NEXT: kgen.param.if <#lit.struct.extract<:!Bool cond
-    @parameter
-    if bool_pred(1) and bool_pred(2) and bool_pred(3):
+    comptime if bool_pred(1) and bool_pred(2) and bool_pred(3):
         test_and_bool[1, 2, 3]()
 
 fn call_test_and_bool_nested():
-    @parameter
-    if bool_pred(1):
-        @parameter
-        if bool_pred(3):
-            @parameter
-            if bool_pred(2):
+    comptime if bool_pred(1):
+        comptime if bool_pred(3):
+            comptime if bool_pred(2):
                 test_and_bool[1, 2, 3]()
 
 # CHECK-LABEL: lit.fn @"test_and_i1[
@@ -79,10 +75,8 @@ fn test_and_bool_i1[x: Int, y: Int]() where bool_pred(x) and i1_pred(y):
 fn test_or_bool[x: Int, y: Int]() where bool_pred(x) or bool_pred(y):
     # With `or`, we can't unconditionally call need_one or need_two
     # but we can call them under appropriate parametric conditions
-    @parameter
-    if bool_pred(x):
+    comptime if bool_pred(x):
         need_bool_pred[x]()
 
-    @parameter
-    if bool_pred(y):
+    comptime if bool_pred(y):
         need_bool_pred[y]()

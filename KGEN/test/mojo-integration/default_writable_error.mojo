@@ -27,8 +27,7 @@ fn main():
     var value = HasBadField(NotWritable(1))
     var string = String()
 
-    @parameter
-    if env_get_int["test"]() == 1:
+    comptime if env_get_int["test"]() == 1:
         # CHECK_1: constraint failed: Could not derive Writable for HasBadField
         value.write_to(string)
     elif env_get_int["test"]() == 2:

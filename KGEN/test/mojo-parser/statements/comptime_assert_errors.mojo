@@ -40,8 +40,7 @@ fn requires_natural[x: Int]() where x >= 0:
 
 
 fn test_assert_injects_assumption_correctly[x: Int]():
-    @parameter
-    if x > 10:
+    comptime if x > 10:
         comptime assert x >= 0
 
         # This is OK.

@@ -28,8 +28,7 @@ struct S1(C):
 
 
 fn foo[T: AnyType]():
-    @parameter
-    if conforms_to(T, A & B):
+    comptime if conforms_to(T, A & B):
         print("T conforms to 'A & B'")
     else:
         print("T does not conform to 'A & B'")
@@ -57,13 +56,11 @@ fn indirect[T: C]():
 
 fn main():
     # CHECK: S conforms to 'A & B'
-    @parameter
-    if conforms_to(S, A & B):
+    comptime if conforms_to(S, A & B):
         print("S conforms to 'A & B'")
 
     # CHECK: S does not conform to 'C'
-    @parameter
-    if not conforms_to(S, C):
+    comptime if not conforms_to(S, C):
         print("S does not conform to 'C'")
 
     # CHECK: T conforms to 'A & B'

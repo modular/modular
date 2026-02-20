@@ -42,8 +42,7 @@ fn itCaptures[THREE: Int](one: Int, four: Int):
     aThing[aParam](one)
 
     # COM: Ensure nesting in legacy closure does not corrupt the symbol calculation
-    @parameter
-    if THREE == 3:
+    comptime if THREE == 3:
 
         @__copy_capture(one, four)
         @parameter

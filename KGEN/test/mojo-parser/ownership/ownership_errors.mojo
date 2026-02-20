@@ -566,8 +566,7 @@ fn param_for_merge_diagnostic():
     # NOTE: shouldn't produce a "unused store" warning.
     var array_ptr = Int()
 
-    @parameter
-    for _ in TrivialRange():
+    comptime for _ in TrivialRange():
         _ = array_ptr._mlir_value
 
 

@@ -8,8 +8,7 @@
 
 
 fn foo[axis: Int](i: Int) -> Int:
-    @parameter
-    if axis < 0:
+    comptime if axis < 0:
         return i
     else:
         return foo[axis - 1](i)

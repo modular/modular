@@ -41,8 +41,7 @@ fn test_if_decorator(a: Bool):
   if a:
     pass
 
-  @parameter
-  if 1:
+  comptime if 1:
     pass
   elif a:  # expected-error {{cannot use a dynamic value in 'comptime if' condition}}
     pass

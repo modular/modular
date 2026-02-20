@@ -496,8 +496,7 @@ fn test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: has_next
     # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
-    @parameter
-    for x in TrivialRange():
+    comptime for x in TrivialRange():
         # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
 
         # Make sure nothing sneaks in here.
@@ -562,8 +561,7 @@ fn test_param_for2():
     # CHECK-NEXT: has_next
     # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
-    @parameter
-    for x in TrivialRange():
+    comptime for x in TrivialRange():
         # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
 
         # Make sure nothing sneaks in here.

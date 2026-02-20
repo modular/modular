@@ -99,8 +99,7 @@ fn foo[D: Int]() -> Int:
 fn test_recursion2():
     comptime run_test = env_get_bool["TEST_RECURSION2", False]()
 
-    @parameter
-    if run_test:
+    comptime if run_test:
         # CHECK-RECURSION2: call expansion failed with parameter value(s): ("D": 2)
         _ = foo[2]()
 
@@ -123,8 +122,7 @@ fn foo1[D: Int]() -> Int:
 fn test_recursion3():
     comptime run_test = env_get_bool["TEST_RECURSION3", False]()
 
-    @parameter
-    if run_test:
+    comptime if run_test:
         # CHECK-RECURSION3: call expansion failed with parameter value(s): ("D": 1)
         _ = foo1[1]()
 
