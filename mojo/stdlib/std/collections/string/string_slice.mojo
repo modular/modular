@@ -1784,13 +1784,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
         """
-        var slen = len(self) - start if end == -1 else end - start
-        if len(prefix) > slen:
+        var n = len(self)
+        var s = start if start >= 0 else max(0, start + n)
+        var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
+        if s > e or len(prefix) > e - s:
             return False
         return (
-            memcmp(
-                self.unsafe_ptr() + start, prefix.unsafe_ptr(), len(prefix)
-            )
+            memcmp(self.unsafe_ptr() + s, prefix.unsafe_ptr(), len(prefix))
             == 0
         )
 
@@ -1811,9 +1811,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
         """
-        var e = len(self) if end == -1 else end
-        var slen = e - start
-        if len(suffix) > slen:
+        var n = len(self)
+        var s = start if start >= 0 else max(0, start + n)
+        var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
+        if s > e or len(suffix) > e - s:
             return False
         return (
             memcmp(

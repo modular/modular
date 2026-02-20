@@ -862,6 +862,14 @@ def test_startswith():
     assert_true(ab.startswith("a", end=1))
     assert_true(ab.startswith("ab"))
 
+    # Out-of-range indices should clamp, not crash.
+    var hello = StringSlice("hello")
+    assert_true(hello.startswith("hello", 0, 100))
+    assert_false(hello.startswith("x", 10))
+    assert_false(hello.startswith("h", 3, 1))
+    assert_true(hello.startswith("hello", -100))
+    assert_false(hello.startswith("he", -3))
+
 
 def test_endswith():
     var empty = StringSlice("")
@@ -881,6 +889,14 @@ def test_endswith():
     assert_true(ab.endswith("b", start=1))
     assert_true(ab.endswith("a", end=1))
     assert_true(ab.endswith("ab"))
+
+    # Out-of-range indices should clamp, not crash.
+    var hello = StringSlice("hello")
+    assert_true(hello.endswith("lo", 0, 100))
+    assert_false(hello.endswith("x", 10))
+    assert_false(hello.endswith("o", 3, 1))
+    assert_true(hello.endswith("hello", -100))
+    assert_true(hello.endswith("llo", -3))
 
 
 def test_isupper():
