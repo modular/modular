@@ -85,8 +85,7 @@ def test_repeat_param():
     """Tests repeat with parameter for loop."""
     var trip_count = 0
 
-    @parameter
-    for val in repeat(42, times=3):
+    comptime for val in repeat(42, times=3):
         assert_equal(val, 42)
         trip_count += 1
 

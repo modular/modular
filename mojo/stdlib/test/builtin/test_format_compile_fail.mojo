@@ -18,8 +18,7 @@ from sys import env_get_int
 
 
 def main():
-    @parameter
-    if env_get_int["test"]() == 1:
+    comptime if env_get_int["test"]() == 1:
         # CHECK_1: note: constraint failed: Conversion flag "invalid" not recognized.
         _ = "{!invalid}".format(42)
     elif env_get_int["test"]() == 2:

@@ -78,8 +78,7 @@ def test_cast():
     assert_equal(uc1, u1)
     assert_equal(ic1, i1)
 
-    @parameter
-    if is_64bit():
+    comptime if is_64bit():
         assert_equal(
             Scalar[DType.uint](18446744073709551615).cast[DType.int](),
             Scalar[DType.int](-1),
@@ -259,8 +258,7 @@ def test_from_to_bits_roundtrip_property_test():
 
     var prop_test = PropTest()
 
-    @parameter
-    for dtype, size in product(dtypes, sizes):
+    comptime for dtype, size in product(dtypes, sizes):
         prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
 
 
@@ -442,8 +440,7 @@ def test_issue_30237():
 
         var result = x.fma(c_last, c_second_from_last)
 
-        @parameter
-        for idx in range(coefficients_len - 2):
+        comptime for idx in range(coefficients_len - 2):
             var c = coefficients[coefficients_len - 3 - idx]
             result = x.fma(result, c)
 
@@ -505,8 +502,7 @@ def test_truthy():
         assert_false(Scalar[dtype](0))
         assert_true(Scalar[dtype](1))
 
-    @parameter
-    for i in range(dtypes.__len__()):
+    comptime for i in range(dtypes.__len__()):
         comptime dtype = dtypes[i]
         test_dtype[dtype]()
 
@@ -1463,8 +1459,7 @@ def test_reduce():
         var x2: X2
         var x1: X1
 
-        @parameter
-        if dtype.is_numeric():
+        comptime if dtype.is_numeric():
             # reduce_add
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(4, 6, 8, 10)
@@ -1533,8 +1528,7 @@ def test_reduce():
             assert_equal(x8.reduce_max[8](), x8)
             assert_equal(X2(6, 3).reduce_max(), 6)
 
-        @parameter
-        if dtype.is_signed():
+        comptime if dtype.is_signed():
             # reduce_add
             x8 = X8(0, -1, 2, -3, 4, -5, 6, -7)
             x4 = X4(4, -6, 8, -10)
@@ -1603,8 +1597,7 @@ def test_reduce():
             assert_equal(x8.reduce_max[8](), x8)
             assert_equal(X2(6, -3).reduce_max(), 6)
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             # reduce_and
             var x8b = SIMD[DType.bool, 8](
                 False, False, True, True, False, True, False, True
@@ -1643,8 +1636,7 @@ def test_reduce():
             assert_equal(x8b.reduce_or[8](), x8b)
             assert_equal(SIMD[DType.bool, 2](False, False).reduce_or(), False)
 
-        @parameter
-        if dtype.is_integral():
+        comptime if dtype.is_integral():
             # reduce_and
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(0, 1, 2, 3)
@@ -1968,8 +1960,7 @@ def test_comparison():
     fn test_dtype[dtype: DType]() raises:
         comptime X4 = SIMD[dtype, 4]
 
-        @parameter
-        if dtype.is_signed():
+        comptime if dtype.is_signed():
             var simd_val = X4(-10, -8, -6, -4)
 
             assert_true(simd_val == simd_val)
@@ -2029,8 +2020,7 @@ def test_comparison():
             assert_true(mixed_ge[2])
             assert_true(mixed_ge[3])
 
-        @parameter
-        if dtype.is_numeric():
+        comptime if dtype.is_numeric():
             var simd_val = X4(1, 2, 3, 4)
 
             assert_true(simd_val == simd_val)
@@ -2090,8 +2080,7 @@ def test_comparison():
             assert_true(mixed_ge[2])
             assert_true(mixed_ge[3])
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var all_true = SIMD[DType.bool, 4](fill=True)
             var all_false = SIMD[DType.bool, 4](fill=False)
             var mixed = SIMD[DType.bool, 4](True, True, False, False)
@@ -2161,8 +2150,7 @@ def test_comparison():
             assert_true(mixed_ge[2])
             assert_true(mixed_ge[3])
 
-    @parameter
-    for i in range(dtypes.__len__()):
+    comptime for i in range(dtypes.__len__()):
         comptime dtype = dtypes[i]
         test_dtype[dtype]()
 
@@ -2207,9 +2195,7 @@ def test_from_bytes_as_bytes():
 
     # Test scalar roundtrip conversions
     for x in [Int16(10), 100, -12, 0, 1, -1, 1000, -1000]:
-
-        @parameter
-        for b in range(2):
+        comptime for b in range(2):
             assert_equal(
                 Int16.from_bytes[big_endian = Bool(b)](
                     Int16(x).as_bytes[big_endian = Bool(b)]()
@@ -2579,8 +2565,7 @@ def test_int_literal_init():
     comptime Index = Scalar[DType.int]
     comptime UIndex = Scalar[DType.uint]
 
-    @parameter
-    if is_64bit():
+    comptime if is_64bit():
         assert_equal(Index(-9223372036854775808), Index(9223372036854775808))
         assert_equal(Index(-9223372036854775809), Index(9223372036854775807))
         assert_equal(UIndex(0), UIndex(18446744073709551616))

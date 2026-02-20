@@ -192,8 +192,7 @@ def test_max_finite():
     #     0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
     # )
 
-    @parameter
-    if is_64bit():
+    comptime if is_64bit():
         assert_equal(max_finite[DType.int](), 9223372036854775807)
         assert_equal(max_finite[DType.uint](), 18446744073709551615)
     else:
@@ -248,8 +247,7 @@ def test_min_finite():
     #     -0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
     # )
 
-    @parameter
-    if is_64bit():
+    comptime if is_64bit():
         assert_equal(min_finite[DType.int](), -9223372036854775808)
         assert_equal(min_finite[DType.uint](), 0)
     else:

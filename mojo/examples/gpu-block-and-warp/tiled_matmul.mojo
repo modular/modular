@@ -112,8 +112,7 @@ fn tiled_matmul_kernel(
 
     # Iterate through tiles along K dimension
     # Use @parameter to unroll the loop at compile time
-    @parameter
-    for k_tile in range(0, MATRIX_K, TILE_K):
+    comptime for k_tile in range(0, MATRIX_K, TILE_K):
         # Cooperative tile loading
         # Calculate global coordinates for tile loading
         var a_global_row = tile_row_start + thread_y
@@ -148,8 +147,7 @@ fn tiled_matmul_kernel(
         barrier()
 
         # Compute dot product using shared memory tiles
-        @parameter
-        for k in range(TILE_K):
+        comptime for k in range(TILE_K):
             var a_element = tile_a_shared[thread_y, k]
             var b_element = tile_b_shared[k, thread_x]
             accumulator += a_element * b_element
@@ -164,8 +162,7 @@ fn tiled_matmul_kernel(
 
 def main():
     # Check for GPU availability
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No GPU detected - this example requires a supported GPU")
     else:
         print("Tiled Matrix Multiplication GPU Example")
@@ -294,8 +291,7 @@ def main():
                 expected_str += String(expected_val, " ")
             print(expected_str)
 
-        @parameter
-        if MATRIX_SIZE > 4:
+        comptime if MATRIX_SIZE > 4:
             print("... (remaining elements not displayed)")
 
         print(

@@ -106,8 +106,7 @@ def test_fused_reductions_inner():
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
         comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-        @parameter
-        if reduction_idx == 0:
+        comptime if reduction_idx == 0:
             return _min(left, right)
         elif reduction_idx == 1:
             return _max(left, right)
@@ -176,8 +175,7 @@ def test_fused_reductions_outer():
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
         comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-        @parameter
-        if reduction_idx == 0:
+        comptime if reduction_idx == 0:
             return _min(left, right)
         elif reduction_idx == 1:
             return _max(left, right)

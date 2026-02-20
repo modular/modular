@@ -19,12 +19,10 @@ from gpu.host.info import GPUInfo
 
 
 fn api() -> String:
-    @parameter
-    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+    comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         comptime api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
-        @parameter
-        if api == "gpu":
+        comptime if api == "gpu":
             return String(GPUInfo.from_name[_accelerator_arch()]().api)
         return String(api)
     return "default"
@@ -34,8 +32,7 @@ fn create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 
-    @parameter
-    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+    comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         print("Using DeviceContext: V2 - " + api())
         test_ctx = DeviceContext(device_id=device_id, api=api())
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():

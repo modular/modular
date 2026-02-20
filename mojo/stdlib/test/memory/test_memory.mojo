@@ -218,8 +218,7 @@ def _test_memcmp_extensive[
         ptr1[i] = Scalar[dtype](i)
         dptr1[i] = Scalar[dtype](i)
 
-        @parameter
-        if extermes == "":
+        comptime if extermes == "":
             ptr2[i] = Scalar[dtype](i + 1)
             dptr2[i] = Scalar[dtype](i + 1)
         elif extermes == "nan":

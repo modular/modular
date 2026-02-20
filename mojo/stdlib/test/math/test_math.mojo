@@ -142,8 +142,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         """
         debug_assert(all(a.ge(0)))
 
-        @parameter
-        if symm:
+        comptime if symm:
             # |a - b| ≤ max(atol, rtol * max(|a|, |b|))
             return a - max(atol, rtol * a)
         else:
@@ -158,8 +157,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         (edge_val[symm](v, atol, 0), v),
     ]
 
-    @parameter
-    if not symm:
+    comptime if not symm:
         all_close += [
             (edge_val[symm](v, 0, rtol), v),
             (edge_val[symm](v, atol, rtol), v),
@@ -178,8 +176,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         (T(nan_, 0), T(nan_, -inf_)),
     ]
 
-    @parameter
-    if symm:
+    comptime if symm:
         none_close += [(v, v + atol + rtol)]
     else:
         none_close += [

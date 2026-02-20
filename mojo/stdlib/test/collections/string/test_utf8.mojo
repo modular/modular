@@ -166,8 +166,7 @@ def test_utf8_validation():
         [0xF4, 0x8F, 0x88, 0xAA],
     ]
 
-    @parameter
-    for i in range(len(positive)):
+    comptime for i in range(len(positive)):
         assert_true(validate_utf8[positive[i]]())
 
     comptime negative: List[List[UInt8]] = [
@@ -196,20 +195,17 @@ def test_utf8_validation():
         [0x00, 0x00, 0xF0, 0x80, 0x80, 0x80],
     ]
 
-    @parameter
-    for i in range(len(negative)):
+    comptime for i in range(len(negative)):
         assert_false(validate_utf8[negative[i]]())
 
 
 def test_good_utf8_sequences():
-    @parameter
-    for i in range(len(GOOD_SEQUENCES)):
+    comptime for i in range(len(GOOD_SEQUENCES)):
         assert_true(validate_utf8[GOOD_SEQUENCES[i]]())
 
 
 def test_bad_utf8_sequences():
-    @parameter
-    for i in range(len(BAD_SEQUENCES)):
+    comptime for i in range(len(BAD_SEQUENCES)):
         assert_false(validate_utf8[BAD_SEQUENCES[i]]())
 
 

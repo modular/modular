@@ -28,14 +28,12 @@ def test_is_negative():
     )
     comptime widths = (1, 2, 4, 8)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime D = dtypes[i]
         var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
-        @parameter
-        for j in range(len(widths)):
+        comptime for j in range(len(widths)):
             comptime S = SIMD[D, widths[j]]
 
             for k in values:
@@ -57,12 +55,10 @@ def test_splat():
     )
     comptime widths = (1, 2, 4, 8)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime D = dtypes[i]
 
-        @parameter
-        for j in range(len(widths)):
+        comptime for j in range(len(widths)):
             comptime w = widths[j]
             comptime B = SIMD[DType.bool, w]
             assert_equal(SIMD[D, w](-1), splat[D](B(fill=True)))
@@ -79,14 +75,12 @@ def test_compare():
     )
     comptime widths = (1, 2, 4, 8)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime D = dtypes[i]
         var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
-        @parameter
-        for j in range(len(widths)):
+        comptime for j in range(len(widths)):
             comptime S = SIMD[D, widths[j]]
 
             for k in values:

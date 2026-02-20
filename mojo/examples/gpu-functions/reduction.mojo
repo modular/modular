@@ -75,8 +75,7 @@ fn sum_kernel[
     active_threads = KERNEL_TPB
     comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
-    @parameter
-    for power in range(1, KERNEL_LOG_TPB - 4):
+    comptime for power in range(1, KERNEL_LOG_TPB - 4):
         active_threads >>= 1
         if tid < active_threads:
             sums[tid] += sums[tid + active_threads]

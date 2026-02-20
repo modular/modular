@@ -100,8 +100,7 @@ def test_data_layout_asm():
 
 
 def test_cross_compile():
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         # TODO: MOCO-2593, this test deadlocks in mojo build in ASAN
         return
 

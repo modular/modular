@@ -54,8 +54,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
         )
         var result: SIMD[DType.bfloat16, simd_width]
 
-        @parameter
-        if do_bfloat_exp:
+        comptime if do_bfloat_exp:
             result = val ** SIMD[DType.bfloat16, simd_width](exponent)
         else:
             result = val**exponent
@@ -69,8 +68,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
         for i in range(length):
             var expected_value: Float32
 
-            @parameter
-            if do_bfloat_exp:
+            comptime if do_bfloat_exp:
                 expected_value = in_host[i] ** Float32(exponent)
             else:
                 expected_value = in_host[i] ** exponent
