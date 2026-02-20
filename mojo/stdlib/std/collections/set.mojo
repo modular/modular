@@ -418,9 +418,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     fn pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
 
-        As an implementation detail this will remove the first item
-        according to insertion order. This is practically useful
-        for breadth-first search implementations.
+        As an implementation detail this will remove the last item
+        according to insertion order.
 
         Returns:
             The element which was removed from the set.
@@ -428,12 +427,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Raises:
             If the set is empty.
         """
-        if not self:
+        try:
+            return self._data.popitem().key.copy()
+        except:
             raise "Pop on empty set"
-        var iter = self.__iter__()
-        var first = iter.__next__().copy()
-        self.remove(first)
-        return first^
 
     fn union(self, other: Self) -> Self:
         """Set union.

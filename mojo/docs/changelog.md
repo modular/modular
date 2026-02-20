@@ -331,6 +331,9 @@ what we publish.
 
 ### Library changes
 
+- `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
+  Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
+
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
   `issubset()` traversal instead of two full traversals.
 
