@@ -757,7 +757,10 @@ fn _matmul_gpu[
             # Fallback to the naive kernel.
             logger.warning("Vendor BLAS failed")
 
-    comptime if has_amd_rdna_gpu_accelerator() and not a_type.is_float8():
+    comptime if has_amd_rdna_gpu_accelerator() and a_type in (
+        DType.float16,
+        DType.bfloat16,
+    ):
         if m > 1 and n > 1 and k >= 16 and k % 16 == 0:
             logger.info("Executing: RDNA WMMA MATMUL kernel")
             comptime _BLOCK_M = 64

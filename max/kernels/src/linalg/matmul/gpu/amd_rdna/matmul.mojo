@@ -85,7 +85,10 @@ fn gemm_kernel_rdna[
     matmul that iterates over the K dimension with scalar accumulation.
     """
 
-    comptime if _is_amd_rdna2_or_earlier():
+    comptime if _is_amd_rdna2_or_earlier() or a_type not in (
+        DType.float16,
+        DType.bfloat16,
+    ):
         _naive_matmul_kernel[
             c_type,
             a_type,
