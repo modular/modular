@@ -57,6 +57,7 @@ PINS = {
     "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
     "flashinfer-cubin": "flashinfer-cubin@0.6.1",
+    "flask": "flask@3.0.3",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.48.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.40.1",

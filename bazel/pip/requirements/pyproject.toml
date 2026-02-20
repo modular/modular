@@ -24,6 +24,7 @@ dependencies = [
   "exceptiongroup",
   "expandvars",
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
+  "flask",
   "fire ", # For mistral-evals.
   "filelock",
   "gguf",
