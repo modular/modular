@@ -328,6 +328,12 @@ what we publish.
 
 ### Library changes
 
+- Added `Bencher.iter_with_setup` to the benchmark module. It accepts a setup
+  closure that produces fresh state for each iteration and a benchmark closure
+  that consumes it, with only the benchmark timed. This enables accurate
+  benchmarking of destructive operations like `List.pop()` without including
+  setup costs (e.g. allocations) in the measurement.
+
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
   `issubset()` traversal instead of two full traversals.
 
