@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from functools import cached_property
@@ -224,6 +225,16 @@ class MAXModelConfig(MAXModelConfigBase):
         description="Whether to pool embedding outputs.",
     )
 
+    chat_template: Path | None = Field(
+        default=None,
+        description=(
+            "Optional custom chat template to override the one shipped with the "
+            "Hugging Face model config. If a path is provided, the file is read "
+            "during config resolution and the content stored as a string. If "
+            "None, the model's default chat template is used."
+        ),
+    )
+
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
         description="The KVCache config.",
@@ -323,6 +334,82 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
+    def retrieve_chat_template(self) -> str | None:
+        """Returns the chat template string, or None if not set."""
+        # Read the file content
+        if self.chat_template is None:
+            return None
+
+        try:
+            with open(self.chat_template, encoding="utf-8") as f:
+                template_content = f.read()
+
+            # Try to parse as JSON and extract chat_template if present
+            try:
+                template_json = json.loads(template_content)
+                if (
+                    isinstance(template_json, dict)
+                    and "chat_template" in template_json
+                ):
+                    logger.info(
+                        f"Successfully loaded chat_template from JSON in {self.chat_template} "
+                        f"({len(template_json['chat_template'])} characters)"
+                    )
+                    return template_json["chat_template"]
+                else:
+                    # JSON but no chat_template key, use entire content
+                    logger.info(
+                        f"Successfully loaded custom prompt template from {self.chat_template} "
+                        f"({len(template_content)} characters, JSON without chat_template key)"
+                    )
+                    return template_content
+            except json.JSONDecodeError:
+                # Not valid JSON, use entire content as template
+                logger.info(
+                    f"Successfully loaded custom prompt template from {self.chat_template} "
+                    f"({len(template_content)} characters)"
+                )
+                return template_content
+
+        except (OSError, UnicodeDecodeError) as e:
+            raise ValueError(
+                f"Failed to read prompt template file {self.chat_template}: {str(e)}. "
+                f"Please ensure the file is readable and contains valid UTF-8 text."
+            ) from e
+
+    def _resolve_chat_template(self) -> None:
+        """Resolves chat_template if it is a Path by reading the file content.
+
+        Handles the case where chat_template is a Path object,
+        validates that the file exists, reads its content, and stores the content
+        as a string in the chat_template field.
+
+        Raises:
+            FileNotFoundError: If the specified template file does not exist
+            ValueError: If there's an error reading the template file
+        """
+        if self.chat_template is None:
+            return
+
+        # Expand user home directory if present (e.g., ~/templates/custom.jinja)
+        self.chat_template = self.chat_template.expanduser()
+
+        # Convert relative paths to absolute paths
+        if not self.chat_template.is_absolute():
+            self.chat_template = Path.cwd() / self.chat_template
+
+        # Verify the file exists
+        if not self.chat_template.exists():
+            raise ValueError(
+                f"--chat-template path ({self.chat_template}) does not exist."
+            )
+
+        if not self.chat_template.is_file():
+            raise ValueError(
+                f"Prompt template path is not a file: {self.chat_template}. "
+                f"Please provide a path to a valid template file."
+            )
+
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
     # initialized in the default factory.
@@ -338,9 +425,13 @@ class MAXModelConfig(MAXModelConfigBase):
         default factory.
 
         In order:
-        1. Validate that the device_specs provided are available
-        2. Parse the weight path(s) and initialize the _weights_repo_id
+        1. Resolve chat_template if it's a Path
+        2. Validate that the device_specs provided are available
+        3. Parse the weight path(s) and initialize the _weights_repo_id
         """
+        # Resolve chat_template if it's a Path
+        self._resolve_chat_template()
+
         # Validate that --quantization-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
         if (
             self.allow_safetensors_weights_fp32_bf6_bidirectional_cast

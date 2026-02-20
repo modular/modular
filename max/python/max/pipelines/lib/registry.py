@@ -698,7 +698,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -707,7 +707,7 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
             )
 
         return tokenizer
@@ -824,7 +824,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
         else:
@@ -834,7 +834,7 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
         # Cast tokenizer to the proper type for text generation pipeline compatibility
