@@ -859,6 +859,14 @@ struct Dict[
 
         Returns:
             The new dictionary.
+
+        Example:
+
+        ```mojo
+        var keys = ["a", "b", "c"]
+        var dict = Dict.fromkeys(keys, 0)
+        print(dict.__str__())  # => {"a": 0, "b": 0, "c": 0}
+        ```
         """
         var my_dict = Dict[Self.K, Self.V, Self.H]()
         for key in keys:
@@ -1048,7 +1056,7 @@ struct Dict[
         my_dict[2] = 2.2
         dict_as_string = String(my_dict)
         print(dict_as_string)
-        # prints "{1: 1.1, 2: 2.2}"
+        # prints {1: 1.1, 2: 2.2}
         ```
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
@@ -1130,6 +1138,18 @@ struct Dict[
         Returns:
             An optional value containing a copy of the value if it was present,
             otherwise an empty Optional.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.find("a")
+        print(value.__str__())  # => 1
+        var missing_value = my_dict.find("c")
+        print(missing_value.__str__())  # => None
+        ```
         """
 
         try:
@@ -1170,6 +1190,22 @@ struct Dict[
         Returns:
             An optional value containing a copy of the value if it was present,
             otherwise an empty Optional.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.get("a")
+        print(value.__str__())  # => 1
+
+        var missing_value = my_dict.get("c")
+        print(missing_value.__str__())  # => -1
+
+        from testing import assert_true
+        assert_true(my_dict["a"] == my_dict.get("a").or_else(Int.MAX))
+        ```
         """
         return self.find(key)
 
@@ -1182,6 +1218,22 @@ struct Dict[
 
         Returns:
             A copy of the value if it was present, otherwise default.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.get("a", Int.MAX)
+        print(value.__str__())  # => 1
+
+        var missing_value = my_dict.get("c", -1)
+        print(missing_value.__str__())  # => -1
+
+        from testing import assert_true
+        assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
+        ```
         """
         return self.find(key).or_else(default^)
 
@@ -1196,6 +1248,18 @@ struct Dict[
         Returns:
             The value associated with the key, if it was in the dictionary.
             If it wasn't, return the provided default value instead.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.pop("a", 99)
+        print(value.__str__())  # => 1
+        var missing_value = my_dict.pop("c", 99)
+        print(missing_value.__str__())  # => 99
+        ```
         """
         try:
             return self.pop(key)
@@ -1214,6 +1278,18 @@ struct Dict[
 
         Raises:
             `DictKeyError` if the key was not present in the dictionary.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.pop("a", 99)
+        print(value.__str__())  # => 1
+        var missing_value = my_dict.pop("c", 99)
+        print(missing_value.__str__())  # => 99
+        ```
         """
         var hash = hash[HasherType = Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
@@ -1244,6 +1320,19 @@ struct Dict[
             destructively iterate over a dictionary, as often used in set
             algorithms. If the dictionary is empty, calling popitem() raises a
             EmptyDictError.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        print(len(my_dict))  # => 2
+
+        var item = my_dict.popitem()
+        print(item.key, item.value)  # => Either "b", 2 or "a", 1
+        print(len(my_dict))  # => 1
+        ```
         """
 
         var i = len(self._order) - 1
@@ -1263,6 +1352,17 @@ struct Dict[
 
         Returns:
             An iterator of immutable references to the dictionary keys.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        for key in my_dict.keys():
+            print(key) # prints a then b or b then a
+            # All keys will be printed, but order is not guaranteed
+        ```
         """
         return Self.__iter__(self)
 
@@ -1273,6 +1373,17 @@ struct Dict[
 
         Returns:
             An iterator of references to the dictionary values.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        for value in my_dict.values():
+            print(value) # prints 1 then 2 or 2 then 1
+            # All values will be printed, but order is not guaranteed
+        ```
         """
         return _DictValueIter(_DictEntryIter(0, 0, self))
 
@@ -1291,8 +1402,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
 
-        for e in my_dict.items():
-            print(e.key, e.value)
+        for item in my_dict.items():
+            print(item.key, item.value) # prints a 1 then b 2 or b 2 then a 1
+            # All entries will be printed, but order is not guaranteed
         ```
 
         Notes:
@@ -1319,7 +1431,8 @@ struct Dict[
         my_dict["b"] = 2
 
         for entry in my_dict.take_items():
-            print(entry.key, entry.value)
+            print(entry.key, entry.value) # prints a 1 then b 2 or b 2 then a 1
+            # All entries will be printed, but order is not guaranteed
 
         print(len(my_dict))
         # prints 0
@@ -1336,12 +1449,37 @@ struct Dict[
 
         Notes:
             The argument must be positional only.
+
+        Example:
+
+        ```mojo
+        var dict1 = Dict[String, Int]()
+        dict1["a"] = 1
+        dict1["b"] = 2
+        var dict2 = Dict[String, Int]()
+        dict2["b"] = 3
+        dict2["c"] = 4
+        dict1.update(dict2)
+        print(dict1.__str__())  # => {"a": 1, "b": 3, "c": 4}
+        ```
         """
         for entry in other.items():
             self[entry.key.copy()] = entry.value.copy()
 
     fn clear(mut self):
-        """Remove all elements from the dictionary."""
+        """Remove all elements from the dictionary.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        print(len(my_dict))  # => 2
+        my_dict.clear()
+        print(len(my_dict))  # => 0
+        ```
+        """
         # Destroy all occupied entries
         for i in range(self._capacity):
             if _is_occupied(self._ctrl[i]):
@@ -1368,6 +1506,20 @@ struct Dict[
         Returns:
             The value associated with the key, or the default value if it wasn't
             present.
+
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        var value1 = my_dict.setdefault("a", 99)
+        print(value1.__str__())  # => 1
+
+        var value2 = my_dict.setdefault("b", 99)
+        print(value2.__str__())  # => 99
+        print(my_dict.__str__())  # => {"a": 1, "b": 99}
+        ```
         """
         self._maybe_resize()
         var h = hash[HasherType = Self.H](key)
