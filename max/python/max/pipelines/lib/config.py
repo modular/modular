@@ -936,8 +936,17 @@ class PipelineConfig(ConfigFileModel):
 
     def _validate_and_resolve_max_num_steps(self) -> None:
         """Validates and resolves the max_num_steps field (platform-specific)."""
+        if self.draft_model is not None and self.max_num_steps > 1:
+            raise ValueError(
+                f"max_num_steps must be 1 when speculative decoding is enabled, "
+                f"got {self.max_num_steps}."
+            )
         if self.max_num_steps < 0:
             if self.model.default_device_spec == DeviceSpec.cpu():
+                self.max_num_steps = 1
+            elif self.draft_model is not None:
+                # Speculative decoding pipelines manage multi-step KV
+                # allocation internally.
                 self.max_num_steps = 1
             else:
                 self.max_num_steps = 10

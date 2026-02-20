@@ -213,6 +213,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
             use_subgraphs=pipeline_config.model.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,

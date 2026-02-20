@@ -721,8 +721,9 @@ class SpeculativeDecodingPipelineBase(
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 
-            # Construct generation output
-            res[context.request_id] = context.to_generation_output()
+            output = context.to_generation_output()
+            if output.tokens:
+                res[context.request_id] = output
 
         return res
 
