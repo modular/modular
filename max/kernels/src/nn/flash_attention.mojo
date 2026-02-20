@@ -65,8 +65,7 @@ struct _MatmulConfig:
 
     @staticmethod
     fn _get_config() -> _MatmulConfig:
-        @parameter
-        if CompilationTarget.has_neon():
+        comptime if CompilationTarget.has_neon():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
@@ -118,23 +117,18 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 fill=0
             )
 
-            @parameter
-            for m in range(tile_m):
+            comptime for m in range(tile_m):
                 a_tile[m] = ak_ptr.load[width=lane_count](m * a_stride)
 
             ak_ptr += lane_count
 
-            @parameter
-            for k in range(lane_count):
-
-                @parameter
-                for n in range(tile_n):
+            comptime for k in range(lane_count):
+                comptime for n in range(tile_n):
                     var b_data = bk_ptr.load[width = Self.simd_width](
                         n * Self.simd_width
                     )
 
-                    @parameter
-                    for m in range(tile_m):
+                    comptime for m in range(tile_m):
                         c_tile.fma(m, n, a_tile[m][k], b_data)
 
                 bk_ptr += b_stride
@@ -166,21 +160,16 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 fill=0
             )
 
-            @parameter
-            for k in range(unroll_factor):
-
-                @parameter
-                for n in range(tile_n):
+            comptime for k in range(unroll_factor):
+                comptime for n in range(tile_n):
                     b_tile[n] = bk_ptr.load[width = Self.simd_width](
                         n * Self.simd_width
                     )
 
-                @parameter
-                for m in range(tile_m):
+                comptime for m in range(tile_m):
                     var a_data = ak_ptr.load(m * a_stride)
 
-                    @parameter
-                    for n in range(tile_n):
+                    comptime for n in range(tile_n):
                         c_tile.fma(m, n, a_data, b_tile[n])
 
                 ak_ptr += 1
@@ -223,8 +212,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 else:
                     c_tile.init(0.0)
 
-                @parameter
-                if CompilationTarget.has_neon():
+                comptime if CompilationTarget.has_neon():
                     Self._inner_loop_a_lane(
                         K, am_ptr, a_stride, bn_ptr, N, c_tile
                     )
@@ -285,19 +273,16 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         @always_inline
         fn process_tile[tile_n: Int, tile_k: Int](n: Int, k: Int):
-            @parameter
-            if transpose_width == tile_n == tile_k:
+            comptime if transpose_width == tile_n == tile_k:
                 # Use an optimized path to transpose a square tile of the
                 # input tensor.
-                @parameter
-                for i in range(transpose_width):
+                comptime for i in range(transpose_width):
                     var val = input_b_fn[simd_width=transpose_width](n + i, k)
                     transpose_buffer.store(Index(i, 0), val)
 
                 transpose_inplace[4, 4](transpose_buffer)
 
-                @parameter
-                for i in range(transpose_width):
+                comptime for i in range(transpose_width):
                     var val = transpose_buffer.load[width=transpose_width](
                         Index(i, 0)
                     )
@@ -309,12 +294,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 # Note that in the common case, `K` is statically known and is
                 # a multiple of `transpose_width`, so the case to optimize for
                 # `tile_n=1` and `tile_k=transpose_width`.
-                @parameter
-                for nn in range(tile_n):
+                comptime for nn in range(tile_n):
                     var val = input_b_fn[simd_width=tile_k](n + nn, k)
 
-                    @parameter
-                    for kk in range(tile_k):
+                    comptime for kk in range(tile_k):
                         packed_ptr.store(
                             (k + kk) * aligned_n + (n + nn), val[kk]
                         )
@@ -380,8 +363,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 for k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](k)
 
-                    @parameter
-                    for nn in range(tile_n):
+                    comptime for nn in range(tile_n):
                         var b_data = input_b_fn[_simd_width](n + nn, k)
                         accum[nn] = b_data.fma(a_data, accum[nn])
 
@@ -396,8 +378,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                     SIMD[Self.dtype, target_width], tile_n
                 ](fill=0)
 
-                @parameter
-                for nn in range(tile_n):
+                comptime for nn in range(tile_n):
                     accum_reduce[nn] = accum[nn].reduce_add[target_width]()
                 return accum_reduce^
 
@@ -417,8 +398,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             var scalar_accum = do_reduce_accum[1](simd_accum)
             do_reduce(simd_loop_end, K, scalar_accum)
 
-            @parameter
-            for nn in range(tile_n):
+            comptime for nn in range(tile_n):
                 cn_ptr.store(nn, scalar_accum[nn])
 
             cn_ptr += tile_n
@@ -479,9 +459,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         accumulate: Bool = False,
     ) raises:
         if M == 1:
-
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 # Transpose is implemented for the K tensor and accumulation
                 # is used with the V tensor, so simplify the implementation by
                 # falling back to the general path.
@@ -494,14 +472,14 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                     N, K, a_ptr, c_ptr, accumulate=accumulate
                 )
 
-        @parameter
-        if transpose_b:
+        comptime if transpose_b:
             Self._pack_buffer_transposed[input_b_fn, static_k](packed_ptr, N, K)
         else:
             Self._pack_buffer[input_b_fn](packed_ptr, N, K)
 
-        @parameter
-        if use_apple_accelerate_lib[Self.dtype, Self.dtype, Self.dtype]():
+        comptime if use_apple_accelerate_lib[
+            Self.dtype, Self.dtype, Self.dtype
+        ]():
             return _cblas_f32(
                 Int32(M),
                 Int32(N),
@@ -548,8 +526,7 @@ struct _FlashAttentionConfig[
 
         comptime depth_static_dim = Self.output_static_shape[Self.rank - 1]
 
-        @parameter
-        if depth_static_dim != UNKNOWN_VALUE:
+        comptime if depth_static_dim != UNKNOWN_VALUE:
             # Extract the static depth dimension with a guard against zero.
             var depth_dim = max(depth_static_dim, 1)
 
@@ -812,8 +789,7 @@ struct _FlashAttention[
                 fn get_nd_index[
                     is_kv: Bool = False
                 ](x: Int, y: Int) -> IndexList[Self.rank]:
-                    @parameter
-                    if Self.rank == 4:
+                    comptime if Self.rank == 4:
                         return IndexList[Self.rank](
                             batch, x, kv_head if is_kv else head, y
                         )
@@ -826,8 +802,7 @@ struct _FlashAttention[
                 fn get_mask_nd_index(
                     x: Int, y: Int
                 ) -> IndexList[Self.mask_rank]:
-                    @parameter
-                    if Self.mask_rank == 4:
+                    comptime if Self.mask_rank == 4:
                         return IndexList[Self.mask_rank](batch, head, x, y)
                     elif Self.mask_rank == 3:
                         return IndexList[Self.mask_rank](batch, x, y)

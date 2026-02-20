@@ -155,16 +155,12 @@ fn _mask_apply[
     var lane_row = coords[0] * rowwise_stride
     var lane_col = coords[1] * colwise_stride
 
-    @parameter
-    if token_gen:
+    comptime if token_gen:
         if lane_row >= group:
             return
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # Coordinates in mask for current mma tile.
@@ -187,13 +183,12 @@ fn _mask_apply[
             comptime is_causal_mask = _type_is_eq[mask_t, CausalMask]()
 
             if masked:
-
-                @parameter
-                for j in range(0, output_frag_size, 2 if is_causal_mask else 1):
+                comptime for j in range(
+                    0, output_frag_size, 2 if is_causal_mask else 1
+                ):
                     var q_head_idx = attention_config_t.q_head_idx()
 
-                    @parameter
-                    if is_causal_mask:
+                    comptime if is_causal_mask:
                         var x_0 = Int32(
                             score_row_with_start_pos
                             - score_col_with_cache_start_pos
@@ -265,8 +260,7 @@ fn _mask_apply[
                             p_reg_vectorized[mma_id, 0][j],
                         )
 
-            @parameter
-            if mask_t.apply_log2e_after_mask:
+            comptime if mask_t.apply_log2e_after_mask:
                 p_reg_vectorized[mma_id, 0] = (
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
@@ -277,8 +271,7 @@ fn _mask_apply[
                     + kv_tile_num_rows if token_gen else num_keys
                 )
 
-                @parameter
-                for j in range(output_frag_size):
+                comptime for j in range(output_frag_size):
                     comptime fragment_col = fragment_layout(j)
 
                     var bound_x = num_keys if token_gen else seq_len
@@ -486,11 +479,8 @@ struct Attention[
     fn scale_p_reg[stage: Int = 0](self):
         var p_reg_vectorized = self.p_reg_buffer.vectorize[stage]()
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
-
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
+            comptime for n_mma in range(Self.num_n_mmas):
                 comptime mma_id = n_mma * Self.num_m_mmas + m_mma
                 p_reg_vectorized[mma_id, 0] *= self.scale
 
@@ -568,8 +558,7 @@ struct Attention[
         self,
         kv_tile_start_row: UInt32,
     ) -> TileMaskStatus:
-        @parameter
-        if Self.token_gen:
+        comptime if Self.token_gen:
             # Decoding with mask checking: check single token at num_keys-1
             return self.mask.status(
                 Index[dtype = DType.uint32](
@@ -590,8 +579,7 @@ struct Attention[
 
     @always_inline
     fn mask_advance(mut self):
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
     @always_inline
@@ -603,8 +591,7 @@ struct Attention[
         mut self,
         kv_tile_start_row: UInt32,
     ) -> Bool:
-        @parameter
-        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
+        comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -656,8 +643,7 @@ struct Attention[
 
         # self.scale_p_reg[stage]()
 
-        @parameter
-        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
+        comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -738,8 +724,9 @@ struct Attention[
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        @parameter
-        if not is_causal_mask or (not Self.attention_config_t.double_buffer):
+        comptime if not is_causal_mask or (
+            not Self.attention_config_t.double_buffer
+        ):
             # using double buffer as proxy for the experimental kernel,
             # using readfirstlane for the gfx942 kernel leads to incorrect results.
             # This needs more investigation.
@@ -764,8 +751,7 @@ struct Attention[
         self.cache_start_pos = cache_start_pos
         self.kv_start_row = 0
 
-        @parameter
-        if Self.sink:
+        comptime if Self.sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -806,8 +792,7 @@ struct Attention[
             Int(Self.WM), Self.output_depth // Int(Self.num_warps_n)
         ](warp_row, warp_col)
 
-        @parameter
-        if Self.mma_shape[0] == 32:
+        comptime if Self.mma_shape[0] == 32:
             copy_local_to_dram2[
                 dst_thread_layout = Self.warp_layout,
                 thread_scope = ThreadScope.WARP,
@@ -834,8 +819,7 @@ struct Attention[
 
     @always_inline
     fn copy_fragment_to_smem(self):
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             return
 
         self.p_reg_buffer.copy_to_shared()
@@ -851,8 +835,7 @@ struct Attention[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
     ):
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             return
 
         var q_head_idx = self.q_head_idx()

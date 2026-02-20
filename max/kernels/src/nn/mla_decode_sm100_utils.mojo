@@ -188,8 +188,7 @@ fn num_matrix_view_rows_decode[
     # output when split-k is used are (split_k x batch x seq_len x num_heads , depth)
     var num_rows: Int = q.dim[0]()
 
-    @parameter
-    for i in range(1, q.rank - 1):
+    comptime for i in range(1, q.rank - 1):
         num_rows *= q.dim[i]()
     return num_rows
 
@@ -431,16 +430,14 @@ struct OffsetPosition[
         # Decode block_idx.z into split_idx and batch_idx
         # Grid layout: block_z = batch_size * num_partitions
         # block_idx.z = batch_idx * num_partitions + split_idx
-        @parameter
-        if Self.decoding_warp_split_k:
+        comptime if Self.decoding_warp_split_k:
             self.batch_idx = Int(block_idx.z) // num_partitions
             self.split_idx = Int(block_idx.z) % num_partitions
         else:
             self.batch_idx = Int(block_idx.z)
             self.split_idx = 0
 
-        @parameter
-        if Self.ragged:
+        comptime if Self.ragged:
             # treat valid_lengths as input_row_offsets
             # Use batch_idx (not block_idx.z) to index into valid_length
             var start_of_seq = Int(valid_length[self.batch_idx])
@@ -456,8 +453,7 @@ struct OffsetPosition[
             )
 
             # Output row offset: includes split dimension for split-K
-            @parameter
-            if Self.decoding_warp_split_k:
+            comptime if Self.decoding_warp_split_k:
                 # For ragged with split-K, o_accum_split uses PADDED layout:
                 # Shape: (num_partitions, batch_size, max_seq_len, num_heads, depth)
                 # This must match the combine kernel's read pattern which uses
@@ -489,8 +485,7 @@ struct OffsetPosition[
             # Output row offset for split-K:
             # Out shape: (split_k * batch * seq_len * num_heads, depth)
             # Row = split_idx * (batch * seq_len * num_heads) + q_row_offset
-            @parameter
-            if Self.decoding_warp_split_k:
+            comptime if Self.decoding_warp_split_k:
                 var rows_per_split = (
                     batch_size * self.seq_len * Self.config.num_q_heads
                 )
@@ -504,14 +499,12 @@ struct OffsetPosition[
         # Use batch_idx (not block_idx.z) to get the correct cache length
         self.num_keys = k.cache_length(self.batch_idx)
 
-        @parameter
-        if not Self.is_cache_length_accurate:
+        comptime if not Self.is_cache_length_accurate:
             self.num_keys += self.seq_len
 
         # Compute KV range for this split
         # Each split handles a portion of the KV cache: [kv_start_row, kv_start_row + num_keys_this_split)
-        @parameter
-        if Self.decoding_warp_split_k:
+        comptime if Self.decoding_warp_split_k:
             # Split-page-aligned strategy: only last CTA handles ragged remainder.
             # All other CTAs process complete split_page_size-element chunks.
             comptime page_size = Self.config.split_page_size
@@ -877,12 +870,10 @@ struct KVPipelineGeneric[
     @always_inline
     fn init(self):
         # Consumer & Producer mbars: arrived by 1 thread performing TMA/mma
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.mbar[i].init(Int32(Self.num_producer))
 
-        @parameter
-        for i in range(Self.num_stages, Self.num_stages * 2):
+        comptime for i in range(Self.num_stages, Self.num_stages * 2):
             self.mbar[i].init(Int32(Self.num_consumer))
 
     @always_inline
@@ -916,8 +907,7 @@ struct KVPipelineGeneric[
     ](mut self, e: Int32):
         elect_mma_arrive(self.consumer_mbar[qk_stage](), e)
 
-        @parameter
-        if qk_stage == Self.num_qk_stages - 1:
+        comptime if qk_stage == Self.num_qk_stages - 1:
             self.state.step()
 
     @staticmethod
@@ -1197,12 +1187,10 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
     @always_inline
     fn init(self):
         # Consumer & Producer mbars: arrived by num_producer and num_consumer threads
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.mbar[i].init(Int32(Self.num_producer))
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             (self.mbar + Self.num_stages)[i].init(Int32(Self.num_consumer))
 
     @always_inline
@@ -1673,8 +1661,7 @@ fn write_bf16x2_row_to_smem_chunked[
     # Precompute all swizzle offsets before the loop
     var phys_offsets = StaticTuple[Int, total_groups]()
 
-    @parameter
-    for i in range(total_groups):
+    comptime for i in range(total_groups):
         comptime chunk_idx = i // groups_per_chunk
         comptime group_idx = i % groups_per_chunk
         comptime col_offset = chunk_idx * chunk_size + group_idx * 8
@@ -1683,19 +1670,15 @@ fn write_bf16x2_row_to_smem_chunked[
 
     var lmv = local_mem.vectorize[8]()
 
-    @parameter
-    for chunk in range(0, num_chunks):
-
-        @parameter
-        for g in range(0, groups_per_chunk):
+    comptime for chunk in range(0, num_chunks):
+        comptime for g in range(0, groups_per_chunk):
             # Compute the correct index into the vectorized view
             # vec_idx accounts for both chunk offset and position within chunk
             comptime vec_idx = chunk * groups_per_chunk + g
 
             var vec_val = lmv[vec_idx]
 
-            @parameter
-            if scale_needed:
+            comptime if scale_needed:
                 vec_val *= scale
 
             var bf16_vec = vec_val.cast[out_dtype]()
@@ -1967,8 +1950,7 @@ struct MLA_SM100_Decode_Common[
         # cache_len + score_row + 1
         var causal_limit: Int
 
-        @parameter
-        if CausalMask:
+        comptime if CausalMask:
             causal_limit = cache_len + Int(score_row) + 1
         else:
             causal_limit = num_keys
@@ -1982,8 +1964,7 @@ struct MLA_SM100_Decode_Common[
             Self.AccumType
         ]()
 
-        @parameter
-        for i in range(0, half_load):
+        comptime for i in range(0, half_load):
             # rank1-style mask_r2p: turn bit into predicate and use it to select
             var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
             var in_bound: Bool = bit != UInt32(0)
@@ -1994,8 +1975,7 @@ struct MLA_SM100_Decode_Common[
                 Self.AccumType
             ]()
 
-            @parameter
-            if NonCausalMask:
+            comptime if NonCausalMask:
                 var v: SIMD[Self.AccumType, 1] = masked_val
                 var coord = clamped_index_coordinate(
                     prompt_idx,
@@ -2009,8 +1989,7 @@ struct MLA_SM100_Decode_Common[
                 v = mask.mask(coord, v)
                 masked_val = v[0]
 
-            @parameter
-            if Self.use_score_mod:
+            comptime if Self.use_score_mod:
                 var v2: SIMD[Self.AccumType, 1] = masked_val
                 var coord = clamped_index_coordinate(
                     prompt_idx,
@@ -2163,14 +2142,12 @@ struct MLA_SM100_Decode_Common[
             var s_row_val_vectorized = s_row.vectorize[2]()
             comptime vs_count = (half_load + 2 - 1) // 2
 
-            @parameter
-            for _vi in range(vs_count):
+            comptime for _vi in range(vs_count):
                 s_row_val_vectorized[_vi] = (
                     s_row_val_vectorized[_vi] * scale_log2e
                 )
 
-            @parameter
-            if NoMask or CausalMask:
+            comptime if NoMask or CausalMask:
                 current_max = Self.apply_mask[
                     half_load, NonCausalMask=False, CausalMask=CausalMask
                 ](
@@ -2238,8 +2215,7 @@ struct MLA_SM100_Decode_Common[
             var float2_register = s_row.vectorize[2]()
             var float2_current_sum: SIMD[Self.AccumType, 2] = 0.0
 
-            @parameter
-            for i in range(0, half_load // 2):
+            comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
                 float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
                 float2_current_sum += rebind[SIMD[Self.AccumType, 2]](
@@ -2305,8 +2281,7 @@ struct MLA_SM100_Decode_Common[
         # Strides: stride_split = batch_size * seq_len * num_heads
         #          stride_batch = seq_len * num_heads
         #          stride_seq = num_heads
-        @parameter
-        if Self.config.decoding_warp_split_k:
+        comptime if Self.config.decoding_warp_split_k:
             # Only threads with valid heads should write LSE
             # head_idx = block_idx.x * BM + row (where row is 0-63 for each half)
             # Each thread in the warpgroup handles one row (one head)
@@ -2398,16 +2373,14 @@ struct MLA_SM100_Decode_Common[
             Self.config.MMA_PV_N // Self.config.BN
         ) // blocks_per_stage
 
-        @parameter
-        for mma_round in range(num_mma_pv_rounds):
+        comptime for mma_round in range(num_mma_pv_rounds):
             # Wait for Correction to finish corrections for this MMA PV round
             corr_done_bars.mbar_base[mma_round].wait(0)
 
             # Fence to ensure all MMA writes to O TMEM are visible before we read
             tcgen05_fence_after()
 
-            @parameter
-            for slot in range(iters_per_mma_round):
+            comptime for slot in range(iters_per_mma_round):
                 # Global iteration index combining mma_round and slot
                 comptime i = mma_round * iters_per_mma_round + slot
 
@@ -2509,12 +2482,10 @@ struct MLA_SM100_Decode_Common[
                 # the MMA.ws split the output across two warps
                 comptime o_stride = Self.config.MMA_PV_N // 2
 
-                @parameter
-                for slot_idx in range(o_range):
+                comptime for slot_idx in range(o_range):
                     o_cons.wait()
 
-                    @parameter
-                    for i in range(0, num_o_tiles):
+                    comptime for i in range(0, num_o_tiles):
                         # Here we load from o_tmem. it is 32 bit float and we load 64 fp32 element per tile
                         var o_tmem_subtile: UInt32 = (
                             o_tmem
@@ -2539,8 +2510,7 @@ struct MLA_SM100_Decode_Common[
 
                         var float2_register = o_row_subtile.vectorize[2]()
 
-                        @parameter
-                        for j in range(0, Self.config.BN // 2):
+                        comptime for j in range(0, Self.config.BN // 2):
                             var element = rebind[SIMD[Self.AccumType, 2]](
                                 float2_register[j]
                             )
@@ -2624,15 +2594,11 @@ struct MLA_SM100_Decode_Common[
         #   |-------|-------|-------|--------|--------|--------|-------|-------|
         #     w0/1    w0/1     w2/3    w2/3     w0/1     w0/1     w2/3    w2/3
 
-        @parameter
-        for n in range(0, num_mma_pv):
-
-            @parameter
-            for m in range(0, num_out_stages_per_mma):
+        comptime for n in range(0, num_mma_pv):
+            comptime for m in range(0, num_out_stages_per_mma):
                 out_cons.wait()
 
-                @parameter
-                for k in range(0, blocks_per_stage):
+                comptime for k in range(0, blocks_per_stage):
                     var stage_ptr = out_cons.stage_base_ptr(k)
                     var col: UInt = UInt(
                         n * Self.config.MMA_PV_N

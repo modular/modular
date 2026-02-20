@@ -166,8 +166,7 @@ fn welford_warp_reduce[
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         var mean = warp.shuffle_down(res_mean, UInt32(1 << mask))
         var m2 = warp.shuffle_down(res_m2, UInt32(1 << mask))
         var count = warp.shuffle_down(res_count, UInt32(1 << mask))
@@ -319,8 +318,7 @@ fn layer_norm_gpu_warp_tiling[
             ]()
 
             # every thread computes its own simd width of mean and variance
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 welford_update(
                     vec_data[Int(i)], thread_mean, thread_m2, thread_count
                 )
@@ -396,8 +394,7 @@ fn layer_norm_gpu_block[
                     Int(row), Int(offset)
                 ).cast[accum_type]()
 
-                @parameter
-                for i in range(simd_width):
+                comptime for i in range(simd_width):
                     welford_update(
                         vec_data[Int(i)], thread_mean, thread_m2, thread_count
                     )
@@ -443,8 +440,7 @@ fn layer_norm_gpu_block[
 fn layer_norm_reshape[
     rank: Int, //, output_rank: Int
 ](shape: IndexList[rank, ...],) -> IndexList[output_rank]:
-    @parameter
-    if rank == output_rank:
+    comptime if rank == output_rank:
         return rebind[IndexList[output_rank]](shape)
 
     var last_dim = shape[rank - 1]
@@ -578,8 +574,7 @@ fn layer_norm_gpu[
 fn _sum_to_mean[
     dtype: DType, //
 ](sum_val: Scalar[dtype], n: Int) -> Scalar[dtype]:
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return sum_val // Scalar[dtype](n)
     return sum_val / Scalar[dtype](n)
 
@@ -698,8 +693,7 @@ fn layer_norm_cpu[
 
     var prod_all_but_last_dim = 1
 
-    @parameter
-    for i in range(rank - 1):
+    comptime for i in range(rank - 1):
         prod_all_but_last_dim *= shape[i]
 
     var num_workers = min(parallelism_level(), prod_all_but_last_dim)
@@ -784,9 +778,7 @@ fn layer_norm[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=Int(ctx.get_device_context().id()),
     ):
-
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             layer_norm_cpu[input_0_fn, input_1_fn, output_0_fn](
                 shape.canonicalize(),
                 beta,
@@ -862,8 +854,7 @@ fn _rms_norm_warp_tiling_subkernel[
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
 
-    @parameter
-    if rows_per_warp == 2:
+    comptime if rows_per_warp == 2:
         # Each half warp handles reduction for one row.
         row_m2 = warp.lane_group_sum_and_broadcast[num_lanes = WARP_SIZE // 2](
             thread_m2
@@ -880,8 +871,7 @@ fn _rms_norm_warp_tiling_subkernel[
             Coord(Idx(idx))
         )
 
-        @parameter
-        if multiply_before_cast:
+        comptime if multiply_before_cast:
             var gamma_accum = gamma_val.cast[accum_type]() + weight_offset
             norm_val = (vec_data * norm_factor * gamma_accum).cast[dtype]()
         else:
@@ -1465,8 +1455,7 @@ fn _rms_norm_impl[
         # Nothing to do.
         return
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         rms_norm_cpu[
             input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
         ](shape, gamma, epsilon, weight_offset)
@@ -2031,8 +2020,7 @@ fn _rms_norm_fused_residual_add_impl[
         # Nothing to do.
         return
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         rms_norm_fused_residual_add_gpu[
             input_0_fn,
             input_1_fn,
@@ -2481,8 +2469,7 @@ fn _rms_norm_fused_fp8_gpu_launch[
         address_space = scale_output.address_space,
     ](scale_output.data, RuntimeLayout[layout_1d].row_major(Index(rows)))
 
-    @parameter
-    if use_warp_tiling:
+    comptime if use_warp_tiling:
         comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
             mut = gamma.mut,
             origin = gamma.origin,
@@ -2738,8 +2725,7 @@ fn group_norm_gpu_warp_tiling[
         if idx + simd_width <= group_size:
             vec_data = input_fn[simd_width](Int(row), idx).cast[accum_type]()
 
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 welford_update(
                     vec_data[i], thread_mean, thread_m2, thread_count
                 )
@@ -2818,8 +2804,7 @@ fn group_norm_gpu_block[
                     accum_type
                 ]()
 
-                @parameter
-                for i in range(simd_width):
+                comptime for i in range(simd_width):
                     welford_update(
                         vec_data[Int(i)], thread_mean, thread_m2, thread_count
                     )
@@ -2918,8 +2903,7 @@ fn group_norm_gpu[
 
         var indices = IndexList[rank]()  # placeholder to satisfy compiler
 
-        @parameter
-        if rank == 4:
+        comptime if rank == 4:
             var inner_volume = shape[2] * shape[3]
             c += col // inner_volume
             var hw = col % inner_volume

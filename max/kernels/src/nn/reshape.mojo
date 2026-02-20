@@ -43,8 +43,7 @@ fn reshape[
     var stride: Int = 1
 
     # Create contiguous strides.
-    @parameter
-    for i in reversed(range(output_rank)):
+    comptime for i in reversed(range(output_rank)):
         # Start from the back so we can accumulate the strides.
         stride_tuple[i] = stride
         stride *= new_shape[i]

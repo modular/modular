@@ -148,8 +148,7 @@ fn _topp_minp_sampling[
 
     var shape = IndexList[input_logits.rank]()
 
-    @parameter
-    for i in range(input_logits.rank):
+    comptime for i in range(input_logits.rank):
         shape[i] = input_logits.layout.shape[i]().value()
 
     softmax[simd_width=1, input_fn=apply_temperature](
@@ -161,8 +160,7 @@ fn _topp_minp_sampling[
     sort_buf_descending(sorted_probs, sorted_ids, vocab_size)
 
     # Copy sorted probs back to input_logits if testing
-    @parameter
-    if _test_sort:
+    comptime if _test_sort:
         for i in range(batch_size * vocab_size):
             input_logits.ptr[i] = sorted_probs.ptr[i]
 
@@ -170,8 +168,7 @@ fn _topp_minp_sampling[
     for batch in range(batch_size):
         var p_threshold = p_thresholds[batch]
 
-        @parameter
-        if is_top_p:
+        comptime if is_top_p:
             # Sample using top-p (nucleus) sampling
             var r = p_threshold * random_float64().cast[dtype]()
             for i in range(vocab_size):

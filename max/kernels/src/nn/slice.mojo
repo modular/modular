@@ -127,8 +127,7 @@ fn slice_as_view[
     # offset of the data.
     var new_data = tensor.ptr
 
-    @parameter
-    for i in range(tensor.rank):
+    comptime for i in range(tensor.rank):
         var start = Int(starts[i])
         var stop = Int(ends[i])
         var step = Int(steps[i])
@@ -369,8 +368,7 @@ fn sliced_add[
 
         c.store[width](coords, out_val)
 
-    @parameter
-    if target == "gpu":
+    comptime if target == "gpu":
         debug_assert(ctx is not None, "DeviceContext required for GPU target")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()

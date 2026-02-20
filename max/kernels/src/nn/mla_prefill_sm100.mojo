@@ -61,8 +61,7 @@ fn mla_sm100_prefill[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    if KRopeType.dtype == DType.bfloat16:
+    comptime if KRopeType.dtype == DType.bfloat16:
         mla_sm100_prefill_bf16[
             config=config,
             group = Int(group),

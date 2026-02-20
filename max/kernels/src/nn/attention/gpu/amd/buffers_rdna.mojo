@@ -296,11 +296,8 @@ struct KBufferRDNA[
         # So: a_frag[v] = K[key=lane, depth=v].
         var lane = Int(lane_id() % UInt(16))
 
-        @parameter
-        for m in range(Self.num_mmas):
-
-            @parameter
-            for k in range(RDNA_AB_FRAG_SIZE):
+        comptime for m in range(Self.num_mmas):
+            comptime for k in range(RDNA_AB_FRAG_SIZE):
                 self.mma_tile[m, k] = warp_tile[
                     m * Self.MMA_N + lane, k_mma * Self.MMA_K + k
                 ]
@@ -493,11 +490,8 @@ struct VBufferRDNA[
 
         var tile_valid_rows = min(Self.BK, self.remaining_rows)
 
-        @parameter
-        for depth_idx in range(Self.depth // Self.depth_tile_size):
-
-            @parameter
-            for i in range(Self.loads_per_thread_per_depth_tile):
+        comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
+            comptime for i in range(Self.loads_per_thread_per_depth_tile):
                 var dst_idx = (
                     i + depth_idx * Self.loads_per_thread_per_depth_tile
                 )
@@ -512,13 +506,10 @@ struct VBufferRDNA[
                         width = Self.load_width
                     ]()
 
-                    @parameter
-                    for j in range(Self.load_width):
+                    comptime for j in range(Self.load_width):
                         load_tile[dst_idx, j] = data[j]
                 else:
-
-                    @parameter
-                    for j in range(Self.load_width):
+                    comptime for j in range(Self.load_width):
                         load_tile[dst_idx, j] = 0
 
         self.remaining_rows -= Self.BK
@@ -560,8 +551,7 @@ struct VBufferRDNA[
         var smem_chunk = smem_col_abs // Self.simd_width
         var smem_col = smem_col_abs % Self.simd_width
 
-        @parameter
-        for depth_idx in range(Self.depth // Self.depth_tile_size):
+        comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
             var smem_tile = smem_iter_tensor.tile[
                 Self.pad[Self.depth](),
                 Self.simd_width,
@@ -572,14 +562,12 @@ struct VBufferRDNA[
                 depth_idx, 0
             )
 
-            @parameter
-            for i in range(Self.loads_per_thread_per_depth_tile):
+            comptime for i in range(Self.loads_per_thread_per_depth_tile):
                 var smem_row_base = (
                     thread_col * depth_per_thread + i * Self.load_width
                 )
 
-                @parameter
-                for j in range(Self.load_width):
+                comptime for j in range(Self.load_width):
                     var smem_row = smem_row_base + j
                     var val = load_tile[
                         i + depth_idx * Self.loads_per_thread_per_depth_tile, j
@@ -608,8 +596,7 @@ struct VBufferRDNA[
         var warp_n_idx = Int(get_warp_id()) % Self.num_warps_n
         var depth_offset = warp_n_idx * Self.warp_depth_tiles * Self.MMA_M
 
-        @parameter
-        for depth_idx in range(Self.warp_depth_tiles):
+        comptime for depth_idx in range(Self.warp_depth_tiles):
             var smem_block0 = smem_iter_tensor.tile[
                 Self.pad[Self.depth](), Self.simd_width
             ](0, k_mma * 2)
@@ -630,12 +617,10 @@ struct VBufferRDNA[
                 dtile_idx * Self.pad[Self.depth_tile_size]() + pos_in_dtile
             )
 
-            @parameter
-            for j in range(RDNA_AB_FRAG_SIZE):
+            comptime for j in range(RDNA_AB_FRAG_SIZE):
                 # Element j selects key position (column of hardware A)
                 # Keys 0..simd_width-1 are in block0, simd_width..15 in block1
-                @parameter
-                if j < Self.simd_width:
+                comptime if j < Self.simd_width:
                     self.mma_tile[depth_idx, j] = smem_block0[depth_row, j]
                 else:
                     self.mma_tile[depth_idx, j] = smem_block1[
@@ -713,16 +698,13 @@ struct QRegisterBufferRDNA[
             min(Int32(Self.WM), Int32(tensor.dim[0]()) - Int32(warp_base_row))
         )
 
-        @parameter
-        for tile_idx in range(Self.num_tiles):
+        comptime for tile_idx in range(Self.num_tiles):
             var depth_offset = tile_idx * Self.BK
 
-            @parameter
-            for k_mma in range(Self.num_k_tiles):
+            comptime for k_mma in range(Self.num_k_tiles):
                 var k_offset = depth_offset + k_mma * Self.MMA_K
 
-                @parameter
-                for m_mma in range(Self.num_mmas):
+                comptime for m_mma in range(Self.num_mmas):
                     var row = row_in_first_mma + m_mma * 16
                     var row_offset = row * tensor.stride[0]()
 
@@ -743,16 +725,13 @@ struct QRegisterBufferRDNA[
                             width = Self.simd_width
                         ]()
 
-                        @parameter
-                        for j in range(Self.simd_width):
+                        comptime for j in range(Self.simd_width):
                             self.reg_tile[frag_idx, j] = data0[j]
                             self.reg_tile[
                                 frag_idx, Self.simd_width + j
                             ] = data1[j]
                     else:
-
-                        @parameter
-                        for j in range(Self.simd_width):
+                        comptime for j in range(Self.simd_width):
                             self.reg_tile[frag_idx, j] = 0
                             self.reg_tile[frag_idx, Self.simd_width + j] = 0
 
@@ -816,15 +795,11 @@ struct OutputRegisterBufferRDNA[
     fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
         """Apply softmax denominator normalization to output accumulator."""
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
             var rowsum_inv = recip(rowsum[m_mma, 0])
 
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
-
-                @parameter
-                for i in range(Self.output_frag_size):
+            comptime for n_mma in range(Self.num_n_mmas):
+                comptime for i in range(Self.output_frag_size):
                     self.reg_tile[n_mma * Self.num_m_mmas + m_mma, i] *= rebind[
                         Self.RegisterTileType.element_type
                     ](rowsum_inv)
@@ -917,12 +892,10 @@ struct PRegisterBufferRDNA[
 
         var lane = Int(lane_id() % UInt(16))
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
             var seq = warp_base_seq + m_mma * Self.mma_shape[0] + lane
 
-            @parameter
-            for k in range(Self.mma_shape[2]):
+            comptime for k in range(Self.mma_shape[2]):
                 var key = k_key_base + k
                 var smem_offset = key * Self.BM + seq
                 mma_reg_tile[m_mma, k] = self.shared_memory_ptr[smem_offset]
@@ -982,11 +955,8 @@ struct PRegisterBufferRDNA[
 
         var reg_ptr = self.reg_tile.ptr
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
-
-            @parameter
-            for n_mma_local in range(num_n_mmas_per_bk):
+        comptime for m_mma in range(Self.num_m_mmas):
+            comptime for n_mma_local in range(num_n_mmas_per_bk):
                 comptime n_mma = chunk_n_start + n_mma_local
 
                 var mma_seq_base = warp_base_seq + m_mma * Self.mma_shape[0]
@@ -997,8 +967,7 @@ struct PRegisterBufferRDNA[
 
                 var global_seq = mma_seq_base + lane_seq_offset
 
-                @parameter
-                for elem in range(reg_per_thread):
+                comptime for elem in range(reg_per_thread):
                     # RDNA WMMA C/D mapping: lane l, elem v → D[row=v*2+l//16, col=l%16]
                     # P^T[key, seq]: key = elem*2 + lane_key_group (interleaved)
                     var key_in_mma = elem * 2 + lane_key_group

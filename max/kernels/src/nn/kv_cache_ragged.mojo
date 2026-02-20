@@ -503,12 +503,10 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     var v_cache: OptionalReg[type_of(k_cache)] = None
     comptime kv_params = collection_t.kv_params
 
-    @parameter
-    if not kv_params.is_mla:
+    comptime if not kv_params.is_mla:
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl[
@@ -577,8 +575,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_bias[
@@ -667,12 +664,10 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     var v_cache: OptionalReg[type_of(k_cache)] = None
     comptime kv_params = collection_t.kv_params
 
-    @parameter
-    if not kv_params.is_mla:
+    comptime if not kv_params.is_mla:
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
@@ -752,12 +747,10 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale_float4[
     var v_cache: OptionalReg[type_of(k_cache)] = None
     comptime kv_params = collection_t.kv_params
 
-    @parameter
-    if not kv_params.is_mla:
+    comptime if not kv_params.is_mla:
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
@@ -861,8 +854,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         var cache: cache_t
         var output_val = val
 
-        @parameter
-        if kv_params.is_mla:
+        comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
             hd_idx = UInt(idx[1]) - UInt(q_dim)
@@ -889,8 +881,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    @parameter
-    if group_size:
+    comptime if group_size:
         comptime assert (
             not has_zp.value()
         ), "Zero point is not supported for quantization."
@@ -1023,8 +1014,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    @parameter
-    if group_size:
+    comptime if group_size:
         comptime assert (
             not has_zp.value()
         ), "Zero point is not supported for quantization."
@@ -1146,8 +1136,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         var output_val: SIMD[dtype, width]
 
-        @parameter
-        if use_per_tensor:
+        comptime if use_per_tensor:
             var scale_a = input_scale[0, 0][0].cast[dtype]()
             var scale_b = weight_scale[0, 0][0].cast[dtype]()
             output_val = val * (scale_a * scale_b)
@@ -1189,8 +1178,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         var hd_idx: UInt
         var cache: cache_t
 
-        @parameter
-        if kv_params.is_mla:
+        comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
             hd_idx = UInt(idx[1]) - UInt(q_dim)
@@ -1221,8 +1209,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
 
-    @parameter
-    if use_block_wise:
+    comptime if use_block_wise:
         comptime assert is_gpu[
             target
         ](), "Blockwise scaled fp8 matmul only works on GPU."
@@ -1336,8 +1323,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         var hd_idx: UInt
         var cache: cache_t
 
-        @parameter
-        if kv_params.is_mla:
+        comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
             hd_idx = UInt(idx[1]) - UInt(q_dim)
@@ -1408,8 +1394,7 @@ fn _matmul_common[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
@@ -1435,8 +1420,7 @@ fn _matmul_common[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](c_nd, hidden_state, weight, context)
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         c_nd.ptr.free()
 
 
@@ -1681,8 +1665,7 @@ fn _matmul_kv_cache_ragged[
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _matmul_kv_cache_ragged_impl[target=target](
@@ -1906,8 +1889,7 @@ fn _matmul_k_cache_ragged[
     layer_idx_cast = Int(layer_idx)
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _matmul_k_cache_ragged_impl[target=target](
@@ -2530,8 +2512,7 @@ fn _qmatmul_gguf_quantized_common[
         mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
     ],
 ) raises:
-    @parameter
-    if quantization_encoding == "q4_0":
+    comptime if quantization_encoding == "q4_0":
         matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
             hidden_state,
             weight,
@@ -2642,9 +2623,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=Int(context.get_device_context().id()),
     ):
-
-        @parameter
-        if has_position_ids:
+        comptime if has_position_ids:
             fused_qk_rope_ragged[
                 kv_collection.CacheType,
                 interleaved=interleaved,
@@ -2794,8 +2773,7 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
                     input_row_offsets,
@@ -3403,8 +3381,7 @@ fn _cross_attention_dispatch[
     fn _dispatch_flash_attention[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q,
                 q_input_row_offsets,
@@ -3626,8 +3603,7 @@ fn generic_kv_cache_radd_dispatch[
             a_val + old_val,
         )
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         if ctx is None:
             raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
@@ -3689,8 +3665,7 @@ fn kv_cache_store_ragged[
             loaded_val,
         )
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         if context is None:
             raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
@@ -3755,8 +3730,7 @@ fn kv_cache_store_padded[
             loaded_val,
         )
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         if context is None:
             raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
@@ -3876,8 +3850,7 @@ fn kv_cache_2m_iadd_dispatch[
             a_val + old_val,
         )
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         if ctx is None:
             raise Error("ctx is None")
         with Trace[TraceLevel.OP, target=target](

@@ -63,8 +63,7 @@ fn _argsort_cpu[
 
     @parameter
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
-        @parameter
-        if ascending:
+        comptime if ascending:
             return input[a] < input[b]
         else:
             return input[a] > input[b]
@@ -90,8 +89,7 @@ fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
         MAX_FINITE for ascending sort, MIN_FINITE for descending sort.
     """
 
-    @parameter
-    if ascending:
+    comptime if ascending:
         return Scalar[dtype].MAX_FINITE
     else:
         return Scalar[dtype].MIN_FINITE
@@ -159,8 +157,7 @@ fn _argsort_gpu_impl[
         if partner > i and partner < UInt(n):
             var cmp_val: Bool
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 cmp_val = input[i] > input[partner]
             else:
                 cmp_val = input[i] < input[partner]
@@ -361,8 +358,7 @@ fn argsort[
     ):
         _validate_argsort(input, output)
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return _argsort_cpu[ascending=ascending](output, input)
         else:
             return _argsort_gpu[ascending=ascending](output, input, ctx)

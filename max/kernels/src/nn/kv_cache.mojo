@@ -254,8 +254,7 @@ fn _fused_qkv_matmul_kv_cache[
     """
     var cuda_ctx: Optional[DeviceContext] = None
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_impl[target=target](
@@ -419,8 +418,7 @@ fn _matmul_common[
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
     var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
 
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
@@ -439,8 +437,7 @@ fn _matmul_common[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](c_nd, hidden_state_2d, weight, context)
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         c_nd.ptr.free()
 
 
@@ -826,8 +823,7 @@ fn _flash_attention_dispatch[
     fn _dispatch_flash_attention[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q, k, v, mask, scale, output, sink_weights
             )
@@ -891,8 +887,7 @@ fn _flash_attention_dispatch_materialized_mask[
         @always_inline
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
                     k,
@@ -1003,8 +998,7 @@ def rms_norm_kv_cache_ragged_paged[
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
 
-    @parameter
-    if per_head_norm:
+    comptime if per_head_norm:
         shape[1] = Int(kv_params.num_heads)
         shape[2] = rms_norm_cols
     else:
@@ -1036,8 +1030,7 @@ def rms_norm_kv_cache_ragged_paged[
         var head_idx: Int
         var head_dim_idx: Int
 
-        @parameter
-        if per_head_norm:
+        comptime if per_head_norm:
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
@@ -1071,8 +1064,7 @@ def rms_norm_kv_cache_ragged_paged[
         var head_idx: Int
         var head_dim_idx: Int
 
-        @parameter
-        if per_head_norm:
+        comptime if per_head_norm:
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:

@@ -36,8 +36,7 @@ fn get_sliding_window_out_dim[
 
     """
 
-    @parameter
-    if ceil_mode:
+    comptime if ceil_mode:
         return 1 + ceildiv(in_dim + pad - (1 + dilation * (ft_dim - 1)), stride)
     else:
         return 1 + (in_dim + pad - (1 + dilation * (ft_dim - 1))) // stride

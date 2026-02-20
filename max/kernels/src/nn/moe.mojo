@@ -331,8 +331,7 @@ fn _count_expert_tokens[
         # Use warp-level voting to efficiently count matching tokens
         # All threads in the warp vote, and we count how many threads
         # before us also voted true to determine our write offset
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             var expert_id = g_vector[i]
             var state = expert_id == Scalar[input_type](bg_params.expert)
 
@@ -440,8 +439,7 @@ fn _copy_tokens_smem_to_gmem[
                 Coord(Idx(0), Idx(smem_idx))
             )
 
-            @parameter
-            for i in range(width):
+            comptime for i in range(width):
                 token_expert_order[
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 ] = source_vector[i]
@@ -505,8 +503,7 @@ fn _copy_tokens_to_gmem[
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             var expert_id = g_vector[i]
             var state = expert_id == Scalar[input_type](bg_params.expert)
 
@@ -827,12 +824,10 @@ fn _warp_bitonic_sort[
     # Use modulo so merge direction is consistent across all lane groups
     var i = UInt32(lane_id() % UInt(num_lanes))
 
-    @parameter
-    for stage_i in range(1, log2_floor(num_lanes) + 1):
+    comptime for stage_i in range(1, log2_floor(num_lanes) + 1):
         var stage = 1 << stage_i
 
-        @parameter
-        for step_i in reversed(range(stage_i)):
+        comptime for step_i in reversed(range(stage_i)):
             var step = 1 << step_i
             val = bitonic_sort_step(val, UInt32(step), UInt32(stage), i)
 
@@ -931,8 +926,7 @@ fn group_limited_router_kernel[
     with PDL():
         var thread_expert_score: Scalar[scores_type]
 
-        @parameter
-        if scores_input_fn:
+        comptime if scores_input_fn:
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
@@ -974,8 +968,7 @@ fn group_limited_router_kernel[
         barrier()
         var selected_group_smem_offset: Int32 = -1
 
-        @parameter
-        for i in range(topk_group):
+        comptime for i in range(topk_group):
             if selected_group[i] == Int32(thread_group_id):
                 selected_group_smem_offset = Int32(i * n_experts_per_tok)
 
@@ -1016,8 +1009,7 @@ fn group_limited_router_kernel[
                 num_lanes=n_experts_per_tok
             ](original_weight)
 
-            @parameter
-            if norm_weights:
+            comptime if norm_weights:
                 original_weight /= weights_sum
 
             original_weight *= Scalar[scores_type](routed_scaling_factor)

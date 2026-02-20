@@ -96,8 +96,7 @@ fn _get_fft_plan[
         # We found the plan in the cache, so just return it
         return cufftHandle(Int(lookup))
 
-    @parameter
-    if not create_if_not_found:
+    comptime if not create_if_not_found:
         # a valid cufft handle is always non-zero
         return cufftHandle(0)
 

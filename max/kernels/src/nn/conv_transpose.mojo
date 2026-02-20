@@ -277,8 +277,7 @@ fn conv_transpose_shape[
         )
 
     # Compute the spatial dims
-    @parameter
-    for i in range(input.rank - 2):
+    comptime for i in range(input.rank - 2):
         var input_spatial_dim = Int(input.dim(i + 1))
         var kernel_spatial_dim = Int(kernel.dim(i))
         var stride = Int(strides[i])
@@ -479,8 +478,7 @@ struct ConvTransposedPacked[
             micro_kernel_width,
         )
 
-        @parameter
-        if Self.conv_attr.num_groups != UNKNOWN_VALUE:
+        comptime if Self.conv_attr.num_groups != UNKNOWN_VALUE:
             comptime assert (
                 Self.conv_attr.num_groups == 1
             ), "Don't support grouped transposed conv for now."
@@ -730,8 +728,7 @@ struct ConvTransposedPacked[
         ) // self.conv_shape.stride[self.input.rank - 3] + 1
         # print("pad effect", left_pad_impact_end, right_pad_impact_start)
 
-        @parameter
-        if Self.InputLayoutType.rank == 4:
+        comptime if Self.InputLayoutType.rank == 4:
             self.input_space_loop_2d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -953,14 +950,12 @@ struct ConvTransposedPacked[
             self.output.ptr + n * num_rows * self.conv_shape.f + f_offset
         )
 
-        @parameter
-        if Self.elementwise_epilogue:
+        comptime if Self.elementwise_epilogue:
             comptime epilogue = Self.elementwise_epilogue.value()
 
             var output_ptr = output_base
 
-            @parameter
-            if Self.InputLayoutType.rank == 4:  # 2D ConvTransposed.
+            comptime if Self.InputLayoutType.rank == 4:  # 2D ConvTransposed.
                 for ho in range(self.conv_shape.ho()):
                     for wo in range(self.conv_shape.wo()):
                         epilogue(
@@ -1046,8 +1041,7 @@ fn update_w_tile_2d[
                 filter + r * filter_stride_by_r + s * filter_stride_by_s
             )
 
-            @parameter
-            if effected_by_padding:
+            comptime if effected_by_padding:
                 comptime assert (
                     micro_kernel_height == 1
                 ), "The tile must only have 1 point when effected bypadding."
@@ -1144,8 +1138,7 @@ fn update_w_tile_3d[
                     + s * filter_stride_by_s
                 )
 
-                @parameter
-                if effected_by_padding:
+                comptime if effected_by_padding:
                     comptime assert micro_kernel_height == 1
                     var wo_nbr = howo[2] + s * conv_shape.dilation[2]
                     if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
@@ -1265,8 +1258,7 @@ fn pack_filter_shape(
     # Input channel
     packed_shape[filter.rank - 1] = Int(filter.dim[filter.rank - 1]())
 
-    @parameter
-    for i in range(filter.rank - 2):
+    comptime for i in range(filter.rank - 2):
         packed_shape[i + 1] = Int(filter.dim[i]())
 
     return packed_shape
@@ -1287,8 +1279,7 @@ fn pack_filter(
     # Product of filter window dims.
     var window_dims_prod = 1
 
-    @parameter
-    for i in range(filter.rank - 2):
+    comptime for i in range(filter.rank - 2):
         window_dims_prod *= Int(filter.dim[i]())
 
     var C = Int(filter.dim[filter.rank - 1]())
@@ -1431,8 +1422,7 @@ fn conv_transposed_cpu[
         var packed_filter_shape: IndexList[packed_filter_rank]
 
         # If filter is not packed, we have to pack it before the kernel.
-        @parameter
-        if not filter_packed:
+        comptime if not filter_packed:
             # Only support single group.
             packed_filter_shape = rebind[IndexList[packed_filter_rank]](
                 pack_filter_shape(filter, 1)
@@ -1443,8 +1433,7 @@ fn conv_transposed_cpu[
         else:
             packed_filter_shape = IndexList[packed_filter_rank]()
 
-            @parameter
-            for i in range(packed_filter_rank):
+            comptime for i in range(packed_filter_rank):
                 packed_filter_shape[i] = filter.layout.shape[i]().value()
 
         var packed_filter = TileTensor(
@@ -1452,8 +1441,7 @@ fn conv_transposed_cpu[
             row_major(Coord(packed_filter_shape)),
         )
 
-        @parameter
-        if not filter_packed:
+        comptime if not filter_packed:
             pack_filter(filter, packed_filter, 1)
 
         comptime conv_attr = ConvInfoStatic[input.rank - 2]()
@@ -1505,8 +1493,7 @@ fn conv_transposed_cpu[
             ) if lambdas_have_fusion else None,
         ].run(output, input, packed_filter, conv_shape)
 
-        @parameter
-        if not filter_packed:
+        comptime if not filter_packed:
             packed_filter_ptr.free()
 
 
@@ -1536,8 +1523,7 @@ fn conv_transposed_gpu[
     padding: IndexList[input.rank - 2],
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    if elementwise_epilogue:
+    comptime if elementwise_epilogue:
         comptime epilogue = elementwise_epilogue.value()
 
         var output_tmp_data = ctx.enqueue_create_buffer[output_type](

@@ -94,8 +94,7 @@ struct SeqInfo(TrivialRegisterPassable):
     ) -> SeqInfo:
         var batch_idx: UInt32 = work.prompt_idx
 
-        @parameter
-        if not ValidLengthType.is_null:
+        comptime if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
             ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
                 valid_length.value()
@@ -190,8 +189,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         """Map the thread block's index to coordinates of work tile."""
 
-        @parameter
-        if schedule == MHASchedule.PROMPT_ROTATE:
+        comptime if schedule == MHASchedule.PROMPT_ROTATE:
             return self._index_to_coords_prompt_rotate[num_heads](idx)
 
         return self._index_to_coords_default[num_heads](idx)
@@ -681,16 +679,13 @@ struct QueuedTileScheduler[
         Note that if `MHASchedulerSynchronization` is `NONE`, then we assume it is only called by `thread_idx.x==0`.
         """
 
-        @parameter
-        if producer:
+        comptime if producer:
             if thread_idx.x == 0:
                 var idx: UInt32
                 while True:
                     idx = Atomic.fetch_add(self.gidx_ptr, 1)
                     if not state.is_valid(idx):
-
-                        @parameter
-                        if sync == MHASchedulerSynchronization.NONE:
+                        comptime if sync == MHASchedulerSynchronization.NONE:
                             state.idx = idx
                             state.sidx_ptr.store(offset=pipeline_idx, val=idx)
                             return None
@@ -701,12 +696,9 @@ struct QueuedTileScheduler[
                         Self.tile_shape, Self.num_heads, Self.schedule
                     ](idx)
 
-                    @parameter
-                    if not Self.decoding:
+                    comptime if not Self.decoding:
                         if seq_info.is_valid():
-
-                            @parameter
-                            if sync == MHASchedulerSynchronization.NONE:
+                            comptime if sync == MHASchedulerSynchronization.NONE:
                                 state.idx = idx
                                 state.sidx_ptr.store(
                                     offset=pipeline_idx, val=idx
@@ -719,12 +711,10 @@ struct QueuedTileScheduler[
                 state.sidx_ptr.store(offset=pipeline_idx, val=idx)
 
             # producer needs to sync before loading
-            @parameter
-            if sync == MHASchedulerSynchronization.PRODUCER:
+            comptime if sync == MHASchedulerSynchronization.PRODUCER:
                 named_barrier[128,](id=1)
 
-        @parameter
-        if sync == MHASchedulerSynchronization.ALL:
+        comptime if sync == MHASchedulerSynchronization.ALL:
             barrier()
 
         # when !ALL, consumers rely on `async_copy_arrive`

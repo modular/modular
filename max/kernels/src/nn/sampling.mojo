@@ -156,8 +156,7 @@ fn update_frequency_data_kernel[
 
         var val = SIMD[DType.int32, simd_width](0)
 
-        @parameter
-        for i in range(simd_width):
+        comptime for i in range(simd_width):
             if tok_idx + i < tok_end:
                 val[i] = compressed_frequency_data[tok_idx + i, 0]
             else:
@@ -220,8 +219,7 @@ fn update_frequency_data[
     comptime assert compressed_frequency_data.element_size == 1
     comptime assert new_tokens.element_size == 1
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         comptime block_size = 128
 
         dev_ctx = ctx.get_device_context()

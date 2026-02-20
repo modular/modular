@@ -293,8 +293,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # launch_dependent_grids() to fulfill the PDL contract with the
         # combine kernel.  Skipping launch_dependent_grids() causes the
         # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
-        @parameter
-        if Self.config.decoding_warp_split_k:
+        comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
                 Self.Common_MLA_Op.pdl_early_exit(
                     offset_position.split_idx,
@@ -313,14 +312,11 @@ struct MLA_SM100_Decode_KV_FP8[
         # may have fewer tokens. CTAs with block_idx.y >= seq_len must still
         # fulfill the PDL contract (write -inf LSE, zero o_accum_split, and
         # call launch_dependent_grids) or the combine kernel will hang.
-        @parameter
-        if Self.ragged:
+        comptime if Self.ragged:
             # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
             # But this batch might have fewer tokens than q_max_seq_len
             if Int(block_idx.y) >= offset_position.seq_len:
-
-                @parameter
-                if Self.config.decoding_warp_split_k:
+                comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,
                         offset_position.batch_idx,
@@ -560,8 +556,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
         # PDL: Signal that this CTA is done so dependent grids (combine kernel) can start.
         # This must be called by all threads in the CTA after all work is complete.
-        @parameter
-        if Self.config.decoding_warp_split_k:
+        comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
 
         if warp_idx == 9:
@@ -768,8 +763,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 dtype = DType.uint32, address_space = AddressSpace.LOCAL
             ](row_major[4, NumBlocks]())
 
-            @parameter
-            for b in range(NumBlocks):
+            comptime for b in range(NumBlocks):
                 var src_block_u8 = src_u8 + b * BlockElems
 
                 var q0 = ld_shared_v4_u32(src_block_u8, phys_fp8_0)
@@ -803,8 +797,7 @@ struct MLA_SM100_Decode_KV_FP8[
             named_barrier[Int32(WARPGROUP_SIZE)](3)
 
             # Second: Store all BF16 data from registers
-            @parameter
-            for b in range(NumBlocks):
+            comptime for b in range(NumBlocks):
                 var dst_block = dst + b * BlockElems
 
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype = Self.q_type](
@@ -1027,8 +1020,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
             # PV does not have the k-rope so we don't need to do the last block
             # that block is used for P
-            @parameter
-            for block in range(0, Self.NumVOBlocks, block_step):
+            comptime for block in range(0, Self.NumVOBlocks, block_step):
                 o_prod.acquire()
                 Self.UMMAPVSS.mma[stage_idx=0](
                     a=p_descriptor
