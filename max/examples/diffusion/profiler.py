@@ -149,6 +149,12 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
         self._wrap_if_exists(
             target,
+            "execute",
+            "E2E execute",
+            self._pipeline_module_label,
+        )
+        self._wrap_if_exists(
+            target,
             "_prepare_prompt_embeddings",
             "prompt/prepare_embeddings",
             self._pipeline_module_label,
