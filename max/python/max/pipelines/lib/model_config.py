@@ -219,6 +219,11 @@ class MAXModelConfig(MAXModelConfigBase):
         description="Whether the model should be built with echo capabilities.",
     )
 
+    pool_embeddings: bool = Field(
+        default=True,
+        description="Whether to pool embedding outputs.",
+    )
+
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
         description="The KVCache config.",

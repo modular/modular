@@ -177,6 +177,11 @@ class PipelineConfig(ConfigFileModel):
         default=True, description="Whether to pool embedding outputs."
     )
 
+    enable_echo: bool = Field(
+        default=False,
+        description="Whether the model should be built with echo capabilities.",
+    )
+
     chat_template: Path | None = Field(
         default=None,
         description=(
