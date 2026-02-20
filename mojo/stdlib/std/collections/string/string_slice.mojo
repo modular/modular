@@ -1784,12 +1784,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
         """
-        if end == -1:
-            return self.find(prefix, start) == start
-        # FIXME: use normalize_index
-        return StringSlice[Self.origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
-        ).startswith(prefix)
+        var n = len(self)
+        var s = start if start >= 0 else max(0, start + n)
+        var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
+        if s > e or len(prefix) > e - s:
+            return False
+        return (
+            memcmp(self.unsafe_ptr() + s, prefix.unsafe_ptr(), len(prefix))
+            == 0
+        )
 
     fn endswith(
         self, suffix: StringSlice, start: Int = 0, end: Int = -1
@@ -1808,14 +1811,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
         """
-        if len(suffix) > len(self):
+        var n = len(self)
+        var s = start if start >= 0 else max(0, start + n)
+        var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
+        if s > e or len(suffix) > e - s:
             return False
-        if end == -1:
-            return self.rfind(suffix, start) + len(suffix) == len(self)
-        # FIXME: use normalize_index
-        return StringSlice[Self.origin](
-            ptr=self.unsafe_ptr() + start, length=end - start
-        ).endswith(suffix)
+        return (
+            memcmp(
+                self.unsafe_ptr() + e - len(suffix),
+                suffix.unsafe_ptr(),
+                len(suffix),
+            )
+            == 0
+        )
 
     fn removeprefix(self, prefix: StringSlice, /) -> Self:
         """Returns a new string with the prefix removed if it was present.
