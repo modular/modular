@@ -778,9 +778,7 @@ class PipelineRegistry:
 
             pipeline_factory = cast(
                 Callable[[], PipelineTypes],
-                functools.partial(  # type: ignore
-                    pipeline_class, **pixel_factory_kwargs
-                ),
+                functools.partial(pipeline_class, **pixel_factory_kwargs),
             )
 
             # Cast tokenizer for return (pixel generation tokenizer doesn't have eos)
@@ -871,9 +869,7 @@ class PipelineRegistry:
 
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
-            functools.partial(  # type: ignore
-                pipeline_class, **factory_kwargs
-            ),
+            functools.partial(pipeline_class, **factory_kwargs),
         )
 
         if tokenizer.eos is None:
