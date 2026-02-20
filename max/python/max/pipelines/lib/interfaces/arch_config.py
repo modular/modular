@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
@@ -69,6 +69,20 @@ class ArchConfigWithKVCache(ArchConfig, Protocol):
 
     def get_kv_params(self) -> KVCacheParamInterface:
         """KV cache parameters to use when running the model."""
+
+
+@runtime_checkable
+class ArchConfigWithSSMCache(ArchConfig, Protocol):
+    """Config for a model architecture that uses an SSM state cache.
+
+    The return type of ``get_ssm_cache_params`` is
+    ``SSMStateCacheParams`` (from ``max.pipelines.architectures.mamba``),
+    typed as ``Any`` here to avoid a circular package dependency.
+    """
+
+    def get_ssm_cache_params(self) -> Any:
+        """SSM cache parameters to use when running the model."""
+        ...
 
 
 def _all_available_devices() -> list[DeviceRef]:

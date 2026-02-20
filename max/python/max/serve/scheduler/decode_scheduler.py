@@ -424,8 +424,9 @@ def load_decode_scheduler(
 
     if len(pipeline.kv_managers) != 1:
         raise ValueError(
-            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
-            f"{len(pipeline.kv_managers)}"
+            "Expected exactly one KV cache manager in pipeline for DecodeScheduler, found: "
+            f"{len(pipeline.kv_managers)}. "
+            "SSM-based models (e.g. Mamba) should use PipelineRole.PrefillAndDecode."
         )
 
     return DecodeScheduler(

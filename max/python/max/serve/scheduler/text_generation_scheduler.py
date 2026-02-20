@@ -58,7 +58,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager | None,
         support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -230,7 +230,8 @@ def load_text_generation_scheduler(
         # For spec decoding, there may be multiple KVCaches. The scheduler
         # arbitrarily uses either the draft or target one. The other kvcache is
         # hidden from scheduler currently and managed by pipelines.
-        kv_cache=pipeline.kv_managers[0],
+        # For non-KV-cache models (e.g. Mamba SSM), kv_managers is empty.
+        kv_cache=pipeline.kv_managers[0] if pipeline.kv_managers else None,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

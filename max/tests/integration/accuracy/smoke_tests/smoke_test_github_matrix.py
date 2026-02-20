@@ -83,6 +83,7 @@ MODELS: dict[str, set[str]] = {
     "redhatai/gemma-3-27b-it-fp8-dynamic": XL,
     "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
+    "state-spaces/mamba-130m-hf": MULTI | {"sglang"},
     "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
 }
 

@@ -245,7 +245,10 @@ class TextGenerationPipeline(
         self,
     ) -> list[Any]:
         """Return the list of KV cache managers backing this pipeline."""
-        return [self._pipeline_model.kv_manager]
+        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
+        if kv_manager is None:
+            return []
+        return [kv_manager]
 
     def update_for_structured_output(
         self,
@@ -378,10 +381,18 @@ class TextGenerationPipeline(
         if bitmask is not None:
             num_steps = 1
 
-        # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            replica_batches, num_steps
-        )
+        # Retrieve the KV Cache Inputs (if model uses KV cache).
+        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
+        if kv_manager is not None:
+            kv_cache_inputs_seq: KVCacheInputsSequence | None = (
+                KVCacheInputsSequence(
+                    kv_cache_inputs=kv_manager.get_runtime_inputs(
+                        replica_batches, num_steps
+                    )
+                )
+            )
+        else:
+            kv_cache_inputs_seq = None
 
         # Log batch details
         if self.batch_info_output_fname is not None:
@@ -390,9 +401,7 @@ class TextGenerationPipeline(
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=replica_batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
+                kv_cache_inputs=kv_cache_inputs_seq,
             ),
             num_steps,
             bitmask,
@@ -579,20 +588,24 @@ class TextGenerationPipeline(
             if i == num_steps - 1:
                 break
 
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._pipeline_model.kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
-                    curr_step_inputs,
+            kv_manager = getattr(self._pipeline_model, "kv_manager", None)
+            if kv_manager is not None:
+                assert isinstance(
+                    curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
+                ), (
+                    "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
                 )
-            )
+                assert isinstance(
+                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
+                ), (
+                    "increment_cache_lengths instantiates and passes this as a list"
+                )
+                curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
+                    kv_manager.increment_cache_lengths(
+                        curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
+                        curr_step_inputs,
+                    )
+                )
             with Tracer(f"prepare_next_token_inputs_{i}"):
                 curr_step_inputs = (
                     self._pipeline_model.prepare_next_token_inputs(
@@ -635,7 +648,9 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(inputs.batches)
+        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
+        if kv_manager is not None:
+            kv_manager.step(inputs.batches)
 
         return res
 
