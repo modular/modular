@@ -202,6 +202,18 @@ fn mla_combine_kernel[
     var warp_idx = Int(warp_id())
     var lane_idx = Int(lane_id())
 
+    # In ragged mode, each batch can have a different number of Q tokens.
+    # The grid launches with seq_len = q_max_seq_len, so CTAs with
+    # seq_idx >= this batch's actual seq_len must exit early to avoid
+    # writing garbage to output locations belonging to other batches.
+    @parameter
+    if ragged:
+        var batch_seq_len = Int(
+            params.input_row_offsets_ptr[batch_idx + 1]
+        ) - Int(params.input_row_offsets_ptr[batch_idx])
+        if seq_idx >= batch_seq_len:
+            return
+
     var sub_warp_idx = warp_idx % warps_per_head
     var head_idx = head_block_idx * heads_per_block + warp_idx // warps_per_head
 
