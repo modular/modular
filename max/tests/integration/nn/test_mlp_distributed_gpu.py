@@ -33,7 +33,6 @@ def test_mlp_gpu(use_subgraphs: bool) -> None:
 
 
 @pytest.mark.parametrize("n_gpus", [2, 4])
-@pytest.mark.skip(reason="(MODELS-712) Skipping to re-enable multi-gpu tests")
 def test_mlp_distributed(n_gpus: int) -> None:
     compare_mlp_outputs(
         1024,
