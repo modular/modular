@@ -392,7 +392,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        if self.pipeline_config.enable_echo:
+        if self.pipeline_config.model.enable_echo:
             raise ValueError(
                 "Mistral model does not currently implement enable echo."
             )

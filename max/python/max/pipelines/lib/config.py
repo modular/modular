@@ -171,11 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    enable_echo: bool = Field(
-        default=False,
-        description="Whether the model should be built with echo capabilities.",
-    )
-
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )
@@ -547,7 +542,7 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            if self.enable_echo or self.draft_model:
+            if self.model.enable_echo or self.draft_model:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -1038,7 +1033,7 @@ class PipelineConfig(ConfigFileModel):
                         f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
                     )
 
-        if self.enable_echo:
+        if self.model.enable_echo:
             raise ValueError(
                 "enable_echo not currently supported with speculative decoding enabled"
             )

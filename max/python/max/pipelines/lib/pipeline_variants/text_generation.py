@@ -194,7 +194,7 @@ class TextGenerationPipeline(
             weights=load_weights(weight_paths),
             adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=ReturnLogits.ALL
-            if self._pipeline_config.enable_echo
+            if self._pipeline_config.model.enable_echo
             else ReturnLogits.LAST_TOKEN,
         )
 

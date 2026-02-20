@@ -143,12 +143,12 @@ class FakeModelConfig(ConfigFileModel):
     device_specs: list[DeviceSpec]
     kv_cache: Any
     quantization_encoding: SupportedEncoding = "float32"
+    enable_echo: bool = False
 
 
 class FakePipelineConfig(ConfigFileModel):
     model: FakeModelConfig
     sampling: FakeSamplingConfig
-    enable_echo: bool = False
     execute_empty_batches: bool = False
     enable_overlap_scheduler: bool = False
 

@@ -296,7 +296,7 @@ class TestPipelineConfigUtilityMethods:
     def test_create_and_set_config_sampling_with_echo_enabled(self) -> None:
         """Test sampling config creation with echo enabled sets variable logits."""
         config = PipelineConfig(
-            model=MAXModelConfig(model_path="test/model"), enable_echo=True
+            model=MAXModelConfig(model_path="test/model", enable_echo=True)
         )
 
         matched_kwargs = {"enable_min_tokens": True}

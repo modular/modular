@@ -214,6 +214,11 @@ class MAXModelConfig(MAXModelConfigBase):
         ),
     )
 
+    enable_echo: bool = Field(
+        default=False,
+        description="Whether the model should be built with echo capabilities.",
+    )
+
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
         description="The KVCache config.",
