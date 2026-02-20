@@ -45,7 +45,7 @@ fn takeIt[T: fn() unified -> String](state: T):
 
 
 def main():
-    var byCopy: String = String(bytes=argv()[1].as_bytes())
+    var byCopy: String = String(unsafe_from_utf8=argv()[1].as_bytes())
 
     fn mutateCopy() unified {var byCopy} -> String:
         byCopy += ".v2"
@@ -56,7 +56,7 @@ def main():
     # CHECK: AA
     print(byCopy)
 
-    var byMutRef: String = String(bytes=argv()[2].as_bytes())
+    var byMutRef: String = String(unsafe_from_utf8=argv()[2].as_bytes())
 
     fn mutateRef() unified {mut byMutRef} -> String:
         byMutRef += ".v2"
@@ -67,7 +67,7 @@ def main():
     # CHECK: BB.v2
     print(byMutRef)
 
-    var byRef: String = String(bytes=argv()[3].as_bytes())
+    var byRef: String = String(unsafe_from_utf8=argv()[3].as_bytes())
 
     fn immRef() unified {read byRef} -> String:
         return byRef
