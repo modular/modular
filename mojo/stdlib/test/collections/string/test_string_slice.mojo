@@ -939,17 +939,29 @@ def test_ascii_rjust() raises:
     assert_equal(StringSlice("hello").ascii_rjust(8), "   hello")
     assert_equal(StringSlice("hello").ascii_rjust(8, "*"), "***hello")
 
+    # Edge cases: empty string, exact width.
+    assert_equal(StringSlice("").ascii_rjust(3), "   ")
+    assert_equal(StringSlice("abc").ascii_rjust(3), "abc")
+
 
 def test_ascii_ljust() raises:
     assert_equal(StringSlice("hello").ascii_ljust(4), "hello")
     assert_equal(StringSlice("hello").ascii_ljust(8), "hello   ")
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
+    # Edge cases: empty string, exact width.
+    assert_equal(StringSlice("").ascii_ljust(3), "   ")
+    assert_equal(StringSlice("abc").ascii_ljust(3), "abc")
+
 
 def test_ascii_center() raises:
     assert_equal(StringSlice("hello").ascii_center(4), "hello")
     assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
     assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
+
+    # Edge cases: empty string, exact width.
+    assert_equal(StringSlice("").ascii_center(3), "   ")
+    assert_equal(StringSlice("abc").ascii_center(3), "abc")
 
 
 def test_count() raises:
