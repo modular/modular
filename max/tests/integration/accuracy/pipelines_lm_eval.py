@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -53,10 +54,16 @@ class PipelineSitter:
     """Owns the pipelines process and manages its startup/shutdown."""
 
     _args: Sequence[str]
+    _extra_env: Mapping[str, str]
     _proc: subprocess.Popen | None
 
-    def __init__(self, args: Sequence[str]) -> None:
+    def __init__(
+        self,
+        args: Sequence[str],
+        extra_env: Mapping[str, str] = {},
+    ) -> None:
         self._args = args
+        self._extra_env = extra_env
         self._proc = None
 
     def __enter__(self) -> PipelineSitter:
@@ -74,8 +81,11 @@ class PipelineSitter:
             return
         logger.info(
             f"Starting pipelines process with provided args: {self._args}"
+            f", extra env: {list(self._extra_env)}"
         )
-        self._proc = subprocess.Popen(self._args)
+        self._proc = subprocess.Popen(
+            self._args, env={**os.environ, **self._extra_env}
+        )
         logger.info("Pipelines process started")
 
     def stop(self) -> None:
@@ -104,6 +114,12 @@ class PipelineSitter:
         else:
             logger.info("Pipelines process terminated")
         self._proc = None
+
+    def is_alive(self) -> bool:
+        """Return True if the managed process is still running."""
+        if self._proc is None:
+            return False
+        return self._proc.poll() is None
 
     def wait_for_alive(self, probe_port: int, *, timeout: float | None) -> None:
         assert self._proc is not None
@@ -151,6 +167,76 @@ class PipelineSitter:
         raise Exception("Pipelines server did not come up within timeout")
 
 
+def _kill_evaluator(proc: subprocess.Popen[bytes]) -> None:
+    """Terminate an evaluator subprocess, escalating to SIGKILL if needed."""
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        logger.warning("Evaluator did not terminate, sending SIGKILL")
+        proc.kill()
+        proc.wait(timeout=5)
+
+
+def run_evaluator_with_crash_detection(
+    evaluator_cmd: list[str],
+    sitter: PipelineSitter,
+    *,
+    poll_interval: float = 10,
+    health_probe_url: str | None = None,
+    health_probe_timeout: float = 10.0,
+    health_probe_max_consecutive_failures: int = 3,
+) -> int:
+    """Run an evaluator subprocess, aborting if the server crashes or hangs.
+
+    Returns the evaluator's exit code, or 1 if the server died/hung.
+    """
+    consecutive_health_failures = 0
+    evaluator_proc = subprocess.Popen(evaluator_cmd)
+    try:
+        while True:
+            evaluator_rc = evaluator_proc.poll()
+            if evaluator_rc is not None:
+                logger.info(f"Evaluator exited with status code {evaluator_rc}")
+                return evaluator_rc
+
+            if not sitter.is_alive():
+                logger.error(
+                    "Pipelines server died while evaluator was still"
+                    " running; terminating evaluator"
+                )
+                return 1
+
+            # Active health probe: detect server hangs even when the
+            # process is still alive (e.g. model worker OOM).
+            if health_probe_url is not None:
+                try:
+                    resp = requests.get(
+                        health_probe_url, timeout=health_probe_timeout
+                    )
+                    resp.raise_for_status()
+                    consecutive_health_failures = 0
+                except Exception:
+                    consecutive_health_failures += 1
+                    logger.warning(
+                        f"Health probe failed ({consecutive_health_failures}/{health_probe_max_consecutive_failures}): {health_probe_url}"
+                    )
+                    if (
+                        consecutive_health_failures
+                        >= health_probe_max_consecutive_failures
+                    ):
+                        logger.error(
+                            f"Health probe failed {consecutive_health_failures} consecutive times;"
+                            " server appears hung, terminating evaluator"
+                        )
+                        return 1
+
+            time.sleep(poll_interval)
+    finally:
+        if evaluator_proc.poll() is None:
+            _kill_evaluator(evaluator_proc)
+
+
 @click.command()
 @click.option(
     "--override-pipelines",
@@ -193,6 +279,16 @@ class PipelineSitter:
     ),
 )
 @click.option("--longbench-v2-arg", "longbench_v2_args", multiple=True)
+@click.option(
+    "--pipelines-health-timeout",
+    type=int,
+    default=120,
+    help=(
+        "Heartbeat timeout in seconds for detecting model-worker hangs. "
+        "Also enables active health probing during evaluation. "
+        "Set to 0 to disable."
+    ),
+)
 def main(
     override_pipelines: Path | None,
     skip_pipelines: bool,
@@ -206,6 +302,7 @@ def main(
     mistral_evals_args: Sequence[str],
     override_longbench_v2: Path | None,
     longbench_v2_args: Sequence[str],
+    pipelines_health_timeout: int,
 ) -> None:
     """Start pipelines server, run an evaluator, and then shut down server."""
     logging.basicConfig(
@@ -346,8 +443,20 @@ def main(
             )
         else:
             # Manage pipelines server lifecycle
+            pipelines_env: dict[str, str] = {}
+            if pipelines_health_timeout > 0:
+                pipelines_env = {
+                    "MAX_SERVE_USE_HEARTBEAT": "true",
+                    "MAX_SERVE_MW_HEALTH_FAIL": str(pipelines_health_timeout),
+                }
+                logger.info(
+                    f"Heartbeat enabled with {pipelines_health_timeout}s timeout"
+                )
             pipeline_sitter = stack.enter_context(
-                PipelineSitter(pipelines_program + list(pipelines_args))
+                PipelineSitter(
+                    pipelines_program + list(pipelines_args),
+                    extra_env=pipelines_env,
+                )
             )
             if pipelines_probe_port is not None:
                 pipeline_sitter.wait_for_alive(
@@ -356,16 +465,29 @@ def main(
                 )
 
         logger.info(
-            "Running evaluator %r with provided args: %r",
-            evaluator_program,
-            evaluator_args,
+            f"Running evaluator {evaluator_program!r} with provided args: {evaluator_args!r}"
         )
-        evaluator_proc = subprocess.run(evaluator_program + evaluator_args)
-        logger.info(
-            "Evaluator exited with status code %s",
-            evaluator_proc.returncode,
+
+        if skip_pipelines:
+            # No local server to monitor — blocking run is fine.
+            evaluator_proc = subprocess.run(evaluator_program + evaluator_args)
+            logger.info(
+                f"Evaluator exited with status code {evaluator_proc.returncode}"
+            )
+            sys.exit(evaluator_proc.returncode)
+
+        # Monitor both the evaluator and the pipelines server so we can
+        # exit early if the server crashes instead of blocking forever.
+        health_probe_url: str | None = None
+        if pipelines_probe_port is not None and pipelines_health_timeout > 0:
+            health_probe_url = f"http://127.0.0.1:{pipelines_probe_port}/health"
+        sys.exit(
+            run_evaluator_with_crash_detection(
+                evaluator_program + evaluator_args,
+                pipeline_sitter,
+                health_probe_url=health_probe_url,
+            )
         )
-        sys.exit(evaluator_proc.returncode)
 
 
 if __name__ == "__main__":

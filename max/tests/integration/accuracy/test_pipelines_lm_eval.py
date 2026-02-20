@@ -14,6 +14,8 @@
 
 import json
 import logging
+import signal
+import sys
 from pathlib import Path
 
 import hf_repo_lock
@@ -82,3 +84,71 @@ def test_pipelines_lm_eval_smollm(tmp_path: Path) -> None:
     results_file = next(results_dir.glob("results_*"))
     results = json.loads(results_file.read_text().strip())
     assert results["results"]["smol_task"]["results_match,none"] == 0.75
+
+
+def test_pipeline_sitter_is_alive() -> None:
+    """Test that is_alive() correctly detects process death."""
+    sitter = pipelines_lm_eval.PipelineSitter(
+        [sys.executable, "-c", "import time; time.sleep(3600)"]
+    )
+    with sitter:
+        assert sitter.is_alive()
+        assert sitter._proc is not None
+        # Kill the managed process
+        sitter._proc.send_signal(signal.SIGKILL)
+        sitter._proc.wait()
+        assert not sitter.is_alive()
+
+
+def test_server_crash_terminates_evaluator() -> None:
+    """Test that a server crash during evaluation causes early exit."""
+    sitter = pipelines_lm_eval.PipelineSitter(
+        [sys.executable, "-c", "import time; time.sleep(3600)"]
+    )
+    with sitter:
+        assert sitter._proc is not None
+        # Kill the server to simulate a crash
+        sitter._proc.send_signal(signal.SIGKILL)
+        sitter._proc.wait()
+
+        rc = pipelines_lm_eval.run_evaluator_with_crash_detection(
+            [sys.executable, "-c", "import time; time.sleep(3600)"],
+            sitter,
+            poll_interval=0.1,
+        )
+        assert rc == 1
+
+
+def test_health_probe_detects_hung_server() -> None:
+    """Test that health probe failures trigger early exit."""
+    # Start a process that stays alive but doesn't listen on any port.
+    sitter = pipelines_lm_eval.PipelineSitter(
+        [sys.executable, "-c", "import time; time.sleep(3600)"]
+    )
+    with sitter:
+        rc = pipelines_lm_eval.run_evaluator_with_crash_detection(
+            [sys.executable, "-c", "import time; time.sleep(3600)"],
+            sitter,
+            poll_interval=0.1,
+            # Point at an unused port so every probe fails.
+            health_probe_url="http://127.0.0.1:19876/health",
+            health_probe_timeout=1.0,
+            health_probe_max_consecutive_failures=3,
+        )
+        assert rc == 1
+
+
+def test_pipeline_sitter_passes_env() -> None:
+    """Test that PipelineSitter forwards env vars to the subprocess."""
+    sitter = pipelines_lm_eval.PipelineSitter(
+        [
+            sys.executable,
+            "-c",
+            "import os, sys; sys.exit(0 if os.environ.get('TEST_HEALTH_VAR') == 'hello' else 1)",
+        ],
+        extra_env={"TEST_HEALTH_VAR": "hello"},
+    )
+    with sitter:
+        assert sitter._proc is not None
+        rc = sitter._proc.wait()
+        assert rc == 0
