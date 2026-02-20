@@ -150,8 +150,7 @@ struct _Group(Copyable, Movable):
         if is_compile_time():
             var result = UInt16(0)
 
-            @parameter
-            for i in range(_GROUP_WIDTH):
+            comptime for i in range(_GROUP_WIDTH):
                 if self.ctrl[i] >= _CTRL_DELETED:
                     result |= UInt16(1) << UInt16(i)
             return result
@@ -175,8 +174,7 @@ struct _Group(Copyable, Movable):
         """
         var result = UInt16(0)
 
-        @parameter
-        for i in range(_GROUP_WIDTH):
+        comptime for i in range(_GROUP_WIDTH):
             if ctrl[i] == target:
                 result |= UInt16(1) << UInt16(i)
         return result
@@ -296,8 +294,7 @@ struct _DictEntryIter[
         while 0 <= self.index < len(self.src[]._order):
             var idx = self.index
 
-            @parameter
-            if Self.forward:
+            comptime if Self.forward:
                 self.index += 1
             else:
                 self.index -= 1
@@ -1399,8 +1396,7 @@ struct Dict[
     fn _insert[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]):
-        @parameter
-        if not safe_context:
+        comptime if not safe_context:
             self._maybe_resize()
         var found, slot_idx = self._find_slot(entry.hash, entry.key)
 

@@ -70,8 +70,7 @@ struct _ListIter[
     fn __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
             self.index += 1
@@ -86,8 +85,7 @@ struct _ListIter[
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index

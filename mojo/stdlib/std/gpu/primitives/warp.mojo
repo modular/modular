@@ -80,8 +80,7 @@ fn _shuffle[
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
@@ -101,9 +100,7 @@ fn _shuffle[
         var result = shuffle1.interleave(shuffle2)
         return bitcast[dtype, simd_width](result)
     elif dtype.is_half_float():
-
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             # splat and recurse to meet 32 bitwidth requirements
             var splatted_val = SIMD[dtype, 2](val._refine[new_size=1]())
             return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
@@ -132,8 +129,7 @@ fn _shuffle[
 fn _shuffle_amd_helper[
     dtype: DType, simd_width: Int
 ](dst_lane: UInt32, val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    @parameter
-    if size_of[SIMD[dtype, simd_width]]() == 4:
+    comptime if size_of[SIMD[dtype, simd_width]]() == 4:
         # Handle int32, float32, float16x2, etc.
         var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
             dst_lane * 4, bitcast[DType.int32, 1](val)
@@ -142,8 +138,7 @@ fn _shuffle_amd_helper[
     else:
         comptime assert simd_width == 1, "Unsupported simd width"
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
                 dtype
             ]()
@@ -186,8 +181,7 @@ fn _shuffle_apple_helper[
 
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
-    @parameter
-    if dtype in (DType.int64, DType.uint64):
+    comptime if dtype in (DType.int64, DType.uint64):
         var bits = bitcast[DType.uint32, simd_width * 2](val)
         var half1, half2 = bits.deinterleave()
 
@@ -209,9 +203,7 @@ fn _shuffle_apple_helper[
     elif (
         dtype == DType.bfloat16
     ):  # bfloat16 is declared in MSL but actually causes a backend error.
-
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             var pair = SIMD[dtype, 2](val._refine[new_size=1]())
             var pair_i32 = bitcast[DType.int32, 1](pair)
             var y_i32 = _shuffle_apple_helper[op, DType.int32, 1](
@@ -328,8 +320,7 @@ fn shuffle_idx[
         ```
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle[
             "idx",
             WIDTH_MASK = Int32(_WIDTH_MASK),
@@ -428,8 +419,7 @@ fn shuffle_up[
         threads not in the mask.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](
             mask, val, offset
         )
@@ -528,8 +518,7 @@ fn shuffle_down[
         or where the corresponding mask bit is not set.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle["down", WIDTH_MASK = Int32(_WIDTH_MASK)](
             mask, val, offset
         )
@@ -631,8 +620,7 @@ fn shuffle_xor[
         ```
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle["bfly", WIDTH_MASK = Int32(_WIDTH_MASK)](
             mask, val, offset
         )
@@ -707,8 +695,7 @@ fn lane_group_reduce[
 
     comptime limit = log2_floor(num_lanes)
 
-    @parameter
-    for i in reversed(range(limit)):
+    comptime for i in reversed(range(limit)):
         comptime offset = 1 << i
         res = func(res, shuffle(res, UInt32(offset * stride)))
 
@@ -837,16 +824,14 @@ fn lane_group_sum_and_broadcast[
     fn _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
-    @parameter
-    if (
+    comptime if (
         num_lanes == WARP_SIZE // stride
         and stride in (16, 32)
         and _cdna_4_or_newer()
     ):
         var out = _reduce_add(val, permlane_shuffle[32](val))
 
-        @parameter
-        if stride == 16:
+        comptime if stride == 16:
             out = _reduce_add(out, permlane_shuffle[16](out))
 
         return out
@@ -924,15 +909,13 @@ fn prefix_sum[
 
     var lane = lane_id()
 
-    @parameter
-    for i in range(log2_floor(WARP_SIZE)):
+    comptime for i in range(log2_floor(WARP_SIZE)):
         comptime offset = 1 << i
         var n = shuffle_up(res, UInt32(offset))
         if lane >= UInt(offset):
             res += n
 
-    @parameter
-    if exclusive:
+    comptime if exclusive:
         res = shuffle_up(res, 1)
         if lane == 0:
             res = 0
@@ -989,8 +972,7 @@ fn lane_group_max[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
-    if (
+    comptime if (
         _has_redux_f32_support[val_type, simd_width]()
         and num_lanes == WARP_SIZE
     ):
@@ -1033,8 +1015,7 @@ fn lane_group_max_and_broadcast[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
-    if (
+    comptime if (
         _has_redux_f32_support[val_type, simd_width]()
         and num_lanes == WARP_SIZE
     ):
@@ -1044,16 +1025,14 @@ fn lane_group_max_and_broadcast[
     fn _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
-    @parameter
-    if (
+    comptime if (
         num_lanes == WARP_SIZE // stride
         and stride in (16, 32)
         and _cdna_4_or_newer()
     ):
         var out = _reduce_max(val, permlane_shuffle[32](val))
 
-        @parameter
-        if stride == 16:
+        comptime if stride == 16:
             out = _reduce_max(out, permlane_shuffle[16](out))
 
         return out
@@ -1113,8 +1092,7 @@ fn lane_group_min[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
-    if (
+    comptime if (
         _has_redux_f32_support[val_type, simd_width]()
         and num_lanes == WARP_SIZE
     ):
@@ -1256,8 +1234,7 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         A mask containing the vote of all threads in the warp.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime assert ret_type == DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():

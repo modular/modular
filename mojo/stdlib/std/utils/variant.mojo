@@ -177,8 +177,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         self = Self(unsafe_uninitialized=())
         self._get_discr() = copy._get_discr()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Copyable),
@@ -201,8 +200,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._get_discr() = take._get_discr()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Movable),
@@ -220,8 +218,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     fn __del__(deinit self):
         """Destroy the variant."""
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -267,14 +264,12 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     fn _write_value_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
         constrained_conforms_to_writable[*Self.Ts, Parent=Self]()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 ref value = trait_downcast[Writable](self.unsafe_get[T]())
 
-                @parameter
-                if is_repr:
+                comptime if is_repr:
                     value.write_repr_to(writer)
                 else:
                     value.write_to(writer)
@@ -479,8 +474,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
     @staticmethod
     fn _check[T: AnyType]() -> Int:
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel
@@ -548,11 +542,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
 
 fn _all_trivial_del[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], ImplicitlyDestructible):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
         else:
@@ -561,11 +552,8 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 
 fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Copyable):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
                 return False
         else:
@@ -575,11 +563,8 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Movable):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__moveinit__is_trivial:
                 return False
         else:

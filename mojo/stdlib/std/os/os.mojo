@@ -121,8 +121,7 @@ struct _DirHandle:
           A string containing the output of running the command.
         """
 
-        @parameter
-        if CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_linux():
             return self._list_linux()
         else:
             return self._list_macos()
@@ -252,8 +251,7 @@ fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
         message: The message to include when aborting.
     """
 
-    @parameter
-    if not is_gpu():
+    comptime if not is_gpu():
         print(prefix, message, flush=True)
 
     abort()

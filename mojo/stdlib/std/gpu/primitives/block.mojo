@@ -65,8 +65,7 @@ fn _block_reduce_with_padding[
     fn compute_offset(offset: Int) -> Int:
         """Computes the offset with the padding if needed."""
 
-        @parameter
-        if padding > 0:
+        comptime if padding > 0:
             return offset + Int(UInt(offset) // UInt(WARP_SIZE))
         else:
             return offset
@@ -91,14 +90,12 @@ fn _block_reduce_with_padding[
         # Reduce across the first warp
         warp_result = warp_reduce_fn(block_val)
 
-        @parameter
-        if broadcast:
+        comptime if broadcast:
             # Store the final result back to shared memory for broadcast
             if lid == 0:
                 shared_mem[] = warp_result
 
-    @parameter
-    if broadcast:
+    comptime if broadcast:
         # Synchronize and broadcast the result to all threads
         barrier()
         # All threads read the final result from shared memory
@@ -149,21 +146,18 @@ fn _block_reduce[
     # Allocate shared memory for inter-warp communication.
     comptime n_warps = block_size // WARP_SIZE
 
-    @parameter
-    if n_warps == 1:
+    comptime if n_warps == 1:
         # Single warp optimization: no shared memory or barriers needed
         # Warp shuffle operations are sufficient and much faster
         var warp_result = warp_reduce_fn(val)
 
-        @parameter
-        if broadcast:
+        comptime if broadcast:
             # Use efficient warp broadcast (shuffle to lane 0)
             warp_result = warp.broadcast(warp_result)
 
         return warp_result
 
-    @parameter
-    if n_warps == 2:
+    comptime if n_warps == 2:
         return _block_reduce_with_padding[
             n_warps=n_warps,
             padding=0,
@@ -325,8 +319,7 @@ fn broadcast[
         block_size % WARP_SIZE == 0
     ), "Block size must be a multiple of warp size"
 
-    @parameter
-    if block_size == WARP_SIZE:
+    comptime if block_size == WARP_SIZE:
         # Single warp - use warp shuffle for better performance
         return warp.broadcast(val)
 
@@ -394,8 +387,7 @@ fn prefix_sum[
     if lane_id() == UInt(WARP_SIZE - 1):
         var inclusive_warp_sum: Scalar[dtype] = thread_result
 
-        @parameter
-        if exclusive:
+        comptime if exclusive:
             # For exclusive scan, thread_result is the sum of elements 0 to
             # WARP_SIZE-2. 'val' is the value of the element at WARP_SIZE-1.
             # Adding them gives the inclusive sum of the warp.

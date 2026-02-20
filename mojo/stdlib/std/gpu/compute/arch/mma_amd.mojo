@@ -54,8 +54,7 @@ struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterPassable):
 
 @always_inline
 fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    @parameter
-    if _is_amd_rdna():
+    comptime if _is_amd_rdna():
         # Use WMMA instructions for RDNA3+ consumer GPUs.
         _mma_wmma_rdna(d, a, b, c)
         return
@@ -99,8 +98,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
-    @parameter
-    if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
+    comptime if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
         constrained[
             False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
         ]()
@@ -113,9 +111,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.size, b.size, c.size, d.size
     ):
-
-        @parameter
-        if block_size == 16:
+        comptime if block_size == 16:
             # Note: 4x4x4_16B (i.e., 16 blocks).
             d = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.size]
@@ -159,9 +155,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.size, b.size, c.size, d.size
     ):
-
-        @parameter
-        if block_size == 16:
+        comptime if block_size == 16:
             # Note: 4x4x4_16B (i.e., 16 blocks)
             d = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.size]

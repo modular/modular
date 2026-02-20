@@ -169,8 +169,7 @@ fn randint[
     ```
     """
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         for si in range(size):
             ptr[si] = random_si64(Int64(low), Int64(high)).cast[dtype]()
     else:
@@ -224,8 +223,7 @@ fn rand[
     """
     var scale_val = int_scale.or_else(-1)
 
-    @parameter
-    if dtype.is_floating_point():
+    comptime if dtype.is_floating_point():
         if scale_val >= 0:
             var scale_double: Float64 = Float64(1 << scale_val)
             for i in range(size):
@@ -240,8 +238,7 @@ fn rand[
 
         return
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         var min_ = math.max(
             Scalar[dtype].MIN.cast[DType.int64](), min.cast[DType.int64]()
         )
@@ -252,8 +249,7 @@ fn rand[
             ptr[i] = random_si64(min_, max_).cast[dtype]()
         return
 
-    @parameter
-    if dtype == DType.bool or dtype.is_unsigned():
+    comptime if dtype == DType.bool or dtype.is_unsigned():
         var min_ = math.max(min.cast[DType.uint64](), 0)
         var max_ = math.min(
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()

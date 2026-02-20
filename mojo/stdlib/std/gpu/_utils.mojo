@@ -219,8 +219,7 @@ fn simd_to_llvm_struct[
         _type = kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = simd[i]
         st = __mlir_op.`kgen.struct.replace`[
             _type = kgen_struct_dtype_splat_type[dtype, n],
@@ -249,8 +248,7 @@ fn llvm_struct_to_simd[
         _type = kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
             _type = Scalar[dtype]._mlir_type,
             index = __mlir_attr[i._mlir_value, `:index`],
@@ -282,8 +280,7 @@ fn array_to_llvm_struct[
         _type = kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = array[i]
         st = __mlir_op.`kgen.struct.replace`[
             _type = kgen_struct_dtype_splat_type[dtype, n],
@@ -314,8 +311,7 @@ fn llvm_struct_to_array[
         _type = kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
             _type = Scalar[dtype]._mlir_type,
             index = __mlir_attr[i._mlir_value, `:index`],

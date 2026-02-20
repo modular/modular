@@ -117,8 +117,7 @@ struct Rng(Movable):
         if min == max:
             return min
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
         elif dtype.is_integral():
             var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)

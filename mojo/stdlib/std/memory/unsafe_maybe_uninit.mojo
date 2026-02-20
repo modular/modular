@@ -211,15 +211,13 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
 
 @always_inline
 fn _is_trivially_copyable[T: AnyType]() -> Bool:
-    @parameter
-    if conforms_to(T, Copyable):
+    comptime if conforms_to(T, Copyable):
         return downcast[T, Copyable].__copyinit__is_trivial
     return False
 
 
 @always_inline
 fn _is_trivially_movable[T: AnyType]() -> Bool:
-    @parameter
-    if conforms_to(T, Movable):
+    comptime if conforms_to(T, Movable):
         return downcast[T, Movable].__moveinit__is_trivial
     return False

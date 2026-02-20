@@ -59,8 +59,7 @@ fn _serialize_elements[
     serialize_fn: fn[T: Writable](elem: T) capturing[_] -> None,
     compact: Bool = False,
 ](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
-    @parameter
-    if compact:
+    comptime if compact:
         _serialize_elements_compact[serialize_fn=serialize_fn](ptr, len)
     else:
         _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)

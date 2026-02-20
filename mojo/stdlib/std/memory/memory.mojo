@@ -145,8 +145,7 @@ fn memcmp[
     """
     var byte_count = count * size_of[type]()
 
-    @parameter
-    if size_of[type]() % size_of[DType.int32]() == 0:
+    comptime if size_of[type]() % size_of[DType.int32]() == 0:
         return _memcmp_impl(
             s1.bitcast[Int32](),
             s2.bitcast[Int32](),
@@ -178,8 +177,7 @@ fn _memcpy_impl(
     fn copy[width: Int](offset: Int) unified {mut}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         vectorize[simd_bit_width()](n, copy)
 
         return
@@ -384,8 +382,7 @@ fn memset_zero[
         ptr: UnsafePointer to the beginning of the memory block to fill.
     """
 
-    @parameter
-    if count > 128:
+    comptime if count > 128:
         return memset_zero(ptr, count)
 
     fn fill[width: Int](offset: Int) unified {mut}:
@@ -454,14 +451,12 @@ fn stack_allocation[
         A data pointer of the given type pointing to the allocated space.
     """
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
 
         comptime global_name = name.value() if name else "_global_alloc"
 
-        @parameter
-        if address_space == AddressSpace.SHARED:
+        comptime if address_space == AddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
                 name = _get_kgen_string[global_name](),
                 count = count._mlir_value,
@@ -529,8 +524,7 @@ fn _malloc[
         address_space = AddressSpace.GENERIC,
     ],
 ):
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         comptime enable_gpu_malloc = env_get_string[
             "ENABLE_GPU_MALLOC", "true"
         ]()
@@ -560,8 +554,7 @@ fn _malloc[
 
 @always_inline
 fn _free(ptr: UnsafePointer[mut=True, ...]):
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         libc.free(ptr.bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr.address)
@@ -625,11 +618,8 @@ fn uninit_move_n[
         behavior.
     """
 
-    @parameter
-    if T.__moveinit__is_trivial:
-
-        @parameter
-        if overlapping:
+    comptime if T.__moveinit__is_trivial:
+        comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
             memcpy(dest=dest, src=src, count=count)
@@ -690,11 +680,8 @@ fn uninit_copy_n[
         behavior.
     """
 
-    @parameter
-    if T.__copyinit__is_trivial:
-
-        @parameter
-        if overlapping:
+    comptime if T.__copyinit__is_trivial:
+        comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
             memcpy(dest=dest, src=src, count=count)
@@ -730,8 +717,7 @@ fn destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    @parameter
-    if T.__del__is_trivial:
+    comptime if T.__del__is_trivial:
         # Trivial destructors don't need to be called!
         pass
     else:

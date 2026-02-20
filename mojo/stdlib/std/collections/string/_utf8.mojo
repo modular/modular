@@ -361,8 +361,7 @@ fn _is_newline_char_utf8[
     if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
-        @parameter
-        if include_r_n:
+        comptime if include_r_n:
             return is_next_line or (b0 == `\r` and b1 == `\n`)
         else:
             return is_next_line

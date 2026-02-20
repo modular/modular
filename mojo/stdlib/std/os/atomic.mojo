@@ -523,8 +523,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             expected = ptr[]
             return False
 
-        @parameter
-        if Self.dtype.is_integral():
+        comptime if Self.dtype.is_integral():
             return _compare_exchange_integral_impl[
                 scope = Self.scope,
                 failure_ordering=failure_ordering,
@@ -775,8 +774,7 @@ fn _max_impl[
     scope: StaticString,
     ordering: Consistency,
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
-    @parameter
-    if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
@@ -802,8 +800,7 @@ fn _min_impl[
     scope: StaticString,
     ordering: Consistency,
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
-    @parameter
-    if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:

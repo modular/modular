@@ -409,14 +409,12 @@ fn cluster_mask_base[
         product(cluster_shape) <= 16
     ), "cluster size must be less than or equal to 16"
 
-    @parameter
-    if axis == 0:
+    comptime if axis == 0:
         return UInt16((1 << cluster_shape[0]) - 1)
 
     var mask: UInt16 = 1
 
-    @parameter
-    for i in range(cluster_shape[1]):
+    comptime for i in range(cluster_shape[1]):
         mask |= mask << UInt16(i * cluster_shape[0])
 
     return mask

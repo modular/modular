@@ -240,8 +240,7 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
@@ -348,8 +347,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
 
-        @parameter
-        for i in range(Variadic.size(Ts)):
+        comptime for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
             if errno == -1:
@@ -573,8 +571,7 @@ struct PythonObject(
         else:
             key_ptr = cpy.PyTuple_New(size)
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 var arg = args[i].copy().to_python_object()
                 _ = cpy.PyTuple_SetItem(key_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
                 _ = arg^
@@ -1527,8 +1524,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             var arg = args[i].copy().to_python_object()
 
             _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._obj_ptr))

@@ -16,8 +16,7 @@ from sys.info import CompilationTarget, platform_map
 
 
 fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
     elif CompilationTarget.is_macos():
         result = external_call["__error", type_of(result)]()
@@ -421,8 +420,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
             writer: The writer to write the error description to.
         """
 
-        @parameter
-        if CompilationTarget.is_macos():
+        comptime if CompilationTarget.is_macos():
             debug_assert(
                 self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
             )

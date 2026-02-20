@@ -78,8 +78,7 @@ fn bitcast[
 
     # TODO(MOCO-2179): Change this to be more precise check for Arm devices, or
     # generate different ops on Arm.
-    @parameter
-    if not is_nvidia_gpu() and not is_amd_gpu():
+    comptime if not is_nvidia_gpu() and not is_amd_gpu():
         # Arm doesn't support casting between float16 and two ints.
         comptime assert not (
             src_dtype == DType.float16
@@ -106,8 +105,7 @@ fn bitcast[
             and width == 1
         ), "Can't cast a 2 x ui8 directly to a float16"
 
-    @parameter
-    if dtype == src_dtype:
+    comptime if dtype == src_dtype:
         return val._refine[dtype, width]()
     var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val._mlir_value

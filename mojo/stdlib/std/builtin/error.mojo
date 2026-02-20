@@ -105,8 +105,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             succeeded, or `None` if disabled or unavailable.
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return None
 
         if depth < 0:

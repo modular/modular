@@ -131,8 +131,7 @@ struct BitSet[size: Int](
         self._words = type_of(self._words)(uninitialized=True)
         comptime step = min(init.size, _WORD_BITS)
 
-        @parameter
-        for i in range(Self._words_size):
+        comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
                 init.slice[step, offset = i * step]()
             ).cast[DType.int64]()
@@ -154,8 +153,7 @@ struct BitSet[size: Int](
         """
         var total = 0
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             total += Int(pop_count(self._words.unsafe_get(i)))
 
         return total
@@ -246,15 +244,13 @@ struct BitSet[size: Int](
         """Toggles (inverts) all bits in the set up to the compile-time `size`.
         """
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~0
 
     fn set_all(mut self):
         """Sets all bits in the set up to the compile-time `size`."""
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             self._words.unsafe_get(i) = ~0
 
     # --------------------------------------------------------------------- #
@@ -306,8 +302,7 @@ struct BitSet[size: Int](
             var right_vec = SIMD[DType.int64, simd_width]()
 
             # Load a batch of words from both bitsets into SIMD vectors
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 left_vec[i] = left._words.unsafe_get(offset + i)
                 right_vec[i] = right._words.unsafe_get(offset + i)
 
@@ -316,20 +311,17 @@ struct BitSet[size: Int](
             var result_vec = func(left_vec, right_vec)
 
             # Store the results back into the result bitset
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 res._words.unsafe_get(offset + i) = result_vec[i]
 
         # Choose between vectorized or scalar implementation based on word count
-        @parameter
-        if Self._words_size >= simd_width:
+        comptime if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
             vectorize[simd_width](Self._words_size, _intersect)
         else:
             # For small bitsets, use a simple scalar implementation
-            @parameter
-            for i in range(Self._words_size):
+            comptime for i in range(Self._words_size):
                 res._words.unsafe_get(i) = func(
                     left._words.unsafe_get(i),
                     right._words.unsafe_get(i),

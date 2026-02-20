@@ -385,8 +385,7 @@ struct FlushDenormals(Defaultable):
 
     @always_inline
     fn _set_flush(self, enable: Bool, force: Bool = False):
-        @parameter
-        if (
+        comptime if (
             not CompilationTarget.has_sse4()
             and not CompilationTarget.has_neon()
         ):  # not supported, so skip
@@ -401,8 +400,7 @@ struct FlushDenormals(Defaultable):
         # value, otherwise we are in an exit state and we need to restore
         # the prior value.
 
-        @parameter
-        if CompilationTarget.has_sse4():
+        comptime if CompilationTarget.has_sse4():
             var mxcsr = self.state
             if enable:
                 mxcsr |= 0x8000  # flush to zero
@@ -427,8 +425,7 @@ struct FlushDenormals(Defaultable):
 
     @always_inline
     fn _is_set(self, state: Int32) -> Bool:
-        @parameter
-        if CompilationTarget.has_sse4():
+        comptime if CompilationTarget.has_sse4():
             return (state & 0x8000) != 0 and (state & 0x40) != 0
 
         comptime ARM_FPCR_FZ = Int32(1) << 24
@@ -439,15 +436,13 @@ struct FlushDenormals(Defaultable):
     fn _current_state() -> Int32:
         """Gets the current denormal state."""
 
-        @parameter
-        if (
+        comptime if (
             not CompilationTarget.has_sse4()
             and not CompilationTarget.has_neon()
         ):  # not supported, so skip
             return 0
 
-        @parameter
-        if CompilationTarget.has_sse4():
+        comptime if CompilationTarget.has_sse4():
             var mxcsr = Int32()
             llvm_intrinsic["llvm.x86.sse.stmxcsr", NoneType](
                 UnsafePointer[Int32](to=mxcsr)
@@ -486,8 +481,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         dtype.is_floating_point()
     ), "Only floating point dtypes support NaN."
 
-    @parameter
-    if dtype == DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
         )
@@ -550,8 +544,7 @@ fn isnan[
         True if val is NaN and False otherwise.
     """
 
-    @parameter
-    if not dtype.is_floating_point() or dtype in (
+    comptime if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
@@ -599,8 +592,7 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
         dtype.is_floating_point()
     ), "Only floating point dtypes support +inf."
 
-    @parameter
-    if dtype == DType.float8_e4m3fnuz:
+    comptime if dtype == DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
         )
@@ -655,8 +647,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
         dtype.is_floating_point()
     ), "Only floating point dtypes support -inf."
 
-    @parameter
-    if dtype == DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
         )
@@ -710,8 +701,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
         for floating-point types.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return ~Scalar[dtype](0)
     elif dtype.is_integral():
         return Scalar[dtype](
@@ -757,8 +747,7 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
         infinity for floating-point types.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return 0
     elif dtype.is_integral():
         return -max_finite[dtype]() - 1
@@ -788,8 +777,7 @@ fn max_or_inf[dtype: DType]() -> Scalar[dtype]:
         floating-point types.
     """
 
-    @parameter
-    if dtype.is_floating_point():
+    comptime if dtype.is_floating_point():
         # TODO: some floating point types don't support inf
         return inf[dtype]()
     else:
@@ -813,8 +801,7 @@ fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
         infinity for floating-point types.
     """
 
-    @parameter
-    if dtype.is_floating_point():
+    comptime if dtype.is_floating_point():
         # TODO: some floating point types don't support inf
         return neg_inf[dtype]()
     else:
@@ -845,8 +832,7 @@ fn isinf[
         True if val is infinite and False otherwise.
     """
 
-    @parameter
-    if not dtype.is_floating_point() or dtype in (
+    comptime if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
@@ -887,8 +873,7 @@ fn isfinite[
         True if val is finite and False otherwise.
     """
 
-    @parameter
-    if not dtype.is_floating_point():
+    comptime if not dtype.is_floating_point():
         return SIMD[DType.bool, width](fill=True)
 
     return llvm_intrinsic[
@@ -929,11 +914,8 @@ fn get_accum_type[
         dtype and the preferred accumulation type.
     """
 
-    @parameter
-    if dtype.is_float8():
-
-        @parameter
-        if preferred_accum_type == DType.float32:
+    comptime if dtype.is_float8():
+        comptime if preferred_accum_type == DType.float32:
             return DType.float32
         else:
             return DType.bfloat16
@@ -942,8 +924,7 @@ fn get_accum_type[
     elif dtype == DType.float16:
         # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
         # performance and use fp32 only when it's specified via preferred type.
-        @parameter
-        if preferred_accum_type == DType.float32:
+        comptime if preferred_accum_type == DType.float32:
             return DType.float32
         else:
             return DType.float16
@@ -1002,7 +983,6 @@ fn nextafter[
         dtype.is_floating_point()
     ), "input dtype must be floating point"
 
-    @parameter
-    if dtype == DType.float64:
+    comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
     return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)

@@ -44,11 +44,8 @@ fn _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        for j in range(i + 1, Variadic.size(Ts)):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime for j in range(i + 1, Variadic.size(Ts)):
             if _type_is_eq[Ts[i], Ts[j]]():
                 return False
     return True
@@ -57,11 +54,8 @@ fn _all_types_unique[*Ts: AnyType]() -> Bool:
 fn _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], ImplicitlyDestructible):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
         else:
@@ -72,11 +66,8 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Copyable):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
                 return False
         else:
@@ -87,11 +78,8 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Movable):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__moveinit__is_trivial:
                 return False
         else:

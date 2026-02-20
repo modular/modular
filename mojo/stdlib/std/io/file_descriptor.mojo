@@ -112,8 +112,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 
-        @parameter
-        if CompilationTarget.is_macos() or CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_macos() or CompilationTarget.is_linux():
             var read = external_call["read", c_ssize_t](
                 self.value, buffer.unsafe_ptr(), len(buffer)
             )
@@ -147,7 +146,6 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             ```
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return False
         return _external_call_const["isatty", c_int](c_int(self.value)) != 0

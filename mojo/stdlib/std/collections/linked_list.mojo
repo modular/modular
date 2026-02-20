@@ -115,8 +115,7 @@ struct _LinkedListIter[
     fn __init__(out self, src: Pointer[LinkedList[Self.Element], Self.origin]):
         self.src = src
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             self.curr = self.src[]._head
         else:
             self.curr = self.src[]._tail
@@ -131,8 +130,7 @@ struct _LinkedListIter[
             raise StopIteration()
         var old = self.curr
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             self.curr = self.curr[].next
         else:
             self.curr = self.curr[].prev

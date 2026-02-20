@@ -97,8 +97,7 @@ struct Random[rounds: Int = 10](Copyable):
         var counter = self._counter
         var key = self._key
 
-        @parameter
-        for i in range(Self.rounds - 1):
+        comptime for i in range(Self.rounds - 1):
             counter = self._single_round(counter, key)
             key += K_PHILOX_10
         var res = self._single_round(counter, key)

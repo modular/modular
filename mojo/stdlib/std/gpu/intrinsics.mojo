@@ -128,8 +128,7 @@ fn warpgroup_reg_alloc[count: Int]():
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
-    @parameter
-    if _is_sm_9x_or_newer():
+    comptime if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.inc.sync.aligned.u32 $0;",
             NoneType,
@@ -163,8 +162,7 @@ fn warpgroup_reg_dealloc[count: Int]():
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
-    @parameter
-    if _is_sm_9x_or_newer():
+    comptime if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;",
             NoneType,
@@ -201,8 +199,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
         - Lookup table value determines output for each possible input combo.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "lop3.b32 $0, $1, $2, $3, $4;",
             Int32,
@@ -250,8 +247,7 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
 
 
 fn _byte_permute_inst() -> StaticString:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return "llvm.nvvm.prmt"
     elif is_amd_gpu():
         return "llvm.amdgcn.perm"
@@ -288,8 +284,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
         On others, it performs multiplication using 32-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
@@ -319,8 +314,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
         On others, it performs multiplication using 32-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
@@ -350,8 +344,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
         On others, it performs multiplication using 64-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
@@ -381,8 +374,7 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
         On others, it performs multiplication using 64-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
@@ -416,8 +408,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
         On others, it performs multiplication using 64-bit casts.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.u32 $0, $1, $2;",
             UInt64,
@@ -449,8 +440,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
         On others, it performs multiplication using 64-bit casts.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.s32 $0, $1, $2;",
             Int64,
@@ -645,8 +635,7 @@ fn _get_type_suffix[dtype: DType]() -> StaticString:
 
 
 fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return "f32"
     elif dtype in (DType.int32, DType.uint32):
         return "i32"
@@ -747,8 +736,7 @@ fn store_release[
     """
     comptime assert is_gpu(), "atomic store only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = _get_nvtx_register_constraint[
             dtype
@@ -819,8 +807,7 @@ fn store_relaxed[
     """
     comptime assert is_gpu(), "atomic store only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = _get_nvtx_register_constraint[
             dtype
@@ -881,8 +868,7 @@ fn load_acquire[
     """
     comptime assert is_gpu(), "atomic load only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
@@ -956,8 +942,7 @@ fn load_relaxed[
     """
     comptime assert is_gpu(), "atomic load only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
@@ -1103,8 +1088,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
         # Architecture-specific word 3 value for buffer resource.
         # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-        @parameter
-        if _is_amd_rdna3() or _is_amd_rdna4():
+        comptime if _is_amd_rdna3() or _is_amd_rdna4():
             # GFX11/GFX12 (RDNA3/RDNA4)
             self.desc[3] = 0x31004000
         elif _is_amd_rdna1() or _is_amd_rdna2():
@@ -1313,8 +1297,7 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
         Format: bit 0 = SC0, bit 1 = NT, bit 4 = SC1
     """
 
-    @parameter
-    if cache_policy == CacheOperation.ALWAYS:
+    comptime if cache_policy == CacheOperation.ALWAYS:
         return 0x00  # SC=00, NT=0
     elif cache_policy == CacheOperation.STREAMING:
         return 0x02  # SC=00, NT=1
@@ -1337,8 +1320,7 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
 
 
 fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
-    @parameter
-    if bytes == 1:
+    comptime if bytes == 1:
         return DType.uint8
     elif bytes == 2:
         return DType.uint16
@@ -1467,8 +1449,7 @@ fn permlane_shuffle[
 
     var out = type_of(res)()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         out[i] = permlane_swap[stride](val[i], val[i])[
             Int((lane_group + 1) % 2)
         ]

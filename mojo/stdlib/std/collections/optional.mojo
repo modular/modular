@@ -462,9 +462,7 @@ struct Optional[T: Movable](
         ]()
 
         if self:
-
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](self.value()).write_repr_to(writer)
             else:
                 trait_downcast[Writable](self.value()).write_to(writer)

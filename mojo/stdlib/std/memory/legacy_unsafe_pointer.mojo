@@ -528,8 +528,7 @@ struct LegacyUnsafePointer[
 
     @staticmethod
     fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
-        @parameter
-        if Self.mut:
+        comptime if Self.mut:
             return Variadic.contains[
                 T,
                 Variadic.types[
@@ -631,8 +630,7 @@ struct LegacyUnsafePointer[
               of `T`.
         """
 
-        @parameter
-        if U.__moveinit__is_trivial:
+        comptime if U.__moveinit__is_trivial:
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.
@@ -725,8 +723,9 @@ struct LegacyUnsafePointer[
             not volatile or volatile ^ invariant
         ), "both volatile and invariant cannot be set at the same time"
 
-        @parameter
-        if is_nvidia_gpu() and size_of[dtype]() == 1 and alignment == 1:
+        comptime if is_nvidia_gpu() and size_of[
+            dtype
+        ]() == 1 and alignment == 1:
             # LLVM lowering to PTX incorrectly vectorizes loads for 1-byte types
             # regardless of the alignment that is passed. This causes issues if
             # this method is called on an unaligned pointer.
@@ -968,8 +967,7 @@ struct LegacyUnsafePointer[
             alignment > 0
         ), "alignment must be a positive integer value"
 
-        @parameter
-        if dtype == DType.bool and width > 1:
+        comptime if dtype == DType.bool and width > 1:
             # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
             # packs bits. Cast to uint8 and store so each element
             # occupies its own byte boundary.

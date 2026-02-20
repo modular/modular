@@ -30,8 +30,7 @@ from memory import Span, bitcast, memcpy
 
 
 fn constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    @parameter
-    for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size(Ts)):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -76,8 +75,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
             self.is_first_element = False
             self.at_element_start = False
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(self.writer[])
 
 
@@ -188,11 +186,8 @@ fn write_sequence_to[
     """
     writer.write_string(open)
 
-    @parameter
-    for i in range(size):
-
-        @parameter
-        if i != 0:
+    comptime for i in range(size):
+        comptime if i != 0:
             writer.write_string(sep)
         ElementFn[i=i](writer)
 
@@ -627,8 +622,7 @@ fn _write_hex[
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    @parameter
-    if amnt_hex_bytes == 2:
+    comptime if amnt_hex_bytes == 2:
         var chars = _hex_digits_to_hex_chars(UInt8(decimal))
         var buf = InlineArray[Byte, 4](uninitialized=True)
         buf[0] = `\\`

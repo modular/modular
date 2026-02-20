@@ -60,8 +60,7 @@ struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterPassable, Writable):
         self.tv_subsec = 0
 
     fn as_nanoseconds(self) -> UInt:
-        @parameter
-        if CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_linux():
             return UInt(self.tv_sec * _NSEC_PER_SEC + self.tv_subsec)
         else:
             return UInt(
@@ -90,8 +89,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @always_inline
 fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
     else:
@@ -108,8 +106,7 @@ fn _gpu_clock() -> UInt:
 
 
 fn _gpu_clock_inst() -> StaticString:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return "llvm.nvvm.read.ptx.sreg.clock64"
     elif is_amd_gpu():
         return "llvm.amdgcn.s.memtime"
@@ -151,8 +148,7 @@ fn _realtime_nanoseconds() -> UInt:
 fn _monotonic_nanoseconds() -> UInt:
     """Returns the current monotonic time in nanoseconds"""
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         return _gpu_clock()
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
@@ -235,8 +231,7 @@ fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
         The current time in ns.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.read.ptx.sreg.globaltimer",
             UInt64,
@@ -332,11 +327,8 @@ fn sleep(sec: Float64):
     if sec <= 0.0:
         return
 
-    @parameter
-    if is_gpu():
-
-        @parameter
-        if is_nvidia_gpu():
+    comptime if is_gpu():
+        comptime if is_nvidia_gpu():
             # NVIDIA's nanosleep has a max duration of 1ms (1,000,000 ns).
             # Loop to handle longer sleep durations.
             comptime MAX_SLEEP_NS = 1_000_000  # 1ms in nanoseconds
@@ -404,8 +396,7 @@ fn sleep(sec: UInt):
         sec: The number of seconds to sleep for.
     """
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         return sleep(Float64(sec))
 
     external_call["sleep", NoneType](Int32(sec))

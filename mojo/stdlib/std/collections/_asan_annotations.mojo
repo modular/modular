@@ -23,8 +23,7 @@ fn __sanitizer_annotate_contiguous_container(
 ):
     # follows __annotate_contiguous_container from __debug_utils
     # https://github.com/llvm/llvm-project/blob/main/libcxx/include/__debug_utils/sanitizers.h
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         if not is_compile_time() and beg:
             external_call[
                 "__sanitizer_annotate_contiguous_container", NoneType

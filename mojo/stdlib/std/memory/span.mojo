@@ -99,8 +99,7 @@ struct _SpanIter[
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> ref[Self.origin] Self.T:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src):
                 raise StopIteration()
 
@@ -338,12 +337,10 @@ struct Span[
         var length = len(self)
         var processed = 0
 
-        @parameter
-        for i in range(len(widths)):
+        comptime for i in range(len(widths)):
             comptime width = widths[i]
 
-            @parameter
-            if simd_width_of[dtype]() >= width:
+            comptime if simd_width_of[dtype]() >= width:
                 for _ in range((length - processed) // width):
                     if value in (ptr + processed).load[width=width]():
                         return True
@@ -679,12 +676,10 @@ struct Span[
         var is_odd = length % 2 != 0
         var processed = 0
 
-        @parameter
-        for i in range(len(widths)):
+        comptime for i in range(len(widths)):
             comptime w = widths[i]
 
-            @parameter
-            if simd_width_of[dtype]() >= w:
+            comptime if simd_width_of[dtype]() >= w:
                 for _ in range((middle - processed) // w):
                     var lhs_ptr = ptr + processed
                     var rhs_ptr = ptr + length - (processed + w)
@@ -722,12 +717,10 @@ struct Span[
         var length = len(self)
         var processed = 0
 
-        @parameter
-        for i in range(len(widths)):
+        comptime for i in range(len(widths)):
             comptime w = widths[i]
 
-            @parameter
-            if simd_width_of[dtype]() >= w:
+            comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
                     var p_curr = ptr + processed
                     p_curr.store(func(p_curr.load[width=w]()))
@@ -759,12 +752,10 @@ struct Span[
         var length = len(self)
         var processed = 0
 
-        @parameter
-        for i in range(len(widths)):
+        comptime for i in range(len(widths)):
             comptime w = widths[i]
 
-            @parameter
-            if simd_width_of[dtype]() >= w:
+            comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
                     var p_curr = ptr + processed
                     var vec = p_curr.load[width=w]()

@@ -37,8 +37,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
-    @parameter
-    if _has_type[DType.float16](
+    comptime if _has_type[DType.float16](
         a.dtype, b.dtype, c.dtype, d.dtype
     ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
         var sa = a.split()

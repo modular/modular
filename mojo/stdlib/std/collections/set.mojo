@@ -339,8 +339,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         fn iterate(mut w: Some[Writer]) raises StopIteration:
             ref element = iterator.__next__()
 
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](element).write_repr_to(w)
             else:
                 trait_downcast[Writable](element).write_to(w)
