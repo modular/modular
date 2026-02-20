@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "logit_verification_config",
+    srcs = ["logit_verification_config.py"],
+    data = ["logit_verification_config.yaml"],
+    deps = [
+        requirement("pydantic"),
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_test(
+    name = "test_logit_verification_config",
+    size = "small",
+    srcs = ["test_logit_verification_config.py"],
+    deps = [
+        ":logit_verification_config",
+    ],
+)
