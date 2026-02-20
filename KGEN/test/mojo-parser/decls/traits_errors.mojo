@@ -127,7 +127,7 @@ trait TFoo:
 
 
 @fieldwise_init
-struct Bar[T: TFoo]: # expected-note {{'Bar' declared here}}
+struct Bar[T: TFoo]:  # expected-note {{'Bar' declared here}}
     pass
 
 
@@ -185,3 +185,14 @@ trait WhereClauseOnTraitMethod:
     # expected-error @+1 {{'where' clauses on trait methods are not supported}}
     fn guarded_method(self) where Self.x > 10:
         pass
+
+
+trait ConflictTraitName:
+    # expected-note @+1 {{trait method declared here}}
+    fn test[a: Int](self):
+        pass
+
+
+# expected-error @+1 {{name conflict between parameter 'a' in the default trait method and a parameter in the struct}}
+struct ConflictStruct[a: Int](ConflictTraitName):
+    pass
