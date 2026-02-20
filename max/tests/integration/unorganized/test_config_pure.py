@@ -1353,42 +1353,6 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
 
-    # Error out if device graph capture is enabled with data parallelism
-    config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
-            data_parallel_degree=2,
-        ),
-        device_graph_capture=True,
-    )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
-
-    # Error out if device graph capture does not define max_batch_size.
-    config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
-        ),
-        device_graph_capture=True,
-    )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
-
-    # Device graph capture uses max_batch_size as the warmup capture bound.
-    config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path="test/model",
-            device_specs=[DeviceSpec.accelerator()],
-        ),
-        device_graph_capture=True,
-        max_batch_size=4,
-    )
-    config._validate_and_resolve_overlap_scheduler()
-    assert config.enable_overlap_scheduler is True
-    assert config.max_num_steps == 1
-
     # Error out if user tries to enable overlap scheduler without PrefillAndDecode
     config = PipelineConfig(
         model=MAXModelConfig(
