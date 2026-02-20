@@ -210,7 +210,7 @@ struct Path(
         Returns:
           A string representation of the path.
         """
-        return String(self)
+        return self.path
 
     fn __repr__(self) -> String:
         """Returns a printable representation of the path.
