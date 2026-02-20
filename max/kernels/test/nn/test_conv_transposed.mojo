@@ -51,8 +51,7 @@ fn extend_shape_5d[
     out_shape[0] = first
     out_shape[4] = last
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape[3] = in_shape[0]
     elif rank == 2:
         out_shape[2] = in_shape[0]
@@ -69,8 +68,7 @@ fn extend_shape_5d[
 fn extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
     var out_shape = IndexList[3](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         out_shape[2 - i] = in_shape[rank - i - 1]
 
     return out_shape
@@ -84,8 +82,7 @@ fn append_shape_5d[
     out_shape[3] = last2nd
     out_shape[4] = last
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape[2] = in_shape[0]
     elif rank == 2:
         out_shape[1] = in_shape[0]
@@ -115,8 +112,7 @@ fn test_conv_transposed[
 
     var output_dims = IndexList[rank](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]
             - pad[2 * i]
@@ -129,8 +125,7 @@ fn test_conv_transposed[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         pad_w = Index(pad[0], pad[1])
     elif rank == 2:
         pad_h = Index(pad[0], pad[1])

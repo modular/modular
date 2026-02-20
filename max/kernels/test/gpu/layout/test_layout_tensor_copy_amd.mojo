@@ -66,8 +66,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     var q_gmem_iter = q_tile.tiled_iterator[BM, BK, axis=1](0, 0)
     var smem_iter = smem.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    @parameter
-    for i in range(BN // BK):
+    comptime for i in range(BN // BK):
         var smem_tile = smem_iter.next_unsafe(smem_iter.linear_uint_type(i))[]
         copy_dram_to_sram[thread_layout=thread_layout](
             smem_tile.vectorize[1, 4](),
@@ -149,8 +148,7 @@ fn copy_dram_to_local_buffer_load_kernel[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    @parameter
-    for i in range(BN // BK):
+    comptime for i in range(BN // BK):
         copy_dram_to_local[src_thread_layout=thread_layout](
             a_reg_tile.tile[a_reg_tile.shape[0]() // (BN // BK), 2](
                 i, 0

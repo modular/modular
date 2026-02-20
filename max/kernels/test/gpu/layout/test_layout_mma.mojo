@@ -169,9 +169,7 @@ fn test_layout_mma[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             comptime shape_884 = IndexList[3](8, 8, 4)
             comptime shape_1684 = IndexList[3](16, 8, 4)
             comptime shape_1688 = IndexList[3](16, 8, 8)

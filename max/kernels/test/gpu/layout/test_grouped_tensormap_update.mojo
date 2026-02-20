@@ -282,22 +282,19 @@ def test_grouped_tensormap_update[
     a_ptrs_host[0, 0] = ptr_a0
     b_ptrs_host[0, 0] = ptr_b0
 
-    @parameter
-    if num_groups >= 2:
+    comptime if num_groups >= 2:
         var ptr_a1 = UInt64(Int(src_a1.device_tensor().ptr))
         var ptr_b1 = UInt64(Int(src_b1.device_tensor().ptr))
         a_ptrs_host[1, 0] = ptr_a1
         b_ptrs_host[1, 0] = ptr_b1
 
-    @parameter
-    if num_groups >= 3:
+    comptime if num_groups >= 3:
         var ptr_a2 = UInt64(Int(src_a2.device_tensor().ptr))
         var ptr_b2 = UInt64(Int(src_b2.device_tensor().ptr))
         a_ptrs_host[2, 0] = ptr_a2
         b_ptrs_host[2, 0] = ptr_b2
 
-    @parameter
-    if num_groups >= 4:
+    comptime if num_groups >= 4:
         var ptr_a3 = UInt64(Int(src_a3.device_tensor().ptr))
         var ptr_b3 = UInt64(Int(src_b3.device_tensor().ptr))
         a_ptrs_host[3, 0] = ptr_a3
@@ -347,8 +344,7 @@ def test_grouped_tensormap_update[
     var tensormaps_host_a = stack_allocation[num_blocks * 128, UInt8]()
     var tensormaps_host_b = stack_allocation[num_blocks * 128, UInt8]()
 
-    @parameter
-    for blk in range(num_blocks):
+    comptime for blk in range(num_blocks):
         for j in range(128):
             tensormaps_host_a[blk * 128 + j] = template_tma_a.descriptor.data[j]
             tensormaps_host_b[blk * 128 + j] = template_tma_b.descriptor.data[j]

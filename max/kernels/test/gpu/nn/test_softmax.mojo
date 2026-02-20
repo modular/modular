@@ -426,8 +426,7 @@ def main():
         # Test covering entire row within one warp
         test_gpu_online_softmax[16, 128, False](ctx)
 
-        @parameter
-        if has_amd_gpu_accelerator():
+        comptime if has_amd_gpu_accelerator():
             test_gpu_online_softmax[32, 32, True](ctx)
             # Test covering entire row within one warp
             test_gpu_online_softmax[16, 128, True](ctx)

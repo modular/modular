@@ -242,8 +242,7 @@ def main():
         ](ctx)
 
         # Test different data types.
-        @parameter
-        for i in range(len(dtype_configs)):
+        comptime for i in range(len(dtype_configs)):
             comptime dtype = dtype_configs[i]
 
             test_conv_cudnn[

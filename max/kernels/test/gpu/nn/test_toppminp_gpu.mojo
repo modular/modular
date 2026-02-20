@@ -250,8 +250,7 @@ fn test_case_sampling[
 
     var m: Bench
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m = Bench()
 
     # Create input tensors
@@ -343,8 +342,7 @@ fn test_case_sampling[
         row_major((Idx(batch_size),)),
     )
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -374,8 +372,7 @@ fn test_case_sampling[
         )
 
     # Run sampling
-    @parameter
-    if is_top_p:
+    comptime if is_top_p:
         top_p_sampling_gpu[_test_sort=True](
             ctx,
             device_p_thresholds_tensor,
@@ -417,12 +414,10 @@ fn test_case_sampling[
             )
             raise e^
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         print("Sampled token indices:", token_ids)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
     _ = device_token_ids_buf^
     _ = device_in_buf^

@@ -181,11 +181,8 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
     ](ctx)
     var lhs_tensor = lhs.tensor()
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
+    comptime for i in range(M):
+        comptime for j in range(K):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
@@ -195,11 +192,8 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
 
     var rhs_tensor = rhs.tensor()
 
-    @parameter
-    for i in range(K):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(K):
+        comptime for j in range(N):
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
@@ -323,11 +317,8 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
 
     var lhs_tensor = lhs.tensor()
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
+    comptime for i in range(M):
+        comptime for j in range(K):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
@@ -337,11 +328,8 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
 
     var rhs_tensor = rhs.tensor()
 
-    @parameter
-    for i in range(K):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(K):
+        comptime for j in range(N):
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
@@ -465,11 +453,8 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
 
     var lhs_tensor = lhs.tensor()
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
+    comptime for i in range(M):
+        comptime for j in range(K):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
@@ -479,11 +464,8 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
 
     var rhs_tensor = rhs.tensor()
 
-    @parameter
-    for i in range(K):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(K):
+        comptime for j in range(N):
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
@@ -607,11 +589,8 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
 
     var lhs_tensor = lhs.tensor()
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
+    comptime for i in range(M):
+        comptime for j in range(K):
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
@@ -621,11 +600,8 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
 
     var rhs_tensor = rhs.tensor()
 
-    @parameter
-    for i in range(K):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(K):
+        comptime for j in range(N):
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[

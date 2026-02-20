@@ -136,8 +136,7 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
     )
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         pack_filter[simd_size, micro_kernel_f_size](
             filter, packed_filter, conv_shape.num_groups
         )
@@ -161,8 +160,7 @@ fn test[
     # Test direct conv
     comptime conv_attr = ConvInfoStatic[2]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_4d,
             layout_5d,
@@ -207,8 +205,7 @@ fn test[
                 for f in range(F):
                     var failed: Bool
 
-                    @parameter
-                    if output_type.is_floating_point():
+                    comptime if output_type.is_floating_point():
                         if isclose(
                             output_ref[n, ho, wo, f],
                             output[n, ho, wo, f],

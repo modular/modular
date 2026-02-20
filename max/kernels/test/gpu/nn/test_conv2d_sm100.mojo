@@ -721,8 +721,7 @@ fn test_conv2d_bias_fusion[
     var K = problem.gemm_k()
 
     # Select config based on parameter
-    @parameter
-    if use_1sm:
+    comptime if use_1sm:
         comptime config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
     else:
         comptime config = Conv2dConfig[dtype, dtype, dtype].default_bf16()
@@ -807,8 +806,7 @@ fn test_conv2d_bias_fusion[
     comptime bias_lambda = Optional[elementwise_compute_lambda_type](add_bias)
 
     # Run conv2d with fused bias
-    @parameter
-    if use_1sm:
+    comptime if use_1sm:
         conv2d_fprop[
             config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
             elementwise_compute_lambda_fn=bias_lambda,

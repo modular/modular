@@ -120,8 +120,7 @@ fn test[
                         qkv_type
                     ](i * depth + j)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
                     mask_ptr[i * num_keys + j] = Scalar[mask_type](
@@ -175,8 +174,7 @@ fn test[
         ),
     )
 
-    @parameter
-    if not against_gpu_naive:
+    comptime if not against_gpu_naive:
         comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -243,8 +241,7 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if use_causal_mask:
+        comptime if use_causal_mask:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                 output_device.as_any_origin(),
                 q_device,
@@ -297,8 +294,7 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    @parameter
-    if against_gpu_naive:
+    comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
@@ -311,8 +307,7 @@ fn test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        @parameter
-        if use_causal_mask:
+        comptime if use_causal_mask:
             var k_operand = LayoutTensorMHAOperand(k_device)
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
@@ -830,8 +825,7 @@ fn test_decoding[
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    @parameter
-    if ctx.default_device_info == B200:
+    comptime if ctx.default_device_info == B200:
         if batch_size <= 2:
             test[
                 3,
@@ -1113,9 +1107,7 @@ fn test_mla_prefill[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             # tests with mask tensor
             test_decoding[27, 1, False, False](ctx, False)
             test_decoding[128, 1, False, False](ctx, False)
@@ -1132,8 +1124,7 @@ def main():
         test_mla_prefill[4, DType.bfloat16, DType.bfloat16](ctx)
         test_mla_prefill[0, DType.bfloat16, DType.bfloat16](ctx)
 
-        @parameter
-        if ctx.default_device_info == B200:
+        comptime if ctx.default_device_info == B200:
             test_mla_prefill[2, DType.bfloat16, DType.float8_e4m3fn](ctx)
             test_mla_prefill[4, DType.bfloat16, DType.float8_e4m3fn](ctx)
             test_mla_prefill[0, DType.bfloat16, DType.float8_e4m3fn](ctx)

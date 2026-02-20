@@ -280,9 +280,7 @@ fn wgmma_e4m3_e4m3_f32[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        for n in range(8, 32, 8):
+        comptime for n in range(8, 32, 8):
             wgmma_e4m3_e4m3_f32[
                 64,
                 n,

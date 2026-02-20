@@ -125,8 +125,7 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
     )
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
@@ -152,8 +151,7 @@ fn test[
     # Test direct conv
     comptime conv_attr = ConvInfoStatic[2]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_4d,
             layout_5d,

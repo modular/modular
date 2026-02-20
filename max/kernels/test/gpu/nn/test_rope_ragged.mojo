@@ -194,8 +194,7 @@ def test_rope_ragged_gpu[
                     + head_idx * head_dim  # head offset
                 )
 
-                @parameter
-                if rope_dim == head_dim:
+                comptime if rope_dim == head_dim:
                     # Full RoPE case - compare entire output against golden
                     assert_almost_equal(
                         q_out_host_buffer.unsafe_ptr() + base_offset,

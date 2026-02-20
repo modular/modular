@@ -157,8 +157,7 @@ fn test_case_batched[
     )
     var k_tt = TileTensor(K_device_buffer, k_runtime_layout)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -200,8 +199,7 @@ fn test_case_batched[
     ctx.enqueue_copy(topk_idxs_host_ptr, device_out_idxs)
     ctx.synchronize()
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         var _msg1: String = "Top-K values"
         var _msg2 = "Sample token index" if sampling else String(
             "Top K indices"
@@ -209,8 +207,7 @@ fn test_case_batched[
         print(_msg1, "and", _msg2, "output available in host pointers")
 
     # ASSERT equality with CPU topk kernel reference
-    @parameter
-    if not sampling:
+    comptime if not sampling:
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](
             out_vals_shape.flattened_length()
         )
@@ -226,8 +223,7 @@ fn test_case_batched[
         )
         var k_host_tt = TileTensor(K_host_ptr, k_runtime_layout)
 
-        @parameter
-        if DEBUG_BENCH:
+        comptime if DEBUG_BENCH:
 
             @always_inline
             @parameter
@@ -266,8 +262,7 @@ fn test_case_batched[
                 topk_vals_cpu_ptr[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -291,8 +286,7 @@ fn test_case_batched[
     _ = device_local_topk_idxs^
     _ = K_device_buffer^
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
 
 
@@ -347,8 +341,7 @@ fn test_case_multi_rank[
     ctx.enqueue_copy(device_in, in_host_ptr)
     var batch_size: Int
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]
@@ -403,8 +396,7 @@ fn test_case_multi_rank[
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference
-    @parameter
-    if not sampling:
+    comptime if not sampling:
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](
             out_vals_shape.flattened_length()
         )
@@ -437,8 +429,7 @@ fn test_case_multi_rank[
                 topk_vals_cpu_ptr[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),

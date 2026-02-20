@@ -53,9 +53,7 @@ fn fill_random_for_test[
     var vocab_size = shape[1]
 
     for b in range(batch_size):
-
-        @parameter
-        if normalized:
+        comptime if normalized:
             var row_sum = Scalar[dtype](0.0)
 
             for i in range(vocab_size):
@@ -220,17 +218,13 @@ fn test_topk_sampling[
     with device_input.map_to_host() as input_host:
         var input_host_tensor = TileTensor(input_host, input_runtime_layout)
 
-        @parameter
-        if sampling_from_prob:
+        comptime if sampling_from_prob:
             fill_random_for_test[dtype, normalized=True](input_host_tensor)
         else:
             fill_random_for_test[dtype, normalized=False](input_host_tensor)
 
-        @parameter
-        if PRINT_OUTPUT:
-
-            @parameter
-            if sampling_from_prob:
+        comptime if PRINT_OUTPUT:
+            comptime if sampling_from_prob:
                 print("Sample probabilities (first batch, first 10):")
             else:
                 print("Sample logits (first batch, first 10):")
@@ -244,14 +238,11 @@ fn test_topk_sampling[
                 input_host_tensor, mask_host_tensor, K, batch_size, N
             )
 
-            @parameter
-            if PRINT_OUTPUT:
+            comptime if PRINT_OUTPUT:
                 print("  Valid top-K indices for first batch:")
                 for i in range(N):
                     if mask_host_tensor.ptr[i]:
-
-                        @parameter
-                        if sampling_from_prob:
+                        comptime if sampling_from_prob:
                             print(
                                 "    Token",
                                 i,
@@ -267,8 +258,7 @@ fn test_topk_sampling[
                             )
 
     # STEP 2: Run sampling validation.
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         print(
             "  [Validation] Running",
             NUM_VALIDATION_TRIALS,
@@ -280,8 +270,7 @@ fn test_topk_sampling[
     for trial in range(NUM_VALIDATION_TRIALS):
         var trial_seed = UInt64(42 + trial)
 
-        @parameter
-        if sampling_from_prob:
+        comptime if sampling_from_prob:
             topk_sampling_from_prob[dtype, out_idx_type, block_size](
                 ctx,
                 input_tensor,
@@ -316,8 +305,7 @@ fn test_topk_sampling[
                 )
         num_passed += 1
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         print(
             "  [Validation] ✓ All",
             num_passed,
@@ -327,14 +315,12 @@ fn test_topk_sampling[
         )
 
     # STEP 3: Benchmark the kernel (separate from validation).
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            @parameter
-            if sampling_from_prob:
+            comptime if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
                     ctx,
                     input_tensor,
@@ -355,8 +341,7 @@ fn test_topk_sampling[
                 )
             ctx.synchronize()
 
-        @parameter
-        if sampling_from_prob:
+        comptime if sampling_from_prob:
             time_kernel[run_func](m, ctx, "topk-sampling-from-prob")
         else:
             time_kernel[run_func](m, ctx, "topk-softmax-sample")
@@ -482,8 +467,7 @@ fn test_case_batched[
         var in_host_tensor = TileTensor(in_host, input_runtime_layout)
         fill_fn[2, dtype](in_host_tensor)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -512,8 +496,7 @@ fn test_case_batched[
             masked_logits_host, input_runtime_layout
         )
 
-        @parameter
-        if PRINT_OUTPUT:
+        comptime if PRINT_OUTPUT:
             print("Masked logits (first 10):")
             for i in range(min(10, input_shape.flattened_length())):
                 print("  ", i, ":", masked_logits_host_tensor.ptr[i])
@@ -534,8 +517,7 @@ fn test_case_batched[
                     topk_idxs_tensor,
                 )
 
-                @parameter
-                if PRINT_OUTPUT:
+                comptime if PRINT_OUTPUT:
                     print("Extracted top-K values (first 10):")
                     for i in range(min(10, topk_shape.flattened_length())):
                         print("  ", i, ":", topk_vals_tensor.ptr[i])
@@ -555,8 +537,7 @@ fn test_case_batched[
                     topk_idxs_cpu_host, topk_runtime_layout
                 )
 
-                @parameter
-                if DEBUG_BENCH:
+                comptime if DEBUG_BENCH:
 
                     @always_inline
                     @parameter
@@ -589,8 +570,7 @@ fn test_case_batched[
                     True,
                 )
 
-                @parameter
-                if PRINT_OUTPUT:
+                comptime if PRINT_OUTPUT:
                     print("CPU top-K values (first 10):")
                     for i in range(min(10, topk_shape.flattened_length())):
                         print("  ", i, ":", topk_vals_cpu_tensor.ptr[i])
@@ -620,8 +600,7 @@ fn test_case_batched[
                 # equal or very close. As long as the top-K values match, the
                 # indices can differ for tied values.
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
 
 

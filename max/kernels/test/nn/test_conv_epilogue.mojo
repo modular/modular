@@ -58,8 +58,7 @@ fn test[
 
     var output_dims = IndexList[rank](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = (
             input_dims[i]
             + pad[2 * i]
@@ -72,8 +71,7 @@ fn test[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         pad_w = Index(pad[0], pad[1])
     elif rank == 2:
         pad_h = Index(pad[0], pad[1])
@@ -154,8 +152,7 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
     )
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
     comptime conv_attr = ConvInfoStatic[rank]()
@@ -165,8 +162,7 @@ fn test[
     fn null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_p2,
             layout_p3,
@@ -248,8 +244,7 @@ fn test[
 
         vectorize[simd_size](f_size, body1)
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_p2,
             layout_p3,

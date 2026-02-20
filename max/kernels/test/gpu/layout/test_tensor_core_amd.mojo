@@ -2141,6 +2141,5 @@ def main():
         test_load_and_mma_f32_bf8_16x16x32_transpose(ctx)
         test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(ctx)
 
-        @parameter
-        if DeviceContext.default_device_info.compute >= MI355X.compute:
+        comptime if DeviceContext.default_device_info.compute >= MI355X.compute:
             test_load_b_tr(ctx)

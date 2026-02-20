@@ -115,8 +115,7 @@ fn test_mma_op[
     var b_reg = mma.load_b(b)
     var d_reg = mma.load_c(c)
 
-    @parameter
-    for k in range(k_group_size):
+    comptime for k in range(k_group_size):
         var a_reg_k = a_reg.tile[1, a_reg.layout.size() // k_group_size](0, k)
         var b_reg_k = b_reg.tile[b_reg.layout.size() // k_group_size, 1](k, 0)
         d_reg = mma.mma_op(a_reg_k, b_reg_k, d_reg)
@@ -126,15 +125,12 @@ fn test_mma_op[
 
 fn _arange(tensor: LayoutTensor[mut=True, ...]):
     # use custom arange and the current arange does not work with fp8
-    @parameter
-    if tensor.dtype in (DType.bfloat16, DType.float16, DType.float32):
+    comptime if tensor.dtype in (DType.bfloat16, DType.float16, DType.float32):
         arange(tensor)
     elif tensor.dtype in (fp8_dtype, bf8_dtype):
         # scale with 0.1 to avoid overflow
         for i in range(tensor.shape[0]()):
-
-            @parameter
-            for j in range(tensor.shape[1]()):
+            comptime for j in range(tensor.shape[1]()):
                 tensor[i, j] = Scalar[tensor.dtype](
                     Float32(0.1 * Float64(i) + 0.2 * Float64(j))
                 )

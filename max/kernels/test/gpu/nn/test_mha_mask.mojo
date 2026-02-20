@@ -104,8 +104,7 @@ def test_causal_mask_asm():
     var asm = _compile_code[kernel, target = get_gpu_target()]().asm
     print(asm)
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
     elif has_amd_gpu_accelerator():
@@ -233,8 +232,7 @@ def test_sliding_window_causal_mask_asm():
     var asm = _compile_code[kernel, target = get_gpu_target()]().asm
     print(asm)
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
     elif has_amd_gpu_accelerator():
