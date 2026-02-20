@@ -1318,7 +1318,6 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1461,7 +1460,6 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth = Int(cache_depth),
             config=mha_config,
-            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1488,7 +1486,6 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1615,7 +1612,6 @@ fn flare_mla_prefill[
             cache_depth=cache_depth,
             config=mha_config,
             _ndbuffer_mha_operand=True,
-            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1652,7 +1648,6 @@ fn flare_mla_prefill_dispatch[
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     },
     _ndbuffer_mha_operand: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1713,7 +1708,7 @@ fn flare_mla_prefill_dispatch[
     )
 
     @parameter
-    if ctx.default_device_info == B200 and use_fa4:
+    if ctx.default_device_info == B200:
         comptime assert (
             k_rope_t.dtype == DType.bfloat16
             or k_rope_t.dtype == DType.float8_e4m3fn
