@@ -7,6 +7,7 @@ load(
     "CONFIG_SECTION_LOCAL_DEFINES",
     "KERNEL_PROFILING_LOCAL_DEFINES",
 )
+load("//bazel/internal:dialect_checksum.bzl", "dialect_checksum")  # buildifier: disable=bzl-visibility
 load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
 # gazelle:default_visibility //KGEN:consumers
@@ -1168,6 +1169,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Compiler",
+        ":DialectChecksum",
         ":ToolCommon",
     ],
 )
@@ -1361,4 +1363,26 @@ modular_shared_library(
         "@llvm-project//lldb:liblldb.wrapper",
         "@llvm-project//lldb:lldb23.0.0git",
     ],
+)
+
+dialect_checksum(
+    name = "gen_dialect_checksum",
+    srcs = [
+        ":CODialectTdFiles",
+        ":HLCFDialectTdFiles",
+        ":InterpreterTdFiles",
+        ":KGENDialectTdFiles",
+        ":LITDialectTdFiles",
+        ":POPDialectTdFiles",
+    ],
+)
+
+modular_cc_library(
+    name = "DialectChecksum",
+    srcs = [
+        "lib/DialectChecksum/DialectChecksum.cpp",
+        ":gen_dialect_checksum",
+    ],
+    hdrs = ["include/KGEN/DialectChecksum/DialectChecksum.h"],
+    copts = ["-I$(GENDIR)/KGEN"],
 )

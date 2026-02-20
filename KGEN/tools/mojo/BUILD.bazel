@@ -102,6 +102,7 @@ pkg_files(
             "//Config",
             "//Init",
             "//KGEN:Compiler",
+            "//KGEN:DialectChecksum",
             "//KGEN:ExecutionEngine",
             "//KGEN:KGENDialect",
             "//KGEN:LITDialect",
