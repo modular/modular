@@ -254,6 +254,9 @@ struct MLA_SM100_Decode_Config:
     var out_rows: Int
     var page_size: Int  # KV cache physical page size (e.g., 128)
     var split_page_size: Int  # Page size for split-K work partitioning (must be <= page_size)
+    var scale_block_size: Int  # 0 = tensorwise, 32/64/128 = blockwise FP8 scaling
+    var scales_per_token: Int  # ceildiv(q_depth, scale_block_size) when blockwise, else 0
+    var scale_smem_per_stage: Int  # BN * scales_per_token bytes per stage (0 if tensorwise)
 
     fn __init__(
         out self,
@@ -269,6 +272,7 @@ struct MLA_SM100_Decode_Config:
         page_size: Int,
         decoding_warp_split_k: Bool,
         split_page_size: Int = 128,
+        scale_block_size: Int = 0,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
@@ -302,6 +306,18 @@ struct MLA_SM100_Decode_Config:
         self.decoding_warp_split_k = decoding_warp_split_k
         self.page_size = page_size
         self.split_page_size = split_page_size
+        self.scale_block_size = scale_block_size
+        self.scales_per_token = (
+            ceildiv(q_depth, scale_block_size) if scale_block_size > 0 else 0
+        )
+        # Scale SMEM per stage: e8m0 values (1 byte each) loaded by warp 8.
+        # Per stage: BN tokens * scales_per_token * 1 byte.
+        # No alignment padding needed: mbarriers placed after scale SMEM
+        # require 8-byte alignment, and BN=64 ensures the product is always
+        # a multiple of 64 >= 8.
+        self.scale_smem_per_stage = (
+            self.BN * self.scales_per_token if scale_block_size > 0 else 0
+        )
         self.BK0 = self.padded_q_depth
         self.BK1 = self.BN
         self.out_rows = min(self.BM, self.num_q_heads)
@@ -312,24 +328,30 @@ struct MLA_SM100_Decode_Config:
         comptime smem_for_max_and_li = 128 * 1 * 4 * 2
         # 4 + (64x576x2) + (128 * 1 * 4 * 2) = 74756 bytes
         smem_use += smem_for_max_and_li
-        # we need BMxBN x dtype bytes for storing the P matrix in smem
-        # (64x64x2) = 8192 bytes
-        var smem_for_out = self.BM * self.BN * dtype_size
-        # 4 + (64x576x2) + (64x64x2) + (128 * 1 * 4 * 2) = 82948 bytes
-        smem_use += smem_for_out
+        # Scale SMEM: for FP8 blockwise, store e8m0 scales (1 byte each).
+        # Double-buffered (num_kv_stages=2) to match the KV pipeline.
+        # For tensorwise: no scale SMEM needed.
+        # For blockwise: scale_smem_per_stage * 2 stages
+        var smem_for_scale: Int
+        if scale_block_size > 0:
+            # Per stage: BN * scales_per_token * 1 byte (e8m0)
+            # Double-buffered: * 2 stages (upper bound, actual num_kv_stages computed below)
+            smem_for_scale = self.scale_smem_per_stage * 2
+        else:
+            smem_for_scale = 0
+        # Tensorwise: 4 + (64x576x2) + 0 + (128*1*4*2) = 74756 bytes
+        # Blockwise (scale_block_size=64): 4 + (64x576x2) + (64*9*2) + (128*1*4*2) = 75908 bytes
+        smem_use += smem_for_scale
         # to store K/V we need the bigger size which is K for storing here
         # so we have (64x576x2) = 73728 bytes
         var smem_per_kv = (
             self.BN * self.padded_q_depth * dtype_size
         )  # (two slot buffer for k/v)
         # now we need to calculate how many slots per K/V we can fit in the remaining memory
-        # so far we have
-        # 4 + (64x576x2) + (64x64x2) + (128 * 1 * 4 * 2) = 82948 bytes
         # the carveout reserves 1K for L1 cache so
         # for b200 we have sm100_smem_carveout 233472 - 1024 =  232448 bytes
-        # remaining smem  = 232448 - 82948 = 149500 bytes
-        # so we can fit 149500 // 73728 = 2 slots per K/V and still have 2044
-        # bytes left for  barriers and other stuff
+        # Tensorwise: remaining = 232448 - 74756 = 157692 → 157692 // 73728 = 2 stages
+        # Blockwise (scale_block_size=64): remaining = 232448 - 75908 = 156540 → 2 stages
         self.num_kv_stages = (
             Self.sm100_smem_carveout - smem_use
         ) // smem_per_kv
@@ -544,8 +566,17 @@ struct OffsetPosition[
 struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     TrivialRegisterPassable
 ):
+    # For blockwise FP8 scaling, warp 8's 32 threads also arrive on the
+    # producer mbar after writing scale data to SMEM (release semantics).
+    # This eliminates separate named barriers for scale synchronization.
+    comptime _load2cvt_num_prod = 1 + (
+        32 if Self.config.scale_block_size > 0 else 0
+    )
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, 1, WARPGROUP_SIZE + 2
+        Self.config.num_kv_stages,
+        1,
+        Self._load2cvt_num_prod,
+        WARPGROUP_SIZE + 2,
     ]
 
     # BF16-stage element count (64*576 = 36864)
@@ -603,8 +634,15 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
 struct KVLoad2CvtConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     TrivialRegisterPassable
 ):
+    # Must match KVLoad2CvtProducer's num_producer for type compatibility.
+    comptime _load2cvt_num_prod = 1 + (
+        32 if Self.config.scale_block_size > 0 else 0
+    )
     comptime PipeT = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, 1, WARPGROUP_SIZE + 2
+        Self.config.num_kv_stages,
+        1,
+        Self._load2cvt_num_prod,
+        WARPGROUP_SIZE + 2,
     ]
 
     comptime bf16_stage_elems = Self.config.BN * Self.config.q_depth
@@ -1737,6 +1775,39 @@ fn st_shared_v4_b32_at_bf16_elem_off[
         constraints="l,r,r,r,r",
         has_side_effect=True,
     ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+
+
+@always_inline
+fn e8m0_to_bf16_broadcast(scale_byte: UInt8) -> UInt32:
+    """Convert an e8m0 scale byte to a bf16 value broadcast into both halves of a uint32.
+
+    e8m0 format: value = 2^(byte - 127). The bf16 representation is
+    obtained by left-shifting the 8-bit exponent by 7 to place it in the
+    bf16 exponent field (bits 7-14), with sign=0 and mantissa=0.
+    Broadcasting into both halves of a uint32 prepares the value for
+    use with the packed bf16x2 multiply instruction.
+    """
+    var bf16_bits = UInt16(scale_byte) << 7
+    return UInt32(bf16_bits) | (UInt32(bf16_bits) << 16)
+
+
+@always_inline
+fn hmul2_bf16x8_by_scalar[
+    out_dtype: DType,
+](packed: SIMD[DType.uint32, 4], scale_bf16: UInt32) -> SIMD[DType.uint32, 4]:
+    """Multiply 8 packed bf16 values (in 4 uint32 registers) by a bf16x2 scalar broadcast.
+    """
+    var res = type_of(packed)()
+
+    @parameter
+    for i in range(packed.size):
+        res[i] = inlined_assembly[
+            "mul.rn.bf16x2 $0, $1, $2;",
+            UInt32,
+            constraints="=r,r,r",
+            has_side_effect=False,
+        ](packed[i], scale_bf16)
+    return res
 
 
 # --------------------------------------------------------------------------

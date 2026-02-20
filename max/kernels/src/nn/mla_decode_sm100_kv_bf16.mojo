@@ -214,6 +214,7 @@ struct MLA_SM100_Decode_KV_BF16[
             ScoreModType = Self.ScoreModType,
             SplitAccumType = Self.SplitAccumType,
         ],
+        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ):
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -520,13 +521,13 @@ struct MLA_SM100_Decode_KV_BF16[
             Self.config.decoding_warp_split_k,
         ],
     ):
+        # Early exit if this split has no work (prevents producer/consumer deadlock)
+        if offset_position.num_keys_this_split == 0:
+            return
+
         num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN
         )
-
-        # Early exit if this split has no work (prevents producer/consumer deadlock)
-        if num_k_tiles == 0:
-            return
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
             kv_pipeline, kv_smem
