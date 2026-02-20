@@ -112,7 +112,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
 
 fn fold_constrained_func[x: Int]() -> IntT[x]:
-    constrained[False, "this is being ignored anyway"]()
+    comptime assert False, "this is being ignored anyway"
     return IntT[x]()
 
 
