@@ -558,7 +558,8 @@ buildSymbol(FnOp impl, ParamDeclAttr implType,
 }
 
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
-ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
+ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
+                                          bool synthetic) {
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
   ImplicitLocOpBuilder b(structDeclOp.getLoc(), structDeclOp);
   b.setInsertionPointToEnd(&structDeclOp.getFields().front());
@@ -596,7 +597,7 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
       result, traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
       wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
           false),
-      "", true, traitFnOp.getInlineLevel());
+      "", synthetic, traitFnOp.getInlineLevel());
   return {op, parameters, result};
 }
 
@@ -921,8 +922,11 @@ ASTDecl *ClosureEmitter::createStructWrapper(
 
 ASTDecl *
 ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
-                                      FnTypeGeneratorType signatureType,
+                                      FnTypeGeneratorType rawSignatureType,
                                       SMLoc smLocation) {
+  FnTypeGeneratorType signatureType =
+      cast<FnTypeGeneratorType>(getCanonicalType(rawSignatureType));
+
   // The struct we're trying to create looks like this:
   // struct FnClosureWrapper[Impl: fn() -> Int](`fn() unified -> Int`):
   //   fn __init__(self):
@@ -1046,18 +1050,11 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                 structDecl, copyParent, moduleDecl);
 
   // Generate the __call__ method based on the function signature.
-  FnTypeGeneratorType closureMethodSignatureType =
-      addClosureSelfArgToFunctionSignature(refSelfType, ArgConvention::ReadMem,
-                                           signatureType);
   // The __call__ method is effectively the in-source body of the function.
   // Mark it as *not* synthetic so that debugging will step into the body.
-  auto [callMethod, _] = structEmitter.synthesizeMethodInStruct(
-      "__call__", closureMethodSignatureType.getArguments(),
-      closureMethodSignatureType.getArgConventions(),
-      closureMethodSignatureType.getArgListAttrs(),
-      signatureType.getResults().front(), SpecialFunctionKind::kNormal,
-      closureMethodSignatureType.getFnEffects().setCapturing(true),
-      /*suffix=*/"", /*synthetic=*/false);
+  auto [callMethod, parameters, result] = pushBackTraitFunctionImpl(
+      callParent.getDefiningOp(moduleDecl), structDecl,
+      /*synthetic=*/false);
   addWitnessEntry(callParent, callMethod);
 
   // Populate the body of ClosureWrapper::__call__.
@@ -1068,7 +1065,17 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
         callMethod.getLoc(), callMethod.getBody());
 
-    auto callee = ParamDeclRefAttr::get(implName, signatureType);
+    TypedAttr callee = ParamDeclRefAttr::get(implName, signatureType);
+    if (!parameters.empty()) {
+      SmallVector<TypedAttr> paramArgs;
+      llvm::append_range(
+          paramArgs,
+          llvm::map_range(parameters, [](ParamDeclAttr p) -> TypedAttr {
+            return ParamDeclRefAttr::get(p);
+          }));
+      callee = BindParamsAttr::get(callee, paramArgs,
+                                   &shared.getEvaluationContext());
+    }
 
     SmallVector<Value> arguments;
     // Ignore the self field and pass the other arguments as-is.
@@ -1080,11 +1087,10 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
          llvm::zip(arguments, signatureType.getArgConventions()))
       if (hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
-
-    Value result = CallOp::create(builder, signatureType.getResults().front(),
-                                  callee, implicitOrigins, arguments)
-                       .getResult(0);
-    IREmitter::emitNormalReturn(builder, result);
+    Value resultValue = CallOp::create(builder, TypeRange(result), callee,
+                                       implicitOrigins, arguments)
+                            .getResult(0);
+    IREmitter::emitNormalReturn(builder, resultValue);
   }
 
   return &structDecl;
@@ -2965,6 +2971,9 @@ CValue ClosureEmitter::emitFnPtrConversion(OpBuilder &builder,
       shared.declResolver->getDeclForTypeSymbol(structTy.getSymbolRef());
   auto structDeclOp = dyn_cast<StructDeclOp>(structDecl.getIfOperation());
   TypedAttr fnVal = fn.get();
+  Type wrapperImplType = structDeclOp.getInputParams().front().getType();
+  if (fnVal.getType() != wrapperImplType)
+    fnVal = ParamOperatorAttr::getRebind(fnVal, wrapperImplType);
   StringAttr fnName = StringAttr::get(shared.getContext(), "wrappedFnPtr");
   VarDeclOp var = VarDeclOp::create(builder, location, structTy, fnName,
                                     module.mangleParamName(fnName.getValue()),

@@ -228,7 +228,8 @@ private:
   /// (c) the result of the function, remapped to reference the struct
   /// parameters instead of indices.
   std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
-  pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl);
+  pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
+                            bool synthetic = true);
   /// Given the wrapper struct, add to the conformance table to enable the
   /// closure to be used with kernel functions
   void addConformanceToDevicePassable(ASTDecl &structDecl,
