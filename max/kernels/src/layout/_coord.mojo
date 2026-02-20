@@ -798,18 +798,29 @@ fn crd2idx[
             return Scalar[out_type](crd.value() * stride.value())
 
 
-# Implementation based off crd2idx - computes the inverse operation
+# Implementation based off crd2idx - computes the inverse operation.
+# Uses the per-element formula: coord[i] = (idx // stride[i]) % shape[i]
 fn idx2crd[
     Shape: CoordLike,
     Stride: CoordLike,
     out_dtype: DType = DType.int64,
 ](idx: Int, shape: Shape, stride: Stride) -> Coord[
-    *_Splatted[RuntimeInt[out_dtype], Shape.__len__()]
+    *_Idx2CrdResultTypes[
+        out_dtype,
+        RuntimeInt[out_dtype],
+        Stride.VariadicType,
+        Shape.VariadicType,
+    ]
 ]:
     """Calculate the coordinate tuple from a linear index.
 
     This is the inverse of crd2idx - given a linear index, shape, and stride,
-    it computes the multi-dimensional coordinates.
+    it computes the multi-dimensional coordinates using the per-element formula:
+    ``coord[i] = (idx // stride[i]) % shape[i]``.
+
+    When a shape dimension is statically known to be 1, the corresponding
+    output coordinate is a ComptimeInt[0]. Otherwise, coordinates are
+    RuntimeInt[out_dtype].
 
     Parameters:
         Shape: The shape type (must be CoordLike).
@@ -823,6 +834,8 @@ fn idx2crd[
 
     Returns:
         A Coord containing the coordinate values for each dimension.
+        Dimensions with static shape 1 produce ComptimeInt[0], others
+        produce RuntimeInt[out_dtype].
 
     Examples:
         For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
@@ -843,38 +856,167 @@ fn idx2crd[
         ")",
     )
 
-    comptime Result = Coord[*_Splatted[RuntimeInt[out_dtype], shape_len]]
+    comptime ResultTypes = _Idx2CrdResultTypes[
+        out_dtype,
+        RuntimeInt[out_dtype],
+        Stride.VariadicType,
+        Shape.VariadicType,
+    ]
+    comptime Result = Coord[*ResultTypes]
     var result = Result()
 
     @parameter
     if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
+        var shape_t = shape.tuple()
         var stride_t = stride.tuple()
-        var remaining_idx = idx
 
-        # Process dimensions in order of decreasing stride
-        # For each dimension, compute coordinate = remaining_idx // stride
-        # then update remaining_idx = remaining_idx % stride
         @parameter
         for i in range(shape_len):
-            var stride_val = stride_t[i].value()
-            var coord_val = remaining_idx // stride_val
-            remaining_idx = remaining_idx % stride_val
-            UnsafePointer(to=result[i]).init_pointee_copy(
-                rebind[Result.element_types[i]](
-                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+
+            @parameter
+            if (
+                Shape.VariadicType[i].is_static_value
+                and Shape.VariadicType[i].static_value == 1
+            ):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
-            )
+            else:
+                var stride_val = stride_t[i].value()
+                var shape_val = shape_t[i].value()
+                var coord_val = (idx // stride_val) % shape_val
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
     else:
-        # Single dimension case
-        var coord_val = idx // stride.value()
+
+        @parameter
+        if Shape.is_static_value and Shape.static_value == 1:
+            UnsafePointer(to=result[0]).init_pointee_copy(
+                rebind[ResultTypes[0]](ComptimeInt[0]())
+            )
+        else:
+            var coord_val = (idx // stride.value()) % shape.value()
+
+            @parameter
+            for i in range(shape_len):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
+
+    return result
+
+
+fn idx2crd[
+    Index: CoordLike,
+    Shape: CoordLike,
+    Stride: CoordLike,
+    out_dtype: DType = DType.int64,
+](idx: Index, shape: Shape, stride: Stride) -> Coord[
+    *_Idx2CrdResultTypes[
+        out_dtype, Index, Stride.VariadicType, Shape.VariadicType
+    ]
+]:
+    """Calculate the coordinate tuple from a CoordLike linear index.
+
+    This overload accepts a CoordLike index, enabling compile-time result
+    computation when the index, shape, and stride are all statically known.
+    Uses the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
+
+    Parameters:
+        Index: The index type (must be CoordLike).
+        Shape: The shape type (must be CoordLike).
+        Stride: The stride type (must be CoordLike).
+        out_dtype: The output data type for coordinate values.
+
+    Args:
+        idx: The CoordLike linear index to convert.
+        shape: The shape of the tensor.
+        stride: The stride of the tensor.
+
+    Returns:
+        A Coord containing the coordinate values for each dimension.
+        When idx, shape, and stride are all compile-time known, produces
+        ComptimeInt results. Otherwise produces RuntimeInt[out_dtype].
+    """
+    comptime shape_len = Shape.__len__()
+    comptime stride_len = Stride.__len__()
+
+    debug_assert(
+        shape_len == stride_len,
+        "Shape length (",
+        shape_len,
+        ") must match stride length (",
+        stride_len,
+        ")",
+    )
+
+    comptime ResultTypes = _Idx2CrdResultTypes[
+        out_dtype, Index, Stride.VariadicType, Shape.VariadicType
+    ]
+    comptime Result = Coord[*ResultTypes]
+    var result = Result()
+
+    @parameter
+    if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
+        var shape_t = shape.tuple()
+        var stride_t = stride.tuple()
 
         @parameter
         for i in range(shape_len):
-            UnsafePointer(to=result[i]).init_pointee_copy(
-                rebind[Result.element_types[i]](
-                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+
+            @parameter
+            if (
+                Shape.VariadicType[i].is_static_value
+                and Shape.VariadicType[i].static_value == 1
+            ):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
+            elif (
+                Index.is_static_value
+                and Shape.VariadicType[i].is_static_value
+                and Stride.VariadicType[i].is_static_value
+            ):
+                # All static: result is ComptimeInt, already default-initialized.
+                pass
+            else:
+                var stride_val = stride_t[i].value()
+                var shape_val = shape_t[i].value()
+                var coord_val = (idx.value() // stride_val) % shape_val
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
+    else:
+
+        @parameter
+        if Shape.is_static_value and Shape.static_value == 1:
+            UnsafePointer(to=result[0]).init_pointee_copy(
+                rebind[ResultTypes[0]](ComptimeInt[0]())
             )
+        elif (
+            Index.is_static_value
+            and Shape.is_static_value
+            and Stride.is_static_value
+        ):
+            # All static: result is ComptimeInt, already default-initialized.
+            pass
+        else:
+            var coord_val = (idx.value() // stride.value()) % shape.value()
+
+            @parameter
+            for i in range(shape_len):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
 
     return result
 
@@ -1432,6 +1574,74 @@ Example:
     # All elements become RuntimeInt[DType.int64]
     comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], RuntimeInt[DType.int32], ComptimeInt[5]]
     # types is equivalent to Variadic.types[RuntimeInt[DType.int64], RuntimeInt[DType.int64], RuntimeInt[DType.int64]]
+    ```
+"""
+
+
+# ===-----------------------------------------------------------------------===#
+# idx2crd result type computation
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _Idx2CrdResultMapper[
+    out_dtype: DType,
+    idx_type: CoordLike,
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    i: Int,
+] = Variadic.concat_types[
+    Prev,
+    # shape == 1: always ComptimeInt[0]
+    Variadic.types[T=CoordLike, ComptimeInt[0]] if From[i].is_static_value
+    and From[i].static_value == 1
+    # all three (idx, shape, stride) static: compute at compile time
+    else Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            (idx_type.static_value // stride_types[i].static_value)
+            % From[i].static_value
+        ],
+    ] if idx_type.is_static_value
+    and From[i].is_static_value
+    and stride_types[i].is_static_value
+    # otherwise: runtime
+    else Variadic.types[T=CoordLike, RuntimeInt[out_dtype]],
+]
+"""Maps a shape element type to an idx2crd result type.
+
+Considers shape, stride, and index to determine the result type:
+- If shape is statically 1, produces ComptimeInt[0].
+- If all of idx, shape, and stride are statically known, produces
+  ComptimeInt[(idx // stride) % shape].
+- Otherwise produces RuntimeInt[out_dtype].
+"""
+
+
+comptime _Idx2CrdResultTypes[
+    out_dtype: DType,
+    idx_type: CoordLike,
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[CoordLike],
+    VariadicType=shape_types,
+    Reducer = _Idx2CrdResultMapper[out_dtype, idx_type, stride_types],
+]
+"""Computes the result types for idx2crd based on shape, stride, and index.
+
+For each dimension:
+- If shape is statically 1, the result is ComptimeInt[0]
+- If idx, shape, and stride are all statically known, the result is
+  ComptimeInt[(idx // stride) % shape]
+- Otherwise, the result is RuntimeInt[out_dtype]
+
+Example:
+    ```mojo
+    from layout._coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
+    comptime stride_t = Variadic.types[T=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]
+    comptime shape_t = Variadic.types[T=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]
+    comptime types = _Idx2CrdResultTypes[DType.int64, RuntimeInt[DType.int64], stride_t, shape_t]
     ```
 """
 

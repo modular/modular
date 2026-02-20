@@ -213,7 +213,8 @@ struct Layout[
         """Maps a linear memory index back to logical coordinates.
 
         This is the inverse of `__call__` (crd2idx). Given a linear index,
-        it computes the corresponding multi-dimensional coordinates.
+        it computes the corresponding multi-dimensional coordinates using
+        the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
 
         Parameters:
             out_dtype: The data type for the output coordinate values.
@@ -230,11 +231,20 @@ struct Layout[
             - layout.idx2crd(5) returns (1, 1).
             - layout.idx2crd(11) returns (2, 3).
         """
-        comptime Shape = Coord[*Self.shape_types]
-        comptime Stride = Coord[*Self.stride_types]
-        return rebind[DynamicCoord[out_dtype, Self.rank]](
-            idx2crd[Shape, Stride, out_dtype](idx, self._shape, self._stride)
-        )
+        comptime ResultType = DynamicCoord[out_dtype, Self.rank]
+        var result = ResultType()
+        var shape_t = self._shape.tuple()
+        var stride_t = self._stride.tuple()
+
+        @parameter
+        for i in range(Self.rank):
+            var coord_val = (idx // stride_t[i].value()) % shape_t[i].value()
+            UnsafePointer(to=result[i]).init_pointee_copy(
+                rebind[ResultType.element_types[i]](
+                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                )
+            )
+        return result
 
     fn product(self) -> Int:
         """Returns the total number of elements in the layout's domain.
