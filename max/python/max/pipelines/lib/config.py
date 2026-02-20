@@ -19,9 +19,8 @@ import importlib
 import logging
 import os
 import sys
-from enum import Enum
 from pathlib import Path
-from typing import Any, get_type_hints
+from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, load_devices
@@ -1436,27 +1435,32 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
         ) from exc
 
 
-class PrependPromptSpeechTokens(str, Enum):
-    NEVER = "never"
-    """Never prepend the prompt speech tokens sent to the audio decoder."""
+PrependPromptSpeechTokens = Literal["never", "once", "rolling"]
+"""Controls whether prompt speech tokens are prepended to the audio decoder.
 
-    ONCE = "once"
-    """Prepend the prompt speech tokens to the first block of the audio decoder."""
+``"never"``
+    Never prepend the prompt speech tokens sent to the audio decoder.
+``"once"``
+    Prepend the prompt speech tokens to the first block of the audio decoder.
+``"rolling"``
+    Prepend the prompt speech tokens to the first block of the audio decoder,
+    and to later blocks to reach the requested buffer size.
+"""
 
-    ROLLING = "rolling"
-    """Prepend the prompt speech tokens to the first block of the audio decoder,
-    and to later blocks to reach the requested buffer size."""
 
+PrometheusMetricsMode = Literal[
+    "instrument_only", "launch_server", "launch_multiproc_server"
+]
+"""Controls the Prometheus metrics mode.
 
-class PrometheusMetricsMode(str, Enum):
-    INSTRUMENT_ONLY = "instrument_only"
-    """Instrument metrics through the Prometheus client library, relying on the application to handle the metrics server."""
-
-    LAUNCH_SERVER = "launch_server"
-    """Launch a Prometheus server to handle metrics requests."""
-
-    LAUNCH_MULTIPROC_SERVER = "launch_multiproc_server"
-    """Launch a Prometheus server in multiprocess mode to report metrics."""
+``"instrument_only"``
+    Instrument metrics through the Prometheus client library, relying on the
+    application to handle the metrics server.
+``"launch_server"``
+    Launch a Prometheus server to handle metrics requests.
+``"launch_multiproc_server"``
+    Launch a Prometheus server in multiprocess mode to report metrics.
+"""
 
 
 class AudioGenerationConfig(PipelineConfig):
@@ -1496,7 +1500,7 @@ class AudioGenerationConfig(PipelineConfig):
     )
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
-        default=PrependPromptSpeechTokens.ONCE,
+        default="once",
         description=(
             "Whether the prompt speech tokens should be forwarded to the audio "
             "decoder. Options: never, once, rolling."
@@ -1518,7 +1522,7 @@ class AudioGenerationConfig(PipelineConfig):
     )
 
     prometheus_metrics_mode: PrometheusMetricsMode = Field(
-        default=PrometheusMetricsMode.INSTRUMENT_ONLY,
+        default="instrument_only",
         description="The mode to use for Prometheus metrics.",
     )
 
@@ -1534,10 +1538,10 @@ class AudioGenerationConfig(PipelineConfig):
         chunk_size: list[int] | None = None,
         buffer: int = 0,
         block_causal: bool = False,
-        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
+        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = "never",
         prepend_prompt_speech_tokens_causal: bool = False,
         run_model_test_mode: bool = False,
-        prometheus_metrics_mode: PrometheusMetricsMode = PrometheusMetricsMode.INSTRUMENT_ONLY,
+        prometheus_metrics_mode: PrometheusMetricsMode = "instrument_only",
         **kwargs: Any,
     ) -> None:
         # Must call the superclass's __init__ first, otherwise PipelineConfig's
@@ -1587,8 +1591,9 @@ class AudioGenerationConfig(PipelineConfig):
             audio_flags.pop("block_causal", "false"), "block_causal"
         )
 
-        prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
-            audio_flags.pop("prepend_prompt_speech_tokens", "never")
+        prepend_prompt_speech_tokens = cast(
+            PrependPromptSpeechTokens,
+            audio_flags.pop("prepend_prompt_speech_tokens", "never"),
         )
 
         prepend_prompt_speech_tokens_causal = _parse_flag_bool(
@@ -1601,7 +1606,8 @@ class AudioGenerationConfig(PipelineConfig):
             "run_model_test_mode",
         )
 
-        prometheus_metrics_mode = PrometheusMetricsMode(
+        prometheus_metrics_mode = cast(
+            PrometheusMetricsMode,
             audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
         )
 

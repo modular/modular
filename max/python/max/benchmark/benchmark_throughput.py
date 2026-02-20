@@ -19,13 +19,11 @@
 from __future__ import annotations
 
 import asyncio
-import enum
 import json
 import os
 import random
 import time
 import warnings
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pyarrow.parquet
@@ -143,13 +141,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
 
     show_text: bool = Field(default=False)
     """Whether to show generated text."""
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for ThroughputBenchmarkConfig."""
-        return {
-            "PipelineTask": PipelineTask,
-        }
 
 
 @dataclass

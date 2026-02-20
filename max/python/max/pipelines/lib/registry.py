@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RepoType, RopeType, SupportedEncoding
+from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -554,7 +554,7 @@ class PipelineRegistry:
                 # Check if model_index.json exists to identify diffusion pipelines
                 import json
 
-                if huggingface_repo.repo_type == RepoType.local:
+                if huggingface_repo.repo_type == "local":
                     config_path = os.path.join(
                         huggingface_repo.repo_id, "model_index.json"
                     )

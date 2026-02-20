@@ -40,7 +40,6 @@ from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
 from .config_enums import (
-    RepoType,
     RopeType,
     SupportedEncoding,
     parse_supported_encoding_from_file_name,
@@ -502,9 +501,9 @@ class MAXModelConfig(MAXModelConfigBase):
         Attempts to find the weights locally first to avoid network
         calls, checking in the following order:
 
-        1. If `repo_type` is :obj:`RepoType.local`, it checks if the path
+        1. If `repo_type` is ``"local"``, it checks if the path
            in `weight_path` exists directly as a local file path.
-        2. Otherwise, if `repo_type` is :obj:`RepoType.online`, it first checks the local
+        2. Otherwise, if `repo_type` is ``"online"``, it first checks the local
            Hugging Face cache using :obj:`huggingface_hub.try_to_load_from_cache()`.
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
@@ -513,7 +512,7 @@ class MAXModelConfig(MAXModelConfigBase):
             The total size of all weight files in bytes.
 
         Raises:
-            FileNotFoundError: If `repo_type` is :obj:`RepoType.local` and a file
+            FileNotFoundError: If `repo_type` is ``"local"`` and a file
                 specified in `weight_path` is not found within the local repo
                 directory.
             ValueError: If :obj:`HuggingFaceRepo.size_of()` fails to retrieve the
@@ -534,13 +533,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 continue
 
             # 2. File not found locally or non-existence is cached.
-            if repo.repo_type == RepoType.local:
+            if repo.repo_type == "local":
                 if not self._local_weight_path(full_file_path):
                     raise FileNotFoundError(
                         f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
                     )
             # If it was an online repo, we need to check the API.
-            elif repo.repo_type == RepoType.online:
+            elif repo.repo_type == "online":
                 # 3. Fallback: File not local/cached, get size via API for online repos.
                 next_size = repo.size_of(file_path_str)
                 if next_size is None:
@@ -658,7 +657,7 @@ class MAXModelConfig(MAXModelConfigBase):
         components = {}
         repo = self.huggingface_model_repo
         repo_root: Path | None = None
-        if repo.repo_type == RepoType.local:
+        if repo.repo_type == "local":
             repo_root = Path(repo.repo_id)
             assert repo_root.exists(), (
                 "Local Hugging Face repository path does not exist: "
@@ -685,7 +684,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     key = component_name
                 if target in ["config.json", f"{key}_config.json"]:
                     try:
-                        if repo.repo_type == RepoType.local:
+                        if repo.repo_type == "local":
                             assert repo_root is not None, (
                                 "repo_root must be set for local repo types."
                             )
@@ -1151,13 +1150,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 continue
 
             # File not found locally.
-            if repo.repo_type == RepoType.local:
+            if repo.repo_type == "local":
                 if not self._local_weight_path(Path(repo.repo_id) / path):
                     # Helper returning None for local repo means not found.
                     raise FileNotFoundError(
                         f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
                     )
-            elif repo.repo_type == RepoType.online:
+            elif repo.repo_type == "online":
                 # Verify that it exists on Huggingface.
                 if not repo.file_exists(path_str):
                     raise ValueError(
@@ -1210,9 +1209,9 @@ class MAXModelConfig(MAXModelConfigBase):
         """Returns the absolute path if the weight file is found locally.
 
         Checks locations based on the repository type:
-        - If `RepoType.local`, try directly using `relative_path` (absolute or
+        - If `"local"`, try directly using `relative_path` (absolute or
           CWD-relative).
-        - If `RepoType.online`, checks the Hugging Face cache via
+        - If `"online"`, checks the Hugging Face cache via
           `try_to_load_from_cache()`.
 
         Args:
@@ -1232,12 +1231,12 @@ class MAXModelConfig(MAXModelConfigBase):
             return str(relative_path.resolve())
 
         # 1. Handle local repository paths.
-        if repo.repo_type == RepoType.local:
+        if repo.repo_type == "local":
             # Not found locally.
             return None
 
         # 2. Handle online repositories: try cache only.
-        elif repo.repo_type == RepoType.online:
+        elif repo.repo_type == "online":
             # `try_to_load_from_cache` checks the HF cache.
             # Returns absolute path string if found in cache, otherwise None.
             cached_result = try_to_load_from_cache(

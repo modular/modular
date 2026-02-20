@@ -14,9 +14,7 @@
 
 from __future__ import annotations
 
-import enum
 import logging
-from collections.abc import Mapping
 
 from max.config import ConfigFileModel
 from pydantic import Field
@@ -52,9 +50,3 @@ class LoRAConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for LoRAConfig."""
-        # LoRAConfig doesn't use any enums currently
-        return {}
