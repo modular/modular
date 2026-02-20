@@ -96,7 +96,7 @@ dependencies = [
   "tqdm",
   "transformers>=4.57",
   "types-aioboto3[essential]",
-  "types-boto3[essential]",
+  "types-boto3[essential,sts]",
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",

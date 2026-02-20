@@ -10909,6 +10909,7 @@ def targets():
         ":types-boto3-rds@1.42.28",
         ":types-boto3-s3@1.42.37",
         ":types-boto3-sqs@1.42.3",
+        ":types-boto3-sts@1.42.3",
         ":types-s3transfer@0.16.0",
     ] + select({
         ":_env_python_3.10_aarch64-apple-darwin": [
@@ -11187,6 +11188,41 @@ def targets():
         deps = _types_boto3_sqs_1_42_3_deps,
         wheel = ":_wheel_types-boto3-sqs@1.42.3",
         testonly = "types-boto3-sqs" in _TESTONLY_DEPS,
+    )
+
+    _types_boto3_sts_1_42_3_deps = [
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_types-boto3-sts@1.42.3",
+        actual = "@pycross_lock_file_wheel_types_boto3_sts_1.42.3_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "types-boto3-sts@1.42.3",
+        deps = _types_boto3_sts_1_42_3_deps,
+        wheel = ":_wheel_types-boto3-sts@1.42.3",
+        testonly = "types-boto3-sts" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -28199,6 +28235,16 @@ def repositories():
         ],
         sha256 = "9290509e99f22464d39cba39feb8034b295ca312a84e43f8c7ad9b511c488e40",
         downloaded_file_path = "types_boto3_sqs-1.42.3-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_types_boto3_sts_1.42.3_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/d5/3a/94aa959526a6e92d8c7a88f19487ef3eed157854959c434e931a7c980250/types_boto3_sts-1.42.3-py3-none-any.whl",
+        ],
+        sha256 = "3661edbcbf4373034ec2f3f7b99932067d67df26c85bf8882c5c5c61323c1010",
+        downloaded_file_path = "types_boto3_sts-1.42.3-py3-none-any.whl",
     )
 
     maybe(
