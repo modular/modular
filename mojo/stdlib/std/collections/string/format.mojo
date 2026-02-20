@@ -39,7 +39,8 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = "{!r}".format(myComplicatedObject)
+%# var some_object = String()
+var s = "{!r}".format(some_object)
 ```
 
 Note that the following features from Python's `str.format()` are
@@ -417,7 +418,9 @@ struct _FormatUtils:
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
+struct _FormatCurlyEntry[
+    origin: ImmutOrigin, spec_type: _FormatSpecType = _DefaultFormatSpec
+](ImplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -426,14 +429,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     """The index of an opening brace around a substitution field."""
     var last_curly: Int
     """The index of a closing brace around a substitution field."""
-    # TODO: ord("a") conversion flag not supported yet
-    var conversion_flag: UInt8
-    """The type of conversion for the entry: {ord("s"), ord("r")}."""
-    # TODO: ord("a") conversion flag not supported yet
-    comptime supported_conversion_flags = SIMD[DType.uint8, 2](
-        UInt8(ord("s")), UInt8(ord("r"))
-    )
-    """Currently supported conversion flags: `__str__` and `__repr__`."""
+    var format_spec: Self.spec_type
+    """The format specifier."""
     comptime _FieldVariantType = Variant[
         StringSlice[Self.origin], Int, NoneType, Bool
     ]
@@ -454,7 +451,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         first_curly: Int,
         last_curly: Int,
         field: Self._FieldVariantType,
-        conversion_flag: UInt8 = 0,
+        format_spec: Self.spec_type = {},
     ):
         """Construct a format entry.
 
@@ -464,12 +461,12 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
             last_curly: The index of a closing brace around a substitution
                 field.
             field: Store the substitution field.
-            conversion_flag: The type of conversion for the entry.
+            format_spec: The format specifier.
         """
         self.first_curly = first_curly
         self.last_curly = last_curly
         self.field = field
-        self.conversion_flag = conversion_flag
+        self.format_spec = format_spec
 
     @always_inline
     fn is_escaped_brace(ref self) -> Bool:
@@ -527,48 +524,40 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
             return StringSlice(ptr=p + start, length=end - start)
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
-        var field_ptr = field.unsafe_ptr()
-        var field_len = i - (start_value + 1)
-        var exclamation_index = -1
-        var idx = 0
-        while idx < field_len:
-            if field_ptr[idx] == UInt8(ord("!")):
-                exclamation_index = idx
-                break
-            idx += 1
-        var new_idx = exclamation_index + 1
-        if exclamation_index != -1:
-            if new_idx == field_len:
-                raise Error("Empty conversion flag.")
-            var conversion_flag = field_ptr[new_idx]
-            if field_len - new_idx > 1 or (
-                conversion_flag not in Self.supported_conversion_flags
-            ):
-                var f = _build_slice(field_ptr, new_idx, field_len)
-                raise Error('Conversion flag "', f, '" not recognized.')
-            self.conversion_flag = conversion_flag
-            field = _build_slice(field_ptr, 0, exclamation_index)
-        else:
-            new_idx += 1
+        # FIXME: We shouldn't hardcode the potential format spec characters,
+        # the implementation should go per element here and stop when a
+        # character that doesn't match {`\w*`, `\d*`, `\[`, `\]`, `.`} is
+        # encountered, and then parse the rest using the provided spec
 
-        # TODO(MSTDL-2243): Add format spec parsing
-
-        if field.byte_length() == 0:
+        var fmt_start = max(field.find("!"), field.find(":"))
+        var pre_fmt_field = field[:fmt_start] if fmt_start != -1 else field
+        var break_from_loop = False
+        if pre_fmt_field.byte_length() == 0:
             # an empty field, so it's automatic indexing
             if automatic_indexing_count >= len_pos_args:
                 raised_automatic_index = automatic_indexing_count
-                return True
+                break_from_loop = True
             automatic_indexing_count += 1
         else:
+            # TODO: add support for "My name is {0.name}".format(Person(name="Fred"))
+            # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
+            # NOTE: use reflection to access the fields, but be mindful of
+            # nested accesses like
+            # "Some: {0.who.name]}".format(Someone(who=Person(name="Fred")))
+
+            # TODO: add support for "My name is {0[name]}".format({"name": "Fred"})
+            # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})
+            # NOTE: This will require an Indexable parametric trait that
+            # we'd have to check conformance to for the indexable type. When
+            # it's a digit then `Indexer`, otherwise it has to be able
+            # to be indexed by a `String` or a `StringSlice`.
             try:
                 # field is a number for manual indexing:
-                # TODO: add support for "My name is {0.name}".format(Person(name="Fred"))
-                # TODO: add support for "My name is {0[name]}".format({"name": "Fred"})
-                var number = Int(field)
+                var number = Int(pre_fmt_field)
                 self.field = number
                 if number >= len_pos_args or number < 0:
                     raised_manual_index = number
-                    return True
+                    break_from_loop = True
                 manual_indexing_count += 1
             except e:
 
@@ -578,34 +567,27 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
 
                 debug_assert[check_string]("Not the expected error from atol")
                 # field is a keyword for **kwargs:
-                # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
-                # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})
-                var f = field
-                self.field = f
-                raised_kwarg_field = f
-                return True
-        return False
+                self.field = pre_fmt_field
+                raised_kwarg_field = pre_fmt_field
+                break_from_loop = True
+
+        self.format_spec = {
+            field[fmt_start:]
+        } if fmt_start != -1 else Self.spec_type()
+        return break_from_loop
 
     fn _format_entry[
         len_pos_args: Int
     ](self, mut writer: Some[Writer], args: _FormatArgs, mut auto_idx: Int):
-        # TODO(#3403 and/or #3252): this function should be able to use
-        # Writer syntax when the type implements it, since it will give great
-        # performance benefits. This also needs to be able to check if the given
-        # args[i] conforms to the trait needed by the conversion_flag to avoid
-        # needing to constraint that every type needs to conform to every trait.
         comptime r_value = UInt8(ord("r"))
         comptime s_value = UInt8(ord("s"))
-        # alias a_value = UInt8(ord("a")) # TODO
 
         fn _format(idx: Int) unified {read self, read args, mut writer}:
             comptime for i in range(len_pos_args):
                 if i == idx:
-                    var flag = self.conversion_flag
-                    var empty = flag == 0
-
+                    var flag = self.format_spec.get_conversion_flag()
                     ref arg = trait_downcast[Writable](args[i])
-                    if empty or flag == s_value:
+                    if flag == s_value:
                         arg.write_to(writer)
                     elif flag == r_value:
                         arg.write_repr_to(writer)
@@ -617,3 +599,365 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         elif self.is_automatic_indexing():
             _format(auto_idx)
             auto_idx += 1
+
+
+# ===-----------------------------------------------------------------------===#
+# Format Specification
+# ===-----------------------------------------------------------------------===#
+
+
+trait _FormatSpecType(Defaultable, ImplicitlyCopyable):
+    comptime amnt_conversion_flags: Int = 2
+    comptime valid_conversion_flags: InlineArray[
+        UInt8, Self.amnt_conversion_flags
+    ] = ([Byte(ord("s")), Byte(ord("r"))])
+
+    fn __init__(out self, fmt_str: StringSlice) raises:
+        """Parses the format spec from a string that should comply with the
+        spec.
+
+        Args:
+            fmt_str: The StringSlice with the format spec.
+        """
+        ...
+
+    # NOTE: this function is temporary until we integrate the API into Writable
+    fn get_conversion_flag(self) -> UInt8:
+        """Get the current conversion flag.
+
+        Returns:
+            The current conversion flag.
+        """
+        ...
+
+
+struct _DefaultFormatSpec(TrivialRegisterType, _FormatSpecType):
+    """A Mojo Format Specification, inspired in [Python's formatspec](
+    https://docs.python.org/3/library/string.html#formatspec).
+
+    #### The order of elements that this implementation expects is the \
+    following (brackets signify optionality):
+    - `[conversion_flag][:[fill_codepoint][alignment][grapheme_width]]`.
+    """
+
+    var conversion_flag: UInt8
+    """The conversion flag: {Byte(ord("s")), Byte(ord("r"))}"""
+    var fill: Codepoint
+    """If a valid align value is specified, the fill codepoint is used. Defaults
+    to a space."""
+    var align: _Alignment
+    """The alignment options."""
+    var grapheme_width: UInt16
+    """A decimal integer defining the minimum total field grapheme width,
+    including any prefixes, separators, and other formatting characters. If not
+    specified, then the field width will be determined by the content. When no
+    explicit alignment is given, preceding the width field by a zero ('0')
+    character enables sign-aware zero-padding for numeric types. This is
+    equivalent to a fill character of '0' with an alignment type of '='.
+    """
+
+    fn __init__(out self):
+        """Construct the default."""
+        self = {conversion_flag = Byte(ord("s"))}
+
+    fn __init__(out self, fmt_str: StringSlice) raises:
+        """Parses the format spec from a string that should comply with the
+        spec.
+
+        Args:
+            fmt_str: The StringSlice with the format spec.
+        """
+        # TODO: implement this properly with tests
+        var data = fmt_str.as_bytes()
+        if fmt_str.byte_length() == 0:
+            return {}
+        elif data[0] == Byte(ord("!")):
+            if fmt_str.byte_length() < 2:
+                raise Error("Empty conversion flag.")
+            elif fmt_str.byte_length() > 2 and data[2] != Byte(ord(":")):
+                raise Error(
+                    'Conversion flag "', fmt_str[1:], '" not recognized.'
+                )
+            var flag = data[1]
+            if not flag in materialize[Self.valid_conversion_flags]():
+                raise Error(
+                    'Conversion flag "', Codepoint(flag), '" not recognized.'
+                )
+            return {conversion_flag = flag}
+
+        raise Error("Not implemented")
+
+    @always_inline
+    fn __init__(
+        out self,
+        *,
+        conversion_flag: UInt8,
+        fill: Codepoint = Codepoint.ord(" "),
+        align: _Alignment = _Alignment.LEFT,
+        grapheme_width: UInt16 = 0,
+    ):
+        """Construct a `BaseFormatSpec`.
+
+        Args:
+            conversion_flag: The conversion flag.
+            fill: The codepoint to fill with, defaults to " ".
+            align: The alignment options.
+            grapheme_width: The minimum grapheme width of the result.
+        """
+        self.conversion_flag = conversion_flag
+        self.fill = fill
+        self.align = align
+        self.grapheme_width = grapheme_width
+
+    fn get_conversion_flag(self) -> UInt8:
+        """Get the current conversion flag.
+
+        Returns:
+            The current conversion flag.
+        """
+        return self.conversion_flag
+
+
+@fieldwise_init
+struct _Alignment(Equatable, TrivialRegisterType):
+    comptime LEFT = Self(Byte(ord("<")))
+    """Forces the field to be left-aligned within the available space
+    (this is the default for most objects)."""
+    comptime RIGHT = Self(Byte(ord(">")))
+    """Forces the field to be right-aligned within the available space
+    (this is the default for numbers)."""
+    comptime EQUAL = Self(Byte(ord("=")))
+    """Forces the padding to be placed after the sign (if any) but before
+    the digits. This is used for printing fields in the form `+000000120`. This
+    alignment option is only valid for numeric types. It becomes the default
+    for numbers when `0` immediately precedes the field width.
+    """
+    comptime CENTERED = Self(Byte(ord("^")))
+    """Forces the field to be centered within the available space."""
+
+    var _value: UInt8
+
+
+struct _NumericFormatSpec(TrivialRegisterType, _FormatSpecType):
+    """A Mojo Format Specification, inspired in [Python's formatspec](
+    https://docs.python.org/3/library/string.html#formatspec).
+
+    #### The order of elements that this implementation expects is the \
+    following (brackets signify optionality):
+    - `[!conversion_flag][:[fill_codepoint][alignment][sign][grapheme_width][numeric_section]]`
+    - `numeric_section = [[float_options][thousand_separator][float_form][integer_form]]`
+    - `float_options = [["z"][.precision]]`
+    - `float_form = [{"e", "E", "f", "F", "g", "G"}]`
+    - `integer_form = [{"d", "b", "x", "X", "o", "c"}]`
+    """
+
+    var base: _DefaultFormatSpec
+    """The base format spec for the number."""
+    var sign: _SignOptions
+    """The sign options."""
+    var thousand_separator: UInt8
+    """The ASCII character to use as a separator."""
+    var float_options: _FloatOptions
+    """Options for dealing with floating point numbers."""
+    var int_options: _IntOptions
+    """Options for dealing with integers."""
+
+    fn __init__(out self):
+        """Construct the default."""
+        self = {{conversion_flag = Byte(ord("s")), align = _Alignment.RIGHT}}
+
+    fn __init__(out self, fmt_str: StringSlice) raises:
+        """Parses the format spec from a string that should comply with the
+        spec.
+
+        Args:
+            fmt_str: The StringSlice with the format spec.
+        """
+        # TODO: implement this properly with tests
+        var data = fmt_str.as_bytes()
+        if fmt_str.byte_length() == 0:
+            return {}
+        elif data[0] == Byte(ord("!")):
+            if fmt_str.byte_length() < 2:
+                raise Error("Empty conversion flag.")
+            elif fmt_str.byte_length() > 2 and data[2] != Byte(ord(":")):
+                raise Error(
+                    'Conversion flag "', fmt_str[1:], '" not recognized.'
+                )
+            var flag = data[1]
+            if flag not in materialize[Self.valid_conversion_flags]():
+                raise Error(
+                    'Conversion flag "', Codepoint(flag), '" not recognized.'
+                )
+            return {{conversion_flag = flag}}
+        if data[0] == Byte(ord(":")) and fmt_str.byte_length() == 1:
+            raise Error("Empty format after ':'")
+
+        raise Error("Not implemented")
+
+    fn __init__(
+        out self,
+        base: _DefaultFormatSpec,
+        *,
+        sign: _SignOptions = _SignOptions.ONLY_NEGATIVE,
+        thousand_separator: UInt8 = Byte(ord("")),
+        float_options: _FloatOptions = {},
+        int_options: _IntOptions = {},
+    ):
+        """Construct a `BaseFormatSpec`.
+
+        Args:
+            base: The base format spec for the number.
+            sign: The sign options.
+            thousand_separator: The ASCII character to use as a separator.
+            float_options: Options for dealing with floating point numbers.
+            int_options: Options for dealing with integers.
+        """
+        self.base = base
+        self.sign = sign
+        self.thousand_separator = thousand_separator
+        self.float_options = float_options
+        self.int_options = int_options
+
+    fn get_conversion_flag(self) -> UInt8:
+        """Get the current conversion flag.
+
+        Returns:
+            The current conversion flag.
+        """
+        return self.base.conversion_flag
+
+
+@fieldwise_init
+struct _SignOptions(Equatable, TrivialRegisterType):
+    comptime BOTH = Self(Byte(ord("+")))
+    """Indicates that a sign should be used for both positive as well as
+    negative numbers."""
+    comptime ONLY_NEGATIVE = Self(Byte(ord("-")))
+    """Indicates that a sign should be used only for negative numbers (this
+    is the default behavior)."""
+    comptime SPACE = Self(Byte(ord(" ")))
+    """Indicates that a leading space should be used on positive numbers,
+    and a minus sign on negative numbers."""
+
+    var _value: UInt8
+
+
+@fieldwise_init
+struct _IntOptions(Defaultable, Equatable, TrivialRegisterType):
+    """Options for dealing with integers."""
+
+    var form: _IntForm
+    """The form the integer should take."""
+
+    fn __init__(out self):
+        self.form = _IntForm.DECIMAL
+
+
+struct _FloatOptions(Defaultable, Equatable, TrivialRegisterType):
+    """Options for dealing with floating point numbers."""
+
+    var coerce_z: Bool
+    """The 'z' option coerces negative zero floating-point values to positive
+    zero after rounding to the format precision. This option is only valid for
+    floating-point presentation types."""
+    var precision: UInt64
+    """The precision is a decimal integer indicating how many digits should be
+    displayed after the decimal point for presentation types 'f' and 'F', or
+    before and after the decimal point for presentation types 'g' or 'G'. For
+    string presentation types the field indicates the maximum field size - in
+    other words, how many characters will be used from the field content. The
+    precision is not allowed for integer presentation types.
+    """
+    var form: _FloatForm
+    """The form the float should take."""
+
+    fn __init__(out self):
+        self.precision = UInt64.MAX
+        self.coerce_z = False
+        self.form = _FloatForm.LOWER_GENERAL_FORMAT
+
+
+@fieldwise_init
+struct _IntForm(Equatable, TrivialRegisterType):
+    """The numeric form of the value to use."""
+
+    comptime BINARY = Self(Byte(ord("b")))
+    """Outputs the number in base 2."""
+    comptime CHARACTER = Self(Byte(ord("c")))
+    """Converts the integer to the corresponding unicode character before
+    printing."""
+    comptime DECIMAL = Self(Byte(ord("d")))
+    """Outputs the number in base 10."""
+    comptime OCTAL = Self(Byte(ord("o")))
+    """Octal format. Outputs the number in base 8."""
+    comptime LOWER_HEX = Self(Byte(ord("x")))
+    """Hex format. Outputs the number in base 16, using lower-case letters
+    for the digits above 9."""
+    comptime UPPER_HEX = Self(Byte(ord("X")))
+    """Hex format. Outputs the number in base 16, using upper-case letters
+    for the digits above 9."""
+
+    var _value: UInt8
+
+
+@fieldwise_init
+struct _FloatForm(Equatable, TrivialRegisterType):
+    """The numeric form of the value to use."""
+
+    comptime LOWER_SCIENTIFIC = Self(Byte(ord("e")))
+    """For a given precision p, formats the number in
+    scientific notation with the letter `e` separating the coefficient from the
+    exponent. The coefficient has one digit before and p digits after the
+    decimal point, for a total of p + 1 significant digits. With no precision
+    given, uses a precision of 6 digits after the decimal point for float, and
+    shows all coefficient digits for Decimal. If no digits follow the decimal
+    point, the decimal point is also removed unless the # option is used."""
+    comptime UPPER_SCIENTIFIC = Self(Byte(ord("E")))
+    """Same as 'e' except it uses an upper case `E` as the separator
+    character."""
+    comptime LOWER_FIXED_POINT = Self(Byte(ord("f")))
+    """For a given precision p, formats the number as
+    a decimal number with exactly p digits following the decimal point. With no
+    precision given, uses a precision of 6 digits after the decimal point for
+    float, and uses a precision large enough to show all coefficient digits for
+    Decimal. If no digits follow the decimal point, the decimal point is also
+    removed unless the '#' option is used."""
+    comptime UPPER_FIXED_POINT = Self(Byte(ord("F")))
+    """Same as 'f', but converts nan to NAN and inf to INF."""
+    comptime LOWER_GENERAL_FORMAT = Self(Byte(ord("g")))
+    """For a given precision p >= 1, this rounds the number
+    to p significant digits and then formats the result in either fixed-point
+    format or in scientific notation, depending on its magnitude. A precision
+    of 0 is treated as equivalent to a precision of 1.
+    The precise rules are as follows: suppose that the result formatted with
+    presentation type 'e' and precision p-1 would have exponent exp. Then, if
+    m <= exp < p, where m is -4 for floats and -6 for Decimals, the number is
+    formatted with presentation type 'f' and precision p-1-exp. Otherwise, the
+    number is formatted with presentation type 'e' and precision p-1. In both
+    cases insignificant trailing zeros are removed from the significand, and
+    the decimal point is also removed if there are no remaining digits
+    following it, unless the '#' option is used.
+    With no precision given, uses a precision of 6 significant digits for
+    float. For Decimal, the coefficient of the result is formed from the
+    coefficient digits of the value; scientific notation is used for values
+    smaller than 1e-6 in absolute value and values where the place value of the
+    least significant digit is larger than 1, and fixed-point notation is used
+    otherwise.
+    Positive and negative infinity, positive and negative zero, and nans, are
+    formatted as inf, -inf, 0, -0 and nan respectively, regardless of the
+    precision.
+    """
+    comptime UPPER_GENERAL_FORMAT = Self(Byte(ord("G")))
+    """Same as 'g' except switches to 'E' if the number gets
+    too large. The representations of infinity and NaN are uppercased, too."""
+
+    var _value: UInt8
+
+
+# ===-----------------------------------------------------------------------===#
+
+
+# ===-----------------------------------------------------------------------===#
+# Utils
+# ===-----------------------------------------------------------------------===#
