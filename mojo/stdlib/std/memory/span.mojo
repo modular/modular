@@ -25,13 +25,32 @@ from bit._mask import splat
 from bit import pop_count
 from memory import memcmp, pack_bits
 from collections._index_normalization import normalize_index
-from sys import align_of
+from sys import align_of, size_of
 from sys.info import simd_width_of
 from sys.intrinsics import _type_is_eq
 
 from algorithm import vectorize
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
+
+
+fn _is_byte_eq_comparable[T: AnyType]() -> Bool:
+    """Returns True for types where byte equality implies value equality.
+
+    This covers all integer scalar types and Bool. Float types are excluded
+    because NaN != NaN and +0.0 == -0.0 in IEEE 754 semantics.
+    """
+    return (
+        _type_is_eq[T, Byte]()
+        or _type_is_eq[T, Int8]()
+        or _type_is_eq[T, UInt16]()
+        or _type_is_eq[T, Int16]()
+        or _type_is_eq[T, UInt32]()
+        or _type_is_eq[T, Int32]()
+        or _type_is_eq[T, UInt64]()
+        or _type_is_eq[T, Int64]()
+        or _type_is_eq[T, Bool]()
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -545,14 +564,16 @@ struct Span[
         # same pointer and length, so equal
         if self.unsafe_ptr() == rhs.unsafe_ptr():
             return True
-        # Fast path: use memcmp for byte-comparable types.
+        # Fast path: use memcmp for trivially equality-comparable types
+        # where byte equality implies value equality (all integer types).
+        # Excludes floats where NaN != NaN and +0.0 == -0.0.
         @parameter
-        if _type_is_eq[_T, Byte]():
+        if _is_byte_eq_comparable[_T]():
             return (
                 memcmp(
                     self.unsafe_ptr().bitcast[Byte](),
                     rhs.unsafe_ptr().bitcast[Byte](),
-                    len(self),
+                    len(self) * size_of[_T](),
                 )
                 == 0
             )
