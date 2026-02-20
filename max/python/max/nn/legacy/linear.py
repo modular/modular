@@ -796,9 +796,7 @@ class MLP(Module, Shardable):
             hidden_dim: The last dimension of the layer input.
             feed_forward_length: Size of dimension used to project the inputs.
             linear_cls: :obj:`Linear` class to use to create the projection layers.
-            devices: :obj:`DeviceRef` devices to run the ``MLP`` layer. If multiple are provided,
-                the first device is used instead. Use :obj:`DistributedMLP` to use
-                all devices.
+            devices: :obj:`DeviceRef` devices to run the ``MLP`` layer.
             has_bias: Whether to include bias terms in the linear layers.
             activation_function: Activation function to use. Options are:
 
