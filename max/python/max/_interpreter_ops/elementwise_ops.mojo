@@ -191,8 +191,7 @@ fn PyInit_elementwise_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_ops")
 
         # Binary arithmetic operations
-        @parameter
-        for i in range(Variadic.size(BINARY_ARITHMETIC_OPS)):
+        comptime for i in range(Variadic.size(BINARY_ARITHMETIC_OPS)):
             comptime op = BINARY_ARITHMETIC_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -203,8 +202,7 @@ fn PyInit_elementwise_ops() -> PythonObject:
             )
 
         # Binary boolean operations
-        @parameter
-        for i in range(Variadic.size(BINARY_BOOLEAN_OPS)):
+        comptime for i in range(Variadic.size(BINARY_BOOLEAN_OPS)):
             comptime op = BINARY_BOOLEAN_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -213,8 +211,7 @@ fn PyInit_elementwise_ops() -> PythonObject:
             b.def_function[bin_bool_dispatcher[op]](name, docstring=docstring)
 
         # Binary comparison operations
-        @parameter
-        for i in range(Variadic.size(BINARY_COMPARISON_OPS)):
+        comptime for i in range(Variadic.size(BINARY_COMPARISON_OPS)):
             comptime op = BINARY_COMPARISON_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -225,8 +222,7 @@ fn PyInit_elementwise_ops() -> PythonObject:
             )
 
         # Unary elementwise operations
-        @parameter
-        for i in range(Variadic.size(UNARY_ELEMENTWISE_OPS)):
+        comptime for i in range(Variadic.size(UNARY_ELEMENTWISE_OPS)):
             comptime op = UNARY_ELEMENTWISE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString("Elementwise " + name)
@@ -235,8 +231,7 @@ fn PyInit_elementwise_ops() -> PythonObject:
             )
 
         # Unary float-only operations
-        @parameter
-        for i in range(Variadic.size(UNARY_FLOAT_ONLY_OPS)):
+        comptime for i in range(Variadic.size(UNARY_FLOAT_ONLY_OPS)):
             comptime op = UNARY_FLOAT_ONLY_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -252,8 +247,7 @@ fn PyInit_elementwise_ops() -> PythonObject:
         )
 
         # Unary predicate operations (float -> bool)
-        @parameter
-        for i in range(Variadic.size(UNARY_PREDICATE_OPS)):
+        comptime for i in range(Variadic.size(UNARY_PREDICATE_OPS)):
             comptime op = UNARY_PREDICATE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -732,8 +726,7 @@ fn unary_elementwise_dispatcher[
     var size = _get_size(out_buffer)
     var ctx = _get_ctx(device_context_ptr)
 
-    @parameter
-    if float_only:
+    comptime if float_only:
         if dtype == DType.float16:
             unary_elementwise_op[op, DType.float16](
                 _get_buffer_ptr[DType.float16](out_buffer),
@@ -1297,11 +1290,10 @@ fn bin_elementwise_op[
         ](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if _is_gpu_allowed_binary_op[op]() and dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if _is_gpu_allowed_binary_op[
+                op
+            ]() and dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
@@ -1361,11 +1353,8 @@ fn pow_elementwise_op[
         ](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and dtype support
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
@@ -1423,11 +1412,10 @@ fn bin_elementwise_comparison_op[
         ](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if _is_gpu_allowed_comparison_op[op]() and dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if _is_gpu_allowed_comparison_op[
+                op
+            ]() and dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
@@ -1481,11 +1469,10 @@ fn unary_elementwise_op[
         ](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if _is_gpu_allowed_unary_op[op]() and dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if _is_gpu_allowed_unary_op[
+                op
+            ]() and dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
@@ -1542,11 +1529,10 @@ fn unary_mixed_op[
         ](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if _is_gpu_allowed_mixed_unary_op[op]() and dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if _is_gpu_allowed_mixed_unary_op[
+                op
+            ]() and dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
@@ -1606,11 +1592,8 @@ fn select_elementwise_op[
         ](IndexList[1](size))
     else:
         # GPU execution
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype != DType.float64:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
                 var device_ctx = DeviceContextPtr(ctx)
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx

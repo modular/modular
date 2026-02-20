@@ -290,11 +290,8 @@ fn matmul_op[
         )
     else:
         # GPU execution - check GPU availability and dtype support
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if _is_gpu_allowed_matmul_dtype[dtype]():
+        comptime if has_accelerator():
+            comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
                 matmul[target="gpu"](c, a, b, device_ctx.get_device_context())
                 # TODO(MXF-108): Remove device sync
@@ -668,12 +665,8 @@ fn batch_matmul_op[
             single_thread_blocking_override=True,
         ](c, a, b, DeviceContextPtr())
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if _is_gpu_allowed_matmul_dtype[dtype]():
+        comptime if has_accelerator():
+            comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
                 BatchMatmulKernel.execute[
                     lambdas_have_fusion=False,
