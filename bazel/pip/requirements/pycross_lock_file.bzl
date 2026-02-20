@@ -58,8 +58,8 @@ PINS = {
     "fire": "fire@0.7.0",
     "flashinfer-cubin": "flashinfer-cubin@0.6.1",
     "gguf": "gguf@0.17.1",
-    "google-auth": "google-auth@2.29.0",
-    "google-cloud-bigquery": "google-cloud-bigquery@3.22.0",
+    "google-auth": "google-auth@2.48.0",
+    "google-cloud-bigquery": "google-cloud-bigquery@3.40.1",
     "gptqmodel": "gptqmodel@2.0.0+cu126torch2.6",
     "grpcio": "grpcio@1.76.0",
     "hf-transfer": "hf-transfer@0.1.9",
@@ -1587,6 +1587,52 @@ def targets():
         testonly = "contourpy" in _TESTONLY_DEPS,
     )
 
+    _cryptography_46_0_5_deps = [
+        ":cffi@2.0.0",
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_cryptography@46.0.5",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_cryptography_46.0.5_cp38_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp38_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp38_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_cryptography_46.0.5_cp314_cp314t_macosx_10_9_universal2//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_cryptography_46.0.5_cp314_cp314t_manylinux_2_34_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_cryptography_46.0.5_cp314_cp314t_manylinux_2_34_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "cryptography@46.0.5",
+        deps = _cryptography_46_0_5_deps,
+        wheel = ":_wheel_cryptography@46.0.5",
+        testonly = "cryptography" in _TESTONLY_DEPS,
+    )
+
     _cuda_bindings_13_0_3_deps = [
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
@@ -2771,7 +2817,7 @@ def targets():
     )
 
     _google_api_core_2_25_1_deps = [
-        ":google-auth@2.29.0",
+        ":google-auth@2.48.0",
         ":googleapis-common-protos@1.70.0",
         ":grpcio-status@1.57.0",
         ":grpcio@1.76.0",
@@ -2792,27 +2838,27 @@ def targets():
         testonly = "google-api-core" in _TESTONLY_DEPS,
     )
 
-    _google_auth_2_29_0_deps = [
-        ":cachetools@5.4.0",
+    _google_auth_2_48_0_deps = [
+        ":cryptography@46.0.5",
         ":pyasn1-modules@0.4.0",
         ":rsa@4.9",
     ]
 
     native.alias(
-        name = "_wheel_google-auth@2.29.0",
-        actual = "@pycross_lock_file_wheel_google_auth_2.29.0_py2.py3_none_any//file",
+        name = "_wheel_google-auth@2.48.0",
+        actual = "@pycross_lock_file_wheel_google_auth_2.48.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "google-auth@2.29.0",
-        deps = _google_auth_2_29_0_deps,
-        wheel = ":_wheel_google-auth@2.29.0",
+        name = "google-auth@2.48.0",
+        deps = _google_auth_2_48_0_deps,
+        wheel = ":_wheel_google-auth@2.48.0",
         testonly = "google-auth" in _TESTONLY_DEPS,
     )
 
-    _google_cloud_bigquery_3_22_0_deps = [
+    _google_cloud_bigquery_3_40_1_deps = [
         ":google-api-core@2.25.1",
-        ":google-auth@2.29.0",
+        ":google-auth@2.48.0",
         ":google-cloud-core@2.4.1",
         ":google-resumable-media@2.7.1",
         ":packaging@25.0",
@@ -2821,20 +2867,20 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_google-cloud-bigquery@3.22.0",
-        actual = "@pycross_lock_file_wheel_google_cloud_bigquery_3.22.0_py2.py3_none_any//file",
+        name = "_wheel_google-cloud-bigquery@3.40.1",
+        actual = "@pycross_lock_file_wheel_google_cloud_bigquery_3.40.1_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "google-cloud-bigquery@3.22.0",
-        deps = _google_cloud_bigquery_3_22_0_deps,
-        wheel = ":_wheel_google-cloud-bigquery@3.22.0",
+        name = "google-cloud-bigquery@3.40.1",
+        deps = _google_cloud_bigquery_3_40_1_deps,
+        wheel = ":_wheel_google-cloud-bigquery@3.40.1",
         testonly = "google-cloud-bigquery" in _TESTONLY_DEPS,
     )
 
     _google_cloud_core_2_4_1_deps = [
         ":google-api-core@2.25.1",
-        ":google-auth@2.29.0",
+        ":google-auth@2.48.0",
     ]
 
     native.alias(
@@ -14577,6 +14623,96 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/f7/81/b0bb27f2ba931a65409c6b8a8b358a7f03c0e46eceacddff55f7c84b1f3b/cryptography-46.0.5-cp311-abi3-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "351695ada9ea9618b3500b490ad54c739860883df6c1f555e088eaf25b1bbaad",
+        downloaded_file_path = "cryptography-46.0.5-cp311-abi3-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/84/29/65b55622bde135aedf4565dc509d99b560ee4095e56989e815f8fd2aa910/cryptography-46.0.5-cp311-abi3-manylinux_2_34_aarch64.whl",
+        ],
+        sha256 = "e9251e3be159d1020c4030bd2e5f84d6a43fe54b6c19c12f51cde9542a2817b2",
+        downloaded_file_path = "cryptography-46.0.5-cp311-abi3-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp311_abi3_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/6d/1a/c1ba8fead184d6e3d5afcf03d569acac5ad063f3ac9fb7258af158f7e378/cryptography-46.0.5-cp311-abi3-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "4c3341037c136030cb46e4b1e17b7418ea4cbd9dd207e4a6f3b2b24e0d4ac731",
+        downloaded_file_path = "cryptography-46.0.5-cp311-abi3-manylinux_2_34_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp314_cp314t_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/00/13/3d278bfa7a15a96b9dc22db5a12ad1e48a9eb3d40e1827ef66a5df75d0d0/cryptography-46.0.5-cp314-cp314t-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "94a76daa32eb78d61339aff7952ea819b1734b46f73646a07decb40e5b3448e2",
+        downloaded_file_path = "cryptography-46.0.5-cp314-cp314t-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp314_cp314t_manylinux_2_34_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d8/d2/b27631f401ddd644e94c5cf33c9a4069f72011821cf3dc7309546b0642a0/cryptography-46.0.5-cp314-cp314t-manylinux_2_34_aarch64.whl",
+        ],
+        sha256 = "4e817a8920bfbcff8940ecfd60f23d01836408242b30f1a708d93198393a80b4",
+        downloaded_file_path = "cryptography-46.0.5-cp314-cp314t-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp314_cp314t_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d2/b9/cf73ddf8ef1164330eb0b199a589103c363afa0cf794218c24d524a58eab/cryptography-46.0.5-cp314-cp314t-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "a3d1fae9863299076f05cb8a778c467578262fae09f9dc0ee9b12eb4268ce663",
+        downloaded_file_path = "cryptography-46.0.5-cp314-cp314t-manylinux_2_34_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp38_abi3_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/e2/fa/a66aa722105ad6a458bebd64086ca2b72cdd361fed31763d20390f6f1389/cryptography-46.0.5-cp38-abi3-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "4108d4c09fbbf2789d0c926eb4152ae1760d5a2d97612b92d508d96c861e4d31",
+        downloaded_file_path = "cryptography-46.0.5-cp38-abi3-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp38_abi3_manylinux_2_34_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/41/e2/df40a31d82df0a70a0daf69791f91dbb70e47644c58581d654879b382d11/cryptography-46.0.5-cp38-abi3-manylinux_2_34_aarch64.whl",
+        ],
+        sha256 = "582f5fcd2afa31622f317f80426a027f30dc792e9c80ffee87b993200ea115f1",
+        downloaded_file_path = "cryptography-46.0.5-cp38-abi3-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_cryptography_46.0.5_cp38_abi3_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/99/0f/a3076874e9c88ecb2ecc31382f6e7c21b428ede6f55aafa1aa272613e3cd/cryptography-46.0.5-cp38-abi3-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "a3d507bb6a513ca96ba84443226af944b0f7f47dcc9a399d110cd6146481d24c",
+        downloaded_file_path = "cryptography-46.0.5-cp38-abi3-manylinux_2_34_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_cuda_bindings_13.0.3_cp310_cp310_manylinux_2_24_aarch64.manylinux_2_28_aarch64",
         urls = [
             "https://files.pythonhosted.org/packages/3b/98/0666ee759cd2e5306f911cbc95d2c6c814326906ed6b9c09e817a4b4a7c8/cuda_bindings-13.0.3-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
@@ -16097,22 +16233,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_google_auth_2.29.0_py2.py3_none_any",
+        name = "pycross_lock_file_wheel_google_auth_2.48.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/9e/8d/ddbcf81ec751d8ee5fd18ac11ff38a0e110f39dfbf105e6d9db69d556dd0/google_auth-2.29.0-py2.py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/83/1d/d6466de3a5249d35e832a52834115ca9d1d0de6abc22065f049707516d47/google_auth-2.48.0-py3-none-any.whl",
         ],
-        sha256 = "d452ad095688cd52bae0ad6fafe027f6a6d6f560e810fec20914e17a09526415",
-        downloaded_file_path = "google_auth-2.29.0-py2.py3-none-any.whl",
+        sha256 = "2e2a537873d449434252a9632c28bfc268b0adb1e53f9fb62afc5333a975903f",
+        downloaded_file_path = "google_auth-2.48.0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_google_cloud_bigquery_3.22.0_py2.py3_none_any",
+        name = "pycross_lock_file_wheel_google_cloud_bigquery_3.40.1_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/9d/75/e0a0b879baa6f521441c38ab06f21f923ceafd5ffacab41411ddecc1a9b4/google_cloud_bigquery-3.22.0-py2.py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/7c/f5/081cf5b90adfe524ae0d671781b0d497a75a0f2601d075af518828e22d8f/google_cloud_bigquery-3.40.1-py3-none-any.whl",
         ],
-        sha256 = "80c8e31a23b68b7d3ae5d138c9a9edff69d100ee812db73a5e63c79a13a5063d",
-        downloaded_file_path = "google_cloud_bigquery-3.22.0-py2.py3-none-any.whl",
+        sha256 = "9082a6b8193aba87bed6a2c79cf1152b524c99bb7e7ac33a785e333c09eac868",
+        downloaded_file_path = "google_cloud_bigquery-3.40.1-py3-none-any.whl",
     )
 
     maybe(
