@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
-package(default_visibility = ["//docs:__subpackages__"])
+package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 
 mojo_binary(
     name = "life_step5",

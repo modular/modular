@@ -1,0 +1,27 @@
+---
+title: Attention mask
+meta_title: What is an attention mask?
+---
+
+An attention mask is a mechanism used in the [attention](attention.mdx) layers
+of a [transformer](transformer.mdx) model to indicate which tokens the model
+should ignore when computing attention scores.
+
+For example, attention masks can prevent the model from attending to [padding
+tokens](padding-tokens.mdx), which are added to make sequences in a batch the
+same length and thus offer no information for attention.
+
+Another common mask is a "causal mask" (or "look-ahead mask"), which prevents
+the [self-attention](self-attention) layer from looking at future tokens when
+predicting a new token, ensuring that it attends only to previous tokens in the
+sequence. Although it sounds absurd that it would even try to look at future
+tokens (because it's generating tokens one at a time, in order), the
+self-attention is designed for more general-purpose attention scoring. In its
+most basic form, self-attention is agnostic to token order—it looks at all
+tokens in the sequence equally, based on their embeddings, and calculates
+scores by looking both backward and ahead in the sequence. (For example,
+self-attention is used during [context encoding](context-encoding.mdx) to
+establish an understanding of the input text.) So instead of creating a
+different kind of attention mechanism for autoregressive inference, the causal
+mask instructs the self-attention layer to simply ignore all future tokens and
+only look backward when generating scores that help predict the next token.

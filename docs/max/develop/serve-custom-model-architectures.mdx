@@ -1,0 +1,363 @@
+---
+title: Serve custom model architectures
+sidebar_label: Custom architectures
+description: Learn to create and serve your own MAX model architectures
+github_url: https://github.com/modular/modular/tree/main/max/examples/custom-models
+is_tutorial: true
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import MDXListing from '@site/src/components/Listing/MDXListing';
+import InstallModular from '@site/docs/_includes/install-modular.mdx';
+
+MAX comes with built-in support for popular model architectures like
+`Gemma3ForCausalLM`, `Qwen2ForCausalLM`, and `LlamaForCausalLM`, so you can
+instantly deploy them by passing a specific Hugging Face model name to the `max
+serve` command (explore [our model
+repo](https://builds.modular.com/?category=models)). You can also use MAX to
+serve a custom model architecture with the `max serve` command, which provides an
+[OpenAI-compatible API](/max/api/serve).
+
+In this tutorial, you'll implement a custom architecture based on the Qwen2 model
+by extending MAX's existing Llama3 implementation. This approach demonstrates how
+to leverage MAX's built-in architectures to quickly support new models with
+similar structures. By the end of this tutorial, you'll understand how to:
+
+- Set up the required file structure for custom architectures.
+- Extend existing MAX model implementations.
+- Register your model architecture with MAX.
+- Serve your model and make inference requests.
+
+## Set up your environment
+
+Create a Python project and install the necessary dependencies:
+
+<InstallModular folder="qwen2" />
+
+## Understand the architecture structure
+
+Before creating your custom architecture, let's understand how to organize your
+custom model project. Create the following structure in your project directory:
+
+```text
+qwen2/
+  ├── __init__.py
+  ├── arch.py
+  └── model.py
+```
+
+Here's what each file does:
+
+- **`__init__.py`**: Makes your architecture discoverable by MAX.
+
+- **`arch.py`**: Registers your model with MAX, specifying supported encodings,
+capabilities, and which existing components to reuse.
+
+- **`model.py`**: Contains your model implementation that extends an existing
+MAX model class.
+
+- **`model_config.py`**: Contains the model configuration class that can be
+instantiated from a PipelineConfig.
+
+When extending an existing architecture, you can often reuse configuration
+handling and weight adapters from the parent model, significantly reducing the
+amount of code you need to write.
+
+## Implement the main model class
+
+When your model is similar to an existing architecture, you can extend that model
+class instead of building from scratch. In this example, we'll extend the
+`Llama3Model` class to implement the `Qwen2Model` class:
+
+```python title="model.py"
+from __future__ import annotations
+
+from max.driver import Device
+from max.engine import InferenceSession
+from max.graph.weights import Weights, WeightsAdapter
+from max.nn.legacy import ReturnLogits
+from max.pipelines.architectures.llama3_legacy.model import Llama3Model
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from transformers import AutoConfig
+
+
+class Qwen2Model(Llama3Model):
+    """Qwen2 pipeline model implementation."""
+
+    attention_bias: bool = True
+    """Whether to use attention bias."""
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+    ) -> None:
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+        )
+```
+
+By inheriting from `Llama3Model`, the Qwen2 implementation automatically gets:
+
+- The
+[`execute`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.execute),
+[`prepare_initial_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_initial_token_inputs),
+and
+[`prepare_next_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_next_token_inputs)
+methods required by MAX.
+- Graph building logic for transformer architectures.
+- Configuration handling from Hugging Face models.
+- Weight loading and conversion capabilities.
+
+The only modification needed is setting `attention_bias = True` to match Qwen2's
+architecture specifics. This approach works because Qwen2 and Llama3 share
+similar transformer architectures.
+
+
+## Implement the model config class
+
+Qwen2's config can be implemented by inheriting most of the features from
+Llama3's config, except override the attention bias.
+
+```python title="model_config.py"
+from dataclasses import dataclass
+from typing import Literal
+
+from max.graph.weights import WeightData
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
+from transformers import AutoConfig
+
+
+@dataclass(kw_only=True)
+class Qwen2Config(Llama3Config):
+    """Model configuration for Qwen2 graph construction/execution."""
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        super().finalize(
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            norm_method=norm_method,
+            attention_bias=True,  # Qwen2 uses attention bias
+        )
+```
+
+## Define your architecture registration
+
+The `arch.py` file that tells MAX about your model's capabilities. When
+extending an existing architecture, you can reuse many components:
+
+```python title="arch.py"
+from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
+from max.pipelines.architectures.llama3 import weight_adapters
+from max.pipelines.lib import (
+    SupportedArchitecture,
+    TextTokenizer,
+)
+
+from .model import Qwen2Model
+from .model_config import Qwen2Config
+
+qwen2_arch = SupportedArchitecture(
+    name="Qwen2ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["Qwen/Qwen2.5-7B-Instruct", "Qwen/QwQ-32B"],
+    default_weights_format=WeightsFormat.safetensors,
+    default_encoding="bfloat16",
+    supported_encodings={
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
+    },
+    pipeline_model=Qwen2Model,
+    tokenizer=TextTokenizer,
+    rope_type="normal",
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
+    config=Qwen2Config,
+)
+```
+
+This configuration demonstrates several key features of MAX's architecture
+system. The
+[`name`](/max/api/python/pipelines/registry/#max.pipelines.lib.registry.SupportedArchitecture)
+parameter must match the model class name in Hugging Face configs, while `task`
+specifies the pipeline task type using `PipelineTask` from `max.interfaces`. The
+`rope_type` parameter specifies the type of rotary position embeddings used by
+the model.
+
+One of the significant advantages of extending existing architectures is the
+ability to reuse components. In this case, we're reusing Llama3's weight adapters
+instead of creating custom ones, which handles the conversion between different
+weight formats like SafeTensors and GGUF. This reuse pattern is common when
+extending existing architectures—you can often leverage adapters, configuration
+handling, and other utilities from the parent model.
+
+## Load your architecture
+
+Create an `__init__.py` file to make your architecture discoverable by MAX:
+
+```python title="__init__.py"
+from .arch import qwen2_arch
+
+ARCHITECTURES = [qwen2_arch]
+
+__all__ = ["qwen2_arch", "ARCHITECTURES"]
+```
+
+MAX automatically loads any architectures listed in the `ARCHITECTURES` variable
+when you specify your module with the
+[`--custom-architectures`](/max/api/python/pipelines/config/#max.pipelines.lib.config.PipelineConfig.custom_architectures)
+flag.
+
+## Test your custom architecture
+
+You can now test your custom architecture using the `--custom-architectures`
+flag. From your project directory, run the following command:
+
+```bash
+max serve \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --custom-architectures qwen2
+```
+
+The `--model` flag tells MAX to use a specified model. You can specify the
+model path to a Hugging Face model, or a local directory containing a model.
+While the `--custom-architectures` flag tells MAX to load custom architectures
+from the specified Python module that we just built.
+
+:::caution Trust remote code
+
+Some models require executing custom code from their repository. If you encounter
+an error about "trust_remote_code", add the `--trust-remote-code` flag:
+
+```bash
+max serve \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --custom-architectures qwen2 \
+  --trust-remote-code
+```
+
+Only use `--trust-remote-code` with models you trust, as it allows executing
+arbitrary code from the model repository.
+
+:::
+
+The server is ready when you see this message:
+
+```output
+Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+
+Now you can test your custom architecture. If you implemented an architecture to
+do [text
+generation](/max/api/python/pipelines/core#max.pipelines.core.PipelineTask.TEXT_GENERATION),
+you can send a request to that endpoint. For example:
+
+<Tabs>
+<TabItem value="curl" label="cURL">
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "messages": [
+      {"role": "user", "content": "Hello! Can you help me with a simple task?"}
+    ],
+    "max_tokens": 100
+  }'
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="EMPTY",  # Required by API but not used by MAX
+)
+
+response = client.chat.completions.create(
+    model="Qwen/Qwen2.5-7B-Instruct",
+    messages=[
+        {"role": "user", "content": "Hello! Can you help me with a simple task?"}
+    ],
+    max_tokens=100,
+)
+
+print(response.choices[0].message.content)
+```
+
+</TabItem>
+</Tabs>
+
+## Next steps
+
+Congratulations! You've successfully created a custom architecture for MAX
+pipelines and served it with the `max serve` command.
+
+While this tutorial showed the simplified approach of extending an existing
+architecture, you may need to implement a model from scratch if your architecture
+differs significantly from MAX's built-in models. In that case, you would:
+
+1. Implement the full
+[`PipelineModel`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel)
+interface including
+[`execute`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.execute),
+[`prepare_initial_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_initial_token_inputs),
+and
+[`prepare_next_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_next_token_inputs)
+methods.
+2. Create custom configuration classes to handle model parameters.
+3. Write custom weight adapters for converting between different formats.
+4. Build the computation graph using MAX's graph API.
+
+For implementation details, explore the existing [supported model
+architectures](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
+on GitHub. Each subdirectory represents a different model family
+with its own implementation. You can examine these architectures to understand
+different approaches and find the best base for your custom architecture.
+
+For a hands-on guide to implementing model architectures from the ground up,
+explore our [Build an LLM from scratch with MAX](https://llm.modular.com/)
+tutorial, which walks you through building a transformer architecture
+step-by-step.
+
+Here are some areas to explore further:
+
+export const docs = [
+  '../../graph/quantize.mdx',
+  '../../develop/custom-ops.mdx',
+  '../../develop/build-an-mlp-block.mdx',
+];
+
+<MDXListing mdxList={docs} />

@@ -1,0 +1,32 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+
+export default function InstallOpenAI() {
+  return (
+    <>
+      <Tabs groupId="packageManager">
+        <TabItem value="pixi" label="pixi">
+          <CodeBlock language="bash">
+            pixi add openai
+          </CodeBlock>
+        </TabItem>
+        <TabItem value="uv" label="uv">
+          <CodeBlock language="bash">
+            uv add openai
+          </CodeBlock>
+        </TabItem>
+        <TabItem value="pip" label="pip">
+          <CodeBlock language="bash">
+            pip install openai
+          </CodeBlock>
+        </TabItem>
+        <TabItem value="conda" label="conda">
+          <CodeBlock language="bash">
+            conda install openai
+          </CodeBlock>
+        </TabItem>
+      </Tabs>
+    </>
+  );
+}

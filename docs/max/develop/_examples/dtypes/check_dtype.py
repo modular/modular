@@ -1,0 +1,17 @@
+# DOC: max/develop/dtypes.mdx
+
+from max.driver import CPU
+from max.dtype import DType
+from max.tensor import Tensor
+
+# Create tensors of different types
+weights = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
+indices = Tensor.constant([0, 1, 2], dtype=DType.int64, device=CPU())
+
+# Check the dtype of each tensor
+print(f"Weights dtype: {weights.dtype}")  # DType.float32
+print(f"Indices dtype: {indices.dtype}")  # DType.int64
+
+# Compare dtypes directly
+if weights.dtype == DType.float32:
+    print("Weights are float32")

@@ -1,0 +1,613 @@
+---
+title: Quickstart
+description: A quickstart guide to run a GenAI model locally with Modular.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import ModelDropdownTabs from '@site/src/components/ModelDropdownTabs';
+import ContactSection from '@site/src/components/ContactSection';
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoMacWithGPU } from './requirements';
+import InstallModular from '@site/docs/_includes/install-modular.mdx';
+import { ModelSelector, DynamicCode, ConditionalContent } from '@site/src/components/ModelSelector';
+
+A major component of the Modular Platform is MAX, our developer framework that
+abstracts away the complexity of building and serving high-performance GenAI
+models on a wide range of hardware, including NVIDIA and AMD GPUs.
+
+In this quickstart, you'll create an endpoint for an open-source LLM using MAX,
+run an inference from a Python client, and then benchmark the endpoint.
+
+:::caution GPU required
+
+We recommend using on an **NVIDIA B200 / H200 / H100** or **AMD MI355X / MI325X
+/ MI300X**.
+
+MAX can serve models on a wide range of CPUs and GPUs, but the LLMs most
+customers want require a lot of memory, which is why we suggest
+production-grade GPUs. This guide does offer some smaller models, but to use
+the latest LLMs, you'll still need a [compatible
+GPU](/max/packages#gpu-compatibility).
+
+:::
+
+System requirements:
+
+<Requirements requirementsData={requirementsNoMacWithGPU}
+url="/max/packages#system-requirements" />
+
+If you'd rather create an endpoint with Docker, see our
+[tutorial to benchmark MAX](/max/deploy/benchmark).
+
+## Set up your project
+
+First, install the `max` CLI that you'll use to start the model endpoint.
+
+:::tip
+
+For the most reliable experience, we recommend installing with `pixi`.
+
+:::
+
+<InstallModular folder="quickstart" />
+
+export const textModelOptions = [
+  {
+    label: 'gemma-3-4b-it',
+    value: 'google/gemma-3-4b-it',
+    description: 'Requires >8 GiB of GPU RAM — works on most compatible GPUs'
+  },
+  {
+    label: 'gemma-3-12b-it',
+    value: 'google/gemma-3-12b-it',
+    description: 'Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better'
+  },
+  {
+    label: 'gemma-3-27b-it',
+    value: 'google/gemma-3-27b-it',
+    description: 'Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better',
+    default: true
+  },
+  {
+    label: 'Llama-3.1-8B-Instruct',
+    value: 'meta-llama/Llama-3.1-8B-Instruct',
+    description: 'Requires >15 GiB of RAM (GPU or CPU) — use this if you\'re on a Mac'
+  },
+];
+
+export const imageModelOptions = [
+  {
+    label: 'gemma-3-12b-it',
+    value: 'google/gemma-3-12b-it',
+    description: 'Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better'
+  },
+  {
+    label: 'gemma-3-27b-it',
+    value: 'google/gemma-3-27b-it',
+    description: 'Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better',
+    default: true
+  },
+  {
+    label: 'InternVL3-8B-Instruct',
+    value: 'OpenGVLab/InternVL3-8B-Instruct',
+    description: 'Requires >22 GiB of GPU RAM — we suggest an A100, MI300, or better',
+  },
+  {
+    label: 'InternVL3-14B-Instruct',
+    value: 'OpenGVLab/InternVL3-14B-Instruct',
+    description: 'Requires >36 GiB of GPU RAM — we suggest an H100, MI300, or better',
+  },
+];
+
+export const allModelOptions = {
+  text: textModelOptions,
+  image: imageModelOptions
+}
+
+## Start a model endpoint
+
+Now you'll serve an LLM from a local endpoint using [`max
+serve`](/max/cli/serve).
+
+First, pick whether you want to perform text-to-text inference or image-to-text
+(multimodal) inference, and then select a model size. We've included a small
+number of model options to keep it simple, but you can explore more models in
+our [model repository](https://builds.modular.com/?category=models).
+
+<ModelDropdownTabs groupId="inference" sticky dropdownOptions={allModelOptions}>
+<TabItem value="text" label="Text to text">
+
+<div className="model-selector-container">
+
+Select a model to change the code below:
+
+<ModelSelector modelOptions={allModelOptions} variableName="text" />
+
+<ConditionalContent
+  variableName="text"
+  condition={(model) => model.includes('gemma')} >
+
+Google's [Gemma 3 models](https://builds.modular.com/models/gemma-3-it/27B) are
+multimodal. MAX supports text input for all available sizes and image input for
+the 12B and 27B models. All sizes require a
+[compatible GPU](/max/packages#gpu-compatibility).
+
+</ConditionalContent>
+
+<ConditionalContent
+  variableName="text"
+  condition={(model) => model.includes('Llama')} >
+
+Meta's [Llama 3.1
+models](https://builds.modular.com/models/Llama-3.1-Instruct/8B) are text-only
+LLMs. You can pick any model in the family, but we suggest the smaller
+8B model because it works on a wide range of CPUs, including on Macs.
+
+</ConditionalContent>
+
+</div>
+
+Start the endpoint with the `max` CLI:
+
+1. Add your [HF Access Token](https://huggingface.co/settings/tokens) as an
+  environment variable:
+
+    ```sh
+    export HF_TOKEN="hf_..."
+    ```
+
+<ConditionalContent
+  variableName="text"
+  condition={(model) => model.includes('gemma')} >
+
+2. Agree to the [Gemma 3 license](https://huggingface.co/google/gemma-3-27b-it).
+
+</ConditionalContent>
+<ConditionalContent
+  variableName="text"
+  condition={(model) => model.includes('Llama')} >
+
+2. Agree to the [Llama 3.1 license](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct).
+
+</ConditionalContent>
+
+3. Start the endpoint:
+
+    <DynamicCode language="sh" variableName="text">{
+    `max serve --model {text}`
+    }</DynamicCode>
+
+</TabItem>
+<TabItem value="image" label="Image to text">
+
+<div className="model-selector-container">
+
+Select a model to change the code below:
+
+<ModelSelector modelOptions={allModelOptions} variableName="image" />
+
+<ConditionalContent
+  variableName="image"
+  condition={(model) => model.includes('gemma')} >
+
+Google's [Gemma 3 models](https://builds.modular.com/models/gemma-3-it/27B) are
+multimodal. MAX supports text input for all available sizes and image input for
+the 12B and 27B models. All sizes require a
+[compatible GPU](/max/packages#gpu-compatibility).
+
+</ConditionalContent>
+
+<ConditionalContent
+  variableName="image"
+  condition={(model) => model.includes('InternVL3')} >
+
+OpenGVLab's multimodal [InternVL3
+models](https://builds.modular.com/models/InternVL3/14B) come in many sizes,
+but they all require a [compatible GPU](/max/packages#gpu-compatibility). They
+aren't gated on Hugging Face, so you don't need to provide a Hugging Face
+access token to start the endpoint.
+
+</ConditionalContent>
+
+</div>
+
+<ConditionalContent
+  variableName="image"
+  condition={(model) => model.includes('gemma')} >
+
+Agree to the [Gemma 3 license](https://huggingface.co/google/gemma-3-27b-it) and
+add your [HF Access Token](https://huggingface.co/settings/tokens) as an
+environment variable:
+
+```bash
+export HF_TOKEN="hf_..."
+```
+
+</ConditionalContent>
+
+Start the endpoint with the `max` CLI:
+
+<DynamicCode language="sh" variableName="image">{
+`max serve --model {image} --trust-remote-code`
+}</DynamicCode>
+
+</TabItem>
+</ModelDropdownTabs>
+
+It will take some time to download the model, compile it, and start the
+server. While that's working, you can get started on the next step.
+
+
+## Run inference with the endpoint
+
+Open a new terminal and send an inference request using the `openai` Python
+API:
+
+<Tabs groupId="inference" className="hidden">
+<TabItem value="text" label="Text to text">
+
+1. Navigate to the project you created above and then install the `openai`
+package:
+
+    <Tabs groupId="install">
+      <TabItem value="pixi" label="pixi">
+
+        ```bash
+        pixi add openai
+        ```
+
+      </TabItem>
+      <TabItem value="uv" label="uv">
+
+        ```bash
+        uv add openai
+        ```
+
+      </TabItem>
+      <TabItem value="pip" label="pip">
+
+        ```bash
+        pip install openai
+        ```
+
+      </TabItem>
+      <TabItem value="conda" label="conda">
+
+        ```bash
+        conda install -c conda-forge openai
+        ```
+
+      </TabItem>
+    </Tabs>
+
+2. Activate the virtual environment:
+
+    <Tabs groupId="install">
+      <TabItem value="pixi" label="pixi">
+
+        ```bash
+        pixi shell
+        ```
+
+      </TabItem>
+      <TabItem value="uv" label="uv">
+
+        ```bash
+        source .venv/bin/activate
+        ```
+
+      </TabItem>
+      <TabItem value="pip" label="pip">
+
+        ```bash
+        source .venv/quickstart/bin/activate
+        ```
+
+      </TabItem>
+      <TabItem value="conda" label="conda">
+
+        ```bash
+        conda init
+        ```
+
+        Or if you're on a Mac, use:
+
+        ```bash
+        conda init zsh
+        ```
+
+      </TabItem>
+    </Tabs>
+
+3. Create a new file that sends an inference request:
+
+    <DynamicCode language="python" title="generate-text.py" variableName="text">{
+    `from openai import OpenAI
+
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+    completion = client.chat.completions.create(
+        model="{text}",
+        messages=[
+            {
+              "role": "user",
+              "content": "Who won the world series in 2020?"
+            },
+        ],
+    )
+
+    print(completion.choices[0].message.content)`
+    }</DynamicCode>
+
+    Notice that the `OpenAI` API requires the `api_key` argument, but you
+    don't need that with MAX.
+
+4. Wait until the model server is ready—when it is, you'll see this message in
+your first terminal:
+
+    ```output
+    🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+    ```
+
+    Then run the Python script from your second terminal, and you should see
+    results like this (your results may vary, especially for different model
+    sizes):
+
+    ```sh
+    python generate-text.py
+    ```
+
+    ```output
+    The **Los Angeles Dodgers** won the World Series in 2020!
+
+    They defeated the Tampa Bay Rays 4 games to 2. It was their first World Series title since 1988.
+    ```
+
+</TabItem>
+<TabItem value="image" label="Image to text">
+
+1. Navigate to the project you created above and then install the `openai`
+package:
+
+    <Tabs groupId="install">
+      <TabItem value="pixi" label="pixi">
+
+        ```bash
+        pixi add openai
+        ```
+
+      </TabItem>
+      <TabItem value="uv" label="uv">
+
+        ```bash
+        uv add openai
+        ```
+
+      </TabItem>
+      <TabItem value="pip" label="pip">
+
+        ```bash
+        pip install openai
+        ```
+
+      </TabItem>
+      <TabItem value="conda" label="conda">
+
+        ```bash
+        conda install -c conda-forge openai
+        ```
+
+      </TabItem>
+    </Tabs>
+
+2. Activate the virtual environment:
+
+    <Tabs groupId="install">
+      <TabItem value="pixi" label="pixi">
+
+        ```bash
+        pixi shell
+        ```
+
+      </TabItem>
+      <TabItem value="uv" label="uv">
+
+        ```bash
+        source .venv/bin/activate
+        ```
+
+      </TabItem>
+      <TabItem value="pip" label="pip">
+
+        ```bash
+        source .venv/quickstart/bin/activate
+        ```
+
+      </TabItem>
+      <TabItem value="conda" label="conda">
+
+        ```bash
+        conda init
+        ```
+
+        Or if you're on a Mac, use:
+
+        ```bash
+        conda init zsh
+        ```
+
+      </TabItem>
+    </Tabs>
+
+3. Create a new file that sends an inference request:
+
+    <DynamicCode language="python" title="generate-image-caption.py" variableName="image">{
+    `from openai import OpenAI
+
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+    completion = client.chat.completions.create(
+        model="{image}",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Write a caption for this image"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=300
+    )
+
+    print(completion.choices[0].message.content)`
+    }</DynamicCode>
+
+    Notice that the `OpenAI` API requires the `api_key` argument, but you
+    don't need that with MAX.
+
+4. Wait until the model server is ready—when it is, you'll see this message in
+your first terminal:
+
+    ```output
+    🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+    ```
+
+    Then run the Python script from your second terminal, and you should see
+    results like this (your results will always be different):
+
+    ```sh
+    python generate-image-caption.py
+    ```
+
+    ```output
+    In a charming English countryside setting, Mr. Bun, dressed elegantly in a tweed outfit, stands proudly on a dirt path, surrounded by lush greenery and blooming wildflowers.
+    ```
+
+</TabItem>
+</Tabs>
+
+
+## Benchmark the endpoint
+
+While still in your second terminal, run the following command to benchmark
+your endpoint:
+
+
+<Tabs groupId="inference" className="hidden">
+<TabItem value="text" label="Text to text">
+
+    <DynamicCode language="sh" variableName="text">{
+    `max benchmark \\
+    --model {text} \\
+    --backend modular \\
+    --endpoint /v1/chat/completions \\
+    --dataset-name sonnet \\
+    --num-prompts 500 \\
+    --sonnet-input-len 550 \\
+    --output-lengths 256 \\
+    --sonnet-prefix-len 200`
+    }</DynamicCode>
+
+</TabItem>
+<TabItem value="image" label="Image to text">
+
+    <DynamicCode language="sh" variableName="image">{
+    `max benchmark \\
+    --model {image} \\
+    --backend modular \\
+    --endpoint /v1/chat/completions \\
+    --dataset-name random \\
+    --num-prompts 500 \\
+    --random-input-len 40 \\
+    --random-output-len 150 \\
+    --random-image-size 512,512 \\
+    --random-coefficient-of-variation 0.1,0.6`
+    }</DynamicCode>
+
+</TabItem>
+</Tabs>
+
+When it's done, you'll see the results printed to the terminal.
+
+If you want to save the results, add the `--save-result` flag and it'll save a
+JSON file in the local directory. You can specify the file name with
+`--result-filename` and change the directory with `--result-dir`. For example:
+
+```sh
+max benchmark \
+  ...
+  --save-result \
+  --result-filename "quickstart-benchmark.json" \
+  --result-dir "results"
+```
+
+The benchmark options above are just a starting point. When you want to
+save your own benchmark configurations, you can define them in a YAML file
+and pass it to the `--config-file` option. For example configurations, see our
+[benchmark config files on
+GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
+
+For more details about the tool, including other datasets and configuration
+options, see the [`max benchmark` documentation](/max/cli/benchmark).
+
+:::caution GPU ran out of memory
+
+If the server log says, `GPU ran out of memory during model execution`, try
+reducing the benchmark input length with the option corresponding to your
+dataset (`--sonnet-input-len` or `--random-input-len`). Also consider
+restarting `max serve` and adding `--device-memory-utilization` with a value as
+low as `0.5` (the default is `0.9`).
+
+:::
+
+## Next steps
+
+Now that you have an endpoint, connect to it with our [Agentic
+Cookbook](https://modul.ar/cookbook)—an
+open-source project for building React-based interfaces for any model endpoint.
+Just clone the repo, run it with npm, and pick a recipe such as a chat
+interface, a drag-and-drop image caption tool, or build your own.
+
+To get started, see the
+[project README](https://modul.ar/cookbook).
+
+<img src={require('./images/cookbook-captioning.png').default}
+     alt="" width="704" />
+
+{/*
+### Keep reading
+
+Here are some features you can try with your endpoint:
+
+import SmallCards from '@site/src/components/SmallCards';
+
+export const docs = [
+  {
+    title: 'Function calling',
+    link: '/max/serve/function-calling',
+    description: `Learn how to use LLMs that support function calling and
+    tool use, such as to retrieve data and execute external tasks.`,
+  },
+  {
+    title: 'Structured output',
+    link: '/max/serve/structured-output',
+    description: `Learn how to use structured output (constrained decoding)
+    to enforce the output format from a model using an input schema.`,
+  },
+];
+
+<SmallCards data={docs} analyticsName="Quickstart: docs" cols={2} /> */}
+
+## Stay in touch
+
+<ContactSection />
