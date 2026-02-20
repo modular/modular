@@ -73,7 +73,7 @@ trait IntervalElement(Comparable, Copyable, Intable, Writable):
 
 struct Interval[T: IntervalElement](
     Boolable,
-    Equatable,
+    Comparable,
     ImplicitlyCopyable,
     Representable,
     Sized,
