@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Positional embedding modules and functions."""
 
+from .fused_rope_vision import fused_qk_rope_vision
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 
 __all__ = [
     "RotaryEmbedding",
     "TransposedRotaryEmbedding",
+    "fused_qk_rope_vision",
 ]
