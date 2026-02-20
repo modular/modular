@@ -449,6 +449,14 @@ struct BitSet[size: Int](
 
         writer.write("}")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("BitSet[")
+        writer.write(Self.size)
+        writer.write("](")
+        self.write_to(writer)
+        writer.write(")")
+
     fn __repr__(self) -> String:
         """Returns a developer-friendly string representation of the bitset.
 
