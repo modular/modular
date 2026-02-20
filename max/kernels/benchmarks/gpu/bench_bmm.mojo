@@ -86,11 +86,8 @@ comptime epilogue_func_type = fn[
 fn _row_major_shapes_to_strides[shapes_dim: DimList]() -> DimList:
     """Compute the strides for a 3D shape. Assuming row-major layout."""
 
-    @parameter
-    if shapes_dim.has_value[2]():
-
-        @parameter
-        if shapes_dim.has_value[1]():
+    comptime if shapes_dim.has_value[2]():
+        comptime if shapes_dim.has_value[1]():
             return DimList(
                 shapes_dim.get[1]() * shapes_dim.get[2](),
                 shapes_dim.get[2](),
@@ -236,11 +233,8 @@ fn bench_bmm[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            @parameter
-            if use_vendor_blas:
-
-                @parameter
-                if has_amd_gpu_accelerator():
+            comptime if use_vendor_blas:
+                comptime if has_amd_gpu_accelerator():
                     var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
                         c_device.data, dynamic_c_shape
                     )
@@ -288,16 +282,13 @@ fn bench_bmm[
                 ctx.synchronize()
 
                 # Epilogue
-                @parameter
-                if lambda_fn:
+                comptime if lambda_fn:
                     elementwise[func, pack_size, target="gpu"](
                         IndexList[3](b, m, Int(N.value())),
                         ctx,
                     )
             else:
-
-                @parameter
-                if lambda_fn:
+                comptime if lambda_fn:
                     _batched_matmul_gpu[
                         transpose_b=transpose_b,
                         elementwise_epilogue_fn=epilogue_fn,

@@ -168,8 +168,7 @@ fn bench_topk_batched[
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference
-    @parameter
-    if not sampling:
+    comptime if not sampling:
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](topk_vals_size)
         var topk_idxs_cpu_ptr = alloc[Int64](topk_vals_size)
         var topk_vals_cpu = TileTensor(
@@ -196,8 +195,7 @@ fn bench_topk_batched[
                 topk_vals_cpu_ptr[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -284,8 +282,7 @@ fn bench_topk_multi_rank[
     ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
     var batch_size: Int
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]
@@ -340,8 +337,7 @@ fn bench_topk_multi_rank[
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference
-    @parameter
-    if not sampling:
+    comptime if not sampling:
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](out_vals_size)
         var topk_idxs_cpu_ptr = alloc[Int64](out_vals_size)
         var topk_vals_cpu = TileTensor(
@@ -368,8 +364,7 @@ fn bench_topk_multi_rank[
                 topk_vals_cpu_ptr[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),

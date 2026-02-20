@@ -167,8 +167,7 @@ fn exp_libm[
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         res[i] = external_call["expf", Scalar[dtype]](arg[i])
     return res
 
@@ -181,8 +180,7 @@ fn ldexp_libm[
 ]:
     var res = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         res[i] = external_call["ldexpf", Scalar[dtype]](arg)
     return res
 

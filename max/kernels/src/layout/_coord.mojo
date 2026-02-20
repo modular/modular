@@ -968,8 +968,7 @@ fn idx2crd[
         else:
             var coord_val = (idx.value() // stride.value()) % shape.value()
 
-            @parameter
-            for i in range(shape_len):
+            comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
                         RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))

@@ -123,8 +123,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
 
         comptime depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
 
-        @parameter
-        for idx in range(len(depth_static_dims)):
+        comptime for idx in range(len(depth_static_dims)):
             if depth_static_dims[idx] == spec.depth_dim:
                 b.iter[iter_fn[depth_static_dims[idx]]]()
                 return

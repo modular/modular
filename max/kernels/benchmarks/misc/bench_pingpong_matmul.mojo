@@ -155,8 +155,7 @@ fn bench_matmul[
             var offset_b = 0
             var offset_c = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_a = (iteration * stride_a) % cache_a
                 offset_b = (iteration * stride_b) % cache_b
                 offset_c = (iteration * stride_c) % cache_c
@@ -189,8 +188,7 @@ fn bench_matmul[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords_prod) if epilogue else None
 
-            @parameter
-            if use_vendor_blas:
+            comptime if use_vendor_blas:
                 vendor_blas.matmul[use_tf32=True](
                     ctx,
                     tensor_c,
@@ -205,8 +203,7 @@ fn bench_matmul[
                 ]()
                 comptime enable_swizzle = env_get_bool["enable_swizzle", True]()
 
-                @parameter
-                if use_ping_pong_matmul:
+                comptime if use_ping_pong_matmul:
                     ping_pong_matmul[enable_swizzle=enable_swizzle](
                         from_ndbuffer_row_major(tensor_a),
                         from_ndbuffer_row_major(tensor_b),

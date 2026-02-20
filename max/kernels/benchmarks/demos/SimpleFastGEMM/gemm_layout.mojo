@@ -61,8 +61,7 @@ fn kernel[
 
     var c_cache = TensorBuilder[MR, NR, dtype].OnStackAligned[alignment]()
 
-    @parameter
-    for m in range(MR):
+    comptime for m in range(MR):
         c_cache.store[NR](m, 0, c.load[NR](m, 0))
 
     for pr in range(K // NR):
@@ -72,22 +71,19 @@ fn kernel[
         for k in range(NR):
             var b_next_tile = b_row.tile[1, NR](0, k + 4)
 
-            @parameter
-            for n in range(0, NR, simd_size):
+            comptime for n in range(0, NR, simd_size):
                 b_next_tile.prefetch(0, n)
 
             var b_tile = b_row.tile[1, NR](0, k)
 
-            @parameter
-            for m in range(MR):
+            comptime for m in range(MR):
                 var av = a_tile[m, k]
 
                 c_cache.store[NR](
                     m, 0, av * b_tile.load[NR](0, 0) + c_cache.load[NR](m, 0)
                 )
 
-    @parameter
-    for m in range(MR):
+    comptime for m in range(MR):
         c.store[NR](m, 0, c_cache.load[NR](m, 0))
 
 

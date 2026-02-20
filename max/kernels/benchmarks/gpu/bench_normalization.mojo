@@ -200,9 +200,7 @@ def main():
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
-
-        @parameter
-        if len(shape) == 2:
+        comptime if len(shape) == 2:
             bench_layer_norm_gpu[dtype, shape](ctx, m, "layer_norm_gpu")
         elif len(shape) == 3:
             bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")

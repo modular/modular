@@ -524,8 +524,7 @@ fn bench_dispatch[
         shmem_free(send_buf)
         shmem_free(recv_buf)
 
-    @parameter
-    if token_dtype == DType.bfloat16:
+    comptime if token_dtype == DType.bfloat16:
         comptime token_fmt_type = BF16TokenFormat[
             output_layout = Layout(), hidden_size, top_k, gpu_alignment
         ]

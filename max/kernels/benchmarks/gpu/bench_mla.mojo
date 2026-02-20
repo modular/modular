@@ -149,8 +149,7 @@ fn bench_decode[
             var offset_mask = 0
             var offset_o = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_q = _calculate_offset(iteration, stride_q, buf_q)
                 offset_k = _calculate_offset(iteration, stride_k, buf_k)
                 offset_mask = _calculate_offset(
@@ -189,8 +188,7 @@ fn bench_decode[
                 ),
             )
 
-            @parameter
-            if use_causal_mask:
+            comptime if use_causal_mask:
                 flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                     output_device.as_any_origin(),
                     q_device,
@@ -412,8 +410,7 @@ fn bench_prefill[
             var offset_cache = 0
             var offset_o = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_q = _calculate_offset(iteration, stride_q, buf_q)
                 offset_k = _calculate_offset(iteration, stride_k, buf_k)
                 offset_v = _calculate_offset(iteration, stride_v, buf_v)

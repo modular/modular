@@ -127,8 +127,7 @@ fn bench_1d1d_quantization[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             # Run the quantization kernel
-            @parameter
-            if use_async:
+            comptime if use_async:
                 quantize_dynamic_scaled_fp4_async[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE
                 ](
@@ -191,9 +190,7 @@ def main():
     comptime is_fp4 = env_get_bool["is_fp4", True]()
 
     with DeviceContext() as ctx:
-
-        @parameter
-        if ctx.default_device_info.compute == B200.compute:
+        comptime if ctx.default_device_info.compute == B200.compute:
             var m = Bench(BenchConfig(num_repetitions=1))
             bench_1d1d_quantization[in_dtype, cols, use_async, is_fp4](
                 ctx, m, "1d1d_quantization", rows

@@ -121,8 +121,7 @@ fn bench_broadcast[
     var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
 
     # Initialize output and signal buffers for each GPU
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
@@ -130,8 +129,7 @@ fn bench_broadcast[
             list_of_ctx[0]
         ).unsafe_ptr()
 
-        @parameter
-        for gpu_idx in range(ngpus):
+        comptime for gpu_idx in range(ngpus):
             # For multimem, we use unicast buffers for verification/copy-back
             out_bufs_list.append(
                 out_multicast_buf.unicast_buffer_for(list_of_ctx[gpu_idx])
@@ -150,9 +148,7 @@ fn bench_broadcast[
                 signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
             )
     else:
-
-        @parameter
-        for gpu_idx in range(ngpus):
+        comptime for gpu_idx in range(ngpus):
             # Create output buffer for this GPU
             out_bufs_list.append(
                 list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
@@ -186,8 +182,7 @@ fn bench_broadcast[
         fill={}
     )
 
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
             out_bufs[i] = NDBuffer[dtype, rank](
@@ -204,15 +199,13 @@ fn bench_broadcast[
 
     # Zero device output buffers once before benchmarking so verification isn't
     # affected by any stale data in case a kernel path doesn't overwrite fully.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
 
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
     # spawning worker threads.
-    @parameter
-    if use_vendor_ccl:
+    comptime if use_vendor_ccl:
         if not vendor_ccl.is_broadcast_available():
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
@@ -228,8 +221,7 @@ fn bench_broadcast[
             # Offset the input buffer if cache_busting
             var offset = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset = (cache_iter * stride) % cache_elems
 
             var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
@@ -281,8 +273,7 @@ fn bench_broadcast[
     # This ensures we're verifying fresh results, not stale data from
     # a previous iteration that might mask a broken kernel.
     # Signal buffers must also be zeroed since 2-stage uses the payload as scratch.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(signal_buffers[i], 0)
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
         list_of_ctx[i].synchronize()
@@ -294,8 +285,7 @@ fn bench_broadcast[
     )
 
     # Run one broadcast for verification
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         comptime broadcast_kernel = vendor_ccl.broadcast if use_vendor_ccl else broadcast
         broadcast_kernel[ngpus, use_multimem=use_multimem](
             in_buf_verify,
@@ -307,8 +297,7 @@ fn bench_broadcast[
         )
 
     # Copy results back and verify - reuse host_buffer for each GPU
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffer, out_bufs_list[i])
         list_of_ctx[i].synchronize()
 

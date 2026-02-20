@@ -236,8 +236,7 @@ struct Layout[
         var shape_t = self._shape.tuple()
         var stride_t = self._stride.tuple()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             var coord_val = (idx // stride_t[i].value()) % shape_t[i].value()
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[ResultType.element_types[i]](

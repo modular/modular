@@ -712,9 +712,7 @@ def main():
 
     var m = Bench()
     with DeviceContext() as ctx:
-
-        @parameter
-        if method == "avg_pool":
+        comptime if method == "avg_pool":
             bench_stencil_avg_pool[
                 dtype,
                 batch_size,

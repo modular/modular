@@ -206,8 +206,7 @@ fn mla_combine_kernel[
     # The grid launches with seq_len = q_max_seq_len, so CTAs with
     # seq_idx >= this batch's actual seq_len must exit early to avoid
     # writing garbage to output locations belonging to other batches.
-    @parameter
-    if ragged:
+    comptime if ragged:
         var batch_seq_len = Int(
             params.input_row_offsets_ptr[batch_idx + 1]
         ) - Int(params.input_row_offsets_ptr[batch_idx])

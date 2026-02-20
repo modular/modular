@@ -188,12 +188,10 @@ fn bench_reducescatter[
             # Offset the input buffer if cache_busting
             var offset = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset = (cache_iter * stride) % cache_elems
 
-            @parameter
-            for i in range(ngpus):
+            comptime for i in range(ngpus):
                 in_bufs[i] = NDBuffer[dtype, rank](
                     in_bufs_list[i].unsafe_ptr() + offset,
                     DimList(input_length),
@@ -217,12 +215,10 @@ fn bench_reducescatter[
     b.dump_report()
 
     # Copy results back and verify
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Verify results
@@ -231,15 +227,13 @@ fn bench_reducescatter[
     #  - quantizing each per-GPU term to `dtype` by calling _per_gpu_value[dtype](...)
     #  - accumulating in Float32
     #  - finally casting to `dtype` for the expected value
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         for j in range(output_lengths[i]):
             comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
             var global_idx = rank_starts[i] + j
 
-            @parameter
-            for k in range(ngpus):
+            comptime for k in range(ngpus):
                 var term_dtype = _per_gpu_value[dtype](k, global_idx)
                 accum += Scalar[accum_t](term_dtype)
             var expected_sum = Scalar[dtype](accum)
@@ -278,8 +272,7 @@ def main():
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
     comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()
 
     var m = Bench()
