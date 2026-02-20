@@ -656,8 +656,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var file = FileDescriptor(self._get_raw_fd())
         var buffer = _WriteBufferStack(file)
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(buffer)
 
         buffer.flush()

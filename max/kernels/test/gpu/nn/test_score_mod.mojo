@@ -32,8 +32,7 @@ fn generate_alibi_bias[
 ) -> SIMD[dtype, width] where dtype.is_floating_point():
     var scale: SIMD[dtype, width]
 
-    @parameter
-    if num_heads.is_power_of_two():
+    comptime if num_heads.is_power_of_two():
         scale = exp2(
             -((head_idx + 1).cast[dtype]() * 8.0 / Scalar[dtype](num_heads))
         )

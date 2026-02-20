@@ -106,8 +106,7 @@ fn to_integer(
     # actual conversion
     comptime vector_with_exponents = get_vector_with_exponents()
 
-    @parameter
-    for i in range(CONTAINER_SIZE // simd_width):
+    comptime for i in range(CONTAINER_SIZE // simd_width):
         var ascii_vector = (std_x_ptr + i * simd_width).load[width=simd_width]()
         var as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
         var as_digits_index = as_digits.cast[DType.uint64]()

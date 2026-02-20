@@ -487,9 +487,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     comptime types = (DType.float32, DType.bfloat16)
 
     for bs in [1, 4, 16]:
-
-        @parameter
-        for type_idx in range(len(types)):
+        comptime for type_idx in range(len(types)):
             comptime type = types[type_idx]
             if bs == 16 and type == DType.float32:
                 # This fails for the MI300X
@@ -517,8 +515,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
                 llama_num_q_heads, type, kv_params_llama3
             ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
 
-            @parameter
-            if has_nvidia_gpu_accelerator():
+            comptime if has_nvidia_gpu_accelerator():
                 print("TG", bs, type, "q_heads//kv_heads = 16//1")
                 execute_ragged_flash_attention[
                     16,

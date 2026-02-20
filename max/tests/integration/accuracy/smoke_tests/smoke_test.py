@@ -31,9 +31,11 @@ Note that if you're running this script inside bazel, only available for max-ci,
 then the virtualenvs are not needed.
 """
 
+import csv
 import json
 import logging
 import os
+import shlex
 import signal
 import sys
 import time
@@ -90,6 +92,20 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
+@cache
+def _load_hf_repo_lock() -> dict[str, str]:
+    """Read hf-repo-lock.tsv, return {lowercase_repo: revision} mapping."""
+    tsv = Path(__file__).resolve().parent.parent.parent / "hf-repo-lock.tsv"
+    if not tsv.exists():
+        logger.warning("hf-repo-lock.tsv not found, skipping revision pinning")
+        return {}
+    db = {}
+    with open(tsv) as f:
+        for row in csv.DictReader(f, dialect="excel-tab"):
+            db[row["hf_repo"].lower()] = row["revision"]
+    return db
+
+
 def test_single_request(model: str, task: str) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
@@ -130,7 +146,12 @@ def server_is_ready() -> bool:
         return False
 
 
-def get_server_cmd(framework: str, model: str) -> list[str]:
+def get_server_cmd(
+    framework: str,
+    model: str,
+    *,
+    serve_extra_args: str = "",
+) -> list[str]:
     gpu_model, gpu_count = get_gpu_name_and_count()
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
@@ -168,6 +189,31 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
+    if framework in ["max-ci", "max"] and "tbmod" in model:
+        cmd += ["--no-use-legacy-module"]
+
+    revision = _load_hf_repo_lock().get(model)
+    if revision:
+        if framework in ("max", "max-ci"):
+            cmd += [
+                "--huggingface-model-revision",
+                revision,
+                "--huggingface-weight-revision",
+                revision,
+            ]
+        else:  # vllm, sglang
+            cmd += ["--revision", revision]
+        logger.info(f"Pinned to revision {revision[:12]}")
+    else:
+        logger.warning(f"No locked revision for {model}")
+
+    if serve_extra_args:
+        if framework in ["max-ci", "max"]:
+            cmd += shlex.split(serve_extra_args)
+        else:
+            logger.warning(
+                "Ignoring --serve-extra-args for framework %s", framework
+            )
     return cmd
 
 
@@ -431,6 +477,15 @@ def write_results(
     default=320,
     help="Number of questions to ask the model",
 )
+@click.option(
+    "--serve-extra-args",
+    type=str,
+    default="",
+    help=(
+        "Extra args appended to MAX serve command, for example: "
+        '"--device-graph-capture --max-batch-size=16"'
+    ),
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -439,6 +494,7 @@ def smoke_test(
     print_cot: bool,
     max_concurrent: int,
     num_questions: int,
+    serve_extra_args: str,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
@@ -462,7 +518,11 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.lower().strip()
-    cmd = get_server_cmd(framework, model)
+    cmd = get_server_cmd(
+        framework,
+        model,
+        serve_extra_args=serve_extra_args,
+    )
 
     # TODO Refactor this to a model list/matrix specifying type of model
     is_vision_model = any(

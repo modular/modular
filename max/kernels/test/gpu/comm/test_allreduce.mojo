@@ -192,8 +192,7 @@ fn allreduce_test[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
             output_lambda = Optional[elementwise_epilogue_type](
@@ -208,8 +207,7 @@ fn allreduce_test[
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    @parameter
-    if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and has_amd_gpu_accelerator():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -226,9 +224,7 @@ fn allreduce_test[
 
             # Test RCCL.
             with vendor_ccl.group():
-
-                @parameter
-                for i in range(ngpus):
+                comptime for i in range(ngpus):
                     vendor_ccl.allreduce[ngpus=ngpus](
                         in_bufs,
                         out_bufs_vendor[i],
@@ -368,8 +364,7 @@ def allreduce_naive_test() -> None:
         )
 
     # Launch naive allreduce per device
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         _allreduce_naive_single[
             dtype = DType.float32,
             rank=1,
@@ -399,8 +394,7 @@ fn run_allreduce_sweep[
     use_multimem: Bool, use_quickreduce: Bool = False
 ]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
+    comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),

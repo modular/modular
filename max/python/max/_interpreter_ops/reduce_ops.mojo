@@ -27,7 +27,7 @@ from algorithm.functional import IndexList
 from memory import OpaquePointer
 from runtime.asyncrt import DeviceContextPtr
 
-from _common import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 # =============================================================================
@@ -431,12 +431,8 @@ fn reduce_op[
             target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype in (
+        comptime if has_accelerator():
+            comptime if dtype in (
                 DType.float32,
                 DType.float16,
                 DType.bfloat16,

@@ -46,8 +46,7 @@ fn test_argsort[
             var lhs = input[indices[i]]
             var rhs = input[indices[i + 1]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs < rhs,
                     msg=String(
@@ -91,8 +90,7 @@ fn test_argsort[
             var lhs = input[indices[i]]
             var rhs = input[indices[0]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs > rhs,
                     msg=String(

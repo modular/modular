@@ -1594,8 +1594,7 @@ def test_copyinit():
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
+    comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
         x = ""
         for i in range(current_size):

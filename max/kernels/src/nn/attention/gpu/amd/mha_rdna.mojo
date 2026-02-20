@@ -72,8 +72,7 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
-        @parameter
-        if Self.token_gen:
+        comptime if Self.token_gen:
             var group_idx = lane_id() % UInt(Self.group)
             return block_idx.y * UInt(Self.group) + UInt(group_idx)
         else:

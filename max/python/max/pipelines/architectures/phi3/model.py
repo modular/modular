@@ -19,8 +19,7 @@ from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
-from transformers import AutoConfig
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 
 from ..llama3_legacy.model import LlamaModelBase
 
@@ -35,8 +34,6 @@ class Phi3Model(LlamaModelBase):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -46,8 +43,6 @@ class Phi3Model(LlamaModelBase):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

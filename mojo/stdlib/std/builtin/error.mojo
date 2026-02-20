@@ -24,6 +24,7 @@ from memory import (
     memcpy,
 )
 from ffi import external_call
+import format._utils as fmt
 from sys import is_gpu
 from sys.info import size_of, align_of
 
@@ -104,8 +105,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             succeeded, or `None` if disabled or unavailable.
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return None
 
         if depth < 0:
@@ -239,7 +239,7 @@ struct Error(
         Returns:
             A String of the error message.
         """
-        return String(self._error)
+        return self._error
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -252,13 +252,25 @@ struct Error(
         self._error.write_to(writer)
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """
+        Formats this error to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Error").fields(fmt.Repr(self._error))
+
+    @no_inline
     fn __repr__(self) -> String:
         """Converts the Error to printable representation.
 
         Returns:
             A printable representation of the error message.
         """
-        return String("Error('", self._error, "')")
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods

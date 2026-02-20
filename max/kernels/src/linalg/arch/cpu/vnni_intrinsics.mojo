@@ -34,8 +34,7 @@ fn vpdpwssd[
 ) -> SIMD[c_type, width]:
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpwssd.512", SIMD[c_type, width]
         ](src, a, b)
@@ -64,8 +63,7 @@ fn vpdpwssds[
 ) -> SIMD[c_type, width]:
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpwssds.512", SIMD[c_type, width]
         ](src, a, b)
@@ -92,8 +90,7 @@ fn vpdpbusd[
 ) -> SIMD[c_type, width]:
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusd.512", SIMD[c_type, width]
         ](
@@ -132,8 +129,7 @@ fn vpdpbusds[
 ) -> SIMD[c_type, width]:
     comptime assert c_type == DType.int32, "the type of C must be int32"
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusds.512", SIMD[c_type, width]
         ](
@@ -245,8 +241,7 @@ fn pmaddubs[
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
 ]:
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 16](
                 llvm_intrinsic[
@@ -287,8 +282,7 @@ fn pmaddw[
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
 ]:
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 16](
                 llvm_intrinsic[
@@ -390,8 +384,7 @@ fn dot_i8_to_i32_AVX2[
         A SIMD vector of width elements.
     """
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_16(
                 rebind[SIMD[DType.int32, 16]](src),
@@ -446,8 +439,7 @@ fn dot_i8_to_i32_saturated_AVX2[
         A SIMD vector of width elements.
     """
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_16(
                 rebind[SIMD[DType.int32, 16]](src),
@@ -502,8 +494,7 @@ fn dot_i8_to_i32_x86[
       A SIMD vector of width elements.
     """
 
-    @parameter
-    if CompilationTarget.has_vnni():
+    comptime if CompilationTarget.has_vnni():
         return vpdpbusd(src, a, b)
     else:
         return dot_i8_to_i32_AVX2(src, a, b)
@@ -538,8 +529,7 @@ fn dot_i8_to_i32_saturated_x86[
       A SIMD vector of width elements.
     """
 
-    @parameter
-    if CompilationTarget.has_vnni():
+    comptime if CompilationTarget.has_vnni():
         return vpdpbusd(src, a, b)
     else:
         return dot_i8_to_i32_saturated_AVX2(src, a, b)
@@ -575,8 +565,7 @@ fn dot_i16_to_i32_AVX2[
 
     var t: SIMD[c_type, width]
 
-    @parameter
-    if width == 16:
+    comptime if width == 16:
         t = llvm_intrinsic["llvm.x86.avx512.pmaddw.d.512", SIMD[c_type, width]](
             a, b
         )
@@ -617,8 +606,7 @@ fn dot_i16_to_i32_x86[
       A SIMD vector of width elements.
     """
 
-    @parameter
-    if CompilationTarget.has_vnni():
+    comptime if CompilationTarget.has_vnni():
         return vpdpwssd(src, a, b)
     else:
         return dot_i16_to_i32_AVX2(src, a, b)

@@ -33,6 +33,7 @@ from typing import (
     TypeGuard,
     TypeVar,
     cast,
+    overload,
 )
 from urllib.parse import unquote, urlparse
 
@@ -43,13 +44,16 @@ from httpx import AsyncClient
 from max.interfaces import (
     AudioGenerationRequest,
     GenerationStatus,
+    ImageContentPart,
     LoRAOperation,
     LoRARequest,
     LoRAStatus,
+    MessageContent,
     PipelineTokenizer,
     RequestID,
     SamplingParams,
     SamplingParamsInput,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
@@ -137,6 +141,18 @@ def record_request_end(
     if input_tokens is not None:
         METRICS.input_tokens(input_tokens)
         METRICS.input_tokens_per_request(input_tokens)
+
+
+@overload
+def get_finish_reason_from_status(
+    status: GenerationStatus, allow_none: Literal[True] = True
+) -> Literal["stop", "length"] | None: ...
+
+
+@overload
+def get_finish_reason_from_status(
+    status: GenerationStatus, allow_none: Literal[False]
+) -> Literal["stop", "length"]: ...
 
 
 def get_finish_reason_from_status(
@@ -387,7 +403,7 @@ class OpenAIChatResponseGenerator(
                 for chunk in completed_outputs
                 if chunk.stop_sequence is not None
             ]
-            finish_reason: str | None
+            finish_reason: Literal["stop", "length"]
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
                 response_message = response_message[:idx]
@@ -465,7 +481,7 @@ class OpenAIChatResponseGenerator(
         self,
         response_message: str,
         response_choices: list[Choice1],
-        finish_reason: str | None,
+        finish_reason: Literal["stop", "length"],
         logprobs: Logprobs2 | None = None,
     ) -> None:
         """Handle regular text response by appending to response_choices."""
@@ -582,28 +598,21 @@ async def openai_parse_chat_completion_request(
     """
     messages: list[TextGenerationRequestMessage] = []
     image_refs: list[AnyUrl] = []
-    image_content_to_update: list[dict[str, Any] | None] = []
     resolve_image_tasks = []
     for m in completion_request.messages:
         if isinstance(m.root.content, list):
-            message_content: list[dict[str, Any]] = []
+            message_content: list[MessageContent] = []
             for content_part in m.root.content:
                 if content_part.root.type == "image_url":
                     image_refs.append(content_part.root.image_url.url)
                     if wrap_content:
-                        new_content = {"type": "image"}
-                        message_content.append(new_content)
-                        image_content_to_update.append(new_content)
+                        message_content.append(ImageContentPart())
                     else:
                         message_content.append(content_part.model_dump())
-                        image_content_to_update.append(None)
                 elif content_part.root.type == "text":
                     if wrap_content:
                         message_content.append(
-                            {
-                                "type": content_part.root.type,
-                                "text": content_part.root.text,
-                            }
+                            TextContentPart(text=content_part.root.text)
                         )
                     else:
                         message_content.append(content_part.model_dump())
@@ -624,9 +633,6 @@ async def openai_parse_chat_completion_request(
         resolve_image_from_url(image_url, settings) for image_url in image_refs
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
-    for i, image_content in enumerate(image_content_to_update):
-        if image_content is not None:
-            image_content["image"] = request_images[i]
 
     return messages, request_images
 
@@ -1240,7 +1246,7 @@ class OpenAICompletionResponseGenerator(
                         index=i,
                         text=response_message,
                         finish_reason=get_finish_reason_from_status(
-                            req_outputs[-1].status
+                            req_outputs[-1].status, allow_none=False
                         ),
                         logprobs=log_probs,
                     )

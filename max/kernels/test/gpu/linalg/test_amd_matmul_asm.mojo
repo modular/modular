@@ -280,8 +280,7 @@ fn test_amd_matmul_bf16_max_config() raises:
     """
     print("== test_amd_matmul_bf16_max_config (256x256x64)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -299,8 +298,7 @@ fn test_amd_matmul_fp8_max_config() raises:
     """
     print("== test_amd_matmul_fp8_max_config (256x256x128)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -317,8 +315,7 @@ fn test_amd_pingpong_fp8_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for FP8 (256x256x128)."""
     print("== test_amd_pingpong_fp8_max_config (256x256x128)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -349,8 +346,7 @@ fn test_amd_pingpong_bf16_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for BF16 (256x256x64)."""
     print("== test_amd_pingpong_bf16_max_config (256x256x64)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 

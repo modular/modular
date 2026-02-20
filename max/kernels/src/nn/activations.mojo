@@ -43,8 +43,7 @@ fn _is_neg[
         negative at position `i` and False otherwise.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return SIMD[DType.bool, simd_width](fill=False)
     return val.lt(0)
 

@@ -155,8 +155,7 @@ fn cpu_bicubic_kernel(
         var sum_weights: Float32 = 0.0
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -246,8 +245,7 @@ fn gpu_bicubic_kernel[
         var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -290,8 +288,7 @@ fn resize_bicubic[
         output.flat_rank == 4 and input.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]

@@ -240,8 +240,7 @@ fn test_rms_norm_fused_residual_float32_3d() raises:
 fn test_rms_norm_fused_residual_bfloat16() raises:
     """Test rms_norm_fused_residual with bfloat16."""
 
-    @parameter
-    if not CompilationTarget.has_neon():
+    comptime if not CompilationTarget.has_neon():
         run_rms_norm_fused_residual_cpu[DType.bfloat16](Index(4, 16), rtol=1e-2)
 
 
@@ -274,8 +273,7 @@ fn test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
 fn test_rms_norm_fused_residual_dropout_bfloat16() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (bfloat16)."""
 
-    @parameter
-    if not CompilationTarget.has_neon():
+    comptime if not CompilationTarget.has_neon():
         run_rms_norm_fused_residual_cpu[DType.bfloat16](
             Index(4, 16), rtol=1e-2, dropout_p=0.2, seed=99
         )

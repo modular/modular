@@ -86,6 +86,16 @@ MODELS: dict[str, set[str]] = {
     "state-spaces/mamba-130m-hf": MULTI | {"sglang"},
     "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
 }
+
+# These models are hardcoded to run on module-V3. They're duplicates
+# of the model from the org listed in the comment next to the model name.
+V3_MODELS: dict[str, set[str]] = {
+    "tbmod/Meta-Llama-3.1-8B-Instruct": MULTI, # unsloth/
+    "tbmod/Llama-3.2-1B-Instruct": MULTI, # unsloth/
+    "tbmod/gpt-oss-20b-BF16": XL | {"max@H100"}, # unsloth/
+}
+
+MODELS = {**MODELS, **V3_MODELS}
 # fmt: on
 
 

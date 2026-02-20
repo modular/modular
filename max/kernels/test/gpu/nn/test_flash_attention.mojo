@@ -139,8 +139,7 @@ fn test[
                         qkv_type
                     ](i * depth + j)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
                     mask_ptr[i * num_keys + j] = Scalar[mask_type](
@@ -202,8 +201,7 @@ fn test[
         ),
     )
 
-    @parameter
-    if not against_gpu_naive:
+    comptime if not against_gpu_naive:
         comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -281,8 +279,7 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             flash_attention[decoding_warp_split_k=decoding_warp_split_k](
                 output_device,
                 q_device,
@@ -326,8 +323,7 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    @parameter
-    if against_gpu_naive:
+    comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -340,8 +336,7 @@ fn test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             mha_gpu_naive(
                 q_device,
                 k_device,
@@ -429,8 +424,7 @@ fn test_context_encoding(ctx: DeviceContext) raises:
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
-    @parameter
-    for d in range(len(depths)):
+    comptime for d in range(len(depths)):
         comptime depth = depths[d]
         # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
         test[
@@ -629,8 +623,7 @@ fn test_decoding[
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
-    @parameter
-    for d in range(len(depths)):
+    comptime for d in range(len(depths)):
         comptime depth = depths[d]
         test[
             3,
@@ -644,8 +637,7 @@ fn test_decoding[
             decoding_warp_split_k=split_k,
         ](1, 11, ctx, use_index_input=use_index_input)
 
-        @parameter
-        if (
+        comptime if (
             not is_sm8(ctx.default_device_info)
             or num_partitions
             and num_partitions.value() == 1
@@ -709,8 +701,7 @@ fn test_decoding_large_group[
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
-    @parameter
-    for d in range(len(depths)):
+    comptime for d in range(len(depths)):
         comptime depth = depths[d]
         test[
             4,
@@ -923,21 +914,16 @@ def main():
         # Test flash attention with sink kernel during decoding
         test_flash_attention_sink_kernel(ctx, 1)
 
-        @parameter
-        for split_k in range(1):
-
-            @parameter
-            for batch_size in range(1, 5, 3):
+        comptime for split_k in range(1):
+            comptime for batch_size in range(1, 5, 3):
                 test_decoding[batch_size, 1, Bool(split_k)](ctx, False)
 
-                @parameter
-                if not split_k:
+                comptime if not split_k:
                     test_decoding[batch_size, 1, Bool(split_k), DType.float32](
                         ctx, False
                     )
 
-                @parameter
-                if (
+                comptime if (
                     ctx.default_device_info == A100
                     or ctx.default_device_info == H100
                 ):
@@ -946,8 +932,7 @@ def main():
                 test_decoding[batch_size, 2, Bool(split_k)](ctx, False)
                 test_decoding[batch_size, 4, Bool(split_k)](ctx, False)
 
-                @parameter
-                if not split_k:
+                comptime if not split_k:
                     test_decoding[batch_size, 4, Bool(split_k), DType.float32](
                         ctx, False
                     )

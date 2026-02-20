@@ -254,15 +254,12 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var ptr = self.unsafe_ptr()
 
         for _ in range(0, unroll_end, batch_size):
-
-            @parameter
-            for _ in range(batch_size):
+            comptime for _ in range(batch_size):
                 ptr.init_pointee_copy(fill)
                 ptr += 1
 
         # Fill the remainder
-        @parameter
-        for _ in range(unroll_end, Self.size):
+        comptime for _ in range(unroll_end, Self.size):
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
@@ -326,8 +323,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
                 UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
@@ -352,8 +348,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        @parameter
-        if Self.ElementType.__copyinit__is_trivial:
+        comptime if Self.ElementType.__copyinit__is_trivial:
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -371,8 +366,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Moves the elements from the source array into this array.
         """
 
-        @parameter
-        if Self.ElementType.__moveinit__is_trivial:
+        comptime if Self.ElementType.__moveinit__is_trivial:
             self._array = take._array
         else:
             self = Self(uninitialized=True)
@@ -393,11 +387,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.ElementType, ImplicitlyDestructible
         ]
 
-        @parameter
-        if not TDestructible.__del__is_trivial:
-
-            @parameter
-            for idx in range(Self.size):
+        comptime if not TDestructible.__del__is_trivial:
+            comptime for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.bitcast[TDestructible]().destroy_pointee()
 
@@ -627,8 +618,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             to support equality comparison.
         """
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             if self[i] == value:
                 return True
         return False

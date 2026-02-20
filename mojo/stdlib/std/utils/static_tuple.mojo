@@ -138,8 +138,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
 
         self = Self()
 
-        @parameter
-        for idx in range(Self.size):
+        comptime for idx in range(Self.size):
             self.__setitem__[idx](values[idx])
 
     @always_inline("nodebug")

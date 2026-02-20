@@ -348,12 +348,10 @@ def main():
         comptime is_sm90orsm100 = ctx.default_device_info == H100 or ctx.default_device_info == B200
         comptime depths = construct_depths(is_sm90orsm100)
 
-        @parameter
-        for d in range(len(depths)):
+        comptime for d in range(len(depths)):
             comptime depth = depths[d]
 
-            @parameter
-            if depth <= 128:
+            comptime if depth <= 128:
                 # fp32 tf32-fp32 mma
                 test[DType.float32, depth, 1](
                     128, 128, CausalMask(), ctx, is_benchmark=is_benchmark()
@@ -562,8 +560,7 @@ def main():
                 group=4,
             ](1, 600, CausalMask(), ctx)
 
-            @parameter
-            if ctx.default_device_info == A100 or is_sm90orsm100:
+            comptime if ctx.default_device_info == A100 or is_sm90orsm100:
                 test[
                     DType.bfloat16,
                     depth,

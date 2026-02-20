@@ -245,6 +245,15 @@ fn test_grouped_1d1d_nvfp4[
     a_scale_offsets_host.free()
     expert_ids_host.free()
     es_host.free()
+    _ = a_buf^
+    _ = b_buf^
+    _ = c_buf^
+    _ = a_off_buf^
+    _ = a_soff_buf^
+    _ = eid_buf^
+    _ = a_sf_buf^
+    _ = b_sf_buf^
+    _ = es_buf^
 
 
 def main():
@@ -254,3 +263,4 @@ def main():
     test_grouped_1d1d_nvfp4[8, 128, 256](ctx, 4, 64)
     test_grouped_1d1d_nvfp4[4, 1024, 1024](ctx, 2, 128)
     print("=== ALL TESTS PASSED ===")
+    _ = ctx^

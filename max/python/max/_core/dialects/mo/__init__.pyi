@@ -338,57 +338,6 @@ class ConstantLike(Protocol):
 class MOControlOpInterface(Protocol):
     """Interface marking ops that are control flow"""
 
-class DefaultParameterization(Protocol):
-    """
-    Interface providing a default (naive) parameterization that is appropriate
-    for ops without strict invariants on arguments and results (e.g. shape
-    and/or dimension equalities). The interface can only handle ops with a
-    single result, and ignores all arguments/results that are not MO tensors.
-    """
-
-    @property
-    def implicitly_parametric(self) -> bool: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
-    ) -> None: ...
-    def get_effects(
-        self, arg: Sequence[max._core._MemoryEffect], /
-    ) -> None: ...
-    def walk_declarations(
-        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
-    ) -> None: ...
-    def walk_definitions(
-        self,
-        arg: Callable[
-            [
-                max._core.dialects.kgen.ParamDeclAttr,
-                max._core.dialects.kgen.ParamDefValue,
-            ],
-            None,
-        ],
-        /,
-    ) -> None: ...
-    def rename_declarations(
-        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
-    ) -> None: ...
-    def collect_parameter_uses(
-        self,
-        arg0: Callable[[max._core.Attribute], None],
-        arg1: Callable[[max._core.Type], None],
-        /,
-    ) -> None: ...
-    def collect_parameter_uses_below(
-        self,
-        arg0: Callable[[max._core.Attribute], None],
-        arg1: Callable[[max._core.Type], None],
-        /,
-    ) -> None: ...
-
 class ElementWiseBinary(Protocol):
     """Interface for modeling binary element-wise operations."""
 
@@ -563,12 +512,6 @@ class ParamDeclarationInterface(Protocol):
         /,
     ) -> None: ...
 
-class ParameterizationInterface(Protocol):
-    """
-    Interface to be implemented by ops that support resolving unknown shape and
-    dimension parameters in their tensors.
-    """
-
 class PreservedDuringKernelLowering(Protocol):
     """
     Represents a MO operation that must have must lowered using a kernel
@@ -598,104 +541,6 @@ class Reduction(Protocol):
     def axis_mutable(self) -> max._core.OpOperand: ...
     @property
     def result(self) -> max._core.Value[TensorType]: ...
-    def get_effects(
-        self, arg: Sequence[max._core._MemoryEffect], /
-    ) -> None: ...
-    def walk_declarations(
-        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
-    ) -> None: ...
-    def walk_definitions(
-        self,
-        arg: Callable[
-            [
-                max._core.dialects.kgen.ParamDeclAttr,
-                max._core.dialects.kgen.ParamDefValue,
-            ],
-            None,
-        ],
-        /,
-    ) -> None: ...
-    def rename_declarations(
-        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
-    ) -> None: ...
-    def collect_parameter_uses(
-        self,
-        arg0: Callable[[max._core.Attribute], None],
-        arg1: Callable[[max._core.Type], None],
-        /,
-    ) -> None: ...
-    def collect_parameter_uses_below(
-        self,
-        arg0: Callable[[max._core.Attribute], None],
-        arg1: Callable[[max._core.Type], None],
-        /,
-    ) -> None: ...
-
-class SameFirstArgumentOutputShapesParameterization(Protocol):
-    """
-    Interface providing a default parameterization for ops that should have the
-    same output shape as the first operand.
-    """
-
-    @property
-    def implicitly_parametric(self) -> bool: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
-    ) -> None: ...
-    def get_effects(
-        self, arg: Sequence[max._core._MemoryEffect], /
-    ) -> None: ...
-    def walk_declarations(
-        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
-    ) -> None: ...
-    def walk_definitions(
-        self,
-        arg: Callable[
-            [
-                max._core.dialects.kgen.ParamDeclAttr,
-                max._core.dialects.kgen.ParamDefValue,
-            ],
-            None,
-        ],
-        /,
-    ) -> None: ...
-    def rename_declarations(
-        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
-    ) -> None: ...
-    def collect_parameter_uses(
-        self,
-        arg0: Callable[[max._core.Attribute], None],
-        arg1: Callable[[max._core.Type], None],
-        /,
-    ) -> None: ...
-    def collect_parameter_uses_below(
-        self,
-        arg0: Callable[[max._core.Attribute], None],
-        arg1: Callable[[max._core.Type], None],
-        /,
-    ) -> None: ...
-
-class SameInputOutputShapesParameterization(Protocol):
-    """
-    Interface providing a default parameterization for ops that should have the
-    same input and output shapes.
-    """
-
-    @property
-    def implicitly_parametric(self) -> bool: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
-    ) -> None: ...
     def get_effects(
         self, arg: Sequence[max._core._MemoryEffect], /
     ) -> None: ...

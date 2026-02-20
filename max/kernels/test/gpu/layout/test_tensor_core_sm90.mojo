@@ -21,11 +21,8 @@ from utils.index import IndexList
 
 
 fn arange(tensor: LayoutTensor[mut=True, ...]):
-    @parameter
-    for i in range(tensor.shape[0]()):
-
-        @parameter
-        for j in range(tensor.shape[1]()):
+    comptime for i in range(tensor.shape[0]()):
+        comptime for j in range(tensor.shape[1]()):
             tensor[i, j] = Scalar[tensor.dtype](i + j)
 
 

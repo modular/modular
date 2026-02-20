@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -81,8 +80,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -93,10 +90,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -110,8 +103,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -139,7 +130,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings

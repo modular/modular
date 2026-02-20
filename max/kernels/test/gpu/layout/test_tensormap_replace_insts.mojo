@@ -124,8 +124,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
 
-    @parameter
-    for i in range(num_of_tensormaps):
+    comptime for i in range(num_of_tensormaps):
         for j in range(128):
             tensormaps_host_ptr[
                 i * 128 + j
@@ -278,8 +277,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
 
-    @parameter
-    for i in range(num_of_tensormaps):
+    comptime for i in range(num_of_tensormaps):
         for j in range(128):
             tensormaps_host_ptr[
                 i * 128 + j
@@ -466,8 +464,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     )
     var tensormaps_host_ptr = stack_allocation[num_of_subtensors * 128, UInt8]()
 
-    @parameter
-    for i in range(num_of_subtensors):
+    comptime for i in range(num_of_subtensors):
         for j in range(128):
             tensormaps_host_ptr[
                 i * 128 + j

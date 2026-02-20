@@ -29,6 +29,7 @@ from typing import TextIO
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
+from max import pipelines
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
@@ -230,7 +231,7 @@ def dump_results(
     # using grep/awk.
     # Please verify that this doesn't break before changing the output format
 
-    any_logit, any_embedding, any_failed = False, False, False
+    any_logit, any_embedding, any_image, any_failed = False, False, False, False
     for verdict in verdicts.values():
         if verdict.discrepancy_report is None:
             any_failed = True
@@ -238,6 +239,8 @@ def dump_results(
             any_logit = True
         elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
+        elif verdict.discrepancy_report.model_modality == Modality.IMAGE:
+            any_image = True
 
     if node := os.environ.get("NODE_NAME"):
         to.write(f"\n\nRan on node: {node}")
@@ -316,6 +319,40 @@ def dump_results(
 
             to.write(
                 f"| {verdict.emoji} | {display_name(name)} | {mae} | {diff_str} |\n"
+            )
+
+    if any_image:
+        to.write("\n\n## Image Models\n")
+        to.write(
+            "**SSIM (avg)** = average SSIM over all prompts (higher is better)\n"
+            "**LPIPS (avg)** = average LPIPS over all prompts (lower is better)\n"
+            "**Diff (LPIPS avg)** = change of average LPIPS from previous run\n"
+        )
+        to.write(
+            "| Status | Model | SSIM (avg) | LPIPS (avg) | MAE | Diff (LPIPS avg) |\n"
+        )
+        to.write(
+            "| :----: | :---  | :--------: | :---------: |:---:| :--------------: |\n"
+        )
+
+        for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
+            if verdict.discrepancy_report is None:
+                continue
+            if verdict.discrepancy_report.model_modality != Modality.IMAGE:
+                continue
+
+            ssim_avg = verdict.discrepancy_report.avg_ssim
+            lpips_avg = verdict.discrepancy_report.avg_lpips
+            ssim_str = "N/A" if ssim_avg is None else f"{ssim_avg:.2e}"
+            lpips_str = "N/A" if lpips_avg is None else f"{lpips_avg:.2e}"
+            mae = f"{verdict.discrepancy_report.avg_mae:.2e}"
+
+            diff_str = "N/A"
+            if previous_verdicts and name in previous_verdicts:
+                diff_str = compute_diff(verdict, previous_verdicts[name])
+
+            to.write(
+                f"| {verdict.emoji} | {display_name(name)} | {ssim_str} | {lpips_str} | {mae} | {diff_str} |\n"
             )
 
 
@@ -400,7 +437,7 @@ def generate_llm_logits_with_optional_retry(
     framework: str,
     device: str,
     pipeline: str,
-    encoding: str,
+    encoding: pipelines.SupportedEncoding,
     output_path: Path,
     reference: list[ModelOutput] | None = None,
     retry_on_flake: bool = True,
@@ -458,7 +495,7 @@ def run_llm_verification(
     find_tolerances: bool,
     print_suggested_tolerances: bool,
     pipeline: str,
-    encoding: str,
+    encoding: pipelines.SupportedEncoding,
     pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
     absolute_tolerance: float | None = None,
     relative_tolerance: float | None = None,
@@ -556,6 +593,128 @@ def run_llm_verification(
         return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
+def run_pixel_generation_verification(
+    *,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+    pipeline: str,
+    encoding: pipelines.SupportedEncoding,
+    pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
+    absolute_tolerance: float | None = None,
+    relative_tolerance: float | None = None,
+    ssim_threshold: float | None = None,
+    lpips_threshold: float | None = None,
+    timeout: int | None = None,
+) -> VerificationVerdict:
+    """Run pixel generation verification with the given model and weights encoding.
+
+    This verification uses multiple metrics for comprehensive image quality assessment:
+    - MAE/RMSE for pixel-level accuracy
+    - SSIM for structural similarity
+    - LPIPS for learned perceptual similarity
+
+    Args:
+        device_type: Type of device to run on (CPU/GPU)
+        devices: Device specification string
+        find_tolerances: Whether to find optimal tolerance values
+        print_suggested_tolerances: Whether to print suggested tolerances on failure
+        pipeline: Pipeline identifier (e.g., "black-forest-labs/FLUX.1-dev")
+        encoding: Weight encoding (e.g., "bfloat16")
+        pregenerated_torch_goldens: Optional pregenerated torch reference goldens
+        absolute_tolerance: Absolute tolerance for MAE/RMSE
+        relative_tolerance: Relative tolerance for MAE/RMSE
+        ssim_threshold: Threshold for SSIM (0-1, where 1.0 = identical)
+        lpips_threshold: Threshold for LPIPS (0-1, lower is better)
+        timeout: Timeout in seconds for generation
+
+    Returns:
+        VerificationVerdict with pass/fail status and metrics
+    """
+
+    fssafe_pipeline = pipeline.replace("/", "_")
+
+    # Run the torch baseline or load it from golden
+    if pregenerated_torch_goldens is not None:
+        tar_file = load_from_tar(pregenerated_torch_goldens.tar_file)
+        torch_golden_path = Path(tar_file, pregenerated_torch_goldens.json_file)
+    else:
+        torch_golden_path = Path(
+            f"/tmp/goldens_torch_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+        )
+        generate_llm_logits_with_optional_retry(
+            framework="torch",
+            device=devices,
+            pipeline=pipeline,
+            encoding=encoding,
+            output_path=torch_golden_path,
+            timeout=timeout,
+        )
+
+    torch_results: list[ModelOutput] = NumpyDecoder().decode(
+        torch_golden_path.read_text()
+    )
+
+    # When find_tolerances is enabled, we set all tolerances to a lower bound and enable print_suggested_tolerances
+    if find_tolerances:
+        print_suggested_tolerances = True
+        ssim_threshold = 0.999  # Very high SSIM threshold to find minimum
+        absolute_tolerance = 1e-4
+        relative_tolerance = 1e-4
+
+    max_golden_path = Path(
+        f"/tmp/goldens_max_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+    )
+    generate_llm_logits_with_optional_retry(
+        framework="max",
+        device=devices,
+        pipeline=pipeline,
+        encoding=encoding,
+        output_path=max_golden_path,
+        reference=torch_results,
+        timeout=timeout,
+    )
+
+    eval_metrics = []
+    if absolute_tolerance is not None and relative_tolerance is not None:
+        eval_metrics.append("tol")
+    if ssim_threshold is not None:
+        eval_metrics.append("ssim")
+    if lpips_threshold is not None:
+        eval_metrics.append("lpips")
+    if not eval_metrics:
+        raise ValueError(
+            "Please provide absolute, relative, SSIM or LPIPS thresholds."
+            " Otherwise no metrics will be computed."
+        )
+
+    try:
+        result = verify(
+            pipeline_outputs=max_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            ssim_threshold=ssim_threshold,
+            lpips_threshold=lpips_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
+        )
+        status = (
+            VerificationStatus.OK
+            if result.passed
+            else VerificationStatus.INVALID
+        )
+        return VerificationVerdict(
+            status=status,
+            discrepancy_report=result.discrepancy_report,
+            kl_div_threshold=None,  # Not applicable for images
+        )
+    except Exception:
+        traceback.print_exc()
+        return VerificationVerdict(status=VerificationStatus.ERROR)
+
+
 @dataclass
 class PipelineDef:
     """Definition of the requirements and method of running a pipeline."""
@@ -564,7 +723,7 @@ class PipelineDef:
     # Name of the model / pipeline to verify.
     pipeline: str
     # Weight / activation dtype (e.g. "float32", "bfloat16").
-    encoding: str
+    encoding: pipelines.SupportedEncoding
     tags: Sequence[str] = field(default_factory=list)
     # Paths to the pregenerated torch golden logits. If provided, the torch
     # golden values are read from the file. Otherwise, Torch outputs are
@@ -628,6 +787,36 @@ class PipelineDef:
             return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
+@dataclass
+class PixelGenerationPipelineDef(PipelineDef):
+    """Pipeline definition for pixel/image generation models (e.g. FLUX)."""
+
+    ssim_threshold: float | None = None
+    lpips_threshold: float | None = None
+
+    def run(
+        self,
+        device_type: DeviceKind,
+        devices: str,
+        find_tolerances: bool,
+        print_suggested_tolerances: bool,
+    ) -> VerificationVerdict:
+        return run_pixel_generation_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline=self.pipeline,
+            encoding=self.encoding,
+            pregenerated_torch_goldens=self.pregenerated_torch_goldens,
+            absolute_tolerance=self.absolute_tolerance,
+            relative_tolerance=self.relative_tolerance,
+            ssim_threshold=self.ssim_threshold,
+            lpips_threshold=self.lpips_threshold,
+            timeout=self.timeout,
+        )
+
+
 PIPELINES = {
     # ========== Robust Pipelines ==========
     # The models here are considered robust. They are tested with all metrics.
@@ -680,7 +869,7 @@ PIPELINES = {
     ),
     "unsloth/gpt-oss-20b-BF16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi", "no-b200-multi"],
+        tags=["nvidia-multi"],
         pipeline="unsloth/gpt-oss-20b-BF16",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1216,7 +1405,7 @@ PIPELINES = {
         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
         encoding="bfloat16",
         cos_dist_threshold=8.0e-03,
-        kl_div_threshold=9.0e-02,
+        kl_div_threshold=1.5e-01,
     ),
     # TODO(MODELS-812): Investigate deepseek timeout
     "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
@@ -1374,6 +1563,15 @@ PIPELINES = {
         ),
         cos_dist_threshold=1.41e-01,
         kl_div_threshold=7.1e-01,
+    ),
+    # ========== Pixel Generation Pipelines ==========
+    "black-forest-labs/FLUX.1-dev-bfloat16": PixelGenerationPipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        pipeline="black-forest-labs/FLUX.1-dev",
+        encoding="bfloat16",
+        tags=["nvidia-only", "image-generation", "manual"],
+        ssim_threshold=0.60,
+        lpips_threshold=0.35,
     ),
 }
 

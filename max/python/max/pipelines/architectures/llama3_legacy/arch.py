@@ -15,9 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -36,21 +34,21 @@ llama_legacy_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=SupportedEncoding.q4_k,
+    default_encoding="q4_k",
     supported_encodings={
-        SupportedEncoding.gptq: ["paged"],
-        SupportedEncoding.q4_k: ["paged"],
-        SupportedEncoding.q4_0: ["paged"],
-        SupportedEncoding.q6_k: ["paged"],
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float8_e4m3fn: ["paged"],
-        SupportedEncoding.float4_e2m1fnx2: ["paged"],
+        "gptq": ["paged"],
+        "q4_k": ["paged"],
+        "q4_0": ["paged"],
+        "q6_k": ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
+        "float8_e4m3fn": ["paged"],
+        "float4_e2m1fnx2": ["paged"],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     weight_adapters={

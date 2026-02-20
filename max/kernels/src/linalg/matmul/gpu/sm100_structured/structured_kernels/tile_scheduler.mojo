@@ -405,8 +405,7 @@ struct SchedulerWorkIterator[
         CLC pipeline stages are properly synchronized before exit.
         """
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.scheduler.empty_mbar[self.producer_state.index()].wait(
                 self.producer_state.phase()
             )
@@ -530,16 +529,14 @@ struct TileScheduler[
         )
 
         # CLC rasterize along M by default.
-        @parameter
-        if Self.rasterize_order == RasterOrder.AlongM:
+        comptime if Self.rasterize_order == RasterOrder.AlongM:
             new_normalized_m = normalized_m
             new_normalized_n = normalized_n
         else:
             new_normalized_m = linear_cluster_id % log_cluster_dim_m
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
-        @parameter
-        if Self.block_swizzle_size != 0:
+        comptime if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
                 FastUInt(cluster_dim[0]) / log_block_swizzle_size
             )
@@ -608,8 +605,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         # num_stages == 0 implies there is only one wave. Only initial
         # work info is valid, next work info is invalid.
-        @parameter
-        if Self.num_stages == 0:
+        comptime if Self.num_stages == 0:
             return WorkInfo(0, 0, 0, False)
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())

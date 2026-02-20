@@ -1267,8 +1267,7 @@ def execute_cont_batch_fused_qkv_matmul[
 def execute_fused_matmul_suite(ctx: DeviceContext):
     comptime dtypes_tolerances = ((DType.float32, 1e-3), (DType.bfloat16, 1e-2))
 
-    @parameter
-    for dtype_idx in range(2):
+    comptime for dtype_idx in range(2):
         comptime dtype = dtypes_tolerances[dtype_idx][0]
         comptime rtol = dtypes_tolerances[dtype_idx][1]
 

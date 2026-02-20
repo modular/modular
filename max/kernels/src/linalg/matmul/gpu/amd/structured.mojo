@@ -188,8 +188,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var sum: Int32 = 0
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             sum += self.__repr[i]
         return sum
 
@@ -429,8 +428,7 @@ struct AmdTileOperator[
 
         # Only load if this is the first fragment in the group
         # (tensor core loads k_group_size tiles at once)
-        @parameter
-        if fragment_idx == 0:
+        comptime if fragment_idx == 0:
             Self.tensor_core.load_a[swizzle = Self.swizzle](
                 smem_tile_a,
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
@@ -466,14 +464,12 @@ struct AmdTileOperator[
         var b_tile = self.b_reg_tile(group_idx)
 
         # Perform MMA for this specific fragment within the group
-        @parameter
-        for mma_m_idx in range(Self.num_m_mmas):
+        comptime for mma_m_idx in range(Self.num_m_mmas):
             var a_fragment = a_tile.tile[1, Self._registers_per_thread_a](
                 mma_m_idx, fragment_idx
             )
 
-            @parameter
-            for mma_n_idx in range(Self.num_n_mmas):
+            comptime for mma_n_idx in range(Self.num_n_mmas):
                 var b_fragment = b_tile.tile[1, Self._registers_per_thread_b](
                     mma_n_idx, fragment_idx
                 )

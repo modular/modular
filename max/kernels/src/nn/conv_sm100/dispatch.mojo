@@ -112,8 +112,7 @@ fn dispatch_sm100_conv2d[
     on dtype, so the kernel is never compiled for unsupported dtypes.
     """
 
-    @parameter
-    if input_type == DType.bfloat16:
+    comptime if input_type == DType.bfloat16:
         from .conv2d import conv2d_fprop
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
@@ -129,8 +128,7 @@ fn dispatch_sm100_conv2d[
         var fh: Int
         var fw: Int
 
-        @parameter
-        if filter_is_fcrs:
+        comptime if filter_is_fcrs:
             fh = filter.dim[2]()
             fw = filter.dim[3]()
         else:
@@ -145,8 +143,7 @@ fn dispatch_sm100_conv2d[
         comptime transpose_block = 256
         var grid = ceildiv(filter_size, transpose_block)
 
-        @parameter
-        if filter_is_fcrs:
+        comptime if filter_is_fcrs:
             var F = filter.dim[0]()
             var C = filter.dim[1]()
             var R = filter.dim[2]()

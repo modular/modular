@@ -92,8 +92,7 @@ fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
     """Reshape 2D layout to 3D by prepending batch dimension of 1."""
     comptime rank = len(layout.shape)
 
-    @parameter
-    if rank == 3:
+    comptime if rank == 3:
         return materialize[layout]()
     else:
         return LegacyLayout.row_major(
@@ -143,8 +142,7 @@ fn _reshape_sf_to_5d[layout: LegacyLayout, is_batched: Bool]() -> LegacyLayout:
                   -> (1, M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K)
     """
 
-    @parameter
-    if is_batched:
+    comptime if is_batched:
         # Input is 6D: (B, M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
         return LegacyLayout.row_major(
             comptime (layout.shape[0].value()),
@@ -675,8 +673,7 @@ fn grouped_block_scaled_matmul[
     # ===== Kernel Launch =====
     # Dispatch to run_2sm() for 2SM mode (cta_group=2), else run() for 1SM
 
-    @parameter
-    if config.cta_group == 2:
+    comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
         ctx.enqueue_function[matmul_kernel.run_2sm, matmul_kernel.run_2sm](
             # Template TMA descriptors

@@ -72,7 +72,7 @@ async def test_unreliable_handle() -> None:
 
 @pytest.mark.asyncio
 async def test_metric_asyncio_client_filtering() -> None:
-    settings = Settings(MAX_SERVE_METRIC_LEVEL="BASIC")
+    settings = Settings(metric_level=MetricLevel.BASIC)
     assert settings.metric_level == MetricLevel.BASIC
 
     q = mock.MagicMock()
@@ -91,7 +91,7 @@ async def test_metric_asyncio_client_filtering() -> None:
 
 @pytest.mark.asyncio
 async def test_metric_process_client_filtering() -> None:
-    settings = Settings(MAX_SERVE_METRIC_LEVEL="BASIC")
+    settings = Settings(metric_level=MetricLevel.BASIC)
     assert settings.metric_level == MetricLevel.BASIC
 
     q = mock.MagicMock()

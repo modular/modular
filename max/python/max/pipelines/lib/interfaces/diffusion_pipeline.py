@@ -216,19 +216,6 @@ class PixelModelInputs:
     If the model is single-encoder or you do not use negative prompts, leave as None.
     """
 
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """
-    A bag of model-specific numeric parameters not represented as explicit fields.
-
-    Typical uses:
-    - Architecture-specific knobs (e.g., cfg_normalization arrays, scaling vectors)
-    - Precomputed per-step values not worth standardizing across all models
-    - Small numeric tensors that are easier to carry as named extras than formal fields
-
-    Values are expected to be numpy arrays (ndarray) to keep the contract consistent,
-    but you can relax this if your codebase needs non-array values.
-    """
-
     timesteps: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )

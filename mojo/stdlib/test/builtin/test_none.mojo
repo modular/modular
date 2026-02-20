@@ -12,18 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, TestSuite
+from test_utils import check_write_to
 
 
-def test_str():
+def test_str_and_repr():
     assert_equal(NoneType().__str__(), "None")
-
-
-def test_repr():
     assert_equal(NoneType().__repr__(), "None")
 
 
-def test_format_to():
-    assert_equal(String.write(NoneType()), "None")
+def test_write_to():
+    check_write_to(NoneType(), expected="None", is_repr=False)
+    check_write_to(NoneType(), expected="None", is_repr=True)
 
 
 struct FromNone:

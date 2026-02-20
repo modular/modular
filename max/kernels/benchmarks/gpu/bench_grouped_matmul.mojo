@@ -139,6 +139,7 @@ fn bench_grouped_matmul[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
+    AB_swapped: Bool = False,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -419,7 +420,7 @@ fn bench_grouped_matmul[
                         mma_shape=umma_shape,
                         block_swizzle_size=8,
                         cta_group=1,
-                        AB_swapped=False,
+                        AB_swapped=AB_swapped,
                         k_group_size=1,
                         num_accum_pipeline_stages=2,
                     )
@@ -552,7 +553,7 @@ fn bench_grouped_matmul[
                         cluster_shape=Index(1, 1, 1),
                         mma_shape=umma_shape,
                         cta_group=1,
-                        AB_swapped=False,
+                        AB_swapped=AB_swapped,
                         k_group_size=1,
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
@@ -689,6 +690,7 @@ fn create_grouped_matmul_bench[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
+    AB_swapped: Bool = False,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -705,6 +707,7 @@ fn create_grouped_matmul_bench[
         use_vendor_blas=use_vendor_blas,
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
+        AB_swapped=AB_swapped,
     ](
         ctx,
         bench,
@@ -748,6 +751,7 @@ def main():
     )
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
     comptime has_epilogue = env_get_bool["has_epilogue", False]()
+    comptime AB_swapped = env_get_bool["AB_swapped", False]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -761,6 +765,7 @@ def main():
             use_vendor_blas=use_vendor_blas,
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
+            AB_swapped=AB_swapped,
         ](
             ctx,
             b,

@@ -22,6 +22,7 @@ from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -97,7 +98,7 @@ class PixtralConfig(ArchConfigWithKVCache):
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the maximum sequence length for the model."""
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.text_config.max_position_embeddings
@@ -127,7 +128,7 @@ class PixtralConfig(ArchConfigWithKVCache):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [

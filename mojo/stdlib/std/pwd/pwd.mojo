@@ -104,8 +104,7 @@ fn getpwuid(uid: Int) raises -> Passwd:
         only.
     """
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _getpw_macos(UInt32(uid))
     else:
         return _getpw_linux(UInt32(uid))
@@ -132,8 +131,7 @@ fn getpwnam(var name: String) raises -> Passwd:
         only.
     """
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _getpw_macos(name)
     else:
         return _getpw_linux(name)

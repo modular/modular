@@ -97,6 +97,44 @@ def test_sampling_params_from_input_and_generation_config_user_override() -> (
     assert sampling_params.frequency_penalty == 0.0  # class default
 
 
+def test_sampling_params_none_top_p_normalized_to_default() -> None:
+    """Test that top_p=None is normalized to the default value (1.0).
+
+    When a user sends top_p=null in an API request, it should be treated
+    the same as not specifying top_p at all, which means using the default
+    of 1.0.  This keeps the gumbel sampling fast path reachable.
+    """
+    # Direct construction with None should normalize to 1.0
+    params = SamplingParams(top_p=None)  # type: ignore[arg-type]
+    assert params.top_p == 1.0
+
+    # Through from_input_and_generation_config with no generation defaults
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(top_p=None),
+        sampling_params_defaults=SamplingParamsGenerationConfigDefaults(),
+    )
+    assert params.top_p == 1.0
+
+
+def test_sampling_params_none_top_k_normalized_to_default() -> None:
+    """Test that top_k=None is normalized to the default value (-1).
+
+    When a user sends top_k=null in an API request, it should be treated
+    the same as not specifying top_k at all, which means using the default
+    of -1 (sample all tokens).
+    """
+    # Direct construction with None should normalize to -1
+    params = SamplingParams(top_k=None)  # type: ignore[arg-type]
+    assert params.top_k == -1
+
+    # Through from_input_and_generation_config with no generation defaults
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(top_k=None),
+        sampling_params_defaults=SamplingParamsGenerationConfigDefaults(),
+    )
+    assert params.top_k == -1
+
+
 def test_sampling_params_from_input_not_shared_across_calls() -> None:
     """Test that calling from_input_and_generation_config twice with different
     user inputs produces independent results (cached dict not mutated)."""

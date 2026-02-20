@@ -1187,7 +1187,7 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable):
 
     Used together with ALPHA_DEVICE_VECTOR_BETA_HOST when matrix D's
     BATCH_COUNT > 1. If ALPHA_DEVICE_VECTOR_BETA_ZERO is set then
-    CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE must be set to 0 as this mode doesnt supported batched alpha vector.
+    CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE must be set to 0 as this mode doesn't support batched alpha vector.
 
     int64_t, default: 0.
     """

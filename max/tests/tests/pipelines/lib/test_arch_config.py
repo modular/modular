@@ -53,8 +53,7 @@ class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
 
 
 def create_mock_pipeline_config(
-    quantization_encoding: SupportedEncoding
-    | None = SupportedEncoding.bfloat16,
+    quantization_encoding: SupportedEncoding | None = "bfloat16",
     kv_cache_page_size: int = 128,
     cache_strategy: KVCacheStrategy = "paged",
     enable_prefix_caching: bool = True,
@@ -65,13 +64,13 @@ def create_mock_pipeline_config(
 ) -> NonCallableMock:
     """Create a mock PipelineConfig for testing."""
     mock_config = NonCallableMock(spec=PipelineConfig)
-    mock_config.max_length = max_length
 
     # Create mock model config
     mock_model = NonCallableMock(spec=MAXModelConfig)
     mock_model.quantization_encoding = quantization_encoding
     mock_model.data_parallel_degree = data_parallel_degree
     mock_model.device_specs = []
+    mock_model.max_length = max_length
 
     # Create mock kv_cache_config
     mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
@@ -155,7 +154,7 @@ class TestArchConfigWithAttentionKVCache:
     def test_initialize_succeeds_with_valid_quantization_encoding(self) -> None:
         """Test that initialize succeeds with valid quantization encoding."""
         mock_config = create_mock_pipeline_config(
-            quantization_encoding=SupportedEncoding.bfloat16
+            quantization_encoding="bfloat16"
         )
         result = ConcreteArchConfig.initialize(mock_config)
         assert isinstance(result, ConcreteArchConfig)
@@ -165,9 +164,7 @@ class TestArchConfigWithAttentionKVCache:
 
         # Test with encoding that maps to different dtype/config
 
-        mock_config = create_mock_pipeline_config(
-            quantization_encoding=SupportedEncoding.q4_k
-        )
+        mock_config = create_mock_pipeline_config(quantization_encoding="q4_k")
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
         assert result.cache_dtype == DType.bfloat16

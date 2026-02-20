@@ -55,7 +55,6 @@ def _create_kv_manager(
         params=params,
         session=InferenceSession(devices=devices),
         total_num_pages=8,
-        max_batch_size=128,
     )
     assert isinstance(manager, PagedKVCacheManager)
     return manager

@@ -23,7 +23,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 from max._core.engine import InferenceSession as _InferenceSession
@@ -50,28 +50,25 @@ ScalarType = (int, float, bool, np.generic)
 InputType = DLPackArray | Buffer | int | float | bool | np.generic
 
 
-class GPUProfilingMode(str, Enum):
-    """The supported modes for GPU profiling.
+GPUProfilingMode = Literal["off", "on", "detailed"]
+"""The supported modes for GPU profiling.
 
-    GPU profiling modes control the level of instrumentation when profiling
-    MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
-    levels provide more detail but may introduce additional overhead.
+GPU profiling modes control the level of instrumentation when profiling
+MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
+levels provide more detail but may introduce additional overhead.
 
-    See Also:
-        :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
-    """
+- ``"off"``: Disable GPU profiling instrumentation. This is the default
+  mode and incurs no profiling overhead.
+- ``"on"``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
+  markers for correlating kernel executions with host-side code.
+- ``"detailed"``: Enable detailed GPU profiling with additional NVTX
+  markers from Python code. This mode provides the most visibility into
+  which Python operations correspond to which GPU kernels, but has the
+  highest overhead.
 
-    OFF = "off"
-    """Disable GPU profiling instrumentation. This is the default mode
-            and incurs no profiling overhead."""
-    ON = "on"
-    """Enable basic GPU profiling. Adds CUDA driver calls and NVTX
-            markers for correlating kernel executions with host-side code."""
-    DETAILED = "detailed"
-    """Enable detailed GPU profiling with additional NVTX markers
-            from Python code. This mode provides the most visibility into
-            which Python operations correspond to which GPU kernels, but
-            has the highest overhead."""
+See Also:
+    :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
+"""
 
 
 def _raise_if_not_contiguous(x: InputType) -> None:
@@ -162,12 +159,40 @@ def _Model_replay(self: Model, *inputs: Buffer) -> None:
     self._replay(list(inputs))
 
 
+def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
+    """Execute eagerly and verify the launch trace matches the captured graph.
+
+    This method validates that graph capture correctly represents eager
+    execution by running the model and comparing kernel launch sequences
+    against a previously captured device graph.
+
+    Args:
+        self: The model to debug/verify
+        inputs: Input buffers matching the captured input signature (same
+            shapes and dtypes used during capture).
+
+    Raises:
+        ValueError: If no input buffers are provided.
+        RuntimeError: If no graph has been captured for this input configuration.
+        RuntimeError: If the eager execution trace doesn't match the captured graph.
+
+    Example:
+        >>> model.capture(input_tensor)
+        >>> model.debug_verify_replay(input_tensor)  # Validates capture
+        >>> model.replay(input_tensor)  # Safe to use optimized replay
+    """
+    if not inputs:
+        raise ValueError("Model.debug_verify_replay requires input buffers.")
+    self._debug_verify_replay(list(inputs))
+
+
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:
@@ -562,11 +587,11 @@ class InferenceSession:
 
         .. code-block:: python
 
-            from max.engine import InferenceSession, GPUProfilingMode
+            from max.engine import InferenceSession
             from max.driver import Accelerator
 
             session = InferenceSession(devices=[Accelerator()])
-            session.gpu_profiling(GPUProfilingMode.DETAILED)
+            session.gpu_profiling("detailed")
             model = session.load(my_graph)
 
         Then run it with ``nsys``:
@@ -593,24 +618,24 @@ class InferenceSession:
         Args:
             mode: The profiling mode to set. One of:
 
-                - :attr:`GPUProfilingMode.OFF`: Disable profiling (default).
-                - :attr:`GPUProfilingMode.ON`: Enable basic profiling with
+                - ``"off"``: Disable profiling (default).
+                - ``"on"``: Enable basic profiling with
                   NVTX markers for kernel correlation.
-                - :attr:`GPUProfilingMode.DETAILED`: Enable detailed profiling
+                - ``"detailed"``: Enable detailed profiling
                   with additional Python-level NVTX markers.
 
         See Also:
             - `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_
         """
-        if mode == GPUProfilingMode.OFF:
+        if mode == "off":
             return
 
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", 1)
         self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", 1)
-        if mode == GPUProfilingMode.DETAILED:
+        if mode == "detailed":
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
-        set_gpu_profiling_state(mode.value)
+        set_gpu_profiling_state(mode)
 
     def use_old_top_k_kernel(self, mode: str) -> None:
         """Enables the old top-k kernel.

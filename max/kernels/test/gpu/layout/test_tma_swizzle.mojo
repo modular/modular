@@ -95,8 +95,7 @@ def test_tma_swizzle[
     var src = ManagedLayoutTensor[dtype, layout](ctx)
     var dst = ManagedLayoutTensor[dtype, layout](ctx)
 
-    @parameter
-    if dtype == DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         random(src.tensor[update=False]())
         random(dst.tensor[update=False]())
     else:

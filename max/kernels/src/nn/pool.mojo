@@ -167,8 +167,7 @@ fn pool_shape_impl[
     output_shape[0] = batch_size
     output_shape[input_buf.rank - 1] = input_channels
 
-    @parameter
-    for i in range(0, input_buf.rank - 2):
+    comptime for i in range(0, input_buf.rank - 2):
         var input_spatial_dim = Int(input_buf.dim(i + 1))
         var filter = Int(filter_buf[i])
         var stride = Int(strides_buf[i])
@@ -771,9 +770,7 @@ fn avg_pool_cpu[
             ),
         )
     else:
-
-        @parameter
-        if count_boundary:
+        comptime if count_boundary:
             return stencil_with_padding(
                 rebind[IndexList[output.rank]](
                     coord_to_index_list(output.layout.shape_coord())
@@ -1043,9 +1040,7 @@ fn avg_pool_gpu[
             ),
         )
     else:
-
-        @parameter
-        if count_boundary:
+        comptime if count_boundary:
             return stencil_gpu_fn(
                 ctx,
                 rebind[IndexList[output.rank]](
@@ -1083,8 +1078,7 @@ fn avg_pool[
     ceil_mode: Bool = False,
     ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         avg_pool_cpu[count_boundary=count_boundary](
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
@@ -1112,8 +1106,7 @@ fn max_pool[
     ceil_mode: Bool = False,
     ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         max_pool_cpu(
             input, filter, strides, dilations, paddings, output, ceil_mode
         )

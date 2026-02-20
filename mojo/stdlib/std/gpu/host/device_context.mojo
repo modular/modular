@@ -2003,12 +2003,10 @@ struct DeviceFunction[
     fn _dump_q[name: String, val: _DumpPath]() -> Tuple[Bool, _DumpPath]:
         comptime env_var = "DUMP_GPU_" + name.upper()
 
-        @parameter
-        if is_defined[env_var]():
+        comptime if is_defined[env_var]():
             comptime env_val = env_get_string[env_var]()
 
-            @parameter
-            if _is_bool_like[env_val]():
+            comptime if _is_bool_like[env_val]():
                 comptime env_bool_val = env_get_bool[env_var]()
                 return env_bool_val, _DumpPath(env_bool_val)
             elif _is_path_like(env_val):
@@ -2095,8 +2093,7 @@ struct DeviceFunction[
         # Get ASM - either from the pre-compiled func_impl or by compiling now
         @parameter
         fn get_asm() -> StaticString:
-            @parameter
-            if Self._emission_kind == "asm":
+            comptime if Self._emission_kind == "asm":
                 return self._func_impl.asm
             return _compile_code[
                 Self.func,
@@ -2105,20 +2102,17 @@ struct DeviceFunction[
                 compile_options = Self.compile_options,
             ]().asm
 
-        @parameter
-        if Self._ptxas_info_verbose:
+        comptime if Self._ptxas_info_verbose:
             print(_ptxas_compile[Self.target](String(get_asm()), options="-v"))
 
         comptime dump_asm_tup = Self._dump_q["asm", dump_asm]()
         comptime do_dump_asm = dump_asm_tup[0]
         comptime dump_asm_val = dump_asm_tup[1]
 
-        @parameter
-        if do_dump_asm:
+        comptime if do_dump_asm:
             var asm = self._cleanup_asm(get_asm())
 
-            @parameter
-            if dump_asm_val.isa[fn() capturing -> Path]():
+            comptime if dump_asm_val.isa[fn() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
                     fn() capturing -> Path
                 ]()
@@ -2138,13 +2132,11 @@ struct DeviceFunction[
         comptime do_dump_sass = dump_sass_tup[0]
         comptime dump_sass_val = dump_sass_tup[1]
 
-        @parameter
-        if do_dump_sass:
+        comptime if do_dump_sass:
             var ptx = Self._cleanup_asm(get_asm())
             var sass = _to_sass[Self.target](ptx)
 
-            @parameter
-            if dump_sass_val.isa[fn() capturing -> Path]():
+            comptime if dump_sass_val.isa[fn() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
                     fn() capturing -> Path
                 ]()
@@ -2164,8 +2156,7 @@ struct DeviceFunction[
         comptime do_dump_llvm = dump_llvm_tup[0]
         comptime dump_llvm_val = dump_llvm_tup[1]
 
-        @parameter
-        if do_dump_llvm:
+        comptime if do_dump_llvm:
             var llvm = _compile_code[
                 Self.func,
                 emission_kind="llvm-opt",
@@ -2173,8 +2164,7 @@ struct DeviceFunction[
                 compile_options = Self.compile_options,
             ]().asm
 
-            @parameter
-            if dump_llvm_val.isa[fn() capturing -> Path]():
+            comptime if dump_llvm_val.isa[fn() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
                     fn() capturing -> Path
                 ]()
@@ -2236,8 +2226,7 @@ struct DeviceFunction[
             for i in range(num_captures_static + num_args):
                 dense_args_sizes[i] = 0
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -2249,8 +2238,7 @@ struct DeviceFunction[
         fn _populate_arg_sizes[i: Int]():
             dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
         for i in range(num_captures):
@@ -2396,8 +2384,7 @@ struct DeviceFunction[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -2501,14 +2488,12 @@ struct DeviceFunction[
         )
         var num_translated_args = 0
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             comptime declared_arg_type = Self.declared_arg_types.value()[i]
             comptime actual_arg_type = Ts[i]
 
             fn declared_arg_type_name() -> String:
-                @parameter
-                if conforms_to(declared_arg_type, DevicePassable):
+                comptime if conforms_to(declared_arg_type, DevicePassable):
                     return downcast[
                         declared_arg_type, DevicePassable
                     ].get_type_name()
@@ -2525,8 +2510,9 @@ struct DeviceFunction[
                 declared_arg_type
             ]()
 
-            @parameter
-            if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
+            comptime if _type_is_eq[
+                actual_arg_type, actual_arg_type.device_type
+            ]():
                 # Now check if they handed in the *correct* device dtype.
                 comptime assert is_convertible, String(
                     "argument #",
@@ -2583,8 +2569,7 @@ struct DeviceFunction[
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
 
-        @parameter
-        if Self.declared_arg_types:
+        comptime if Self.declared_arg_types:
             _ = Self._validate_arguments[*Ts, num_args=num_args]()
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2602,8 +2587,7 @@ struct DeviceFunction[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -2711,8 +2695,7 @@ struct DeviceFunction[
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
-        @parameter
-        if Self.declared_arg_types:
+        comptime if Self.declared_arg_types:
             var validated_args = Self._validate_arguments[
                 *Ts, num_args=num_passed_args
             ]()
@@ -2730,8 +2713,7 @@ struct DeviceFunction[
         fn calculate_args_size() -> Int:
             var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 
-            @parameter
-            for i in range(num_passed_args):
+            comptime for i in range(num_passed_args):
                 comptime actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
                     size_of[actual_arg_type.device_type](), 8
@@ -2774,8 +2756,7 @@ struct DeviceFunction[
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
 
-        @parameter
-        for i in range(num_passed_args):
+        comptime for i in range(num_passed_args):
             # If the arg offset is negative then the corresponding declared
             # dtype is zero sized and we do not push the argument to the kernel.
             var translated_arg_offset = translated_arg_offsets[i]
@@ -3164,8 +3145,7 @@ struct DeviceExternalFunction:
             OpaquePointer[MutAnyOrigin], num_args
         ](uninitialized=True)
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -5761,8 +5741,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        @parameter
-        if bitwidth == 8:
+        comptime if bitwidth == 8:
             value = UInt64(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
             value = UInt64(Int(bitcast[DType.uint16, 1](val)))
@@ -5810,8 +5789,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        @parameter
-        if bitwidth == 8:
+        comptime if bitwidth == 8:
             value = UInt64(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
             value = UInt64(Int(bitcast[DType.uint16, 1](val)))
@@ -5894,16 +5872,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         var result = _DeviceEventPtr()
         var flags = EventFlags.default
 
-        @parameter
-        if blocking_sync:
+        comptime if blocking_sync:
             flags |= EventFlags.blocking_sync
 
-        @parameter
-        if disable_timing:
+        comptime if disable_timing:
             flags |= EventFlags.disable_timing
 
-        @parameter
-        if interprocess:
+        comptime if interprocess:
             flags |= EventFlags.interprocess
 
         # const char *AsyncRT_DeviceContext_eventCreate(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)

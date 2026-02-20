@@ -173,8 +173,7 @@ fn test[
         ),
     )
 
-    @parameter
-    if not against_gpu_naive:
+    comptime if not against_gpu_naive:
         comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -257,8 +256,7 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             flash_attention(
                 output_device,
                 q_device,
@@ -302,8 +300,7 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    @parameter
-    if against_gpu_naive:
+    comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -316,8 +313,7 @@ fn test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             mha_gpu_naive(
                 q_device,
                 k_device,
@@ -594,13 +590,11 @@ def main():
         ]()
         comptime depths = [64, 128, 256] if not experimental_kernel else [128]
 
-        @parameter
-        for i in range(len(depths)):
+        comptime for i in range(len(depths)):
             comptime depth = depths[i]
             test_context_encoding[1, depth](ctx)
 
-            @parameter
-            for batch_size in range(1, 5, 3):
+            comptime for batch_size in range(1, 5, 3):
                 test_decoding[batch_size, depth, 1](ctx, False)
                 test_decoding[batch_size, depth, 1, DType.float32](ctx, False)
             test_decoding[1, depth, None](ctx, False)

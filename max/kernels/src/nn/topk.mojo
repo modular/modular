@@ -173,8 +173,7 @@ fn top_k[
     # Clamp max_k
     var bound_max_k = 255 if max_k == -1 else max_k
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         comptime assert (
             out_idx_type == DType.int64
         ), "out_idx_type must be int64 for cpu"
@@ -260,8 +259,7 @@ fn _top_k_cpu[
                 var input_idx = input.layout(Coord(indices))
                 return input.ptr[input_idx]
 
-            @parameter
-            if largest:
+            comptime if largest:
 
                 @parameter
                 @always_inline
@@ -471,8 +469,7 @@ fn _top_k_sampling[
     var internal_bs: Int
     var internal_in_shape: IndexList[internal_rank]
 
-    @parameter
-    if input.rank == 1:
+    comptime if input.rank == 1:
         internal_bs = 1
         internal_in_shape = IndexList[internal_rank](1, input.numel())
     elif input.rank == internal_rank:
@@ -572,8 +569,7 @@ fn _top_k_sampling[
 
 @always_inline("nodebug")
 fn _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
-    @parameter
-    if largest:
+    comptime if largest:
         return min_or_neg_inf[T]()
     else:
         return max_or_inf[T]()
@@ -592,8 +588,7 @@ struct TopK_2[T: DType, largest: Bool = True](
         self.u = _topk_dead_val[Self.T, Self.largest]()
 
     fn insert(mut self, elem: Scalar[Self.T], elem_id: Int):
-        @parameter
-        if Self.largest:
+        comptime if Self.largest:
             if elem > self.u:
                 self.u = elem
                 self.p = elem_id
@@ -655,8 +650,7 @@ fn _warp_reduce_topk[
     fn reduce_fn(
         a: TopK_2[T, largest], b: TopK_2[T, largest]
     ) -> TopK_2[T, largest]:
-        @parameter
-        if largest:
+        comptime if largest:
             if a.u > b.u:
                 return a
             elif a.u < b.u:
@@ -672,8 +666,7 @@ fn _warp_reduce_topk[
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
     comptime limit = log2_floor(num_lanes)
 
-    @parameter
-    for i in reversed(range(limit)):
+    comptime for i in reversed(range(limit)):
         comptime mask = 1 << i
         res = reduce_fn(res, shuffle_topk2(res, mask))
 
@@ -1096,8 +1089,7 @@ fn _topk_stage2[
                 batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
             return
 
-        @parameter
-        if sampling:
+        comptime if sampling:
             # Storing the top-K logits in shmem for sampling
             s_id = (idxs_sram + vals_smem_size).bitcast[Int]()
             # The 2* below is for warp align safety
@@ -1118,8 +1110,7 @@ fn _topk_stage2[
         for k in range(max_k):
             if k >= k_batch:
                 # Fill remaining positions with sentinel values for unused elements
-                @parameter
-                if not sampling:
+                comptime if not sampling:
                     if tid == 0:
                         for remaining_k in range(k, max_k):
                             batch_i_topk_vals[remaining_k] = _topk_dead_val[
@@ -1143,9 +1134,7 @@ fn _topk_stage2[
             )
 
             if tid == 0:
-
-                @parameter
-                if sampling:
+                comptime if sampling:
                     if k == 0:
                         max_logit = total.u
 
@@ -1153,8 +1142,7 @@ fn _topk_stage2[
                 idxs_sram[total.p] = -1
                 vals_sram[total.p] = _topk_dead_val[T, largest]()
 
-                @parameter
-                if sampling:
+                comptime if sampling:
                     comptime assert (
                         T.is_floating_point()
                     ), "T must be floating point for sampling"
@@ -1179,8 +1167,7 @@ fn _topk_stage2[
             barrier()
 
         # do sampling
-        @parameter
-        if sampling:
+        comptime if sampling:
             if tid == 0:
                 var top_p_val = Scalar[T](1.0)
                 if top_p:
@@ -1341,8 +1328,9 @@ fn _topk_gpu[
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
 
     # Enqueue the first kernel (stage 1)
-    @parameter
-    if env_get_bool["USE_OLD_TOP_K_KERNEL", False]() or _force_old_impl:
+    comptime if env_get_bool[
+        "USE_OLD_TOP_K_KERNEL", False
+    ]() or _force_old_impl:
         comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
         ctx.enqueue_function_experimental[kernel_1](
             k_device,
@@ -1586,8 +1574,7 @@ fn topk_gpu[
         address_space = out_vals.address_space,
     ]
 
-    @parameter
-    if input.rank == 1:
+    comptime if input.rank == 1:
         # Handle 1D input: treat it as a single batch with one element
         internal_bs = 1
         var internal_in_shape = IndexList[internal_rank](1, input.numel())
@@ -1833,13 +1820,11 @@ fn apply_gumbel_noise_kernel[
                     input_val = ld_ptr.load[width=simd_width](i * simd_width)
                 var noised_logits = input_val.cast[DType.float32]() / temp_val
 
-                @parameter
-                for loop_i in range(simd_width // 4):
+                comptime for loop_i in range(simd_width // 4):
                     var rnd_val = rng_state.step_uniform()
                     rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
 
-                    @parameter
-                    for vec_i in range(4):
+                    comptime for vec_i in range(4):
                         noised_logits[4 * loop_i + vec_i] += rnd_val[vec_i]
 
                 if N % simd_width == 0:

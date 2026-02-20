@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -47,35 +46,12 @@ class MockModelInputs(ModelInputs):
         active_batch_size: int,
         eos_prob: float,
         kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int | Buffer = 1,
+        return_n_logits: int = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
         self.eos_prob = eos_prob
-        self.tokens = Buffer.from_numpy(
-            np.zeros((max(active_batch_size, 1),), dtype=np.int64)
-        )
-        self.input_row_offsets = Buffer.from_numpy(
-            np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
-        )
-        self.signal_buffers: list[Buffer] = []
         self.kv_cache_inputs = kv_cache_inputs
-        if isinstance(return_n_logits, Buffer):
-            self.return_n_logits = return_n_logits
-        else:
-            self.return_n_logits = Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.uint32)
-            )
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
-        return (
-            self.tokens,
-            self.input_row_offsets,
-            self.return_n_logits,
-            *self.signal_buffers,
-            *kv_cache_inputs,
-        )
+        self.return_n_logits = return_n_logits
 
 
 class MockPipelineModel(PipelineModel):
@@ -83,8 +59,6 @@ class MockPipelineModel(PipelineModel):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         devices: list[Device] = [],  # noqa: B006
@@ -93,10 +67,8 @@ class MockPipelineModel(PipelineModel):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
-        self.huggingface_config = huggingface_config
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
-        self.encoding = encoding
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
@@ -109,23 +81,23 @@ class MockPipelineModel(PipelineModel):
             self.devices = devices
 
         # This is required to smuggle these parameters in.
-        self.max_length = pipeline_config.max_length
+        self.max_length = pipeline_config.model.max_length
         self.kv_manager = MagicMock(spec=PagedKVCacheManager)
 
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
         self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, huggingface_config
+            pipeline_config, self.huggingface_config
         )
         self._lora_manager = (
             LoRAManager(
                 config=self.pipeline_config.lora,
                 base_model_path=pipeline_config.model.model_path,
-                base_dtype=self.encoding.dtype,
-                n_heads=huggingface_config.num_attention_heads,
-                n_kv_heads=huggingface_config.num_key_value_heads,
-                head_dim=huggingface_config.head_dim,
+                base_dtype=self.dtype,
+                n_heads=self.huggingface_config.num_attention_heads,
+                n_kv_heads=self.huggingface_config.num_key_value_heads,
+                head_dim=self.huggingface_config.head_dim,
                 zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
             )
             if self.pipeline_config.lora
@@ -133,13 +105,24 @@ class MockPipelineModel(PipelineModel):
             else None
         )
 
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """Returns the HuggingFace config from pipeline config."""
+        config = self.pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required but could not be loaded for "
+                f"model '{self.pipeline_config.model.model_path}'."
+            )
+        return config
+
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         MAX_LENGTH = 1200
-        if pipeline_config.max_length:
-            return min(MAX_LENGTH, pipeline_config.max_length)
+        if pipeline_config.model.max_length:
+            return min(MAX_LENGTH, pipeline_config.model.max_length)
 
         return MAX_LENGTH
 

@@ -197,8 +197,7 @@ fn test_case_sampling[
     for i in range(batch_size):
         p_thresholds.ptr[i] = p_threshold
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -223,8 +222,7 @@ fn test_case_sampling[
         )
 
     # Run sampling
-    @parameter
-    if is_top_p:
+    comptime if is_top_p:
         top_p_sampling[_test_sort=True](
             p_thresholds,
             in_logits,
@@ -244,12 +242,10 @@ fn test_case_sampling[
     # to the softmax & sort kernels so this is a good check.
     assert_equal(test_is_sorted_descending(in_logits, vocab_size), True)
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         print("Sampled token indices:", token_ids)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
 
     # free all pointers
