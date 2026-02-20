@@ -251,7 +251,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
         var start = 0
         var next_idx = 0
         var i = 0
-        while next_idx < len(version) and i < 3:
+        while next_idx < version.byte_length() and i < 3:
             if version[byte=next_idx] == "." or (
                 version[byte=next_idx] == " " and i == 2
             ):

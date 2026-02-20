@@ -582,7 +582,7 @@ struct Trace[
             color_val = UInt32(Int(self.color.value())) if self.color else 0
             self._tracy_ctx = external_call[
                 "KGEN_CompilerRT_TracyZoneBegin", UInt64
-            ](name_str.unsafe_ptr(), len(name_str), color_val)
+            ](name_str.unsafe_ptr(), name_str.byte_length(), color_val)
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
@@ -620,7 +620,7 @@ struct Trace[
         # names, `self._name_value` must be `StaticString` when
         # `is_profiling_enabled()` is set.
         var name_str_ptr = self._name_value[StaticString].unsafe_ptr()
-        var name_str_len = len(self._name_value[StaticString])
+        var name_str_len = self._name_value[StaticString].byte_length()
 
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
@@ -635,7 +635,7 @@ struct Trace[
                 name_str_ptr,
                 name_str_len,
                 self.detail.unsafe_ptr(),
-                len(self.detail),
+                self.detail.byte_length(),
                 self.parent_id,
             )
         elif self.int_payload:

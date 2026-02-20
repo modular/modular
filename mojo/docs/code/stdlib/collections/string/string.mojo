@@ -35,7 +35,7 @@ def string_summary():
     var text = "Hello"
 
     # String properties and indexing
-    print(len(text))  # 5
+    print(text.byte_length())  # 5
     print(text[byte=1])  # e
     print(text[byte= -1])  # o
 

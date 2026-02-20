@@ -56,7 +56,6 @@ struct String(
     KeyElement,
     PathLike,
     Representable,
-    Sized,
     Stringable,
     Writable,
     Writer,
@@ -1024,45 +1023,6 @@ struct String(
         """
         return self.byte_length() > 0
 
-    fn __len__(self) -> Int:
-        """Get the string length of in bytes.
-
-        This function returns the number of bytes in the underlying UTF-8
-        representation of the string.
-
-        To get the number of Unicode codepoints in a string, use
-        `len(str.codepoints())`.
-
-        Returns:
-            The string length in bytes.
-
-        Examples:
-
-        Query the length of a string, in bytes and Unicode codepoints:
-
-        ```mojo
-        from testing import assert_equal
-
-        var s = "ನಮಸ್ಕಾರ"
-
-        assert_equal(len(s), 21)
-        assert_equal(len(s.codepoints()), 7)
-        ```
-
-        Strings containing only ASCII characters have the same byte and
-        Unicode codepoint length:
-
-        ```mojo
-        from testing import assert_equal
-
-        var s = "abc"
-
-        assert_equal(len(s), 3)
-        assert_equal(len(s.codepoints()), 3)
-        ```
-        """
-        return self.byte_length()
-
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
@@ -1311,7 +1271,7 @@ struct String(
         """
         # Add a nul terminator, making the string mutable if not already
         if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
+            var ptr = self.unsafe_ptr_mut(capacity=self.byte_length() + 1)
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
@@ -1332,7 +1292,7 @@ struct String(
         """
         # Add a nul terminator, making the string mutable if not already
         if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
+            var ptr = self.unsafe_ptr_mut(capacity=self.byte_length() + 1)
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
@@ -2094,7 +2054,7 @@ struct String(
 
     # Make a string mutable on the stack.
     fn _inline_string(mut self):
-        var length = len(self)
+        var length = self.byte_length()
         var new_string = Self()
         new_string.set_byte_length(length)
         var dst = UnsafePointer(to=new_string).bitcast[Byte]()
