@@ -135,7 +135,7 @@ fn _arange(tensor: LayoutTensor[mut=True, ...]):
                     Float32(0.1 * Float64(i) + 0.2 * Float64(j))
                 )
     else:
-        constrained[False, "Unsupported dtype"]()
+        comptime assert False, "Unsupported dtype"
 
 
 def test_load_and_mma_and_multiply_operands[

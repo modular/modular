@@ -3085,7 +3085,7 @@ struct PadConstant:
                 ctx.get_device_context(),
             )
         else:
-            constrained[False, "Unknown target " + target]()
+            comptime assert False, "Unknown target " + target
 
     @staticmethod
     fn shape[

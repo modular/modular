@@ -21,4 +21,4 @@ struct FailsToElaborate:
     fn execute(
         output: OutputTensor[dtype = DType.int32, rank=1],
     ):
-        constrained[False, "oops"]()
+        comptime assert False, "oops"

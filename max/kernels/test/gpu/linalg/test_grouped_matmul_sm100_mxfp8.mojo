@@ -591,7 +591,7 @@ def _test_kernel_impl[
             ctx,
         )
     else:
-        constrained[False, "kernel_type must be 'old' or 'new'"]()
+        comptime assert False, "kernel_type must be 'old' or 'new'"
         pass
 
     constrained[

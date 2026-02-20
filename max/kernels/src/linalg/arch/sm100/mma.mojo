@@ -85,7 +85,7 @@ fn max_contiguous_tile_shape[
         # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
         return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
-        constrained[False, "Invalid major"]()
+        comptime assert False, "Invalid major"
         return IntTuple()
 
 

@@ -122,7 +122,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
-        constrained[False, "ComptimeInt is not a tuple type"]()
+        comptime assert False, "ComptimeInt is not a tuple type"
         return rebind[Coord[*Self.VariadicType]](self)
 
 
@@ -176,7 +176,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
-        constrained[False, "RuntimeInt is not a tuple type"]()
+        comptime assert False, "RuntimeInt is not a tuple type"
         return rebind[Coord[*Self.VariadicType]](self)
 
 
@@ -414,7 +414,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn value(self) -> Int:
-        constrained[False, "Coord is not a value type"]()
+        comptime assert False, "Coord is not a value type"
         abort()
 
     @always_inline("nodebug")
@@ -1200,7 +1200,7 @@ fn _get_flattened_helper[
     """Helper function to recursively access flattened elements."""
 
     comptime if i >= Coord[*element_types].__len__():
-        constrained[False, "flat_idx out of bounds"]()
+        comptime assert False, "flat_idx out of bounds"
         abort()
 
     comptime T = element_types[i]
