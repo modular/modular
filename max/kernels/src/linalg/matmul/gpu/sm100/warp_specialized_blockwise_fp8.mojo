@@ -315,8 +315,7 @@ fn multi_stage_reg_epilogue[
 
     var warp_id = get_warp_id()
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         var upper_frag = c_upper_main_tile.load[fragments_per_stage](stage, 0)
         var lower_frag = c_lower_main_tile.load[fragments_per_stage](stage, 0)
 
@@ -336,8 +335,7 @@ fn multi_stage_reg_epilogue[
             1, 0
         )
 
-        @parameter
-        if is_lower_frag_required:
+        comptime if is_lower_frag_required:
             stsm_helper[swizzle, UInt(stageN)](
                 lower_frag, c_smem_warp_tile_lower
             )
@@ -394,15 +392,13 @@ fn multi_stage_reg_epilogue[
             c_tma_op.commit_group()
 
         # Keep one tma store in fly
-        @parameter
-        if stage < num_stages - 1:
+        comptime if stage < num_stages - 1:
             c_tma_op.wait_group[1]()
         # Last stage guard all tma store to finish
         else:
             c_tma_op.wait_group[0]()
 
-        @parameter
-        if stage > 0 and stage < num_stages - 1:
+        comptime if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
@@ -505,8 +501,7 @@ fn promote_accumulators[
     var b_scale_0: Scalar[accum_type]
     var b_scale_1: Scalar[accum_type]
 
-    @parameter
-    if MMA_N != BK:
+    comptime if MMA_N != BK:
         constrained[
             stageN <= gcd(MMA_N, BK) and (gcd(MMA_N, BK) % stageN == 0),
             (
@@ -573,8 +568,7 @@ fn promote_accumulators[
     var staged_c_row: UInt
     var staged_c_col: UInt
 
-    @parameter
-    if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
+    comptime if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
         # based on layout A/D (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a)
         staged_c_row = warp_id * UInt(WARP_SIZE)
         staged_c_col = UInt(0)
@@ -628,8 +622,7 @@ fn promote_accumulators[
     var lower_sfa0_smem = Scalar[accum_type]()
     var lower_sfa1_smem = Scalar[accum_type]()
 
-    @parameter
-    if is_lower_frag_required:
+    comptime if is_lower_frag_required:
         lower_sfa0_smem = rebind[Scalar[accum_type]](
             a_scales_smem[
                 0, UInt32(staged_c_row) + top_frag_lower_coord[0]
@@ -650,8 +643,7 @@ fn promote_accumulators[
     var upper_frag: SIMD[accum_type, rep_frag_size]
     var lower_frag = SIMD[accum_type, rep_frag_size]()
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
         upper_frag = tcgen05_ld[
             datapaths=data_paths,
@@ -662,8 +654,7 @@ fn promote_accumulators[
             width=rep_frag_size,
         ](stage_tmem_addr)
 
-        @parameter
-        if is_lower_frag_required:
+        comptime if is_lower_frag_required:
             lower_frag = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
@@ -675,11 +666,8 @@ fn promote_accumulators[
 
         tcgen05_load_wait()
 
-        @parameter
-        if stage == num_stages - 1:
-
-            @parameter
-            if cta_group == 1:
+        comptime if stage == num_stages - 1:
+            comptime if cta_group == 1:
                 _ = mbarrier_arrive(
                     mma_output_pipeline.consumer_mbar(mma_output_stage)
                 )
@@ -690,8 +678,7 @@ fn promote_accumulators[
 
         var b_scale: Scalar[accum_type]
 
-        @parameter
-        if MMA_N != BK:
+        comptime if MMA_N != BK:
             # check if we cross the border between the two scale_b
             b_scale = (
                 b_scale_0 if (stage * stageN + Int(staged_c_col))
@@ -700,11 +687,8 @@ fn promote_accumulators[
         else:
             b_scale = b_scale_0
 
-        @parameter
-        for ld_iter in range(repeats):
-
-            @parameter
-            for j in range(fragment_size // 2):
+        comptime for ld_iter in range(repeats):
+            comptime for j in range(fragment_size // 2):
                 comptime offset = ld_iter * fragment_size + j * 2
 
                 var upper_elems = upper_frag.slice[2, offset=offset]()
@@ -727,8 +711,7 @@ fn promote_accumulators[
                     Scalar[accum_type]
                 ](upper_elems[1]) * rebind[Scalar[accum_type]](upper_scale)
 
-                @parameter
-                if is_lower_frag_required:
+                comptime if is_lower_frag_required:
                     c_lower_main_tile[stage, offset] += rebind[
                         Scalar[accum_type]
                     ](lower_elems[0]) * rebind[Scalar[accum_type]](lower_scale)
@@ -985,8 +968,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * config.cta_group))
 
-    @parameter
-    for i in range(config.num_clc_pipeline_stages):
+    comptime for i in range(config.num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(Int32(clc_consumer_arv_count))
 
@@ -1041,13 +1023,11 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // config.cta_group):
+    comptime for i in range(CLUSTER_M // config.cta_group):
         b_multicast_mask |= UInt16(1 << (i * config.cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -1102,8 +1082,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             load_mma_pipeline.wait_consumer()
             load_mma_pipeline.producer_step()
 
@@ -1133,8 +1112,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             clc_pipe_consumer_state.step()
 
         # make sure all pipes are empty before kernel exit
-        @parameter
-        for i in range(config.num_clc_pipeline_stages):
+        comptime for i in range(config.num_clc_pipeline_stages):
             clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                 clc_pipe_producer_state.phase()
             )
@@ -1184,9 +1162,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
                     if elect_one_sync():
-
-                        @parameter
-                        if config.cta_group == 1:
+                        comptime if config.cta_group == 1:
                             mma_arrive[config.cta_group](
                                 mma_output_pipeline.producer_mbar(
                                     mma_output_mma_stage
@@ -1242,8 +1218,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             _ = c_upper_main_tile.fill(0.0)
 
-            @parameter
-            if is_lower_frag_required:
+            comptime if is_lower_frag_required:
                 _ = c_lower_main_tile.fill(0.0)
 
             for k_iter in range(num_iters):
@@ -1299,8 +1274,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        if config.cta_group == 2:
+        comptime if config.cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
 

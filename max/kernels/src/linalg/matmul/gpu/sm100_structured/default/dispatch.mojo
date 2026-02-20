@@ -90,8 +90,7 @@ fn matmul_dispatch_sm100[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    @parameter
-    if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if env_get_bool["AUTOTUNING_MODE", False]():
         var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
         var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
         var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
@@ -134,11 +133,8 @@ fn matmul_dispatch_sm100[
             register_based_epilogue=register_based_epilogue,
         ](c_tensor, a_tensor, b_tensor, ctx)
 
-    @parameter
-    if _vendor_blas_fallback_disabled():
-
-        @parameter
-        if (
+    comptime if _vendor_blas_fallback_disabled():
+        comptime if (
             c_type == DType.bfloat16
             and static_N * size_of[c_type]() % 16 == 0
             and static_K * size_of[a_type]() % 16 == 0
@@ -162,8 +158,7 @@ fn matmul_dispatch_sm100[
 
     var epilogue_type = String("None")
 
-    @parameter
-    if elementwise_compute_lambda_fn:
+    comptime if elementwise_compute_lambda_fn:
         epilogue_type = String("Compute Epilogue")
     elif elementwise_lambda_fn:
         epilogue_type = String("Normal Epilogue")
@@ -194,8 +189,7 @@ fn matmul_dispatch_sm100[
     # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
     # 2. Our GEMV matmul dosen't support float8 yet.
     # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    @parameter
-    if a_type == DType.bfloat16:
+    comptime if a_type == DType.bfloat16:
         if static_N == 1 or m == 1:
             logger.info("------ Executing GEMV Matmul------")
             gemv_gpu[
@@ -208,8 +202,7 @@ fn matmul_dispatch_sm100[
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
-    @parameter
-    if (
+    comptime if (
         c_type == DType.bfloat16
         and static_N * size_of[c_type]() % 16 == 0
         and static_K * size_of[a_type]() % 16 == 0
@@ -217,8 +210,7 @@ fn matmul_dispatch_sm100[
     ):
         var status = DISPATCH_MISS
 
-        @parameter
-        if a_type == b_type == DType.bfloat16:
+        comptime if a_type == b_type == DType.bfloat16:
             status = matmul_dispatch_sm100_bf16[
                 c_type=c_type,
                 a_type=a_type,
@@ -320,8 +312,7 @@ fn matmul_dispatch_sm100_fp8[
 
         comptime m_values = T.query_values[Int, get_m, domain]()
 
-        @parameter
-        for static_m in m_values:
+        comptime for static_m in m_values:
 
             @parameter
             @always_inline
@@ -331,8 +322,7 @@ fn matmul_dispatch_sm100_fp8[
             if m <= static_m:
                 comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
-                @parameter
-                if idx_list:
+                comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
@@ -355,15 +345,12 @@ fn matmul_dispatch_sm100_fp8[
     # TODO: re-enable the following tuning dispatch.
     # make sure the domain (nk_idx_list) is not empty!
     if m > 128:
-
-        @parameter
-        if nk_idx_list:
+        comptime if nk_idx_list:
             if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
                 return DISPATCH_HIT
 
     # gemma-3-27b-it-prefill (TP1)
-    @parameter
-    if static_N == 5376 and static_K == 21504:
+    comptime if static_N == 5376 and static_K == 21504:
         if m == 224 or m == 256:
             comptime block_tile_shape = Index(128, 64, BK)
             comptime umma_shape = Index(
@@ -1096,8 +1083,7 @@ fn matmul_dispatch_sm100_fp8[
             return DISPATCH_HIT
 
     # gemma-3-27b-it-prefill (TP2)
-    @parameter
-    if static_N == 4096 and static_K == 5376:
+    comptime if static_N == 4096 and static_K == 5376:
         if m == 2000:
             comptime block_tile_shape = Index(128, 128, BK)
             comptime umma_shape = Index(
@@ -1399,8 +1385,7 @@ fn heuristic_and_outliers_dispatch[
 
     comptime outlier_configs = outliers.find[rule]()
 
-    @parameter
-    for tuning_config in outlier_configs:
+    comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
             comptime matmul_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
@@ -1437,8 +1422,7 @@ fn heuristic_and_outliers_dispatch[
         m, static_N, static_K
     )
 
-    @parameter
-    for config in configs:
+    comptime for config in configs:
         if config_runtime == config:
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
@@ -1496,8 +1480,7 @@ fn matmul_dispatch_sm100_bf16[
         Index(4096, 1536),
     ]
 
-    @parameter
-    if Index(static_N, static_K) in miscellaneous_NK:
+    comptime if Index(static_N, static_K) in miscellaneous_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1505,8 +1488,7 @@ fn matmul_dispatch_sm100_bf16[
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
-    @parameter
-    if Index(static_N, static_K) in llama3_8b_NK:
+    comptime if Index(static_N, static_K) in llama3_8b_NK:
         if m <= 128:
             return heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
@@ -1516,8 +1498,7 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
 
     # gemma-3-27b-it-prefill (TP1)
-    @parameter
-    if static_N == 8192 and static_K == 5376:
+    comptime if static_N == 8192 and static_K == 5376:
         if m == 48000:
             comptime block_tile_shape = Index(128, 128, BK)
             comptime umma_shape = Index(
@@ -1593,8 +1574,7 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    @parameter
-    if static_N == 5376 and static_K == 4096:
+    comptime if static_N == 5376 and static_K == 4096:
         if m == 2000:
             comptime block_tile_shape = Index(128, 104, BK)
             comptime umma_shape = Index(
@@ -1691,8 +1671,7 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    @parameter
-    if static_N == 43008 and static_K == 5376:
+    comptime if static_N == 43008 and static_K == 5376:
         if m == 2000:
             comptime block_tile_shape = Index(128, 112, BK)
             comptime umma_shape = Index(
@@ -1758,8 +1737,7 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    @parameter
-    if static_N == 5376 and static_K == 21504:
+    comptime if static_N == 5376 and static_K == 21504:
         if m == 2000:
             comptime block_tile_shape = Index(128, 104, BK)
             comptime umma_shape = Index(
@@ -1856,8 +1834,7 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    @parameter
-    if static_N == 262208 and static_K == 5376:
+    comptime if static_N == 262208 and static_K == 5376:
         if m == 1:
             comptime block_tile_shape = Index(64, 128, BK)
             comptime umma_shape = Index(
@@ -1878,8 +1855,7 @@ fn matmul_dispatch_sm100_bf16[
             return DISPATCH_HIT
 
     # gemma-3-27b-it-prefill (TP=2)
-    @parameter
-    if static_N == 4096 and static_K == 5376:
+    comptime if static_N == 4096 and static_K == 5376:
         if m == 3000:
             comptime block_tile_shape = Index(128, 88, BK)
             comptime umma_shape = Index(
@@ -1900,8 +1876,7 @@ fn matmul_dispatch_sm100_bf16[
             return DISPATCH_HIT
 
     # llama-3-1-8b-it-prefill (TP=2)
-    @parameter
-    if static_N == 3072 and static_K == 4096:
+    comptime if static_N == 3072 and static_K == 4096:
         if m == 4096:
             comptime block_tile_shape = Index(128, 120, BK)
             comptime umma_shape = Index(
@@ -1959,8 +1934,7 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    @parameter
-    if static_N == 4096 and static_K == 2048:
+    comptime if static_N == 4096 and static_K == 2048:
         if m == 512:
             comptime block_tile_shape = Index(128, 56, BK)
             comptime umma_shape = Index(
@@ -2020,8 +1994,7 @@ fn _vendor_blas_matmul_sm100[
         # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
         logger.warning("Vendor BLAS failed")
 
-        @parameter
-        if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
+        comptime if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
             logger.info("Executing Multistage matmul kernel")
             comptime kernels = MatmulKernels[
                 a_type, b_type, c_type, transpose_b
@@ -2104,8 +2077,7 @@ fn _matmul_dispatch_sm100[
         "Either the epilogue lambda or the compute lambda can be used",
     ]()
 
-    @parameter
-    if not elementwise_lambda_fn:
+    comptime if not elementwise_lambda_fn:
         if not c.data:
             raise "c must be allocated!"
 

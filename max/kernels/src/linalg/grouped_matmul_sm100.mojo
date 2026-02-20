@@ -358,14 +358,12 @@ fn stsm_helper[
     fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
         var tmp = SIMD[v.dtype, size]()
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             tmp[i] = v[i + offset]
         return tmp
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
-    @parameter
-    for i in range(shape0 // stsmx4_row_size):
+    comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_tile_offset
         var offset = swizzle(stsm_lane_offset + UInt32(n_offset))
         var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
@@ -476,8 +474,7 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
@@ -500,15 +497,13 @@ fn multi_stage_store_C[
 
         tcgen05_load_wait()
 
-        @parameter
-        if stage == num_stages - 1:
+        comptime if stage == num_stages - 1:
             umma_arrive_leader_cta(accum_empty_mbar + index)
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
 
-        @parameter
-        if transpose_c:
+        comptime if transpose_c:
             # if stage_contiguous_size is 128, we need to split the shared memory
             # into two stageNx64 row-major tiles due to the limitation of 128B TMA
             # swizzle. However, for easier programming, we reshape the tile
@@ -585,11 +580,8 @@ fn multi_stage_store_C[
             if elect_one_warp and lane == 0:
                 fence_async_view_proxy()
 
-                @parameter
-                if transpose_c:
-
-                    @parameter
-                    for i in range(M // 16):
+                comptime if transpose_c:
+                    comptime for i in range(M // 16):
                         var c_smem_warp_tile = c_smem_tile.tile[
                             stageN * 16 // stage_contiguous_size,
                             stage_contiguous_size,
@@ -617,8 +609,7 @@ fn multi_stage_store_C[
                 c_tma_op.commit_group()
 
             # Keep one tma store in fly
-            @parameter
-            if stage < num_stages - 1:
+            comptime if stage < num_stages - 1:
                 c_tma_op.wait_group[1]()
             # Last stage guard all tma store to finish
             else:
@@ -650,8 +641,7 @@ fn multi_stage_store_C[
             comptime value_shape = logical_c_layout.size() // thread_num
             comptime cM = c.shape[1]()
 
-            @parameter
-            for v in range(value_shape):
+            comptime for v in range(value_shape):
                 comptime thread_offset = v * thread_num
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
                 # idx2crd but RuntimeTuple.idx2crd is too hard to use
@@ -672,9 +662,7 @@ fn multi_stage_store_C[
                     chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
                 ) * UInt32(simd_size)
                 if m < UInt32(cM):
-
-                    @parameter
-                    if elementwise_lambda_fn:
+                    comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[
                             c_type, simd_size, alignment=alignment
@@ -684,8 +672,7 @@ fn multi_stage_store_C[
                             val_vec
                         )
 
-        @parameter
-        if stage > 0 or stage == num_stages - 1:
+        comptime if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
@@ -910,16 +897,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
                 cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
 
-        @parameter
-        for i in range(num_accum_pipeline_stages):
+        comptime for i in range(num_accum_pipeline_stages):
             accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
             accum_empty_mbar[i].init(Int32(accum_pipeline_consumer_arv_count))
 
@@ -981,13 +966,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -1038,8 +1021,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             var next_work_info = scheduler.fetch_next_work()
             work_info = next_work_info
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             mma_mbar[producer_phase.index()].wait(producer_phase.phase())
             producer_phase.step()
 
@@ -1093,9 +1075,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
                 # mma arrive multicast will track completion of all mma prior to this barrier.
                 if elect_one_sync():
-
-                    @parameter
-                    if cta_group == 2:
+                    comptime if cta_group == 2:
                         mma_arrive_multicast[cta_group](
                             accum_full_mbar + accum_index,
                             UInt16(mma_complete_mask),
@@ -1170,8 +1150,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             next_work_info = scheduler.fetch_next_work()
             work_info = next_work_info
 
-        @parameter
-        if cta_group == 2:
+        comptime if cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
 
         _ = tmem_dealloc_mbar[].arrive()
@@ -1385,8 +1364,7 @@ fn _grouped_matmul_sm100_persistent[
         max_pipeline_stages >= 1
     ), "Max pipeline stages must be at least 1"
 
-    @parameter
-    if num_pipeline_stages:
+    comptime if num_pipeline_stages:
         comptime assert (
             num_pipeline_stages.value() <= max_pipeline_stages
         ), "Pipeline stage must be less than or equal to max pipeline stages"

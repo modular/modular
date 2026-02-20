@@ -426,8 +426,7 @@ struct RingBuffer[
         """Get tiles from shared memory."""
         var result = Self.WarpTileTupleType()
 
-        @parameter
-        for i in range(Self.tile_buffers):
+        comptime for i in range(Self.tile_buffers):
             var staged_smem_tile = self.smem_buffers[i].get_tile(stage)
             result[i] = staged_smem_tile.tile[Self.warp_rows, Self.warp_cols](
                 warp_tile_idx, 0

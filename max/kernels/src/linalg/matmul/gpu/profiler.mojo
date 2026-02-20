@@ -66,8 +66,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @staticmethod
     @parameter
     fn _get_warp_count[warp_role: UInt32]() -> UInt32:
-        @parameter
-        if warp_role == 0:
+        comptime if warp_role == 0:
             return Self.load_warps
         elif warp_role == 1:
             return Self.scheduler_warps
@@ -215,14 +214,12 @@ struct BlackwellProfileWarp[
 
     @always_inline
     fn __enter__(mut self):
-        @parameter
-        if Self.enable_profiling:
+        comptime if Self.enable_profiling:
             self.timeline[0] = global_perf_counter_ns()
 
     @always_inline
     fn __exit__(mut self):
-        @parameter
-        if Self.enable_profiling:
+        comptime if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
             Self.WorkspaceManager.write_to_workspace[Self.warp_role](
                 UInt32(sm_id()),

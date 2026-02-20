@@ -45,8 +45,7 @@ fn matmul[
     architectures, so in place we just call the CUBLAS library.
     """
 
-    @parameter
-    if not elementwise_lambda_fn:
+    comptime if not elementwise_lambda_fn:
         if not c.data:
             raise "c must be allocated"
         vendor_matmul[use_tf32=True](

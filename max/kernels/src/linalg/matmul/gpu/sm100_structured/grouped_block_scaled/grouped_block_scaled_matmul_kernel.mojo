@@ -1413,8 +1413,7 @@ struct GroupedBlockScaledMatmulKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor (native SMEM storage)
@@ -1501,9 +1500,7 @@ struct GroupedBlockScaledMatmulKernel[
     ):
         """Execute MMA operations using InputConsumerStage."""
         if elect_one_sync():
-
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor (native SMEM storage)
@@ -1684,14 +1681,12 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm):
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
             # Initialize throttle barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm * 2):
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm * 2):
                 clc_throttle.ptr[i].init(
                     Int32(
                         Self.clc_throttle_producer_arv_count if i
@@ -2005,8 +2000,7 @@ struct GroupedBlockScaledMatmulKernel[
         # Build cumulative tiles
         var cumulative = StaticTuple[UInt32, Self.max_groups + 1]()
 
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             cumulative[i] = 0
 
         var cumsum: UInt32 = 0

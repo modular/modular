@@ -75,27 +75,22 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             uninitialized=True
         )
 
-        @parameter
-        for row in range(kernel_rows):
+        comptime for row in range(kernel_rows):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](
                 IndexList[2](global_m, global_k)
             ).cast[c_local.dtype]()
             a_vals[row] = a_val
 
-        @parameter
-        for lane in range(a_col_size):
-
-            @parameter
-            for col in range(kernel_cols // simd_size):
+        comptime for lane in range(a_col_size):
+            comptime for col in range(kernel_cols // simd_size):
                 var b_val = (
                     (b_ptr + col * simd_size)
                     .load[width=simd_size]()
                     .cast[c_local.dtype]()
                 )
 
-                @parameter
-                for row in range(kernel_rows):
+                comptime for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_val = c_local[row, col]
                     c_val = fma[dtype = c_local.dtype, width=simd_size](

@@ -293,14 +293,12 @@ fn run_producer[
     with ring_buffer.producer[warps_processed_per_producer]() as producer_view:
         var scatter_gather = ScatterGatherAmd[thread_layout](matrix)
 
-        @parameter
-        for producer_iteration in range(warps_processed_per_producer):
+        comptime for producer_iteration in range(warps_processed_per_producer):
             var warp_tile_idx = (
                 Int(warp_id) + producer_iteration * producer_warps
             )
 
-            @parameter
-            for tile_num in range(tile_count):
+            comptime for tile_num in range(tile_count):
                 comptime stage = tile_num % pipeline_stages
 
                 var gmem_tile = matrix.tile[block_rows, block_cols](
@@ -546,16 +544,16 @@ fn warp_specialized_matmul_kernel[
             warps_computed_per_consumer
         ]() as consumer_view_b:
             # Process each tile completely before moving to the next
-            @parameter
-            for consumer_iteration in range(warps_computed_per_consumer):
+            comptime for consumer_iteration in range(
+                warps_computed_per_consumer
+            ):
                 var m_warp_idx, n_warp_idx = compute_indices(consumer_iteration)
 
                 # Reset accumulator for this new M,N position
                 tile_operator.reset_accumulator()
 
                 # Accumulate across all K tiles for this M, N position
-                @parameter
-                for tile_num in range(tile_count):
+                comptime for tile_num in range(tile_count):
                     comptime stage = tile_num % pipeline_stages
 
                     # Get tiles using consumer view context
@@ -567,15 +565,13 @@ fn warp_specialized_matmul_kernel[
                         comptime num_k_tiles = tile_operator.total_k_tiles
 
                         # Load all K tiles
-                        @parameter
-                        for k_idx in range(num_k_tiles):
+                        comptime for k_idx in range(num_k_tiles):
                             tile_operator.load_tile_fragment[k_idx](
                                 smem_tile_a[0], smem_tile_b[0]
                             )
 
                         # Perform MMA computation
-                        @parameter
-                        for k_idx in range(num_k_tiles):
+                        comptime for k_idx in range(num_k_tiles):
                             tile_operator.mma_compute[k_idx]()
 
                 # Write this tile's result to global memory

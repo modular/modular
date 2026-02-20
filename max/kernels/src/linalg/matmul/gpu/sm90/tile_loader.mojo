@@ -252,12 +252,10 @@ struct TileLoaderTMA[
         comptime tma_load_size = Self.desc_layout.size()
         comptime tma_rows = Self.desc_layout.shape[0].value()
 
-        @parameter
-        if Self.cluster_size > 1:
+        comptime if Self.cluster_size > 1:
             # Multi-block cluster: Use multicast to share data across blocks
 
-            @parameter
-            if Self.use_partitioned_multicast:
+            comptime if Self.use_partitioned_multicast:
                 # Partitioned multicast: Each block loads a portion of the tile
                 # This is more efficient for large tiles as it distributes the load
                 self.tma_op[].async_multicast_load_partitioned[
@@ -470,8 +468,7 @@ fn async_copy_with_bound_check[
     comptime num_vecs = dst_frag.layout.size()
 
     # Process each vector element assigned to this thread
-    @parameter
-    for i in range(num_vecs):
+    comptime for i in range(num_vecs):
         # Apply swizzling to the destination index to avoid bank conflicts
         comptime dst_idx = dst_frag.layout(i)
         comptime dst_idx_base = dst_idx % swizzle.size()

@@ -46,8 +46,7 @@ fn _is_valid_cluster_shape[
     if num_tiles_n % cluster_shape[0] != 0:
         return False
 
-    @parameter
-    for i in range(2):
+    comptime for i in range(2):
         if (
             grid_shape[i] < cluster_shape[i]
             or grid_shape[i] % cluster_shape[i] != 0
@@ -124,8 +123,7 @@ fn warp_specialize_gemm_with_multicasting[
 ) raises:
     """Unified dispatcher for all matmul kernel variants."""
 
-    @parameter
-    if splits > 0:
+    comptime if splits > 0:
         # TODO: Remove if unnecessary otherwise add support
         comptime assert (
             swapAB == False
@@ -255,8 +253,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     logger.info("cluster_shape:", config.cluster_shape)
     logger.info("mma_shape:", config.mma_shape)
 
-    @parameter
-    if schedule == MatmulSchedule.NONE:
+    comptime if schedule == MatmulSchedule.NONE:
         pass
     elif schedule == MatmulSchedule.DS_SCHEDULER:
         constrained[
@@ -343,8 +340,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
     ]()
 
-    @parameter
-    if use_tma_store:
+    comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
@@ -353,8 +349,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
 
-    @parameter
-    if hilbert_swizzle:
+    comptime if hilbert_swizzle:
         var grid_x = ceildiv(N, BN)
         var grid_y = ceildiv(M, BM)
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
@@ -447,11 +442,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Note that K * size_of[a_type]() decides the 2nd row's alignment
     # and Nvidia requires access alignment by access size.
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
-    @parameter
-    if k_align == 16:
-
-        @parameter
-        if not swapAB:
+    comptime if k_align == 16:
+        comptime if not swapAB:
             var a_tma_op = create_tensor_tile[
                 Index(
                     BM // Int(CLUSTER_N), BK
@@ -466,8 +458,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 swizzle_mode=b_swizzle,
             ](ctx, b)
 
-            @parameter
-            if schedule != MatmulSchedule.NONE:
+            comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
                     a_tma_op.layout,
                     b_tma_op.layout,
@@ -536,8 +527,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 swizzle_mode=b_swizzle,
             ](ctx, a)
 
-            @parameter
-            if schedule == MatmulSchedule.NONE:
+            comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
                     a_tma_op.layout,
                     b_tma_op.layout,
@@ -637,8 +627,7 @@ fn _get_c_smem_layout[
     comptime min_wg_bn = 16
     comptime MIN_WG_BN = min_wg_bn if size_of[c_type]() == 2 else BN // 4
 
-    @parameter
-    if available_smem_size > (
+    comptime if available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
     ):
 

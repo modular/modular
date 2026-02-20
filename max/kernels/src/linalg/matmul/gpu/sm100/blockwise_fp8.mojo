@@ -341,8 +341,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
-        @parameter
-        for ld_iter in range(total_repeat // repeat):
+        comptime for ld_iter in range(total_repeat // repeat):
             c_frag_temp = tcgen05_ld[
                 datapaths=16,
                 bits=256,
@@ -355,8 +354,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             var b_scale: Scalar[b_scales_type]
 
-            @parameter
-            if BN != BK:
+            comptime if BN != BK:
                 var global_n = block_idx.x * UInt(BN)
 
                 var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
@@ -382,8 +380,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             var m_offset = (warp_id * 16) + (lane_id() // 4)
 
             # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
-            @parameter
-            for j in range(temp_cfrags_size // 2):
+            comptime for j in range(temp_cfrags_size // 2):
                 var local_m = m_offset + UInt((j % 2) * 8)
                 var a_scale = a_scales_smem_tile_2D_view[0, local_m]
 
@@ -410,11 +407,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     )
     comptime c_coord_type = type_of(ctile_coords)
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
@@ -438,11 +432,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
@@ -457,8 +448,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
 
-                        @parameter
-                        if elementwise_lambda_fn:
+                        comptime if elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()
                             comptime epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](

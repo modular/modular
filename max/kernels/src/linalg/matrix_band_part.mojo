@@ -106,8 +106,7 @@ fn _matrix_band_part_impl[
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
         ) and (upper_diagonal_index < 0 or (col - row) <= upper_diagonal_index)
 
-        @parameter
-        if exclude:
+        comptime if exclude:
             in_band = not in_band
 
         if in_band:

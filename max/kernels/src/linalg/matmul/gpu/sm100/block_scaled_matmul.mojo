@@ -675,8 +675,7 @@ fn copy_accum_to_gmem[
     var c_row = c_coord[0] * UInt32(BM)
     var c_col = c_coord[1] * UInt32(MMA_N)
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
         upper_frag_partial = tcgen05_ld[
             datapaths=data_paths,
@@ -687,8 +686,7 @@ fn copy_accum_to_gmem[
             width=rep_frag_size,
         ](stage_tmem_addr)
 
-        @parameter
-        if is_lower_frag_required:
+        comptime if is_lower_frag_required:
             lower_frag_partial = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
@@ -700,28 +698,22 @@ fn copy_accum_to_gmem[
 
         tcgen05_load_wait()
 
-        @parameter
-        if stage == num_stages - 1:
+        comptime if stage == num_stages - 1:
             accum_arrive[cta_group](mma_output_pipeline, mma_output_stage)
 
         # Apply tensor scale factor
         upper_frag_partial = upper_frag_partial * alpha.cast[accum_type]()
 
-        @parameter
-        if is_lower_frag_required:
+        comptime if is_lower_frag_required:
             lower_frag_partial = lower_frag_partial * alpha.cast[accum_type]()
 
         upper_frag_casted = upper_frag_partial.cast[epilogue_dtype]()
 
-        @parameter
-        if is_lower_frag_required:
+        comptime if is_lower_frag_required:
             lower_frag_casted = lower_frag_partial.cast[epilogue_dtype]()
 
-        @parameter
-        if elementwise_compute_lambda_fn:
-
-            @parameter
-            if register_based_epilogue:
+        comptime if elementwise_compute_lambda_fn:
+            comptime if register_based_epilogue:
                 register_epilogue[
                     Int(MMA_M),
                     data_paths,
@@ -742,15 +734,13 @@ fn copy_accum_to_gmem[
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
 
-        @parameter
-        if transpose_c:
+        comptime if transpose_c:
             # if stage_contiguous_size is 128, we need to split the shared
             # memory into two stageNxswizzle_width row-major tiles due to the
             # limitation of 128B TMA swizzle. However, for easier programming,
             # we reshape the tile contiguous row_major(stageN, swizzle_width)
             # chunks.
-            @parameter
-            if is_lower_frag_required:
+            comptime if is_lower_frag_required:
                 comptime tile_width = 32
                 comptime smem_swblock_layout = Layout.row_major(
                     stageN, 2, tile_width
@@ -802,11 +792,8 @@ fn copy_accum_to_gmem[
                 # Guard the write to shared memory is done.
                 named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
-                @parameter
-                if elementwise_compute_lambda_fn:
-
-                    @parameter
-                    if not register_based_epilogue:
+                comptime if elementwise_compute_lambda_fn:
+                    comptime if not register_based_epilogue:
                         shared_memory_epilogue_transpose[
                             UInt(stage),
                             UInt(stageN),
@@ -860,11 +847,8 @@ fn copy_accum_to_gmem[
                 # Guard the write to shared memory is done.
                 named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
-                @parameter
-                if elementwise_compute_lambda_fn:
-
-                    @parameter
-                    if not register_based_epilogue:
+                comptime if elementwise_compute_lambda_fn:
+                    comptime if not register_based_epilogue:
                         shared_memory_epilogue_transpose[
                             UInt(stage),
                             UInt(stageN),
@@ -905,8 +889,7 @@ fn copy_accum_to_gmem[
                 data_paths, stageN
             ](1, 0)
 
-            @parameter
-            if is_lower_frag_required:
+            comptime if is_lower_frag_required:
                 stsm_helper[swizzle, UInt(stageN), transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
@@ -914,11 +897,8 @@ fn copy_accum_to_gmem[
             # Guard the write to shared memory is done.
             named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
-            @parameter
-            if elementwise_compute_lambda_fn:
-
-                @parameter
-                if not register_based_epilogue:
+            comptime if elementwise_compute_lambda_fn:
+                comptime if not register_based_epilogue:
                     shared_memory_epilogue[
                         UInt(MMA_M),
                         data_paths,
@@ -976,11 +956,8 @@ fn copy_accum_to_gmem[
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
 
-            @parameter
-            if transpose_c:
-
-                @parameter
-                if cta_group == 2 and MMA_M == 128:
+            comptime if transpose_c:
+                comptime if cta_group == 2 and MMA_M == 128:
                     var c_smem_reshaped = c_smem_tile.reshape[
                         Layout.row_major(2 * stageN, stage_contiguous_size // 2)
                     ]()
@@ -1004,8 +981,7 @@ fn copy_accum_to_gmem[
                         // (1 if is_lower_frag_required else 2)
                     )
 
-                    @parameter
-                    for i in range(num_c_smem_tiles):
+                    comptime for i in range(num_c_smem_tiles):
                         var c_smem_warp_tile = c_smem_tile.tile[
                             stageN * swizzle_width // stage_contiguous_size,
                             stage_contiguous_size,
@@ -1040,15 +1016,13 @@ fn copy_accum_to_gmem[
             c_tma_op.commit_group()
 
         # Keep one tma store in fly
-        @parameter
-        if stage < num_stages - 1:
+        comptime if stage < num_stages - 1:
             c_tma_op.wait_group[1]()
         # Last stage guard all tma store to finish
         else:
             c_tma_op.wait_group[0]()
 
-        @parameter
-        if stage > 0 or stage == num_stages - 1:
+        comptime if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
             named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
@@ -1057,8 +1031,7 @@ fn copy_accum_to_gmem[
 fn _reshape_to_3d[layout: Layout]() -> Layout:
     comptime rank = len(layout.shape)
 
-    @parameter
-    if rank == 3:
+    comptime if rank == 3:
         return materialize[layout]()
     else:
         return Layout.row_major(
@@ -1392,15 +1365,13 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
         tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * config.cta_group))
 
-        @parameter
-        for i in range(config.num_clc_pipeline_stages):
+        comptime for i in range(config.num_clc_pipeline_stages):
             clc_full_mbar[i].init(Int32(clc_producer_arv_count))
             clc_empty_mbar[i].init(Int32(clc_consumer_arv_count))
 
     fence_mbarrier_init()
 
-    @parameter
-    if CLUSTER_SIZE > 1:
+    comptime if CLUSTER_SIZE > 1:
         cluster_arrive_relaxed()
 
     var clc_pipe_producer_state = PipelineState[
@@ -1454,13 +1425,11 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // config.cta_group):
+    comptime for i in range(CLUSTER_M // config.cta_group):
         b_multicast_mask |= UInt16(1 << (i * config.cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -1477,8 +1446,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         warp_role, max_profiled_tiles_per_SM
     ]
 
-    @parameter
-    if CLUSTER_SIZE > 1:
+    comptime if CLUSTER_SIZE > 1:
         cluster_wait()
     else:
         barrier()
@@ -1487,8 +1455,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         with MatmulProfilerType[0](workspace, 0):
             var required_clc_query = True
 
-            @parameter
-            if pdl_level > PDLLevel.OFF:
+            comptime if pdl_level > PDLLevel.OFF:
                 wait_on_dependent_grids()
 
             while work_info.is_valid():
@@ -1542,23 +1509,22 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 clc_pipe_consumer_state.step()
 
             # Prevent CTA to exit when a peer CTA is still working on mma.
-            @parameter
-            for i in range(config.num_pipeline_stages // config.k_group_size):
+            comptime for i in range(
+                config.num_pipeline_stages // config.k_group_size
+            ):
                 load_mma_pipeline.wait_consumer()
                 load_mma_pipeline.producer_step()
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
         # Implies each SM will only process initial work, there is no
         # more work to schedule.
-        @parameter
-        if config.num_clc_pipeline_stages == 0:
+        comptime if config.num_clc_pipeline_stages == 0:
             return
 
         with MatmulProfilerType[1](workspace, 0):
             var required_clc_query = True
 
-            @parameter
-            if pdl_level > PDLLevel.OFF:
+            comptime if pdl_level > PDLLevel.OFF:
                 wait_on_dependent_grids()
 
             while work_info.is_valid():
@@ -1586,8 +1552,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 clc_pipe_consumer_state.step()
 
             # make sure all pipes are empty before kernel exit
-            @parameter
-            for i in range(config.num_clc_pipeline_stages):
+            comptime for i in range(config.num_clc_pipeline_stages):
                 clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                     clc_pipe_producer_state.phase()
                 )
@@ -1655,9 +1620,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
                     if elect_one_sync():
-
-                        @parameter
-                        if config.cta_group == 1:
+                        comptime if config.cta_group == 1:
                             mma_arrive[config.cta_group](
                                 mma_output_pipeline.producer_mbar(
                                     mma_output_mma_stage
@@ -1673,8 +1636,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
 
-            @parameter
-            if pdl_level > PDLLevel.OFF:
+            comptime if pdl_level > PDLLevel.OFF:
                 launch_dependent_grids()
 
             tcgen05_release_allocation_lock[Int32(config.cta_group)]()
@@ -1732,8 +1694,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             tile_idx += 1
 
-        @parameter
-        if config.cta_group == 2:
+        comptime if config.cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
 
@@ -1837,8 +1798,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         == SF_ATOM_K
     ), ""
 
-    @parameter
-    if config.cta_group == 2:
+    comptime if config.cta_group == 2:
         comptime assert MMA_M == 256 and MMA_N in (
             64,
             128,
@@ -2081,8 +2041,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var workspace: Span[UInt64, MutAnyOrigin]
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
         ].get_workspace(ctx)
@@ -2113,8 +2072,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         attributes=pdl_launch_attributes(pdl_level),
     )
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         ctx.synchronize()
         MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
@@ -2192,8 +2150,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         If configuration constraints are violated.
     """
 
-    @parameter
-    if config.AB_swapped:
+    comptime if config.AB_swapped:
         # When both A and B are K-major, C = A @ B'.
         # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
         # So swapping + transposing the output gives the same result.

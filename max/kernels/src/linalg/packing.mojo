@@ -176,8 +176,7 @@ struct PackMatrixRows[
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
-        @parameter
-        for idx in range(Self.simd_size):
+        comptime for idx in range(Self.simd_size):
             comptime inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
@@ -187,8 +186,7 @@ struct PackMatrixRows[
                 )
                 var row_data: SIMD[Self.dtype, Self.simd_size]
 
-                @parameter
-                if skip_col_bound:
+                comptime if skip_col_bound:
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
@@ -221,8 +219,7 @@ struct PackMatrixRows[
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
-        @parameter
-        for idx in range(Self.simd_size):
+        comptime for idx in range(Self.simd_size):
             var transposed_data = transpose_buffer.load[width = Self.simd_size](
                 Index(idx, 0)
             )
@@ -438,16 +435,12 @@ struct PackMatrixCols[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](global_row_idx, global_col_idx)
 
-        @parameter
-        if skip_row_bound:
+        comptime if skip_row_bound:
             if not CompilationTarget.has_neon():
-
-                @parameter
-                for i in range(unroll_factor):
+                comptime for i in range(unroll_factor):
                     prefetch_body[i]()
 
-            @parameter
-            for i in range(unroll_factor):
+            comptime for i in range(unroll_factor):
                 pack_body[i]()
         else:
             for row_idx in range(row_start, valid_row_count):
@@ -466,9 +459,7 @@ struct PackMatrixCols[
         for i in range(0, self.pack_tile_dim[0], vnni_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
-
-                    @parameter
-                    for l in range(vnni_cols):
+                    comptime for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
                         var val = (
                             0 if local_idx[0] >= kc
@@ -541,8 +532,7 @@ struct PackMatrixCols[
             row_idx += unroll_factor
 
     fn _pack(self):
-        @parameter
-        if Self.use_vnni:
+        comptime if Self.use_vnni:
             self._pack_vnni()
         elif Self.use_i8mm:
             self._pack_i8mm()
@@ -590,8 +580,7 @@ fn _pack_matmul_b_shape_func_impl[
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
-    @parameter
-    if transpose_in_0:
+    comptime if transpose_in_0:
         output[0] = b_input.dim(1)
         output[1] = b_input.dim(0)
     else:
@@ -603,8 +592,7 @@ fn _pack_matmul_b_shape_func_impl[
     # special gemv for M=1 (apple_gemv).
     # So override packing, BUT pack functions will do transpose (facilitates
     # apple_gemv), so assign the transposed B dimensions.
-    @parameter
-    if not use_apple_accelerate_lib[c_type, a_type, b_type]():
+    comptime if not use_apple_accelerate_lib[c_type, a_type, b_type]():
         comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
         comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
         comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
@@ -633,8 +621,7 @@ fn pack_matmul_b_shape_func[
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
-    @parameter
-    if a_shape.at[0]().has_value():
+    comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
 
     return _pack_matmul_b_shape_func_impl[
@@ -679,8 +666,7 @@ fn pack_b[
     comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
     comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
-    @parameter
-    if not transpose_b:
+    comptime if not transpose_b:
         var k_in = src.dim[0]()
         var n_in = src.dim[1]()
         var k_out = dst.dim[0]()
@@ -803,11 +789,9 @@ fn _pack_b_ndbuffer_impl[
         # (which is a binding for cblas_sgemm that doesn't support packing) and a
         # special gemv for M=1 (apple_gemv).
         # So override packing, BUT do transpose (facilitates apple_gemv).
-        @parameter
-        if use_apple_accelerate_lib[c_type, a_type, b_type]():
+        comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
             # If already transposed, skip transpose step and do a memcpy.
-            @parameter
-            if not transposed:
+            comptime if not transposed:
                 var perm = NDBuffer[
                     DType.int, 1, MutAnyOrigin, 2
                 ].stack_allocation()
@@ -868,8 +852,7 @@ fn pack_b_ndbuffer[
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
-    @parameter
-    if a_shape.at[0]().has_value():
+    comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
     _pack_b_ndbuffer_impl[
         a_type,
@@ -897,8 +880,7 @@ fn pack_transposed_b_ndbuffer[
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
-    @parameter
-    if a_shape.at[0]().has_value():
+    comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
     _pack_b_ndbuffer_impl[
         a_type,
@@ -957,8 +939,7 @@ struct BTileGenerator[
             "b cannot be both transposed and pre-packed.",
         )
 
-        @parameter
-        if not Self.b_packed:
+        comptime if not Self.b_packed:
             b_tile_stack_ptr = stack_allocation[
                 get_pack_data_size[Self.b_type](),
                 Self.b_type,
@@ -1014,8 +995,7 @@ struct BTileGenerator[
             self.b_tile_stack_ptr, tile_shape_nopack
         )
 
-        @parameter
-        if Self.transpose_b and not Self.b_packed:
+        comptime if Self.transpose_b and not Self.b_packed:
             PackMatrixRows[
                 Self.shape,
                 Self.config.packed_shape,

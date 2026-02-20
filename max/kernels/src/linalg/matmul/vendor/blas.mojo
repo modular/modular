@@ -158,8 +158,7 @@ struct Backend(Equatable, TrivialRegisterPassable, Writable):
 fn _resolve_backend[
     backend: Backend, dtype: DType = DType.invalid
 ]() -> Backend:
-    @parameter
-    if backend is not Backend.AUTOMATIC:
+    comptime if backend is not Backend.AUTOMATIC:
         return backend
     # TODO: Remove this once we have a proper hipBLASLt backend for float32.
     elif dtype == DType.float32 and has_amd_gpu_accelerator():
@@ -193,8 +192,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     var _handle: Self.type
 
     fn __init__(out self) raises:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
             check_cublas_error(
                 cublasCreate(LegacyUnsafePointer(to=handle).as_unsafe_pointer())
@@ -227,8 +225,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
     @always_inline
     fn __exit__(mut self) raises:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             check_cublas_error(cublasDestroy(self._get_cublas()))
             self._handle = Self._cublas_type()
             return
@@ -246,8 +243,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         raise Error("the backend is not currently supported")
 
     fn _is_null(self) -> Bool:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             return self._get_cublas() == Self._cublas_type()
         elif Self.resolved_backend is Backend.ROCBLAS:
             return self._get_rocblas() == Self._rocblas_type()
@@ -290,17 +286,13 @@ comptime _DEBUG_VENDOR_BLAS = False
 
 
 fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
-    @parameter
-    if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+    comptime if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
         check_cublas_error(
             cublasSetStream(handle._get_cublas(), CUDA(ctx.stream()))
         )
 
-        @parameter
-        if _DEBUG_VENDOR_BLAS:
-
-            @parameter
-            if handle.resolved_backend is Backend.CUBLAS:
+        comptime if _DEBUG_VENDOR_BLAS:
+            comptime if handle.resolved_backend is Backend.CUBLAS:
                 check_cublas_error(
                     cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
                 )
@@ -472,8 +464,7 @@ fn matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    @parameter
-    if handle.resolved_backend is Backend.CUBLAS:
+    comptime if handle.resolved_backend is Backend.CUBLAS:
         with Trace[TraceLevel.OP]("_cublas_matmul"):
             _cublas_matmul[use_tf32=use_tf32](
                 ctx,
@@ -616,8 +607,7 @@ fn _cublas_matmul[
 
     var compute_type: ComputeType
 
-    @parameter
-    if a_type == DType.float16:
+    comptime if a_type == DType.float16:
         compute_type = ComputeType.COMPUTE_32F
     elif a_type == DType.bfloat16:
         compute_type = ComputeType.COMPUTE_32F
@@ -628,8 +618,7 @@ fn _cublas_matmul[
 
     # When use_tf32 is True, CUBLAS will use TF32 to speedup the computation.
     # However, the result is not bit-wise identical to the result of FP32.
-    @parameter
-    if use_tf32:
+    comptime if use_tf32:
         check_cublas_error(
             cublasSetMathMode(handle, cublasMath_t.CUBLAS_TF32_TENSOR_OP_MATH)
         )
@@ -904,8 +893,7 @@ fn _cublasLt_matmul[
 
     comptime assert a_type == b_type, "A and B must have the same type"
 
-    @parameter
-    if a_type.is_float8():
+    comptime if a_type.is_float8():
         comptime assert not (a_type == b_type == DType.float8_e5m2), (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"
@@ -978,8 +966,7 @@ fn _cublasLt_matmul[
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
-    @parameter
-    if ctx.default_device_info.compute == B200.compute:
+    comptime if ctx.default_device_info.compute == B200.compute:
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")

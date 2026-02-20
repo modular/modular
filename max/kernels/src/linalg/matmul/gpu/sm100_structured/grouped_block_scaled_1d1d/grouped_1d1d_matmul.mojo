@@ -159,8 +159,7 @@ fn grouped_matmul_1d1d_nvfp4[
         row_major(Coord(Idx[num_experts * N](), Idx[K]()))
     )
 
-    @parameter
-    if config.cta_group == 2:
+    comptime if config.cta_group == 2:
         constrained[
             MMA_M == 256 and MMA_N in (128, 256),
             "Only support cta_group == 2 with MMA_M == 256",
@@ -302,8 +301,7 @@ fn grouped_matmul_1d1d_nvfp4[
 
     # When AB_swapped, swap A/B operands and their scale factors for TMA
     # and kernel launch. The @parameter if ensures compile-time branching.
-    @parameter
-    if config.AB_swapped:
+    comptime if config.AB_swapped:
         var a_tma_op = create_tma_tile[
             KernelType.ATmaTile.tile_layout,
             KernelType.ATmaTile.desc_layout,

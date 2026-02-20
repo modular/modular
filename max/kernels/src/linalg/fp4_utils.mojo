@@ -79,11 +79,8 @@ fn cast_uint_to_fp4e2m1[
 
     var result = SIMD[out_dtype, out_width]()
 
-    @parameter
-    for i in range(in_width):
-
-        @parameter
-        for shift in range(0, num_fp4_values):
+    comptime for i in range(in_width):
+        comptime for shift in range(0, num_fp4_values):
             comptime BitsType = type_of(x[i].to_bits())
             var x = (
                 x[i].to_bits() >> BitsType(shift * FP4_E2M1_WIDTH)
@@ -118,8 +115,7 @@ fn cast_fp_to_fp4e2m1[
     var abs_x = abs(x)
     var result = SIMD[dtype, width]()
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         if abs_x[i] <= 0.25:
             result[i] = 0.0
         elif abs_x[i] < 0.75:

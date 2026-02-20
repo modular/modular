@@ -386,8 +386,7 @@ struct TileWriter[
         var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
         var lower_frag_casted = SIMD[Self.epilogue_dtype, Self.rep_frag_size]()
 
-        @parameter
-        for stage in range(Self.num_stages):
+        comptime for stage in range(Self.num_stages):
             # Load fragments from TMEM tile
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
@@ -397,14 +396,12 @@ struct TileWriter[
                 SIMD[Self.accum_type, Self.rep_frag_size]
             ](frags.upper)
 
-            @parameter
-            if Self.is_lower_frag_required:
+            comptime if Self.is_lower_frag_required:
                 lower_frag_partial = rebind[
                     SIMD[Self.accum_type, Self.rep_frag_size]
                 ](frags.lower)
 
-            @parameter
-            if stage == Self.num_stages - 1:
+            comptime if stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(
                     output_stage.pipeline, output_stage.index
                 )
@@ -421,18 +418,14 @@ struct TileWriter[
             # Cast to epilogue dtype
             upper_frag_casted = upper_frag_partial.cast[Self.epilogue_dtype]()
 
-            @parameter
-            if Self.is_lower_frag_required:
+            comptime if Self.is_lower_frag_required:
                 lower_frag_casted = lower_frag_partial.cast[
                     Self.epilogue_dtype
                 ]()
 
             # Apply epilogue lambda if provided
-            @parameter
-            if Self.elementwise_compute_lambda_fn:
-
-                @parameter
-                if Self.register_based_epilogue:
+            comptime if Self.elementwise_compute_lambda_fn:
+                comptime if Self.register_based_epilogue:
                     upper_frag_casted, lower_frag_casted = (
                         epilogue_applier.apply_to_both_fragments[
                             Self.epilogue_dtype,
@@ -450,8 +443,7 @@ struct TileWriter[
 
             var c_smem_tile = c_tiles[stage % 2]
 
-            @parameter
-            if (
+            comptime if (
                 Self.register_based_epilogue
                 or not Self.elementwise_compute_lambda_fn
             ):
@@ -507,8 +499,7 @@ struct TileWriter[
                 batched = Self.batched,
             ]
 
-            @parameter
-            if Self.batched:
+            comptime if Self.batched:
                 var store_coords = StoreCoords(
                     (c_coord[0], c_coord[1], batch_idx), UInt32(warp_id)
                 )
@@ -536,8 +527,7 @@ struct TileWriter[
                 stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
-            @parameter
-            if stage > 0 or stage == Self.num_stages - 1:
+            comptime if stage > 0 or stage == Self.num_stages - 1:
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
@@ -612,8 +602,7 @@ struct TileWriter[
         var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
         var lower_frag_casted = SIMD[Self.epilogue_dtype, Self.rep_frag_size]()
 
-        @parameter
-        for loop_stage in range(Self.num_stages):
+        comptime for loop_stage in range(Self.num_stages):
             # Phase 1: TMEM Load
             var frags = accum_tiles[loop_stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
@@ -622,15 +611,13 @@ struct TileWriter[
                 SIMD[Self.accum_type, Self.rep_frag_size]
             ](frags.upper)
 
-            @parameter
-            if Self.is_lower_frag_required:
+            comptime if Self.is_lower_frag_required:
                 lower_frag_partial = rebind[
                     SIMD[Self.accum_type, Self.rep_frag_size]
                 ](frags.lower)
 
             # Phase 2: Barrier Arrive
-            @parameter
-            if loop_stage == Self.num_stages - 1:
+            comptime if loop_stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(
                     output_stage.pipeline, output_stage.index
                 )
@@ -643,8 +630,7 @@ struct TileWriter[
             # Cast to epilogue dtype
             upper_frag_casted = upper_frag_partial.cast[Self.epilogue_dtype]()
 
-            @parameter
-            if Self.is_lower_frag_required:
+            comptime if Self.is_lower_frag_required:
                 lower_frag_casted = lower_frag_partial.cast[
                     Self.epilogue_dtype
                 ]()
@@ -688,8 +674,7 @@ struct TileWriter[
             #   coord_n→tc1(tokens)
             var tile_needs_bounds_check: Bool
 
-            @parameter
-            if Self.transpose_c:
+            comptime if Self.transpose_c:
                 # Per-stage bounds check on token dimension (passed as
                 # n_abs). Each stage writes stageN token rows.
                 var stage_token_start = m_abs + UInt32(loop_stage * Self.stageN)
@@ -700,9 +685,7 @@ struct TileWriter[
                 tile_needs_bounds_check = m_abs + UInt32(TMA_BM) > m_end
 
             if tile_needs_bounds_check:
-
-                @parameter
-                if Self.transpose_c:
+                comptime if Self.transpose_c:
                     # CUDA core fallback for unaligned group boundaries
                     Self._store_with_bounds_check_transpose[c_tensor_layout](
                         c_smem_tile.ptr,
@@ -742,8 +725,7 @@ struct TileWriter[
                     (dummy_m_tile, n_tile), UInt32(warp_id)
                 )
 
-                @parameter
-                if Self.transpose_c:
+                comptime if Self.transpose_c:
                     # Transpose: coord_m→tc0→N(weights),
                     # coord_n→tc1→M(tokens)
                     store_coords.coord_m = UInt(n_abs)
@@ -776,8 +758,7 @@ struct TileWriter[
                 loop_stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
-            @parameter
-            if loop_stage > 0 or loop_stage == Self.num_stages - 1:
+            comptime if loop_stage > 0 or loop_stage == Self.num_stages - 1:
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @staticmethod
@@ -828,8 +809,7 @@ struct TileWriter[
         WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
         # Iterate over SMEM chunks
-        @parameter
-        for i in range(c_smem_M // TMA_BM):
+        comptime for i in range(c_smem_M // TMA_BM):
             var c_smem_split = c_smem_tile.tile[TMA_BM, Self.stageN](i, 0)
             comptime split_layout = c_smem_split.layout
             comptime zipped = zipped_divide(
@@ -838,8 +818,7 @@ struct TileWriter[
             # Use new Layout for idx2crd
             comptime split_layout_new = row_major[TMA_BM, Self.stageN]()
 
-            @parameter
-            for j in range(zipped.shape[1][0].value()):
+            comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
                     element_type = DType.uint32,
@@ -867,9 +846,7 @@ struct TileWriter[
 
                 # Bounds check: only store if within expert boundary
                 if global_i < m_end:
-
-                    @parameter
-                    if size_of[Self.c_type]() == 2:
+                    comptime if size_of[Self.c_type]() == 2:
                         var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
@@ -943,8 +920,7 @@ struct TileWriter[
 
         var n_inbound = Int32(m_end) - Int32(m_abs)
 
-        @parameter
-        for v in range(value_shape):
+        comptime for v in range(value_shape):
             comptime thread_offset = v * output_threads
             var tidx = UInt32(thread_idx.x) + UInt32(thread_offset)
             var rest, vec_chunkM_idx = divmod(tidx, UInt32(vec_chunkM))
@@ -1092,8 +1068,7 @@ struct TileWriter[
         # Get source C tile for residual add
         var src_smem_tile = src_tiles[Int(src_stage_idx) % 2]
 
-        @parameter
-        for stage in range(Self.num_stages):
+        comptime for stage in range(Self.num_stages):
             # 1. Load fragments from TMEM tile
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
@@ -1101,18 +1076,14 @@ struct TileWriter[
             upper_frag_casted = rebind[type_of(upper_frag_casted)](casted.upper)
             lower_frag_casted = rebind[type_of(lower_frag_casted)](casted.lower)
 
-            @parameter
-            if stage == Self.num_stages - 1:
+            comptime if stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(
                     output_stage.pipeline, output_stage.index
                 )
 
             # 2. Apply epilogue lambda (if present)
-            @parameter
-            if Self.elementwise_compute_lambda_fn:
-
-                @parameter
-                if Self.register_based_epilogue:
+            comptime if Self.elementwise_compute_lambda_fn:
+                comptime if Self.register_based_epilogue:
                     upper_frag_casted, lower_frag_casted = (
                         epilogue_applier.apply_to_both_fragments[
                             Self.epilogue_dtype,
@@ -1155,8 +1126,7 @@ struct TileWriter[
             # 4. Write to output SMEM
             var c_smem_tile = out_tiles[stage % 2]
 
-            @parameter
-            if (
+            comptime if (
                 Self.register_based_epilogue
                 or not Self.elementwise_compute_lambda_fn
             ):
@@ -1226,6 +1196,5 @@ struct TileWriter[
                 stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
-            @parameter
-            if stage > 0 or stage == Self.num_stages - 1:
+            comptime if stage > 0 or stage == Self.num_stages - 1:
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()

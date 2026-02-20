@@ -170,12 +170,10 @@ struct KernelContext[
         self.a_multicast_mask = 0x0
         self.b_multicast_mask = 0x0
 
-        @parameter
-        for i in range(Self.CLUSTER_N):
+        comptime for i in range(Self.CLUSTER_N):
             self.a_multicast_mask |= UInt16(1 << (i * Self.CLUSTER_M))
 
-        @parameter
-        for i in range(Self.CLUSTER_M // Self.cta_group):
+        comptime for i in range(Self.CLUSTER_M // Self.cta_group):
             self.b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
 
         self.a_multicast_mask <<= UInt16(self.rank_m)
@@ -260,9 +258,7 @@ fn consumer_main_loop[
     load_mma_pipeline.wait_producer()
 
     if elect_one_sync():
-
-        @parameter
-        for j in range(k_group_size):
+        comptime for j in range(k_group_size):
             var a_smem_tile = a_smem_iter.next(
                 stage * UInt32(k_group_size) + UInt32(j)
             )[]

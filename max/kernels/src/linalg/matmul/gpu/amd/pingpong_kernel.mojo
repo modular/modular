@@ -221,8 +221,7 @@ struct TileLoaderLDS[
         # Swizzle inversion: load from swizzle(T) so writing to T is conflict-free
         var effective_lane = lane_id
 
-        @parameter
-        if Self.swizzle:
+        comptime if Self.swizzle:
             var lds_write_bytes = (
                 lane_id * Self.load_width * size_of[Self.dtype]()
             )
@@ -268,8 +267,7 @@ struct TileLoaderLDS[
         # This is the thread-varying part that differs per lane
         var lane_offset = self.thread_col + self.thread_row * self.stride
 
-        @parameter
-        for i in range(Self.num_iterations):
+        comptime for i in range(Self.num_iterations):
             var tile_idx = i * Self.num_loading_warps + self.warp_id
             var warp_subtile = dst.tile[Self.rows_per_warp, Self.tile_cols](
                 tile_idx, 0
@@ -316,8 +314,7 @@ fn _load_from_lds[
 
     # Generate the appropriate LLVM vector type and load
     # Using compile-time dispatch based on dtype and width
-    @parameter
-    if dtype == DType.bfloat16 and width == 4:
+    comptime if dtype == DType.bfloat16 and width == 4:
         # BF16 x4 = 64 bits = ds_read_b64
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<4 x bf16>`,
@@ -529,24 +526,19 @@ fn load_lds_fragment[
     comptime elements_per_iter = col_groups * frag_width
     comptime use_split_k = mma_k > elements_per_iter  # True for FP8 16×16×128
 
-    @parameter
-    if use_split_k:
+    comptime if use_split_k:
         # FP8 16×16×128 split-K pattern: 2 iterations per MMA position
         comptime k_splits = mma_k // elements_per_iter  # 2 for 128/64
         comptime m_positions = num_iterations // k_splits
         comptime k_stride = elements_per_iter  # 64 elements between K halves
         comptime m_stride = mma_k * mma_m  # 128*16=2048 between M positions
 
-        @parameter
-        for m_idx in range(m_positions):
-
-            @parameter
-            for k_idx in range(k_splits):
+        comptime for m_idx in range(m_positions):
+            comptime for k_idx in range(k_splits):
                 var iter_base = m_idx * m_stride + k_idx * k_stride
                 var full_offset = iter_base + lane_offset
 
-                @parameter
-                if swizzle:
+                comptime if swizzle:
                     full_offset = swizzle.value()(full_offset)
 
                 comptime frag_idx = m_idx * k_splits + k_idx
@@ -557,13 +549,11 @@ fn load_lds_fragment[
                 )
     else:
         # Standard iteration: iter_base = i * WARP_SIZE * frag_width
-        @parameter
-        for i in range(num_iterations):
+        comptime for i in range(num_iterations):
             var iter_base = i * WARP_SIZE * frag_width
             var full_offset = iter_base + lane_offset
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 full_offset = swizzle.value()(full_offset)
 
             frag_ptr[i] = rebind[FragElement](
@@ -591,8 +581,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Stringable, Writable):
     fn _write_index_list(
         mut writer: Some[Writer], list: IndexList, sep: StaticString
     ):
-        @parameter
-        for i in range(list.size):
+        comptime for i in range(list.size):
             if i != 0:
                 writer.write(sep)
             writer.write(list[i])
@@ -854,14 +843,9 @@ struct MmaOp[
             Self.quadrant_m_size, Self.quadrant_n_size
         ](which_a, which_b).vectorize[1, Self.accum_width]()
 
-        @parameter
-        for k in range(Self.num_k_mmas):
-
-            @parameter
-            for m in range(Self.quadrant_m_mmas):
-
-                @parameter
-                for n in range(Self.quadrant_n_mmas):
+        comptime for k in range(Self.num_k_mmas):
+            comptime for m in range(Self.quadrant_m_mmas):
+                comptime for n in range(Self.quadrant_n_mmas):
                     # stdlib mma() handles both BF16 and FP8 dispatch
                     mma(
                         c_accum_frag[m, n],
@@ -1211,8 +1195,7 @@ struct TileBuffers[
         comptime rows_per_iter_4warp = thread_rows * num_warp_rows_in_4
         comptime num_iterations = half_data_rows // rows_per_iter_4warp
 
-        @parameter
-        for i in range(num_iterations):
+        comptime for i in range(num_iterations):
             var tile_idx = i * 4 + group_warp_id
             var warp_subtile = dst_tile.tile[Self.rows_per_warp, Self.BK](
                 tile_idx, 0
@@ -1622,8 +1605,7 @@ struct AMDPingPongMatmul[
             in_type == DType.float8_e4m3fn and MMA_K == 128
         )
 
-        @parameter
-        if USE_SIMPLIFIED_SCHEDULE:
+        comptime if USE_SIMPLIFIED_SCHEDULE:
             # ================================================================
             # SIMPLIFIED SCHEDULE
             # ================================================================
@@ -2209,8 +2191,7 @@ fn ping_pong_matmul[
     # BF16 uses 16×16×32 with BK=64
     #
     # Swizzle enabled for all configs (each has matched write/read swizzle patterns)
-    @parameter
-    if is_fp8:
+    comptime if is_fp8:
         # FP8 32×32×64 MMA with BK=128 (split-K: 2 MMAs per tile)
         # Requires M % 32 == 0: transpose reads mix data across 32 rows,
         # and split-K offsets corrupt partial groups with OOB zeros

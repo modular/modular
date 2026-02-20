@@ -175,8 +175,7 @@ struct BlockwiseFP8Accumulator[
         self.lower = stack_allocation[dtype = Self.accum_type](accum_layout)
         _ = self.upper.fill(0.0)
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             _ = self.lower.fill(0.0)
 
     @always_inline
@@ -244,8 +243,7 @@ struct BlockwiseFP8Accumulator[
         var b_scale_0: Scalar[Self.accum_type]
         var b_scale_1: Scalar[Self.accum_type]
 
-        @parameter
-        if Self.MMA_N != Self.BK:
+        comptime if Self.MMA_N != Self.BK:
             constrained[
                 Self.stageN <= gcd(Self.MMA_N, Self.BK)
                 and (gcd(Self.MMA_N, Self.BK) % Self.stageN == 0),
@@ -291,8 +289,7 @@ struct BlockwiseFP8Accumulator[
         var staged_c_row: UInt
         var staged_c_col: UInt
 
-        @parameter
-        if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
+        comptime if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
             staged_c_row = warp_id * UInt(WARP_SIZE)
             staged_c_col = UInt(0)
         elif Self.MMA_M == 64 and cta_group == 1:
@@ -334,8 +331,7 @@ struct BlockwiseFP8Accumulator[
         var lower_sfa0_smem = Scalar[Self.accum_type]()
         var lower_sfa1_smem = Scalar[Self.accum_type]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             lower_sfa0_smem = rebind[Scalar[Self.accum_type]](
                 a_scales_smem[
                     0, UInt32(staged_c_row) + top_frag_lower_coord[0]
@@ -353,8 +349,7 @@ struct BlockwiseFP8Accumulator[
             epi_stage.arrive_input()
         syncwarp()
 
-        @parameter
-        for stage in range(Self.num_stages):
+        comptime for stage in range(Self.num_stages):
             var tmem_addr = TmemAddress(
                 tmem_offset + UInt32(stage * Self.stageN)
             )
@@ -363,8 +358,7 @@ struct BlockwiseFP8Accumulator[
 
             var b_scale: Scalar[Self.accum_type]
 
-            @parameter
-            if Self.MMA_N != Self.BK:
+            comptime if Self.MMA_N != Self.BK:
                 b_scale = (
                     b_scale_0 if (stage * Self.stageN + Int(staged_c_col))
                     < b_scale_next_n else b_scale_1
@@ -372,11 +366,8 @@ struct BlockwiseFP8Accumulator[
             else:
                 b_scale = b_scale_0
 
-            @parameter
-            for ld_iter in range(Self.repeats):
-
-                @parameter
-                for j in range(Self.fragment_size // 2):
+            comptime for ld_iter in range(Self.repeats):
+                comptime for j in range(Self.fragment_size // 2):
                     comptime offset = ld_iter * Self.fragment_size + j * 2
 
                     var upper_elems = frags.upper.slice[2, offset=offset]()
@@ -403,8 +394,7 @@ struct BlockwiseFP8Accumulator[
                         upper_scale
                     )
 
-                    @parameter
-                    if Self.is_lower_required:
+                    comptime if Self.is_lower_required:
                         self.lower[stage, offset] += rebind[
                             Scalar[Self.accum_type]
                         ](lower_elems[0]) * rebind[Scalar[Self.accum_type]](

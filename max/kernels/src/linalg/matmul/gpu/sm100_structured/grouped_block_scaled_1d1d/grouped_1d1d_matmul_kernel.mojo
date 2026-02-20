@@ -768,8 +768,7 @@ struct Grouped1D1DMatmulKernel[
             a_scale_offset
         )
 
-        @parameter
-        if Self.config.AB_swapped:
+        comptime if Self.config.AB_swapped:
             return (expert_sf_coord, token_sf_coord)
         else:
             return (token_sf_coord, expert_sf_coord)
@@ -812,8 +811,7 @@ struct Grouped1D1DMatmulKernel[
         var a_gmem_m_coord: UInt
         var b_gmem_n_coord: UInt
 
-        @parameter
-        if Self.config.AB_swapped:
+        comptime if Self.config.AB_swapped:
             # A loads weights (b_device): use weight coordinate
             a_gmem_m_coord = (
                 peer_m_rank * UInt(Self.a_tma_rows)
@@ -842,8 +840,7 @@ struct Grouped1D1DMatmulKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor
@@ -940,9 +937,7 @@ struct Grouped1D1DMatmulKernel[
     ):
         """Execute MMA operations."""
         if elect_one_sync():
-
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor
