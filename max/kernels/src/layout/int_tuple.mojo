@@ -2348,8 +2348,7 @@ fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
             if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
                 return UNKNOWN_VALUE
 
-            @parameter
-            if check:
+            comptime if check:
                 debug_assert(
                     va % vb == 0 or vb % va == 0,
                     "Incompatible shape values: ",

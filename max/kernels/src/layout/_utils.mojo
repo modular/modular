@@ -145,12 +145,10 @@ struct ManagedLayoutTensor[
             "device_tensor cannot be constructed for host only tensor.",
         )
 
-        @parameter
-        if update:
+        comptime if update:
             self._update_device()
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
                 self.device_data.value().unsafe_ptr(),
             )
@@ -161,12 +159,10 @@ struct ManagedLayoutTensor[
             )
 
     fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
-        @parameter
-        if update:
+        comptime if update:
             self._update_host()
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
                 self.host_data.unsafe_ptr(),
             )
@@ -250,8 +246,7 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
     comptime assert layout.all_dims_known(), "Layout must be known for idx2crd"
     var res = IndexList[layout.rank()]()
 
-    @parameter
-    for i in range(layout.rank()):
+    comptime for i in range(layout.rank()):
         comptime stride = layout.stride[i].value()
         comptime shape = layout.shape[i].value()
         res[i] = (idx // stride) % shape

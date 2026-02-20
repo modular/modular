@@ -161,17 +161,13 @@ struct TileTensor[
         var shape = Coord[*_DimsToCoordLike[DType.int64, buffer.shape]]()
         var stride = Coord[*_DimsToCoordLike[DType.int64, buffer.strides]]()
 
-        @parameter
-        for i in range(buffer.rank):
-
-            @parameter
-            if not shape.element_types[i].is_static_value:
+        comptime for i in range(buffer.rank):
+            comptime if not shape.element_types[i].is_static_value:
                 shape[i] = rebind[shape.element_types[i]](
                     Scalar[DType.int64](buffer.dynamic_shape[i])
                 )
 
-            @parameter
-            if not stride.element_types[i].is_static_value:
+            comptime if not stride.element_types[i].is_static_value:
                 stride[i] = rebind[stride.element_types[i]](
                     Scalar[DType.int64](buffer.dynamic_stride[i])
                 )
@@ -329,8 +325,7 @@ struct TileTensor[
         comptime arg_count = Variadic.size(IndexTypes)
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
-        @parameter
-        for i in range(arg_count):
+        comptime for i in range(arg_count):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
                     RuntimeInt[Self.linear_idx_type](
@@ -373,8 +368,7 @@ struct TileTensor[
         comptime arg_count = Variadic.size(IndexTypes)
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
-        @parameter
-        for i in range(arg_count):
+        comptime for i in range(arg_count):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
                     RuntimeInt[Self.linear_idx_type](
@@ -493,8 +487,7 @@ struct TileTensor[
     fn numel(self) -> Int:
         var result = 1
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             result *= self.layout.shape[i]().value()
         return result
 
@@ -550,12 +543,10 @@ struct TileTensor[
         # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
         # printed elementwise.
 
-        @parameter
-        if Self.flat_rank == 2:
+        comptime if Self.flat_rank == 2:
             comptime assert Self.flat_rank == 2
 
-            @parameter
-            if Self.static_shape[0] > -1 and Self.static_shape[1] > -1:
+            comptime if Self.static_shape[0] > -1 and Self.static_shape[1] > -1:
                 _pretty_print_2d_tensor(self, w)
                 return
 
@@ -749,8 +740,7 @@ struct TileTensor[
         """
         var coordinates = DynamicCoord[Self.linear_idx_type, Self.rank]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             UnsafePointer(to=coordinates[i]).init_pointee_copy(
                 rebind[coordinates.element_types[i]](
                     RuntimeInt[Self.linear_idx_type](
@@ -907,15 +897,13 @@ struct TileTensor[
         ```
         """
 
-        @parameter
-        if not use_runtime_layout:
+        comptime if not use_runtime_layout:
             comptime num_elements = Coord[
                 *Self.LayoutType._shape_types
             ].static_product
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
-            @parameter
-            for i in range(num_elements):
+            comptime for i in range(num_elements):
                 var idx = self.layout(Idx[i]())
                 self.ptr.mut_cast[True]()[idx] = val
         else:
@@ -936,8 +924,7 @@ struct TileTensor[
     ](self, index: IndexType) -> Scalar[Self.linear_idx_type]:
         var idx = std.builtin.int.index(index)
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             if idx == i:
                 return Scalar[Self.linear_idx_type](
                     self.layout.shape[i]().value()
@@ -951,8 +938,7 @@ struct TileTensor[
     ](self, index: IndexType) -> Scalar[Self.linear_idx_type]:
         var idx = std.builtin.int.index(index)
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             if idx == i:
                 return Scalar[Self.linear_idx_type](
                     self.layout.stride[i]().value()
@@ -1029,8 +1015,7 @@ struct TileTensor[
         # Compute offset based on slice start indices and strides
         var offset = 0
 
-        @parameter
-        for i in range(Variadic.size(slices)):
+        comptime for i in range(Variadic.size(slices)):
             comptime slice_i = slices[i]
             comptime slice_start = slice_i.start.or_else(0)
             var stride_i = self.layout.stride[i]().value()
@@ -1042,8 +1027,7 @@ struct TileTensor[
         comptime NewShapeTypes = _Slice[slices, Self.LayoutType._shape_types]
         var new_shape = Coord[*NewShapeTypes]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             comptime slice_i = slices[i]
             comptime slice_start = slice_i.start.or_else(0)
 
@@ -1633,8 +1617,7 @@ fn _distribute[
 
     var offset: UInt = 0
 
-    @parameter
-    for i in range(Variadic.size(thread_layout.stride_types)):
+    comptime for i in range(Variadic.size(thread_layout.stride_types)):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
@@ -1646,8 +1629,7 @@ fn _distribute[
     # the former is the unit in distribution.
     var swizzled_offset = offset
 
-    @parameter
-    if swizzle:
+    comptime if swizzle:
         comptime swizzle_fn = swizzle.value()
         comptime element_size = data_layout_tensor.element_size
         swizzled_offset = UInt(
@@ -1726,8 +1708,7 @@ fn _distribute_with_offset[
     var offset: UInt = 0
     var thread_coords = IndexList[Variadic.size(thread_layout.shape_types)]()
 
-    @parameter
-    for i in range(Variadic.size(thread_layout.shape_types)):
+    comptime for i in range(Variadic.size(thread_layout.shape_types)):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
@@ -1740,8 +1721,7 @@ fn _distribute_with_offset[
     # the former is the unit in distribution.
     var swizzled_offset = offset
 
-    @parameter
-    if swizzle:
+    comptime if swizzle:
         comptime swizzle_fn = swizzle.value()
         comptime element_size = data_layout_tensor.element_size
         swizzled_offset = UInt(
@@ -1843,8 +1823,7 @@ fn _tile[
 
     var offset: UInt = 0
 
-    @parameter
-    for i in range(Coord[*coord_types].__len__()):
+    comptime for i in range(Coord[*coord_types].__len__()):
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -1913,8 +1892,7 @@ fn _tile_with_offset[
     var offset: UInt = 0
     var corner_coords = IndexList[Variadic.size(coord_types)]()
 
-    @parameter
-    for i in range(Variadic.size(coord_types)):
+    comptime for i in range(Variadic.size(coord_types)):
         corner_coords[i] = Int(tile_coords[i].value() * tile_shape[i].value())
         offset += UInt(
             tile_coords[i].value()
@@ -1985,8 +1963,7 @@ fn _tile[
 
     var offset: UInt = 0
 
-    @parameter
-    for i in range(Coord[*coord_types].__len__()):
+    comptime for i in range(Coord[*coord_types].__len__()):
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -2051,8 +2028,7 @@ fn _tile_with_offset[
     var offset: UInt = 0
     var corner_coords = IndexList[Variadic.size(coord_types)]()
 
-    @parameter
-    for i in range(Variadic.size(coord_types)):
+    comptime for i in range(Variadic.size(coord_types)):
         corner_coords[i] = Int(tile_coords[i].value() * tile_shape[i].value())
         offset += UInt(
             tile_coords[i].value()

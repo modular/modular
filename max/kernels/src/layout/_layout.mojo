@@ -375,13 +375,11 @@ fn row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
     # Compute row-major strides on the flattened shape
     # Row-major means rightmost dimension has stride 1,
     # and each preceding dimension has stride equal to the product of all following dimensions
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         comptime idx = rank - 1 - i  # Process in reverse order
         var stride_ptr = UnsafePointer(to=strides[idx])
 
-        @parameter
-        if i == 0:
+        comptime if i == 0:
             # Rightmost dimension always has stride 1
             comptime StrideType = RowMajorTypes[idx]
             stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
@@ -389,8 +387,7 @@ fn row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
             # Calculate stride as product of shape[idx+1] * stride[idx+1]
             comptime StrideType = RowMajorTypes[idx]
 
-            @parameter
-            if StrideType.is_static_value:
+            comptime if StrideType.is_static_value:
                 # Stride is compile-time known (both shape and prev stride are compile-time)
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
@@ -507,12 +504,10 @@ fn col_major(var shape: Coord) -> ColMajorLayout[*shape.element_types]:
     # Compute column-major strides on the shape
     # Column-major means leftmost dimension has stride 1,
     # and each subsequent dimension has stride = product of all previous dimensions
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         var stride_ptr = UnsafePointer(to=strides[i])
 
-        @parameter
-        if i == 0:
+        comptime if i == 0:
             # Leftmost dimension always has stride 1
             comptime StrideType = ColMajorTypes[i]
             stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
@@ -520,8 +515,7 @@ fn col_major(var shape: Coord) -> ColMajorLayout[*shape.element_types]:
             # Calculate stride as product of shape[i-1] * stride[i-1]
             comptime StrideType = ColMajorTypes[i]
 
-            @parameter
-            if StrideType.is_static_value:
+            comptime if StrideType.is_static_value:
                 # Stride is compile-time known
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
@@ -603,11 +597,8 @@ fn zipped_divide[
     var inner_shape = tile
     var inner_stride = layout.stride_coord()
 
-    @parameter
-    for i in range(outer_shape.rank):
-
-        @parameter
-        if (
+    comptime for i in range(outer_shape.rank):
+        comptime if (
             outer_shape.element_types[i].is_value
             and not outer_shape.element_types[i].is_static_value
         ):
@@ -617,8 +608,7 @@ fn zipped_divide[
                 )
             )
 
-        @parameter
-        if (
+        comptime if (
             outer_stride.element_types[i].is_value
             and not outer_stride.element_types[i].is_static_value
         ):
@@ -760,11 +750,8 @@ fn blocked_product[
     # We compute this by multiplying tiler stride by the row-major strides of block shape
     var outer_stride = Coord[*OuterStrideTypes]()
 
-    @parameter
-    for i in range(TilerShape.rank):
-
-        @parameter
-        if OuterStrideTypes[i].is_static_value:
+    comptime for i in range(TilerShape.rank):
+        comptime if OuterStrideTypes[i].is_static_value:
             # Compile-time known
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](

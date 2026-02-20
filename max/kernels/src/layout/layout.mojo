@@ -511,15 +511,13 @@ struct Layout(
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             var dim = dims.get[i]()
             shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
 
         var unknown_flag = False
 
-        @parameter
-        for i in range(rank - 1):
+        comptime for i in range(rank - 1):
             var dim = dims.get[i]()
             if not dims.has_value[i]():
                 unknown_flag = True
@@ -562,14 +560,12 @@ struct Layout(
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             shape.append(tuple[i])
 
         var unknown_flag = False
 
-        @parameter
-        for i in range(rank - 1):
+        comptime for i in range(rank - 1):
             var dim = tuple[i]
 
             if dim == UNKNOWN_VALUE:
@@ -640,15 +636,13 @@ struct Layout(
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             var dim = dims.get[i]()
             shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
 
         var unknown_flag = False
 
-        @parameter
-        for i in range(rank - 1):
+        comptime for i in range(rank - 1):
             var dim = dims.get[rank - 1 - i]()
             if not dims.has_value[rank - 1 - i]():
                 unknown_flag = True
@@ -693,12 +687,10 @@ struct Layout(
 
         var unknown_flag = False
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             shape.append(tuple[i])
 
-        @parameter
-        for i in range(rank - 1):
+        comptime for i in range(rank - 1):
             var dim = tuple[rank - 1 - i]
 
             if dim == UNKNOWN_VALUE:
@@ -730,8 +722,7 @@ struct Layout(
         """
         var shape = IntTuple()
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             shape.append(UNKNOWN_VALUE)
 
         return Layout.row_major(shape)
@@ -798,8 +789,7 @@ struct Layout(
         ```
         """
 
-        @parameter
-        if axis == UNKNOWN_VALUE:
+        comptime if axis == UNKNOWN_VALUE:
             return Layout(to_unknown(self.shape), self.stride)
         else:
             # var shape_with_unknown = self.shape
@@ -1081,8 +1071,7 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
 
     var layout_list = LayoutList(capacity=num_tiles)
 
-    @parameter
-    for i in range(num_tiles):
+    comptime for i in range(num_tiles):
         comptime arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 

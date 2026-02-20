@@ -153,8 +153,7 @@ fn _print_svg_impl[
             var idx = materialized_layout([i, j])
             var non_swizzled_idx = idx
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 idx = swizzle.value()(idx)
 
             map[idx] = IntTuple(i, j)
@@ -195,8 +194,7 @@ fn _print_svg_impl[
                 idx,
             )
 
-            @parameter
-            if memory_bank:
+            comptime if memory_bank:
                 writer.write(
                     " b=",
                     (

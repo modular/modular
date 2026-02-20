@@ -60,8 +60,7 @@ fn concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:
 
 
 fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
-    @parameter
-    if unsigned:
+    comptime if unsigned:
         return _uint_type_of_width[bitwidth]()
 
     return _int_type_of_width[bitwidth]()
@@ -100,12 +99,10 @@ struct RuntimeTuple[
 
         comptime f = flatten(Self.S)
 
-        @parameter
-        for i in range(Self.scalar_length):
+        comptime for i in range(Self.scalar_length):
             comptime v = f[i].value()
 
-            @parameter
-            if v != UNKNOWN_VALUE:
+            comptime if v != UNKNOWN_VALUE:
                 self.value[i] = v
             else:
                 self.value[i] = UNKNOWN_VALUE
@@ -158,8 +155,7 @@ struct RuntimeTuple[
         """
         var result = 0
 
-        @parameter
-        for j in range(i):
+        comptime for j in range(i):
             result += len(flatten(Self.S[j]))
         return result
 
@@ -176,8 +172,7 @@ struct RuntimeTuple[
         """
         comptime comptime_value = Scalar[Self.element_type](Self.S.value())
 
-        @parameter
-        if comptime_value != UNKNOWN_VALUE:
+        comptime if comptime_value != UNKNOWN_VALUE:
             return comptime_value
         else:
             return Scalar[Self.element_type](self.value[0])
@@ -201,8 +196,7 @@ struct RuntimeTuple[
         comptime offset = Self.offset_until[i]()
         res = {}
 
-        @parameter
-        for i in range(res.scalar_length):
+        comptime for i in range(res.scalar_length):
             res.value[i] = self.value[i + offset]
 
     @no_inline
@@ -246,20 +240,14 @@ struct RuntimeTuple[
 
         comptime S_flat = flatten(Self.S)
 
-        @parameter
-        for i in range(Self.scalar_length):
-
-            @parameter
-            if S_flat[i] == UNKNOWN_VALUE:
+        comptime for i in range(Self.scalar_length):
+            comptime if S_flat[i] == UNKNOWN_VALUE:
                 result.value[i] = self.value[i]
 
         comptime R_flat = flatten(R)
 
-        @parameter
-        for i in range(rhs.scalar_length):
-
-            @parameter
-            if R_flat[i] == UNKNOWN_VALUE:
+        comptime for i in range(rhs.scalar_length):
+            comptime if R_flat[i] == UNKNOWN_VALUE:
                 result.value[Self.scalar_length + i] = rhs.value[i]
 
     @always_inline
@@ -290,20 +278,17 @@ struct RuntimeTuple[
             writer: The Writer object to write the string representation to.
         """
 
-        @parameter
-        if Self.S.is_value():
+        comptime if Self.S.is_value():
             writer.write(self.value[0])
         else:
             writer.write("(")
 
             comptime size = len(Self.S)
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 self[i].write_to(writer)
 
-                @parameter
-                if i != size - 1:
+                comptime if i != size - 1:
                     writer.write(", ")
             writer.write(")")
 
@@ -435,8 +420,7 @@ fn product[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Int:
     """
     var res: Int = 1
 
-    @parameter
-    for i in range(tuple.scalar_length):
+    comptime for i in range(tuple.scalar_length):
         res *= tuple.value[i]
     return res
 
@@ -481,8 +465,7 @@ fn idx2crd[
 
     result = {}
 
-    @parameter
-    for i in range(result.scalar_length):
+    comptime for i in range(result.scalar_length):
         result.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
 
 
@@ -549,8 +532,7 @@ fn crd2idx[
         A scalar value representing the linear index corresponding to the given coordinates.
     """
 
-    @parameter
-    if crd_t.is_tuple():
+    comptime if crd_t.is_tuple():
         comptime assert shape_t.is_tuple() and (
             len(crd_t) == len(shape_t) == len(stride_t)
         ), String(
@@ -564,8 +546,7 @@ fn crd2idx[
         var r: Scalar[out_type] = 0
         comptime size = min(min(len(crd_t), len(shape_t)), len(stride_t))
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             r += crd2idx[out_type=out_type](crd[i], shape[i], stride[i])
         return r
     else:
@@ -573,8 +554,7 @@ fn crd2idx[
             0 if len(crd) == 0 else Int(crd)
         )
 
-        @parameter
-        if shape_t.is_tuple():  # "int" tuple tuple
+        comptime if shape_t.is_tuple():  # "int" tuple tuple
             comptime assert len(shape_t) == len(
                 stride_t
             ), "shape and stride should have same rank"
@@ -582,8 +562,7 @@ fn crd2idx[
 
             comptime last_elem_idx = len(shape_t) - 1
 
-            @parameter
-            for i in range(last_elem_idx):
+            comptime for i in range(last_elem_idx):
                 var divisor, quotient = divmod(Int(int_crd), product(shape[i]))
                 result += crd2idx[crd_t, out_type=out_type](
                     RuntimeTuple[crd_t, ...](quotient), shape[i], stride[i]
@@ -649,22 +628,17 @@ fn shape_div[
         A new `RuntimeTuple` containing the result of the shape division.
     """
 
-    @parameter
-    if a_t.is_tuple():
-
-        @parameter
-        if b_t.is_tuple():
+    comptime if a_t.is_tuple():
+        comptime if b_t.is_tuple():
             comptime assert len(a_t) == len(
                 b_t
             ), "shape and stride length musth match"
             var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
 
-            @parameter
-            for i in range(len(a_t)):
+            comptime for i in range(len(a_t)):
                 var res_i = shape_div(a[i], b[i])
 
-                @parameter
-                for j in range(res_i.scalar_length):
+                comptime for j in range(res_i.scalar_length):
                     res.value[i + j] = res_i.value[j]
             return res
         else:
@@ -673,12 +647,10 @@ fn shape_div[
             # var vb = Int(to_int(b))
             var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(b))
 
-            @parameter
-            for i in range(len(a_t)):
+            comptime for i in range(len(a_t)):
                 var res_i = shape_div(a[i], vb)
 
-                @parameter
-                for j in range(res_i.scalar_length):
+                comptime for j in range(res_i.scalar_length):
                     res.value[i + j] = res_i.value[j]
 
                 # FIXME: this used to be simpler
@@ -687,9 +659,7 @@ fn shape_div[
                 vb = {Int(shape_div(vb, t))}
             return res
     else:
-
-        @parameter
-        if b_t.is_tuple():
+        comptime if b_t.is_tuple():
             return shape_div(a, b)
         else:
             var va = Int(a)
@@ -727,12 +697,10 @@ fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
     comptime rank = len(t)
     var tup = IntTuple(num_elems=rank)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         comptime known = t[i].all_known()
 
-        @parameter
-        if known:
+        comptime if known:
             comptime product = product_int_tuple(t[i])
             tup.replace_entry(i, int_value=product)
         else:
@@ -762,12 +730,10 @@ fn coalesce_nested_tuple[
     comptime rank = len(out_t)
     var idxs = IndexList[rank]()
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         comptime known = out_t[i].all_known()
 
-        @parameter
-        if known:
+        comptime if known:
             idxs[i] = out_t[i].value()
         else:
             var slice = tuple[i]
@@ -775,8 +741,7 @@ fn coalesce_nested_tuple[
 
             comptime assert slice.scalar_length > 0, "Slice is empty"
 
-            @parameter
-            for j in range(slice.scalar_length):
+            comptime for j in range(slice.scalar_length):
                 product *= Int(slice[j])
 
             idxs[i] = product

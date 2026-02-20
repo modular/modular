@@ -90,8 +90,7 @@ fn _compute_distribute_layout[
     """
     var thread_tile = LayoutList()
 
-    @parameter
-    if axis:
+    comptime if axis:
         return zipped_divide(
             materialize[data_layout](),
             Layout(threads_layout.shape[axis.value()]),
@@ -176,11 +175,8 @@ fn _not_in_tuple[n: Int, size: Int, tuple: IndexList[size]]() -> Bool:
         present.
     """
 
-    @parameter
-    for i in range(size):
-
-        @parameter
-        if tuple[i] == n:
+    comptime for i in range(size):
+        comptime if tuple[i] == n:
             return False
     return True
 
@@ -202,16 +198,13 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
         False if all dimensions are perfectly divisible by their tile sizes.
     """
 
-    @parameter
-    if not layout.all_dims_known():
+    comptime if not layout.all_dims_known():
         return True
 
-    @parameter
-    for axis in range(layout.rank()):
+    comptime for axis in range(layout.rank()):
         comptime dim = product(layout.shape[axis])
 
-        @parameter
-        if dim % tile_sizes[axis] != 0:
+        comptime if dim % tile_sizes[axis] != 0:
             return True
     return False
 
@@ -238,25 +231,20 @@ fn _distribute_is_masked[
     """
 
     # TODO: relax this constraint
-    @parameter
-    if depth(threads_layout.shape) > 1:
+    comptime if depth(threads_layout.shape) > 1:
         return False
 
-    @parameter
-    if axis:
+    comptime if axis:
         return False
 
-    @parameter
-    if not layout.all_dims_known():
+    comptime if not layout.all_dims_known():
         return True
 
-    @parameter
-    for i in range(layout.rank()):
+    comptime for i in range(layout.rank()):
         comptime layout_dim = product(layout.shape[i])
         comptime thread_dim = product(threads_layout.shape[i])
 
-        @parameter
-        if layout_dim % thread_dim != 0:
+        comptime if layout_dim % thread_dim != 0:
             return True
 
     return False
@@ -322,8 +310,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
-        @parameter
-        if Self.mut:
+        comptime if Self.mut:
             return Variadic.contains[
                 T,
                 Variadic.types[
@@ -1096,11 +1083,8 @@ struct LayoutTensor[
         ]()
         var offset = 0
 
-        @parameter
-        for i in range(Self.rank):
-
-            @parameter
-            if static_strides[i] == UNKNOWN_VALUE:
+        comptime for i in range(Self.rank):
+            comptime if static_strides[i] == UNKNOWN_VALUE:
                 # Use runtime stride for unknown dimensions
                 offset += self.runtime_layout.stride.value[i] * coords[i]
             else:
@@ -1153,8 +1137,7 @@ struct LayoutTensor[
             " layouts"
         )
 
-        @parameter
-        for i in range(self.layout.size()):
+        comptime for i in range(self.layout.size()):
             comptime idx = self.layout(i)
             self.ptr.mut_cast[True]().store(
                 idx, func(self.ptr.load[width = Self.element_size](idx))
@@ -1221,11 +1204,8 @@ struct LayoutTensor[
         - The operation is optimized based on the memory layout of both tensors.
         """
 
-        @parameter
-        if Self.rank == other.rank:
-
-            @parameter
-            for axis in range(Self.rank):
+        comptime if Self.rank == other.rank:
+            comptime for axis in range(Self.rank):
                 comptime assert axis != UNKNOWN_VALUE
                 comptime assert other.shape[axis]() == self.shape[axis](), (
                     "_elementwise_binary_with_broadcast requires shape to"
@@ -1247,15 +1227,13 @@ struct LayoutTensor[
             Self.rank == 2 or Self.rank == other.rank
         ), "Only supports rank-2 tensor, or same rank"
 
-        @parameter
-        if other.rank == 1:
+        comptime if other.rank == 1:
             comptime assert other.shape[0]() == self.shape[0](), (
                 "_elementwise_binary_with_broadcast 1d tensor operand must"
                 " have a dim that matches the tensors"
             )
 
-            @parameter
-            for i in range(self.layout.size()):
+            comptime for i in range(self.layout.size()):
                 comptime other_size = other.layout.size()
 
                 comptime lhs_idx = self.layout(i)
@@ -1270,8 +1248,7 @@ struct LayoutTensor[
                 )
             return self
 
-        @parameter
-        for i in range(self.layout.size()):
+        comptime for i in range(self.layout.size()):
             comptime lhs_idx = self.layout(i)
             comptime rhs_idx = other.layout(i)
             self.ptr.mut_cast[True]().store(
@@ -1976,8 +1953,7 @@ struct LayoutTensor[
 
         var index_list = Self.idx_list_t[arg_count](fill=0)
 
-        @parameter
-        for arg_idx in range(arg_count):
+        comptime for arg_idx in range(arg_count):
             index_list[arg_idx] = index(args[arg_idx])
 
         # Bounds checking for each dimension
@@ -1988,11 +1964,8 @@ struct LayoutTensor[
         # We use a simple static error message to minimize register pressure on GPU kernels.
         # Including runtime values (idx, dim_size) in the message requires passing them to
         # debug_assert and allocating buffer machinery, which increases register usage.
-        @parameter
-        if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
-
-            @parameter
-            for arg_idx in range(arg_count):
+        comptime if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
+            comptime for arg_idx in range(arg_count):
                 var idx = index_list[arg_idx]
                 var dim_size = self.dim[arg_idx]()
                 debug_assert(
@@ -2058,8 +2031,7 @@ struct LayoutTensor[
 
         var index_list = Self.idx_list_t[arg_count](fill=0)
 
-        @parameter
-        for arg_idx in range(arg_count):
+        comptime for arg_idx in range(arg_count):
             index_list[arg_idx] = index(args[arg_idx])
 
         var strides = self.runtime_layout.stride.value
@@ -2124,8 +2096,7 @@ struct LayoutTensor[
 
         var index_list = Self.idx_list_t[arg_count](fill=0)
 
-        @parameter
-        for arg_idx in range(arg_count):
+        comptime for arg_idx in range(arg_count):
             index_list[arg_idx] = index(args[arg_idx])
 
         var strides = self.runtime_layout.stride.value
@@ -2179,8 +2150,7 @@ struct LayoutTensor[
         # at compile-time when assertions are enabled (it would trigger llvm.memcpy).
         #
         # We use a simple static error message to minimize register pressure on GPU kernels.
-        @parameter
-        if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
+        comptime if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
             # Use self.dim which correctly handles both compile-time and
             # runtime layouts (including UNKNOWN_VALUE dimensions)
             var dim0 = self.dim[0]()
@@ -2442,8 +2412,7 @@ struct LayoutTensor[
         # at compile-time when assertions are enabled (it would trigger llvm.memcpy).
         #
         # We use a simple static error message to minimize register pressure on GPU kernels.
-        @parameter
-        if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
+        comptime if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
             # Use self.dim which correctly handles both compile-time and
             # runtime layouts (including UNKNOWN_VALUE dimensions)
             var dim0 = self.dim[0]()
@@ -2566,8 +2535,7 @@ struct LayoutTensor[
           The total number of elements that can be stores in the tensor.
         """
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             comptime size = Self.layout.size()
             return size
         else:
@@ -2690,8 +2658,7 @@ struct LayoutTensor[
     fn _stack_copy(
         self,
     ) -> Self.StackTensorType:
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             copy = self.stack_allocation()
         else:
             copy = Self.StackTensorType(
@@ -2712,8 +2679,7 @@ struct LayoutTensor[
     ]() -> IndexList[len(t), element_type=element_type]:
         var st = IndexList[len(t), element_type=element_type]()
 
-        @parameter
-        for i in range(len(t)):
+        comptime for i in range(len(t)):
             # Use product() to handle both scalar and nested tuples
             st[i] = product(t[i])
         return st
@@ -2734,8 +2700,7 @@ struct LayoutTensor[
         comptime sub_layout = Self.layout[rank_idx]
         comptime stride_idx = Self._get_rank_stride_offset(rank_idx)
 
-        @parameter
-        if len(sub_layout) == 1:
+        comptime if len(sub_layout) == 1:
             return stride[stride_idx] * vals[rank_idx]
         return 0
 
@@ -2749,14 +2714,12 @@ struct LayoutTensor[
         ]()
         eidx_offset = 0
 
-        @parameter
-        for rank_idx in range(Self.rank):
+        comptime for rank_idx in range(Self.rank):
             comptime sub_layout = flatten(Self.layout.shape[rank_idx])
             comptime sub_layout_size = len(sub_layout)
             comptime assert sub_layout_size > 0
 
-            @parameter
-            if sub_layout_size == 1:
+            comptime if sub_layout_size == 1:
                 # not nested
                 eidx[eidx_offset] = ridx[rank_idx]
                 eidx_offset += 1
@@ -2764,8 +2727,7 @@ struct LayoutTensor[
                 # map from linear to column-major cartesian indices
                 idx = ridx[rank_idx]
 
-                @parameter
-                for i in range(sub_layout_size - 1):
+                comptime for i in range(sub_layout_size - 1):
                     comptime sz: Int = sub_layout[i].value()
                     comptime assert sz != UNKNOWN_VALUE, (
                         "unknown shapes not supported in non-trailing"
@@ -2800,16 +2762,14 @@ struct LayoutTensor[
 
         var idxs: Self.idx_list_t[Self.num_strides]
 
-        @parameter
-        if Self.num_strides == rank:
+        comptime if Self.num_strides == rank:
             idxs = rebind[Self.idx_list_t[Self.num_strides]](vals)
         else:
             idxs = Self._expand_indices(
                 rebind[Self.idx_list_t[Self.rank]](vals)
             )
 
-        @parameter
-        for i in range(Self.num_strides):
+        comptime for i in range(Self.num_strides):
             offset += Scalar[Self.linear_idx_type](idxs[i] * stride[i])
         return Int(offset)
 
@@ -3051,8 +3011,7 @@ struct LayoutTensor[
             Self.layout.shape, Self.layout_int_type
         ]()
 
-        @parameter
-        if not Self.layout.shape[idx].all_known() or Self.masked:
+        comptime if not Self.layout.shape[idx].all_known() or Self.masked:
             return self.runtime_layout.shape.value[idx]
         else:
             return shape[idx]
@@ -3290,11 +3249,8 @@ struct LayoutTensor[
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
-        @parameter
-        if tile_type.layout.all_dims_known():
-
-            @parameter
-            for i in range(num_tiles):
+        comptime if tile_type.layout.all_dims_known():
+            comptime for i in range(num_tiles):
                 comptime stride = product(_tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
@@ -3303,11 +3259,8 @@ struct LayoutTensor[
             )
 
             # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
-            @parameter
-            if tile_type.masked:
-
-                @parameter
-                for i in range(tile_type.layout.rank()):
+            comptime if tile_type.masked:
+                comptime for i in range(tile_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_layout.shape.value[i] = shape_i
@@ -3317,8 +3270,7 @@ struct LayoutTensor[
         else:
             # Dynamic layout, use strides
 
-            @parameter
-            for i in range(num_tiles):
+            comptime for i in range(num_tiles):
                 var stride = self.runtime_layout.stride.value[i] * tile_sizes[i]
                 runtime_stride.value[i] = self.runtime_layout.stride.value[i]
                 offset += tile_coords[i] * stride
@@ -3328,8 +3280,7 @@ struct LayoutTensor[
             )
 
             # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
-            @parameter
-            for i in range(tile_type.layout.rank()):
+            comptime for i in range(tile_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_layout.shape.value[i] = shape_i
@@ -3416,11 +3367,8 @@ struct LayoutTensor[
         var runtime_shape = tile_type.RuntimeLayoutType.ShapeType()
         var runtime_stride = tile_type.RuntimeLayoutType.StrideType()
 
-        @parameter
-        if tile_type.layout.all_dims_known():
-
-            @parameter
-            for i in range(num_tiles):
+        comptime if tile_type.layout.all_dims_known():
+            comptime for i in range(num_tiles):
                 comptime stride = Int(_tiled_layout[1].stride[i])
                 offset += Scalar[Self.linear_idx_type](tile_coords[i] * stride)
                 corner_coords[i] = tile_coords[i] * tile_sizes[i]
@@ -3430,11 +3378,8 @@ struct LayoutTensor[
             )
 
             # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
-            @parameter
-            if tile_type.masked:
-
-                @parameter
-                for i in range(tile_type.layout.rank()):
+            comptime if tile_type.masked:
+                comptime for i in range(tile_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_layout.shape.value[i] = shape_i
@@ -3447,8 +3392,7 @@ struct LayoutTensor[
 
         else:
             # Dynamic layout, use strides
-            @parameter
-            for i in range(num_tiles):
+            comptime for i in range(num_tiles):
                 var corner_coord = tile_coords[i] * tile_sizes[i]
                 corner_coords[i] = corner_coord
                 runtime_stride.value[i] = self.runtime_layout.stride.value[i]
@@ -3461,8 +3405,7 @@ struct LayoutTensor[
             )
 
             # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
-            @parameter
-            for i in range(tile_type.layout.rank()):
+            comptime for i in range(tile_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_layout.shape.value[i] = shape_i
@@ -3569,8 +3512,7 @@ struct LayoutTensor[
 
         var ptr_offset = 0
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             var runtime_shape = (
                 tiled_iterator_type.RuntimeLayoutType.ShapeType()
             )
@@ -3578,8 +3520,7 @@ struct LayoutTensor[
                 tiled_iterator_type.RuntimeLayoutType.StrideType()
             )
 
-            @parameter
-            for i in range(tiles_rank):
+            comptime for i in range(tiles_rank):
                 comptime stride = Int(__tiled_layout[1].stride[i])
                 ptr_offset += tile_coords[i] * stride
 
@@ -3599,11 +3540,8 @@ struct LayoutTensor[
             comptime stride = __tiled_layout[1].stride[axis].value()
             # fmt: on
 
-            @parameter
-            if tiled_iterator_type.masked:
-
-                @parameter
-                for i in range(tiled_iterator_type.layout.rank()):
+            comptime if tiled_iterator_type.masked:
+                comptime for i in range(tiled_iterator_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_shape.value[i] = shape_i
@@ -3637,8 +3575,7 @@ struct LayoutTensor[
                 tiled_iterator_type.RuntimeLayoutType.StrideType()
             )
 
-            @parameter
-            for i in range(tiles_rank):
+            comptime for i in range(tiles_rank):
                 var stride = self.runtime_layout.stride.value[i] * tile_sizes[i]
                 runtime_stride.value[i] = self.runtime_layout.stride.value[i]
                 ptr_offset += tile_coords[i] * stride
@@ -3648,8 +3585,7 @@ struct LayoutTensor[
             var iter_bound = axis_dim * axis_stride
             var iter_stride = tile_sizes[axis] * axis_stride
 
-            @parameter
-            for i in range(tiled_iterator_type.layout.rank()):
+            comptime for i in range(tiled_iterator_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_shape.value[i] = shape_i
@@ -3735,8 +3671,7 @@ struct LayoutTensor[
         comptime stride = Self.layout.stride[axis].value()
         var tiles = Self.StaticSplitType[count, axis]()
 
-        @parameter
-        for i in range(count):
+        comptime for i in range(count):
             # Need tile_size alias to ensure that the ptr passed to LayoutTensor is
             # known at compile time. Otherwise we get compile time failure.
             # The compiler can't allocate LayoutTensor on stack if ptr is not known at compile time.
@@ -3845,12 +3780,10 @@ struct LayoutTensor[
         ].RuntimeLayoutType.ShapeType()
         var axis_partition_dim = align_up(axis_dim // count, split_alignment)
 
-        @parameter
-        for i in range(flatten_rank):
+        comptime for i in range(flatten_rank):
             var shape_i = self.runtime_layout.shape.value[i]
 
-            @parameter
-            if i == axis_in_flatten_tuple:
+            comptime if i == axis_in_flatten_tuple:
                 runtime_shape.value[i] = min(
                     axis_partition_dim, shape_i - idx * axis_partition_dim
                 )
@@ -3888,8 +3821,7 @@ struct LayoutTensor[
 
         # this would only work for rank-2 thread layout, need to extend this
         # to support thread layout such as Layout((2, 2), 2)
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             comptime thread_stride_i = Int(thread_stride[i])
             comptime thread_shape_i = Int(thread_shape[i])
             var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
@@ -4023,8 +3955,7 @@ struct LayoutTensor[
 
         var runtime_shape: runtime_shape_type
 
-        @parameter
-        if distribute_type.masked:
+        comptime if distribute_type.masked:
             runtime_shape = runtime_shape_type(
                 self._clamp_distribute_shape[threads_layout](thread_id)
             )
@@ -4035,8 +3966,7 @@ struct LayoutTensor[
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             comptime fragments_layout_stride = flatten(
                 distributed_layout[0].stride
             )
@@ -4057,8 +3987,7 @@ struct LayoutTensor[
 
             var offset: Scalar[Self.linear_idx_type] = 0
 
-            @parameter
-            for i in range(len(fragments_layout_stride)):
+            comptime for i in range(len(fragments_layout_stride)):
                 comptime fragments_stride_i = Int(fragments_layout_stride[i])
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
@@ -4073,15 +4002,13 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 comptime swizzle_fn = swizzle.value()
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
 
-            @parameter
-            if distribute_type.masked:
+            comptime if distribute_type.masked:
                 return distribute_type(
                     self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
@@ -4115,15 +4042,13 @@ struct LayoutTensor[
 
             var offset: Scalar[Self.linear_idx_type] = 0
 
-            @parameter
-            for i in range(runtime_shape.scalar_length):
+            comptime for i in range(runtime_shape.scalar_length):
                 comptime thread_shape_i = threads_layout[i].size()
                 runtime_stride.value[i] = (
                     self.runtime_layout.stride.value[i] * thread_shape_i
                 )
 
-            @parameter
-            for i in range(len(flatten(Self.layout.stride))):
+            comptime for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
@@ -4138,15 +4063,13 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 comptime swizzle_fn = swizzle.value()
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
 
-            @parameter
-            if self.element_layout.all_dims_known():
+            comptime if self.element_layout.all_dims_known():
                 return distribute_type(
                     self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
@@ -4197,8 +4120,7 @@ struct LayoutTensor[
             axis,
         ]()
 
-        @parameter
-        if ret_tensor_type.masked:
+        comptime if ret_tensor_type.masked:
             runtime_shape = ret_tensor_type.RuntimeLayoutType.ShapeType(
                 self._clamp_distribute_shape[threads_layout](thread_id)
             )
@@ -4213,8 +4135,7 @@ struct LayoutTensor[
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             comptime fragments_layout_stride = flatten(
                 distributed_layout[0].stride
             )
@@ -4233,8 +4154,7 @@ struct LayoutTensor[
                 ] if axis else threads_layout.shape
             )
 
-            @parameter
-            for i in range(len(fragments_layout_stride)):
+            comptime for i in range(len(fragments_layout_stride)):
                 comptime fragments_stride_i = Int(fragments_layout_stride[i])
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
@@ -4250,15 +4170,13 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 comptime swizzle_fn = swizzle.value()
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
 
-            @parameter
-            if ret_tensor_type.masked:
+            comptime if ret_tensor_type.masked:
                 return (
                     ret_tensor_type(
                         self.ptr + Int(swizzled_offset),
@@ -4300,15 +4218,13 @@ struct LayoutTensor[
                 ] if axis else threads_layout.shape
             )
 
-            @parameter
-            for i in range(runtime_shape.scalar_length):
+            comptime for i in range(runtime_shape.scalar_length):
                 comptime thread_shape_i = threads_layout[i].size()
                 runtime_stride.value[i] = (
                     self.runtime_layout.stride.value[i] * thread_shape_i
                 )
 
-            @parameter
-            for i in range(len(flatten(Self.layout.stride))):
+            comptime for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
@@ -4324,15 +4240,13 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 comptime swizzle_fn = swizzle.value()
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
 
-            @parameter
-            if self.element_layout.all_dims_known():
+            comptime if self.element_layout.all_dims_known():
                 return (
                     ret_tensor_type(
                         self.ptr + Int(swizzled_offset),
@@ -4448,8 +4362,7 @@ struct LayoutTensor[
         runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
         runtime_stride = vectorized_type.RuntimeLayoutType.StrideType()
 
-        @parameter
-        if check_rank:
+        comptime if check_rank:
             comptime assert is_int(vector_shape) or congruent(
                 vector_shape, Self.layout.shape
             ), "vector_shape has to be congruent to layout.shape = " + String(
@@ -4461,11 +4374,8 @@ struct LayoutTensor[
         )
         comptime flat_vector_shape = flatten(tiler.shape)
 
-        @parameter
-        if vectorized_type.masked or not Self.layout.all_dims_known():
-
-            @parameter
-            for i in range(len(flat_vector_shape)):
+        comptime if vectorized_type.masked or not Self.layout.all_dims_known():
+            comptime for i in range(len(flat_vector_shape)):
                 comptime vector_shape_i = Int(flat_vector_shape[i])
                 runtime_shape.value[i] = ceildiv(
                     self.runtime_layout.shape.value[i], vector_shape_i
@@ -4476,11 +4386,8 @@ struct LayoutTensor[
 
         var ptr = self.ptr.as_immutable().unsafe_origin_cast[_origin]()
 
-        @parameter
-        if Self.layout.all_dims_known():
-
-            @parameter
-            if vectorized_type.masked:
+        comptime if Self.layout.all_dims_known():
+            comptime if vectorized_type.masked:
                 return vectorized_type(
                     ptr,
                     vectorized_type.RuntimeLayoutType(
@@ -4864,14 +4771,12 @@ struct LayoutTensor[
 
         var idx = 0
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             comptime stride_i = Int(Self.layout.stride[i])
 
             comptime offset_index = _not_in_tuple[i, 2, slice_indices]()
 
-            @parameter
-            if offset_index:
+            comptime if offset_index:
                 slice_offset += offsets[idx] * stride_i
                 idx += 1
 
@@ -4979,14 +4884,12 @@ struct LayoutTensor[
 
         var idx = 0
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             comptime stride_i = Int(Self.layout.stride[i])
 
             comptime offset_index = _not_in_tuple[i, 1, slice_indices]()
 
-            @parameter
-            if offset_index:
+            comptime if offset_index:
                 slice_offset += offsets[idx] * stride_i
                 idx += 1
 
@@ -5385,8 +5288,7 @@ struct LayoutTensor[
     fn _get_element_idx[elem_i: Int](self) -> Scalar[Self.linear_idx_type]:
         comptime element_size = self.element_size
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             comptime idx = make_layout(Self.element_layout, Self.layout)(
                 elem_i * element_size
             )
@@ -5481,8 +5383,7 @@ struct LayoutTensor[
             dst_element_size == src_element_size
         ), "copy_from should move"
 
-        @parameter
-        for i in range(dst_size):
+        comptime for i in range(dst_size):
             src_idx = other._get_element_idx[i]()
             dst_idx = self._get_element_idx[i]()
 
@@ -5661,8 +5562,7 @@ struct LayoutTensor[
         comptime coalesce_src_element_layout = coalesce(src.element_layout)
         comptime coalesce_dst_element_layout = coalesce(self.element_layout)
 
-        @parameter
-        if (
+        comptime if (
             src.element_layout.all_dims_known()
             and coalesce_src_element_layout.rank() == 1
             and coalesce_src_element_layout.stride[0] == 1
@@ -5671,23 +5571,20 @@ struct LayoutTensor[
         ):
             comptime num_vecs = Self.layout.size()
 
-            @parameter
-            for i in range(num_vecs):
+            comptime for i in range(num_vecs):
                 var src_idx: Scalar[src.linear_idx_type]
                 comptime src_static_idx: Scalar[src.linear_idx_type] = Scalar[
                     src.linear_idx_type
                 ](src.layout(i))
 
-                @parameter
-                if src_dims_known:
+                comptime if src_dims_known:
                     src_idx = src_static_idx
                 else:
                     src_idx = src.runtime_layout(i)
                 comptime dst_idx = Self.layout(i)
                 var swizzled_idx: Scalar[self.linear_idx_type]
 
-                @parameter
-                if swizzle:
+                comptime if swizzle:
                     comptime swizzle_fn = swizzle.value()
                     comptime dst_idx_base = dst_idx % swizzle_fn.size()
                     comptime dst_idx_diff = dst_idx - dst_idx_base
@@ -5702,8 +5599,7 @@ struct LayoutTensor[
                 else:
                     swizzled_idx = Scalar[Self.linear_idx_type](dst_idx)
 
-                @parameter
-                if is_masked:
+                comptime if is_masked:
                     var src_copy_size = (
                         Int32(element_size_bytes) if src_idx
                         < src_idx_bound else 0
@@ -5729,8 +5625,7 @@ struct LayoutTensor[
         else:
             comptime assert not swizzle, "Should not swizzle scalar copy."
 
-            @parameter
-            for i in range(dst_size * dst_element_size):
+            comptime for i in range(dst_size * dst_element_size):
                 var src_idx: Scalar[src.linear_idx_type]
                 comptime src_static_idx = make_layout(
                     src.element_layout, src.layout
@@ -5739,8 +5634,7 @@ struct LayoutTensor[
                     self.element_layout, self.layout
                 )(i)
 
-                @parameter
-                if src_dims_known:
+                comptime if src_dims_known:
                     src_idx = Scalar[src.linear_idx_type](src_static_idx)
                 else:
                     # FIXME: this used to be simpler
@@ -5818,17 +5712,14 @@ struct LayoutTensor[
         ```
         """
 
-        @parameter
-        if not use_runtime_layout:
+        comptime if not use_runtime_layout:
             comptime num_elements = Self.layout.size()
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
-            @parameter
-            for i in range(num_elements):
+            comptime for i in range(num_elements):
                 comptime idx = Self.layout(i)
 
-                @parameter
-                for j in range(Self.element_size):
+                comptime for j in range(Self.element_size):
                     comptime element_offset = Self.element_layout(j)
                     self.ptr[idx + element_offset] = val
         else:
@@ -5837,11 +5728,8 @@ struct LayoutTensor[
             for i in range(num_elements):
                 var idx = self.runtime_layout(i)
 
-                @parameter
-                if Self.element_layout.all_dims_known():
-
-                    @parameter
-                    for j in range(Self.element_size):
+                comptime if Self.element_layout.all_dims_known():
+                    comptime for j in range(Self.element_size):
                         comptime element_offset = Self.element_layout(j)
                         self.ptr[
                             idx + Scalar[self.linear_idx_type](element_offset)
@@ -5927,8 +5815,7 @@ struct LayoutTensor[
         # Check both original and coalesced layouts so that (M, 1) and
         # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
         # printed elementwise.
-        @parameter
-        if is_2d_print(Self.layout):
+        comptime if is_2d_print(Self.layout):
             _pretty_print_2d_tensor(self, writer)
             return
         elif is_2d_print(coalesce(Self.layout)):
@@ -5940,8 +5827,7 @@ struct LayoutTensor[
             var vec_offset = self.runtime_layout(i)
             var vec = SIMD[Self.dtype, Self.element_size]()
 
-            @parameter
-            for idx in range(Self.element_size):
+            comptime for idx in range(Self.element_size):
                 comptime element_offset = self.element_layout(idx)
                 vec[idx] = self.ptr.load(
                     vec_offset + Scalar[Self.linear_idx_type](element_offset)
@@ -6178,11 +6064,8 @@ fn _get_worker_idx[
         + ". Thread blocks contain between 1 (x) and 3 (x,y,z) dimensions"
     )
 
-    @parameter
-    if thread_scope == ThreadScope.BLOCK:
-
-        @parameter
-        if block_dim_count == 1:
+    comptime if thread_scope == ThreadScope.BLOCK:
+        comptime if block_dim_count == 1:
             return thread_idx.x
         elif block_dim_count == 2:
             return thread_idx.y * block_dim.x + thread_idx.x
@@ -6316,8 +6199,7 @@ fn copy_dram_to_sram[
     comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -6341,8 +6223,7 @@ fn copy_dram_to_sram[
         and coalesce_dst_element_layout.stride[0] == 1
     )
 
-    @parameter
-    if not src_fragments.masked or is_scalar:
+    comptime if not src_fragments.masked or is_scalar:
         comptime assert (
             dst_fragments.layout.size() == src_fragments.layout.size()
         ), (
@@ -6358,8 +6239,7 @@ fn copy_dram_to_sram[
         comptime num_stores_per_thread = dst_fragments.layout.size()
         comptime static_stride = src.layout.stride[0].value()
 
-        @parameter
-        if src.layout.all_dims_known():
+        comptime if src.layout.all_dims_known():
             stride = static_stride
         else:
             stride = src.runtime_layout.stride.value[0]
@@ -6371,16 +6251,14 @@ fn copy_dram_to_sram[
             Scalar[src.linear_idx_type](src.dim[0]() * stride) - src_frag_offset
         ).cast[src_fragments.linear_idx_type]()
 
-        @parameter
-        for i in range(num_stores_per_thread):
+        comptime for i in range(num_stores_per_thread):
             comptime src_static_idx = src_fragments.layout(i)
 
             comptime dst_idx = dst_fragments.layout(i)
 
             var src_idx: Scalar[src_fragments.linear_idx_type]
 
-            @parameter
-            if src.layout.all_dims_known():
+            comptime if src.layout.all_dims_known():
                 src_idx = Scalar[src.linear_idx_type](src_static_idx)
             else:
                 src_idx = src_fragments.runtime_layout(i)
@@ -6446,8 +6324,7 @@ fn copy_dram_to_sram[
     comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -6465,12 +6342,10 @@ fn copy_dram_to_sram[
         src_iter.linear_idx_type
     ](Int(src_iter.offset))
 
-    @parameter
-    for i in range(num_stores_per_thread):
+    comptime for i in range(num_stores_per_thread):
         var src_frag_idx: Scalar[src_fragments.linear_idx_type]
 
-        @parameter
-        if src_tensor.layout.all_dims_known():
+        comptime if src_tensor.layout.all_dims_known():
             comptime frag_layout = src_fragments.layout(i)
             src_frag_idx = Scalar[src_iter.linear_idx_type](frag_layout)
         else:
@@ -6584,8 +6459,7 @@ fn cp_async_k_major[
         128 * simd_size // desc_shape1, desc_shape1 // simd_size
     )
 
-    @parameter
-    for tile_id in range(num_tiles):
+    comptime for tile_id in range(num_tiles):
         src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
         dst_tile = LayoutTensor[
             dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
@@ -6825,8 +6699,7 @@ fn copy_dram_to_sram_async[
 
     # We know at compile time that only partial threads copy based on the size
     # of input tensors. Return if current thread doesn't have work.
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -6861,8 +6734,7 @@ fn copy_dram_to_sram_async[
 
     var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
 
-    @parameter
-    if not src_fragments.masked:
+    comptime if not src_fragments.masked:
         dst_fragments.copy_from_async[
             swizzle=swizzle_option, eviction_policy=eviction_policy
         ](
@@ -6878,8 +6750,7 @@ fn copy_dram_to_sram_async[
         )
         var row_stride = static_row_stride
 
-        @parameter
-        if src.layout.stride[0].value() == UNKNOWN_VALUE:
+        comptime if src.layout.stride[0].value() == UNKNOWN_VALUE:
             row_stride = Scalar[src_fragments.linear_idx_type](
                 src.runtime_layout.stride.value[0]
             )
@@ -7045,8 +6916,7 @@ fn copy_sram_to_dram[
     comptime num_busy_threads = thread_layout.size()
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -7054,8 +6924,7 @@ fn copy_sram_to_dram[
     var dst_fragments = dst.distribute[thread_layout](worker_idx)
 
     # TODO: copy_from only allows static layout
-    @parameter
-    if src.dtype == dst.dtype and not swizzle and not dst.masked:
+    comptime if src.dtype == dst.dtype and not swizzle and not dst.masked:
         dst_fragments.copy_from(src_fragments)
     else:
         comptime assert src.dtype == dst.dtype or (
@@ -7078,19 +6947,15 @@ fn copy_sram_to_dram[
 
         comptime num_stores_per_thread = dst_fragments.layout.size()
 
-        @parameter
-        if not dst_fragments.masked:
-
-            @parameter
-            for i in range(num_stores_per_thread):
+        comptime if not dst_fragments.masked:
+            comptime for i in range(num_stores_per_thread):
                 comptime src_idx = src_fragments.layout(i)
                 comptime dst_idx = dst_fragments.layout(i)
                 var swizzled_idx = src_frag_offset + Scalar[
                     src.linear_idx_type
                 ](src_idx)
 
-                @parameter
-                if swizzle:
+                comptime if swizzle:
                     comptime swizzle_fn = swizzle.value()
                     comptime src_idx_base = src_idx % swizzle_fn.size()
                     comptime src_idx_diff = src_idx - src_idx_base
@@ -7106,8 +6971,7 @@ fn copy_sram_to_dram[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx).cast[dst.dtype]()
 
-                @parameter
-                if binary_op:
+                comptime if binary_op:
                     comptime binop = binary_op.value()
                     var dst_vec = dst_fragments.ptr.load[
                         width=simd_size, alignment=dst_align
@@ -7118,8 +6982,7 @@ fn copy_sram_to_dram[
         else:
             comptime static_stride = dst.layout.stride[0].value()
 
-            @parameter
-            if dst.layout.all_dims_known():
+            comptime if dst.layout.all_dims_known():
                 stride = static_stride
             else:
                 stride = dst.runtime_layout.stride.value[0]
@@ -7129,8 +6992,7 @@ fn copy_sram_to_dram[
                 - dst_frag_offset
             ).cast[dst_fragments.linear_idx_type]()
 
-            @parameter
-            for i in range(num_stores_per_thread):
+            comptime for i in range(num_stores_per_thread):
                 comptime src_idx = src_fragments.layout(i)
 
                 comptime dst_uint_dtype = _get_unsigned_type(
@@ -7140,8 +7002,7 @@ fn copy_sram_to_dram[
 
                 var dst_idx: Scalar[dst_fragments.linear_idx_type]
 
-                @parameter
-                if dst.layout.all_dims_known():
+                comptime if dst.layout.all_dims_known():
                     dst_idx = Scalar[dst.linear_idx_type](dst_static_idx)
                 else:
                     dst_idx = dst_fragments.runtime_layout(i)
@@ -7150,8 +7011,7 @@ fn copy_sram_to_dram[
                     src.linear_idx_type
                 ](src_idx)
 
-                @parameter
-                if swizzle:
+                comptime if swizzle:
                     comptime swizzle_fn = swizzle.value()
                     comptime src_idx_base = src_idx % swizzle_fn.size()
                     comptime src_idx_diff = src_idx - src_idx_base
@@ -7172,8 +7032,7 @@ fn copy_sram_to_dram[
                         .cast[dst.dtype]()
                     )
 
-                    @parameter
-                    if binary_op:
+                    comptime if binary_op:
                         comptime binop = binary_op.value()
                         var dst_vec = dst_fragments.ptr.load[
                             width=simd_size, alignment=dst_align
@@ -7233,8 +7092,7 @@ fn copy_sram_to_local[
         dst.address_space == AddressSpace.LOCAL
     ), "dst address space must be LOCAL."
 
-    @parameter
-    if axis:
+    comptime if axis:
         var src_fragments = src.distribute[
             src_warp_layout, axis = axis.value()
         ](thread_idx.x)
@@ -7297,22 +7155,19 @@ fn copy_local_to_dram[
     comptime num_busy_threads = dst_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
-    @parameter
-    if not dst_fragments.masked:
+    comptime if not dst_fragments.masked:
         dst_fragments.copy_from(src)
     else:
         var dst_frag_offset = dst_fragments.distance(dst.ptr)
         comptime static_stride = dst.layout.stride[0].value()
 
-        @parameter
-        if dst.layout.all_dims_known():
+        comptime if dst.layout.all_dims_known():
             stride = static_stride
         else:
             stride = dst.runtime_layout.stride.value[0]
@@ -7322,8 +7177,7 @@ fn copy_local_to_dram[
 
         comptime num_stores_per_thread = dst_fragments.layout.size()
 
-        @parameter
-        for i in range(num_stores_per_thread):
+        comptime for i in range(num_stores_per_thread):
             comptime src_idx = src.layout(i)
             comptime dst_uint_dtype = _get_unsigned_type(
                 dst_fragments.layout, dst_fragments.address_space
@@ -7332,8 +7186,7 @@ fn copy_local_to_dram[
 
             var dst_idx: Scalar[dst_fragments.linear_idx_type]
 
-            @parameter
-            if dst_fragments.layout.all_dims_known():
+            comptime if dst_fragments.layout.all_dims_known():
                 dst_idx = Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx = dst_fragments.runtime_layout(i)
@@ -7367,11 +7220,8 @@ fn _copy_local_to_dram_static_row_major[
     comptime M = dst_fragments.shape[0]()
     comptime N = dst_fragments.shape[1]()
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             comptime idx = Layout.col_major(M, N)([i, j])
             comptime src_frag_idx = src.layout(idx)
             comptime dst_frag_idx = Int32(dst_fragments.layout(idx))
@@ -7405,8 +7255,7 @@ fn _copy_local_to_dram[
     comptime num_busy_threads = dst_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -7420,8 +7269,7 @@ fn _copy_local_to_dram[
 
     comptime dst_element_stride = dst_fragments.element_layout.stride[1].value()
 
-    @parameter
-    if dst_element_stride == 1 and dst_fragments.layout.all_dims_known():
+    comptime if dst_element_stride == 1 and dst_fragments.layout.all_dims_known():
         _copy_local_to_dram_static_row_major[dst.dtype](
             src,
             dst_fragments,
@@ -7431,14 +7279,12 @@ fn _copy_local_to_dram[
     else:
         comptime num_stores_per_thread = dst_fragments.layout.size()
 
-        @parameter
-        for i in range(num_stores_per_thread):
+        comptime for i in range(num_stores_per_thread):
             comptime src_idx = src.layout(i)
             comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
-            @parameter
-            if dst_fragments.layout.all_dims_known():
+            comptime if dst_fragments.layout.all_dims_known():
                 dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
@@ -7448,16 +7294,13 @@ fn _copy_local_to_dram[
                 src.runtime_element_layout,
             )
 
-            @parameter
-            if dst_element_stride == 1:
+            comptime if dst_element_stride == 1:
                 buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
             else:
-
-                @parameter
-                for i in range(dst_fragments.element_layout.size()):
+                comptime for i in range(dst_fragments.element_layout.size()):
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
@@ -7547,8 +7390,7 @@ fn _copy_dram_to_local[
     comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -7574,11 +7416,8 @@ fn _copy_dram_to_local[
         )
 
         # These loads need to be row-major for L1 cache performance
-        @parameter
-        for i in range(M):
-
-            @parameter
-            for j in range(N):
+        comptime for i in range(M):
+            comptime for j in range(N):
                 comptime dst_frag_idx = Layout.col_major(M, N)([i, j])
                 comptime src_frag_idx = Int32(src_fragments.layout([i, j]))
                 dst[dst_frag_idx, 0] = rebind[dst.element_type](
@@ -7796,22 +7635,19 @@ fn copy_dram_to_local[
     comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
-    @parameter
-    if not src_fragments.masked:
+    comptime if not src_fragments.masked:
         dst.copy_from(src_fragments)
     else:
         var src_frag_offset = src_fragments.distance(src.ptr)
         comptime static_stride = src.layout.stride[0].value()
 
-        @parameter
-        if src.layout.all_dims_known():
+        comptime if src.layout.all_dims_known():
             stride = static_stride
         else:
             stride = src.runtime_layout.stride.value[0]
@@ -7821,8 +7657,7 @@ fn copy_dram_to_local[
 
         comptime num_stores_per_thread = src_fragments.layout.size()
 
-        @parameter
-        for i in range(num_stores_per_thread):
+        comptime for i in range(num_stores_per_thread):
             comptime dst_idx = dst.layout(i)
             comptime src_uint_dtype = _get_unsigned_type(
                 src_fragments.layout, src_fragments.address_space
@@ -7831,8 +7666,7 @@ fn copy_dram_to_local[
 
             var src_idx: Scalar[src_fragments.linear_idx_type]
 
-            @parameter
-            if src_fragments.layout.all_dims_known():
+            comptime if src_fragments.layout.all_dims_known():
                 src_idx = Scalar[src.linear_idx_type](src_static_idx)
             else:
                 src_idx = src_fragments.runtime_layout(i)
@@ -7934,8 +7768,7 @@ fn copy_local_to_shared[
     comptime num_busy_threads = thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
-    @parameter
-    if num_threads > num_busy_threads:
+    comptime if num_threads > num_busy_threads:
         if worker_idx >= UInt(num_busy_threads):
             return
 
@@ -7946,20 +7779,17 @@ fn copy_local_to_shared[
         src.element_size == dst.element_size
     ), "src and dst element size mismatch."
 
-    @parameter
-    if not row_major:
+    comptime if not row_major:
         var dst_frag = dst.distribute[thread_layout](worker_idx)
 
-        @parameter
-        if swizzle:
+        comptime if swizzle:
             comptime swizzle_fn = swizzle.value()
             comptime num_vecs = src.layout.size()
             comptime align_src = align_of[SIMD[src.dtype, src.element_size]]()
             comptime align_dst = align_of[SIMD[dst.dtype, dst.element_size]]()
             var dst_frag_offset = dst_frag.distance(dst.ptr)
 
-            @parameter
-            for i in range(num_vecs):
+            comptime for i in range(num_vecs):
                 comptime src_idx = src.layout(i)
                 comptime dst_idx = dst_frag.layout(i)
                 comptime dst_idx_base = dst_idx % swizzle_fn.size()
@@ -7988,11 +7818,8 @@ fn copy_local_to_shared[
 
         comptime assert dst_frag.layout.rank() == 2, "dst_frag must be rank 2."
 
-        @parameter
-        for i in range(M):
-
-            @parameter
-            for j in range(N):
+        comptime for i in range(M):
+            comptime for j in range(N):
                 # The order here needs to match the order of the loads in copy_dram_to_local
                 comptime idx = Layout.col_major(M, N)([i, j])
                 var src_idx = src._get_element_idx[idx]()
@@ -8097,8 +7924,7 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     ), "dst and src should have the same size."
 
     # Fast for 2D fragments
-    @parameter
-    if (
+    comptime if (
         dst.rank == 2
         and src.rank == 2
         and dst.stride[1]() == 1
@@ -8120,8 +7946,7 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
             1, src_frag_size
         ]()
 
-        @parameter
-        for i in range(dst_vectorized.layout.size()):
+        comptime for i in range(dst_vectorized.layout.size()):
             comptime dst_idx = dst_vectorized.layout(i)
             comptime src_idx = src_vectorized.layout(i)
 
@@ -8134,9 +7959,7 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
 
     # Default elementwise copy
     else:
-
-        @parameter
-        for i in range(dst.layout.size()):
+        comptime for i in range(dst.layout.size()):
             comptime dst_idx = dst.layout(i)
             comptime src_idx = src.layout(i)
             dst.ptr.store(dst_idx, src.ptr[src_idx].cast[dst.dtype]())
@@ -8239,8 +8062,7 @@ struct LayoutTensorIter[
         placeholder or default value.
         """
 
-        @parameter
-        if Self.axis:
+        comptime if Self.axis:
             comptime assert (
                 not Self.circular
             ), "Circular use case is not supported if an axis is defined."
@@ -8371,8 +8193,7 @@ struct LayoutTensorIter[
             and Self.linear_idx_type.is_signed()
         ), "Layout integer type and linear index type must be signed."
 
-        @parameter
-        if Self.axis:
+        comptime if Self.axis:
             comptime assert (
                 not Self.circular
             ), "Circular use case is not supported if an axis is defined."
@@ -8515,16 +8336,13 @@ struct LayoutTensorIter[
         """
         self.offset += rhs * self.stride
 
-        @parameter
-        if Self.axis:
+        comptime if Self.axis:
             self.idx += rhs
 
-        @parameter
-        if Self.masked and Self.axis:
+        comptime if Self.masked and Self.axis:
             self.runtime_layout = self._clip_shape()
 
-        @parameter
-        if Self.circular:
+        comptime if Self.circular:
             self.offset = self.offset % self.bound
 
     @always_inline
@@ -8537,8 +8355,7 @@ struct LayoutTensorIter[
         """
         self.offset += self.stride
 
-        @parameter
-        if Self.circular:
+        comptime if Self.circular:
             self.offset = (
                 self.offset - self.bound if self.offset
                 >= self.bound else self.offset
@@ -8565,18 +8382,15 @@ struct LayoutTensorIter[
             self.offset + Self.linear_uint_type(Int(rhs)) * self.stride
         )
 
-        @parameter
-        if Self.axis:
+        comptime if Self.axis:
             next_idx = self.idx + Self.linear_uint_type(Int(rhs))
 
-        @parameter
-        if Self.masked:
+        comptime if Self.masked:
             runtime_layout = self._clip_shape()
         else:
             runtime_layout = self.runtime_layout
 
-        @parameter
-        if Self.circular:
+        comptime if Self.circular:
             next_offset = next_offset % self.bound
 
         return Self(
@@ -8629,8 +8443,7 @@ struct LayoutTensorIter[
 
         var next_offset = self.offset + rhs * self.stride
 
-        @parameter
-        if Self.circular:
+        comptime if Self.circular:
             next_offset = (
                 next_offset - self.bound if next_offset
                 >= self.bound else next_offset
