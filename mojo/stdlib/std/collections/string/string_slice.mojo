@@ -2478,12 +2478,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var result = String(capacity=width)
         var ptr = result.unsafe_ptr_mut(capacity=width)
 
+        var end_padding = width - start - len(self)
+        debug_assert(start >= 0, "start padding must be non-negative")
+        debug_assert(end_padding >= 0, "end padding must be non-negative")
+
         # Left padding
         memset(ptr, fill_byte, start)
         # Content
         memcpy(ptr + start, self.unsafe_ptr(), len(self))
         # Right padding
-        var end_padding = width - start - len(self)
         memset(ptr + start + len(self), fill_byte, end_padding)
 
         result.set_byte_length(width)
