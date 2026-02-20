@@ -733,179 +733,30 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 # ===-----------------------------------------------------------------------===#
 @always_inline
 fn Index[
-    T0: Intable, //, *, dtype: DType = DType.int64
-](x: T0, out result: IndexList[1, element_type=dtype]):
-    """Constructs a 1-D Index from the given value.
+    T: Intable, *Ts: Intable, dtype: DType = DType.int64
+](arg0: T, *args: *Ts,) -> IndexList[args.__len__() + 1, element_type=dtype]:
+    """Constructs an N-D Index from the given values.
 
     Parameters:
-        T0: The type of the 1st argument.
+        T: The type of the first argument (must be `Intable`).
+        Ts: The types of the remaining arguments (must be `Intable`).
         dtype: The integer type of the underlying element.
 
     Args:
-        x: The initial value.
+        arg0: The first value.
+        args: The follow-up values (variable number of arguments).
 
     Returns:
         The constructed IndexList.
     """
-    return {Int(x)}
+    var result = IndexList[args.__len__() + 1, element_type=dtype]()
 
+    result[0] = Int(arg0)
 
-@always_inline
-fn Index[
-    *, dtype: DType = DType.int64
-](x: UInt, out result: IndexList[1, element_type=dtype]):
-    """Constructs a 1-D Index from the given value.
-
-    Parameters:
-        dtype: The integer type of the underlying element.
-
-    Args:
-        x: The initial value.
-
-    Returns:
-        The constructed IndexList.
-    """
-    return {Int(x)}
-
-
-@always_inline
-fn Index[
-    T0: Intable, T1: Intable, //, *, dtype: DType = DType.int64
-](x: T0, y: T1, out result: IndexList[2, element_type=dtype]):
-    """Constructs a 2-D Index from the given values.
-
-    Parameters:
-        T0: The type of the 1st argument.
-        T1: The type of the 2nd argument.
-        dtype: The integer type of the underlying element.
-
-    Args:
-        x: The 1st initial value.
-        y: The 2nd initial value.
-
-    Returns:
-        The constructed IndexList.
-    """
-    return {Int(x), Int(y)}
-
-
-@always_inline
-fn Index[
-    *, dtype: DType = DType.int64
-](x: UInt, y: UInt, out result: IndexList[2, element_type=dtype]):
-    """Constructs a 2-D Index from the given values.
-
-    Parameters:
-        dtype: The integer type of the underlying element.
-
-    Args:
-        x: The 1st initial value.
-        y: The 2nd initial value.
-
-    Returns:
-        The constructed IndexList.
-    """
-    return {Int(x), Int(y)}
-
-
-@always_inline
-fn Index[
-    T0: Intable,
-    T1: Intable,
-    T2: Intable,
-    //,
-    *,
-    dtype: DType = DType.int64,
-](x: T0, y: T1, z: T2, out result: IndexList[3, element_type=dtype]):
-    """Constructs a 3-D Index from the given values.
-
-    Parameters:
-        T0: The type of the 1st argument.
-        T1: The type of the 2nd argument.
-        T2: The type of the 3rd argument.
-        dtype: The integer type of the underlying element.
-
-    Args:
-        x: The 1st initial value.
-        y: The 2nd initial value.
-        z: The 3rd initial value.
-
-    Returns:
-        The constructed IndexList.
-    """
-    return {Int(x), Int(y), Int(z)}
-
-
-@always_inline
-fn Index[
-    T0: Intable,
-    T1: Intable,
-    T2: Intable,
-    T3: Intable,
-    //,
-    *,
-    dtype: DType = DType.int64,
-](x: T0, y: T1, z: T2, w: T3, out result: IndexList[4, element_type=dtype]):
-    """Constructs a 4-D Index from the given values.
-
-    Parameters:
-        T0: The type of the 1st argument.
-        T1: The type of the 2nd argument.
-        T2: The type of the 3rd argument.
-        T3: The type of the 4th argument.
-        dtype: The integer type of the underlying element.
-
-    Args:
-        x: The 1st initial value.
-        y: The 2nd initial value.
-        z: The 3rd initial value.
-        w: The 4th initial value.
-
-    Returns:
-        The constructed IndexList.
-    """
-    return {Int(x), Int(y), Int(z), Int(w)}
-
-
-@always_inline
-fn Index[
-    T0: Intable,
-    T1: Intable,
-    T2: Intable,
-    T3: Intable,
-    T4: Intable,
-    //,
-    *,
-    dtype: DType = DType.int64,
-](
-    x: T0,
-    y: T1,
-    z: T2,
-    w: T3,
-    v: T4,
-    out result: IndexList[5, element_type=dtype],
-):
-    """Constructs a 5-D Index from the given values.
-
-    Parameters:
-        T0: The type of the 1st argument.
-        T1: The type of the 2nd argument.
-        T2: The type of the 3rd argument.
-        T3: The type of the 4th argument.
-        T4: The type of the 5th argument.
-        dtype: The integer type of the underlying element.
-
-    Args:
-        x: The 1st initial value.
-        y: The 2nd initial value.
-        z: The 3rd initial value.
-        w: The 4th initial value.
-        v: The 5th initial value.
-
-    Returns:
-        The constructed IndexList.
-    """
-    return {Int(x), Int(y), Int(z), Int(w), Int(v)}
+    @parameter
+    for i in range(args.__len__()):
+        result[i + 1] = Int(args[i])
+    return result
 
 
 # ===-----------------------------------------------------------------------===#
