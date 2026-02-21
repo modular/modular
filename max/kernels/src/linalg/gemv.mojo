@@ -14,7 +14,6 @@ from collections import Optional
 from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
     simd_width_of,
 )
 
@@ -37,10 +36,8 @@ from gpu.host import (
     DeviceAttribute,
     DeviceBuffer,
     DeviceContext,
-    LaunchAttribute,
     get_gpu_target,
 )
-from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import load
 from gpu.primitives.grid_controls import (
     PDLLevel,
@@ -48,7 +45,6 @@ from gpu.primitives.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host.info import H100
 
 # layout imports
 from layout import (
@@ -597,80 +593,29 @@ fn gemv_gpu_dispatch[
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
-                comptime if has_nvidia_gpu_accelerator():
-                    var max_access_policy_window_size = ctx.get_attribute(
-                        DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE
-                    )
-
-                    var launch_attributes: List[LaunchAttribute] = [
-                        LaunchAttribute(
-                            AccessPolicyWindow(
-                                base_ptr=a.data,
-                                count=min(
-                                    a.size(), max_access_policy_window_size
-                                ),
-                                hit_ratio=1,
-                                hit_prop=AccessProperty.PERSISTING,
-                                miss_prop=AccessProperty.STREAMING,
-                            )
-                        ),
-                    ]
-
-                    comptime pdl_attribute_list = pdl_launch_attributes(
-                        pdl_level
-                    )
-
-                    comptime if len(pdl_attribute_list) > 0:
-                        comptime pdl_attribute = pdl_attribute_list[0]
-                        launch_attributes.append(pdl_attribute)
-
-                    comptime kernel = gemv_kernel_vector[
-                        c.type,
-                        a.type,
-                        b.type,
-                        c_tensor.layout,
-                        a_tensor.layout,
-                        b_layout_template,
-                        simd_width = UInt(simd_width),
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        pdl_level=pdl_level,
-                    ]
-                    ctx.enqueue_function[kernel, kernel](
-                        c_tensor,
-                        a_tensor,
-                        b_tensor_n_major,
-                        m,
-                        n,
-                        k,
-                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                        block_dim=block_dim,
-                        attributes=launch_attributes^,
-                    )
-                else:
-                    comptime kernel = gemv_kernel_vector[
-                        c.type,
-                        a.type,
-                        b.type,
-                        c_tensor.layout,
-                        a_tensor.layout,
-                        b_layout_template,
-                        simd_width = UInt(simd_width),
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        pdl_level=pdl_level,
-                    ]
-                    ctx.enqueue_function[kernel, kernel](
-                        c_tensor,
-                        a_tensor,
-                        b_tensor_n_major,
-                        m,
-                        n,
-                        k,
-                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                        block_dim=block_dim,
-                        attributes=pdl_launch_attributes(pdl_level),
-                    )
+                comptime kernel = gemv_kernel_vector[
+                    c.type,
+                    a.type,
+                    b.type,
+                    c_tensor.layout,
+                    a_tensor.layout,
+                    b_layout_template,
+                    simd_width = UInt(simd_width),
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ]
+                ctx.enqueue_function[kernel, kernel](
+                    c_tensor,
+                    a_tensor,
+                    b_tensor_n_major,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
         elif m == 1:
             comptime kernel = gemv_kernel_vector[
                 c.type,
