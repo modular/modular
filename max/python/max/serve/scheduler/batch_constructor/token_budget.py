@@ -374,8 +374,42 @@ class TotalContextTokenBudget(TokenBudget):
     :attr:`len(TextGenerationContext.tokens)` and the planned number of
     generation steps. It is intended for enforcing limits such as
     ``max_batch_total_tokens`` that bound the total number of tokens resident
-    in a batch across multiple steps.
+    in a batch across multiple steps. The effective cost is rounded up to the
+    configured ``page_size`` so per-request lengths match PagedKVCache
+    alignment.
     """
+
+    def __init__(
+        self,
+        capacity: int,
+        allow_chunking: bool,
+        applicable_types: list[RequestType],
+        cost_alignment: int = 1,
+    ) -> None:
+        """Initialize a total-context token budget.
+
+        Args:
+            capacity: Maximum number of tokens that may be consumed by this
+                budget.
+            allow_chunking: Whether this budget is permitted to shrink
+                :class:`TextGenerationContext` instances via ``context.chunk`` in
+                order to fit within the remaining capacity.
+            applicable_types: Request types that this budget applies to.
+            cost_alignment: Alignment used to align effective costs for this budget.
+                Defaults to 1, which means no alignment is applied.
+        """
+        super().__init__(
+            capacity=capacity,
+            allow_chunking=allow_chunking,
+            applicable_types=applicable_types,
+        )
+
+        self.cost_alignment = cost_alignment
+
+    @staticmethod
+    def align_up(x: int, align: int) -> int:
+        """Round x up to the nearest multiple of align."""
+        return (x + align - 1) // align * align
 
     @property
     def remaining(self) -> int:
@@ -397,6 +431,9 @@ class TotalContextTokenBudget(TokenBudget):
         yielding an effective cost of
 
         ``len(context.tokens) + (num_steps - 1)``.
+
+        The effective cost is rounded up to the page size so per-request lengths
+        match the PagedKVCache alignment that some GPU kernels expect.
 
         If the context would exceed the budget and ``allow_chunking`` is
         enabled, it may call
@@ -424,6 +461,7 @@ class TotalContextTokenBudget(TokenBudget):
                 not succeed in reducing the effective cost to the remaining
                 capacity.
         """
+
         if request_type not in self.applicable_types:
             return BudgetStatus.BUDGET_AVAILABLE
 
@@ -433,7 +471,10 @@ class TotalContextTokenBudget(TokenBudget):
         if tokens_remaining <= 0:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-        total_length = len(context.tokens) + (num_steps - 1)
+        # Match PagedKVCache page alignment for GPU kernels.
+        total_length = self.align_up(
+            len(context.tokens) + (num_steps - 1), self.cost_alignment
+        )
 
         if total_length < tokens_remaining:
             return BudgetStatus.BUDGET_AVAILABLE
@@ -459,7 +500,7 @@ class TotalContextTokenBudget(TokenBudget):
 
         **Side effect**:
             Increments :attr:`used` by the same effective cost that was
-            evaluated in :meth:`status_after_context`, namely
+            evaluated in :meth:`status_after_context`, namely the page-aligned
             ``len(context.tokens) + (num_steps - 1)``.
 
         Args:
@@ -467,4 +508,6 @@ class TotalContextTokenBudget(TokenBudget):
             request_type: The type of request being added to the budget.
             num_steps: Planned number of generation steps for this context.
         """
-        self.used += len(context.tokens) + (num_steps - 1)
+        self.used += self.align_up(
+            len(context.tokens) + (num_steps - 1), self.cost_alignment
+        )

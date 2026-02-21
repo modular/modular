@@ -30,8 +30,7 @@ from memory import Span, bitcast, memcpy
 
 
 fn constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    @parameter
-    for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size(Ts)):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -76,8 +75,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
             self.is_first_element = False
             self.at_element_start = False
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(self.writer[])
 
 
@@ -188,11 +186,8 @@ fn write_sequence_to[
     """
     writer.write_string(open)
 
-    @parameter
-    for i in range(size):
-
-        @parameter
-        if i != 0:
+    comptime for i in range(size):
+        comptime if i != 0:
             writer.write_string(sep)
         ElementFn[i=i](writer)
 
@@ -213,6 +208,18 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
             size = Variadic.size(Self.Types),
             ElementFn=elements,
         ](writer, open="", close="")
+
+
+@always_inline
+fn write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
+    comptime assert conforms_to(T, Writable), "T must be Writable"
+    trait_downcast[Writable](t).write_repr_to(writer)
+
+
+@always_inline
+fn write_to[T: AnyType](t: T, mut writer: Some[Writer]):
+    comptime assert conforms_to(T, Writable), "T must be Writable"
+    trait_downcast[Writable](t).write_to(writer)
 
 
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
@@ -608,15 +615,14 @@ fn _write_hex[
     ```
     """
 
-    __comptime_assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
+    comptime assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
 
     comptime `\\` = Byte(ord("\\"))
     comptime `x` = Byte(ord("x"))
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    @parameter
-    if amnt_hex_bytes == 2:
+    comptime if amnt_hex_bytes == 2:
         var chars = _hex_digits_to_hex_chars(UInt8(decimal))
         var buf = InlineArray[Byte, 4](uninitialized=True)
         buf[0] = `\\`

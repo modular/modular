@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -42,7 +43,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.log_probabilities import (
@@ -57,6 +57,7 @@ from .model_config import Gemma3Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Gemma3Inputs(ModelInputs):
     """A class representing inputs for the Gemma3 model.
 
@@ -74,27 +75,8 @@ class Gemma3Inputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: list[Buffer],
-        return_n_logits: Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+    return_n_logits: Buffer
+    """Number of logits to return."""
 
 
 class Gemma3Model(
@@ -114,23 +96,16 @@ class Gemma3Model(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         """
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -138,25 +113,20 @@ class Gemma3Model(
             weights: The model weights (:obj:`max.graph.weights.Weights`).
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
-            text_huggingface_config: The text configuration loaded from HuggingFace
-                if it differs from the base huggingface_config (:obj:`transformers.AutoConfig`).
             return_logits: The number of top logits to return from the model
                 execution.
         """
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
         )
-        self._is_multimodal = text_huggingface_config is not None
-        if self._is_multimodal:
-            self.huggingface_config = text_huggingface_config
+        # Detect multimodal models by presence of text_config
+        self._is_multimodal = hasattr(self.huggingface_config, "text_config")
 
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
@@ -180,7 +150,7 @@ class Gemma3Model(
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
@@ -311,11 +281,15 @@ class Gemma3Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        huggingface_config = self.huggingface_config
+        text_config = (
+            self.huggingface_config.text_config
+            if self._is_multimodal
+            else self.huggingface_config
+        )
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
-                huggingface_config=huggingface_config,
+                huggingface_config=text_config,
                 pipeline_config=self.pipeline_config,
             )
         else:
@@ -325,7 +299,7 @@ class Gemma3Model(
 
         state_dict_prefix = "language_model." if self._is_multimodal else ""
         float8_config = parse_float8_config(
-            huggingface_config,
+            text_config,
             state_dict,
             self.dtype,
             state_dict_name_prefix=state_dict_prefix,
@@ -333,10 +307,10 @@ class Gemma3Model(
         )
 
         model_config = Gemma3Config.initialize_from_config(
-            self.pipeline_config, huggingface_config
+            self.pipeline_config, text_config
         )
         model_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=text_config,
             state_dict=state_dict,
             return_logits=self.return_logits,
             float8_config=float8_config,
@@ -360,7 +334,7 @@ class Gemma3Model(
         ]
 
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"),
+            getattr(text_config, "model_type", "Gemma3"),
             input_types=[
                 tokens_type,
                 return_n_logits_type,

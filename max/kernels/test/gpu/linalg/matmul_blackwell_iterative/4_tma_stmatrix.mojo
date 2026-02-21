@@ -97,7 +97,7 @@ fn kernel_4[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     num_iters: Int,
 ):
-    __comptime_assert num_threads == 128 or num_threads == 256
+    comptime assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -177,13 +177,13 @@ fn kernel_4[
     comptime b_size = b_smem_layout.size()
     comptime c_size = c_smem_layout.size()
 
-    __comptime_assert (
+    comptime assert (
         (a_size * size_of[a_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (c_size * size_of[c_type]()) % 128
     ) == 0, "preserve alignment"
 
@@ -260,15 +260,14 @@ fn kernel_4[
     for i in range(num_iters):
         # load A and B from global memory to shared memory
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            @parameter
-            for j in range(BK // 64):
+            comptime for j in range(BK // 64):
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
-                __comptime_assert ((a_offset * size_of[a_type]()) % 128) == 0
-                __comptime_assert ((b_offset * size_of[b_type]()) % 128) == 0
+                comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
+                comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
@@ -292,15 +291,15 @@ fn kernel_4[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for j in range(num_k_mmas):
+            comptime for j in range(num_k_mmas):
                 comptime idx = IntTuple(0, MMA_K * j)
                 comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                 comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
 
                 # use c_scale=0 for the first mma only on the first iteration to initialize
-                var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
+                var c_scale_value: UInt32 = UInt32(
+                    0 if (i == 0 and j == 0) else 1
+                )
                 mma(
                     adesc + a_offset,
                     bdesc + b_offset,
@@ -338,14 +337,9 @@ fn kernel_4[
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
 
-    @parameter
-    for tma_n in range(BN // TMA_BN):
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range(TMA_BN // 16):
+    comptime for tma_n in range(BN // TMA_BN):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for i in range(TMA_BN // 16):
                 var d_reg = c_frag.slice[
                     8, offset = (i + tma_n * (TMA_BN // 16)) * 8
                 ]().cast[DType.bfloat16]()
@@ -428,7 +422,7 @@ fn blackwell_kernel_4[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -477,7 +471,9 @@ fn blackwell_kernel_4[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -520,8 +516,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("transpose_b:", transpose_b)
     print()
 
-    @parameter
-    for i in range(len(dict_of_shapes)):
+    comptime for i in range(len(dict_of_shapes)):
         comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(
@@ -659,7 +654,7 @@ def test_blackwell_kernel_4[
             Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")

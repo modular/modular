@@ -88,7 +88,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     var capacity: Int
 
     fn __init__(out self, capacity: Int):
-        __comptime_assert (
+        comptime assert (
             Self.KeyEndType == DType.uint8
             or Self.KeyEndType == DType.uint16
             or Self.KeyEndType == DType.uint32
@@ -100,14 +100,14 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = 0
         self.capacity = capacity
 
-    fn __copyinit__(out self, existing: Self):
-        self.allocated_bytes = existing.allocated_bytes
-        self.count = existing.count
-        self.capacity = existing.capacity
+    fn __copyinit__(out self, copy: Self):
+        self.allocated_bytes = copy.allocated_bytes
+        self.count = copy.count
+        self.capacity = copy.capacity
         self.keys = alloc[UInt8](self.allocated_bytes)
-        memcpy(dest=self.keys, src=existing.keys, count=self.allocated_bytes)
+        memcpy(dest=self.keys, src=copy.keys, count=self.allocated_bytes)
         self.keys_end = alloc[Scalar[Self.KeyEndType]](self.capacity)
-        memcpy(dest=self.keys_end, src=existing.keys_end, count=self.capacity)
+        memcpy(dest=self.keys_end, src=copy.keys_end, count=self.capacity)
 
     fn __del__(deinit self):
         self.keys.free()
@@ -117,10 +117,10 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     fn add(mut self, key: StringSlice):
         var prev_end = 0 if self.count == 0 else self.keys_end[self.count - 1]
         var key_length = len(key)
-        var new_end = prev_end + key_length
+        var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
         var needs_realocation = False
-        while new_end > self.allocated_bytes:
+        while new_end > Scalar[Self.KeyEndType](self.allocated_bytes):
             self.allocated_bytes += self.allocated_bytes >> 1
             needs_realocation = True
 
@@ -199,7 +199,7 @@ struct StringDict[
     var capacity: Int
 
     fn __init__(out self, capacity: Int = 16):
-        __comptime_assert (
+        comptime assert (
             Self.KeyCountType == DType.uint8
             or Self.KeyCountType == DType.uint16
             or Self.KeyCountType == DType.uint32
@@ -215,8 +215,7 @@ struct StringDict[
             )
         self.keys = KeysContainer[Self.KeyOffsetType](capacity)
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
         else:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
@@ -224,42 +223,39 @@ struct StringDict[
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
         memset_zero(self.slot_to_index, self.capacity)
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
             memset_zero(self.deleted_mask, self.capacity >> 3)
         else:
             self.deleted_mask = alloc[UInt8](0)
 
-    fn __copyinit__(out self, existing: Self):
-        self.count = existing.count
-        self.capacity = existing.capacity
-        self.keys = existing.keys
+    fn __copyinit__(out self, copy: Self):
+        self.count = copy.count
+        self.capacity = copy.capacity
+        self.keys = copy.keys
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
             memcpy(
                 dest=self.key_hashes,
-                src=existing.key_hashes,
+                src=copy.key_hashes,
                 count=self.capacity,
             )
         else:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
-        self.values = existing.values.copy()
+        self.values = copy.values.copy()
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
         memcpy(
             dest=self.slot_to_index,
-            src=existing.slot_to_index,
+            src=copy.slot_to_index,
             count=self.capacity,
         )
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
             memcpy(
                 dest=self.deleted_mask,
-                src=existing.deleted_mask,
+                src=copy.deleted_mask,
                 count=self.capacity >> 3,
             )
         else:
@@ -283,14 +279,13 @@ struct StringDict[
 
         var key_hash = hash(key).cast[Self.KeyCountType]()
         var modulo_mask = self.capacity - 1
-        var slot = Int(key_hash & modulo_mask)
+        var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
         while True:
             var key_index = Int(self.slot_to_index.load(slot))
             if key_index == 0:
                 self.keys.add(key)
 
-                @parameter
-                if Self.caching_hashes:
+                comptime if Self.caching_hashes:
                     self.key_hashes.store(slot, key_hash)
                 self.values.append(value.copy())
                 self.count += 1
@@ -299,8 +294,7 @@ struct StringDict[
                 )
                 return
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 var other_key_hash = self.key_hashes[slot]
                 if other_key_hash == key_hash:
                     var other_key = self.keys[key_index - 1]
@@ -308,8 +302,7 @@ struct StringDict[
                         # replace value
                         self.values[key_index - 1] = value.copy()
 
-                        @parameter
-                        if Self.destructive:
+                        comptime if Self.destructive:
                             if self._is_deleted(key_index - 1):
                                 self.count += 1
                                 self._not_deleted(key_index - 1)
@@ -320,8 +313,7 @@ struct StringDict[
                     # replace value
                     self.values[key_index - 1] = value.copy()
 
-                    @parameter
-                    if Self.destructive:
+                    comptime if Self.destructive:
                         if self._is_deleted(key_index - 1):
                             self.count += 1
                             self._not_deleted(key_index - 1)
@@ -333,7 +325,7 @@ struct StringDict[
     fn _is_deleted(self, index: Int) -> Bool:
         var offset = index >> 3
         var bit_index = index & 7
-        return (self.deleted_mask + offset).load() & (1 << bit_index) != 0
+        return (self.deleted_mask + offset).load() & UInt8(1 << bit_index) != 0
 
     @always_inline
     fn _deleted(self, index: Int):
@@ -341,7 +333,7 @@ struct StringDict[
         var bit_index = index & 7
         var p = self.deleted_mask + offset
         var mask = p.load()
-        p.store(mask | (1 << bit_index))
+        p.store(mask | UInt8((1 << bit_index)))
 
     @always_inline
     fn _not_deleted(self, index: Int):
@@ -349,7 +341,7 @@ struct StringDict[
         var bit_index = index & 7
         var p = self.deleted_mask + offset
         var mask = p.load()
-        p.store(mask & ~(1 << bit_index))
+        p.store(mask & UInt8(~(1 << bit_index)))
 
     @always_inline
     fn _rehash(mut self):
@@ -362,12 +354,10 @@ struct StringDict[
 
         var key_hashes = self.key_hashes
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             var deleted_mask = alloc[UInt8](mask_capacity)
             memset_zero(deleted_mask, mask_capacity)
             memcpy(
@@ -384,15 +374,14 @@ struct StringDict[
                 continue
             var key_hash = Scalar[Self.KeyCountType](0)
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 key_hash = self.key_hashes[i]
             else:
                 key_hash = hash(self.keys[Int(old_slot_to_index[i] - 1)]).cast[
                     Self.KeyCountType
                 ]()
 
-            var slot = Int(key_hash & modulo_mask)
+            var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
 
             # var searching = True
             while True:
@@ -406,12 +395,10 @@ struct StringDict[
                 else:
                     slot = (slot + 1) & modulo_mask
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 key_hashes[slot] = key_hash
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             self.key_hashes.free()
             self.key_hashes = key_hashes
         old_slot_to_index.free()
@@ -421,15 +408,13 @@ struct StringDict[
         if key_index == 0:
             return default.copy()
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             if self._is_deleted(key_index - 1):
                 return default.copy()
         return self.values[key_index - 1].copy()
 
     fn delete(mut self, key: StringSlice):
-        @parameter
-        if not Self.destructive:
+        comptime if not Self.destructive:
             return
 
         var key_index = self._find_key_index(key)
@@ -451,8 +436,7 @@ struct StringDict[
         else:
             key_index -= 1
 
-            @parameter
-            if Self.destructive:
+            comptime if Self.destructive:
                 if self._is_deleted(key_index):
                     self.count += 1
                     self._not_deleted(key_index)
@@ -466,8 +450,7 @@ struct StringDict[
         self.keys.clear()
         memset_zero(self.slot_to_index, self.capacity)
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             memset_zero(self.deleted_mask, self.capacity >> 3)
         self.count = 0
 
@@ -476,14 +459,13 @@ struct StringDict[
         var key_hash = hash(key).cast[Self.KeyCountType]()
         var modulo_mask = self.capacity - 1
 
-        var slot = Int(key_hash & modulo_mask)
+        var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
         while True:
             var key_index = Int(self.slot_to_index.load(slot))
             if key_index == 0:
                 return key_index
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 var other_key_hash = self.key_hashes[slot]
                 if key_hash == other_key_hash:
                     var other_key = self.keys[key_index - 1]
@@ -510,7 +492,7 @@ fn bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._entries.unsafe_ptr())
+        keep(d._ctrl)
 
     b.iter[call_fn]()
 
@@ -525,7 +507,7 @@ fn bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._entries.unsafe_ptr())
+        keep(d._ctrl)
 
     b.iter[call_fn]()
 

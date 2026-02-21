@@ -35,7 +35,7 @@ from sys._libc import (
     close,
     WaitFlags,
 )
-from sys.ffi import c_char, c_int, c_pid_t, get_errno
+from ffi import c_char, c_int, c_pid_t, get_errno
 from sys.os import abort, sep
 
 
@@ -375,8 +375,7 @@ struct Process:
             Error: If the process fails to spawn.
         """
 
-        @parameter
-        if CompilationTarget.is_linux() or CompilationTarget.is_macos():
+        comptime if CompilationTarget.is_linux() or CompilationTarget.is_macos():
             var file_name = String(path.split(sep)[-1])
 
             var arg_count = len(argv)

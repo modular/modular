@@ -120,14 +120,14 @@ def test_matmul[
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            a[IndexList[2]((i, p))] = cnt % vnni_range
+            a[IndexList[2]((i, p))] = Scalar[a_type](cnt % vnni_range)
             cnt += 1
 
     cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            b[IndexList[2]((p, j))] = cnt % 256 - 128
+            b[IndexList[2]((p, j))] = Scalar[b_type](cnt % 256 - 128)
             bp[IndexList[2]((p, j))] = b[IndexList[2]((p, j))]
             cnt += 1
 
@@ -136,8 +136,7 @@ def test_matmul[
             c[IndexList[2]((i, j))] = 0
             golden[IndexList[2]((i, j))] = c[IndexList[2]((i, j))]
 
-    @parameter
-    if b_packed:
+    comptime if b_packed:
         if kernel_type_m != 0:
             _pack_b_ndbuffer_impl[
                 a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
@@ -189,8 +188,7 @@ def test_matmul[
                 c_type,
             )
 
-            @parameter
-            if c_type.is_floating_point():
+            comptime if c_type.is_floating_point():
                 assert_almost_equal(c[i, j], golden[i, j], msg)
             else:
                 assert_equal(c[i, j], golden[i, j], msg)
@@ -263,8 +261,7 @@ def test_shapes[
 
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
-    @parameter
-    if b_packed and CompilationTarget.is_macos():
+    comptime if b_packed and CompilationTarget.is_macos():
         return
 
     test_shapes[

@@ -256,8 +256,8 @@ def execute_flash_attention[
         ),
         cache_lengths_device,
         lookup_table_tensor,
-        max_prompt_len,
-        max_context_len,
+        UInt32(max_prompt_len),
+        UInt32(max_context_len),
     )
 
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
@@ -288,7 +288,7 @@ def execute_flash_attention[
                 ),
             ),
             start_pos=LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
                 cache_lengths_dev.unsafe_ptr(),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -351,8 +351,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
     )
 
-    @parameter
-    for dtype_idx in range(len(dtypes)):
+    comptime for dtype_idx in range(len(dtypes)):
         comptime dtype = dtypes[dtype_idx]
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128

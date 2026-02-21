@@ -60,7 +60,7 @@ fn tc_reduce_gevm_8x[
         Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    __comptime_assert (
+    comptime assert (
         out_type == DType.float32 and in_type == DType.bfloat16
     ), "unsupported input/output type"
 
@@ -95,7 +95,7 @@ fn tc_reduce_gevm_4x[
         Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    __comptime_assert (
+    comptime assert (
         out_type == DType.float32 and in_type == DType.bfloat16
     ), "unsupported input/output type"
 
@@ -127,8 +127,7 @@ fn tc_reduce[
         Supports various input/output type combinations using tensor core operations.
     """
 
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         return _tc_reduce_scalar[out_type](val._refine[new_size=1]())
     else:
         return _tc_reduce_vector[out_type](val)
@@ -157,11 +156,8 @@ fn _tc_reduce_vector[
         Uses matrix multiply-accumulate (MMA) and shuffle operations for efficient reduction.
     """
 
-    @parameter
-    if out_type == DType.float32 and in_type == DType.bfloat16:
-
-        @parameter
-        if simd_width == 1:
+    comptime if out_type == DType.float32 and in_type == DType.bfloat16:
+        comptime if simd_width == 1:
             return val[0].cast[out_type]()
 
         elif simd_width == 2:
@@ -217,8 +213,7 @@ fn _tc_reduce_vector[
         elif simd_width > 8:
             var tmp = SIMD[out_type, simd_width // 8]()
 
-            @parameter
-            for i in range(0, simd_width, 8):
+            comptime for i in range(0, simd_width, 8):
                 tmp[i // 8] = _tc_reduce_vector[out_type](
                     val.slice[8, offset=i]()
                 )
@@ -263,10 +258,9 @@ fn _tc_reduce_scalar[
         Uses matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    __comptime_assert out_type == DType.float32
+    comptime assert out_type == DType.float32
 
-    @parameter
-    if out_type == DType.float32 and in_type == DType.float16:
+    comptime if out_type == DType.float32 and in_type == DType.float16:
         var d_reg = SIMD[out_type, 2]()
         var a_reg = Scalar[in_type](1)
         var b_reg: Scalar[in_type] = val
@@ -308,7 +302,7 @@ fn _tc_reduce_scalar[
         return d_reg[0]
 
     else:
-        __comptime_assert (
+        comptime assert (
             in_type == DType.float16 and out_type == DType.float16
         ), "unsupported dtype"
         var d_reg = SIMD[out_type, 2]()

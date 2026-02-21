@@ -54,8 +54,7 @@ fn get_amd_fp8_dtype() -> DType:
         - `DType.invalid` for RDNA3 (no native FP8 support).
     """
 
-    @parameter
-    if _is_amd_rdna3():
+    comptime if _is_amd_rdna3():
         return DType.invalid
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e4m3fn
@@ -72,8 +71,7 @@ fn get_amd_bf8_dtype() -> DType:
         - `DType.invalid` for RDNA3 (no native BF8 support).
     """
 
-    @parameter
-    if _is_amd_rdna3():
+    comptime if _is_amd_rdna3():
         return DType.invalid
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e5m2
@@ -87,7 +85,7 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         False,
         # fmt: off
         String(
-        "no valid implementation of mma for for a=",
+        "no valid implementation of mma for a=",
         a.size, "x",  a.dtype,
         ", b=",  b.size, "x",  b.dtype,
         ", c=",  c.size, "x",  c.dtype,
@@ -129,8 +127,7 @@ fn _has_shape[
 fn _dtype_to_nvvm_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if out_type == DType.float16 or out_type == DType.uint32:
+    comptime if out_type == DType.float16 or out_type == DType.uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr.`si32`
@@ -142,8 +139,7 @@ fn _dtype_to_nvvm_type[
 fn _dtype_to_nvvm_wgmma_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if out_type == DType.float8_e4m3fn:
+    comptime if out_type == DType.float8_e4m3fn:
         return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
     elif out_type == DType.float8_e5m2:
         return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
@@ -177,16 +173,14 @@ fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
 
 
 fn _to_nvvm_scale_out[s: Int]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if s == 0:
+    comptime if s == 0:
         return __mlir_attr.`#nvvm.wgmma_scale_out<zero>`
     else:
         return __mlir_attr.`#nvvm.wgmma_scale_out<one>`
 
 
 fn _to_nvvm_scale_in[s: Int]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if s == -1:
+    comptime if s == -1:
         return __mlir_attr.`#nvvm.wgmma_scale_in<neg>`
     else:
         return __mlir_attr.`#nvvm.wgmma_scale_in<one>`
@@ -227,8 +221,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         - Matrix dimensions and data types must match hardware requirements
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _mma_nvidia(d, a, b, c)
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
@@ -285,7 +278,7 @@ fn ld_matrix[
         ```
     """
 
-    __comptime_assert (transpose and dtype.is_half_float()) or (
+    comptime assert (transpose and dtype.is_half_float()) or (
         not transpose
     ), "Transposed ld_matrix is only for half precision."
 
@@ -309,8 +302,7 @@ fn ld_matrix[
     # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
     # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
     # and input simd_width being equal to 4
-    @parameter
-    if num_registers == 1:
+    comptime if num_registers == 1:
         comptime ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
         var r0 = bitcast[dtype, register_width](r[0])
@@ -326,7 +318,7 @@ fn ld_matrix[
         d = rebind[SIMD[dtype, simd_width]](r0.join(r1))
 
     else:
-        __comptime_assert (
+        comptime assert (
             num_registers == 4
         ), "no valid implementation of ldmatrix instruction"
         comptime ins = base + ".x4" + get_suffix()
@@ -396,7 +388,7 @@ fn st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    __comptime_assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (DType.bfloat16, DType.float32), ""
 
     comptime num_matrices = simd_width
 
@@ -409,8 +401,7 @@ fn st_matrix[
             return ".trans" + sfx
         return sfx
 
-    @parameter
-    if num_matrices == 1:
+    comptime if num_matrices == 1:
         comptime ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
         inlined_assembly[ins, NoneType, constraints="r,r"](
             Int32(Int(ptr)), d[0]
@@ -423,7 +414,7 @@ fn st_matrix[
         )
 
     else:
-        __comptime_assert (
+        comptime assert (
             num_matrices == 4
         ), "no valid implementation of stmatrix instruction"
 
@@ -439,7 +430,9 @@ fn st_matrix[
 
 
 # Shared memory operand descriptor.
-struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
+struct WGMMADescriptor[dtype: DType](
+    MMAOperandDescriptor, TrivialRegisterPassable
+):
     """Descriptor for shared memory operands used in warp group matrix multiply operations.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -538,8 +531,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
         fn _convert_swizzle_enum[mode: Int32]() -> Int64:
-            @parameter
-            if mode == 0:
+            comptime if mode == 0:
                 return mode.cast[DType.int64]()
             else:
                 return (4 - mode).cast[DType.int64]()
@@ -685,7 +677,7 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+    comptime assert (m * n // 128) * size_of[accum_type]() == width * size_of[
         c_dtype
     ](), String(
         "Number of output registers ",
@@ -694,21 +686,21 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
 
-    __comptime_assert scale_d == 1 or scale_d == 0, (
+    comptime assert scale_d == 1 or scale_d == 0, (
         "Invalid scale in value of scaled_d '"
         + String(scale_d)
         + "' which is not supported. Only 1 or 0 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_a == 1 or scale_a == -1, (
+    comptime assert scale_a == 1 or scale_a == -1, (
         "Invalid scale in value of scaled_a '"
         + String(scale_a)
         + "' which is not supported. Only 1 or -1 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_b == 1 or scale_b == -1, (
+    comptime assert scale_b == 1 or scale_b == -1, (
         "Invalid scale in value of scaled_b '"
         + String(scale_b)
         + "' which is not supported. Only 1 or -1 is supported as the"
@@ -813,7 +805,7 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+    comptime assert (m * n // 128) * size_of[accum_type]() == width * size_of[
         c_dtype
     ](), String(
         "Number of output registers ",
@@ -822,21 +814,21 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
 
-    __comptime_assert scale_d == 1 or scale_d == 0, (
+    comptime assert scale_d == 1 or scale_d == 0, (
         "Invalid scale in value of scaled_d '"
         + String(scale_d)
         + "' which is not supported. Only 1 or 0 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_a == 1 or scale_a == -1, (
+    comptime assert scale_a == 1 or scale_a == -1, (
         "Invalid scale in value of scaled_a '"
         + String(scale_a)
         + "' which is not supported. Only 1 or -1 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_b == 1 or scale_b == -1, (
+    comptime assert scale_b == 1 or scale_b == -1, (
         "Invalid scale in value of scaled_b '"
         + String(scale_b)
         + "' which is not supported. Only 1 or -1 is supported as the"
@@ -942,7 +934,7 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-    __comptime_assert (m * n // 128) * size_of[
+    comptime assert (m * n // 128) * size_of[
         accum_type
     ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
@@ -951,7 +943,7 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
 
-    __comptime_assert (m * k // 128) * size_of[
+    comptime assert (m * k // 128) * size_of[
         a_type
     ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
@@ -960,14 +952,14 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
     # for now, limited support
-    __comptime_assert m == 64
-    __comptime_assert k == 16
-    __comptime_assert a_type == DType.bfloat16
-    __comptime_assert b_type == DType.bfloat16
-    __comptime_assert accum_type == DType.float32
-    __comptime_assert c_dtype == DType.float32
-    __comptime_assert layout_a == "row"
-    __comptime_assert layout_b == "col" or (
+    comptime assert m == 64
+    comptime assert k == 16
+    comptime assert a_type == DType.bfloat16
+    comptime assert b_type == DType.bfloat16
+    comptime assert accum_type == DType.float32
+    comptime assert c_dtype == DType.float32
+    comptime assert layout_a == "row"
+    comptime assert layout_b == "col" or (
         layout_b == "row" and b_type == DType.bfloat16
     )
 
@@ -976,8 +968,7 @@ fn wgmma_async[
     )
     comptime trans_b = 1 if layout_b == "row" else 0
 
-    @parameter
-    if (
+    comptime if (
         m == 64
         and k == 16
         and a_type == b_type == DType.bfloat16
@@ -1014,8 +1005,7 @@ fn wgmma_async[
         comptime constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
 
         # fmt: off
-        @parameter
-        if n == 8:
+        comptime if n == 8:
             var r = inlined_assembly[
                 """{
                     .reg .pred p;

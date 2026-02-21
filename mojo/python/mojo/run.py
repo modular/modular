@@ -35,7 +35,7 @@ def _sdk_default_env() -> dict[str, str]:
     # ->
     # bin/mblack
     extra_env = {}
-    maybe_mblack_path = root.parent.parent.parent.parent / "bin" / "mblack"
+    maybe_mblack_path = root.parent.parent.parent.parent / "bin/mblack"
     if maybe_mblack_path.exists():
         extra_env["MODULAR_MOJO_MAX_MBLACK_PATH"] = str(maybe_mblack_path)
 

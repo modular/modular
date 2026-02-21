@@ -35,6 +35,9 @@ from internal_utils import assert_almost_equal
 from random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    lt_to_tt,
+)
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -255,8 +258,8 @@ fn test_existing_kernel_single_group[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor,
-        b_scales=b_scales_tensor,
+        a_scales=a_scales_tensor.get_immutable(),
+        b_scales=b_scales_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -281,11 +284,11 @@ fn test_existing_kernel_single_group[
         transpose_b=transpose_b,
         config=config,
     ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
+        lt_to_tt(c_tensor),
+        lt_to_tt(a_tensor),
+        lt_to_tt(b_tensor),
+        lt_to_tt(a_scales_tensor),
+        lt_to_tt(b_scales_tensor),
         ctx,
     )
     ctx.synchronize()
@@ -511,8 +514,8 @@ fn test_grouped_kernel_single_group[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor,
-        b_scales=b_scales_tensor,
+        a_scales=a_scales_tensor.get_immutable(),
+        b_scales=b_scales_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -523,9 +526,9 @@ fn test_grouped_kernel_single_group[
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
-    problem_sizes_host[0] = m.value  # M
-    problem_sizes_host[1] = n.value  # N
-    problem_sizes_host[2] = k.value  # K
+    problem_sizes_host[0] = Int32(m.value)  # M
+    problem_sizes_host[1] = Int32(n.value)  # N
+    problem_sizes_host[2] = Int32(k.value)  # K
     problem_sizes_host[3] = 1  # L (batch=1)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -895,8 +898,8 @@ fn test_grouped_kernel_multi_group_same_ptr[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor,
-        b_scales=b_scales_tensor,
+        a_scales=a_scales_tensor.get_immutable(),
+        b_scales=b_scales_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -910,9 +913,9 @@ fn test_grouped_kernel_multi_group_same_ptr[
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = m.value  # M
-        problem_sizes_host[g * 4 + 1] = n.value  # N
-        problem_sizes_host[g * 4 + 2] = k.value  # K
+        problem_sizes_host[g * 4 + 0] = Int32(m.value)  # M
+        problem_sizes_host[g * 4 + 1] = Int32(n.value)  # N
+        problem_sizes_host[g * 4 + 2] = Int32(k.value)  # K
         problem_sizes_host[g * 4 + 3] = 1  # L (batch=1)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -1292,8 +1295,8 @@ fn test_grouped_kernel_two_groups_different_ptrs[
         c0_ref_tensor,
         a0_tensor,
         b0_tensor,
-        a_scales=sfa0_tensor,
-        b_scales=sfb0_tensor,
+        a_scales=sfa0_tensor.get_immutable(),
+        b_scales=sfb0_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -1304,8 +1307,8 @@ fn test_grouped_kernel_two_groups_different_ptrs[
         c1_ref_tensor,
         a1_tensor,
         b1_tensor,
-        a_scales=sfa1_tensor,
-        b_scales=sfb1_tensor,
+        a_scales=sfa1_tensor.get_immutable(),
+        b_scales=sfb1_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -1317,9 +1320,9 @@ fn test_grouped_kernel_two_groups_different_ptrs[
     # Problem sizes: both groups have same size
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = m.value
-        problem_sizes_host[g * 4 + 1] = n.value
-        problem_sizes_host[g * 4 + 2] = k.value
+        problem_sizes_host[g * 4 + 0] = Int32(m.value)
+        problem_sizes_host[g * 4 + 1] = Int32(n.value)
+        problem_sizes_host[g * 4 + 2] = Int32(k.value)
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](

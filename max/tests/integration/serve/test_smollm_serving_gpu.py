@@ -19,8 +19,8 @@ from typing import Any
 import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
@@ -36,12 +36,13 @@ MAX_READ_SIZE = 10 * 1024
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM2-135M",
-            max_length=512,
-            max_new_tokens=10,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            model=MAXModelConfig(
+                model_path="HuggingFaceTB/SmolLM2-135M",
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding="bfloat16",
+                kv_cache=KVCacheConfig(cache_strategy="paged"),
+                max_length=512,
+            ),
             max_batch_size=16,
         )
     ],
@@ -83,12 +84,13 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:  # type: ignore
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM2-135M",
-            max_length=512,
-            max_new_tokens=10,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            model=MAXModelConfig(
+                model_path="HuggingFaceTB/SmolLM2-135M",
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding="bfloat16",
+                kv_cache=KVCacheConfig(cache_strategy="paged"),
+                max_length=512,
+            ),
             max_batch_size=16,
         )
     ],
@@ -126,12 +128,13 @@ async def test_smollm_serve_gpu_nonchat_completions(
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM2-135M",
-            max_length=512,
-            max_new_tokens=10,
-            device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            model=MAXModelConfig(
+                model_path="HuggingFaceTB/SmolLM2-135M",
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding="bfloat16",
+                kv_cache=KVCacheConfig(cache_strategy="paged"),
+                max_length=512,
+            ),
             max_batch_size=16,
         )
     ],

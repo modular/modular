@@ -46,8 +46,7 @@ fn test_argsort[
             var lhs = input[indices[i]]
             var rhs = input[indices[i + 1]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs < rhs,
                     msg=String(
@@ -91,8 +90,7 @@ fn test_argsort[
             var lhs = input[indices[i]]
             var rhs = input[indices[0]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs > rhs,
                     msg=String(
@@ -135,10 +133,10 @@ fn test_argsort[
 
 def main():
     fn linear_filler(i: Int, n: Int) -> Float32:
-        return i
+        return Float32(i)
 
     fn reverse_filler(i: Int, n: Int) -> Float32:
-        return n - i
+        return Float32(n - i)
 
     test_argsort[ascending=True, filler=linear_filler]()
     test_argsort[ascending=True, filler=reverse_filler]()

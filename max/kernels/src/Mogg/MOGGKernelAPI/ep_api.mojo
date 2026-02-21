@@ -17,6 +17,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 
 import compiler_internal as compiler
+from comm.sync import can_enable_p2p
 from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
@@ -79,6 +80,7 @@ struct Struct_ep_init:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
+        n_nodes: Int,
         dispatch_scale_dtype: DType,
         dispatch_fmt_str: StaticString,
         //,
@@ -101,6 +103,7 @@ struct Struct_ep_init:
             n_experts: Total number of experts across all GPUs.
             max_token_per_rank: Maximum number of tokens per GPU.
             n_gpus_per_node: Number of GPUs per node.
+            n_nodes: Number of physical nodes.
             dispatch_scale_dtype: DType of the dispatch scale.
             dispatch_fmt_str: String indicating the dispatch format.
             target: Target for this kernel.
@@ -115,7 +118,7 @@ struct Struct_ep_init:
             context: GPU device context
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
         var gpu_ctx = context.get_device_context()
 
         comptime gpu_target = get_gpu_target()
@@ -130,8 +133,7 @@ struct Struct_ep_init:
         var dispatch_msg_size: Int
 
         # Infer message sizes for dispatch phases
-        @parameter
-        if dispatch_fmt_str == "BlockwiseFP8":
+        comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
@@ -178,7 +180,7 @@ struct Struct_ep_init:
 
         # Initialize atomic counters to zero for synchronization
         # These counters coordinate work between different thread blocks.
-        __comptime_assert (
+        comptime assert (
             atomic_counters_0.static_spec.to_layout().size()
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 0 size doesn't match expected size."
@@ -190,7 +192,7 @@ struct Struct_ep_init:
         )
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
-        __comptime_assert (
+        comptime assert (
             atomic_counters_1.static_spec.to_layout().size()
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 1 size doesn't match expected size."
@@ -202,22 +204,54 @@ struct Struct_ep_init:
         )
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
-        # Initialize the SHMEM library for this GPU
-        shmem_init_thread(gpu_ctx, n_gpus_per_node)
+        var dispatch_send_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var dispatch_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var dispatch_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        # Allocate SHMEM buffers for dispatch phase
-        var dispatch_send_p = shmem_malloc[DType.uint8](
-            UInt(dispatch_send_size)
-        )
-        var dispatch_recv_p = shmem_malloc[DType.uint8](
-            UInt(dispatch_recv_size)
-        )
-        var dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+        var combine_send_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        # Allocate SHMEM buffers for combine phase
-        var combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
-        var combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
-        var combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+        comptime if n_nodes > 1:
+            # Initialize the SHMEM library for this GPU
+            shmem_init_thread(gpu_ctx, n_gpus_per_node)
+
+            # Allocate SHMEM buffers for dispatch phase
+            dispatch_send_p = shmem_malloc[DType.uint8](
+                UInt(dispatch_send_size)
+            )
+            dispatch_recv_p = shmem_malloc[DType.uint8](
+                UInt(dispatch_recv_size)
+            )
+            dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+
+            # Allocate SHMEM buffers for combine phase
+            combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
+            combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
+            combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+
+        else:
+            if not can_enable_p2p():
+                raise Error("P2P is not supported on this system.")
+            dispatch_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                dispatch_send_size
+            ).take_ptr()
+            dispatch_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                dispatch_recv_size
+            ).take_ptr()
+            dispatch_recv_count_p = gpu_ctx.enqueue_create_buffer[DType.uint64](
+                n_experts
+            ).take_ptr()
+
+            combine_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                combine_send_size
+            ).take_ptr()
+            combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
+                combine_recv_size
+            ).take_ptr()
+            combine_recv_count_p = gpu_ctx.enqueue_create_buffer[DType.uint64](
+                n_experts
+            ).take_ptr()
 
         # Initialize receive count buffers to MAX_FINITE
         # This sentinel value indicates that no data has been received yet
@@ -242,7 +276,12 @@ struct Struct_ep_init:
         dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
 
         # Store current device's rank
-        var my_rank = Int32(shmem_my_pe())
+        var my_rank: Int32
+
+        comptime if n_nodes > 1:
+            my_rank = Int32(shmem_my_pe())
+        else:
+            my_rank = Int32(gpu_ctx.id())
         my_rank_tensor[0] = my_rank
 
 
@@ -280,8 +319,7 @@ struct Struct_ep_dispatch_async:
         transferred in either Blockwise FP8 or BF16 format.
         """
 
-        @parameter
-        if dispatch_fmt_str == "BlockwiseFP8":
+        comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype = DType.float32,
@@ -434,7 +472,7 @@ struct Struct_ep_dispatch_wait:
         var output_tokens_tensor = output_tokens.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens.static_spec.shape.get[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -500,7 +538,7 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
             ),
         )
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens.static_spec.shape.get[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -563,7 +601,7 @@ struct Struct_ep_dispatch_wait_fp8:
         var output_scales_tensor = output_scales.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens_tensor.shape[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -636,7 +674,7 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
         )
 
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens_tensor.shape[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -698,7 +736,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
         var output_scales_tensor = output_scales.to_layout_tensor()
         var scales_offsets_tensor = scales_offsets.to_layout_tensor()
 
-        __comptime_assert (
+        comptime assert (
             output_tokens_tensor.shape[1]() * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -759,7 +797,7 @@ struct Struct_ep_dispatch:
     ) raises:
         """Execute the fused Expert Parallelism dispatch kernel."""
 
-        __comptime_assert dispatch_dtype == DType.bfloat16
+        comptime assert dispatch_dtype == DType.bfloat16
 
         var output_tokens_tensor = output_tokens.to_layout_tensor()
         var format_handler = BF16TokenFormat[hidden_size, top_k](
@@ -1221,7 +1259,7 @@ struct Struct_ep_fused_silu:
         operation on the received tokens.
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tensor = output.to_layout_tensor()
         var input_tensor = input.to_layout_tensor().get_immutable()
@@ -1294,7 +1332,7 @@ struct Struct_ep_fused_silu_fp8:
         will be stored in a transposed way.
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         comptime group_size = 128
 
@@ -1378,7 +1416,7 @@ struct Struct_ep_fused_silu_nvfp4:
         will be padded and zero-filled.
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tensor = output.to_layout_tensor()
         var scales_tensor = scales.to_layout_tensor()

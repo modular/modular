@@ -28,7 +28,6 @@ from max.graph import (
     ops,
 )
 from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.attention.attention_with_rope import distribute_value
 from max.nn.legacy.comm import Allreduce
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
@@ -39,6 +38,7 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
@@ -117,7 +117,9 @@ class _Llama4TextAttention(Module):
         self.has_bias = has_bias
         self.devices = devices
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.local_window_size = local_window_size
         # rope unused for dense layers
@@ -128,7 +130,7 @@ class _Llama4TextAttention(Module):
         self.attn_temperature_tuning = attn_temperature_tuning
         self.qk_norm_eps = qk_norm_eps
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"
                 " in Attention layer."
@@ -347,7 +349,13 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         signal_buffers: list[BufferValue] = kwargs["signal_buffers"]
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
-        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+        if not input_row_offsets.device == self.devices[0]:
+            raise ValueError(
+                f"input_row_offsets must be located on {self.devices[0]}"
+            )
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets, signal_buffers
+        )
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](

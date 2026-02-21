@@ -45,8 +45,7 @@ def test_rng_rand_scalar():
             assert_true(value >= min)
             assert_true(value <= max)
 
-    @parameter
-    for dtype in [
+    comptime for dtype in [
         DType.uint,
         DType.uint8,
         DType.uint16,
@@ -65,8 +64,7 @@ def test_rng_rand_scalar():
 
         test_dtype[dtype](scalar.MIN_FINITE, scalar.MAX_FINITE)
 
-        @parameter
-        if dtype.is_signed():
+        comptime if dtype.is_signed():
             test_dtype[dtype](scalar(-10), scalar(10))
         else:
             test_dtype[dtype](scalar(10), scalar(20))

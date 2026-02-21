@@ -37,7 +37,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
     max_entries_per_warp: UInt32,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """
     This struct manages the profiling workspace. The workspaces consists of equal sized chunks, the total number of
     which is equal to the total number of active SMs. Each SM chunk consists of sequences of entries, with a maximum
@@ -66,8 +66,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @staticmethod
     @parameter
     fn _get_warp_count[warp_role: UInt32]() -> UInt32:
-        @parameter
-        if warp_role == 0:
+        comptime if warp_role == 0:
             return Self.load_warps
         elif warp_role == 1:
             return Self.scheduler_warps
@@ -215,14 +214,12 @@ struct BlackwellProfileWarp[
 
     @always_inline
     fn __enter__(mut self):
-        @parameter
-        if Self.enable_profiling:
+        comptime if Self.enable_profiling:
             self.timeline[0] = global_perf_counter_ns()
 
     @always_inline
     fn __exit__(mut self):
-        @parameter
-        if Self.enable_profiling:
+        comptime if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
             Self.WorkspaceManager.write_to_workspace[Self.warp_role](
                 UInt32(sm_id()),

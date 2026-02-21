@@ -130,8 +130,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         if len(self) != len(other):
             return False
-        for e in self:
-            if e not in other:
+        # Iterate over dict entries directly to reuse cached hash values,
+        # avoiding redundant hash recomputation for each lookup in `other`.
+        for entry in self._data.items():
+            if not other._data._find_slot(entry.hash, entry.key)[0]:
                 return False
         return True
 
@@ -234,7 +236,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict superset of the `other` set, False otherwise.
         """
-        return self >= other and self != other
+        return len(self) > len(other) and other.issubset(self)
 
     fn __lt__(self, other: Self) -> Bool:
         """Overloads the < operator for strict subset comparison of sets.
@@ -245,7 +247,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict subset of the `other` set, False otherwise.
         """
-        return self <= other and self != other
+        return len(self) < len(other) and self.issubset(other)
 
     fn __xor__(self, other: Self) -> Self:
         """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
@@ -337,8 +339,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         fn iterate(mut w: Some[Writer]) raises StopIteration:
             ref element = iterator.__next__()
 
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](element).write_repr_to(w)
             else:
                 trait_downcast[Writable](element).write_to(w)
@@ -620,14 +621,4 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         This method modifies the set in-place, removing all of its elements.
         After calling this method, the set will be empty.
         """
-        for _ in range(len(self)):
-            # Can't fail from an empty set
-            try:
-                _ = self.pop()
-            except:
-                pass
-
-        #! This code below (without using range function) won't pass tests
-        #! It leaves set with one remaining item. Is this a bug?
-        # for _ in self:
-        #     var a = self.pop()
+        self._data.clear()

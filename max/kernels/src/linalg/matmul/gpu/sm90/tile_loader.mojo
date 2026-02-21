@@ -34,12 +34,17 @@ from gpu.memory import (
 from ....structuring import SharedMemBarrier, SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
 from gpu import thread_idx
+from gpu.globals import WARPGROUP_SIZE
+from gpu.sync import async_copy_arrive
+from ..sm100_structured.structured_kernels.pipeline import (
+    ProducerConsumerPipeline,
+)
 from sys import simd_width_of
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-trait TileLoader(TrivialRegisterType):
+trait TileLoader(TrivialRegisterPassable):
     """Base trait for tile loading mechanisms in matrix multiplication.
 
     This trait defines the interface for loading tiles from global memory
@@ -63,6 +68,106 @@ trait TileLoader(TrivialRegisterType):
             coords: Tile coordinates (row, column) in the source matrix.
         """
         ...
+
+
+trait BarrierHandler(TrivialRegisterPassable):
+    """Handles barrier lifecycle for different transfer mechanisms.
+
+    Separates barrier management from tile loading:
+    - prepare_stage: Called once before loading tiles for a stage.
+    - complete_stage: Called once after all tiles for a stage are loaded.
+
+    TMA: prepare sets expected bytes, complete is noop (hardware signals).
+    cp.async: prepare is noop, complete commits copies and signals arrival.
+    """
+
+    @always_inline
+    fn prepare_stage(self, mem_barrier: SMemBarrier):
+        """Prepare barrier for incoming transfers.
+
+        For TMA: sets expected transaction bytes.
+        For cp.async: noop.
+
+        Args:
+            mem_barrier: The stage's memory barrier.
+        """
+        ...
+
+    @always_inline
+    fn complete_stage(self, mem_barrier: SMemBarrier):
+        """Signal that all transfers for this stage are done.
+
+        For TMA: noop (hardware auto-signals).
+        For cp.async: commits pending copies and signals thread arrival.
+
+        Args:
+            mem_barrier: The stage's memory barrier.
+        """
+        ...
+
+
+struct TMABarrierHandler[expected_bytes: Int](BarrierHandler):
+    """TMA barrier handler: sets expected bytes on prepare, noop on complete.
+
+    Initializes the pipeline on construction (phase=0, barrier counts).
+
+    Parameters:
+        expected_bytes: Total bytes expected per stage across all loaders.
+    """
+
+    fn __init__[
+        num_stages: Int
+    ](
+        out self,
+        mut pipeline: ProducerConsumerPipeline[num_stages],
+        num_consumers: Int,
+        cluster_size: Int,
+    ):
+        pipeline._producer_phase = 0
+        if thread_idx.x == 0:
+            pipeline.init_mbars(
+                producer_arrive_count=1,
+                consumer_arrive_count=Int32(num_consumers * cluster_size),
+            )
+
+    @always_inline
+    fn prepare_stage(self, mem_barrier: SMemBarrier):
+        mem_barrier[].expect_bytes(Int32(Self.expected_bytes))
+
+    @always_inline
+    fn complete_stage(self, mem_barrier: SMemBarrier):
+        pass
+
+
+struct CPAsyncBarrierHandler(BarrierHandler):
+    """The cp.async barrier handler: noop on prepare, arrives on complete.
+
+    Initializes the pipeline on construction (phase=0, barrier counts).
+    """
+
+    fn __init__[
+        num_stages: Int
+    ](
+        out self,
+        mut pipeline: ProducerConsumerPipeline[num_stages],
+        num_consumers: Int,
+        cluster_size: Int,
+    ):
+        pipeline._producer_phase = 0
+        if thread_idx.x == 0:
+            pipeline.init_mbars(
+                producer_arrive_count=Int32(WARPGROUP_SIZE),
+                consumer_arrive_count=Int32(num_consumers * cluster_size),
+            )
+
+    @always_inline
+    fn prepare_stage(self, mem_barrier: SMemBarrier):
+        pass
+
+    @always_inline
+    fn complete_stage(self, mem_barrier: SMemBarrier):
+        async_copy_arrive(mem_barrier)
+        _ = mem_barrier[].arrive()
 
 
 struct TileLoaderTMA[
@@ -147,12 +252,10 @@ struct TileLoaderTMA[
         comptime tma_load_size = Self.desc_layout.size()
         comptime tma_rows = Self.desc_layout.shape[0].value()
 
-        @parameter
-        if Self.cluster_size > 1:
+        comptime if Self.cluster_size > 1:
             # Multi-block cluster: Use multicast to share data across blocks
 
-            @parameter
-            if Self.use_partitioned_multicast:
+            comptime if Self.use_partitioned_multicast:
                 # Partitioned multicast: Each block loads a portion of the tile
                 # This is more efficient for large tiles as it distributes the load
                 self.tma_op[].async_multicast_load_partitioned[
@@ -211,7 +314,7 @@ struct TileLoaderCPAsync[
     var src: LayoutTensor[
         Self.dtype,
         Self.src_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ]
 
@@ -221,7 +324,7 @@ struct TileLoaderCPAsync[
         src: LayoutTensor[
             Self.dtype,
             Self.src_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
     ):
@@ -282,7 +385,7 @@ fn async_copy_with_bound_check[
     src: LayoutTensor[
         dtype,
         src_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
@@ -365,8 +468,7 @@ fn async_copy_with_bound_check[
     comptime num_vecs = dst_frag.layout.size()
 
     # Process each vector element assigned to this thread
-    @parameter
-    for i in range(num_vecs):
+    comptime for i in range(num_vecs):
         # Apply swizzling to the destination index to avoid bank conflicts
         comptime dst_idx = dst_frag.layout(i)
         comptime dst_idx_base = dst_idx % swizzle.size()

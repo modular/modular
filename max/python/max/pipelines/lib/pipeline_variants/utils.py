@@ -74,15 +74,18 @@ def update_context_and_prepare_responses(
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
 ) -> dict[RequestID, TextGenerationOutput]:
-    """
-    Update the context objects and prepare the response objects for each context in the batch after generation.
+    """Updates context objects and prepares response objects after generation.
 
     Args:
-        generated_tokens_host: Array of generated tokens on the host, indexed as [batch, step].
-        batch_log_probabilities: List of per-step log probability outputs (or None), each entry is a list per batch for that step.
-        flat_batch: List of generation contexts, one per request, matching batch dimension.
+        generated_tokens_host: Array of generated tokens on the host, indexed
+            as [batch, step].
+        flat_batch: List of generation contexts, one per request, matching
+            batch dimension.
         num_steps: Number of generation steps to process for each context.
+        batch_log_probabilities: List of per-step log probability outputs (or
+            None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
+        overwrite_future: Whether to overwrite future tokens in the context.
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.
@@ -129,6 +132,15 @@ def update_context_and_prepare_responses(
 
 
 def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
+    """Returns the set of end-of-sequence token IDs from config or fallback.
+
+    Args:
+        hf_config: HuggingFace model configuration.
+        eos_token_id: Default EOS token id when not present in config.
+
+    Returns:
+        Set of EOS token ids to use for generation.
+    """
     # Expand eos tokens if more are provided in pipeline_config
     if "eos_token_id" not in hf_config:
         return set([eos_token_id])
@@ -151,6 +163,14 @@ def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
 
 
 def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
+    """Resolves local paths or downloads weight files for the model config.
+
+    Args:
+        model_config: Model configuration containing weight repo and paths.
+
+    Returns:
+        List of paths to weight files (local or downloaded).
+    """
     weight_repo = model_config.huggingface_weight_repo
     if weight_repo.repo_type == RepoType.online:
         # Download weight files if not existent.

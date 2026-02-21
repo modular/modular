@@ -21,7 +21,7 @@ import numpy as np
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
-from .types import SampledRequest
+from .types import RequestSamples, SampledRequest
 
 
 class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
@@ -48,7 +48,7 @@ class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         """Sample requests from an Axolotl-formatted dataset.
         The dataset should be in the following JSON format:
         [
@@ -74,7 +74,7 @@ class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
             tokenizer: Tokenizer for computing token lengths
             output_lengths: Optional list of request lengths for outputs
         Returns:
-            List of SampledRequest objects
+            Sampled requests
         """
         assert self.dataset_path is not None, (
             "dataset_path must be provided for AxolotlBenchmarkDataset"
@@ -118,4 +118,4 @@ class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
                     ignore_eos=(output_len is not None),
                 )
             )
-        return sampled_requests
+        return RequestSamples(requests=sampled_requests)

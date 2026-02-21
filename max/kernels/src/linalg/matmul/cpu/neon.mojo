@@ -56,7 +56,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -75,27 +75,22 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             uninitialized=True
         )
 
-        @parameter
-        for row in range(kernel_rows):
+        comptime for row in range(kernel_rows):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](
                 IndexList[2](global_m, global_k)
             ).cast[c_local.dtype]()
             a_vals[row] = a_val
 
-        @parameter
-        for lane in range(a_col_size):
-
-            @parameter
-            for col in range(kernel_cols // simd_size):
+        comptime for lane in range(a_col_size):
+            comptime for col in range(kernel_cols // simd_size):
                 var b_val = (
                     (b_ptr + col * simd_size)
                     .load[width=simd_size]()
                     .cast[c_local.dtype]()
                 )
 
-                @parameter
-                for row in range(kernel_rows):
+                comptime for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_val = c_local[row, col]
                     c_val = fma[dtype = c_local.dtype, width=simd_size](
@@ -123,7 +118,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         var c_stride = c.dim[1]()
 

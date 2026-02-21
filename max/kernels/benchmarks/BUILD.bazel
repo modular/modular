@@ -53,6 +53,7 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3161
+    "gpu/bench_blockwise_fp8_1d2d.mojo": ["//:b200_gpu"],  # SM100-specific blockwise FP8
     "gpu/bench_bmm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -61,6 +62,8 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3161
+    "gpu/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
+    "gpu/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
 }
 
 _CPU_TESTS = glob(

@@ -26,8 +26,7 @@ fn _to_StaticTuple[
 
     var res = StaticTuple[Scalar[dtype], size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
@@ -39,8 +38,7 @@ fn _to_SIMD[
     """Convert StaticTuple to SIMD."""
     var res = SIMD[dtype, size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
@@ -69,10 +67,10 @@ fn calculate_symmetric_vector[
       A vector of the quantized values.
       The associated scale factor.
     """
-    __comptime_assert (
+    comptime assert (
         output_bits >= 1 and output_bits <= 8
     ), "expected a scalar type"
-    __comptime_assert (
+    comptime assert (
         input_dtype.is_floating_point()
     ), "expect accumulating over floating point only."
     var max_value = data.reduce_max()
@@ -88,13 +86,15 @@ fn calculate_symmetric_vector[
     # data is ~[1, 1, 1, 1] + `negative_steps`
     var f32_scale = (max_value / 1.0) if (
         result_range == 0
-    ) else result_range / positive_steps
+    ) else result_range / Scalar[input_dtype](positive_steps)
 
     # TODO: consider clipping values
     var data_rounded = round(data / f32_scale).cast[DType.int8]()
 
     # each bit pattern in `data_quantized`
-    var data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
+    var data_quantized = (data_rounded + Int8(negative_steps)).cast[
+        DType.uint8
+    ]()
 
     return data_quantized, f32_scale
 
@@ -137,15 +137,15 @@ struct Q4sym[
     @always_inline
     fn _check_constraints():
         # TODO
-        __comptime_assert (
+        comptime assert (
             Self.group_size.is_power_of_two()
         ), "`group_size` must be a power of 2."
-        __comptime_assert (
+        comptime assert (
             Self.group_size == 8
             or Self.group_size == 16
             or Self.group_size == 32
         ), "Only support some `group_sizes`"
-        __comptime_assert (
+        comptime assert (
             Self.float_dtype.is_floating_point()
         ), "Must be floating point type"
 
@@ -286,7 +286,7 @@ struct Q4sym[
                     ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
-        __comptime_assert (
+        comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
         # TODO: check contiguous inputs and outputs
@@ -360,7 +360,7 @@ struct Q4sym[
             output_tensor: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
-        __comptime_assert (
+        comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
         # Read and dequantize `input_tensor` which are the bytes of the raw
@@ -479,8 +479,7 @@ fn q4_k_dequantize_impl(
         var b_min = src_ptr[].base_min.cast[DType.float32]()
 
         # Process 2 groups at a time to load 6-bit scales/mins.
-        @parameter
-        for group_idx in range(0, block_Q4_K.group_count, 2):
+        comptime for group_idx in range(0, block_Q4_K.group_count, 2):
             var q_scale: Float32
             var q_min: Float32
 
@@ -498,8 +497,7 @@ fn q4_k_dequantize_impl(
             var dst_idx = group_idx * group_nelems
 
             # Dequantize 1st group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + elem_idx] = (
                     d1
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] & 0xF).cast[
@@ -509,8 +507,7 @@ fn q4_k_dequantize_impl(
                 )
 
             # Dequantize 2nd group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + group_nelems + elem_idx] = (
                     d2
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] >> 4).cast[
@@ -562,11 +559,8 @@ fn q6_k_dequantize_impl(
         var sc = src_ptr[].q_scales.unsafe_ptr()
 
         # Process 8 groups at a time.
-        @parameter
-        for _ in range(0, block_Q6_K.group_count, 8):
-
-            @parameter
-            for l in range(32):
+        comptime for _ in range(0, block_Q6_K.group_count, 8):
+            comptime for l in range(32):
                 var sc_idx = l // 16
                 var q1 = ((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)).cast[
                     DType.int8

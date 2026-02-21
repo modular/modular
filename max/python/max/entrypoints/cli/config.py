@@ -27,6 +27,7 @@ from pathlib import Path
 from types import SimpleNamespace, UnionType
 from typing import (
     Any,
+    Literal,
     TypeGuard,
     TypeVar,
     Union,
@@ -109,6 +110,9 @@ def validate_field_type(field_type: Any) -> bool:
     if get_origin(test_type) is dict:
         return True
 
+    if get_origin(test_type) is Literal:
+        return True
+
     for valid_type in VALID_CONFIG_TYPES:
         if valid_type == test_type:
             return True
@@ -133,6 +137,10 @@ def get_field_type(field_type: Any):  # noqa: ANN201
         field_type = click.Path(path_type=pathlib.Path)
     elif get_origin(field_type) is dict or field_type is dict:
         field_type = JSONType()
+    elif get_origin(field_type) is Literal:
+        field_type = click.Choice(
+            [str(v) for v in get_args(field_type)], case_sensitive=False
+        )
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)
@@ -265,6 +273,7 @@ def config_to_flag(
     cls: type[BaseModel], prefix: str | None = None
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
+    param_names: set[str] = set()
     help_text = {
         field_name: field_info.description
         for field_name, field_info in cls.model_fields.items()
@@ -296,16 +305,53 @@ def config_to_flag(
             new_option = create_click_option(
                 help_text, modified_field, field_type
             )
+            param_names.add(new_name)
         else:
             new_option = create_click_option(help_text, _field, field_type)
+            param_names.add(original_name)
         options.append(new_option)
 
     def apply_flags(func: Callable[_P, _R]) -> Callable[_P, _R]:
+        @functools.wraps(func)
+        def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            ctx = click.get_current_context(silent=True)
+            if ctx is not None and _config_file_is_set(ctx, kwargs):
+                kwargs = _strip_default_params(ctx, kwargs, param_names)  # type: ignore[assignment]
+            return func(*args, **kwargs)
+
         for option in reversed(options):
-            func = option(func)
-        return func
+            wrapped = option(wrapped)  # type: ignore[assignment]
+        return wrapped
 
     return apply_flags
+
+
+def _config_file_is_set(ctx: click.Context, params: dict[str, Any]) -> bool:
+    source = ctx.get_parameter_source("config_file")
+    if source is None or source is click.core.ParameterSource.DEFAULT:
+        return False
+    return params.get("config_file") is not None
+
+
+def _strip_default_params(
+    ctx: click.Context,
+    params: dict[str, Any],
+    names: set[str],
+) -> dict[str, Any]:
+    # Strip Click defaults for config_to_flag fields so that
+    # ConfigFileModel.load_config_file can fill them from the YAML.
+    # Safe because Click defaults originate from Pydantic field defaults,
+    # so for fields absent from the config file Pydantic recovers the
+    # same default.
+    return {
+        name: value
+        for name, value in params.items()
+        if not (
+            name in names
+            and ctx.get_parameter_source(name)
+            is click.core.ParameterSource.DEFAULT
+        )
+    }
 
 
 def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -383,9 +429,11 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
             )
             set_virtual_device_count(virtual_count)
 
-        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
+        # The type ignores are necessary because "devices" is a str, but in
+        # device_specs() we accept them as a DeviceHandle.
+        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)  # type: ignore[arg-type]
         kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
-            draft_devices
+            draft_devices  # type: ignore[arg-type]
         )
 
         return func(*args, **kwargs)

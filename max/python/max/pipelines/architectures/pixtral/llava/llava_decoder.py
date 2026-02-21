@@ -23,9 +23,10 @@ from max.nn.legacy.layer import Layer, LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.transformer import ReturnLogits, TransformerBlock
+from max.nn.legacy.transformer.transformer import LogitsPostprocessMixin
 
 
-class Transformer(Module):
+class Transformer(LogitsPostprocessMixin, Module):
     """Transformer model consisting for TransformerBlock layers.
 
     The differences between this transformer and the transformer in nn:
@@ -91,43 +92,4 @@ class Transformer(Module):
                 input_row_offsets=input_row_offsets,
             )
 
-        # Retrieve a variable number of tokens
-        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                return_n_logits[0],
-                0,
-                -1,
-                out_dim="return_n_logits_range",
-                device=h.device,
-                dtype=DType.int64,
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            last_tokens = ops.gather(h, last_indices, axis=0)
-            logits = ops.cast(
-                self.lm_head(self.norm(last_tokens)), DType.float32
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                device=h.device,
-                dtype=DType.int64,
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
-            offsets = input_row_offsets
-
-        if offsets is not None:
-            assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
+        return self._postprocess_logits(h, input_row_offsets, return_n_logits)

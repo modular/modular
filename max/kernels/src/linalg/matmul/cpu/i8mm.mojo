@@ -61,11 +61,8 @@ struct LoadStore_i8mm[
     ):
         var c_ptr_loc = c_ptr + tile_n_idx
 
-        @parameter
-        for idx0 in range(Self.tile_rows):
-
-            @parameter
-            for idx1 in range(Self.tile_columns // Self.simd_size):
+        comptime for idx0 in range(Self.tile_rows):
+            comptime for idx1 in range(Self.tile_columns // Self.simd_size):
                 var c_data: SIMD[Self.dtype, Self.simd_size] = 0
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
@@ -108,11 +105,8 @@ struct LoadStore_i8mm[
     ):
         var c_ptr_loc = c_ptr + tile_n_idx
 
-        @parameter
-        for idx0 in range(Self.tile_rows):
-
-            @parameter
-            for idx1 in range(Self.tile_columns // Self.simd_size):
+        comptime for idx0 in range(Self.tile_rows):
+            comptime for idx1 in range(Self.tile_columns // Self.simd_size):
                 var c_data = self.output_tile[idx0, idx1]
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
@@ -121,8 +115,7 @@ struct LoadStore_i8mm[
                         c_data.slice[2](),
                     )
 
-                    @parameter
-                    if not Self.single_row:
+                    comptime if not Self.single_row:
                         (
                             c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1)
                         ).store(
@@ -136,8 +129,7 @@ struct LoadStore_i8mm[
                         c_data.slice[2](),
                     )
 
-                    @parameter
-                    if not Self.single_row:
+                    comptime if not Self.single_row:
                         partial_simd_store(
                             c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1),
                             0,
@@ -176,7 +168,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
@@ -192,24 +184,19 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
-        __comptime_assert simd_size == 4
+        comptime assert simd_size == 4
 
-        @parameter
-        if prefetch_distance > 0:
+        comptime if prefetch_distance > 0:
             comptime prefetch_offset = prefetch_distance * kernel_cols
 
-            @parameter
-            for idx in range(kernel_cols // simd_size):
+            comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # Loop over local accumulator tiles.
-        @parameter
-        for idx0 in range(kernel_rows):
-
-            @parameter
-            for idx1 in range(kernel_cols // simd_size):
+        comptime for idx0 in range(kernel_rows):
+            comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = (b_ptr + 16 * idx1).load[
@@ -237,7 +224,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
         comptime single_row = (kernel_rows == 1)

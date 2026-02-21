@@ -20,7 +20,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from layout._coord import Coord, CoordLike, coord_to_index_list
 from layout._tile_tensor import TileTensor
-from layout._layout import row_major
+from layout._layout import row_major, TensorLayout
 
 from utils import IndexList, StaticTuple
 
@@ -30,8 +30,7 @@ from utils import IndexList, StaticTuple
 
 
 fn split[
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     //,
     dtype: DType,
     num_outputs: Int,
@@ -42,26 +41,18 @@ fn split[
     input: TileTensor[dtype, ...],
     axis: Int,
     outputs: StaticTuple[
-        TileTensor[
-            shape_types=output_shape_types,
-            stride_types=output_stride_types,
-            dtype,
-            output_origin,
-        ],
+        TileTensor[dtype, OutputLayoutType, output_origin],
         num_outputs,
     ],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
-        input.rank == outputs[0].rank
+    comptime assert (
+        input.rank == OutputLayoutType.rank
     ), "Input and outputs must have the same rank."
 
     # check inputs have same rank and same dims except for axis dim
-    @parameter
-    for i in range(num_outputs):
-
-        @parameter
-        for j in range(input.rank):
+    comptime for i in range(num_outputs):
+        comptime for j in range(input.rank):
             if j != axis and outputs[0].dim[j]() != outputs[i].dim[j]():
                 raise Error(
                     "all split outputs must have the same dimensions in the"
@@ -70,8 +61,7 @@ fn split[
 
     var output_sizes = IndexList[num_outputs]()
 
-    @parameter
-    for i in range(num_outputs):
+    comptime for i in range(num_outputs):
         output_sizes[i] = Int(outputs[i].dim(axis))
 
     @__copy_capture(output_sizes)
@@ -89,16 +79,14 @@ fn split[
         var axis_output_dim = input_coords[axis]
 
         # First determine which output we should write to
-        @parameter
-        for i in range(num_outputs):
+        comptime for i in range(num_outputs):
             if axis_output_dim < output_sizes[i]:
                 break
             axis_output_dim -= output_sizes[i]
             output_idx += 1
 
         # Then derive the output coordinate
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             if i == axis:
                 output_coords[i] = axis_output_dim
             else:
@@ -126,11 +114,11 @@ fn split[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(input.layout.shape), ctx)
+        ](coord_to_index_list(input.layout.shape_coord()), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(input.layout.shape), ctx)
+        ](coord_to_index_list(input.layout.shape_coord()), ctx)

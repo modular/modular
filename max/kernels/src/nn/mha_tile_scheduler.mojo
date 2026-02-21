@@ -26,7 +26,7 @@ from builtin.device_passable import DevicePassable
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -61,7 +61,7 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
         )
 
 
-struct SeqInfo(TrivialRegisterType):
+struct SeqInfo(TrivialRegisterPassable):
     var seq_len: UInt32
     var start_of_seq: UInt32
     var prompt_offset: UInt32
@@ -94,8 +94,7 @@ struct SeqInfo(TrivialRegisterType):
     ) -> SeqInfo:
         var batch_idx: UInt32 = work.prompt_idx
 
-        @parameter
-        if not ValidLengthType.is_null:
+        comptime if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
             ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
                 valid_length.value()
@@ -111,7 +110,7 @@ struct SeqInfo(TrivialRegisterType):
 
 
 @fieldwise_init
-struct MHASchedulerSynchronization(TrivialRegisterType):
+struct MHASchedulerSynchronization(TrivialRegisterPassable):
     var _value: Int32
 
     comptime NONE = Self(0)  # use for TMA
@@ -130,7 +129,7 @@ struct MHASchedulerSynchronization(TrivialRegisterType):
 
 # This class is constructed within the fully inlined kernel,
 # so unneeded fields can be optimized away.
-struct MHATileState(TrivialRegisterType):
+struct MHATileState(TrivialRegisterPassable):
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
     var sidx_ptr: UnsafePointer[
@@ -160,7 +159,9 @@ struct MHATileState(TrivialRegisterType):
         return self.is_valid(self.idx)
 
 
-struct MHATileSummary[ValidLengthType: OptionalPointer](TrivialRegisterType):
+struct MHATileSummary[ValidLengthType: OptionalPointer](
+    TrivialRegisterPassable
+):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
@@ -188,8 +189,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](TrivialRegisterType):
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         """Map the thread block's index to coordinates of work tile."""
 
-        @parameter
-        if schedule == MHASchedule.PROMPT_ROTATE:
+        comptime if schedule == MHASchedule.PROMPT_ROTATE:
             return self._index_to_coords_prompt_rotate[num_heads](idx)
 
         return self._index_to_coords_default[num_heads](idx)
@@ -328,7 +328,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](TrivialRegisterType):
         return self.unsafe_seq_info[tile_shape, num_heads, schedule](state.idx)
 
 
-trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterType):
+trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
     comptime may_advance: Bool
     comptime mha_schedule: MHASchedule
 
@@ -394,7 +394,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct MHASchedule(TrivialRegisterType):
+struct MHASchedule(TrivialRegisterPassable):
     var _value: Int32
 
     comptime DEFAULT = Self(0)
@@ -417,7 +417,7 @@ struct MHASchedule(TrivialRegisterType):
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](Defaultable, MHATileScheduler, TrivialRegisterType):
+](Defaultable, MHATileScheduler, TrivialRegisterPassable):
     comptime may_advance: Bool = False
     comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -514,7 +514,7 @@ struct TileScheduler[
     /,
     num_ctas: UInt32 = UInt32(H100.sm_count),
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](Defaultable, MHATileScheduler, TrivialRegisterType):
+](Defaultable, MHATileScheduler, TrivialRegisterPassable):
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
 
@@ -630,7 +630,7 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = UInt32(H100.sm_count),
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](DevicePassable, MHATileScheduler, TrivialRegisterType):
+](DevicePassable, MHATileScheduler, TrivialRegisterPassable):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.
@@ -679,16 +679,13 @@ struct QueuedTileScheduler[
         Note that if `MHASchedulerSynchronization` is `NONE`, then we assume it is only called by `thread_idx.x==0`.
         """
 
-        @parameter
-        if producer:
+        comptime if producer:
             if thread_idx.x == 0:
                 var idx: UInt32
                 while True:
                     idx = Atomic.fetch_add(self.gidx_ptr, 1)
                     if not state.is_valid(idx):
-
-                        @parameter
-                        if sync == MHASchedulerSynchronization.NONE:
+                        comptime if sync == MHASchedulerSynchronization.NONE:
                             state.idx = idx
                             state.sidx_ptr.store(offset=pipeline_idx, val=idx)
                             return None
@@ -699,12 +696,9 @@ struct QueuedTileScheduler[
                         Self.tile_shape, Self.num_heads, Self.schedule
                     ](idx)
 
-                    @parameter
-                    if not Self.decoding:
+                    comptime if not Self.decoding:
                         if seq_info.is_valid():
-
-                            @parameter
-                            if sync == MHASchedulerSynchronization.NONE:
+                            comptime if sync == MHASchedulerSynchronization.NONE:
                                 state.idx = idx
                                 state.sidx_ptr.store(
                                     offset=pipeline_idx, val=idx
@@ -717,12 +711,10 @@ struct QueuedTileScheduler[
                 state.sidx_ptr.store(offset=pipeline_idx, val=idx)
 
             # producer needs to sync before loading
-            @parameter
-            if sync == MHASchedulerSynchronization.PRODUCER:
+            comptime if sync == MHASchedulerSynchronization.PRODUCER:
                 named_barrier[128,](id=1)
 
-        @parameter
-        if sync == MHASchedulerSynchronization.ALL:
+        comptime if sync == MHASchedulerSynchronization.ALL:
             barrier()
 
         # when !ALL, consumers rely on `async_copy_arrive`

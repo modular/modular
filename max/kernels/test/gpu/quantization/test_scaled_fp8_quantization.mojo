@@ -23,6 +23,7 @@ from linalg.fp8_quantization import (
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from sys import has_nvidia_gpu_accelerator
 from testing import assert_equal
 
 from utils import Index, IndexList
@@ -208,8 +209,7 @@ fn test_dynamic_fp8_quant[
 
             var scale_factor: Scalar[scales_dtype]
 
-            @parameter
-            if scales_dtype == DType.float8_e8m0fnu:
+            comptime if scales_dtype == DType.float8_e8m0fnu:
                 scale_factor = max(
                     group_max.cast[accum_dtype]()
                     / Scalar[out_dtype].MAX_FINITE.cast[accum_dtype](),
@@ -532,27 +532,29 @@ def main():
             K = Int(544),
         ](ctx, 128, 1024, 544)
 
-        test_dynamic_fp8_quant[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
-            DType.float8_e8m0fnu,
-            128,
-            M=None,
-            N = Int(1024),
-        ](ctx, 43, 1024)
-        test_dynamic_fp8_quant[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
-            DType.float8_e8m0fnu,
-            128,
-            M=None,
-            N = Int(16384),
-        ](ctx, 3, 16384)
-        test_dynamic_fp8_quant[
-            DType.float8_e4m3fn,
-            DType.float32,
-            DType.float8_e8m0fnu,
-            128,
-            M=None,
-            N = Int(576),
-        ](ctx, 1, 576)
+        # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
+        comptime if has_nvidia_gpu_accelerator():
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                DType.float8_e8m0fnu,
+                128,
+                M=None,
+                N = Int(1024),
+            ](ctx, 43, 1024)
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                DType.float8_e8m0fnu,
+                128,
+                M=None,
+                N = Int(16384),
+            ](ctx, 3, 16384)
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fn,
+                DType.float32,
+                DType.float8_e8m0fnu,
+                128,
+                M=None,
+                N = Int(576),
+            ](ctx, 1, 576)

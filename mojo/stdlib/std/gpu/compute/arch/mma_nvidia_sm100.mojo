@@ -29,7 +29,9 @@ from hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-struct UMMAKind(Hashable, Stringable, TrivialRegisterType, Writable):
+struct UMMAKind(
+    Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable
+):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -143,7 +145,7 @@ fn _constrained_mma_m[
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    __comptime_assert mma_m in mma_m_valid, String(
+    comptime assert mma_m in mma_m_valid, String(
         "Invalid MMA M: ",
         mma_m,
         " , MMA M has to be ",
@@ -178,7 +180,7 @@ fn _constrained_mma_n[
     comptime lower_bound = mma_n_range[0]
     comptime upper_bound = mma_n_range[1]
 
-    __comptime_assert (
+    comptime assert (
         mma_n >= lower_bound
         and mma_n <= upper_bound
         and mma_n % multiple_of == 0
@@ -211,8 +213,7 @@ fn _get_f16_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_cta_pair:
+    comptime if not use_cta_pair:
         _constrained_mma_m[
             mma_m,
             (64, 128),
@@ -220,8 +221,7 @@ fn _get_f16_mma_shape[
             use_cta_pair=use_cta_pair,
         ]()
 
-        @parameter
-        if mma_m == 64:
+        comptime if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -253,8 +253,7 @@ fn _get_f16_mma_shape[
             use_cta_pair=use_cta_pair,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (32, 256),
@@ -295,8 +294,7 @@ fn _get_tf32_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_pair_cta:
+    comptime if not use_pair_cta:
         _constrained_mma_m[
             mma_m,
             (64, 128),
@@ -304,8 +302,7 @@ fn _get_tf32_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 64:
+        comptime if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -337,8 +334,7 @@ fn _get_tf32_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (32, 256),
@@ -379,8 +375,7 @@ fn _get_f8f6f4_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_pair_cta:
+    comptime if not use_pair_cta:
         _constrained_mma_m[
             mma_m,
             (64, 128),
@@ -388,8 +383,7 @@ fn _get_f8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 64:
+        comptime if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -423,8 +417,7 @@ fn _get_f8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (32, 256),
@@ -465,8 +458,7 @@ fn _get_mxf8f6f4_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_pair_cta:
+    comptime if not use_pair_cta:
         _constrained_mma_m[
             mma_m,
             (128, -1),
@@ -474,8 +466,7 @@ fn _get_mxf8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -499,8 +490,7 @@ fn _get_mxf8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (16, 256),
@@ -528,7 +518,7 @@ fn _get_mxf8f6f4_mma_shape[
 
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Descriptor for UMMA instructions.
 
     This struct represents a descriptor that encodes information about UMMA instructions.
@@ -619,7 +609,7 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        __comptime_assert (
+        comptime assert (
             d_type == DType.float32
             and a_type == DType.float32
             and b_type == DType.float32
@@ -658,11 +648,11 @@ struct UMMAInsDescriptor[
         comptime available_d_types = (DType.float32, DType.float16)
         comptime available_operand_types = (DType.bfloat16, DType.float16)
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -707,11 +697,11 @@ struct UMMAInsDescriptor[
             DType.float8_e5m2,
         )
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -888,8 +878,7 @@ struct UMMAInsDescriptor[
             transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
-        @parameter
-        if Self.mma_kind == UMMAKind.KIND_TF32:
+        comptime if Self.mma_kind == UMMAKind.KIND_TF32:
             return Self(
                 desc
                 | Self._create_tf32_desc[d_type, a_type, b_type]()
@@ -956,8 +945,7 @@ struct UMMAInsDescriptor[
             transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
-        @parameter
-        if Self.mma_kind == UMMAKind.KIND_MXF8F6F4:
+        comptime if Self.mma_kind == UMMAKind.KIND_MXF8F6F4:
             return Self(
                 desc
                 | Self._create_mxf8f6f4_desc[
@@ -1009,7 +997,7 @@ struct UMMAInsDescriptor[
 # ===----------------------------------------------------------------------=== #
 
 
-struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
+struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1096,8 +1084,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
         fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
-            @parameter
-            if mode == TensorMapSwizzle.SWIZZLE_NONE:
+            comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
             elif mode == TensorMapSwizzle.SWIZZLE_32B:
                 return 6
@@ -1161,7 +1148,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
         return Self(self.desc + UInt64((offset >> 4) & Self.mask_14_bits))
 
 
-struct MMASmemDescriptorPair(TrivialRegisterType):
+struct MMASmemDescriptorPair(TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1226,8 +1213,7 @@ struct MMASmemDescriptorPair(TrivialRegisterType):
             Updated descriptor value with inserted bits.
         """
 
-        @parameter
-        if start_bit < 32:
+        comptime if start_bit < 32:
             return Self(self.hi, self.lo | (val << UInt32(start_bit)))
         else:
             return Self(self.hi | (val << UInt32(start_bit - 32)), self.lo)
@@ -1257,8 +1243,7 @@ struct MMASmemDescriptorPair(TrivialRegisterType):
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
         fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
-            @parameter
-            if mode == TensorMapSwizzle.SWIZZLE_NONE:
+            comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
             elif mode == TensorMapSwizzle.SWIZZLE_32B:
                 return 6
@@ -1354,16 +1339,15 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         var masks = IndexList[4, element_type = DType.uint32](0)
 
         inlined_assembly[
@@ -1462,15 +1446,13 @@ fn mma[
     fn _get_scale_vector_size[kind: UMMAKind]() -> String:
         var scale_vector_size = String(".block_scale")
 
-        @parameter
-        if kind == UMMAKind.KIND_MXF4NVF4:
+        comptime if kind == UMMAKind.KIND_MXF4NVF4:
             scale_vector_size = scale_vector_size + String(".block16")
         return scale_vector_size
 
     comptime scale_vector_size = _get_scale_vector_size[kind]()
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         inlined_assembly[
             """{
                 .reg .pred p;
@@ -1543,12 +1525,11 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         var masks = IndexList[4, element_type = DType.uint32](0)
 
         inlined_assembly[
@@ -1630,12 +1611,11 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         var masks = IndexList[4, element_type = DType.uint32](0)
 
         inlined_assembly[
@@ -1718,16 +1698,15 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         var masks = IndexList[4, element_type = DType.uint32](0)
 
         inlined_assembly[
@@ -1801,12 +1780,12 @@ fn mma_arrive[
         mbar_ptr: Pointer to the mbar.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1834,12 +1813,12 @@ fn mma_arrive_multicast[
         cta_mask: Mask of ctas to signal.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

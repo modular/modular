@@ -14,7 +14,7 @@ from collections.string.string_slice import get_static_string
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
-from sys.ffi import (
+from ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -37,8 +37,7 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
-struct NVSHMEMIVersion:
+struct NVSHMEMIVersion(RegisterPassable):
     var major: c_int
     var minor: c_int
     var patch: c_int
@@ -159,7 +158,7 @@ struct NVSHMEMXInitAttr:
     var args: NVSHMEMXInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXInitAttr]())
@@ -173,7 +172,7 @@ struct NVSHMEMXInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "NVSHMEMXInitArgs must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXInitArgs]())
@@ -188,7 +187,7 @@ struct NVSHMEMXUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
@@ -202,7 +201,7 @@ struct NVSHMEMXUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "nvshmemx_uniqueid_t must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueID]())
@@ -210,8 +209,7 @@ struct NVSHMEMXUniqueID:
 
 
 fn _get_prefix[scope: SHMEMScope]() -> StaticString:
-    @parameter
-    if scope == SHMEMScope.default:
+    comptime if scope == SHMEMScope.default:
         return "nvshmem_"
     else:
         return "nvshmemx_"
@@ -261,8 +259,7 @@ fn _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    @parameter
-    if dtype == DType.float16:
+    comptime if dtype == DType.float16:
         return get_static_string[prefix, "half", suffix, scope]()
     elif dtype == DType.bfloat16:
         return get_static_string[prefix, "bfloat16", suffix, scope]()
@@ -332,15 +329,10 @@ fn nvshmemx_init() raises:
 
 # Modular specific, initialize a DeviceContext on this thread to be SHMEM
 # enabled.
-fn nvshmemx_init_thread(
-    ctx: DeviceContext, number_of_devices_node: Int = -1
-) raises:
+fn nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
     # Must set the associated CUcontext on this thread prior to init
     ctx.set_as_current()
-    var nranks = (
-        number_of_devices_node if number_of_devices_node
-        > 0 else ctx.number_of_devices()
-    )
+    var nranks = gpus_per_node if gpus_per_node > 0 else ctx.number_of_devices()
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
@@ -398,8 +390,7 @@ fn nvshmemx_init_status() -> c_int:
 
 
 fn nvshmem_my_pe() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_my_pe", c_int]()
     else:
         return _get_nvshmem_function[
@@ -409,8 +400,7 @@ fn nvshmem_my_pe() -> c_int:
 
 
 fn nvshmem_n_pes() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_n_pes", c_int]()
     else:
         return _get_nvshmem_function[
@@ -609,8 +599,7 @@ fn nvshmem_sync_all():
 
 
 fn nvshmem_barrier_all():
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         external_call["nvshmem_barrier_all", NoneType]()
     else:
         _get_nvshmem_function[

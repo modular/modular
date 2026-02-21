@@ -16,7 +16,7 @@ from hashlib import Hasher
 from random.random import random_si64, seed
 from sys import size_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -25,10 +25,8 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
     var d = Dict[Int, Int]()
     for i in range(0, size):
-
-        @parameter
-        if random:
-            d[i] = Int(random_si64(0, size))
+        comptime if random:
+            d[i] = Int(random_si64(0, Int64(size)))
         else:
             d[i] = i
     return d^
@@ -44,8 +42,7 @@ fn bench_dict_init(mut b: Bencher) raises:
     fn call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
-            keep(d._entries.unsafe_ptr())
-            keep(d._index.data)
+            keep(d)
 
     b.iter[call_fn]()
 
@@ -63,7 +60,7 @@ fn bench_dict_insert[size: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         for _ in range(10_000):
             for key in range(size, size + 10):
-                items[key] = Int(random_si64(0, size))
+                items[key] = Int(random_si64(0, Int64(size)))
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -110,28 +107,79 @@ fn bench_dict_contains[size: Int](mut b: Bencher) raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark Dict Lookup Miss
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
+    """Lookup 10 missing keys 100_000 times."""
+    var items = make_dict[size]()
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for _ in range(10_000):
+            for key in range(size, size + 10):
+                var res = black_box(key) in items
+                keep(res)
+
+    b.iter[call_fn]()
+    _ = items
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark Dict Insert/Delete
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
+    """Insert and immediately delete 10_000 times."""
+    var items = make_dict[size]()
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for i in range(10_000):
+            var key = black_box(size + i)
+            items[key] = i
+            var result = items.pop(key, 0)
+            keep(result)
+
+    b.iter[call_fn]()
+    _ = items
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark Dict Iteration
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_dict_iter[size: Int](mut b: Bencher) raises:
+    """Iterate over all keys."""
+    var items = make_dict[size]()
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for key in black_box(items):
+            keep(key)
+
+    b.iter[call_fn]()
+    _ = items
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Dict Memory Footprint
 # ===-----------------------------------------------------------------------===#
 
 
 fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
-    # the allocated memory by entries:
-    var entry_size = size_of[Optional[DictEntry[Int, Int, H]]]()
-    var amnt_bytes = items._entries.capacity * entry_size
-    amnt_bytes += size_of[Dict[Int, Int]]()
-
-    # the allocated memory by index table:
-    var reserved = items._reserved()
-    if reserved <= 128:
-        amnt_bytes += size_of[Int8]() * reserved
-    elif reserved <= 2**16 - 2:
-        amnt_bytes += size_of[Int16]() * reserved
-    elif reserved <= 2**32 - 2:
-        amnt_bytes += size_of[Int32]() * reserved
-    else:
-        amnt_bytes += size_of[Int64]() * reserved
-
-    return amnt_bytes
+    # The SIMD group width used internally by Dict's Swiss Table.
+    comptime _BENCH_GROUP_WIDTH: Int = 16
+    # ctrl bytes: capacity + GROUP_WIDTH for SIMD mirroring
+    var ctrl_bytes = (items._reserved() + _BENCH_GROUP_WIDTH) * size_of[UInt8]()
+    # slot storage: one DictEntry per capacity slot
+    var slot_bytes = items._reserved() * size_of[DictEntry[Int, Int, H]]()
+    # struct overhead (includes _order List inline storage)
+    var struct_bytes = size_of[Dict[Int, Int, H]]()
+    return ctrl_bytes + slot_bytes + struct_bytes
 
 
 # ===-----------------------------------------------------------------------===#
@@ -143,8 +191,7 @@ def main():
     m.bench_function[bench_dict_init](BenchId("bench_dict_init"))
     comptime sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
 
-    @parameter
-    for i in range(len(sizes)):
+    comptime for i in range(len(sizes)):
         comptime size = sizes[i]
         m.bench_function[bench_dict_insert[size]](
             BenchId(String("bench_dict_insert[", size, "]"))
@@ -155,19 +202,30 @@ def main():
         m.bench_function[bench_dict_contains[size]](
             BenchId(String("bench_dict_contains[", size, "]"))
         )
+        m.bench_function[bench_dict_lookup_miss[size]](
+            BenchId(String("bench_dict_lookup_miss[", size, "]"))
+        )
+        m.bench_function[bench_dict_insert_delete[size]](
+            BenchId(String("bench_dict_insert_delete[", size, "]"))
+        )
+        m.bench_function[bench_dict_iter[size]](
+            BenchId(String("bench_dict_iter[", size, "]"))
+        )
 
     results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
         n = info.name
         time = info.result.mean("ms")
         avg, amnt = results.get(n, (Float64(0), 0))
-        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
     print("")
     for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")
 
-    @parameter
-    for i in range(len(sizes)):
+    comptime for i in range(len(sizes)):
         comptime size = sizes[i]
         var mem_s = total_bytes_used(make_dict[size]())
         print("dict_memory_size[", size, "]: ", mem_s, sep="")

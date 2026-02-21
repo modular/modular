@@ -35,7 +35,7 @@ def test_ndbuffer_indexing():
     )
 
     for fillIdx in range(total_buffer_size):
-        fillBufferView[fillIdx] = fillIdx
+        fillBufferView[fillIdx] = Scalar[DType.int](fillIdx)
 
     # ===------------------------------------------------------------------=== #
     # Test 1DBuffer:

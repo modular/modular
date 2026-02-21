@@ -39,6 +39,7 @@ from utils import Variant
 from builtin.constrained import _constrained_conforms_to
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
+from format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 
 
 # TODO(27780): NoneType can't currently conform to traits
@@ -47,9 +48,10 @@ struct _NoneType(ImplicitlyCopyable):
     pass
 
 
-@register_passable
 @fieldwise_init
-struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
+struct EmptyOptionalError[T: AnyType](
+    ImplicitlyCopyable, RegisterPassable, Writable
+):
     """An error type for when an empty `Optional` is accessed.
 
     Parameters:
@@ -61,16 +63,18 @@ struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
 
         Args:
             writer: The `Writer` to write to.
-
-
-        Examples:
-
-        ```mojo
-        instance = Optional[String]()
-        print(instance) # Output: None
-        ```
         """
-        writer.write("EmptyOptionalError[", get_type_name[Self.T](), "]")
+        FormatStruct(writer, "EmptyOptionalError").params(
+            TypeNames[Self.T]()
+        ).fields()
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the error to a `Writer`.
+
+        Args:
+            writer: The `Writer` to write to.
+        """
+        self.write_to(writer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -449,23 +453,44 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
+    fn _write_to[*, is_repr: Bool](self: Self, mut writer: Some[Writer]):
+        _constrained_conforms_to[
+            conforms_to(Self.T, Writable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+        ]()
+
+        if self:
+            comptime if is_repr:
+                trait_downcast[Writable](self.value()).write_repr_to(writer)
+            else:
+                trait_downcast[Writable](self.value()).write_to(writer)
+        else:
+            writer.write_string("None")
+
     fn write_to(self: Self, mut writer: Some[Writer]):
-        """Write `Optional` string representation to a `Writer`.
+        """Write this `Optional` to a `Writer`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Representable",
-        ]()
+        self._write_to[is_repr=False](writer)
 
-        if self:
-            writer.write(trait_downcast[Representable](self.value()).__repr__())
-        else:
-            writer.write("None")
+    fn write_repr_to(self: Self, mut writer: Some[Writer]):
+        """Write this `Optional`'s representation to a `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            self._write_to[is_repr=True](w)
+
+        FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
+            FieldsFn=fields
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -682,7 +707,7 @@ struct Optional[T: Movable](
 
 
 struct OptionalReg[T: __TypeOfAllTypes](
-    Boolable, Defaultable, DevicePassable, TrivialRegisterType
+    Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
 ):
     """A register-passable optional type.
 

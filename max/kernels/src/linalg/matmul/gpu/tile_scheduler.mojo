@@ -23,7 +23,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
+struct RasterOrder(
+    Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable
+):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -50,7 +52,7 @@ struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -106,7 +108,7 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct MatmulSchedule(TrivialRegisterType):
+struct MatmulSchedule(TrivialRegisterPassable):
     var _value: Int32
 
     comptime NONE = Self(0)
@@ -135,7 +137,7 @@ struct TileScheduler[
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
@@ -163,8 +165,7 @@ struct TileScheduler[
 
     @always_inline
     fn __init__(out self, prob_shape: IndexList[3]):
-        @parameter
-        if Self.schedule == MatmulSchedule.TILE2D:
+        comptime if Self.schedule == MatmulSchedule.TILE2D:
             constrained[
                 _check_cluster(Self.cluster, Self.raster_dim),
                 "Only support block cluster in along raster dimension.",
@@ -194,8 +195,7 @@ struct TileScheduler[
         )
         self.num_blocks = self.num_aligned_m_blocks * Self.kNumNBlocks
 
-        @parameter
-        if Self.raster_dim == 0:  # rasterize along M
+        comptime if Self.raster_dim == 0:  # rasterize along M
             self.idx = UInt32(block_idx.x) * UInt32(grid_dim.y) + UInt32(
                 block_idx.y
             )
@@ -206,8 +206,7 @@ struct TileScheduler[
 
     @always_inline
     fn get_current_work_info(mut self) -> WorkInfo:
-        @parameter
-        if Self.schedule == MatmulSchedule.DS_SCHEDULER:
+        comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             var m_block_idx: UInt32 = 0
             var n_block_idx: UInt32 = 0
             var is_valid = self._get_next_block(m_block_idx, n_block_idx)
@@ -240,8 +239,7 @@ struct TileScheduler[
 
     @always_inline
     fn fetch_next_work(mut self) -> WorkInfo:
-        @parameter
-        if Self.schedule == MatmulSchedule.DS_SCHEDULER:
+        comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             return self.fetch_next_work_ds()
         else:
             self.advance()
@@ -251,8 +249,7 @@ struct TileScheduler[
     fn _index_to_mn(self) -> Tuple[UInt, UInt]:
         """Map the thread block's index to coordinates of work tile."""
 
-        @parameter
-        if Self.schedule == MatmulSchedule.TILE2D:
+        comptime if Self.schedule == MatmulSchedule.TILE2D:
             return self._index_to_mn_tile2d()
 
         return self._index_to_mn_tile1d()
@@ -283,14 +280,14 @@ struct TileScheduler[
 
         comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
 
-        num_waves_executed = FastUInt(Int(self.idx)) / log_num_grids
-        idx_in_wave = FastUInt(Int(self.idx)) % log_num_grids
+        num_waves_executed = FastUInt(self.idx) / log_num_grids
+        idx_in_wave = FastUInt(self.idx) % log_num_grids
 
         num_waves_executed_m = (
-            FastUInt(Int(num_waves_executed)) / self.log_num_waves_n
+            FastUInt(num_waves_executed) / self.log_num_waves_n
         )
         num_waves_executed_n = (
-            FastUInt(Int(num_waves_executed)) % self.log_num_waves_n
+            FastUInt(num_waves_executed) % self.log_num_waves_n
         )
 
         # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
@@ -298,8 +295,8 @@ struct TileScheduler[
         wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
         wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
 
-        m_in_wave = FastUInt(Int(idx_in_wave)) / log_grid_shape
-        n_in_wave = FastUInt(Int(idx_in_wave)) % log_grid_shape
+        m_in_wave = FastUInt(idx_in_wave) / log_grid_shape
+        n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
 
         return (
             UInt(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),
@@ -390,8 +387,7 @@ struct TileScheduler[
 fn _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
-    @parameter
-    for i in range(3):
+    comptime for i in range(3):
         if cluster_dims[i] > 1 and i != Int(raster_dim):
             return False
 

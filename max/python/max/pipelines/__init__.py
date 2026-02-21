@@ -26,6 +26,12 @@ from .lib.config_enums import (
     RepoType,
     RopeType,
     SupportedEncoding,
+    is_float4_encoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .lib.hf_utils import download_weight_files
@@ -40,7 +46,10 @@ from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
-from .lib.pipeline_variants.text_generation import TextGenerationPipeline
+from .lib.pipeline_variants.text_generation import (
+    TextGenerationPipeline,
+    TextGenerationPipelineInterface,
+)
 from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
@@ -89,7 +98,14 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
+    "TextGenerationPipelineInterface",
     "TextTokenizer",
     "download_weight_files",
+    "is_float4_encoding",
+    "parse_supported_encoding_from_file_name",
+    "supported_encoding_dtype",
+    "supported_encoding_quantization",
+    "supported_encoding_supported_devices",
+    "supported_encoding_supported_on",
     "upper_bounded_default",
 ]

@@ -31,7 +31,7 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import (
+from ffi import (
     c_ssize_t,
     c_int,
     external_call,
@@ -42,7 +42,7 @@ from sys.ffi import (
 from memory import Span
 
 
-struct FileDescriptor(TrivialRegisterType, Writer):
+struct FileDescriptor(TrivialRegisterPassable, Writer):
     """File descriptor of a file."""
 
     var value: Int
@@ -108,12 +108,11 @@ struct FileDescriptor(TrivialRegisterType, Writer):
             If the operation fails.
         """
 
-        __comptime_assert (
+        comptime assert (
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 
-        @parameter
-        if CompilationTarget.is_macos() or CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_macos() or CompilationTarget.is_linux():
             var read = external_call["read", c_ssize_t](
                 self.value, buffer.unsafe_ptr(), len(buffer)
             )
@@ -147,7 +146,6 @@ struct FileDescriptor(TrivialRegisterType, Writer):
             ```
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return False
         return _external_call_const["isatty", c_int](c_int(self.value)) != 0

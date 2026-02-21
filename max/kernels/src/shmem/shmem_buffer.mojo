@@ -18,7 +18,7 @@ from sys import (
     has_amd_gpu_accelerator,
     size_of,
 )
-from sys.ffi import external_call
+from ffi import external_call
 
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
@@ -50,8 +50,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         ctx: DeviceContext,
         size: Int,
     ) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
             self._data = shmem_malloc[Self.dtype](UInt(size))
             self._ctx_ptr = ctx._handle
             self._size = size

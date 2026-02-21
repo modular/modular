@@ -24,22 +24,14 @@ across K iterations, with scales applied per-iteration.
 
 from gpu.memory import AddressSpace
 from layout import Layout
-from layout.tma_async import SharedMemBarrier
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
 
 from ..structured_kernels.config import MatmulConfig
 from ..structured_kernels.pipeline_storage import (
-    InputPipelineStorage,
-    OutputPipelineStorage,
-    ClcPipelineStorage,
-    TmemDeallocStorage,
     BlockwiseFP8TileStorage,
+    SmemPipelineBundle,
+    SmemLayouts,
 )
 from ..structured_kernels.tile_pipeline import BlockwiseFP8TilePayload
-from linalg.structuring import SMemTileArray, SMemArray
 
 
 struct BlockwiseFP8Smem[
@@ -78,37 +70,50 @@ struct BlockwiseFP8Smem[
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
     # ========== Layout Definitions ==========
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
-    ]()
-
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
-    ]()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
+    comptime Layouts = SmemLayouts[
+        Self.a_type,
+        Self.b_type,
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.OutputM,
+        Self.OutputN,
+        Self.config.a_swizzle,
+        Self.config.b_swizzle,
+        Self.transpose_b,
+    ]
+    comptime a_smem_layout = Self.Layouts.a_smem_layout
+    comptime b_smem_layout = Self.Layouts.b_smem_layout
+    comptime c_smem_layout = Self.Layouts.c_smem_layout
 
     # A-scales layout: 1D row vector with BM elements (one scale per row)
     comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, a_scales
+    # Layouts are used by tile storage types for allocation and sizing
     comptime Tiles = BlockwiseFP8TileStorage[
         Self.a_type,
         Self.b_type,
         Self.c_type,
         Self.a_scales_type,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
-        Self.c_smem_layout,
-        Self.a_scales_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.BM,
+        Self.BK,
+        # B tile dimensions (BN x BK)
+        Self.BN,
+        Self.BK,
+        # C tile dimensions (OutputM x OutputN)
+        Self.OutputM,
+        Self.OutputN,
+        # A-scales dimensions (1 x BM)
+        1,
+        Self.BM,
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types for external use
+    # Re-export tile array types
     comptime ATileArray = Self.Tiles.ATileArray
     comptime BTileArray = Self.Tiles.BTileArray
     comptime CTileArray = Self.Tiles.CTileArray
@@ -117,94 +122,49 @@ struct BlockwiseFP8Smem[
     # ========== Tile Storage Field ==========
     var tiles: Self.Tiles
 
-    # ========== Tile Accessors (Delegated) ==========
+    # ========== Tile Accessors (TileTensor - Delegated) ==========
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+        """Get A tile array accessor."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+        """Get B tile array accessor."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor."""
         return self.tiles.c_tiles()
 
     @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
+        """Get A-scales tile array accessor."""
         return self.tiles.a_scales_tiles()
 
-    # ========== Pipeline Storage (Embedded) ==========
-    comptime InputPipeline = InputPipelineStorage[
+    # ========== Pipeline Storage (Composed Bundle) ==========
+    comptime Pipelines = SmemPipelineBundle[
         Self.num_group_pipeline_stages,
+        Self.num_accum_pipeline_stages,
+        Self.num_clc_pipeline_stages,
         BlockwiseFP8TilePayload[
             Self.a_type,
             Self.b_type,
             Self.a_scales_type,
-            Self.a_smem_layout,
-            Self.b_smem_layout,
-            Self.a_scales_smem_layout,
+            # A tile dimensions (BM x BK)
+            Self.BM,
+            Self.BK,
+            # B tile dimensions (BN x BK)
+            Self.BN,
+            Self.BK,
+            # A-scales dimensions (1 x BM)
+            1,
+            Self.BM,
             Self.num_pipeline_stages,
         ],
     ]
-    comptime OutputPipeline = OutputPipelineStorage[
-        Self.num_accum_pipeline_stages
-    ]
-    comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
-    comptime TmemDeallocPipeline = TmemDeallocStorage
-
-    # Storage fields - embedded in SMEM
-    var input_pipeline: Self.InputPipeline
-    var output_pipeline: Self.OutputPipeline
-    var clc_pipeline: Self.ClcPipeline
-    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
-
-    # Type aliases for accessor return types
-    comptime InputBarriers = Self.InputPipeline.BarrierArray
-    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
-    comptime ClcBarriers = Self.ClcPipeline.BarrierArray
-    comptime ClcThrottleBarriers = Self.ClcPipeline.ThrottleArray
-    comptime ClcResponse = Self.ClcPipeline.ResponseArray
-    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
-    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
-
-    # ========== Barrier Accessors (Delegated to Pipelines) ==========
-    @always_inline
-    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
-        """Returns input tile pipeline barriers."""
-        return self.input_pipeline.barriers.barriers()
-
-    @always_inline
-    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
-        """Returns accumulator pipeline barriers."""
-        return self.output_pipeline.barriers.barriers()
-
-    @always_inline
-    fn clc_mbars_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.full()
-
-    @always_inline
-    fn clc_mbars_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.empty()
-
-    @always_inline
-    fn clc_throttle_mbars(
-        ref[AddressSpace.SHARED] self,
-    ) -> Self.ClcThrottleBarriers:
-        return self.clc_pipeline.throttle()
-
-    @always_inline
-    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
-        return self.clc_pipeline.response()
-
-    @always_inline
-    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
-        """Returns TMEM deallocation barrier."""
-        return self.tmem_dealloc_pipeline.barrier()
-
-    @always_inline
-    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
-        return self.tmem_dealloc_pipeline.addr()
+    var pipelines: Self.Pipelines
 
     # ========== Size Utilities ==========
     @staticmethod

@@ -43,8 +43,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
     comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
     # This lut is operation: (A & B) | C
 
-    @parameter
-    for i in range(0, 4):
+    comptime for i in range(0, 4):
         # The ternary operator isnot working.
         # The conditional is_amd_gpu() or no_lop appears to not be constant
         # var t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM if (is_amd_gpu() or no_lop) else lop[
@@ -52,8 +51,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
         # ](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
         var t: Int32
 
-        @parameter
-        if is_apple_gpu() or is_amd_gpu() or no_lop:
+        comptime if is_apple_gpu() or is_amd_gpu() or no_lop:
             t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM
         else:
             t = lop[lut](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
@@ -85,8 +83,8 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
 
     ctx.enqueue_copy(out_host.data, out_device)
     for i in range(4):
-        assert_equal(out_host[2 * i + 0], i + 0)
-        assert_equal(out_host[2 * i + 1], i + 4)
+        assert_equal(out_host[2 * i + 0], BFloat16(i + 0))
+        assert_equal(out_host[2 * i + 1], BFloat16(i + 4))
 
 
 def main():

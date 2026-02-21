@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -39,7 +40,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -49,6 +49,7 @@ from .model_config import GptOssConfig
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class GptOssInputs(ModelInputs):
     """A class representing inputs for the GPT OSS model.
 
@@ -63,25 +64,8 @@ class GptOssInputs(ModelInputs):
     """Buffer containing the offsets for each row in the ragged input sequence.
     """
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+    return_n_logits: Buffer
+    """Number of logits to return."""
 
 
 class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
@@ -96,8 +80,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -108,10 +90,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -125,8 +103,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -154,7 +130,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings

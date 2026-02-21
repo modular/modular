@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -40,12 +41,12 @@ class BertModelConfig(ArchConfig):
         try:
             return upper_bounded_default(
                 upper_bound=self.huggingface_config.max_position_embeddings,
-                default=self.pipeline_config.max_length,
+                default=self.pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Bert, the provided "
-                f"max_length ({self.pipeline_config.max_length}) exceeds the "
+                f"max_length ({self.pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({self.huggingface_config.max_position_embeddings})."
             ) from e
@@ -75,7 +76,7 @@ class BertModelConfig(ArchConfig):
                 "Please ensure the model repository contains a valid config.json file."
             )
         return cls(
-            dtype=quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(quantization_encoding),
             device=DeviceRef(
                 device_type=device_spec.device_type, id=device_spec.id
             ),

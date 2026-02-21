@@ -38,7 +38,7 @@ struct Dim(
     Indexer,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A static or dynamic dimension modeled with an optional integer.
@@ -285,7 +285,9 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
+struct DimList(
+    Representable, Sized, Stringable, TrivialRegisterPassable, Writable
+):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -449,7 +451,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             The static dimension value at the specified index.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i].get()
 
     @always_inline("nodebug")
@@ -462,7 +464,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             The dimension at the specified index.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i]
 
     @always_inline("nodebug")
@@ -475,7 +477,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             Whether the specified dimension has a static value.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
 
     @always_inline
@@ -512,8 +514,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
 
         var res = 1
 
-        @parameter
-        for i in range(start, end):
+        comptime for i in range(start, end):
             res *= self.value[i].get()
         return res
 
@@ -537,8 +538,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
 
     @always_inline
     fn _contains_impl[i: Int, length: Int](self, value: Dim) -> Bool:
-        @parameter
-        if i >= length:
+        comptime if i >= length:
             return False
         else:
             return self.at[i]() == value or self._contains_impl[i + 1, length](
@@ -611,8 +611,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         )
         var index_list = IndexList[rank]()
 
-        @parameter
-        for idx in range(rank):
+        comptime for idx in range(rank):
             index_list[idx] = Int(self.at[idx]())
 
         return index_list
@@ -628,7 +627,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             A list of all dynamic dimension values.
         """
-        __comptime_assert length > 0, "length must be positive"
+        comptime assert length > 0, "length must be positive"
 
         return Self(
             VariadicList[Dim](
@@ -710,8 +709,7 @@ fn _make_tuple[
     """
     var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
 
-    @parameter
-    for idx in range(size):
+    comptime for idx in range(size):
         tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
 
     return {tup}
@@ -734,11 +732,8 @@ fn _make_partially_static_index_list[
     """
     var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
 
-    @parameter
-    for idx in range(size):
-
-        @parameter
-        if static_list.at[idx]().is_dynamic():
+    comptime for idx in range(size):
+        comptime if static_list.at[idx]().is_dynamic():
             tup = tup._replace[idx](result._int_type(dynamic_list[idx]))
         else:
             tup = tup._replace[idx](

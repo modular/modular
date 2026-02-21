@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Architecture-specific config interfaces.
 
-
 The `ArchConfig` class is not to be confused with the following classes:
 - PipelineConfig: Parameters that are relevant to the entire pipeline and are
   generally passed in from the top level (MAX Serve, entrypoints). For example,
@@ -36,9 +35,12 @@ from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.pipelines.lib.kv_cache_config import KVCacheConfig
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.lib.utils import upper_bounded_default
 from typing_extensions import Self, override
+
+from ..config_enums import supported_encoding_dtype
+from ..kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
@@ -54,18 +56,18 @@ class ArchConfig(Protocol):
         """Initialize the config from a PipelineConfig."""
 
     def get_max_seq_len(self) -> int:
-        """The default maximum sequence length that can be processed by the
-        model.
+        """Returns the default maximum sequence length for the model.
 
         Subclasses should determine whether this value can be overridden by
-        setting the `--max-length` (`pipeline_config.max_length`) flag."""
+        setting the ``--max-length`` (``pipeline_config.model.max_length``) flag.
+        """
 
 
 @runtime_checkable
 class ArchConfigWithKVCache(ArchConfig, Protocol):
     """Config for a model architecture that uses a KV cache."""
 
-    def get_kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParamInterface:
         """KV cache parameters to use when running the model."""
 
 
@@ -78,8 +80,7 @@ def _all_available_devices() -> list[DeviceRef]:
 
 @dataclass
 class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
-    """Predefined configuration for model architectures that use attention KV
-    cache blocks.
+    """Predefined configuration for architectures that use attention KV cache blocks.
 
     Subclasses must define the following attributes:
     - num_key_value_heads: int
@@ -113,7 +114,9 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
                 "Quantization encoding is required for ArchConfigWithAttentionKVCache"
             )
         return cls(
-            dtype=pipeline_config.model.quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(
+                pipeline_config.model.quantization_encoding
+            ),
             devices=[
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in pipeline_config.model.device_specs
@@ -121,33 +124,30 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
             cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
             kv_cache=pipeline_config.model.kv_cache,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            user_provided_max_length=pipeline_config.max_length,
+            user_provided_max_length=pipeline_config.model.max_length,
             huggingface_config=pipeline_config.model.huggingface_config,
         )
 
     def get_max_seq_len(self) -> int:
-        """The maximum sequence length that can be processed by the model.
+        """Returns the maximum sequence length the model can process.
 
-        Returns max_length if set, otherwise returns model_max_seq_len.
-        Raises ValueError if max_length exceeds model_max_seq_len."""
+        Returns ``max_length`` if set, otherwise ``model_max_seq_len``.
+        Raises ValueError if ``max_length`` exceeds ``model_max_seq_len``.
+        """
         return upper_bounded_default(
             upper_bound=self.model_max_seq_len,
             default=self.user_provided_max_length,
         )
 
     def get_kv_params(self) -> KVCacheParams:
+        """Returns the KV cache parameters for this architecture."""
         if self._kv_params is not None:
             return self._kv_params
-        self._kv_params = KVCacheParams(
+        self._kv_params = self.kv_cache.to_params(
             dtype=self.cache_dtype or self.dtype,
             n_kv_heads=self.num_key_value_heads,
             head_dim=self.head_dim,
             num_layers=self.num_layers,
-            page_size=self.kv_cache.kv_cache_page_size,
-            cache_strategy=self.kv_cache.cache_strategy,
-            enable_prefix_caching=self.kv_cache.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=self.kv_cache.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=self.kv_cache.host_kvcache_swap_space_gb,
             devices=self.devices,
             data_parallel_degree=self.data_parallel_degree,
         )

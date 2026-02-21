@@ -32,7 +32,7 @@ fn fold[
     output_size: IndexList[2],
     kernel_size: IndexList[2],
     ctx: DeviceContextPtr,
-) raises where (output.rank == 4 and input.rank == 3):
+) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
     Parameters:
@@ -50,13 +50,15 @@ fn fold[
         ctx: DeviceContextPtr.
     """
 
-    __comptime_assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
-    __comptime_assert (
+    comptime assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
+    comptime assert (
         dilation[0] > 0 and dilation[1] > 0
     ), "Dilation must be positive"
-    __comptime_assert (
+    comptime assert (
         padding[0] >= 0 and padding[1] >= 0
     ), "Padding must be non-negative"
+    comptime assert output.flat_rank == 4
+    comptime assert input.flat_rank == 3
 
     var N = Int(output.dim(0))
     var C = Int(output.dim(1))
@@ -68,7 +70,7 @@ fn fold[
 
     var channels_col = C * kernel_size[0] * kernel_size[1]
 
-    if input.dim(1) != channels_col:
+    if input.dim(1) != Scalar[input.linear_idx_type](channels_col):
         raise Error(
             "Input tensor channels must be equal to C * prod(kernel_size)."
         )
@@ -84,7 +86,7 @@ fn fold[
 
     var expected_blocks = height_col * width_col
 
-    if num_blocks != expected_blocks:
+    if num_blocks != Scalar[input.linear_idx_type](expected_blocks):
         raise Error(
             "Input tensor must have the same number of blocks ("
             + String(num_blocks)
@@ -111,7 +113,7 @@ fn fold[
     fn fold_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank_]):
-        __comptime_assert rank_ == 4, "fold_fn: rank must be 4"
+        comptime assert rank_ == 4, "fold_fn: rank must be 4"
         var idx = rebind[IndexList[4]](idx_arg)
 
         var batch = idx[0]
@@ -149,7 +151,7 @@ fn fold[
                     var patch_offset = h * width_col + w
 
                     # Load and accumulate
-                    __comptime_assert input.element_size == 1
+                    comptime assert input.element_size == 1
                     output_val += input[
                         batch, channel_offset + kernel_offset, patch_offset
                     ][0]

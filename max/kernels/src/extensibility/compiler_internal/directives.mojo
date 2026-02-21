@@ -41,8 +41,7 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
     """Return a `DimList` of strides for data laid out in row-major order, from
     a `DimList` representing the shape."""
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         return 1
     elif rank == 2:
         return DimList(shape.get[1](), 1)
@@ -56,7 +55,7 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
 struct StaticTensorSpec[
     dtype: DType,
     rank: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     # Represents the DimList type (not accessible from KGEN tests).
     comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank]
@@ -103,7 +102,7 @@ struct StaticTensorSpec[
         self.out_compute_lambda = out_compute_lambda
 
     fn __init__(out self, shape: DimList):
-        __comptime_assert Self.rank > 0, (
+        comptime assert Self.rank > 0, (
             "initializing `StaticTensorSpec` with just a shape only"
             " supports rank 1 to 3"
         )

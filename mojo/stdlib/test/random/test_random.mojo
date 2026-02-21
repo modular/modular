@@ -103,13 +103,13 @@ def test_seed_normal():
     for sample in samples:
         sum += sample
 
-    var mean: Float64 = sum / num_samples
+    var mean: Float64 = sum / Float64(num_samples)
 
     var sum_sq: Float64 = 0.0
     for sample in samples:
         sum_sq += (sample - mean) ** 2
 
-    var variance = sum_sq / num_samples
+    var variance = sum_sq / Float64(num_samples)
 
     # Calculate absolute differences (errors)
     var mean_error = abs(mean)
@@ -490,6 +490,26 @@ def test_normal_distribution_edge_cases():
     # We check |result - 1e100| < 10 (10 standard deviations, very conservative)
     # This catches cases where precision is completely lost and we get exactly 1e100
     assert_true(abs(large_mean - 1e100) < 10.0)
+
+
+def test_full_range_integers():
+    """Test random integers with full type range don't always return min."""
+    seed(42)
+
+    # Generate multiple samples and verify we don't always get min
+    var got_non_zero = False
+    for _ in range(100):
+        if random_ui64(0, UInt64.MAX) != 0:
+            got_non_zero = True
+            break
+    assert_true(got_non_zero, "Full-range UInt64 should not always return 0")
+
+    var got_non_min = False
+    for _ in range(100):
+        if random_si64(Int64.MIN, Int64.MAX) != Int64.MIN:
+            got_non_min = True
+            break
+    assert_true(got_non_min, "Full-range Int64 should not always return MIN")
 
 
 def main():

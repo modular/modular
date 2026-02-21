@@ -53,14 +53,14 @@ struct TMADescriptor[
         self.tensormap = tensormap
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """
         Copy initializes this `TMADescriptor` from another instance.
 
         Args:
-            other: The other `TMADescriptor` instance to copy from.
+            copy: The other `TMADescriptor` instance to copy from.
         """
-        self.tensormap = other.tensormap
+        self.tensormap = copy.tensormap
 
 
 fn create_tma_descriptor[
@@ -92,10 +92,10 @@ fn create_tma_descriptor[
         If the TMA descriptor creation fails.
     """
 
-    __comptime_assert depth(tile_shape) == 1, "Tile shape must be a flat tuple"
+    comptime assert depth(tile_shape) == 1, "Tile shape must be a flat tuple"
 
     comptime rank = len(tile_shape)
-    __comptime_assert (
+    comptime assert (
         rank == gmem_tensor.rank
     ), "Tile shape and input tensor's rank must match"
 
@@ -158,18 +158,18 @@ struct TMALoad[
 
     @staticmethod
     fn verify_destination_tensor(dst: LayoutTensor):
-        __comptime_assert Self.dtype == dst.dtype, String(
+        comptime assert Self.dtype == dst.dtype, String(
             "type mismatch: expected ", Self.dtype, " passed in ", dst.dtype
         )
 
-        __comptime_assert dst.address_space == AddressSpace.SHARED, String(
+        comptime assert dst.address_space == AddressSpace.SHARED, String(
             "address space mismatch: expected ",
             AddressSpace.SHARED,
             " passed in ",
             dst.address_space,
         )
 
-        __comptime_assert dst.alignment % Self.smem_alignment == 0, String(
+        comptime assert dst.alignment % Self.smem_alignment == 0, String(
             "alignment mismatch: expected ",
             Self.smem_alignment,
             " passed in ",
@@ -178,7 +178,7 @@ struct TMALoad[
 
     @staticmethod
     fn verify_source_tensor(src: LayoutTensor):
-        __comptime_assert src.address_space == AddressSpace.GLOBAL, String(
+        comptime assert src.address_space == AddressSpace.GLOBAL, String(
             "address space mismatch: expected ",
             AddressSpace.GLOBAL,
             " passed in ",
@@ -190,13 +190,11 @@ struct TMALoad[
         comptime shape = repeat_pattern.shape
         comptime stride = repeat_pattern.stride
 
-        @parameter
-        for i in range(len(shape)):
+        comptime for i in range(len(shape)):
             comptime current_shape = product(shape[i])
             comptime current_stride = product(stride[i]) * size_of[Self.dtype]()
 
-            @parameter
-            if current_shape > 1 and current_stride % Self.smem_alignment != 0:
+            comptime if current_shape > 1 and current_stride % Self.smem_alignment != 0:
                 return False
 
         return True
@@ -227,7 +225,7 @@ struct TMALoad[
             1
         ]
 
-        __comptime_assert (
+        comptime assert (
             Self.layout_is_tma_compatible[repeat_pattern]()
             or repeat_pattern.size() == 1
             or check_tma_compatibility == False
@@ -302,7 +300,7 @@ fn copy[
         coalesced_layout, check_tma_compatibility=False
     ]()
 
-    __comptime_assert (
+    comptime assert (
         dst_repeat_pattern.size() == src_repeat_pattern.size()
     ), "Repeat patterns must have the same size"
 
@@ -346,8 +344,7 @@ fn copy[
     the shared memory layout but in row major order.
     """
 
-    @parameter
-    for i in range(num_copies):
+    comptime for i in range(num_copies):
         # The index i represents the tile we want to operate on.
         # We plug i into the repeat pattern to get the starting offset
         # of the desired tile.
@@ -390,8 +387,7 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime if mode in (
         SwizzleMode._128B,
         SwizzleMode._64B,
         SwizzleMode._32B,

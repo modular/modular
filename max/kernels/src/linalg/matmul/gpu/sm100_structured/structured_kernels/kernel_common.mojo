@@ -41,11 +41,22 @@ from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
-    """Warp role identifiers for SM100 warp-specialized kernel."""
+struct WarpRole(TrivialRegisterPassable):
+    """Warp role identifiers for SM100 warp-specialized kernel.
+
+    Warp assignment (8 warps total = 256 threads):
+    - Epilogue: warp IDs 0-3 (4 warps, 128 threads)
+    - Scheduler: warp ID 4 (1 warp, 32 threads)
+    - MainLoad: warp ID 5 (1 warp, 32 threads)
+    - Mma: warp ID 6 (1 warp, 32 threads)
+    - EpilogueLoad: warp ID 7 (1 warp, 32 threads) - loads source C for residual
+
+    Note: When epilogue load is not needed (no residual), warp 7 exits early.
+    """
 
     var _role: Int32
 
+    comptime EpilogueLoad = Self(7)
     comptime Mma = Self(6)
     comptime MainLoad = Self(5)
     comptime Scheduler = Self(4)
@@ -86,6 +97,12 @@ struct WarpRole(TrivialRegisterType):
     @always_inline
     fn is_scheduler() -> Bool:
         return Self.Scheduler == get_warp_id()
+
+    @staticmethod
+    @always_inline
+    fn is_epilogue_load() -> Bool:
+        """Check if current warp is the epilogue load warp (loads source C)."""
+        return Self.EpilogueLoad == get_warp_id()
 
 
 # =============================================================================
@@ -153,12 +170,10 @@ struct KernelContext[
         self.a_multicast_mask = 0x0
         self.b_multicast_mask = 0x0
 
-        @parameter
-        for i in range(Self.CLUSTER_N):
+        comptime for i in range(Self.CLUSTER_N):
             self.a_multicast_mask |= UInt16(1 << (i * Self.CLUSTER_M))
 
-        @parameter
-        for i in range(Self.CLUSTER_M // Self.cta_group):
+        comptime for i in range(Self.CLUSTER_M // Self.cta_group):
             self.b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
 
         self.a_multicast_mask <<= UInt16(self.rank_m)
@@ -243,9 +258,7 @@ fn consumer_main_loop[
     load_mma_pipeline.wait_producer()
 
     if elect_one_sync():
-
-        @parameter
-        for j in range(k_group_size):
+        comptime for j in range(k_group_size):
             var a_smem_tile = a_smem_iter.next(
                 stage * UInt32(k_group_size) + UInt32(j)
             )[]

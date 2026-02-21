@@ -52,6 +52,16 @@ class FrequencyData:
 def to_pinned_host_buffer(
     values: Sequence[Any], device: Device, dtype: DType = DType.float32
 ) -> Buffer:
+    """Copies a sequence of values into a buffer, pinned when device is not host.
+
+    Args:
+        values: Values to copy into the buffer.
+        device: Target device (buffer is pinned if this is a non-host device).
+        dtype: Buffer dtype. Defaults to float32.
+
+    Returns:
+        A buffer containing the values, with pinning if applicable.
+    """
     pinned = not device.is_host
 
     buffer = Buffer(
@@ -228,6 +238,7 @@ class FusedSamplingProcessor:
         self.step_counter = 0
 
     def __call__(self, inputs: BatchProcessorInputs) -> None:
+        """Processes the batch logits and updates generated tokens and seed."""
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
 
@@ -284,7 +295,8 @@ def _build_token_frequency_csr(
     device: Device,
     include_prompt: bool = False,
 ) -> FrequencyData:
-    """Build a CSR matrix of token frequency in the batch.
+    """Builds a CSR matrix of token frequency in the batch.
+
     The original matrix is (batch_size, vocab_size), where each element is
     the number of times a token appears in the batch.
 

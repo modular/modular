@@ -28,8 +28,7 @@ def positional_embedding(
     alpha: float,
     beta: float,
 ) -> Tensor:
-    """Computes YaRN rotary positional embeddings up to a specified
-    sequence length.
+    """Computes YaRN rotary positional embeddings up to a specified sequence length.
 
     These embeddings are compatible with RoPE-trained models, extending
     the context window beyond the context window used in training in a stable
@@ -55,9 +54,9 @@ def positional_embedding(
     ```
 
     Args:
-        n: The embedding dimension. By convention each component
+        dim: The embedding dimension. By convention each component
             of the complex valued embedding is considered its own dim.
-        theta: Scaling factor for the frequency
+        base: Scaling factor for the frequency.
         max_sequence_length: The number of positional embeddings to compute.
             (`L'`). By convention produce twice the vector size.
         original_max_sequence_length: The original maximum sequence length

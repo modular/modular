@@ -19,8 +19,8 @@ from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy import ReturnLogits
-from max.pipelines.architectures.llama3.model import Llama3Model
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
+from max.pipelines.architectures.llama3_legacy.model import Llama3Model
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
 
@@ -35,7 +35,6 @@ class Qwen2Model(Llama3Model):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -46,7 +45,6 @@ class Qwen2Model(Llama3Model):
             pipeline_config,
             session,
             huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

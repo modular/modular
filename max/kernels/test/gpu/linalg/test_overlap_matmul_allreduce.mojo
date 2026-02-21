@@ -51,7 +51,7 @@ fn overlap_matmul_allreduce_test[
     # Other than allreduce i depending on matmul i, there is no dependence. The best
     # performance is obtained by letting allreduce i wait on matmul i but launch
     # matmul i+1 asap. Matmul doesn't need to wait for any kernel.
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
 
     print(
         "num_gpus",
@@ -99,8 +99,7 @@ fn overlap_matmul_allreduce_test[
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * temp_length
 
     # Initialize buffers for each GPU
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
         A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
         B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
@@ -114,7 +113,7 @@ fn overlap_matmul_allreduce_test[
 
         # Initialize A with i and B with 1
         for j in range(mk):
-            A_host_list[i][j] = i
+            A_host_list[i][j] = Scalar[dtype](i)
         for j in range(nk):
             B_host_list[i][j] = 1.0
 
@@ -149,8 +148,7 @@ fn overlap_matmul_allreduce_test[
     ](fill={})
 
     # Setup the kernel NDBuffers
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
             A_list[i].unsafe_ptr(), DimList(m.value, k.value)
         )
@@ -169,8 +167,7 @@ fn overlap_matmul_allreduce_test[
         NDBuffer[dtype, 2, MutAnyOrigin]()
     )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
             C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
@@ -193,9 +190,7 @@ fn overlap_matmul_allreduce_test[
 
     # Call the split matmul + AllReduce implementation
     for _ in range(10):
-
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             list_of_ctx[i].synchronize()
 
         matmul_allreduce[
@@ -213,25 +208,21 @@ fn overlap_matmul_allreduce_test[
             static[num_partitions](),
         )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Last allreduce
     var expected_sum = Scalar[dtype](0)
 
-    @parameter
-    for i in range(ngpus):
-        expected_sum += i * k.value
+    comptime for i in range(ngpus):
+        expected_sum += Scalar[dtype](i * k.value)
         list_of_ctx[i].enqueue_copy(C_reduced_host_list[i], C_reduced_list[i])
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Verify results
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         for j in range(mn):
             try:
                 assert_almost_equal(C_reduced_host_list[i][j], expected_sum)
@@ -261,8 +252,7 @@ def main():
     comptime test_gpu_counts = (4, 8)
 
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
             break
@@ -273,8 +263,7 @@ def main():
             ctx.append(DeviceContext(device_id=i))
 
         # Test all cases for this configuration.
-        @parameter
-        for dtype_idx in range(len(test_dtypes)):
+        comptime for dtype_idx in range(len(test_dtypes)):
             comptime dtype = test_dtypes[dtype_idx]
 
             overlap_matmul_allreduce_test[
@@ -290,3 +279,11 @@ def main():
                 num_partitions=4,
                 partition_dim=1,
             ](ctx, dynamic(8192), static[8192](), static[2048]())
+
+            # Make sure allreduce does not crash if the inputs are 0 sized
+            overlap_matmul_allreduce_test[
+                dtype=dtype,
+                ngpus=num_gpus,
+                num_partitions=4,
+                partition_dim=1,
+            ](ctx, dynamic(0), static[8192](), static[2048]())

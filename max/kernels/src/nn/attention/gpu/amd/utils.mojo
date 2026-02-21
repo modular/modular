@@ -105,19 +105,15 @@ fn copy_local_to_dram2[
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
 
-    @parameter
-    for n in range(N):
-
-        @parameter
-        for m in range(M):
+    comptime for n in range(N):
+        comptime for m in range(M):
             comptime src_idx = 4 * n + 16 * m
             comptime i = 4 * m + n
 
             comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
-            @parameter
-            if dst_fragments.layout.all_dims_known():
+            comptime if dst_fragments.layout.all_dims_known():
                 dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
@@ -131,16 +127,13 @@ fn copy_local_to_dram2[
                 1
             ].value()
 
-            @parameter
-            if element_stride == 1:
+            comptime if element_stride == 1:
                 buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
             else:
-
-                @parameter
-                for i in range(dst_fragments.element_layout.size()):
+                comptime for i in range(dst_fragments.element_layout.size()):
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
@@ -361,11 +354,11 @@ struct GlobalMemoryManager[
         qtype: DType,
     ](
         self,
-        ptr: UnsafePointer[Scalar[qtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[qtype], ImmutAnyOrigin],
         out result: LayoutTensor[
             qtype,
             Self.q_gmem_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             masked=True,
@@ -396,12 +389,12 @@ struct GlobalMemoryManager[
         //,
     ](
         self,
-        ptr: UnsafePointer[Scalar[kvtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[kvtype], ImmutAnyOrigin],
         kv_tile_num_rows: UInt32,
         out result: LayoutTensor[
             kvtype,
             Self.kv_gmem_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             masked=True,
             address_space = ptr.address_space,
         ],
@@ -431,13 +424,13 @@ fn _load_tr16_b64_row(
     # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
     # Then they are exchanged such that at the end of this operation you get a
     # SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
-    __comptime_assert size_of[tile.dtype]() == 2, String(
+    comptime assert size_of[tile.dtype]() == 2, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert tile.shape[0]() == 4, String(
+    comptime assert tile.shape[0]() == 4, String(
         "Expected tile.shape[0]() to be 4, but got ", tile.shape[0]()
     )
-    __comptime_assert tile.shape[1]() == 16, String(
+    comptime assert tile.shape[1]() == 16, String(
         "Expected tile.shape[1]() to be 16, but got ", tile.shape[1]()
     )
 
@@ -480,20 +473,16 @@ fn _load_tr16_b64_warp[
     comptime row_layout = Layout.row_major(2, 2) if mma_shape[
         0
     ] == 32 else Layout.row_major(4, 1)
-    __comptime_assert tile.dtype == DType.bfloat16, String(
+    comptime assert tile.dtype == DType.bfloat16, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert (
-        tile.shape[0]() == row_layout.shape[0].value() * 4
-    ), String(
+    comptime assert tile.shape[0]() == row_layout.shape[0].value() * 4, String(
         "Expected tile.shape[0]() to be ",
         row_layout.shape[0].value() * 4,
         ", but got ",
         tile.shape[0](),
     )
-    __comptime_assert (
-        tile.shape[1]() == row_layout.shape[1].value() * 16
-    ), String(
+    comptime assert tile.shape[1]() == row_layout.shape[1].value() * 16, String(
         "Expected tile.shape[1]() to be ",
         row_layout.shape[1].value() * 16,
         ", but got ",
@@ -530,7 +519,7 @@ fn load_b_tr[
         SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
     """
     # only support double-rate mfma shapes for now
-    __comptime_assert mma_shape in (
+    comptime assert mma_shape in (
         IndexList[3](32, 32, 16),
         IndexList[3](16, 16, 32),
     ), String(
@@ -542,16 +531,16 @@ fn load_b_tr[
         mma_shape[2],
         ". Supported shapes: 32x32x16, 16x16x32",
     )
-    __comptime_assert tile.dtype == DType.bfloat16, String(
+    comptime assert tile.dtype == DType.bfloat16, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert tile.shape[0]() == mma_shape[2], String(
+    comptime assert tile.shape[0]() == mma_shape[2], String(
         "Expected tile.shape[0]() to be mma_shape[2]=",
         mma_shape[2],
         ", but got ",
         tile.shape[0](),
     )
-    __comptime_assert tile.shape[1]() == mma_shape[1], String(
+    comptime assert tile.shape[1]() == mma_shape[1], String(
         "Expected tile.shape[1]() to be mma_shape[1]=",
         mma_shape[1],
         ", but got ",
@@ -597,8 +586,7 @@ fn copy_dram_to_sram_lds[
 
     var lds_ptr = lds_base_ptr
 
-    @parameter
-    for n_tile, m_tile, m_sub_tile in product(
+    comptime for n_tile, m_tile, m_sub_tile in product(
         range(N // BN), range(M // BM), range(BM // BM_SUB)
     ):
         var dst_partitions = dst.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
@@ -609,8 +597,8 @@ fn copy_dram_to_sram_lds[
         )
         comptime dst_layout = dst_partitions.layout
         # dst need to be contiguous
-        __comptime_assert dst_layout.stride[1].value() == 1, String(dst_layout)
-        __comptime_assert dst_layout.stride[0].value() == 32, String(dst_layout)
+        comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
+        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
         var worker_idx_with_offset = worker_idx + UInt(m_sub_tile * WARP_SIZE)
         var src_dist = src_partitions.vectorize[
             1, simd_width_of[src.dtype]()
@@ -685,7 +673,7 @@ fn load_b_[
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
-    __comptime_assert src.shape[0]() == MMA_M
+    comptime assert src.shape[0]() == MMA_M
     comptime simd_width = simd_width_of[src.dtype]()
     var tile = src.tile[MMA_M, MMA_K](0, k_tile_idx)
     comptime thread_layout = Layout.col_major(32, 2) if mma_shape[
@@ -696,8 +684,7 @@ fn load_b_[
     )
     var offset = dist.distance(src.ptr)
 
-    @parameter
-    if swizzle:
+    comptime if swizzle:
         offset = swizzle.value()(
             offset // Scalar[src.linear_idx_type](simd_width)
         ) * Scalar[src.linear_idx_type](simd_width)
@@ -741,8 +728,7 @@ fn load_b[
     comptime N = src.shape[1]() // MMA_K
     var output_vectorized = output.vectorize[1, 8]()
 
-    @parameter
-    for i, j in product(range(M), range(N)):
+    comptime for i, j in product(range(M), range(N)):
         var out_reg = load_b_[mma_shape, swizzle, j](
             src.tile[MMA_M, src.shape[1]()](i, 0)
         )

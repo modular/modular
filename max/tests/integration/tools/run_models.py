@@ -24,6 +24,7 @@ import huggingface_hub
 import requests
 import torch
 from create_pipelines import (
+    ImageGenerationOracle,
     MaxPipelineAndTokenizer,
     PipelineOracle,
     TorchModelAndDataProcessor,
@@ -32,12 +33,10 @@ from create_pipelines import (
 from max import driver, pipelines
 from max.interfaces import PipelineTask
 from max.pipelines.lib.hf_utils import HuggingFaceRepo
-from test_common import (
-    evaluate,
-    evaluate_embeddings,
-    torch_utils,
-    vllm_utils,
+from max.pipelines.lib.pipeline_variants.pixel_generation import (
+    PixelGenerationPipeline,
 )
+from test_common import evaluate, evaluate_embeddings, torch_utils, vllm_utils
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
 
@@ -158,7 +157,7 @@ def get_max_default_encoding(
     pipeline_oracle: PipelineOracle,
     pipeline_name: str,
     device_specs: list[driver.DeviceSpec],
-) -> str:
+) -> pipelines.SupportedEncoding:
     """Determine a suitable default encoding for MAX given the pipeline and devices.
 
     Preference order:
@@ -190,9 +189,9 @@ def get_max_default_encoding(
         if encodings and len(encodings) > 0:
             return encodings[0]
         # Fall back to architecture default
-        return arch.default_encoding.name
+        return arch.default_encoding
     # Fall back to architecture default if no device_encoding_map
-    return arch.default_encoding.name
+    return arch.default_encoding
 
 
 def run_max_model(
@@ -208,7 +207,7 @@ def run_max_model(
     if task == PipelineTask.TEXT_GENERATION:
         assert isinstance(
             max_pipeline_and_tokenizer.pipeline,
-            pipelines.TextGenerationPipeline,
+            pipelines.TextGenerationPipelineInterface,
         )
         results = evaluate.run_model(
             max_pipeline_and_tokenizer.pipeline,
@@ -234,6 +233,18 @@ def run_max_model(
             max_pipeline_and_tokenizer.tokenizer,
             prompts=(inp.prompt for inp in inputs),
             batch_size=evaluation_batch_size,
+        )
+    elif task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(
+            max_pipeline_and_tokenizer.pipeline,
+            PixelGenerationPipeline,
+        )
+        results = evaluate.run_pixel_generation(
+            max_pipeline_and_tokenizer.pipeline,
+            max_pipeline_and_tokenizer.tokenizer,
+            requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
         )
     else:
         raise ValueError(f"Evaluating task {task} is not supported.")
@@ -284,6 +295,14 @@ def run_torch_model(
             prompts=(inp.prompt for inp in inputs),
             pool_embeddings=pool_embeddings,
         )
+    elif pipeline_oracle.task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(pipeline_oracle, ImageGenerationOracle)
+        results = pipeline_oracle.run_torch_image_generation(
+            torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
+            device=device,
+            num_steps=num_steps,
+            inputs=inputs,
+        )
     else:
         raise ValueError(
             f"Evaluating task {pipeline_oracle.task} is not supported."
@@ -318,6 +337,7 @@ def run_vllm_model(
             encoding_name=vllm_pipeline.encoding,
             trust_remote_code=vllm_pipeline.trust_remote_code,
             max_batch_size=max_batch_size,
+            tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
         )
     else:
         raise NotImplementedError(

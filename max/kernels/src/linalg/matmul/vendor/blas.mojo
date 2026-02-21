@@ -19,7 +19,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from sys import has_amd_gpu_accelerator, size_of
-from sys.ffi import _get_global_or_null, external_call
+from ffi import _get_global_or_null, external_call
 
 import _rocblas
 from _cublas.cublas import (
@@ -113,7 +113,7 @@ from linalg.fp4_utils import (
 # ===----------------------------------------------------------------------===#
 
 
-struct Backend(Equatable, TrivialRegisterType, Writable):
+struct Backend(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -158,8 +158,7 @@ struct Backend(Equatable, TrivialRegisterType, Writable):
 fn _resolve_backend[
     backend: Backend, dtype: DType = DType.invalid
 ]() -> Backend:
-    @parameter
-    if backend is not Backend.AUTOMATIC:
+    comptime if backend is not Backend.AUTOMATIC:
         return backend
     # TODO: Remove this once we have a proper hipBLASLt backend for float32.
     elif dtype == DType.float32 and has_amd_gpu_accelerator():
@@ -193,8 +192,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     var _handle: Self.type
 
     fn __init__(out self) raises:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
             check_cublas_error(
                 cublasCreate(LegacyUnsafePointer(to=handle).as_unsafe_pointer())
@@ -227,8 +225,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
     @always_inline
     fn __exit__(mut self) raises:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             check_cublas_error(cublasDestroy(self._get_cublas()))
             self._handle = Self._cublas_type()
             return
@@ -246,8 +243,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         raise Error("the backend is not currently supported")
 
     fn _is_null(self) -> Bool:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             return self._get_cublas() == Self._cublas_type()
         elif Self.resolved_backend is Backend.ROCBLAS:
             return self._get_rocblas() == Self._rocblas_type()
@@ -257,20 +253,20 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         return False
 
     fn _get_cublas(self) -> Self._cublas_type:
-        __comptime_assert Self.resolved_backend in (
+        comptime assert Self.resolved_backend in (
             Backend.CUBLAS,
             Backend.CUBLASLT,
         ), "backend must be CUBLAS/CUBLASLT"
         return self._handle[Self._cublas_type]
 
     fn _get_rocblas(self) -> Self._rocblas_type:
-        __comptime_assert (
+        comptime assert (
             Self.resolved_backend is Backend.ROCBLAS
         ), "backend must be ROCBLAS"
         return self._handle[Self._rocblas_type]
 
     fn _get_hipblaslt(self) -> Self._hipblaslt_type:
-        __comptime_assert (
+        comptime assert (
             Self.resolved_backend is Backend.HIPBLASLT
         ), "backend must be HIPBLASLT"
         return self._handle[Self._hipblaslt_type]
@@ -290,17 +286,13 @@ comptime _DEBUG_VENDOR_BLAS = False
 
 
 fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
-    @parameter
-    if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+    comptime if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
         check_cublas_error(
             cublasSetStream(handle._get_cublas(), CUDA(ctx.stream()))
         )
 
-        @parameter
-        if _DEBUG_VENDOR_BLAS:
-
-            @parameter
-            if handle.resolved_backend is Backend.CUBLAS:
+        comptime if _DEBUG_VENDOR_BLAS:
+            comptime if handle.resolved_backend is Backend.CUBLAS:
                 check_cublas_error(
                     cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
                 )
@@ -347,15 +339,15 @@ fn matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c: NDBuffer[_, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, _, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -375,7 +367,7 @@ fn matmul[
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a.type](ctx),
             c_tensor,
@@ -411,10 +403,10 @@ fn matmul[
     b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -424,7 +416,7 @@ fn matmul[
     batch_size: Int = 1,
 ) raises:
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tensor,
@@ -460,10 +452,10 @@ fn matmul[
     b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -472,8 +464,7 @@ fn matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    @parameter
-    if handle.resolved_backend is Backend.CUBLAS:
+    comptime if handle.resolved_backend is Backend.CUBLAS:
         with Trace[TraceLevel.OP]("_cublas_matmul"):
             _cublas_matmul[use_tf32=use_tf32](
                 ctx,
@@ -599,7 +590,7 @@ fn _cublas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    __comptime_assert a_type == b_type and (
+    comptime assert a_type == b_type and (
         a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
@@ -616,8 +607,7 @@ fn _cublas_matmul[
 
     var compute_type: ComputeType
 
-    @parameter
-    if a_type == DType.float16:
+    comptime if a_type == DType.float16:
         compute_type = ComputeType.COMPUTE_32F
     elif a_type == DType.bfloat16:
         compute_type = ComputeType.COMPUTE_32F
@@ -628,8 +618,7 @@ fn _cublas_matmul[
 
     # When use_tf32 is True, CUBLAS will use TF32 to speedup the computation.
     # However, the result is not bit-wise identical to the result of FP32.
-    @parameter
-    if use_tf32:
+    comptime if use_tf32:
         check_cublas_error(
             cublasSetMathMode(handle, cublasMath_t.CUBLAS_TF32_TENSOR_OP_MATH)
         )
@@ -762,7 +751,7 @@ fn _rocblas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    __comptime_assert a_type == b_type and (
+    comptime assert a_type == b_type and (
         a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
@@ -875,10 +864,10 @@ fn _cublasLt_matmul[
     b: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
     ] = None,
     b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
     ] = None,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
@@ -890,7 +879,7 @@ fn _cublasLt_matmul[
     var N = d.dim(1)
     var K = a.dim(1)
 
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
         DType.bfloat16,
@@ -902,11 +891,10 @@ fn _cublasLt_matmul[
         " types."
     )
 
-    __comptime_assert a_type == b_type, "A and B must have the same type"
+    comptime assert a_type == b_type, "A and B must have the same type"
 
-    @parameter
-    if a_type.is_float8():
-        __comptime_assert not (a_type == b_type == DType.float8_e5m2), (
+    comptime if a_type.is_float8():
+        comptime assert not (a_type == b_type == DType.float8_e5m2), (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"
         )
@@ -978,8 +966,7 @@ fn _cublasLt_matmul[
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
-    @parameter
-    if ctx.default_device_info.compute == B200.compute:
+    comptime if ctx.default_device_info.compute == B200.compute:
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")
@@ -1310,7 +1297,7 @@ fn _hipblasLt_matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float32,
         DType.float16,
         DType.bfloat16,
@@ -1320,7 +1307,7 @@ fn _hipblasLt_matmul[
         DType.float8_e5m2fnuz,
     ), "Unsupported data type. Please extend it if you need more data types."
 
-    __comptime_assert a_type == b_type, "A and B must have the same type"
+    comptime assert a_type == b_type, "A and B must have the same type"
 
     @always_inline
     @parameter

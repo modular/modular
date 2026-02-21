@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -43,7 +44,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -53,6 +53,7 @@ from .model_config import Llama4Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Llama4Inputs(ModelInputs):
     """A class representing inputs for the Llama4 model.
 
@@ -73,28 +74,6 @@ class Llama4Inputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    def __init__(
-        self,
-        tokens: npt.NDArray[np.integer[Any]] | Buffer,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer,
-        cache_positions: npt.NDArray[np.integer[Any]] | Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            cache_positions: Positions in the cache of each input token.
-            signal_buffers: Device buffers used for synchronization in
-                communication collectives.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.cache_positions = cache_positions
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-
 
 class Llama4Model(
     AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
@@ -113,8 +92,6 @@ class Llama4Model(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -125,10 +102,6 @@ class Llama4Model(
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -142,8 +115,6 @@ class Llama4Model(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -171,7 +142,7 @@ class Llama4Model(
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
 

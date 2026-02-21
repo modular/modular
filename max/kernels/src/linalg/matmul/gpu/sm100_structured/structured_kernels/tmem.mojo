@@ -40,7 +40,7 @@ from linalg.structuring import SMemArray
 struct TmemAllocation[
     cta_group: Int,
     max_cols: Int = 512,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Handle to allocated Tensor Memory.
 
     Lifecycle: allocate() → use → release_lock() → wait → deallocate()
@@ -96,7 +96,7 @@ struct TmemAllocation[
 comptime TMEM_LOWER_ROW_OFFSET: UInt32 = 16 << 16
 
 
-struct TmemAddress(TrivialRegisterType):
+struct TmemAddress(TrivialRegisterPassable):
     """Simple TMEM address wrapper for load/store operations.
 
     Encapsulates TMEM address encoding for accumulator fragment access.
@@ -243,7 +243,7 @@ struct TmemTensor[
     layout: Layout,
     *,
     cta_group: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Typed tensor view over Tensor Memory (TMEM) for MMA accumulators.
 
     Provides a LayoutTensor-like abstraction for TMEM with:
@@ -467,7 +467,7 @@ struct TmemFragments[
     is_lower_required: Bool = True,
     data_paths: Int = 16,
     bits: Int = 256,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Paired upper/lower accumulator fragments from TMEM.
 
     Encapsulates the SM100 TMEM row-split hardware detail:
@@ -547,8 +547,7 @@ struct TmemFragments[
             Self.dtype, width, Self.data_paths, Self.bits, repeat
         ]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             result.lower = tmem.load_lower[
                 Self.dtype, width, Self.data_paths, Self.bits, repeat
             ]()
@@ -571,8 +570,7 @@ struct TmemFragments[
             Self.dtype, Self.frag_size, Self.data_paths, Self.bits, repeat
         ](self.upper)
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             tmem.store_lower[
                 Self.dtype, Self.frag_size, Self.data_paths, Self.bits, repeat
             ](self.lower)
@@ -591,8 +589,7 @@ struct TmemFragments[
         ]()
         result.upper = self.upper.cast[target_dtype]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             result.lower = self.lower.cast[target_dtype]()
 
         return result
@@ -621,7 +618,7 @@ struct TmemArrayType[
     num_tiles: Int,
     *,
     cta_group: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Array of tiles in Tensor Memory (TMEM).
 
     Similar to SMemArray but for TMEM-resident tiles. Provides indexed
@@ -678,7 +675,7 @@ struct BlockScaledTmem[
     cta_group: Int = 1,
     total_cols: Int = 512,
     num_sf_k_tiles: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """TMEM region for block-scaled matmul with typed tile accessors.
 
     Manages the TMEM address space for block-scaled MMA operations,
@@ -822,7 +819,7 @@ struct TmemStage[
     num_stages: Int,
     stage_stride: Int,
     cta_group: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """A pipeline stage within TMEM for accumulator buffering.
 
     Used by OutputTilePipeline to manage MMA→Epilogue synchronization.

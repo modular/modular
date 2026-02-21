@@ -40,6 +40,7 @@ from gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from gpu.memory import fence_async_view_proxy
 from layout import Layout, LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier
+from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
@@ -47,9 +48,7 @@ from utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr, SMemArray
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
-    ProducerConsumerPipeline,
-)
+from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================
@@ -60,7 +59,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
 struct GroupedAdvanceContext[
     work_origin: MutOrigin,
     idx_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager that returns current work and advances on exit.
 
     This follows the same pattern as the working kernel's WaitAndAdvanceContext:
@@ -109,7 +108,7 @@ struct GroupedAdvanceContext[
 
 @fieldwise_init
 struct GroupedWorkInfo(
-    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterType, Writable
+    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterPassable, Writable
 ):
     """Work info for grouped GEMM with group-specific metadata.
 
@@ -194,7 +193,7 @@ struct GroupedWorkIterator[
     tile_k: Int,
     max_groups: Int,
     cta_group: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator for grouped GEMM.
 
     This iterator traverses tiles across all groups, tracking when groups change
@@ -238,9 +237,7 @@ struct GroupedWorkIterator[
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
         grid_size: UInt32,
     ):
@@ -264,8 +261,7 @@ struct GroupedWorkIterator[
 
         # Compute cumulative tile counts
         # Explicitly zero-initialize ALL slots to avoid stale memory issues
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -299,7 +295,7 @@ struct GroupedWorkIterator[
         # Start at this cluster's first tile
         # For 2SM (cta_group=2), both CTAs in a cluster work on the same tile
         # Use cluster index = block_idx.x // cta_group
-        self.linear_tile_idx = UInt32(block_idx.x // Self.cta_group)
+        self.linear_tile_idx = UInt32(block_idx.x // UInt(Self.cta_group))
 
         # Delinearize initial position
         self.work_info = self._delinearize_to_group(self.linear_tile_idx)
@@ -321,7 +317,7 @@ struct GroupedWorkIterator[
         self.prev_group_idx = self.work_info.group_idx
 
         # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        self.linear_tile_idx += UInt32(grid_dim.x // Self.cta_group)
+        self.linear_tile_idx += UInt32(grid_dim.x // UInt(Self.cta_group))
 
         if self.linear_tile_idx >= self.total_tiles:
             self.work_info = GroupedWorkInfo()  # Invalid
@@ -351,7 +347,7 @@ struct GroupedWorkIterator[
         """
         # Pre-compute next state (read-only computation)
         # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        var advance_step = UInt32(grid_dim.x // Self.cta_group)
+        var advance_step = UInt32(grid_dim.x // UInt(Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + advance_step
         var next_work: GroupedWorkInfo
 
@@ -385,7 +381,7 @@ struct GroupedWorkIterator[
         """
         # Pre-compute next state (same as next() for grouped GEMM)
         # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        var advance_step = UInt32(grid_dim.x // Self.cta_group)
+        var advance_step = UInt32(grid_dim.x // UInt(Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + advance_step
         var next_work: GroupedWorkInfo
 
@@ -466,7 +462,7 @@ struct GroupedTileScheduler[
     max_groups: Int,
     num_stages: Int = 0,
     cta_group: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Tile scheduler for grouped block-scaled GEMM.
 
     Uses linear tile iteration to map tiles across groups. Does not use CLC
@@ -483,17 +479,13 @@ struct GroupedTileScheduler[
 
     var num_groups: Int
     """Number of active groups."""
-    var problem_sizes: LayoutTensor[
-        DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-    ]
+    var problem_sizes: _ProblemSizesTile[Self.max_groups]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
     ):
         """Initialize scheduler with problem sizes.
@@ -550,7 +542,7 @@ struct GroupedTileScheduler[
 
 struct GroupedCLCWaitAndAdvanceContext[
     work_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for waiting on CLC barrier and advancing work iterator.
 
     Encapsulates CLC response barrier synchronization:
@@ -598,7 +590,7 @@ struct GroupedCLCWorkIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator for grouped GEMM with CLC barrier support.
 
     This iterator combines grouped GEMM features with CLC-based synchronization
@@ -653,9 +645,7 @@ struct GroupedCLCWorkIterator[
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -687,8 +677,7 @@ struct GroupedCLCWorkIterator[
         self.problem_k = StaticTuple[UInt32, Self.max_groups]()
 
         # Initialize cumulative tiles
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -797,7 +786,7 @@ struct GroupedCLCWorkIterator[
         # Compute next work locally instead of reading from CLC response
         # (CLC response is in CTA 0's SMEM, not accessible to other CTAs)
         var linear_idx = self._current_linear_idx() + UInt32(
-            grid_dim.x // Self.cta_group
+            grid_dim.x // UInt(Self.cta_group)
         )
 
         fence_async_view_proxy()
@@ -826,7 +815,7 @@ struct GroupedCLCWorkIterator[
         """Compute next work item without CLC wait (for non-MMA warps)."""
         # Simple linear advance
         var linear_idx = self._current_linear_idx() + UInt32(
-            grid_dim.x // Self.cta_group
+            grid_dim.x // UInt(Self.cta_group)
         )
         if linear_idx >= self.total_tiles:
             return GroupedWorkInfo()  # Invalid
@@ -897,7 +886,7 @@ struct GroupedCLCSchedulerIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Scheduler warp iterator for grouped GEMM with CLC.
 
     The scheduler warp produces work items for other warps via CLC.
@@ -939,9 +928,7 @@ struct GroupedCLCSchedulerIterator[
     @always_inline
     fn __init__(
         out self,
-        problem_sizes: LayoutTensor[
-            DType.int32, Layout.row_major(Self.max_groups, 4), MutAnyOrigin
-        ],
+        problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -968,8 +955,7 @@ struct GroupedCLCSchedulerIterator[
         self.signal_count = UInt32(0)
 
         # Initialize cumulative tiles
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -1008,7 +994,7 @@ struct GroupedCLCSchedulerIterator[
     ]:
         """Get context manager for advance-after-work pattern."""
         # For 2SM: advance by number of clusters (each cluster processes different tiles)
-        var num_clusters = UInt32(grid_dim.x // Self.cta_group)
+        var num_clusters = UInt32(grid_dim.x // UInt(Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + num_clusters
         var next_work: GroupedWorkInfo
 
@@ -1046,7 +1032,7 @@ struct GroupedCLCSchedulerIterator[
         # Produce next work item: write linear_idx to CLC response
         # For 2SM: advance by number of clusters (each cluster processes different tiles)
         # Always signal, even for "no more work" (consumer detects via total_tiles)
-        var num_clusters = grid_dim.x // Self.cta_group
+        var num_clusters = grid_dim.x // UInt(Self.cta_group)
         var next_linear_idx = self.linear_tile_idx + UInt32(num_clusters)
 
         # Wait for empty signal (consumers done with previous)
@@ -1070,9 +1056,10 @@ struct GroupedCLCSchedulerIterator[
             var response_ptr = self.clc_response + self.producer_state.index()
             response_ptr[] = UInt128(Int(next_linear_idx))
 
-            @parameter
-            for cta in range(Self.cta_group):
-                self.full_mbar[self.producer_state.index()].arrive_cluster(cta)
+            comptime for cta in range(Self.cta_group):
+                self.full_mbar[self.producer_state.index()].arrive_cluster(
+                    UInt32(cta)
+                )
         self.signal_count += 1
 
         self.producer_state.step()

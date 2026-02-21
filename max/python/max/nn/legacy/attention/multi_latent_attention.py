@@ -17,13 +17,13 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     Weight,
     ops,
@@ -37,8 +37,8 @@ from ..kernels import (
     flare_mla_prefill_plan,
     flare_mla_prefill_ragged,
     fused_qk_ragged_rope,
-    kv_cache_get_max_seq_len,
-    matmul_k_cache_ragged,
+    fused_qkv_ragged_matmul,
+    mla_prefill_decode_graph_bf16,
     rms_norm_key_cache,
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -59,7 +59,32 @@ class MLAPrefillMetadata:
 
 
 class LatentAttentionWithRope(Module, Shardable):
-    """Implementation of Latent Attention with Rope."""
+    """Implementation of Latent Attention with Rope.
+
+    Args:
+        rope: The rope layer to borrow the freqs_cis value from.
+        num_attention_heads: The number of attention heads.
+        num_key_value_heads: Number of key/value heads.
+        hidden_size: The dimension of the hidden states.
+        kv_params: KV Cache Params, including the number of kv heads, the
+            head dim, and data type.
+        dtype: DType of the weights, currently only bfloat16 is supported.
+        devices: Device to place the weights and run the computation. If
+            multiple are provided, the first device is used.
+        linear_cls: Linear class to use for the outputs dense layer.
+        o_proj_dtype: Optional dtype override for the output projection.
+        o_proj_float8_config: Optional float8 config for the output projection.
+        scale: Value used to scale the results of the attention output.
+        q_lora_rank: Optional LoRA rank for Q projection.
+        kv_lora_rank: LoRA rank for KV projections.
+        qk_nope_head_dim: Head dimension for non-positional encoding part.
+        qk_rope_head_dim: Head dimension for rope part.
+        v_head_dim: Head dimension for value.
+        buffer_size: Buffer size for storing the temporal results during
+            prefill, in unit of tokens.
+        graph_mode: Pipeline role to use for the attention layer. Should be
+            "prefill", "decode", or "auto".
+    """
 
     # TODO: This will be replaced with a generic Yarn Rope implementation for Deepseek-V2-lite.
     rope: RotaryEmbedding
@@ -89,32 +114,6 @@ class LatentAttentionWithRope(Module, Shardable):
         buffer_size: int = 16384,
         graph_mode: str | None = None,
     ) -> None:
-        """Initializes the latent attention layer.
-
-        Args:
-            rope: The rope layer to borrow the freqs_cis value from.
-            num_attention_heads: The number of attention heads.
-            num_key_value_heads: Number of key/value heads.
-            hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the
-                head dim, and data type.
-            dtype: DType of the weights, currently only bfloat16 is supported.
-            devices: Device to place the weights and run the computation. If
-                multiple are provided, the first device is used.
-            linear_cls: Linear class to use for the outputs dense layer.
-            o_proj_dtype: Optional dtype override for the output projection.
-            o_proj_float8_config: Optional float8 config for the output projection.
-            scale: Value used to scale the results of the attention output.
-            q_lora_rank: Optional LoRA rank for Q projection.
-            kv_lora_rank: LoRA rank for KV projections.
-            qk_nope_head_dim: Head dimension for non-positional encoding part.
-            qk_rope_head_dim: Head dimension for rope part.
-            v_head_dim: Head dimension for value.
-            buffer_size: Buffer size for storing the temporal results during
-                prefill, in unit of tokens.
-            graph_mode: Pipeline role to use for the attention layer. Should be
-                "prefill", "decode", or "auto".
-        """
         super().__init__()
 
         _role = graph_mode or "auto"
@@ -147,7 +146,9 @@ class LatentAttentionWithRope(Module, Shardable):
 
         self.BUFFER_TOK_SIZE = buffer_size
 
-        self._scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
+        self._scale = (
+            scale if scale is not None else math.sqrt(1.0 / self.qk_head_dim)
+        )
         self.scale = self.rope.compute_scale(self._scale)
         self.devices = devices or [DeviceRef.CPU()]
 
@@ -244,9 +245,10 @@ class LatentAttentionWithRope(Module, Shardable):
         if strategy.is_tensor_parallel:
             self._sharding_strategy = strategy
 
-            if (self.n_heads / strategy.num_devices) % 16 != 0:
+            if self.n_heads % strategy.num_devices != 0:
                 raise ValueError(
-                    "MLA head per device must be a multiple of 16."
+                    f"Number of attention heads ({self.n_heads}) must be"
+                    f" divisible by the number of devices ({strategy.num_devices})."
                 )
 
             # Tensor parallelism: shard/replicate weights appropriately
@@ -457,6 +459,17 @@ class LatentAttentionWithRope(Module, Shardable):
             )
 
     @property
+    def wqkv(self) -> TensorValue:
+        """The concatenation of q and kv_a_proj_with_mqa weight vectors."""
+
+        if self.q_lora_rank is not None:
+            wqkv = ops.concat((self.q_a_proj, self.kv_a_proj_with_mqa))
+        else:
+            wqkv = ops.concat((self.q_proj, self.kv_a_proj_with_mqa))
+
+        return wqkv
+
+    @property
     def w_uk_uv(self) -> list[TensorValue]:
         """The concatenation of q, k, and v weight vectors."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
@@ -481,26 +494,60 @@ class LatentAttentionWithRope(Module, Shardable):
 
     def _mla_impl(
         self,
-        xq_nope: TensorValue,
-        xq_rope: TensorValue,
+        xq_nope: TensorValue | None,
+        xq_rope: TensorValue | None,
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        *,
+        xq: TensorValue | None = None,
+        freqs_cis: TensorValue | None = None,
+        kv_norm_gamma: TensorValue | None = None,
+        epsilon: float | None = None,
     ) -> TensorValue:
-        # These weights are going to be used in the decode path.
-        # Move the creation of these weights outside of the decode subgraph so the
-        # ConstantFold Pass can optimize them out, avoiding the need to re-calculate
-        # them each time we enter the decode subgraph.
-        w_uk, w_uv = self.w_uk_uv
+        attn_kwargs: dict[str, Any] = {
+            "input_row_offsets": input_row_offsets,
+            "kv_collection": kv_collection,
+            "layer_idx": layer_idx,
+            "mask_variant": MHAMaskVariant.CAUSAL_MASK,
+            "scale": self.scale,
+            "v_head_dim": self.v_head_dim,
+        }
 
-        def _mla_prefill() -> TensorValue:
+        if self.graph_mode != "auto":
+            assert xq_nope is not None and xq_rope is not None
+            attn_kwargs["q_nope"] = xq_nope
+            attn_kwargs["q_rope"] = xq_rope
+
+        mla_prefill_metadata: MLAPrefillMetadata | None = None
+        if self.graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(
                     input_row_offsets, kv_collection
                 )
             else:
                 mla_prefill_metadata = _mla_prefill_metadata
+
+            attn_kwargs["buffer_row_offsets"] = (
+                mla_prefill_metadata.buffer_row_offsets
+            )
+            attn_kwargs["cache_offsets"] = mla_prefill_metadata.cache_offsets
+            attn_kwargs["buffer_length"] = (
+                mla_prefill_metadata.buffer_lengths.to(DeviceRef.CPU())
+            )
+            attn_kwargs["kv_b_proj"] = self.kv_b_proj
+
+        w_uk: TensorValue | None = None
+        w_uv: TensorValue | None = None
+        if self.graph_mode in ["decode", "auto"]:
+            w_uk, w_uv = self.w_uk_uv
+            attn_kwargs["w_uk"] = w_uk.transpose(1, 2)
+            attn_kwargs["w_uv"] = w_uv.transpose(1, 2)
+
+        def _mla_prefill() -> TensorValue:
+            assert mla_prefill_metadata is not None
+            assert xq_nope is not None and xq_rope is not None
             xq = ops.concat([xq_nope, xq_rope], axis=2)
 
             kv_buffer = flare_mla_decompress_k_cache(
@@ -521,7 +568,7 @@ class LatentAttentionWithRope(Module, Shardable):
                 kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
             )
 
-            result = flare_mla_prefill_ragged(
+            return flare_mla_prefill_ragged(
                 self.kv_params,
                 xq,
                 k_nope,
@@ -536,9 +583,9 @@ class LatentAttentionWithRope(Module, Shardable):
                 self.qk_rope_head_dim,
             )
 
-            return result
-
         def _mla_decode() -> TensorValue:
+            assert w_uk is not None and w_uv is not None
+            assert xq_nope is not None and xq_rope is not None
             # from [B, H, D] to [H, B, D]
             xq_nope_t = xq_nope.transpose(0, 1)
 
@@ -565,31 +612,29 @@ class LatentAttentionWithRope(Module, Shardable):
             attn_out = attn_out_latent @ w_uv
             return attn_out.transpose(0, 1)
 
-        # TODO: use max_lengths[0, 0] cause a CUDA_INVALID_MEMORY_ACCESS error,
-        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len = kv_cache_get_max_seq_len(self.kv_params, kv_collection)
-
         if self.graph_mode == "prefill":
             result = _mla_prefill()
         elif self.graph_mode == "decode":
             result = _mla_decode()
         else:
-            result = ops.cond(
-                max_seq_len > 1,
-                [
-                    TensorType(
-                        dtype=xq_nope.dtype,
-                        shape=[
-                            xq_nope.shape[0],
-                            self.n_heads,
-                            self.v_head_dim,
-                        ],
-                        device=xq_nope.device,
-                    )
-                ],
-                _mla_prefill,
-                _mla_decode,
-            )[0].tensor
+            assert mla_prefill_metadata is not None
+            assert w_uk is not None and w_uv is not None
+            assert xq is not None
+            assert freqs_cis is not None
+            assert kv_norm_gamma is not None
+            assert epsilon is not None
+            attn_kwargs.update(
+                {
+                    "q": xq,
+                    "freqs_cis": freqs_cis,
+                    "kv_norm_gamma": kv_norm_gamma,
+                    "epsilon": epsilon,
+                }
+            )
+            result = mla_prefill_decode_graph_bf16(
+                kv_params=self.kv_params,
+                **attn_kwargs,
+            )
 
         result = ops.reshape(
             result, shape=[result.shape[0], self.n_heads * self.v_head_dim]
@@ -609,60 +654,77 @@ class LatentAttentionWithRope(Module, Shardable):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        if self.q_lora_rank is not None:
-            xq = self.q_a_layernorm(x @ self.q_a_proj.T) @ self.q_b_proj.T
-        else:
-            xq = x @ self.q_proj.T
-
-        matmul_k_cache_ragged(
+        _xq = fused_qkv_ragged_matmul(
             self.kv_params,
-            hidden_states=x,
-            weight=self.kv_a_proj_with_mqa,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-        )
-
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.kv_a_proj_layernorm,
-            epsilon=1e-6,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            rms_norm_cols=self.kv_lora_rank,
-            weight_offset=0.0,
-            multiply_before_cast=False,
-        )
-
-        xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
-
-        xq_nope, xq_rope = ops.split(
-            xq, [self.qk_nope_head_dim, self.qk_rope_head_dim], axis=2
-        )
-
-        # Apply rope.
-        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-
-        xq_rope = fused_qk_ragged_rope(
-            self.kv_params,
-            xq_rope,
+            x,
             input_row_offsets,
-            kv_collection,
-            freqs_cis=freqs_cis,
-            layer_idx=layer_idx,
-            interleaved=True,
-        )
-
-        attn_out = self._mla_impl(
-            xq_nope,
-            xq_rope,
+            self.wqkv,
             kv_collection,
             layer_idx,
-            input_row_offsets,
-            mla_prefill_metadata,
+            self.n_heads,
+            _output_dim=self.q_lora_rank
+            if self.q_lora_rank is not None
+            else self.n_heads * self.qk_head_dim,
         )
+
+        if self.q_lora_rank is not None:
+            xq = self.q_a_layernorm(_xq) @ self.q_b_proj.T
+        else:
+            xq = _xq
+
+        xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+
+        if self.graph_mode == "auto":
+            attn_out = self._mla_impl(
+                None,
+                None,
+                kv_collection,
+                layer_idx,
+                input_row_offsets,
+                mla_prefill_metadata,
+                xq=xq,
+                freqs_cis=freqs_cis,
+                kv_norm_gamma=self.kv_a_proj_layernorm,
+                epsilon=1e-6,
+            )
+        else:
+            rms_norm_key_cache(
+                self.kv_params,
+                kv_collection=kv_collection,
+                gamma=self.kv_a_proj_layernorm,
+                epsilon=1e-6,
+                layer_idx=layer_idx,
+                total_seq_len=total_seq_len,
+                input_row_offsets=input_row_offsets,
+                rms_norm_cols=self.kv_lora_rank,
+                weight_offset=0.0,
+                multiply_before_cast=False,
+            )
+
+            xq_nope, xq_rope = ops.split(
+                xq, [self.qk_nope_head_dim, self.qk_rope_head_dim], axis=2
+            )
+
+            # Apply rope.
+            xq_rope = fused_qk_ragged_rope(
+                self.kv_params,
+                xq_rope,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis=freqs_cis,
+                layer_idx=layer_idx,
+                interleaved=True,
+            )
+
+            attn_out = self._mla_impl(
+                xq_nope,
+                xq_rope,
+                kv_collection,
+                layer_idx,
+                input_row_offsets,
+                mla_prefill_metadata,
+            )
 
         return self.o_proj(attn_out)
 

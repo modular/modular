@@ -64,7 +64,7 @@ from std.bit import log2_floor
 
 
 # Import ThreadInfo from matmul_output
-struct ThreadInfo(TrivialRegisterType):
+struct ThreadInfo(TrivialRegisterPassable):
     """Thread identification within the warp group."""
 
     var warp_id: UInt
@@ -101,7 +101,7 @@ struct ThreadInfo(TrivialRegisterType):
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
 
-struct TileCoordinates(TrivialRegisterType):
+struct TileCoordinates(TrivialRegisterPassable):
     """Helper struct for managing tile coordinate offsets.
 
     This struct encapsulates corner and split coordinates used in epilogue
@@ -138,7 +138,7 @@ struct TileCoordinates(TrivialRegisterType):
         )
 
 
-trait SMemTileWriter(TrivialRegisterType):
+trait SMemTileWriter(TrivialRegisterPassable):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing tiles from shared memory to global memory,
@@ -168,7 +168,7 @@ struct TileWriterTMA[
     tma_layout: Layout,
     desc_layout: Layout,
     //,
-](SMemTileWriter, TrivialRegisterType):
+](SMemTileWriter, TrivialRegisterPassable):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
     This writer uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
@@ -244,7 +244,7 @@ struct TileWriterThreadwise[
     simd_size: Int,
     half_tile: Bool = False,  # Handle masked x2 case,
     swapAB: Bool = False,
-](SMemTileWriter, TrivialRegisterType):
+](SMemTileWriter, TrivialRegisterPassable):
     comptime _dtype = Self.dtype
 
     comptime DstType = LayoutTensor[
@@ -301,8 +301,7 @@ struct TileWriterThreadwise[
             log2_floor(16 // size_of[Self._dtype]()),
         ]()
 
-        @parameter
-        if Self.half_tile:
+        comptime if Self.half_tile:
             if Self.swapAB:
                 comptime threads_per_row = Self.thread_layout.shape[1].value()
                 comptime num_threads = Int(Self.thread_layout.size())
@@ -387,7 +386,7 @@ struct TileWriterThreadwise[
             )
 
 
-trait RegTileWriter(TrivialRegisterType):
+trait RegTileWriter(TrivialRegisterPassable):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing register tiles to memory
@@ -599,8 +598,7 @@ struct FragmentToSMemWriter[
         ) // ST_MATRIX_WIDTH_BYTES
 
         # Store all fragments using st.matrix
-        @parameter
-        for m_frag, n_frag in itertools.product(
+        comptime for m_frag, n_frag in itertools.product(
             range(Self.num_m_mmas),
             range(Self.tile_n_size // ST_MATRIX_WIDTH_BYTES),
         ):
@@ -749,8 +747,7 @@ struct RegisterToGMemWriter[
         var n_mma = Int(coords[1])
         var mma_id = self._get_mma_id(m_mma, n_mma)
 
-        @parameter
-        if Self.check_runtime_bounds or Self.swapAB:
+        comptime if Self.check_runtime_bounds or Self.swapAB:
             # Element-by-element with runtime bounds checking
             self._write_with_runtime_bounds(c_reg_tile, m_mma, n_mma, mma_id)
         elif Self.epilogue_fn is not None or Self.compute_lambda_fn is not None:
@@ -822,8 +819,7 @@ struct RegisterToGMemWriter[
         comptime num_vecs = gmem_frag.layout.size()
 
         # Process all vectors
-        @parameter
-        for frag_idx in range(num_vecs):
+        comptime for frag_idx in range(num_vecs):
             comptime dst_idx = gmem_frag.layout(frag_idx)
             comptime dst_m_offset = dst_idx // Self.N
             comptime dst_n_offset = dst_idx % Self.N
@@ -852,8 +848,7 @@ struct RegisterToGMemWriter[
         """Apply epilogue or compute_lambda and store result."""
         comptime alignment = align_of[SIMD[Self.c_type, 2]]()
 
-        @parameter
-        if Self.epilogue_fn:
+        comptime if Self.epilogue_fn:
             comptime epilogue = Self.epilogue_fn.value()
             epilogue[alignment=alignment](
                 (m, n),
@@ -908,8 +903,7 @@ struct RegisterToGMemWriter[
             warp_tile_coords = self.tile_coords.value().adjust(warp_tile_coords)
 
         # Process fragment matrices
-        @parameter
-        for m_frag, n_frag in itertools.product(
+        comptime for m_frag, n_frag in itertools.product(
             range(Self.num_m_frag_mat), range(Self.num_n_frag_mat)
         ):
             comptime frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag
@@ -925,8 +919,7 @@ struct RegisterToGMemWriter[
             var max_row = UInt32(frag_mat_gmem.runtime_layout.shape[0].value[0])
             var max_col = UInt32(frag_mat_gmem.runtime_layout.shape[1].value[0])
 
-            @parameter
-            for i in range(2):
+            comptime for i in range(2):
                 # Bounds check coordinates
                 # For normal: row = lane_row, col = lane_col * 2 + i
                 # For swapAB: row = lane_col * 2 + i, col = lane_row (transposed)
@@ -946,8 +939,7 @@ struct RegisterToGMemWriter[
 
                     @parameter
                     fn epilogue_coordinates() -> Tuple[Int, Int]:
-                        @parameter
-                        if Self.swapAB:
+                        comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (
                                 warp_tile_coords[0]
@@ -977,17 +969,14 @@ struct RegisterToGMemWriter[
                                 ),
                             )
 
-                    @parameter
-                    if Self.epilogue_fn:
+                    comptime if Self.epilogue_fn:
                         comptime epilogue = Self.epilogue_fn.value()
                         var frag_m, frag_n = epilogue_coordinates()
                         epilogue[alignment = align_of[Scalar[Self.c_type]]()](
                             (frag_m, frag_n), reg_val
                         )
                     else:
-
-                        @parameter
-                        if Self.compute_lambda_fn:
+                        comptime if Self.compute_lambda_fn:
                             comptime compute_lambda = Self.compute_lambda_fn.value()
                             var frag_m, frag_n = epilogue_coordinates()
                             reg_val = compute_lambda[

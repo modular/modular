@@ -31,15 +31,15 @@ def compute_group_stats[
     Scalar[t],
     Scalar[t],
 ]:
-    __comptime_assert vec.rank == 1, "vec must be rank 1"
-    __comptime_assert vec.element_size == 1
+    comptime assert vec.flat_rank == 1, "vec must be rank 1"
+    comptime assert vec.element_size == 1
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
     for i in range(size):
         sum_val += vec[i][0]
         sum_sq += vec[i][0] * vec[i][0]
-    var mean = sum_val / size
-    var variance = max((sum_sq / size) - (mean * mean), 0.0)
+    var mean = sum_val / Scalar[t](size)
+    var variance = max((sum_sq / Scalar[t](size)) - (mean * mean), 0.0)
     return (mean, rsqrt(variance + eps))
 
 
@@ -112,7 +112,7 @@ fn run_group_norm_gpu[
         return beta.ptr.load[width=width](idx)
 
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
-        shape, epsilon, num_groups, data_buf, ctx=ctx
+        shape, epsilon, Int32(num_groups), data_buf, ctx=ctx
     )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()

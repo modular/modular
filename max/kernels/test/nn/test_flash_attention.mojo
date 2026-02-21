@@ -47,7 +47,7 @@ def reference_attention_bshd[
     ],
     scale: Float32,
 ):
-    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
@@ -180,7 +180,7 @@ def reference_attention_bshd_with_sinks[
     scale: Float32,
 ):
     """Reference implementation of attention with sink weights."""
-    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
 
     comptime layout_4d = Layout.row_major[4]()
 
@@ -297,7 +297,7 @@ def reference_attention_bshd_with_sinks[
 
 
 @fieldwise_init
-struct TestCaseConfig[batch_rank: Int](TrivialRegisterType):
+struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
     """Test case workload configuration hyperparameters."""
 
     comptime rank = Self.batch_rank + 2
@@ -322,23 +322,19 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterType):
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
         var shape = IndexList[shape_rank]()
 
-        @parameter
-        if shape_rank == self.kv_cache_rank:
+        comptime if shape_rank == self.kv_cache_rank:
             # Unsqueeze the output shape with a 1-dim.
             shape[0] = 1
 
-            @parameter
-            for i in range(Self.batch_rank):
+            comptime for i in range(Self.batch_rank):
                 shape[i + 1] = self.batch_dims[i]
         else:
             # Copy the batch dims without unsqueezing.
-            @parameter
-            for i in range(Self.batch_rank):
+            comptime for i in range(Self.batch_rank):
                 shape[i] = self.batch_dims[i]
 
         # Replace the number of query heads with the number of KV heads.
-        @parameter
-        if is_kv and Self.batch_rank == 2:
+        comptime if is_kv and Self.batch_rank == 2:
             shape[shape_rank - 3] = self.kv_num_heads
 
         shape[shape_rank - 2] = x
@@ -352,26 +348,22 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterType):
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
         var shape = IndexList[shape_rank]()
 
-        @parameter
-        if shape_rank == self.kv_cache_rank:
+        comptime if shape_rank == self.kv_cache_rank:
             # Unsqueeze the output shape with a 1-dim.
             shape[0] = 1
             shape[1] = self.batch_dims[0]
 
-            @parameter
-            for i in range(1, Self.batch_rank):
+            comptime for i in range(1, Self.batch_rank):
                 shape[i + 2] = self.batch_dims[i]
         else:
             shape[0] = self.batch_dims[0]
 
             # Copy the batch dims without unsqueezing.
-            @parameter
-            for i in range(1, Self.batch_rank):
+            comptime for i in range(1, Self.batch_rank):
                 shape[i + 1] = self.batch_dims[i]
 
         # Replace the number of query heads with the number of KV heads.
-        @parameter
-        if is_kv and Self.batch_rank == 2:
+        comptime if is_kv and Self.batch_rank == 2:
             shape[shape_rank - 2] = self.kv_num_heads
 
         shape[1] = x
@@ -556,6 +548,7 @@ def test_flash_attention[dtype: DType]():
     )
     test_case[
         dtype,
+        batch_rank=1,
         output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 128),
     ](
         TestCaseConfig(
@@ -569,6 +562,7 @@ def test_flash_attention[dtype: DType]():
     )
     test_case[
         dtype,
+        batch_rank=1,
         output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 160),
     ](
         TestCaseConfig(
@@ -582,6 +576,7 @@ def test_flash_attention[dtype: DType]():
     )
     test_case[
         dtype,
+        batch_rank=1,
         output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 300),
     ](
         TestCaseConfig(
@@ -603,7 +598,7 @@ def test_case_split_kv[
     ),
 ](cfg: TestCaseConfig[batch_rank]):
     # For now only allow Q.shape = [B, S, H, D].
-    __comptime_assert batch_rank == 2
+    comptime assert batch_rank == 2
 
     seed(42)
 
@@ -804,7 +799,7 @@ def test_flash_attention_with_sinks[dtype: DType]():
     # Fill sink weights with known values
     for i in range(num_heads):
         sink_weights[i] = Scalar[dtype](
-            0.5 * (i + 1)
+            0.5 * Float64((i + 1))
         )  # 0.5, 1.0 for heads 0, 1
 
     # Test 1: Regular attention without sinks
@@ -906,7 +901,7 @@ def test_flash_attention_with_sinks[dtype: DType]():
         sink_weights=LayoutTensor[
             sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE)
         ](
-            sink_weights.ptr,
+            sink_weights.ptr.as_immutable(),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 sink_weights.runtime_layout.shape.value
             ),

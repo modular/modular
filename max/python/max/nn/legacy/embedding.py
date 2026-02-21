@@ -193,10 +193,12 @@ class VocabParallelEmbedding(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        # Shard the weight onto each device.
+        # Broadcast indices to all devices.
         input = TensorValue(indices)
+        indices_per_device = ops.distributed_broadcast(input, signal_buffers)
         outputs = [
-            self._per_device_call(input, n) for n in range(self.num_devices)
+            self._per_device_call(indices_per_device[i], i)
+            for i in range(self.num_devices)
         ]
 
         return self.allreduce(outputs, signal_buffers)
@@ -215,7 +217,6 @@ class VocabParallelEmbedding(Module):
             device
         )
 
-        indices = indices.to(device)
         # Process indices so that all tokens are between 0 and the shard size.
 
         # Set up mask so that the 1=tokens within range, 0=tokens out of range.

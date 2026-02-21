@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn.legacy.comm import Signals
@@ -42,7 +43,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
     upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import (
@@ -58,6 +58,7 @@ from .model_config import DeepseekV2Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class DeepseekV2Inputs(ModelInputs):
     """A class representing inputs for the DeepseekV2 model.
 
@@ -71,27 +72,8 @@ class DeepseekV2Inputs(ModelInputs):
     input_row_offsets: Buffer
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
-    return_n_logits: Buffer
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: Buffer | None = None,
-    ) -> None:
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        if return_n_logits is None:
-            # Provide a default value if none is provided
-            self.return_n_logits = Buffer.from_numpy(
-                np.array([1], dtype=np.int64)
-            ).to(tokens.device)
-        else:
-            self.return_n_logits = return_n_logits
+    return_n_logits: Buffer = field(kw_only=True)
 
 
 class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
@@ -99,8 +81,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -114,8 +94,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -230,17 +208,17 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_seq_len "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -248,8 +226,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=device_ref
         )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -259,10 +235,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
         if len(self.devices) > 1:
-            # Flatten kv types for each device
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
             signals = Signals(
                 devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
@@ -271,14 +243,14 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *flattened_kv_types,
+                *self.kv_params.get_symbolic_inputs().flatten(),
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *kv_inputs[0],
+                *self.kv_params.get_symbolic_inputs().flatten(),
             )
 
     def _unflatten_kv_inputs(
@@ -337,6 +309,10 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
             }
 
         model_config = DeepseekV2Config.initialize(self.pipeline_config)
+        model_config.max_batch_context_length = (
+            self.pipeline_config.max_batch_total_tokens
+            or model_config.max_batch_context_length
+        )
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()

@@ -20,7 +20,7 @@ from datasets import load_dataset
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
-from .types import SampledRequest
+from .types import RequestSamples, SampledRequest
 
 
 class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
@@ -38,7 +38,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         # Extract required parameters from kwargs
         input_len = kwargs.get("input_len")
         max_output_len = kwargs.get("max_output_len")
@@ -58,7 +58,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
             tokenizer: Tokenizer for processing text
 
         Returns:
-            Sequence of SampledRequest objects
+            Sampled requests
         """
         # Load the dataset with train split
         dataset = load_dataset("ccdv/arxiv-summarization", split="train")
@@ -111,7 +111,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
             prompt_formatted = f"{prompt_prefix}{article}{prompt_suffix}"
 
             # Re-tokenize and get the actual prompt length.
-            # Note that the the final prompt size usually does not match
+            # Note that the final prompt size usually does not match
             # len(prefix)+len(suffix)+len(article_tokens) exactly because most
             # tokenizers are not entirely stateless; i.e. adding the prefix
             # changes the behavior. This means the result may be slightly larger
@@ -144,4 +144,4 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
                 )
             )
 
-        return sampled_requests
+        return RequestSamples(requests=sampled_requests)

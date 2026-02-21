@@ -16,10 +16,17 @@ import subprocess
 import sys
 
 
+def update_pip() -> None:
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "pip"]
+    )
+
+
 def install_pip_package(package: str) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 
 if __name__ == "__main__":
-    install_pip_package("sgl-kernel")
+    update_pip()
     install_pip_package("sglang[all]")
+    install_pip_package("sgl-kernel")

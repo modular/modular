@@ -43,7 +43,9 @@ fn arg_nonzero[
         input_buffer: The tensor to count the non-zeros in.
         output_buffer: The indices of all non-zero elements.
     """
-    __comptime_assert output_buffer.rank == 2, "output_buffer must be of rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output_buffer must be of rank 2"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.numel()
@@ -53,7 +55,7 @@ fn arg_nonzero[
         var j: Int = 0
         for i in range(numel):
             var indices = _get_start_indices_of_nth_subvolume[0](
-                i, coord_to_index_list(input_buffer.layout.shape)
+                i, coord_to_index_list(input_buffer.layout.shape_coord())
             )
             var offset = input_buffer.layout(Coord(indices))
             if input_buffer.ptr.load(offset) != 0:
@@ -65,8 +67,7 @@ fn arg_nonzero[
                 var coords = input_buffer.layout.idx2crd(Int(offset))
 
                 # Write each coordinate to the output buffer
-                @parameter
-                for k in range(input_buffer.rank):
+                comptime for k in range(input_buffer.rank):
                     out_indices[1] = k
                     output_buffer.store(
                         Coord(Idx(out_indices[0]), Idx(out_indices[1])),

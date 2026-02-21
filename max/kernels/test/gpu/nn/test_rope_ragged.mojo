@@ -31,7 +31,7 @@ def test_rope_ragged_gpu[
 ](ctx: DeviceContext) -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.float32
     ), "goldens only for float32, currently"
 
@@ -101,7 +101,7 @@ def test_rope_ragged_gpu[
 
     # Fill input row offsets: [0, seq_len, 2*seq_len] = [0, 3, 6]
     for i in range(batch_size):
-        input_row_offsets_host_buffer[i] = i * seq_len
+        input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
     input_row_offsets_host_buffer[batch_size] = batch_size * seq_len
 
     # Fill start positions
@@ -194,8 +194,7 @@ def test_rope_ragged_gpu[
                     + head_idx * head_dim  # head offset
                 )
 
-                @parameter
-                if rope_dim == head_dim:
+                comptime if rope_dim == head_dim:
                     # Full RoPE case - compare entire output against golden
                     assert_almost_equal(
                         q_out_host_buffer.unsafe_ptr() + base_offset,

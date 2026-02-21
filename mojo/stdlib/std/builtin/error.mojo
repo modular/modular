@@ -23,7 +23,9 @@ from memory import (
     alloc,
     memcpy,
 )
-from sys import external_call, is_gpu
+from ffi import external_call
+import format._utils as fmt
+from sys import is_gpu
 from sys.info import size_of, align_of
 
 
@@ -63,26 +65,26 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructor - copies the stack trace string.
 
         Args:
-            existing: The existing StackTrace to copy from.
+            copy: The existing StackTrace to copy from.
         """
         # Copy the null-terminated string
-        var src_ptr = existing._data.unsafe_ptr()
+        var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
         var new_ptr = alloc[UInt8](str_len + 1)
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move constructor.
 
         Args:
-            existing: The existing StackTrace to move from.
+            take: The existing StackTrace to move from.
         """
-        self._data = existing._data^
+        self._data = take._data^
 
     @staticmethod
     @no_inline
@@ -103,8 +105,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             succeeded, or `None` if disabled or unavailable.
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return None
 
         if depth < 0:
@@ -238,7 +239,7 @@ struct Error(
         Returns:
             A String of the error message.
         """
-        return String(self._error)
+        return self._error
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -251,13 +252,25 @@ struct Error(
         self._error.write_to(writer)
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """
+        Formats this error to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Error").fields(fmt.Repr(self._error))
+
+    @no_inline
     fn __repr__(self) -> String:
         """Converts the Error to printable representation.
 
         Returns:
             A printable representation of the error message.
         """
-        return String("Error('", self._error, "')")
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods

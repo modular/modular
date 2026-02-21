@@ -33,7 +33,7 @@ fn _current_target() -> _TargetType:
 
 
 struct CompilationTarget[value: _TargetType = _current_target()](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     """A struct that provides information about a target architecture.
 
@@ -70,8 +70,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         comptime note_text = String(" Note: ", note.value() if note else "")
         comptime msg = "Current compilation target does not support"
 
-        @parameter
-        if operation:
+        comptime if operation:
             constrained[
                 False,
                 String(msg, " operation: ", operation.value(), ".", note_text),
@@ -167,8 +166,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             The string of default compile options for the compilation target.
         """
 
-        @parameter
-        if is_triple["nvptx64-nvidia-cuda", Self.value]():
+        comptime if is_triple["nvptx64-nvidia-cuda", Self.value]():
             # TODO: use `is_nvidia_gpu` when moved to into this struct.
             return "nvptx-short-ptr=true"
         else:
@@ -396,8 +394,7 @@ fn platform_map[
     ```
     """
 
-    @parameter
-    if CompilationTarget.is_macos() and macos:
+    comptime if CompilationTarget.is_macos() and macos:
         return macos.value().copy()
     elif CompilationTarget.is_linux() and linux:
         return linux.value().copy()
@@ -702,12 +699,11 @@ fn _is_amd_mi355x() -> Bool:
 
 @always_inline("nodebug")
 fn _cdna_version() -> Int:
-    __comptime_assert (
+    comptime assert (
         _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
-    @parameter
-    if _is_amd_mi300x():
+    comptime if _is_amd_mi300x():
         return 3
     else:
         return 4
@@ -715,16 +711,14 @@ fn _cdna_version() -> Int:
 
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
-    @parameter
-    if _is_amd_cdna():
+    comptime if _is_amd_cdna():
         return _cdna_version() >= 3
     return False
 
 
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
-    @parameter
-    if _is_amd_cdna():
+    comptime if _is_amd_cdna():
         return _cdna_version() >= 4
     return False
 
@@ -997,7 +991,7 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn bit_width_of[
-    type: TrivialRegisterType, target: _TargetType = _current_target()
+    type: TrivialRegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1028,7 +1022,7 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn simd_width_of[
-    type: TrivialRegisterType, target: _TargetType = _current_target()
+    type: TrivialRegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -1099,7 +1093,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         The version triple of macOS.
     """
 
-    __comptime_assert (
+    comptime assert (
         CompilationTarget.is_macos()
     ), "the operating system must be macOS"
 
@@ -1163,6 +1157,19 @@ fn has_amd_gpu_accelerator() -> Bool:
         True if the host system has an AMD GPU.
     """
     return is_amd_gpu() or "amd" in _accelerator_arch()
+
+
+@always_inline("nodebug")
+fn has_amd_rdna_gpu_accelerator() -> Bool:
+    """Returns True if the host system has an AMD RDNA GPU and False otherwise.
+
+    Returns:
+        True if the host system has an AMD RDNA GPU.
+    """
+    var arch = _accelerator_arch()
+    return (
+        _is_amd_rdna() or "gfx10" in arch or "gfx11" in arch or "gfx12" in arch
+    )
 
 
 @always_inline("nodebug")

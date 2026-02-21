@@ -26,11 +26,9 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    SupportedEncoding,
 )
-from transformers import AutoConfig
 
-from ..llama3.model import Llama3Inputs, LlamaModelBase
+from ..llama3_legacy.model import Llama3Inputs, LlamaModelBase
 from .eagle_llama3 import EagleLlama3
 from .model_config import Llama3Config
 
@@ -44,8 +42,6 @@ class EagleLlama3Model(LlamaModelBase):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -56,8 +52,6 @@ class EagleLlama3Model(LlamaModelBase):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -74,7 +68,10 @@ class EagleLlama3Model(LlamaModelBase):
         assert (
             hasattr(model_inputs, "hidden_states")
             and model_inputs.hidden_states is not None
-        ), "EAGLE model requires hidden_states in model_inputs"
+            and isinstance(model_inputs.hidden_states, Buffer)
+        ), (
+            "EAGLE model requires hidden_states as a single Buffer in model_inputs"
+        )
 
         model_outputs = self.model.execute(
             model_inputs.tokens,

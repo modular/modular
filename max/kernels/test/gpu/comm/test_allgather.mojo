@@ -258,8 +258,7 @@ def main() -> None:
         [0, 8 * 1024],
     ]
 
-    @parameter
-    for test_idx in range(len(test_lengths)):
+    comptime for test_idx in range(len(test_lengths)):
         comptime lengths = test_lengths[test_idx]
         comptime num_gpus = len(lengths)
 

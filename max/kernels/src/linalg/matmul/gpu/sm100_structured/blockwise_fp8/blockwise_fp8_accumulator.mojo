@@ -30,11 +30,16 @@ from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
 from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.sync import syncwarp
-from layout import Layout, LayoutTensor
+from layout._coord import Coord, Idx
+from layout._layout import TensorLayout, row_major
+from layout._tile_tensor import TileTensor, stack_allocation
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
-from linalg.structuring import RegTile, SMemTile, SMemTileArray
+from ..structured_kernels.tile_types import (
+    SMemTileArray2DRowMajor,
+    static_row_major,
+)
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
@@ -46,16 +51,16 @@ from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
 
 @always_inline
-fn get_accumulator_layout[
+fn get_accumulator_dims[
     *,
-    c_smem_layout: Layout,
+    c_smem_dim1: Int,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int,
-]() -> Layout:
-    """Compute the register accumulator layout for blockwise FP8.
+]() -> IndexList[2]:
+    """Compute register accumulator dimensions for blockwise FP8.
 
-    Returns a 2D layout (num_stages, num_elements) for the register tiles.
+    Returns (num_stages, num_elements) for the register tile shape.
     """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -67,7 +72,7 @@ fn get_accumulator_layout[
 
     constrained[num_m_mmas == 1 and num_n_mmas == 1]()
 
-    comptime stageN = c_smem_layout.shape[1].value()
+    comptime stageN = c_smem_dim1
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
     comptime cg1_num_stages = MMA_N // stageN
     comptime num_stages = cg2_num_stages if cta_group == 2 else cg1_num_stages
@@ -79,7 +84,7 @@ fn get_accumulator_layout[
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
     comptime num_elements = repeats * fragment_size
 
-    return Layout.row_major(num_stages, num_elements)
+    return IndexList[2](num_stages, num_elements)
 
 
 @always_inline
@@ -98,7 +103,8 @@ fn is_lower_fragment_required[
 
 struct BlockwiseFP8Accumulator[
     accum_type: DType,
-    accum_layout: Layout,
+    accum_num_stages: Int,
+    accum_num_elements: Int,
     is_lower_required: Bool,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -111,8 +117,9 @@ struct BlockwiseFP8Accumulator[
 
     Parameters:
         accum_type: Accumulator data type (typically float32).
-        accum_layout: 2D layout (num_stages, num_elements) for register tiles.
-        is_lower_required: Whether lower fragment is needed (based on cta_group/MMA_M).
+        accum_num_stages: Number of accumulator pipeline stages.
+        accum_num_elements: Number of elements per stage.
+        is_lower_required: Whether lower fragment is needed.
         block_tile_shape: Block tile dimensions (BM, BN, BK).
         mma_shape: MMA operation dimensions (MMA_M, MMA_N, MMA_K).
         cluster_size: Number of CTAs in the cluster.
@@ -125,11 +132,17 @@ struct BlockwiseFP8Accumulator[
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
 
-    comptime UpperTile = RegTile[Self.accum_type, Self.accum_layout]
-    comptime LowerTile = RegTile[Self.accum_type, Self.accum_layout]
+    comptime num_stages = Self.accum_num_stages
+    comptime num_elements = Self.accum_num_elements
 
-    comptime num_stages = Self.accum_layout.shape[0].value()
-    comptime num_elements = Self.accum_layout.shape[1].value()
+    # TileTensor register tile layout: row-major [num_stages, num_elements]
+    comptime AccumLayout = static_row_major[Self.num_stages, Self.num_elements]
+    comptime RegTileType = TileTensor[
+        Self.accum_type,
+        Self.AccumLayout,
+        MutExternalOrigin,
+        address_space = AddressSpace.GENERIC,
+    ]
 
     # Fragment load parameters (match TmemFragments defaults)
     comptime data_paths = 16
@@ -151,18 +164,18 @@ struct BlockwiseFP8Accumulator[
         bits = Self.bits,
     ]
 
-    var upper: Self.UpperTile
-    var lower: Self.LowerTile
+    var upper: Self.RegTileType
+    var lower: Self.RegTileType
 
     @always_inline
     fn __init__(out self):
         """Create accumulator with zero-initialized register tiles."""
-        self.upper = Self.UpperTile.stack_allocation()
-        self.lower = Self.LowerTile.stack_allocation()
+        var accum_layout = row_major[Self.num_stages, Self.num_elements]()
+        self.upper = stack_allocation[dtype = Self.accum_type](accum_layout)
+        self.lower = stack_allocation[dtype = Self.accum_type](accum_layout)
         _ = self.upper.fill(0.0)
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             _ = self.lower.fill(0.0)
 
     @always_inline
@@ -175,17 +188,18 @@ struct BlockwiseFP8Accumulator[
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
-        b_scales_layout: Layout,
         a_scales_dtype: DType,
-        a_scales_smem_layout: Layout,
+        # A-scales tile dimensions
+        a_scales_dim0: Int,
+        a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: LayoutTensor[b_scales_dtype, b_scales_layout, MutAnyOrigin],
-        a_scales_tiles: SMemTileArray[
+        b_scales: TileTensor[b_scales_dtype, _, ImmutAnyOrigin],
+        a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
-            a_scales_smem_layout,
+            a_scales_dim0,
+            a_scales_dim1,
             num_pipeline_stages,
-            alignment=128,
         ],
         epi_stage: EpilogueKStage[
             num_accum_pipeline_stages,
@@ -229,8 +243,7 @@ struct BlockwiseFP8Accumulator[
         var b_scale_0: Scalar[Self.accum_type]
         var b_scale_1: Scalar[Self.accum_type]
 
-        @parameter
-        if Self.MMA_N != Self.BK:
+        comptime if Self.MMA_N != Self.BK:
             constrained[
                 Self.stageN <= gcd(Self.MMA_N, Self.BK)
                 and (gcd(Self.MMA_N, Self.BK) % Self.stageN == 0),
@@ -248,17 +261,25 @@ struct BlockwiseFP8Accumulator[
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
 
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales[b_scale_idx0, k_iter].cast[Self.accum_type]()
+                b_scales.ptr.load(
+                    b_scales.layout(Coord(Idx(b_scale_idx0), Idx(k_iter)))
+                ).cast[Self.accum_type]()
             )
             if b_scale_next_n < Self.MMA_N:
                 b_scale_1 = rebind[Scalar[Self.accum_type]](
-                    b_scales[b_scale_idx0 + 1, k_iter].cast[Self.accum_type]()
+                    b_scales.ptr.load(
+                        b_scales.layout(
+                            Coord(Idx(b_scale_idx0 + 1), Idx(k_iter))
+                        )
+                    ).cast[Self.accum_type]()
                 )
             else:
                 b_scale_1 = 0.0
         else:
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales[bn, k_iter].cast[Self.accum_type]()
+                b_scales.ptr.load(
+                    b_scales.layout(Coord(Idx(bn), Idx(k_iter)))
+                ).cast[Self.accum_type]()
             )
             b_scale_1 = 0.0
 
@@ -268,8 +289,7 @@ struct BlockwiseFP8Accumulator[
         var staged_c_row: UInt
         var staged_c_col: UInt
 
-        @parameter
-        if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
+        comptime if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
             staged_c_row = warp_id * UInt(WARP_SIZE)
             staged_c_col = UInt(0)
         elif Self.MMA_M == 64 and cta_group == 1:
@@ -311,8 +331,7 @@ struct BlockwiseFP8Accumulator[
         var lower_sfa0_smem = Scalar[Self.accum_type]()
         var lower_sfa1_smem = Scalar[Self.accum_type]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             lower_sfa0_smem = rebind[Scalar[Self.accum_type]](
                 a_scales_smem[
                     0, UInt32(staged_c_row) + top_frag_lower_coord[0]
@@ -330,8 +349,7 @@ struct BlockwiseFP8Accumulator[
             epi_stage.arrive_input()
         syncwarp()
 
-        @parameter
-        for stage in range(Self.num_stages):
+        comptime for stage in range(Self.num_stages):
             var tmem_addr = TmemAddress(
                 tmem_offset + UInt32(stage * Self.stageN)
             )
@@ -340,8 +358,7 @@ struct BlockwiseFP8Accumulator[
 
             var b_scale: Scalar[Self.accum_type]
 
-            @parameter
-            if Self.MMA_N != Self.BK:
+            comptime if Self.MMA_N != Self.BK:
                 b_scale = (
                     b_scale_0 if (stage * Self.stageN + Int(staged_c_col))
                     < b_scale_next_n else b_scale_1
@@ -349,11 +366,8 @@ struct BlockwiseFP8Accumulator[
             else:
                 b_scale = b_scale_0
 
-            @parameter
-            for ld_iter in range(Self.repeats):
-
-                @parameter
-                for j in range(Self.fragment_size // 2):
+            comptime for ld_iter in range(Self.repeats):
+                comptime for j in range(Self.fragment_size // 2):
                     comptime offset = ld_iter * Self.fragment_size + j * 2
 
                     var upper_elems = frags.upper.slice[2, offset=offset]()
@@ -380,8 +394,7 @@ struct BlockwiseFP8Accumulator[
                         upper_scale
                     )
 
-                    @parameter
-                    if Self.is_lower_required:
+                    comptime if Self.is_lower_required:
                         self.lower[stage, offset] += rebind[
                             Scalar[Self.accum_type]
                         ](lower_elems[0]) * rebind[Scalar[Self.accum_type]](

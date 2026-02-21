@@ -20,7 +20,7 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from sys.ffi import _Global, c_int
+from ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
@@ -612,7 +612,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
+            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -1094,8 +1094,7 @@ fn _py_function_wrapper[
     """Converts a PyObjectFunction to a format that can be used by def_py_method.
     """
 
-    @parameter
-    if func.has_kwargs:
+    comptime if func.has_kwargs:
 
         @always_inline
         fn wrapper_with_kwargs(
@@ -1103,8 +1102,7 @@ fn _py_function_wrapper[
             mut py_args: PythonObject,
             mut py_kwargs: PythonObject,
         ) raises -> PythonObject:
-            @parameter
-            if is_method:
+            comptime if is_method:
                 return func._call_method(py_self, py_args, py_kwargs)
             else:
                 return func._call_func(py_args, py_kwargs)
@@ -1116,8 +1114,7 @@ fn _py_function_wrapper[
         fn wrapper(
             mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
-            @parameter
-            if is_method:
+            comptime if is_method:
                 return func._call_method(py_self, py_args)
             else:
                 return func._call_func(py_args)

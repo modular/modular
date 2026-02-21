@@ -27,15 +27,18 @@ from utils.index import Index, IndexList
 fn compute_rms[
     dtype: DType
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
-    __comptime_assert data.rank == 1, "data.rank must be 1"
-    __comptime_assert data.element_size == 1
+    comptime assert data.flat_rank == 1, "data.rank must be 1"
+    comptime assert data.element_size == 1
 
     comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
         var val = data[i][0].cast[accum_type]()
         sum_of_squares += val * val
-    var result = sqrt((sum_of_squares / data.numel()) + eps.cast[accum_type]())
+    var result = sqrt(
+        (sum_of_squares / Scalar[accum_type](data.numel()))
+        + eps.cast[accum_type]()
+    )
     return result.cast[dtype]()
 
 

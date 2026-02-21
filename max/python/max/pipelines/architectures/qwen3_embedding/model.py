@@ -18,6 +18,7 @@ import functools
 import logging
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
@@ -34,12 +35,12 @@ from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -54,6 +55,7 @@ from .layers import (
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Qwen3EmbeddingInputs(ModelInputs):
     """Input structure for Qwen3 embedding models."""
 
@@ -65,17 +67,6 @@ class Qwen3EmbeddingInputs(ModelInputs):
 
     return_n_logits: Buffer
     """Number of logits to return (kept for interface compatibility)"""
-
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-    ) -> None:
-        super().__init__()
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
 
 
 class Qwen3EmbeddingModel(PipelineModel[TextContext]):
@@ -104,8 +95,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -117,29 +106,22 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         Args:
             pipeline_config: Pipeline configuration
             session: Inference session
-            huggingface_config: HuggingFace model configuration
-            encoding: Encoding configuration
             devices: List of devices
+            kv_cache_config: KV cache configuration
             weights: Model weights
             adapter: Optional weight adapter
+            return_logits: Return logits mode
         """
         self.pipeline_config = pipeline_config
         self.session = session
-        self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
 
         # Build and compile graph
-        logger.info(f"Building {self.__class__.__name__} graph")
+        timer = CompilationTimer("model")
         graph = self._build_graph(weights, adapter, session)
-        logger.info(f"Compiling {self.__class__.__name__} model")
+        timer.mark_build_complete()
         self.model = session.load(graph, weights_registry=self.state_dict)
-        logger.info("Model loaded successfully")
-
-    @property
-    def dtype(self) -> DType:
-        """Get the model's data type."""
-        return self.encoding.dtype
+        timer.done()
 
     def _get_state_dict(
         self, weights: Weights, adapter: WeightsAdapter | None
@@ -181,12 +163,12 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         state_dict = self._get_state_dict(weights, adapter)
 
         # Get configuration
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         device_refs = [DeviceRef.from_device(d) for d in self.devices]
 
         # Create RoPE
         head_dim = self.huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.max_length or 32768
+        max_seq_len = self.pipeline_config.model.max_length or 32768
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
@@ -444,7 +426,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
         )
-        configured_max = pipeline_config.max_length or 8192
+        configured_max = pipeline_config.model.max_length or 8192
 
         if configured_max > model_max:
             raise ValueError(

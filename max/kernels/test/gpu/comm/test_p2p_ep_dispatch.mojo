@@ -604,7 +604,7 @@ struct NVFP4DispatchTest[
 
         var expert_start_index = token_idx - expert_token_idx
         var scales_block_id = (
-            expert_start_index // SF_MN_GROUP_SIZE
+            UInt32(expert_start_index // SF_MN_GROUP_SIZE)
             + self.host_output_scales_offset_bufs_list[dev_idx][
                 slot_idx * (Self.n_experts // Self.n_ranks) + expert_idx
             ]
@@ -621,7 +621,15 @@ struct NVFP4DispatchTest[
             _scales_tensor, expert_token_idx, hid_dim_idx
         )
         var token_val = (
-            E2M1_TO_FLOAT32[Int((uint8_val >> ((hid_dim_idx % 2) * 4)) & 0x0F)]
+            E2M1_TO_FLOAT32[
+                Int(
+                    (
+                        uint8_val
+                        >> Scalar[Self.fp4_dtype](((hid_dim_idx % 2) * 4))
+                    )
+                    & 0x0F
+                )
+            ]
             * token_scale.cast[DType.float32]()
         )
 
@@ -1013,8 +1021,7 @@ fn test_dispatch_common[
 
     # We don't enable e2e benchmarking by default because it would hang
     # if AsyncRT has less than n_ranks worker threads.
-    @parameter
-    if bench_e2e:
+    comptime if bench_e2e:
         for dev_i in range(n_ranks):
             clean_up(dev_i)
             list_of_ctx[dev_i].synchronize()
@@ -1128,13 +1135,15 @@ fn test_dispatch_common[
             # Check the output tokens
             for expert_idx in range(n_local_experts):
                 var curr_local_expert = slot_expert_ids[expert_idx]
-                var curr_expert = n_local_experts * dev_idx + curr_local_expert
+                var curr_expert = (
+                    Int32(n_local_experts * dev_idx) + curr_local_expert
+                )
                 var expert_token_idx = 0
 
                 for remote_rank in range(n_ranks):
-                    var expert_rank_offset = (
-                        curr_local_expert * n_ranks + remote_rank
-                    )
+                    var expert_rank_offset = curr_local_expert * Int32(
+                        n_ranks
+                    ) + Int32(remote_rank)
                     var token_end = (
                         slot_dispatch_wait_counter[2 * expert_rank_offset]
                         - EP_DATA_READY_FLAG
@@ -1160,7 +1169,7 @@ fn test_dispatch_common[
                         # Check if curr_expert is in remote rank's topk_ids
                         assert_equal(
                             remote_rank_topk_ids[
-                                remote_loc * top_k + remote_topk_id
+                                remote_loc * Int32(top_k) + remote_topk_id
                             ],
                             curr_expert,
                             "Expert mismatch for dev "
@@ -1180,7 +1189,7 @@ fn test_dispatch_common[
                         # Check if the received token matches the remote rank's token
                         for i in range(hidden_size):
                             var remote_token_val = remote_rank_input_tokens[
-                                remote_loc * hidden_size + i
+                                remote_loc * Int32(hidden_size) + Int32(i)
                             ]
                             dispatch_test.check_output_val(
                                 dev_idx,
@@ -1292,13 +1301,12 @@ def main():
     else:
         raise Error("Cannot enable P2P Mem Access!")
 
-    __comptime_assert (
+    comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "Only NVIDIA and AMD GPUs are supported"
     comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
@@ -1330,8 +1338,7 @@ def main():
 
         comptime device_info = DeviceContext.default_device_info
 
-        @parameter
-        if has_nvidia_gpu_accelerator() and device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and device_info == B200:
             test_dispatch_nvfp4[
                 hidden_size=7168,
                 top_k=8,

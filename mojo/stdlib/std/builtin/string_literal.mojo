@@ -22,7 +22,7 @@ from collections.string.string_slice import (
     StaticString,
 )
 from os import PathLike
-from sys.ffi import c_char, CStringSlice
+from ffi import c_char, CStringSlice
 
 from python import ConvertibleToPython, PythonObject
 
@@ -31,7 +31,7 @@ from python import ConvertibleToPython, PythonObject
 # ===-----------------------------------------------------------------------===#
 
 
-@nonmaterializable(String)
+@__nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
     ConvertibleToPython,
@@ -43,7 +43,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Representable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """This type represents a string literal.
@@ -295,7 +295,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return StaticString(ptr=self.unsafe_ptr() + idx, length=1)
 
     # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # non-materializable by making them merge into StaticString.  They should
+    # nonmaterializable by making them merge into StaticString.  They should
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
@@ -816,20 +816,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
-        comptime result = _FormatUtils.compile_entries[*Ts](Self())
-
-        @parameter
-        if result.isa[Error]():
-            __comptime_assert not result.isa[Error](), String(result[Error])
-            return {}
-        else:
-            var buffer = String()
-            _FormatUtils.format_precompiled[*Ts](
-                buffer,
-                result[type_of(result).Ts[0]],
-                args,
-            )
-            return buffer^
+        var buffer = String()
+        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, args)
+        return buffer^
 
     fn join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.

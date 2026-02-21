@@ -82,7 +82,7 @@ fn sgemm_double_buffer[
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN
     comptime warp_dim_y = WM // TM
-    __comptime_assert (
+    comptime assert (
         warp_dim_x * warp_dim_y == WARP_SIZE
     ), "Warp 2d shape doesn't match 32 threads"
 
@@ -244,8 +244,7 @@ fn sgemm_double_buffer[
         # The shared memory buffer to be prefetched
         var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
 
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             var next_k = (k + 1) % BK
 
             # Buffer id for the double register buffers. They alternate.
@@ -334,10 +333,10 @@ fn test(ctx: DeviceContext) raises:
     var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)

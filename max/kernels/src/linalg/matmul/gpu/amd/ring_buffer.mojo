@@ -49,7 +49,7 @@ struct ProducerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager for producer access to a single ring buffer tile."""
 
     comptime ProducerViewType = ProducerView[
@@ -94,7 +94,7 @@ struct ConsumerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context manager for consumer access to a single ring buffer tile."""
 
     comptime ConsumerViewType = ConsumerView[
@@ -144,7 +144,7 @@ struct ProducerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Producer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
@@ -246,7 +246,7 @@ struct ConsumerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Consumer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
@@ -426,8 +426,7 @@ struct RingBuffer[
         """Get tiles from shared memory."""
         var result = Self.WarpTileTupleType()
 
-        @parameter
-        for i in range(Self.tile_buffers):
+        comptime for i in range(Self.tile_buffers):
             var staged_smem_tile = self.smem_buffers[i].get_tile(stage)
             result[i] = staged_smem_tile.tile[Self.warp_rows, Self.warp_cols](
                 warp_tile_idx, 0

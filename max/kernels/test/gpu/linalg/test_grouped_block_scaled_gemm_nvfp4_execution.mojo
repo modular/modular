@@ -242,8 +242,8 @@ fn test_grouped_kernel_nvfp4_single_group[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor,
-        b_scales=b_scales_tensor,
+        a_scales=a_scales_tensor.get_immutable(),
+        b_scales=b_scales_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -254,9 +254,11 @@ fn test_grouped_kernel_nvfp4_single_group[
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
-    problem_sizes_host[0] = m.value  # M
-    problem_sizes_host[1] = n.value  # N
-    problem_sizes_host[2] = k.value  # K (logical K, kernel handles packing)
+    problem_sizes_host[0] = Int32(m.value)  # M
+    problem_sizes_host[1] = Int32(n.value)  # N
+    problem_sizes_host[2] = Int32(
+        k.value
+    )  # K (logical K, kernel handles packing)
     problem_sizes_host[3] = 1  # L (batch=1)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -436,6 +438,18 @@ fn test_grouped_kernel_nvfp4_single_group[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
+    _ = a_scales_device^
+    _ = b_scales_device^
+    _ = problem_sizes_device^
+    _ = a_ptrs_device^
+    _ = b_ptrs_device^
+    _ = c_ptrs_device^
+    _ = sfa_ptrs_device^
+    _ = sfb_ptrs_device^
 
 
 fn test_grouped_kernel_nvfp4_multi_group[
@@ -655,8 +669,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
         c0_ref_tensor,
         a0_tensor,
         b0_tensor,
-        a_scales=sfa0_tensor,
-        b_scales=sfb0_tensor,
+        a_scales=sfa0_tensor.get_immutable(),
+        b_scales=sfb0_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -667,8 +681,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
         c1_ref_tensor,
         a1_tensor,
         b1_tensor,
-        a_scales=sfa1_tensor,
-        b_scales=sfb1_tensor,
+        a_scales=sfa1_tensor.get_immutable(),
+        b_scales=sfb1_tensor.get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -680,9 +694,9 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # Problem sizes: both groups have same size
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = m.value
-        problem_sizes_host[g * 4 + 1] = n.value
-        problem_sizes_host[g * 4 + 2] = k.value  # Logical K
+        problem_sizes_host[g * 4 + 0] = Int32(m.value)
+        problem_sizes_host[g * 4 + 1] = Int32(n.value)
+        problem_sizes_host[g * 4 + 2] = Int32(k.value)  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -867,6 +881,24 @@ fn test_grouped_kernel_nvfp4_multi_group[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
+    _ = a0_device^
+    _ = b0_device^
+    _ = c0_device^
+    _ = c0_ref_device^
+    _ = sfa0_device^
+    _ = sfb0_device^
+    _ = a1_device^
+    _ = b1_device^
+    _ = c1_device^
+    _ = c1_ref_device^
+    _ = sfa1_device^
+    _ = sfb1_device^
+    _ = problem_sizes_device^
+    _ = a_ptrs_device^
+    _ = b_ptrs_device^
+    _ = c_ptrs_device^
+    _ = sfa_ptrs_device^
+    _ = sfb_ptrs_device^
 
 
 def main():
@@ -981,3 +1013,4 @@ def main():
     print("\n" + "=" * 60)
     print("All NVFP4 tests passed!")
     print("=" * 60)
+    _ = ctx^

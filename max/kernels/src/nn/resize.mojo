@@ -16,8 +16,8 @@ from math import ceil, floor
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from layout._coord import Coord, CoordLike, coord_to_index_list
-from layout._layout import row_major
+from layout._coord import Coord, coord_to_index_list
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from layout.int_tuple import fill_like
 from memory import memcpy
@@ -48,8 +48,7 @@ fn coord_transform[
 ](out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32) -> Float32:
     var out_coord_f32 = Float32(out_coord)
 
-    @parameter
-    if mode == CoordinateTransformationMode.HalfPixel:
+    comptime if mode == CoordinateTransformationMode.HalfPixel:
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
@@ -103,7 +102,9 @@ struct InterpolationMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-struct Interpolator[mode: InterpolationMode](Defaultable, TrivialRegisterType):
+struct Interpolator[mode: InterpolationMode](
+    Defaultable, TrivialRegisterPassable
+):
     var cubic_coeff: Float32
 
     @always_inline
@@ -117,8 +118,7 @@ struct Interpolator[mode: InterpolationMode](Defaultable, TrivialRegisterType):
     @staticmethod
     @always_inline
     fn filter_length() -> Int:
-        @parameter
-        if Self.mode == InterpolationMode.Linear:
+        comptime if Self.mode == InterpolationMode.Linear:
             return 1
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -126,8 +126,7 @@ struct Interpolator[mode: InterpolationMode](Defaultable, TrivialRegisterType):
 
     @always_inline
     fn filter(self, x: Float32) -> Float32:
-        @parameter
-        if Self.mode == InterpolationMode.Linear:
+        comptime if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -142,7 +141,7 @@ fn resize_nearest_neighbor[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
@@ -154,8 +153,7 @@ fn resize_nearest_neighbor[
     @parameter
     @always_inline
     fn round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
-        @parameter
-        if round_mode == RoundMode.HalfDown:
+        comptime if round_mode == RoundMode.HalfDown:
             return ceil(val - 0.5)
         elif round_mode == RoundMode.HalfUp:
             return floor(val + 0.5)
@@ -174,8 +172,7 @@ fn resize_nearest_neighbor[
     ](out_coords: IndexList[_rank]):
         var in_coords = IndexList[input.rank](0)
 
-        @parameter
-        for i in range(input.rank):
+        comptime for i in range(input.rank):
             in_coords[i] = min(
                 Int(
                     round(
@@ -196,7 +193,9 @@ fn resize_nearest_neighbor[
         output.ptr[out_idx] = input.ptr[in_idx]
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[nn_interpolate, 1](coord_to_index_list(output.layout.shape))
+    elementwise[nn_interpolate, 1](
+        coord_to_index_list(output.layout.shape_coord())
+    )
 
 
 @always_inline
@@ -219,7 +218,7 @@ fn linear_filter(x: Float32) -> Float32:
 @parameter
 @always_inline
 fn interpolate_point_1d[
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
     //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
@@ -228,12 +227,12 @@ fn interpolate_point_1d[
 ](
     interpolator: Interpolator[interpolation_mode],
     dim: Int,
-    out_coords: IndexList[Variadic.size(input_shape_types)],
+    out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
     input: TileTensor[
         mut=True,
-        shape_types=input_shape_types,
         dtype,
+        InputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
@@ -317,14 +316,14 @@ fn _resize[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
 
     if rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape)
+        coord_to_index_list(input.layout.shape_coord())
     ) == rebind[IndexList[input.rank]](
-        coord_to_index_list(output.layout.shape)
+        coord_to_index_list(output.layout.shape_coord())
     ):
         return memcpy(dest=output.ptr, src=input.ptr, count=input.numel())
     var scales = StaticTuple[Float32, input.rank]()
@@ -358,8 +357,8 @@ fn _resize[
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
         tmp_buffer2 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
-    var in_shape = coord_to_index_list(input.layout.shape)
-    var out_shape = coord_to_index_list(input.layout.shape)
+    var in_shape = coord_to_index_list(input.layout.shape_coord())
+    var out_shape = coord_to_index_list(input.layout.shape_coord())
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
@@ -379,7 +378,7 @@ fn _resize[
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
                 interpolate_point_1d[
-                    input_shape_types = in_buf.shape_types,
+                    InputLayoutType = in_buf.LayoutType,
                     coordinate_transformation_mode,
                     antialias,
                 ](

@@ -34,12 +34,13 @@ from testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from testing.prop.strategy import SIMD, List
+from sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698():
     var list = List[Float64]()
     for i in range(5):
-        list.append(i)
+        list.append(Float64(i))
 
     assert_equal(0.0, list[0])
     assert_equal(1.0, list[1])
@@ -1024,12 +1025,11 @@ def _test_copyinit_trivial_types[dt: DType]():
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
+    comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
-            x.append(i)
+            x.append(Scalar[dt](i))
         y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
@@ -1052,8 +1052,7 @@ def test_copyinit_trivial_types_dtypes():
         DType.bool,
     )
 
-    @parameter
-    for index_dtype in range(len(dtypes)):
+    comptime for index_dtype in range(len(dtypes)):
         _test_copyinit_trivial_types[dtypes[index_dtype]]()
 
 
@@ -1063,6 +1062,22 @@ def test_list_comprehension():
 
     var l2 = [x * y for x in range(3) for y in l1]
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
+
+
+def test_list_can_infer_iterable_element_type():
+    var string = "Mojo🔥"
+    var l = List(string.codepoints())
+    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_equal(
+        l,
+        [
+            Codepoint.ord("M"),
+            Codepoint.ord("o"),
+            Codepoint.ord("j"),
+            Codepoint.ord("o"),
+            Codepoint.ord("🔥"),
+        ],
+    )
 
 
 # ===-------------------------------------------------------------------===#

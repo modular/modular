@@ -29,6 +29,7 @@ from math import (
     exp2,
     factorial,
     floor,
+    fma,
     frexp,
     gcd,
     iota,
@@ -141,8 +142,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         """
         debug_assert(all(a.ge(0)))
 
-        @parameter
-        if symm:
+        comptime if symm:
             # |a - b| ≤ max(atol, rtol * max(|a|, |b|))
             return a - max(atol, rtol * a)
         else:
@@ -157,8 +157,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         (edge_val[symm](v, atol, 0), v),
     ]
 
-    @parameter
-    if not symm:
+    comptime if not symm:
         all_close += [
             (edge_val[symm](v, 0, rtol), v),
             (edge_val[symm](v, atol, rtol), v),
@@ -177,8 +176,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         (T(nan_, 0), T(nan_, -inf_)),
     ]
 
-    @parameter
-    if symm:
+    comptime if symm:
         none_close += [(v, v + atol + rtol)]
     else:
         none_close += [
@@ -278,11 +276,11 @@ def test_iota():
     var buff = vector.unsafe_ptr()
     iota(buff, length, offset)
     for i in range(length):
-        assert_equal(vector[i], offset + i)
+        assert_equal(vector[i], Int32(offset + i))
 
     iota(vector, offset)
     for i in range(length):
-        assert_equal(vector[i], offset + i)
+        assert_equal(vector[i], Int32(offset + i))
 
     var vector2 = List[Int](unsafe_uninit_length=length)
 
@@ -638,6 +636,29 @@ def test_clamp():
     assert_equal(
         clamp(SIMD[DType.float32, 4](0, 1, 3, 4), 0, 1),
         SIMD[DType.float32, 4](0, 1, 1, 1),
+    )
+
+
+def test_fma():
+    # Test Int overload
+    assert_equal(fma(5, 3, 2), 17)  # 5*3 + 2 = 17
+    assert_equal(fma(-2, 3, 4), -2)  # -2*3 + 4 = -2
+    assert_equal(fma(0, 100, 5), 5)  # 0*100 + 5 = 5
+
+    # Test UInt (uses SIMD overload since UInt = Scalar[DType.uint])
+    assert_equal(fma(UInt(5), UInt(3), UInt(2)), UInt(17))
+    assert_equal(fma(UInt(1000000), UInt(1000), UInt(500)), UInt(1000000500))
+    assert_equal(fma(UInt(0), UInt(100), UInt(5)), UInt(5))
+
+    # Test SIMD overload with float
+    assert_almost_equal(fma(Float32(2.5), Float32(4.0), Float32(1.5)), 11.5)
+    assert_almost_equal(
+        fma(
+            SIMD[DType.float32, 4](1, 2, 3, 4),
+            SIMD[DType.float32, 4](2, 2, 2, 2),
+            SIMD[DType.float32, 4](1, 1, 1, 1),
+        ),
+        SIMD[DType.float32, 4](3, 5, 7, 9),
     )
 
 

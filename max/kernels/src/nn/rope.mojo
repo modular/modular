@@ -19,8 +19,8 @@ from algorithm.functional import elementwise
 from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, RuntimeInt, Idx, coord
-from layout._layout import _RowMajor
+from layout._coord import Coord, CoordLike, ComptimeInt, RuntimeInt, Idx, coord
+from layout._layout import Layout, _RowMajor
 from layout._tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -74,7 +74,7 @@ fn apply_rope[
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
 ):
-    __comptime_assert rank - 1 >= 0
+    comptime assert rank - 1 >= 0
     var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
     var pos_re = idx
     var pos_im = idx
@@ -84,16 +84,15 @@ fn apply_rope[
 
     var val: SIMD[dtype, width]
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         var coord = Coord(idx)
-        __comptime_assert coord.rank == x.rank
+        comptime assert coord.flat_rank == x.flat_rank
         val = x.load[width=width](coord)
     else:
         var re_coord = Coord(pos_re)
-        __comptime_assert re_coord.rank == x.rank
+        comptime assert re_coord.flat_rank == x.flat_rank
         var im_coord = Coord(pos_im)
-        __comptime_assert im_coord.rank == x.rank
+        comptime assert im_coord.flat_rank == x.flat_rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2](re_coord).interleave(
                 x.load[width=width_2](im_coord)
@@ -102,8 +101,7 @@ fn apply_rope[
 
     var res = _rope(val, freq_val)
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         output_fn[alignment=alignment](idx, res)
     else:
         output_re, output_im = res.deinterleave()
@@ -125,12 +123,6 @@ fn rope_ragged[
         CoordLike
     ],
     mrope_section: Optional[Coord[*mrope_types]] = None,
-    position_ids_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
-    position_ids_stride_types: Variadic.TypesOfTrait[CoordLike] = _RowMajor[
-        *position_ids_shape_types
-    ],
 ](
     x: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[DType.uint32, ...],
@@ -139,45 +131,29 @@ fn rope_ragged[
     context: Optional[DeviceContext],
     position_ids: OptionalReg[
         TileTensor[
-            shape_types=position_ids_shape_types,
-            stride_types=position_ids_stride_types,
             DType.uint32,
+            Layout[
+                Variadic.types[
+                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+                ],
+                _RowMajor[
+                    *Variadic.types[
+                        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+                    ]
+                ],
+            ],
             MutAnyOrigin,
         ]
     ] = None,
 ) raises where (
-    input_row_offsets.rank == 1
-    and start_pos.rank == 1
-    and position_ids.T.rank == 2
-    and freqs_cis.rank == 2
+    input_row_offsets.flat_rank == 1
+    and start_pos.flat_rank == 1
+    and position_ids.T.flat_rank == 2
+    and freqs_cis.flat_rank == 2
 ):
-    @parameter
-    for i in range(x.rank):
-        __comptime_assert x.shape_types[i].is_static_value, (
-            "x.layout.shape["
-            + String(i)
-            + "] must be a scalar, was "
-            # + String(x.layout.shape[i])
-        )
-    # __comptime_assert (
-    #     x.layout.shape[1].all_known() and x.layout.shape[2].all_known()
-    # ), (
-    #     "x.shape[1] (num_heads) and x.shape[2] (head_dim) must be static, was "
-    #     + String(x.layout.shape)
-    # )
-    __comptime_assert (
-        input_row_offsets.all_dims_known
-    ), "input_row_offsets shape must be statically shaped"
-    __comptime_assert (
+    comptime assert (
         freqs_cis.all_dims_known
     ), "freqs_cis shape must be statically shaped"
-    debug_assert(
-        input_row_offsets.static_shape[0] - 1 == start_pos.static_shape[0],
-        (
-            "input_row_offsets shape must be batch_size + 1 and start_pos must"
-            " be batch_size"
-        ),
-    )
     comptime head_size = x.static_shape[2]
     comptime rope_dim = freqs_cis.static_shape[1]
     comptime unroped_dim = head_size - rope_dim
@@ -189,11 +165,18 @@ fn rope_ragged[
     fn rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
-        @parameter
-        if width == 1:
-            # constrained[False, "ROPE SIMD_WIDTH=1, We should never be here"]()
+        comptime if width == 1:
+            debug_assert(
+                False,
+                (
+                    "RoPE kernel called with simd width = 1, We should never be"
+                    " here. This is indicative of an uneven last dimension of"
+                    " the rope tensor. Ensure the model's head_size is"
+                    " divisible by the simd width of your target hardware."
+                ),
+            )
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -206,7 +189,6 @@ fn rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_idx = idx[1]
             var head_dim_idx = idx[2]
 
             # Use position_ids if provided, otherwise fall back to cache calculation
@@ -214,13 +196,10 @@ fn rope_ragged[
 
             var position_ids_idx = Int(post_seq_idx)
             if position_ids:
-
-                @parameter
-                if mrope_section:
+                comptime if mrope_section:
                     var section_idx = 0
 
-                    @parameter
-                    for i in range(len(mrope_section.value())):
+                    comptime for i in range(len(mrope_section.value())):
                         comptime val = mrope_section.value()[i].value()
                         if head_dim_idx < val:
                             section_idx = i
@@ -239,8 +218,7 @@ fn rope_ragged[
 
             var f_c_temp: SIMD[freq_dtype, width]
 
-            @parameter
-            if has_nope:
+            comptime if has_nope:
                 if is_unroped_region:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
@@ -263,8 +241,7 @@ fn rope_ragged[
 
     var launch_shape_index_list = IndexList[x.rank]()
 
-    @parameter
-    for i in range(x.rank):
+    comptime for i in range(x.rank):
         launch_shape_index_list[i] = Int(x.dim(i))
 
     comptime compile_target = _current_target() if is_cpu[
@@ -273,19 +250,21 @@ fn rope_ragged[
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    @parameter
-    if mrope_section:
-
-        @parameter
-        for i in range(len(mrope_section.value())):
-            __comptime_assert (
+    comptime if mrope_section:
+        comptime for i in range(len(mrope_section.value())):
+            comptime assert (
                 mrope_section.value()[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    __comptime_assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert (
+        kernel_simd_width >= 2 and rope_dim % kernel_simd_width == 0
+    ), (
+        "Rope kernel simd width must be between 2 and rope_dim and divisible by"
+        " rope_dim. Ensure the model's head_size is divisible by the simd width"
+        " of your target hardware."
+    )
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape_index_list
         )

@@ -43,7 +43,7 @@ fn _sign(x: Int) -> Int:
 
 
 struct _ZeroStartingRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -90,7 +90,7 @@ struct _ZeroStartingRange(
 
 
 struct _SequentialRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -136,7 +136,9 @@ struct _SequentialRange(
 
 
 @fieldwise_init
-struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
+struct _StridedRangeIterator(
+    Iterable, Iterator, Sized, TrivialRegisterPassable
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -185,7 +187,7 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
 
 
 struct _StridedRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -380,8 +382,7 @@ fn range[
 fn _scalar_range_bounds[
     dtype: DType
 ](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
-    @parameter
-    if size_of[Scalar[dtype]]() >= size_of[Int]():
+    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
         if unlikely(UInt(len) > UInt(Int.MAX)):
             return (Int.MAX, None)
 
@@ -389,7 +390,7 @@ fn _scalar_range_bounds[
 
 
 struct _ZeroStartingScalarRange[dtype: DType](
-    Iterable, TrivialRegisterType, Iterator & ImplicitlyCopyable
+    Iterable, TrivialRegisterPassable, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -438,7 +439,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
     @always_inline
     fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
-        __comptime_assert (
+        comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
         return range(
@@ -451,7 +452,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
 
 struct _SequentialScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterType
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -488,7 +489,7 @@ struct _SequentialScalarRange[dtype: DType](
 
     @always_inline
     fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
-        __comptime_assert (
+        comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
         return range(self.end - 1, self.start - 1, Scalar[Self.dtype](-1))
@@ -500,7 +501,7 @@ struct _SequentialScalarRange[dtype: DType](
 
 @fieldwise_init
 struct _StridedScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterType
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -517,8 +518,7 @@ struct _StridedScalarRange[dtype: DType](
     @always_inline
     fn __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         # If the type is unsigned, then 'step' cannot be negative.
-        @parameter
-        if Self.dtype.is_unsigned():
+        comptime if Self.dtype.is_unsigned():
             if self.start >= self.end:
                 raise StopIteration()
         else:
@@ -534,10 +534,9 @@ struct _StridedScalarRange[dtype: DType](
 
     @always_inline
     fn __len__(self) -> Scalar[Self.dtype]:
-        __comptime_assert Self.dtype.is_integral(), "dtype must be integral"
+        comptime assert Self.dtype.is_integral(), "dtype must be integral"
 
-        @parameter
-        if Self.dtype.is_unsigned():
+        comptime if Self.dtype.is_unsigned():
             return Scalar[Self.dtype](
                 select(
                     self.start < self.end,

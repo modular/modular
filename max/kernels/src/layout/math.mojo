@@ -17,7 +17,7 @@ from sys.info import simd_width_of
 
 import algorithm.reduction
 from algorithm import vectorize
-from builtin.math import max as b_max
+from math.math import max as b_max
 from layout import LayoutTensor, UNKNOWN_VALUE
 from layout._coord import Coord, Idx
 from layout._tile_tensor import TileTensor
@@ -49,28 +49,25 @@ fn outer_product_acc(
         `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
     """
 
-    __comptime_assert (
+    comptime assert (
         res.layout.known_shape()
         and lhs.layout.known_shape()
         and rhs.layout.known_shape()
     ), "outer_product_acc expects inputs with statically known shapes"
-    __comptime_assert res.rank == 2, "Only rank 2 res is allowed."
-    __comptime_assert lhs.rank == 1, "Only rank 1 lhs is allowed."
-    __comptime_assert rhs.rank == 1, "Only rank 1 rhs is allowed."
+    comptime assert res.rank == 2, "Only rank 2 res is allowed."
+    comptime assert lhs.rank == 1, "Only rank 1 lhs is allowed."
+    comptime assert rhs.rank == 1, "Only rank 1 rhs is allowed."
 
     comptime dtype = res.dtype
 
     comptime M = res.shape[0]()
     comptime N = res.shape[1]()
 
-    __comptime_assert lhs.shape[0]() == M, "lhs shape mismatch"
-    __comptime_assert rhs.shape[0]() == N, "rhs shape mismatch"
+    comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
+    comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             res[i, j] += rebind[res.element_type](
                 lhs[i].cast[dtype]()
             ) * rebind[res.element_type](rhs[j].cast[dtype]())
@@ -84,46 +81,36 @@ fn _reduce[
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
-    __comptime_assert (
+    comptime assert (
         inp.layout.known_shape() and outp.layout.known_shape()
     ), "_reduce expects inputs with statically know shapes"
-    __comptime_assert (
+    comptime assert (
         inp.rank - 1 == outp.rank
     ), "_reduce expects output of rank = inp.rank - 1"
 
-    @parameter
-    for dim in range(axis):
-
-        @parameter
-        if dim != axis:
-            __comptime_assert dim != UNKNOWN_VALUE
-            __comptime_assert (
+    comptime for dim in range(axis):
+        comptime if dim != axis:
+            comptime assert dim != UNKNOWN_VALUE
+            comptime assert (
                 inp.shape[dim]() == outp.shape[dim]()
             ), "_reduce expects none reduction dims to be the same"
 
-    @parameter
-    for dim in range(axis + 1, inp.rank):
-
-        @parameter
-        if dim != axis:
-            __comptime_assert dim != UNKNOWN_VALUE
-            __comptime_assert (dim - 1) != UNKNOWN_VALUE
-            __comptime_assert (
+    comptime for dim in range(axis + 1, inp.rank):
+        comptime if dim != axis:
+            comptime assert dim != UNKNOWN_VALUE
+            comptime assert (dim - 1) != UNKNOWN_VALUE
+            comptime assert (
                 inp.shape[dim]() == outp.shape[dim - 1]()
             ), "_reduce expects none reduction dims to be the same"
 
     # TODO(KERN-777): We need to relax this constraine.
-    __comptime_assert inp.rank == 2, "Only rank-2 _reduce is supported"
+    comptime assert inp.rank == 2, "Only rank-2 _reduce is supported"
 
-    @parameter
-    if inp.rank == 2 and axis == 1:
-
-        @parameter
-        for i in range(inp.shape[0]()):
+    comptime if inp.rank == 2 and axis == 1:
+        comptime for i in range(inp.shape[0]()):
             var reduce_val = init_func[outp.dtype, outp.element_size]()
 
-            @parameter
-            for j in range(inp.shape[1]()):
+            comptime for j in range(inp.shape[1]()):
                 reduce_val = func(
                     reduce_val,
                     rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
@@ -132,13 +119,10 @@ fn _reduce[
             outp[i] = reduce_val
 
     elif inp.rank == 2 and axis == 0:
-
-        @parameter
-        for j in range(inp.shape[1]()):
+        comptime for j in range(inp.shape[1]()):
             var reduce_val = init_func[outp.dtype, outp.element_size]()
 
-            @parameter
-            for i in range(inp.shape[0]()):
+            comptime for i in range(inp.shape[0]()):
                 reduce_val = func(
                     reduce_val,
                     rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
@@ -309,13 +293,12 @@ fn max[
         Input tensors must have statically known shapes and matching layouts.
     """
 
-    __comptime_assert (
+    comptime assert (
         x.layout.all_dims_known()
     ), "max expects tensor of statically know shape"
     var res_tensor = type_of(x).stack_allocation()
 
-    @parameter
-    for i in range(res_tensor.layout.size()):
+    comptime for i in range(res_tensor.layout.size()):
         comptime idx = x.layout(i)
         res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
     return res_tensor
@@ -374,7 +357,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     Raises:
         May raise on GPU targets when a device error occurs.
     """
-    __comptime_assert src.rank == 1, "src must be of rank 1"
+    comptime assert src.rank == 1, "src must be of rank 1"
 
     debug_assert(src.size() != 0, "input must not be empty")
 
@@ -423,8 +406,7 @@ fn mean[
 
     comptime src_dtype = src.dtype
 
-    @parameter
-    if dst.dtype.is_integral():
+    comptime if dst.dtype.is_integral():
 
         @always_inline
         fn normalize_integral[
@@ -531,7 +513,7 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
     Raises:
         May raise on GPU targets when a device error occurs.
     """
-    __comptime_assert src.rank == 1, "src must be of rank 1"
+    comptime assert src.rank == 1, "src must be of rank 1"
 
     debug_assert(src.numel() != 0, "input must not be empty")
 

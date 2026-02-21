@@ -65,8 +65,8 @@ fn gemm_kernel[
     TN: Int,
 ](
     mat_c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    mat_a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    mat_b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    mat_a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    mat_b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
 ):
     var M = mat_c.dim(0)
     var N = mat_c.dim(1)
@@ -134,8 +134,7 @@ fn gemm_kernel[
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_i in range(BK):
+        comptime for k_i in range(BK):
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](warp_m, 0).slice[
                 :, k_i : k_i + 1
             ]()
@@ -181,10 +180,10 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)

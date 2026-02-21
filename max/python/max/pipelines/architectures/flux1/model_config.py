@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
-from max.driver import Device
+from max.driver import Device, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from pydantic import Field
+from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
 
 
 class FluxConfigBase(MAXModelConfigBase):
@@ -37,7 +42,50 @@ class FluxConfigBase(MAXModelConfigBase):
 
 
 class FluxConfig(FluxConfigBase):
-    config_name: ClassVar[str] = "config.json"
+    @classmethod
+    def initialize(cls, pipeline_config: "PipelineConfig") -> Self:
+        """Initialize FluxConfig from a PipelineConfig.
+
+        Args:
+            pipeline_config: The pipeline configuration.
+
+        Returns:
+            An initialized FluxConfig instance.
+        """
+        if pipeline_config.model.quantization_encoding is None:
+            raise ValueError("Quantization encoding is required for FluxConfig")
+
+        # Get the huggingface config if available
+        hf_config = pipeline_config.model.huggingface_config
+        config_dict = hf_config.to_dict() if hf_config is not None else {}
+
+        # Convert device specs to devices
+        devices = load_devices(pipeline_config.model.device_specs)
+
+        # Generate config using the existing generate method
+        config_base = cls.generate(
+            config_dict,
+            pipeline_config.model.quantization_encoding,
+            devices,
+        )
+
+        # Convert to FluxConfig (which is just FluxConfigBase with extra methods)
+        return cls(**config_base.model_dump())
+
+    def get_max_seq_len(self) -> int:
+        """Get the maximum sequence length.
+
+        For pixel generation models, this returns a placeholder value
+        as sequence length is not applicable.
+
+        Returns:
+            A placeholder sequence length value.
+        """
+        # Pixel generation models don't have a text sequence length constraint
+        # Return a reasonable default
+        return (
+            77  # Standard CLIP text encoder max length used in diffusion models
+        )
 
     @staticmethod
     def generate(
@@ -52,7 +100,7 @@ class FluxConfig(FluxConfigBase):
         }
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )

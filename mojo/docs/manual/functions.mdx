@@ -614,7 +614,7 @@ If there is more than one candidate after applying these rules, the overload
 resolution fails. For example:
 
 ```mojo
-struct MyInt(TrivialRegisterType):
+struct MyInt(TrivialRegisterPassable):
     """A type that is implicitly convertible to `Int`."""
     var value: Int
 
@@ -820,6 +820,20 @@ fn propagate_error() raises:
     raises_error()
 
 ```
+
+All of the examples above use the built-in `Error` type. Mojo also supports
+*typed errors*, where you specify a custom error type a function can raise:
+
+```mojo
+fn validate(value: Int) raises ValidationError -> Int:
+    ...
+```
+
+Typed errors are only available with `fn` functions—`def` functions always use
+the built-in `Error` type. For full details, see
+[Typed errors](/mojo/manual/errors#typed-errors). For a comparison of how `fn`
+and `def` handle errors differently, see
+[`fn` vs `def` for error handling](/mojo/manual/errors#fn-vs-def-for-error-handling).
 
 If you're writing code that you expect to use widely or distribute as a package,
 you may want to use `fn` functions for APIs that don't raise errors to limit

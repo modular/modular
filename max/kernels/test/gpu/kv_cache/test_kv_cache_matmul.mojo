@@ -164,7 +164,7 @@ def execute_fused_qkv_matmul[
         batch_size
     )
     for i in range(batch_size):
-        cache_lengths_host_ptr[i] = cache_sizes[i]
+        cache_lengths_host_ptr[i] = UInt32(cache_sizes[i])
         if cache_lengths_host_ptr[i] != 0:
             is_context_encoding = False
 
@@ -219,8 +219,8 @@ def execute_fused_qkv_matmul[
             lookup_table_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        max_seq_len,
-        0 if is_context_encoding else max_seq_len,
+        UInt32(max_seq_len),
+        UInt32(0 if is_context_encoding else max_seq_len),
     )
     var kv_collection_host = CollectionType(
         LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
@@ -235,8 +235,8 @@ def execute_fused_qkv_matmul[
             lookup_table_host_ptr,
             cache_len_runtime,
         ),
-        max_seq_len,
-        0 if is_context_encoding else max_seq_len,
+        UInt32(max_seq_len),
+        UInt32(0 if is_context_encoding else max_seq_len),
     )
 
     # Create device tensors for kernel calls
@@ -270,7 +270,7 @@ def execute_fused_qkv_matmul[
     ctx.enqueue_copy(valid_lengths_device, valid_lengths_host_ptr)
 
     var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         valid_lengths_device.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -378,8 +378,7 @@ def execute_fused_qkv_matmul[
 def execute_fused_matmul_suite(ctx: DeviceContext):
     comptime dtypes = (DType.float32, DType.bfloat16)
 
-    @parameter
-    for dtype_idx in range(2):
+    comptime for dtype_idx in range(2):
         comptime dtype = dtypes[dtype_idx]
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()

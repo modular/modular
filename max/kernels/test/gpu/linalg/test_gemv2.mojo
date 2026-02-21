@@ -47,8 +47,7 @@ fn epilogue_test_fn[
 ]:
     var bias = SIMD[dtype, width](0)
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         bias[i] = (
             0.5
             + Float64(idx[0] + idx[1] + i)
@@ -66,7 +65,7 @@ fn test[
     N: Optional[Int],
     K: Optional[Int],
 ](mut bench: Bench, ctx: DeviceContext, m: Int, n: Int, k: Int,) raises:
-    __comptime_assert Bool(N) and Bool(
+    comptime assert Bool(N) and Bool(
         K
     ), "This test currently requires static N and K."
 

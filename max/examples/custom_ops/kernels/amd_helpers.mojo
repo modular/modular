@@ -91,38 +91,35 @@ fn amd_scheduling_hints[
     # scheduler_hint[2] For MFMA after DS_READ
 
     # Schedule barriers for DS_READ operations
-    @parameter
-    for i in range(
+    comptime for i in range(
         (mmas_per_warp_m * k_tiles_count + mmas_per_warp_n * k_tiles_count)
         // k_tiles_count
     ):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[2]), 0
         )
 
     # Schedule barriers for memory load operations
-    @parameter
-    for i in range(a_loads_per_thread + b_loads_per_thread):
+    comptime for i in range(a_loads_per_thread + b_loads_per_thread):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[0], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[0]), 0
         )
         schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[1], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[1]), 0
         )
 
     # Additional DS_READ scheduling for remaining k_tiles
-    @parameter
-    for i in range(
+    comptime for i in range(
         (mmas_per_warp_m * k_tiles_count + mmas_per_warp_n * k_tiles_count)
         // k_tiles_count
         * (k_tiles_count - 1)
     ):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
         schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
+            AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[2]), 0
         )
 
 
@@ -140,26 +137,24 @@ fn copy_local_to_dram_32_32_8[
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
+        dst.linear_idx_type
+    ](offset)
     comptime num_stores_per_thread = dst_fragments.layout.size()
 
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
 
-    @parameter
-    for n in range(N):
-
-        @parameter
-        for m in range(M):
+    comptime for n in range(N):
+        comptime for m in range(M):
             comptime src_idx = 4 * n + 16 * m
             comptime i = 4 * n + m + ((m // 4) * 12)
 
             comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
-            @parameter
-            if dst_fragments.layout.all_dims_known():
-                dst_idx += dst_static_idx
+            comptime if dst_fragments.layout.all_dims_known():
+                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
@@ -172,20 +167,20 @@ fn copy_local_to_dram_32_32_8[
                 1
             ].value()
 
-            @parameter
-            if element_stride == 1:
+            comptime if element_stride == 1:
                 buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
             else:
-
-                @parameter
-                for i in range(dst_fragments.element_layout.size()):
+                comptime for i in range(dst_fragments.element_layout.size()):
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
-                        Int32(dst_idx + element_offset),
+                        Int32(
+                            dst_idx
+                            + Scalar[dst.linear_idx_type](element_offset)
+                        ),
                         src,
                     )
 
@@ -403,8 +398,7 @@ struct MMATileBuffers[
 
     @always_inline
     fn load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
-        @parameter
-        if is_a:
+        comptime if is_a:
             Self.mma_type.tensor_core_mma.mma_op.load_a[
                 swizzle = Self.mma_type.swizzle
             ](

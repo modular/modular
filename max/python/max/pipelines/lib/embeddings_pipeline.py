@@ -104,8 +104,6 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=huggingface_config,
-            encoding=self._pipeline_config.model.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=weights,
@@ -120,10 +118,11 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self,
         inputs: EmbeddingsGenerationInputs,
     ) -> dict[RequestID, EmbeddingsGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
-        """
+        """Processes the batch and returns embeddings.
 
+        Given a batch, executes the graph and returns the list of embedding
+        outputs per request.
+        """
         tracer: Tracer = Tracer()
         replica_batches = list(
             list(replica_batch.values()) for replica_batch in inputs.batches
@@ -159,5 +158,6 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         return res
 
     def release(self, request_id: RequestID) -> None:
+        """Releases resources for the request (no-op for embeddings)."""
         # Nothing to release.
         pass

@@ -99,8 +99,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
 
         # Run the destructor on each member, the destructor of !kgen.pack is
         # trivial and won't do anything.
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             comptime TUnknown = Self.element_types[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -113,19 +112,18 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             ).destroy_pointee()
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy construct the tuple.
 
         Args:
-            existing: The value to copy from.
+            copy: The value to copy from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
         )
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             comptime element_type = Self.element_types[i]
             _constrained_conforms_to[
                 conforms_to(element_type, Copyable),
@@ -138,28 +136,27 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             # uninitialized memory.
             UnsafePointer(
                 to=trait_downcast[Copyable](self[i])
-            ).init_pointee_copy(trait_downcast[Copyable](existing[i]))
+            ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, deinit existing: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move construct the tuple.
 
         Args:
-            existing: The value to move from.
+            take: The value to move from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
         )
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
             UnsafePointer(to=self[i]).init_pointee_move_from(
-                UnsafePointer(to=existing[i])
+                UnsafePointer(to=take[i])
             )
-        # Note: The destructor on `existing` is auto-disabled in a moveinit.
+        # Note: The destructor on `take` is auto-disabled in a moveinit.
 
     @always_inline("builtin")
     @staticmethod
@@ -224,11 +221,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             True if the value is in the tuple, False otherwise.
         """
 
-        @parameter
-        for i in range(type_of(self).__len__()):
-
-            @parameter
-            if _type_is_eq[Self.element_types[i], T]():
+        comptime for i in range(type_of(self).__len__()):
+            comptime if _type_is_eq[Self.element_types[i], T]():
                 if rebind[T](self[i]) == value:
                     return True
 
@@ -247,8 +241,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             __get_mvalue_as_litref(self._mlir_value)
         )
 
-        @parameter
-        for i in range(type_of(self).__len__()):
+        comptime for i in range(type_of(self).__len__()):
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
 
     @always_inline
@@ -274,15 +267,13 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
-        @parameter
-        if self_len != other_len:
+        comptime if self_len != other_len:
             return False
 
-        @parameter
-        for i in range(type_of(self).__len__()):
+        comptime for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[
+            comptime assert _type_is_eq[
                 self_type, other_type
             ](), "Tuple elements must be of the same type to compare."
             if self[i] != rebind[self_type](other[i]):
@@ -324,8 +315,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
 
         @parameter
         fn elements[i: Int](mut writer: Some[Writer]):
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](self[i]).write_repr_to(writer)
             else:
                 trait_downcast[Writable](self[i]).write_to(writer)
@@ -335,8 +325,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             ElementFn=elements,
         ](writer, open="", close="")
 
-        @parameter
-        if Self.__len__() == 1:
+        comptime if Self.__len__() == 1:
             writer.write_string(",")
 
     @no_inline
@@ -383,17 +372,15 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
-        @parameter
-        if other_len == 0:
+        comptime if other_len == 0:
             return 1 if self_len > 0 else 0
 
         comptime min_length = min(self_len, other_len)
 
-        @parameter
-        for i in range(min_length):
+        comptime for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[self_type, other_type](), String(
+            comptime assert _type_is_eq[self_type, other_type](), String(
                 "Mismatch between tuple elements at index ",
                 i,
                 " must be of the same type to compare.",
@@ -403,8 +390,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             if rebind[self_type](other[i]) < self[i]:
                 return 1
 
-        @parameter
-        if self_len < other_len:
+        comptime if self_len < other_len:
             return -1
         elif self_len > other_len:
             return 1
@@ -516,8 +502,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             __get_mvalue_as_litref(result)
         )
 
-        @parameter
-        for i in range(type_of(result).__len__()):
+        comptime for i in range(type_of(result).__len__()):
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
                     UnsafePointer(
@@ -562,16 +547,14 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
 
         comptime self_len = Self.__len__()
 
-        @parameter
-        for i in range(self_len):
+        comptime for i in range(self_len):
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
                     UnsafePointer(to=self[i])
                 )
             )
 
-        @parameter
-        for i in range(type_of(other).__len__()):
+        comptime for i in range(type_of(other).__len__()):
             UnsafePointer(to=result[self_len + i]).init_pointee_move_from(
                 rebind[
                     UnsafePointer[

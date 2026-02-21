@@ -15,7 +15,7 @@ from collections import OptionalReg
 
 from testing import *
 from testing import TestSuite
-from test_utils import MoveOnly
+from test_utils import MoveOnly, check_write_to
 
 
 def test_basic():
@@ -158,6 +158,20 @@ def test_optional_str_repr():
     assert_equal(o.__repr__(), "Optional(10)")
     assert_equal(Optional[Int](None).__str__(), "None")
     assert_equal(Optional[Int](None).__repr__(), "Optional(None)")
+
+
+def test_optional_write_to():
+    check_write_to(Optional[Int](None), expected="None", is_repr=False)
+    check_write_to(Optional[Int](42), expected="42", is_repr=False)
+
+
+def test_optional_write_repr_to():
+    check_write_to(
+        Optional[Int](None), expected="Optional[Int](None)", is_repr=True
+    )
+    check_write_to(
+        Optional[Int](42), expected="Optional[Int](Int(42))", is_repr=True
+    )
 
 
 def test_optional_equality():

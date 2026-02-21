@@ -56,7 +56,6 @@ from max.nn.legacy.rotary_embedding import (
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
-    distribute_value,
     forward_sharded_layers,
 )
 
@@ -109,10 +108,12 @@ class DeepseekV3DecoderLayer(Module):
         config: DeepseekV3Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
+        is_nextn: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
         self.ep_manager = ep_manager
+        self.is_nextn = is_nextn
         num_devices = len(config.devices)
 
         # Create Multi-head Latent Attention layer.
@@ -332,7 +333,12 @@ class DeepseekV3DecoderLayer(Module):
             # Single-GPU non-EP path
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        if self.is_nextn:
+            # NextN/MTP decoder: skip the second residual connection.
+            # The MoE output is used directly as hidden_states.
+            hs = mlp_outs
+        else:
+            hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -453,14 +459,17 @@ class DeepseekV3(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        freqs_cis = ops.distributed_broadcast(
-            self.rope.freqs_cis.to(devices[0]), signal_buffers
+        # Keep this as explicit per-device `.to()` copies.
+        # Broadcasting graph-time constants can hang when chained after
+        # runtime-dependent collectives (GEX-3200).
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
+        if not input_row_offsets.device == devices[0]:
+            raise ValueError(
+                f"input_row_offsets must be located on {devices[0]}"
+            )
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets, signal_buffers
         )
-        # Note: input_row_offsets uses distribute_value instead of broadcast
-        # because its size depends on batch size and may be too small for
-        # the broadcast kernel's SIMD requirements.
-        # TODO: Rebase once kernel fix is merged
-        input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
         if len(devices) > 1:
             # Split batch across devices for data-parallel attention.
@@ -578,7 +587,7 @@ class DeepseekV3(Module):
                 )
                 assert isinstance(h, list)
 
-        if self.ep_manager is not None:
+        if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
             for dev_idx in range(len(devices)):
                 h0 = h[dev_idx]
@@ -589,12 +598,10 @@ class DeepseekV3(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = ops.distributed_broadcast(
-                last_token_h, signal_buffers
-            )
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
@@ -609,38 +616,87 @@ class DeepseekV3(Module):
         offsets = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    self.lm_head(
-                        forward_sharded_layers(self.norm_shards, h),
-                        signal_buffers,
-                    )[0],
+            if self.config.data_parallel_degree > 1:
+                # Data-parallel case: gather variable tokens per device, then allgather
+                # Create the range once on device 0 (range inputs must be on CPU)
+                return_n_logits_range = ops.range(
+                    start=return_n_logits[0],
+                    stop=0,
+                    step=-1,
+                    out_dim="return_n_logits_range",
+                    dtype=DType.int64,
+                    device=devices[0],
+                )
+                variable_tokens_per_dev: list[TensorValue] = []
+                for dev_idx in range(len(devices)):
+                    h0 = h[dev_idx]
+                    dev_return_n_logits_range = return_n_logits_range.to(
+                        devices[dev_idx]
+                    )
+                    # Compute indices for last return_n_logits tokens per
+                    # sequence on this device
+                    dev_offsets = (
+                        ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
+                        - dev_return_n_logits_range
+                    )
+                    indices = ops.reshape(dev_offsets, shape=(-1,))
+                    variable_h = ops.gather(h0, indices, axis=0)
+                    variable_tokens_per_dev.append(variable_h)
+
+                variable_tokens_distributed = ops.allgather(
+                    variable_tokens_per_dev, signal_buffers
+                )
+
+                norm_variable_tokens = forward_sharded_layers(
+                    self.norm_shards, variable_tokens_distributed
+                )
+                logits = ops.cast(
+                    self.lm_head(norm_variable_tokens, signal_buffers)[0],
                     DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
+                )
+
+                offsets = ops.range(
+                    0,
+                    TensorValue(logits.shape[0]) + return_n_logits[0],
+                    return_n_logits[0],
+                    out_dim="logit_offsets",
+                    dtype=DType.int64,
+                    device=devices[0],
+                )
+            else:
+                # Non-EP case: keep existing single-device implementation
+                return_n_logits_range = ops.range(
+                    start=return_n_logits[0],
+                    stop=0,
+                    step=-1,
+                    out_dim="return_n_logits_range",
+                    dtype=DType.int64,
+                    device=devices[0],
+                )
+                last_offsets = (
+                    ops.unsqueeze(input_row_offsets_[0][1:], -1)
+                    - return_n_logits_range
+                )
+                last_indices = ops.reshape(last_offsets, shape=(-1,))
+                logits = ops.gather(
+                    ops.cast(
+                        self.lm_head(
+                            forward_sharded_layers(self.norm_shards, h),
+                            signal_buffers,
+                        )[0],
+                        DType.float32,
+                    ),
+                    last_indices,
+                    axis=0,
+                )
+                offsets = ops.range(
+                    0,
+                    TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                    return_n_logits[0],
+                    out_dim="logit_offsets",
+                    dtype=DType.int64,
+                    device=devices[0],
+                )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(
                 self.lm_head(
@@ -661,15 +717,17 @@ class DeepseekV3(Module):
             ret_val += (logits, offsets)
 
         if self.return_hidden_states == ReturnHiddenStates.ALL:
-            hidden_states = h[0] if isinstance(h, list) else h
-            ret_val += (hidden_states,)
+            ret_val += tuple(h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_h,)
+            if self.config.data_parallel_degree > 1:
+                ret_val += tuple(last_token_per_dev)
+            else:
+                ret_val += tuple(last_token_distributed)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.norm_shards, h)[0]
-            ret_val += (norm_h,)
+            norm_h = forward_sharded_layers(self.norm_shards, h)
+            ret_val += tuple(norm_h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += (norm_last_token[0],)
+            ret_val += tuple(norm_last_token)
 
         return ret_val
 
@@ -707,13 +765,6 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
 
-        kv_inputs = kv_params.get_symbolic_inputs()
-
-        # Flatten kv types for each device
-        flattened_kv_types: list[TensorType] = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         signals = Signals(devices=self.config.devices)
         signal_buffer_types: list[BufferType] = signals.input_types()
 
@@ -725,7 +776,7 @@ class DeepseekV3(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(flattened_kv_types)
+        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(

@@ -14,7 +14,7 @@
 from os import abort
 
 
-struct Property(Equatable, TrivialRegisterType):
+struct Property(Equatable, TrivialRegisterPassable):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
@@ -37,7 +37,7 @@ struct Property(Equatable, TrivialRegisterType):
         return Int(self._value)
 
 
-struct DataType(Equatable, TrivialRegisterType):
+struct DataType(Equatable, TrivialRegisterPassable):
     var _value: Int32
     comptime R_16F = Self(2)
     comptime C_16F = Self(6)

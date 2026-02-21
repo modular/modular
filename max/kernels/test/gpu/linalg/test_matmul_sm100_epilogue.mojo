@@ -26,6 +26,9 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    lt_to_tt,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -192,13 +195,13 @@ def test_matmul_sm100_epilogue[
         elementwise_compute_lambda_fn=optional_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ](
-        from_ndbuffer_row_major(c_device_nd),
-        from_ndbuffer_row_major(a_device_nd),
-        from_ndbuffer_row_major(b_device_nd),
+        lt_to_tt(from_ndbuffer_row_major(c_device_nd)),
+        lt_to_tt(from_ndbuffer_row_major(a_device_nd)),
+        lt_to_tt(from_ndbuffer_row_major(b_device_nd)),
         ctx,
     )
 
-    __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -233,8 +236,7 @@ def test_matmul_sm100_epilogue[
     ]:
         return val + c_tensor_host.load[width=width](idx).cast[_dtype]()
 
-    @parameter
-    if optional_lambda_fn:
+    comptime if optional_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
         # alias compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
@@ -283,15 +285,12 @@ def main():
     comptime n_scale_max = 3 if FASTER_TEST else (5 if QUICK_TEST else 17)
 
     with DeviceContext() as ctx:
-
-        @parameter
-        for mma_m_scale in range(1, 3):
-
-            @parameter
-            for mma_n_scale in range(1, n_scale_max):
+        comptime for mma_m_scale in range(1, 3):
+            comptime for mma_n_scale in range(1, n_scale_max):
                 # Quick/Faster mode: skip odd n_scale values
-                @parameter
-                if (QUICK_TEST or FASTER_TEST) and mma_n_scale % 2 != 0:
+                comptime if (
+                    QUICK_TEST or FASTER_TEST
+                ) and mma_n_scale % 2 != 0:
                     continue
 
                 comptime block_tile_shape = Index(
@@ -302,11 +301,9 @@ def main():
                     128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                 )
 
-                @parameter
-                for register_based_epilogue in [True, False]:
+                comptime for register_based_epilogue in [True, False]:
                     # SMEM epilogue has issues for MMA_M==128 and odd MMA_N
-                    @parameter
-                    if (
+                    comptime if (
                         not register_based_epilogue
                         and mma_m_scale == 1
                         and mma_n_scale % 2 != 0
@@ -327,7 +324,7 @@ def main():
                             block_tile_shape,
                             umma_shape,
                             cluster_shape = StaticTuple[Int32, 3](
-                                cluster_m, cluster_n, 1
+                                Int32(cluster_m), Int32(cluster_n), 1
                             ),
                             cta_group=2,
                             test_lambda_fn=True,
@@ -338,8 +335,7 @@ def main():
                     # FASTER mode: 2 key test cases only
                     run[4, 4](dynamic(1000), static[1024](), static[1024]())
 
-                    @parameter
-                    if not FASTER_TEST:
+                    comptime if not FASTER_TEST:
                         run[4, 4](dynamic(512), static[4096](), static[1024]())
                         run[4, 4, k_group=2](
                             dynamic(500), static[2048](), static[4096]()
@@ -348,6 +344,5 @@ def main():
 
                     run[2, 2](static[1024](), static[1024](), static[2048]())
 
-                    @parameter
-                    if not FASTER_TEST:
+                    comptime if not FASTER_TEST:
                         run[4, 4](dynamic(8192), static[2560](), static[8192]())

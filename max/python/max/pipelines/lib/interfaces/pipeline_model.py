@@ -24,24 +24,22 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.kv_cache import infer_optimal_batch_size
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
+
+from ..config_enums import supported_encoding_dtype
+from ..kv_cache_config import KVCacheConfig
+from ..lora import LoRAManager
+from .kv_cache import KVCacheMixin
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
-
-from max.graph import DeviceRef
-
-from ..config_enums import SupportedEncoding
-from ..kv_cache_config import KVCacheConfig
-from ..lora import LoRAManager
-from .kv_cache import KVCacheMixin
 
 
 class AlwaysSignalBuffersMixin:
@@ -92,38 +90,69 @@ class AlwaysSignalBuffersMixin:
         ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ModelOutputs:
+    """Pipeline model outputs.
+
+    Shape conventions below are for text-generation pipelines:
+
+    - ``B``: batch size
+    - ``V``: vocabulary size
+    - ``H``: hidden-state width
+    - ``T``: number of returned logit rows (depends on return mode)
+
+    The shape depends on the value of the `ReturnLogits` and `ReturnHiddenStates`
+    enums. Unless we are running with spec decoding, we use `ReturnLogits.LAST_TOKEN`
+    and `ReturnHiddenStates.NONE`.
+    """
+
     logits: Buffer
-    """Logits for a variable number of tokens per sequence."""
+    """Primary logits buffer.
+
+    For text generation this has shape ``[T, V]`` where:
+    - last-token mode: ``T = B`` (default)
+    - all-token mode: ``T = total_input_tokens``
+    - variable mode: ``T = logit_offsets[-1]`` (typically ``B * return_n_logits``)
+    """
 
     next_token_logits: Buffer | None = None
-    """Logits for just the next token."""
+    """Next-token logits for text generation, shape ``[B, V]`` when present."""
 
     logit_offsets: Buffer | None = None
-    """Offsets to access variable length logits for each sequence."""
+    """Cumulative row offsets into ``logits`` for text generation.
 
-    hidden_states: Buffer | None = None
-    """Hidden states for a variable number of tokens per sequence."""
-
-
-class ModelInputs:
+    Shape is ``[B + 1]``. Per-sequence logits are:
+    ``logits[logit_offsets[i]:logit_offsets[i + 1], :]``.
     """
-    Base class for model inputs.
-    Use this class to encapsulate inputs for your model.
-    You may store any number of dataclass fields
 
-    The following example demonstrates how to create a custom inputs class for a model:
+    hidden_states: Buffer | list[Buffer] | None = None
+    """Optional hidden states for text generation.
+
+    Single-device shape is ``[T_h, H]`` where:
+    - none mode: NONE (default)
+    - last-token mode: ``T_h = B``
+    - all-token mode: ``T_h = total_input_tokens``
+
+    For data parallel models, this can be a list of Buffers where each Buffer
+    has shape ``[T_h_device, H]`` for the sequences assigned to that device.
+    """
+
+
+@dataclass(kw_only=True)
+class ModelInputs:
+    """Base class for model inputs.
+
+    Use this class to encapsulate inputs for your model; you may store any
+    number of dataclass fields.
+
+    The following example demonstrates how to create a custom inputs class:
 
     .. code-block:: python
 
+        @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
             input_row_offsets: Buffer
-
-            def __init__(self, tokens: Buffer, input_row_offsets: Buffer):
-                self.tokens = tokens
-                self.input_row_offsets = input_row_offsets
 
         # Create tensors
         tokens = Buffer.zeros((1, 2, 3), DType.int64)
@@ -144,34 +173,27 @@ class ModelInputs:
     lora_ranks: Buffer | None = None
     """Buffer containing the LoRA ranks"""
 
-    hidden_states: Buffer | None = None
-    """Hidden states for a variable number of tokens per sequence."""
+    hidden_states: Buffer | list[Buffer] | None = None
+    """Hidden states for a variable number of tokens per sequence.
+
+    For data parallel models, this can be a list of Buffers where each Buffer
+    contains hidden states for the sequences assigned to that device.
+    """
 
     def update(self, **kwargs) -> None:
+        """Updates attributes from keyword arguments (only existing, non-None)."""
         key: str
         value: Any
         for key, value in kwargs.items():
             if hasattr(self, key) and value is not None:
                 setattr(self, key, value)
 
-
-@dataclass
-class _DeviceGraphState:
-    buffers: list[Buffer]
-    outputs: ModelOutputs
-
-
-class InputKey:
-    def __init__(self, *inputs: Buffer):
-        self.keys = tuple((input.dtype, tuple(input.shape)) for input in inputs)
-
-    def __eq__(self, other: Any):
-        if not isinstance(other, InputKey):
-            return False
-        return self.keys == other.keys
-
-    def __hash__(self) -> int:
-        return hash(self.keys)
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns positional Buffer inputs for model ABI calls."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not define model ABI buffers."
+        )
 
 
 class PipelineModel(ABC, Generic[BaseContextType]):
@@ -184,11 +206,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        # TODO: This is no longer necessary inside PipelineModel since it can be
-        # inferred directly from model_config, remove it and from
-        # other PipelineModel methods that depend on it.
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -197,8 +214,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         self.pipeline_config = pipeline_config
-        self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -209,12 +224,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         # Initialize `max_seq_len` here to avoid repeated HF config access.
         self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, huggingface_config
+            pipeline_config, self.huggingface_config
         )
 
         if isinstance(self, KVCacheMixin):
             self.kv_params = self.get_kv_params(
-                huggingface_config=huggingface_config,
+                huggingface_config=self.huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=self.device_refs,
                 kv_cache_config=kv_cache_config,
@@ -226,34 +241,56 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             assert pipeline_config.max_batch_size is not None, (
                 "max_batch_size should have been set during memory estimation"
             )
-            self.kv_manager = self.load_kv_manager(
+            self.kv_managers = self.load_kv_managers(
                 kv_params=self.kv_params,
                 max_batch_size=pipeline_config.max_batch_size,
                 max_seq_len=self.max_seq_len,
                 session=session,
                 available_cache_memory=self.kv_cache_config._available_cache_memory,
             )
+            self.kv_manager = self.kv_managers[0]
 
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
                 pipeline_config.lora,
                 pipeline_config.model.model_name,
                 self.dtype,
-                huggingface_config.num_attention_heads,
-                huggingface_config.num_key_value_heads,
-                huggingface_config.head_dim,
+                self.huggingface_config.num_attention_heads,
+                self.huggingface_config.num_key_value_heads,
+                self.huggingface_config.head_dim,
                 pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora
             else None
         )
-        self._device_graph_capture_enabled = (
-            pipeline_config.device_graph_capture
-        )
-        self._device_graph_states: dict[InputKey, _DeviceGraphState] = {}
+
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """Returns the HuggingFace config from pipeline config.
+
+        For multimodal models (e.g., Pixtral, Gemma3 multimodal), this
+        returns the top-level config which contains both text_config and
+        vision_config. Models should explicitly access .text_config or
+        .vision_config as needed.
+
+        Returns:
+            The HuggingFace AutoConfig for this model.
+
+        Raises:
+            ValueError: If HuggingFace config could not be loaded.
+        """
+        config = self.pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required but could not be loaded for "
+                f"model '{self.pipeline_config.model.model_path}'. "
+                "Ensure the model repository contains a valid config.json."
+            )
+        return config
 
     @property
     def lora_manager(self) -> LoRAManager | None:
+        """Returns the LoRA manager if LoRA is enabled, otherwise None."""
         return self._lora_manager
 
     @cached_property
@@ -294,22 +331,21 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     @property
     def dtype(self) -> DType:
-        # AudioGeneratorPipeline passes Nones for all args except pipeline config
-        return (
-            self.encoding.dtype
-            if self.encoding is not None
-            else self.pipeline_config.model.quantization_encoding.dtype
-        )
+        """Returns the model data type from pipeline config."""
+        quantization_encoding = self.pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        return supported_encoding_dtype(quantization_encoding)
 
     @classmethod
     @abstractmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        """Calculate the optimal max sequence length for the model.
-        Models are expected to implement this method.
+        """Calculates the optimal max sequence length for the model.
 
-        The following example shows how to implement this method for a Mistral model:
+        Models are expected to implement this method. The following example
+        shows how to implement it for a Mistral model:
 
         .. code-block:: python
 
@@ -319,12 +355,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     try:
                         return upper_bounded_default(
                             upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.max_length,
+                            default=pipeline_config.model.max_length,
                         )
                     except ValueError as e:
                         raise ValueError(
                             "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
                             f"model's max_seq_len ({huggingface_config.max_seq_len})."
                         ) from e
 
@@ -340,56 +376,8 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
     @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        huggingface_config: AutoConfig,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Returns the estimated optimal batch size to run the model
-        given current memory constraints."""
-        if not issubclass(cls, KVCacheMixin):
-            # we rely on the KVCache setup to know optimal batch size.
-            # If we don't have that, default to BS=1.
-            return 1
-        elif len(devices) == 1 and devices[0].is_host:
-            # batching on CPU is generally not useful, so we hard-code a batch size of 1.
-            return 1
-
-        # TODO we should map HF configs to a unified MAX Config object
-        # this would help avoid these excessive calls to class methods.
-        kv_params = cls.get_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in devices],
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-        n_layers = kv_params.num_layers
-        inferred_batch_size = infer_optimal_batch_size(
-            params=kv_params,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            num_layers=n_layers,
-            available_cache_memory=available_cache_memory,
-            devices=devices,
-        )
-
-        # clamp the floor of the inferred batch size to 1 and the ceiling to 4096
-        inferred_batch_size = max(
-            cls._MIN_DEFAULT_BATCH_SIZE,
-            min(inferred_batch_size, cls._MAX_DEFAULT_BATCH_SIZE),
-        )
-        return inferred_batch_size
-
-    @classmethod
     def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
         """Calculates the estimated memory consumption of our model."""
-
         # TODO move this logic to the PipelineModel instead of PipelineConfig class.
         # Better yet, make this more accurate by loading and measuring memory consumption
         # after we load the model
@@ -410,22 +398,13 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         Args:
             pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace model configuration
+            huggingface_config: Hugging Face model configuration
 
         Returns:
             Estimated activation memory in bytes
         """
         del pipeline_config, huggingface_config  # Unused.
         return 0
-
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration.
-
-        This method is called after the pipeline configuration is resolved.
-        It can be overridden to perform any finalization steps that are needed.
-        """
-        del pipeline_config  # Unused.
 
     @abstractmethod
     def execute(
@@ -445,122 +424,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         to define their specific execution logic.
         """
 
-    def _execution_trace_inputs(
-        self, model_inputs: ModelInputs
-    ) -> Sequence[Buffer]:
-        raise NotImplementedError(
-            "Device graph inputs not implemented for model. "
-            "Override _execution_trace_inputs to enable capture."
-        )
-
-    def execute_with_capture(
-        self,
-        model_inputs: ModelInputs,
-        batch_size: int,
-    ) -> ModelOutputs:
-        """Executes the model with optional capture handling.
-
-        Subclasses can override this to integrate device graph capture/replay.
-        """
-        if not getattr(self, "_device_graph_capture_enabled", False):
-            return self.execute(model_inputs)
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "replay"):
-            raise RuntimeError(
-                "Device graph capture is enabled but model does not support capture."
-            )
-
-        if batch_size > 1:
-            return self.execute(model_inputs)
-
-        self.pre_capture_execution_trace([model_inputs], batch_size)
-
-        graph_inputs = list(self._execution_trace_inputs(model_inputs))
-
-        state = self._device_graph_states.get(InputKey(*graph_inputs))
-
-        if state is None:
-            return self.execute(model_inputs)
-
-        if not self._copy_graph_inputs(graph_inputs, state.buffers):
-            return self.execute(model_inputs)
-
-        try:
-            model.replay(*state.buffers)
-        except Exception:
-            logger.exception("Device graph replay failed for replica.")
-            raise
-
-        return state.outputs
-
-    def pre_capture_execution_trace(
-        self,
-        model_inputs: Sequence[ModelInputs],
-        batch_size: int,
-    ) -> None:
-        if not self._device_graph_capture_enabled:
-            return
-
-        model = getattr(self, "model", None)
-        if model is None or not hasattr(model, "capture"):
-            return
-
-        if batch_size > 1:
-            return
-
-        for inputs in model_inputs:
-            graph_inputs = list(self._execution_trace_inputs(inputs))
-
-            key = InputKey(*graph_inputs)
-
-            if key in self._device_graph_states:
-                continue
-
-            try:
-                outputs = model.capture(*graph_inputs)
-            except Exception:
-                logger.exception("Device graph capture failed for replica.")
-                raise
-
-            self._device_graph_states[key] = _DeviceGraphState(
-                buffers=graph_inputs,
-                outputs=ModelOutputs(*outputs),
-            )
-            logger.info(
-                f"Device graph captured {len(self._device_graph_states)}."
-            )
-
-    def _copy_graph_inputs(
-        self, src: Sequence[Buffer], dst: Sequence[Buffer]
-    ) -> bool:
-        if len(src) != len(dst):
-            logger.error(
-                "Device graph input count mismatch: src=%s dst=%s",
-                len(src),
-                len(dst),
-            )
-            return False
-
-        for src_value, dst_value in zip(src, dst, strict=True):
-            if src_value is dst_value:
-                continue
-
-            try:
-                dst_value.inplace_copy_from(src_value)
-            except ValueError:
-                logger.error(
-                    "Device graph input mismatch: src_shape=%s dst_shape=%s src_dtype=%s dst_dtype=%s src_device=%s dst_device=%s",
-                    src_value.shape,
-                    dst_value.shape,
-                    src_value.dtype,
-                    dst_value.dtype,
-                    src_value.device,
-                    dst_value.device,
-                )
-                return False
-        return True
-
     @abstractmethod
     def prepare_initial_token_inputs(
         self,
@@ -568,17 +431,14 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
-        """Prepares the initial inputs to be passed to `.execute()`.
+        """Prepares the initial inputs to be passed to ``.execute()``.
 
-        The inputs and functionality of this method can vary per model.
-        For example, the model inputs could include:
-        - Encoded tensors
-        - A unique IDs for each tensor if this model uses a KV Cache manager.
-        - kv_cache_inputs: The kv cache inputs required for the model. This
-        should be None if the model does not use KV Cache.
-        This function would batch the encoded tensors, claim a slot in the kv
-        cache if the ID hasn't been seen before, and return the inputs and
-        caches as a list of tensors."""
+        The inputs and functionality can vary per model. For example, model
+        inputs could include encoded tensors, unique IDs per tensor when using
+        a KV cache manager, and ``kv_cache_inputs`` (or None if the model does
+        not use KV cache). This method typically batches encoded tensors,
+        claims a KV cache slot if needed, and returns the inputs and caches.
+        """
         ...
 
     @abstractmethod

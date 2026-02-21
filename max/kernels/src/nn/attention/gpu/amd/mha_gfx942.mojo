@@ -66,8 +66,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
-        @parameter
-        if Self.token_gen:
+        comptime if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
             return block_idx.y * UInt(Self.group) + group_idx
@@ -133,7 +132,7 @@ __extension Attention:
     fn mha_prefill(
         mut self,
     ):
-        __comptime_assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter
@@ -241,7 +240,7 @@ __extension Attention:
         ],
         num_partitions: Int,
     ):
-        __comptime_assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter

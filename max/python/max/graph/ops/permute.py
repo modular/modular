@@ -26,7 +26,7 @@ def permute(x: TensorValueLike, dims: list[int]) -> TensorValue:
     """Permutes all dimensions of a symbolic tensor.
 
     Args:
-        input: The input symbolic tensor to transpose.
+        x: The input symbolic tensor to permute.
         dims: The desired ordering of the dimensions in the output tensor.
 
     Returns:

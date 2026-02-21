@@ -76,6 +76,33 @@ If you're experienced with GitHub, here's the basic process:
 
 4. Skip to [Step 3: PR triage and review](#step-3-pr-triage-and-review).
 
+#### Format your changes
+
+Please make sure your changes are formatted before submitting a pull request.
+Otherwise, CI will fail in its lint and formatting checks.  `bazel` setup
+provides a `format` command.  So, you can format your changes like so:
+
+```bash
+./bazelw run format
+```
+
+It is advised, to avoid forgetting, to set-up `pre-commit`, which will format
+your changes automatically at each commit, and will also ensure that you
+always have the latest linting tools applied.
+
+To do so, install pre-commit:
+
+```bash
+pixi x pre-commit install
+```
+
+If you need to manually apply the `pre-commit`, for example, if you
+made a commit with the github UI, you can do `pixi x pre-commit run --all-files`,
+and it will apply the formatting to all Mojo and Python files.
+
+You can also consider setting up your editor to automatically format
+Mojo and Python files upon saving.
+
 #### Pull request walkthrough
 
 For more specifics, here's a detailed walkthrough of the process to create a
@@ -168,7 +195,7 @@ pull request:
 
 ### Step 3: PR triage and review
 
-A Modular team member will take an initial look the the pull request and
+A Modular team member will take an initial look at the pull request and
 determine how to proceed. This may include:
 
 - **Leaving the PR as-is** (e.g. if it's a draft).
@@ -208,7 +235,7 @@ If we need changes from you, we'll leave clear comments with action items.
 Once everything is approved and CI checks pass, we'll take care of the final
 steps to get your PR merged.
 
-Merged changes will generally show up in the the next nightly build (or docs
+Merged changes will generally show up in the next nightly build (or docs
 website), a day or two after it's merged.
 
 ## Guidelines for review time

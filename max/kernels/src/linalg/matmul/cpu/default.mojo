@@ -55,7 +55,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -73,12 +73,10 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
-        @parameter
-        if prefetch_distance > 0:
+        comptime if prefetch_distance > 0:
             comptime prefetch_offset = prefetch_distance * kernel_cols
 
-            @parameter
-            for idx in range(kernel_cols // simd_size):
+            comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ](b_ptr + (prefetch_offset + idx * simd_size))
@@ -90,11 +88,8 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         comptime c_type = c_local.dtype
 
         # Loop over local accumulator tiles.
-        @parameter
-        for idx0 in range(kernel_rows):
-
-            @parameter
-            for idx1 in range(kernel_cols // simd_size):
+        comptime for idx0 in range(kernel_rows):
+            comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
@@ -121,7 +116,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         var c_stride = c.dim[1]()
 

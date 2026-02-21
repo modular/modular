@@ -61,6 +61,7 @@ from os import abort
 from buffer import DimList
 from builtin.range import _StridedRange
 from memory import memcpy
+from sys.compile import is_compile_time
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -122,8 +123,7 @@ fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
         return _get_index_type(address_space)
 
 
-@register_passable
-struct IntArray(ImplicitlyCopyable):
+struct IntArray(ImplicitlyCopyable, RegisterPassable):
     """A memory-efficient, register-passable array of integers.
 
     `IntArray` provides a low-level implementation of a dynamically-sized integer array
@@ -147,21 +147,21 @@ struct IntArray(ImplicitlyCopyable):
         self._size = size
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Initialize by copying an existing `IntArray`.
 
         For owned arrays, this performs a deep copy of the data.
 
         Args:
-            existing: The source array to copy from.
+            copy: The source array to copy from.
         """
-        self._size = existing._size
-        if existing.owning():
-            var size = existing.size()
+        self._size = copy._size
+        if copy.owning():
+            var size = copy.size()
             self._data = alloc[Int](size)
-            self.copy_from(0, existing, size)
+            self.copy_from(0, copy, size)
         else:
-            self._data = existing._data
+            self._data = copy._data
 
     @always_inline("nodebug")
     fn __del__(deinit self):
@@ -270,7 +270,7 @@ that are not known at compile time or have not been specified.
 
 
 struct _IntTupleIter[origin: ImmutOrigin](
-    Iterable, Iterator, TrivialRegisterType
+    Iterable, Iterator, TrivialRegisterPassable
 ):
     """Iterator for traversing elements of an IntTuple."""
 
@@ -502,11 +502,14 @@ struct IntTuple(
         Args:
             value: The integer value to store in the tuple.
         """
-        debug_assert(
-            value >= Self.MinimumValue,
-            "IntTuple value must be >= MinimumValue: ",
-            value,
-        )
+        # Skip validation during compile-time interpretation since the comparison
+        # may involve complex type witness expressions that can't be evaluated.
+        if not is_compile_time():
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
         self._store = IntArray(2)
         self._store[0] = 1
         self._store[1] = value
@@ -641,22 +644,22 @@ struct IntTuple(
             self.append(tup)
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         """Initialize by copying an existing `IntTuple`.
 
         Creates a deep copy of the provided `IntTuple`, copying all its data
         into newly allocated memory.
 
         Args:
-            existing: The `IntTuple` to copy from.
+            copy: The `IntTuple` to copy from.
 
         Note:
             There is a Mojo bug where this method unnecessarily propagates
             the origin of self to the new copy.
         """
-        var size = existing.size()
+        var size = copy.size()
         self._store = IntArray(size)
-        self._store.copy_from(0, existing._store, size)
+        self._store.copy_from(0, copy._store, size)
 
     @always_inline("nodebug")
     fn __lt__(self, rhs: IntTuple) -> Bool:
@@ -2345,8 +2348,7 @@ fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
             if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
                 return UNKNOWN_VALUE
 
-            @parameter
-            if check:
+            comptime if check:
                 debug_assert(
                     va % vb == 0 or vb % va == 0,
                     "Incompatible shape values: ",

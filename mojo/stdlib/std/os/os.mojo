@@ -23,8 +23,8 @@ from os import listdir
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
 from io import FileDescriptor
-from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char, c_int, get_errno
+from ffi import c_char, c_int, external_call, get_errno
+from sys import CompilationTarget, is_gpu
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -121,8 +121,7 @@ struct _DirHandle:
           A string containing the output of running the command.
         """
 
-        @parameter
-        if CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_linux():
             return self._list_linux()
         else:
             return self._list_macos()
@@ -252,8 +251,7 @@ fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
         message: The message to include when aborting.
     """
 
-    @parameter
-    if not is_gpu():
+    comptime if not is_gpu():
         print(prefix, message, flush=True)
 
     abort()

@@ -86,8 +86,7 @@ def test_kernel_1[
     ) if transpose_b else Layout.row_major(K, N)
     var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         var b_tensor = b.tensor[update=False]()
         var b_vendor_tensor = b_vendor.tensor[update=True]()
         for k in range(K):
@@ -140,7 +139,7 @@ def test_kernel_1[
             Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")

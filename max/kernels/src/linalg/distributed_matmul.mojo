@@ -60,8 +60,7 @@ fn _matmul_allreduce[
     This function is used as a reference to check correctness and benchmark other versions that split the matrices and overlap the computation.
     """
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         _matmul_gpu[use_tensor_core=True, transpose_b=True](
             c_temp_buffers[i], a_buffers[i], b_buffers[i], ctxs[i]
         )
@@ -69,10 +68,11 @@ fn _matmul_allreduce[
     # Call allreduce for each GPU
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
-            c_temp_buffers[i],
+            rebind[InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]](
+                c_temp_buffers
+            ),
             output_buffers[i],
             rank_sigs,
             ctxs[i],
@@ -139,8 +139,7 @@ fn _matmul_allreduce_split_m[
     for stage in range(num_partitions):
         var curr_m = m_part + res_m if stage == num_partitions - 1 else m_part
 
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             A_parts[i] = NDBuffer[
                 a_dtype, 2, MutAnyOrigin, a_part_static_shape
             ](
@@ -196,14 +195,15 @@ fn _matmul_allreduce_split_m[
         # Call allreduce for each GPU
         group_start()
 
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
                 output_lambda = outputs_lambda_wrapper[input_index=i],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
-                C_parts[i],
+                rebind[
+                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
+                ](C_parts),
                 Out_parts[i],
                 rank_sigs,
                 ctxs[i],
@@ -245,11 +245,11 @@ fn _matmul_allreduce_split_n[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    __comptime_assert not b_static_shape.at[
+    comptime assert not b_static_shape.at[
         0
     ]().is_dynamic(), "N dimension must be static"
     comptime n = b_static_shape.get[0]()
-    __comptime_assert (
+    comptime assert (
         n % num_partitions == 0
     ), "num_partitions doesn't split evenly N"
     comptime n_part = n // num_partitions
@@ -272,12 +272,10 @@ fn _matmul_allreduce_split_n[
     ](fill={})
 
     # Overlap matmul with previous partition's allreduce
-    @parameter
-    for stage in range(num_partitions):
+    comptime for stage in range(num_partitions):
         comptime pdl_matmul = PDLLevel.OVERLAP_AT_END if stage == 0 else PDLLevel.NO_WAIT_OVERLAP_AT_END
 
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             B_parts[i] = NDBuffer[
                 b_dtype, 2, MutAnyOrigin, b_part_static_shape
             ](
@@ -326,14 +324,15 @@ fn _matmul_allreduce_split_n[
         # Call allreduce for each GPU
         group_start()
 
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
                 output_lambda = outputs_lambda_wrapper[input_index=i],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
-                C_parts[i],
+                rebind[
+                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
+                ](C_parts),
                 Out_parts[i],
                 rank_sigs,
                 ctxs[i],
@@ -376,10 +375,13 @@ fn matmul_allreduce[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    __comptime_assert partition_dim == 0 or partition_dim == 1
+    comptime assert partition_dim == 0 or partition_dim == 1
 
-    @parameter
-    if not num_partitions.dim.is_dynamic() and num_partitions.dim.get() == 1:
+    # return early if the input buffers are empty
+    if a_buffers[0].num_elements() == 0 or b_buffers[0].num_elements() == 0:
+        return
+
+    comptime if not num_partitions.dim.is_dynamic() and num_partitions.dim.get() == 1:
         _matmul_allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
             a_buffers,
             b_buffers,
@@ -415,7 +417,7 @@ fn matmul_allreduce[
             )
 
     else:
-        __comptime_assert (
+        comptime assert (
             not num_partitions.dim.is_dynamic()
         ), "for split_n num_partitions must be a constant"
         _matmul_allreduce_split_n[
@@ -458,8 +460,7 @@ fn matmul_allreduce[
     """
 
     # If we don't support PDL, we can't split the computation.
-    @parameter
-    if not _SUPPORT_PDL_LAUNCH:
+    comptime if not _SUPPORT_PDL_LAUNCH:
         return matmul_allreduce[
             ngpus=ngpus,
             partition_dim=0,

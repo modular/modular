@@ -18,7 +18,7 @@ import enum
 from typing import Any, get_args, get_origin
 
 import yaml
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from .base_model import MAXBaseModel
 
@@ -42,6 +42,12 @@ class ConfigFileModel(MAXBaseModel):
         config = MyConfig(config_file="config.yaml")
         ```
     """
+
+    # Config models receive values from text sources (environment variables,
+    # CLI arguments, quoted YAML strings) that rely on Pydantic's lax coercion
+    # (e.g. "123" -> int, "1.5" -> float).  Override the strict=True default
+    # inherited from MAXBaseModel so these conversions continue to work.
+    model_config = ConfigDict(strict=False)
 
     config_file: str | None = None
     """Path to the configuration file."""

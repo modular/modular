@@ -129,7 +129,7 @@ struct SmemBarriers[
 
 
 struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     """Named barrier for warp group synchronization.
 
@@ -156,7 +156,7 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
         named_barrier[Int32(Self.num_threads)](Int32(Self.barrier_id))
 
 
-struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterType):
+struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
     """TMEM deallocation synchronization barrier.
 
     Handles cluster-aware synchronization patterns for TMEM deallocation,
@@ -175,8 +175,7 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterType):
     fn signal_peer(self):
         """Signal peer CTA in cluster (cta_group=2 only)."""
 
-        @parameter
-        if Self.cta_group == 2:
+        comptime if Self.cta_group == 2:
             _ = self.barrier.ptr[].arrive_cluster(block_rank_in_cluster() ^ 1)
 
     @always_inline

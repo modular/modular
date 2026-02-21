@@ -42,21 +42,20 @@ from max.nn.legacy.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
     ShardableCallable,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
-from max.pipelines.architectures.internvl.internvl import distribute_value
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
 
 
 class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
@@ -113,7 +112,9 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self.has_bias = has_bias
         self.hidden_size = hidden_size
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.float8_config = float8_config
 
@@ -121,7 +122,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
 
         self._sharding_strategy: ShardingStrategy | None = None
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"
                 " in Attention layer."
@@ -459,7 +460,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
         return hs
 
 
-class Qwen25VLDecoder(Module):
+class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
     """Qwen2.5VL decoder model with support for vision-language tasks.
 
     This decoder implements the Qwen2.5VL architecture with:
@@ -564,7 +565,6 @@ class Qwen25VLDecoder(Module):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        super().__init__()
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(layers)
@@ -612,7 +612,7 @@ class Qwen25VLDecoder(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(
@@ -629,76 +629,6 @@ class Qwen25VLDecoder(Module):
                 signal_buffers=signal_buffers,
             )
 
-        # Retrieve a variable number of tokens
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        assert h is not None and len(h) == len(last_token_indices)
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64, device=self.devices[0]),
-                ops.constant(-1, DType.int64, device=self.devices[0]),
-                out_dim="return_n_logits_range",
-                device=self.devices[0],
-                dtype=DType.int64,
-            )
-
-            last_indices = [
-                ops.reshape(
-                    ops.unsqueeze(row_offset[1:], -1) - return_range,
-                    shape=(-1,),
-                )
-                for row_offset in input_row_offsets
-            ]
-
-            # Gather, normalize, and get logits
-            variable_tokens = [
-                self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(
-                    zip(h, last_indices, strict=True)
-                )
-            ]
-            logits = ops.cast(
-                self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
-            )
-            offsets = ops.range(
-                0,
-                last_indices[0].shape[0] + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = [
-                self.norm_shards[i](h_device) for i, h_device in enumerate(h)
-            ]
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0], DType.float32
-            )
-            offsets = input_row_offsets[0]
-
-        if offsets is not None:
-            assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)

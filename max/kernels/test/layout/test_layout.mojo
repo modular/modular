@@ -867,11 +867,8 @@ fn test_transpose() raises:
     assert_equal(trans_nested.transpose(), nested)
 
     # Test memory mapping preservation for 2D
-    @parameter
-    for i in range(3):
-
-        @parameter
-        for j in range(4):
+    comptime for i in range(3):
+        comptime for j in range(4):
             var original_idx = row_major(IntTuple(i, j))
             var transposed_idx = transposed(IntTuple(j, i))
             assert_equal(original_idx, transposed_idx)
@@ -955,7 +952,7 @@ def test_layout_tensor_iterator_print():
     comptime buf_size = 16
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
-        storage[i] = i
+        storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(2, 2)
     var iter = LayoutTensorIter[
         DType.int16,

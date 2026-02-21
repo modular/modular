@@ -46,7 +46,7 @@ fn _histogram_gpu(
     # Set the maximum number of threads per block to the block dimension.
     # This is equivalent to the `__launch_bounds__` attribute in CUDA.
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
     fn kernel(
         output: UnsafePointer[Int64, MutAnyOrigin],
@@ -113,8 +113,7 @@ struct Histogram:
         input: InputTensor[dtype = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             _histogram_cpu(output, input)
         else:
             _histogram_gpu(output, input, ctx)

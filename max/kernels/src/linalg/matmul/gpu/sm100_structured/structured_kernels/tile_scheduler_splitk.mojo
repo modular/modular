@@ -14,8 +14,12 @@ from gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
+from layout._layout import TensorLayout, row_major
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 from layout.tma_async import SharedMemBarrier, PipelineState
 from utils.static_tuple import StaticTuple
+from .tile_types import static_row_major, _StridedLayout, _strided_layout
 from gpu import (
     grid_dim,
     thread_idx,
@@ -37,7 +41,7 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -94,7 +98,7 @@ struct AdvanceAfterWorkContextSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue)."""
 
     comptime SchedulerType = TileScheduler[
@@ -141,7 +145,7 @@ struct AdvanceAfterWorkContextSplitK[
 
 struct WaitAndAdvanceContextSplitK[
     work_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for waiting on CLC barrier and advancing work iterator (Split-K).
 
     Encapsulates the CLC response barrier synchronization:
@@ -183,7 +187,7 @@ struct WorkIteratorSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator for split-K that owns work_info and pipeline state.
     Throttle pipeline is obtained from the scheduler.
     """
@@ -283,7 +287,7 @@ struct SchedulerWorkIteratorSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Work iterator for Scheduler warp (split-K) - owns work_info and both states.
     Throttle pipeline is obtained from the scheduler.
     """
@@ -352,8 +356,7 @@ struct SchedulerWorkIteratorSplitK[
     fn drain(mut self):
         """Drain all pending CLC requests before kernel exit."""
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             # Split-K wraps underlying scheduler, so access via scheduler.scheduler
             self.scheduler.scheduler.empty_mbar[
                 self.producer_state.index()
@@ -370,7 +373,7 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime UnderlyingScheduler = B200TileScheduler[
         Self.num_stages,
         Self.cluster_shape,
@@ -570,20 +573,22 @@ struct TileScheduler[
     fn output_tile_index(self, work_info: WorkInfo) -> UInt32:
         return work_info.m * UInt32(grid_dim.y) + work_info.n
 
+    comptime WorkspaceTileLayout = static_row_major[Self.BM, Self.MMA_N]
+
     @always_inline
     fn _get_workspace_tile[
-        accum_type: DType, workspace_layout: Layout
+        accum_type: DType, workspace_layout: TensorLayout
     ](
         self,
-        reduction_workspace: LayoutTensor[accum_type, workspace_layout],
-        reduction_tile_idx: UInt32,
-        out result: LayoutTensor[
-            accum_type, Layout.row_major(Self.BM, Self.MMA_N), MutAnyOrigin
+        reduction_workspace: TileTensor[
+            accum_type, workspace_layout, MutAnyOrigin
         ],
-    ):
-        return type_of(result)(
-            reduction_workspace.ptr
-            + (reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N))
+        reduction_tile_idx: UInt32,
+    ) -> TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin]:
+        var offset = reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N)
+        return TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin](
+            UnsafePointer(to=reduction_workspace.ptr[Int(offset)]),
+            row_major[Self.BM, Self.MMA_N](),
         )
 
     @always_inline
@@ -613,33 +618,29 @@ struct TileScheduler[
 
         return (arr^, i)
 
-    @staticmethod
-    @always_inline
-    fn _get_new_layout[
-        layout: Layout,
-        width: Int,
-    ]() -> Layout:
-        comptime new_shape = IntTuple(layout.shape[0].value(), width)
-        return Layout(new_shape, layout.stride)
-
     @always_inline
     @staticmethod
     fn _to_next_subtile[
         accum_type: DType,
-        layout: Layout,
+        tile_layout: TensorLayout,
         /,
         *,
         widths: InlineArray[Int, 4],
         curr_stage: Int,
     ](
-        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, ...],
-        out result: LayoutTensor[
-            accum_type,
-            Self._get_new_layout[layout, widths[curr_stage]](),
-            MutAnyOrigin,
-            address_space = type_of(tensor).address_space,
+        tensor: TileTensor[accum_type, tile_layout, MutAnyOrigin],
+    ) -> TileTensor[
+        accum_type,
+        # Shape narrows to [height, stage_width], but stride is preserved
+        # from the parent [parent_stride, 1] -- NOT row_major of the
+        # narrowed shape. The sub-tile is a strided view into wider rows.
+        _StridedLayout[
+            tile_layout.static_shape[0],
+            widths[curr_stage],
+            tile_layout.static_stride[0],
         ],
-    ):
+        MutAnyOrigin,
+    ]:
         @parameter
         fn _get_current_width(
             widths: InlineArray[Int, 4], curr_stage: Int
@@ -651,12 +652,27 @@ struct TileScheduler[
 
         comptime current_width = _get_current_width(widths, curr_stage)
 
-        return type_of(result)(tensor.ptr + current_width)
+        return TileTensor[
+            accum_type,
+            _StridedLayout[
+                tile_layout.static_shape[0],
+                widths[curr_stage],
+                tile_layout.static_stride[0],
+            ],
+            MutAnyOrigin,
+        ](
+            UnsafePointer(to=tensor.ptr[current_width]),
+            _strided_layout[
+                tile_layout.static_shape[0],
+                widths[curr_stage],
+                tile_layout.static_stride[0],
+            ](),
+        )
 
     @always_inline
     fn store_to_workspace[
         accum_type: DType,
-        workspace_layout: Layout,
+        workspace_layout: TensorLayout,
         /,
         *,
         do_reduction: Bool = False,
@@ -664,7 +680,9 @@ struct TileScheduler[
     ](
         self,
         tmem: TmemAddress,
-        reduction_workspace: LayoutTensor[accum_type, workspace_layout],
+        reduction_workspace: TileTensor[
+            accum_type, workspace_layout, MutAnyOrigin
+        ],
         epilogue_thread_idx: UInt,
         reduction_tile_idx: UInt32,
     ):
@@ -693,14 +711,17 @@ struct TileScheduler[
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
-            Int(warp_id_x), Int(warp_id_y)
+            Coord(Idx(Int(warp_id_x)), Idx(Int(warp_id_y)))
         )
-        var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
-        var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
+        var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
+            Coord(Idx(0), Idx(0))
+        )
+        var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](
+            Coord(Idx(1), Idx(0))
+        )
         var stage_addr = tmem  # Track address for iteration
 
-        @parameter
-        for stage in range(num_widths):
+        comptime for stage in range(num_widths):
             comptime stage_width = widths[stage]
             comptime stage_rep = stage_width // 8
 
@@ -714,44 +735,39 @@ struct TileScheduler[
                     reduction_upper
                 )
                 .vectorize[1, 2]()
-                .distribute[Layout.row_major(8, 4)](lane_id())
+                .distribute[row_major[8, 4]()](Int(lane_id()))
             )
             var ws_lower = (
                 Self._to_next_subtile[widths=widths, curr_stage=stage](
                     reduction_lower
                 )
                 .vectorize[1, 2]()
-                .distribute[Layout.row_major(8, 4)](lane_id())
+                .distribute[row_major[8, 4]()](Int(lane_id()))
             )
 
-            comptime num_m = ws_upper.layout.shape[0].value()
-            comptime num_n = ws_upper.layout.shape[1].value()
+            comptime num_m = type_of(ws_upper).static_shape[0]
+            comptime num_n = type_of(ws_upper).static_shape[1]
 
-            @parameter
-            for m in range(num_m):
-
-                @parameter
-                for n in range(num_n):
+            comptime for m in range(num_m):
+                comptime for n in range(num_n):
                     comptime i = m * num_n + n
 
-                    var v2_upper = rebind[ws_upper.element_type](
+                    var v2_upper = rebind[type_of(ws_upper).ElementType](
                         SIMD[accum_type, 2](
                             frags.upper[2 * i], frags.upper[2 * i + 1]
                         )
                     )
-                    var v2_lower = rebind[ws_lower.element_type](
+                    var v2_lower = rebind[type_of(ws_lower).ElementType](
                         SIMD[accum_type, 2](
                             frags.lower[2 * i], frags.lower[2 * i + 1]
                         )
                     )
 
-                    @parameter
-                    if do_reduction:
+                    comptime if do_reduction:
                         v2_upper += ws_upper[m, n]
                         v2_lower += ws_lower[m, n]
 
-                    @parameter
-                    if write_back:
+                    comptime if write_back:
                         ws_upper[m, n] = v2_upper
                         ws_lower[m, n] = v2_lower
                     else:
@@ -761,8 +777,7 @@ struct TileScheduler[
                         frags.lower[2 * i + 1] = v2_lower[1]
 
             # Store modified fragments back to TMEM
-            @parameter
-            if not write_back:
+            comptime if not write_back:
                 stage_tmem.store_fragments[stage_rep](frags)
                 AccumTmem.wait_store()
 
@@ -771,10 +786,12 @@ struct TileScheduler[
     @always_inline
     fn reduction[
         accum_type: DType,
-        workspace_layout: Layout,
+        workspace_layout: TensorLayout,
     ](
         self,
-        reduction_workspace: LayoutTensor[accum_type, workspace_layout],
+        reduction_workspace: TileTensor[
+            accum_type, workspace_layout, MutAnyOrigin
+        ],
         tmem: TmemAddress,
         epilogue_thread_idx: UInt,
         work_info: WorkInfo,

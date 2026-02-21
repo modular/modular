@@ -304,7 +304,7 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-struct Swizzle(LayoutTrait, Stringable, TrivialRegisterType, Writable):
+struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -492,7 +492,7 @@ fn make_ldmatrix_swizzle[
     comptime type_size = size_of[dtype]()
     comptime bytes_row = row_size * type_size
 
-    __comptime_assert (
+    comptime assert (
         bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0
     ), (
         "Row sizes should be multiples of 32 banks, or multiple"
@@ -533,7 +533,7 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     comptime base = log2_floor(access_size)
     comptime shifts = log2_floor(row_size) - base
 
-    __comptime_assert shifts > 0, "Negative shifts in swizzling likely a bug."
+    comptime assert shifts > 0, "Negative shifts in swizzling likely a bug."
 
     return Swizzle(bits, base, shifts)
 
@@ -554,8 +554,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime if mode in (
         TensorMapSwizzle.SWIZZLE_128B,
         TensorMapSwizzle.SWIZZLE_64B,
         TensorMapSwizzle.SWIZZLE_32B,
@@ -604,21 +603,21 @@ struct ComposedLayout[
             layout_a: The first layout.
             layout_b: The second layout.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.offset or Self.offset.value() >= 0
         ), "Requires non-negative offset if present"
         self.layout_a = layout_a^
         self.layout_b = layout_b^
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructor for ComposedLayout.
 
         Args:
-            other: The ComposedLayout to copy from.
+            copy: The ComposedLayout to copy from.
         """
-        self.layout_a = other.layout_a.copy()
-        self.layout_b = other.layout_b.copy()
+        self.layout_a = copy.layout_a.copy()
+        self.layout_b = copy.layout_b.copy()
 
     @always_inline
     fn __call__(self, idx: IntTuple) -> Int:
@@ -649,7 +648,7 @@ struct ComposedLayout[
         Returns:
             The transformed index.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.offset
         ), "Static offset set; runtime offset not allowed."
         return self.layout_b(offset_val + self.layout_a(idx))
@@ -702,13 +701,11 @@ fn eval_composed[
     var b_idx = 0
 
     # layout or composed layout
-    @parameter
-    if composed_layout.layout_a.has_shape:
+    comptime if composed_layout.layout_a.has_shape:
         comptime shape_a = flatten(composed_layout.layout_a.shape)
         comptime stride_a = flatten(composed_layout.layout_a.stride)
 
-        @parameter
-        for i in range(len(stride_a)):
+        comptime for i in range(len(stride_a)):
             comptime s = shape_a[i].value()
             comptime st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,9 +25,7 @@ from .model_config import FluxConfig
 from .weight_adapters import convert_safetensor_state_dict
 
 
-class Flux1Model(ComponentModel):
-    config_name = FluxConfig.config_name
-
+class Flux1TransformerModel(ComponentModel):
     def __init__(
         self,
         config: dict[str, Any],

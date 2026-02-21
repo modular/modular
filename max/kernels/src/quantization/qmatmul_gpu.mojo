@@ -61,8 +61,7 @@ from utils.numerics import get_accum_type
 
 @always_inline
 fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
-    @parameter
-    if swap:
+    comptime if swap:
         return (arg_1, arg_0)
     else:
         return (arg_0, arg_1)
@@ -142,13 +141,13 @@ fn multistage_mma_q[
     comptime repack_tile = Index(64, 16)
 
     var tid = UInt32(thread_idx.x % UInt(num_threads))
-    var warp_id = tid // WARP_SIZE
-    var lane_id = tid % WARP_SIZE
+    var warp_id = tid // UInt32(WARP_SIZE)
+    var lane_id = tid % UInt32(WARP_SIZE)
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % UInt32(num_warps_n)
+    var warp_y = warp_id // UInt32(num_warps_n)
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
@@ -183,15 +182,12 @@ fn multistage_mma_q[
         )
 
     # Prefetch (num_pipeline_stages - 1) stages.
-    @parameter
-    if prefetch_init:
-
-        @parameter
-        for stage in range(num_pipeline_stages - 1):
-
-            @parameter
-            if a_iter.address_space == AddressSpace.GENERIC:
-                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
+    comptime if prefetch_init:
+        comptime for stage in range(num_pipeline_stages - 1):
+            comptime if a_iter.address_space == AddressSpace.GENERIC:
+                var a_smem_tile = a_smem_iter.next_unsafe(
+                    a_smem_iter.linear_uint_type(stage)
+                )[]
 
                 _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
                     a_smem_tile, a_iter[]
@@ -199,9 +195,10 @@ fn multistage_mma_q[
 
                 a_iter._incr()
 
-            @parameter
-            if b_iter.address_space == AddressSpace.GENERIC:
-                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
+            comptime if b_iter.address_space == AddressSpace.GENERIC:
+                var b_smem_tile = b_smem_iter.next_unsafe(
+                    b_smem_iter.linear_uint_type(stage)
+                )[]
 
                 copy_dram_to_sram_async[
                     thread_layout=async_copy_b_layout,
@@ -219,16 +216,15 @@ fn multistage_mma_q[
 
             # Every group_size rows share a scale
             # Only load scales when necessary
-            @parameter
-            if scales_iter.address_space == AddressSpace.GENERIC:
+            comptime if scales_iter.address_space == AddressSpace.GENERIC:
                 if stage % (group_size // BK) == 0:
                     comptime scales_stage = stage // (group_size // BK)
                     var scales_smem_tile = scales_smem_iter.next_unsafe(
-                        scales_stage
+                        scales_smem_iter.linear_uint_type(scales_stage)
                     )[]
 
                     # We only need one warp for copying scales...
-                    if tid < WARP_SIZE:
+                    if tid < UInt32(WARP_SIZE):
                         var src_fragments = (
                             scales_iter[]
                             .bitcast[
@@ -236,13 +232,11 @@ fn multistage_mma_q[
                                 target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
-                            .distribute[async_copy_scales_layout](
-                                UInt(Int(tid))
-                            )
+                            .distribute[async_copy_scales_layout](UInt(tid))
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, async_copy_scales_veclen
-                        ]().distribute[async_copy_scales_layout](UInt(Int(tid)))
+                        ]().distribute[async_copy_scales_layout](UInt(tid))
 
                         dst_fragments.copy_from_async[](src_fragments)
 
@@ -251,7 +245,7 @@ fn multistage_mma_q[
             async_copy_commit_group()
 
         # Guard stage 0.
-        async_copy_wait_group(num_pipeline_stages - 2)
+        async_copy_wait_group(Int32(num_pipeline_stages - 2))
         barrier()
 
     comptime mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
@@ -272,6 +266,7 @@ fn multistage_mma_q[
     # Register tiles.
     var a_reg_tiles = (
         LayoutTensor[
+            mut=True,
             a_type,
             a_reg_layout,
             MutAnyOrigin,
@@ -283,6 +278,7 @@ fn multistage_mma_q[
     comptime b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
     var b_reg_tiles = (
         LayoutTensor[
+            mut=True,
             a_type,
             b_reg_layout,
             MutAnyOrigin,
@@ -295,6 +291,7 @@ fn multistage_mma_q[
 
     var scales_reg_tiles = (
         LayoutTensor[
+            mut=True,
             scales_type,
             Layout.row_major(num_n_mmas, 1),
             MutAnyOrigin,
@@ -337,7 +334,7 @@ fn multistage_mma_q[
     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
         scales_warp_tile.vectorize[1, simd_size]().distribute[
             smem_reg_scales_layout, axis=0
-        ](UInt(Int(lane_id)))
+        ](UInt(lane_id))
     )
 
     mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
@@ -351,8 +348,7 @@ fn multistage_mma_q[
 
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
-        @parameter
-        for k_mma in range(num_k_mmas):
+        comptime for k_mma in range(num_k_mmas):
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
 
@@ -374,7 +370,7 @@ fn multistage_mma_q[
                     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
                         scales_warp_tile.vectorize[1, simd_size]().distribute[
                             smem_reg_scales_layout, axis=0
-                        ](UInt(Int(lane_id)))
+                        ](UInt(lane_id))
                     )
 
             mma_op.load_a[swizzle_a_pattern](
@@ -401,11 +397,11 @@ fn multistage_mma_q[
                 # Prefetch one k tile (if valid) from global memory to current
                 # shared memory buffer.
                 if prefetch_tile_id < num_iters:
-
-                    @parameter
-                    if a_iter.address_space == AddressSpace.GENERIC:
+                    comptime if a_iter.address_space == AddressSpace.GENERIC:
                         var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
+                            a_smem_iter.linear_uint_type(
+                                num_pipeline_stages - 1
+                            )
                         )[]
 
                         _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
@@ -414,10 +410,11 @@ fn multistage_mma_q[
 
                         a_iter._incr()
 
-                    @parameter
-                    if b_iter.address_space == AddressSpace.GENERIC:
+                    comptime if b_iter.address_space == AddressSpace.GENERIC:
                         var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
+                            b_smem_iter.linear_uint_type(
+                                num_pipeline_stages - 1
+                            )
                         )[]
 
                         copy_dram_to_sram_async[
@@ -435,19 +432,20 @@ fn multistage_mma_q[
 
                         b_iter._incr()
 
-                    @parameter
-                    if scales_iter.address_space == AddressSpace.GENERIC:
+                    comptime if scales_iter.address_space == AddressSpace.GENERIC:
                         # Every group_size rows share a scale
                         # Only load scales when necessary
                         if (k_tile_id + num_pipeline_stages - 1) % (
                             group_size // BK
                         ) == 0:
                             var scales_smem_tile = scales_smem_iter.next_unsafe(
-                                num_scales_stages - 1
+                                scales_smem_iter.linear_uint_type(
+                                    num_scales_stages - 1
+                                )
                             )[]
 
                             # We only need one warp for copying scales...
-                            if tid < WARP_SIZE:
+                            if tid < UInt32(WARP_SIZE):
                                 var src_fragments = (
                                     scales_iter[]
                                     .bitcast[
@@ -456,13 +454,13 @@ fn multistage_mma_q[
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
-                                        UInt(Int(tid))
+                                        UInt(tid)
                                     )
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, async_copy_scales_veclen
                                 ]().distribute[async_copy_scales_layout](
-                                    UInt(Int(tid))
+                                    UInt(tid)
                                 )
 
                                 dst_fragments.copy_from_async[](
@@ -474,7 +472,7 @@ fn multistage_mma_q[
                 async_copy_commit_group()
 
                 # Guard the next k tile's shared memory buffer.
-                async_copy_wait_group(num_pipeline_stages - 2)
+                async_copy_wait_group(Int32(num_pipeline_stages - 2))
                 barrier()
 
 
@@ -491,11 +489,11 @@ fn multistage_qgemm_kernel[
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b_packed: LayoutTensor[b_packed_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
+    b_packed: LayoutTensor[mut=False, b_packed_type, b_layout, ImmutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "Quantized gemm only supports NVIDIA hardwares for now."
     comptime simd_size = simd_width_of[c_type]()
@@ -653,6 +651,7 @@ fn multistage_qgemm_kernel[
     )
     var c_reg_tile = (
         LayoutTensor[
+            mut=True,
             accum_type,
             c_reg_layout,
             MutAnyOrigin,
@@ -685,8 +684,7 @@ fn multistage_qgemm_kernel[
     )
 
     # reduce within the threadblock
-    @parameter
-    if num_warp_k_partitions > 1:
+    comptime if num_warp_k_partitions > 1:
         warp_split_k_reduction[
             BM,
             BN,
@@ -709,7 +707,7 @@ fn multistage_qgemm_kernel[
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
-        __comptime_assert (
+        comptime assert (
             elementwise_lambda_fn is not None
         ), "elementwise_lambda_fn is not valid"
         comptime thread_layout = Layout.row_major(
@@ -728,14 +726,12 @@ fn multistage_qgemm_kernel[
         ]().transpose()
         var thread_offset = c_gmem_frag.distance(c.ptr)
 
-        @parameter
-        for i in range(type_of(c_gmem_frag).layout.size()):
+        comptime for i in range(type_of(c_gmem_frag).layout.size()):
             comptime src_idx = c_reg_frag.layout(i)
             comptime dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
             var dst_idx: Int
 
-            @parameter
-            if c_gmem_frag.layout.all_dims_known():
+            comptime if c_gmem_frag.layout.all_dims_known():
                 dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
@@ -748,13 +744,10 @@ fn multistage_qgemm_kernel[
                     alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
 
-                @parameter
-                if dst_simd_width_x == 1:
+                comptime if dst_simd_width_x == 1:
                     epilogue[alignment=alignment]((m, n), vec)
                 else:
-
-                    @parameter
-                    for j in range(dst_simd_width_x):
+                    comptime for j in range(dst_simd_width_x):
                         if UInt(m + j) < M:
                             epilogue[alignment=alignment](
                                 (m + j, n), vec[j].cast[c_type]()
@@ -765,13 +758,13 @@ fn multistage_qgemm_kernel[
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
 
-    @parameter
-    if c_type.is_half_float() and is_nvidia_gpu():
+    comptime if c_type.is_half_float() and is_nvidia_gpu():
         comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
+            mut=True,
             c_type,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
@@ -792,8 +785,7 @@ fn multistage_qgemm_kernel[
         # Vectorized copy from shared to global memory, during which every 2 FP32
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
@@ -811,20 +803,19 @@ fn multistage_qgemm_kernel[
                 accum_smem_warp_tile.ptr
             )
 
-            @parameter
-            for i in range(num_stores_per_thread):
+            comptime for i in range(num_stores_per_thread):
                 comptime src_idx = type_of(c_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = (
-                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
-                )
+                var swizzled_idx = swizzle(
+                    c_smem_frag_offset
+                    + type_of(c_smem_frag_offset)(src_idx_base)
+                ) + type_of(c_smem_frag_offset)(src_idx_diff)
 
                 comptime dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
 
-                @parameter
-                if c_gmem_frag.layout.all_dims_known():
+                comptime if c_gmem_frag.layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
@@ -851,24 +842,20 @@ fn multistage_qgemm_kernel[
             )
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             apply_epilogue()
 
         else:
             var c_reg_tile_out = LayoutTensor[
+                mut=True,
                 c_type,
                 c_reg_tile.layout,
                 MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
-            @parameter
-            for i in range(c_reg_tile.shape[0]()):
-
-                @parameter
-                for j in range(c_reg_tile.shape[1]()):
+            comptime for i in range(c_reg_tile.shape[0]()):
+                comptime for j in range(c_reg_tile.shape[1]()):
                     c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
             copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
                 c_gmem_warp_tile.vectorize[4, 1](),
@@ -876,14 +863,10 @@ fn multistage_qgemm_kernel[
             )
     # Store FP32 results to FP32 buffer in global memory.
     else:
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             apply_epilogue()
         else:
-
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
                     c_gmem_warp_tile.vectorize[1, 2](),
                     c_reg_tile.vectorize[1, 2]().transpose(),
@@ -948,8 +931,7 @@ fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
     var res: SIMD[DType.uint32, 4] = 0
 
-    @parameter
-    for i in range(4):
+    comptime for i in range(4):
         res[i] |= input[i * 4 + 0].cast[DType.uint32]() & 0x0F
         res[i] |= (input[i * 4 + 0].cast[DType.uint32]() & 0xF0) << 12
         res[i] |= (input[i * 4 + 1].cast[DType.uint32]() & 0x0F) << 4
@@ -966,7 +948,7 @@ fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 @always_inline
 fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
     var u32_val = rebind[UInt32](val)
-    return (u32_val >> (idx * 4)).cast[DType.uint8]() & 0x0F
+    return (u32_val >> UInt32(idx * 4)).cast[DType.uint8]() & 0x0F
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
@@ -975,8 +957,10 @@ fn repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[DType.uint8, q_layout, MutAnyOrigin],
-    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutAnyOrigin],
+    q_weight: LayoutTensor[mut=False, DType.uint8, q_layout, ImmutAnyOrigin],
+    q_packed_weight: LayoutTensor[
+        mut=True, DType.uint8, repack_layout, MutAnyOrigin
+    ],
 ):
     comptime group_size = 32
     comptime group_bytes = size_of[DType.float16]() + (group_size // 2)
@@ -1102,8 +1086,7 @@ fn repack_Q4_0_for_sm8x[
                 .distribute[thd_layout](UInt(lane_id))
             )
 
-            @parameter
-            for i_e in range(16):
+            comptime for i_e in range(16):
                 var val = thread_tile.load[2](i_e // 2, i_e % 2)
                 frag_0[i_e] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
                 frag_1[i_e] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
@@ -1167,9 +1150,9 @@ fn repack_GPTQ_for_sm8x[
     *,
     perm_layout: Layout = Layout(),
 ](
-    in_tensor: LayoutTensor[DType.uint8, in_layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[DType.uint8, out_layout, MutAnyOrigin],
-    perm_idx: LayoutTensor[DType.int32, perm_layout, MutAnyOrigin],
+    in_tensor: LayoutTensor[mut=False, DType.uint8, in_layout, ImmutAnyOrigin],
+    out_tensor: LayoutTensor[mut=True, DType.uint8, out_layout, MutAnyOrigin],
+    perm_idx: LayoutTensor[mut=False, DType.int32, perm_layout, ImmutAnyOrigin],
 ):
     comptime raw_scales_type = DType.float16
     comptime weights_bytes_per_group = group_size // 2
@@ -1288,9 +1271,7 @@ fn repack_GPTQ_for_sm8x[
     # (group_size // 16) tiles for each warp.
     # repack_reg_tile[0] stores frags of the one 64x16 tile,
     for i in range(ceildiv(BK_groups, 2)):
-
-        @parameter
-        if has_perm:
+        comptime if has_perm:
             pass
         else:
             barrier()
@@ -1306,13 +1287,11 @@ fn repack_GPTQ_for_sm8x[
                 repack_tile[0], group_size // pack_factor
             ](Int(warp_x), Int(warp_y))
 
-            @parameter
-            for i_Q_tile in range(group_size // repack_tile[1]):
+            comptime for i_Q_tile in range(group_size // repack_tile[1]):
                 var tmp: SIMD[DType.uint8, 16] = 0
                 comptime thd_layout = Layout.row_major(8, 4)
 
-                @parameter
-                if has_perm:
+                comptime if has_perm:
                     var p_block_idx = perm_idx.tile[BK](block_idx[1])
                     var p_group_idx = p_block_idx.tile[group_size](
                         2 * i + Int(warp_y)
@@ -1330,8 +1309,7 @@ fn repack_GPTQ_for_sm8x[
                         Int(warp_x), 0
                     )
 
-                    @parameter
-                    for i_e in range(16):
+                    comptime for i_e in range(16):
                         if i_e % 2 == 0 and i_e > 0:
                             n_idx += 8
                         var k_idx: Int = Int(thd_idx[i_e % 2][0])
@@ -1357,8 +1335,7 @@ fn repack_GPTQ_for_sm8x[
                         UInt(lane_id)
                     )
 
-                    @parameter
-                    for i_e in range(16):
+                    comptime for i_e in range(16):
                         tmp[i_e] = thread_tile.load[1](i_e // 2, i_e % 2)
 
                 var repacked_Q_tile = repacked_warp_tile.tile[
@@ -1437,34 +1414,36 @@ fn multistage_gemm_q[
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    a: LayoutTensor[
+        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, b_type, address_space = AddressSpace.GENERIC, ...
+    ],
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
     var M = c.dim[0]()
     var N = c.dim[1]()
 
     comptime smem_usage = q_smem_usage[config, group_size]()
     comptime max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
-    @parameter
-    if smem_usage > max_smem:
+    comptime if smem_usage > max_smem:
         # Strategy:
         # 1. First attempt: Reduce pipeline stages until minimum of 3
         # 2. If still insufficient: Halve the number of warp partitions
         # and retry pipeline stages reduction
-        @parameter
-        for partition_reduction in range(
+        comptime for partition_reduction in range(
             log2_floor(Int(config.num_warp_k_partitions)) + 1
         ):
-
-            @parameter
-            for num_stages in range(config.num_pipeline_stages, 2, -1):
+            comptime for num_stages in range(config.num_pipeline_stages, 2, -1):
                 comptime adjusted_config = MatmulConfig[
                     a_type, b_type, c_type, True
                 ](
@@ -1482,8 +1461,7 @@ fn multistage_gemm_q[
                     adjusted_config, group_size
                 ]()
 
-                @parameter
-                if adjusted_smem < max_smem:
+                comptime if adjusted_smem < max_smem:
                     comptime gemm_kernel_type = multistage_qgemm_kernel[
                         c_type,  # c_type
                         c.layout,
@@ -1506,7 +1484,7 @@ fn multistage_gemm_q[
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            adjusted_smem,
+                            UInt32(adjusted_smem),
                         ),
                     )
 
@@ -1534,7 +1512,7 @@ fn multistage_gemm_q[
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            smem_usage,
+            UInt32(smem_usage),
         ),
     )
 
@@ -1548,15 +1526,21 @@ fn matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    a: LayoutTensor[
+        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     matmul_gpu_qint4_impl[group_size, target, elementwise_lambda_fn](
@@ -1573,15 +1557,21 @@ fn matmul_gpu_qint4_impl[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    a: LayoutTensor[
+        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: Optional[DeviceContext],
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    # __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    # comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
@@ -1595,8 +1585,7 @@ fn matmul_gpu_qint4_impl[
     comptime static_K = Int(a_shape[1])
     comptime static_N = Int(c_shape[1])
 
-    @parameter
-    if static_K == 4096 and static_N == 4096:
+    comptime if static_K == 4096 and static_N == 4096:
         if m <= 16:
             comptime M16_config = MatmulConfig[
                 a_type, DType.uint8, c_type, True
@@ -1713,8 +1702,7 @@ fn matmul_gpu_qint4_impl[
             )
             return
 
-    @parameter
-    if static_K == 4096 and static_N == 6144:
+    comptime if static_K == 4096 and static_N == 6144:
         if m <= 16:
             comptime M16_config = MatmulConfig[
                 a_type, DType.uint8, c_type, True
@@ -1831,8 +1819,7 @@ fn matmul_gpu_qint4_impl[
             )
             return
 
-    @parameter
-    if static_K == 4096 and static_N == 14336:
+    comptime if static_K == 4096 and static_N == 14336:
         if m <= 16:
             comptime M16_config = MatmulConfig[
                 a_type, DType.uint8, c_type, True
@@ -1926,8 +1913,7 @@ fn matmul_gpu_qint4_impl[
             )
             return
 
-    @parameter
-    if static_K == 14336 and static_N == 4096:
+    comptime if static_K == 14336 and static_N == 4096:
         if m <= 16:
             comptime M16_config = MatmulConfig[
                 a_type, DType.uint8, c_type, True
@@ -2072,15 +2058,17 @@ fn gpu_qint4_repack_Q4_0[
     //,
     target: StaticString,
 ](
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[
+        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+    ],
     b_packed: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert b.rank == 2
-    __comptime_assert b_packed.rank == 2
-    __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert b.rank == 2
+    comptime assert b_packed.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
@@ -2104,7 +2092,9 @@ fn gpu_qint4_repack_Q4_0[
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_usage)
+        ),
     )
 
 
@@ -2113,16 +2103,21 @@ fn gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b: LayoutTensor[DType.uint8, ...],
-    b_packed: LayoutTensor[DType.uint8, ...],
+    b: LayoutTensor[mut=False, DType.uint8, ...],
+    b_packed: LayoutTensor[mut=True, DType.uint8, ...],
     perm_idx: OptionalReg[
-        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[
+            mut=False,
+            DType.int32,
+            Layout.row_major(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ]
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert b.rank == 2
-    __comptime_assert b_packed.rank == 2
-    __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert b.rank == 2
+    comptime assert b_packed.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
@@ -2133,10 +2128,10 @@ fn gpu_qint4_repack_GPTQ[
     comptime N = Int(b.layout.shape[1])
     comptime K = Int(b.layout.shape[0]) // group_bytes * group_size
 
-    __comptime_assert N == Int(
+    comptime assert N == Int(
         b_packed.layout.shape[0]
     ), "qmatmul: Mismatched input/output dimension."
-    __comptime_assert K == (
+    comptime assert K == (
         Int(b_packed.layout.shape[1]) // group_bytes * group_size
     ), "qmatmul: Mismatched input/output dimension."
 
@@ -2184,6 +2179,6 @@ fn gpu_qint4_repack_GPTQ[
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_usage
+                UInt32(smem_usage)
             ),
         )

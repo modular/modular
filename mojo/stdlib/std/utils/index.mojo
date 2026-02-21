@@ -76,8 +76,7 @@ fn _int_tuple_binary_apply[
 
     c = {}
 
-    @parameter
-    for i in range(a.size):
+    comptime for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
         c.__setitem__[i](
@@ -110,8 +109,7 @@ fn _int_tuple_compare[
 
     var c = StaticTuple[Bool, a.size]()
 
-    @parameter
-    for i in range(a.size):
+    comptime for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
         c.__setitem__[i](
@@ -148,8 +146,7 @@ fn _bool_tuple_reduce[
 
     var c: Bool = init
 
-    @parameter
-    for i in range(a.size):
+    comptime for i in range(a.size):
         c = reduce_fn(c, a.__getitem__[i]())
 
     return c
@@ -161,8 +158,7 @@ fn _bool_tuple_reduce[
 
 
 fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
-    @parameter
-    if unsigned:
+    comptime if unsigned:
         return _uint_type_of_width[bitwidth]()
     else:
         return _int_type_of_width[bitwidth]()
@@ -176,7 +172,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     ImplicitlyCopyable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A base struct that implements size agnostic index functions.
@@ -208,7 +204,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             data: The StaticTuple to construct the IndexList from.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = data
@@ -224,18 +220,17 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             elems: The tuple to copy from.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         comptime num_elements = type_of(elems).__len__()
-        __comptime_assert (
+        comptime assert (
             Self.size == num_elements
         ), "[IndexList] mismatch in the number of elements"
 
         var tup = Self()
 
-        @parameter
-        for idx in range(num_elements):
+        comptime for idx in range(num_elements):
             tup[idx] = Int(elems[idx])
 
         self = tup
@@ -249,7 +244,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             __list_literal__: Specifies that this constructor can be used for
                list literals.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
 
@@ -262,7 +257,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             fill: The elem to splat into the tuple.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
@@ -274,7 +269,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             values: The list of values.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         var num_elements = len(values)
@@ -286,8 +281,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         var tup = Self()
 
-        @parameter
-        for idx in range(Self.size):
+        comptime for idx in range(Self.size):
             tup[idx] = values[idx]
 
         self = tup
@@ -371,8 +365,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
         var res = StaticTuple[Int, Self.size]()
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             res[i] = self.__getitem__[i]()
         return res
 
@@ -397,8 +390,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
         var result = Self(0)
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             result[i] = self[Self.size - i - 1]
         return result
 
@@ -411,8 +403,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
         var length: Int = 1
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             length *= self[i]
 
         return length
@@ -658,15 +649,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
             var element = self[i]
 
-            @parameter
-            if bit_width_of[Self.element_type]() == 32:
+            comptime if bit_width_of[Self.element_type]() == 32:
                 writer.write(Int32(element))
             else:
                 writer.write(Int64(element))
 
         # Single element tuples should be printed with a trailing comma.
-        @parameter
-        if Self.size == 1:
+        comptime if Self.size == 1:
             writer.write(",")
 
         writer.write(")")
@@ -692,13 +681,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The list casted to the target type.
         """
-        __comptime_assert (
-            dtype.is_integral()
-        ), "the target type must be integral"
+        comptime assert dtype.is_integral(), "the target type must be integral"
         result = {}
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             result.data[i] = self.data.__getitem__[i]().cast[
                 result.element_type
             ]()
@@ -713,8 +699,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             hasher: The hasher instance.
         """
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             hasher.update(self.data[i])
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):

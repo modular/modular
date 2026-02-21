@@ -86,7 +86,7 @@ from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole(TrivialRegisterPassable):
     var _role: Int32
 
     comptime Mma = Self(5)
@@ -328,7 +328,7 @@ fn stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.layout.stride[0].value()
     comptime stride1 = dst.layout.stride[1].value()
-    __comptime_assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
+    comptime assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
     comptime shape0 = dst.layout.shape[
         1
     ].value() if not transpose_c else dst.layout.shape[0].value()
@@ -358,14 +358,12 @@ fn stsm_helper[
     fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
         var tmp = SIMD[v.dtype, size]()
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             tmp[i] = v[i + offset]
         return tmp
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
-    @parameter
-    for i in range(shape0 // stsmx4_row_size):
+    comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_tile_offset
         var offset = swizzle(stsm_lane_offset + UInt32(n_offset))
         var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
@@ -430,7 +428,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # assume N dimension is static
     comptime simd_size = simd_width_of[c_type]()
@@ -476,8 +474,7 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
@@ -500,15 +497,13 @@ fn multi_stage_store_C[
 
         tcgen05_load_wait()
 
-        @parameter
-        if stage == num_stages - 1:
+        comptime if stage == num_stages - 1:
             umma_arrive_leader_cta(accum_empty_mbar + index)
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
 
-        @parameter
-        if transpose_c:
+        comptime if transpose_c:
             # if stage_contiguous_size is 128, we need to split the shared memory
             # into two stageNx64 row-major tiles due to the limitation of 128B TMA
             # swizzle. However, for easier programming, we reshape the tile
@@ -585,11 +580,8 @@ fn multi_stage_store_C[
             if elect_one_warp and lane == 0:
                 fence_async_view_proxy()
 
-                @parameter
-                if transpose_c:
-
-                    @parameter
-                    for i in range(M // 16):
+                comptime if transpose_c:
+                    comptime for i in range(M // 16):
                         var c_smem_warp_tile = c_smem_tile.tile[
                             stageN * 16 // stage_contiguous_size,
                             stage_contiguous_size,
@@ -617,17 +609,16 @@ fn multi_stage_store_C[
                 c_tma_op.commit_group()
 
             # Keep one tma store in fly
-            @parameter
-            if stage < num_stages - 1:
+            comptime if stage < num_stages - 1:
                 c_tma_op.wait_group[1]()
             # Last stage guard all tma store to finish
             else:
                 c_tma_op.wait_group[0]()
         else:
-            __comptime_assert (
+            comptime assert (
                 transpose_c
             ), "Unaligned handling only supports transpose_c"
-            __comptime_assert MMA_M == 256 or cta_group == 1, (
+            comptime assert MMA_M == 256 or cta_group == 1, (
                 "Unaligned handling only supports MMA_M == 256 or cta_group =="
                 " 1. Got "
                 + String(MMA_M)
@@ -642,7 +633,7 @@ fn multi_stage_store_C[
                 chunk_num, stageN, vec_chunkM
             )
             comptime thread_num = num_output_warps * WARP_SIZE
-            __comptime_assert logical_c_layout.size() % thread_num == 0, (
+            comptime assert logical_c_layout.size() % thread_num == 0, (
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
                 + String(logical_c_layout.size())
                 + "."
@@ -650,8 +641,7 @@ fn multi_stage_store_C[
             comptime value_shape = logical_c_layout.size() // thread_num
             comptime cM = c.shape[1]()
 
-            @parameter
-            for v in range(value_shape):
+            comptime for v in range(value_shape):
                 comptime thread_offset = v * thread_num
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
                 # idx2crd but RuntimeTuple.idx2crd is too hard to use
@@ -672,9 +662,7 @@ fn multi_stage_store_C[
                     chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
                 ) * UInt32(simd_size)
                 if m < UInt32(cM):
-
-                    @parameter
-                    if elementwise_lambda_fn:
+                    comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[
                             c_type, simd_size, alignment=alignment
@@ -684,8 +672,7 @@ fn multi_stage_store_C[
                             val_vec
                         )
 
-        @parameter
-        if stage > 0 or stage == num_stages - 1:
+        comptime if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
@@ -714,7 +701,7 @@ fn zero_output[
     comptime output_N = output_tile_shape[1]
     comptime stride = c.layout.stride[0].value()
     var ptr = c.ptr + coord[1] * UInt32(stride) + coord[0]
-    __comptime_assert thread_num * simd_size >= output_N, (
+    comptime assert thread_num * simd_size >= output_N, (
         "output_N must be less than thread_num * simd_size. Got "
         + String(output_N)
         + "."
@@ -778,7 +765,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
-    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != DType.float32, "c_type cannot be float32"
 
     comptime num_output_warps = 4
 
@@ -910,16 +897,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
                 cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
 
-        @parameter
-        for i in range(num_accum_pipeline_stages):
+        comptime for i in range(num_accum_pipeline_stages):
             accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
             accum_empty_mbar[i].init(Int32(accum_pipeline_consumer_arv_count))
 
@@ -981,13 +966,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -1038,8 +1021,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             var next_work_info = scheduler.fetch_next_work()
             work_info = next_work_info
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             mma_mbar[producer_phase.index()].wait(producer_phase.phase())
             producer_phase.step()
 
@@ -1093,9 +1075,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
                 # mma arrive multicast will track completion of all mma prior to this barrier.
                 if elect_one_sync():
-
-                    @parameter
-                    if cta_group == 2:
+                    comptime if cta_group == 2:
                         mma_arrive_multicast[cta_group](
                             accum_full_mbar + accum_index,
                             UInt16(mma_complete_mask),
@@ -1170,8 +1150,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             next_work_info = scheduler.fetch_next_work()
             work_info = next_work_info
 
-        @parameter
-        if cta_group == 2:
+        comptime if cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
 
         _ = tmem_dealloc_mbar[].arrive()
@@ -1273,7 +1252,7 @@ fn _grouped_matmul_sm100_persistent[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -1283,7 +1262,7 @@ fn _grouped_matmul_sm100_persistent[
     comptime BN = MMA_N // cta_group
     comptime BK = config.block_tile_shape[2]
 
-    __comptime_assert (MMA_M != 128) or (
+    comptime assert (MMA_M != 128) or (
         MMA_N % 32 == 0
     ), "if MMA_M is 128, then MMA_N must be a multiple of 32"
 
@@ -1327,7 +1306,7 @@ fn _grouped_matmul_sm100_persistent[
         == 32 else TensorMapSwizzle.SWIZZLE_32B
     )
     # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
-    __comptime_assert (
+    comptime assert (
         not (transpose_c and cta_group == 2)
     ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
     var c_tma_op = create_tensor_tile[
@@ -1381,13 +1360,12 @@ fn _grouped_matmul_sm100_persistent[
         smem_leftover // producer_consumer_smem_per_stage
     )
 
-    __comptime_assert (
+    comptime assert (
         max_pipeline_stages >= 1
     ), "Max pipeline stages must be at least 1"
 
-    @parameter
-    if num_pipeline_stages:
-        __comptime_assert (
+    comptime if num_pipeline_stages:
+        comptime assert (
             num_pipeline_stages.value() <= max_pipeline_stages
         ), "Pipeline stage must be less than or equal to max pipeline stages"
 
@@ -1435,7 +1413,7 @@ fn _grouped_matmul_sm100_persistent[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    __comptime_assert (
+    comptime assert (
         cluster_shape[1] == 1
     ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
 

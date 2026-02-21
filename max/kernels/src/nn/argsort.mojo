@@ -21,7 +21,7 @@ from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, Idx
+from layout._coord import Coord, Idx
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -35,7 +35,7 @@ fn _argsort_cpu[
 ](
     indices: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: TileTensor,
-) raises where (input.rank == 1):
+) raises:
     """
     Performs argsort on CPU.
 
@@ -46,6 +46,7 @@ fn _argsort_cpu[
         indices: Output buffer to store sorted indices.
         input: Input buffer to sort.
     """
+    comptime assert input.flat_rank == 1
 
     @parameter
     fn fill_indices_iota[
@@ -62,8 +63,7 @@ fn _argsort_cpu[
 
     @parameter
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
-        @parameter
-        if ascending:
+        comptime if ascending:
             return input[a] < input[b]
         else:
             return input[a] > input[b]
@@ -89,8 +89,7 @@ fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
         MAX_FINITE for ascending sort, MIN_FINITE for descending sort.
     """
 
-    @parameter
-    if ascending:
+    comptime if ascending:
         return Scalar[dtype].MAX_FINITE
     else:
         return Scalar[dtype].MIN_FINITE
@@ -103,7 +102,7 @@ fn _argsort_gpu_impl[
     indices: TileTensor[mut=True, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
-) raises where (input.rank == 1 and indices.rank == 1):
+) raises:
     """
     Implements GPU argsort using bitonic sort algorithm.
 
@@ -115,6 +114,8 @@ fn _argsort_gpu_impl[
         input: Input buffer to sort.
         ctx: Device context for GPU execution.
     """
+    comptime assert input.flat_rank == 1
+    comptime assert indices.flat_rank == 1
     # Create a device buffer to store a copy of the input data
     var n = indices.numel()
 
@@ -128,18 +129,8 @@ fn _argsort_gpu_impl[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
     fn bitonic_sort_step(
-        indices: TileTensor[
-            shape_types = indices.shape_types,
-            stride_types = indices.stride_types,
-            indices.dtype,
-            indices.origin,
-        ],
-        input: TileTensor[
-            shape_types = input.shape_types,
-            stride_types = input.stride_types,
-            input.dtype,
-            input.origin,
-        ],
+        indices: TileTensor[indices.dtype, indices.LayoutType, indices.origin],
+        input: TileTensor[input.dtype, input.LayoutType, input.origin],
         n: Int,
         step: Int,
         stage: Int,
@@ -154,6 +145,8 @@ fn _argsort_gpu_impl[
             step: Current step size in the bitonic sequence.
             stage: Current stage of the bitonic sort.
         """
+        comptime assert input.flat_rank == 1
+        comptime assert indices.flat_rank == 1
         var i = global_idx.x
 
         if i >= UInt(n):
@@ -164,8 +157,7 @@ fn _argsort_gpu_impl[
         if partner > i and partner < UInt(n):
             var cmp_val: Bool
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 cmp_val = input[i] > input[partner]
             else:
                 cmp_val = input[i] < input[partner]
@@ -204,7 +196,7 @@ fn _argsort_gpu[
     indices: TileTensor[mut=True, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
-) raises where (indices.rank == 1 and input.rank == 1):
+) raises:
     """
     Performs argsort on GPU with padding to power-of-two size if needed.
 
@@ -216,6 +208,8 @@ fn _argsort_gpu[
         input: Input buffer to sort.
         ctx: Device context for GPU execution.
     """
+    comptime assert indices.flat_rank == 1
+    comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
     var n = indices.numel()
 
@@ -343,7 +337,7 @@ fn argsort[
     output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
-) raises where (input.rank == 1 and output.rank == 1):
+) raises:
     """
     Performs argsort on input buffer, storing indices in output buffer.
 
@@ -356,14 +350,15 @@ fn argsort[
         input: Buffer containing values to sort.
         ctx: Device context for execution.
     """
+    comptime assert input.flat_rank == 1
+    comptime assert output.flat_rank == 1
     with Trace[TraceLevel.OP, target=target](
         "argsort",
         task_id=get_safe_task_id(ctx),
     ):
         _validate_argsort(input, output)
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return _argsort_cpu[ascending=ascending](output, input)
         else:
             return _argsort_gpu[ascending=ascending](output, input, ctx)
@@ -374,9 +369,7 @@ fn argsort[
 ](
     output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: TileTensor,
-) raises where (
-    input.rank == 1 and output.rank == 1 and output.dtype.is_integral()
-):
+) raises:
     """
     CPU-only version of argsort.
 
@@ -387,6 +380,9 @@ fn argsort[
         output: Buffer to store sorted indices.
         input: Buffer containing values to sort.
     """
+    comptime assert input.flat_rank == 1
+    comptime assert output.flat_rank == 1
+    comptime assert output.dtype.is_integral()
     with Trace[TraceLevel.OP]("argsort"):
         _validate_argsort(input, output)
         _argsort_cpu[ascending=ascending](output, input)

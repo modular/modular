@@ -50,7 +50,7 @@ comptime BLOCK_DIM = 8
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](NUM_THREADS)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_THREADS))
 )
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
@@ -166,8 +166,7 @@ fn sgemm_warp_tiling_kernel[
                 + Int((inner_row_a + UInt(offset)) * UInt(K) + inner_col_a * 4)
             )
 
-            @parameter
-            for i in range(4):
+            comptime for i in range(4):
                 a_sram[
                     Int(
                         (inner_col_a * 4 + UInt(i)) * UInt(BM_padded)
@@ -193,11 +192,8 @@ fn sgemm_warp_tiling_kernel[
 
         for dot_idx in range(BK):
             # Populate registers for whole warptile.
-            @parameter
-            for w_sub_row_idx in range(WMITER):
-
-                @parameter
-                for i in range(0, TM, 4):
+            comptime for w_sub_row_idx in range(WMITER):
+                comptime for i in range(0, TM, 4):
                     var vec = a_sram.load[width=4, alignment=16](
                         (dot_idx * BM_padded)
                         + Int(warp_row) * WM
@@ -207,11 +203,8 @@ fn sgemm_warp_tiling_kernel[
                     )
                     reg_m.store(Index(w_sub_row_idx, i), vec)
 
-            @parameter
-            for w_sub_col_idx in range(WNITER):
-
-                @parameter
-                for i in range(0, TN, 4):
+            comptime for w_sub_col_idx in range(WNITER):
+                comptime for i in range(0, TN, 4):
                     var vec = b_sram.load[width=4, alignment=16](
                         (dot_idx * BN)
                         + Int(warp_col) * WN
@@ -221,17 +214,11 @@ fn sgemm_warp_tiling_kernel[
                     reg_n.store(Index(w_sub_col_idx, i), vec)
 
             # Execute warptile matmul.
-            @parameter
-            for w_sub_row_idx in range(WMITER):
-
-                @parameter
-                for w_sub_col_idx in range(WNITER):
+            comptime for w_sub_row_idx in range(WMITER):
+                comptime for w_sub_col_idx in range(WNITER):
                     # Calculate per-thread results.
-                    @parameter
-                    for res_idx_m in range(TM):
-
-                        @parameter
-                        for res_idx_n in range(TN):
+                    comptime for res_idx_m in range(TM):
+                        comptime for res_idx_n in range(TN):
                             thread_results[
                                 Index(
                                     w_sub_row_idx,
@@ -248,21 +235,15 @@ fn sgemm_warp_tiling_kernel[
         barrier()
 
     # Write out the results.
-    @parameter
-    for w_sub_row_idx in range(WMITER):
-
-        @parameter
-        for w_sub_col_idx in range(WNITER):
+    comptime for w_sub_row_idx in range(WMITER):
+        comptime for w_sub_col_idx in range(WNITER):
             # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
             var C_interim = cc_ptr + M_offset_subtile * N + N_offset_subtile
 
-            @parameter
-            for res_idx_m in range(TM):
-
-                @parameter
-                for res_idx_n in range(0, TN, 4):
+            comptime for res_idx_m in range(TM):
+                comptime for res_idx_n in range(0, TN, 4):
                     var M_offset_val = thread_row_in_warp * UInt(TM) + UInt(
                         res_idx_m
                     )
@@ -283,8 +264,7 @@ fn sgemm_warp_tiling_kernel[
                         width=4, alignment=16
                     ](Int(c_idx))
 
-                    @parameter
-                    if elementwise_lambda_fn:
+                    comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
@@ -361,45 +341,45 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     )
 
     # Warptile in threadblocktile.
-    __comptime_assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
-    __comptime_assert (K10_BN // K10_WN) * (K10_BM // K10_WM) == NUM_WARPS
+    comptime assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
+    comptime assert (K10_BN // K10_WN) * (K10_BM // K10_WM) == NUM_WARPS
 
     # Threads in the warp sub-tile.
-    __comptime_assert (K10_WM * K10_WN) % (
+    comptime assert (K10_WM * K10_WN) % (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     ) == 0
 
     # Warp sub-tile in warp tile.
-    __comptime_assert (K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)
+    comptime assert (K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)
 
-    __comptime_assert (K10_NUM_THREADS * 4) % K10_BK == 0, (
+    comptime assert (K10_NUM_THREADS * 4) % K10_BK == 0, (
         "NUM_THREADS*4 must be multiple of K9_BK to avoid quantization "
         "issues during GMEM->SMEM tiling (loading only parts of the "
         "final row of Bs during each iteration)"
     )
-    __comptime_assert (K10_NUM_THREADS * 4) % K10_BN == 0, (
+    comptime assert (K10_NUM_THREADS * 4) % K10_BN == 0, (
         "NUM_THREADS*4 must be multiple of K9_BN to avoid quantization "
         "issues during GMEM->SMEM tiling (loading only parts of the "
         "final row of As during each iteration)"
     )
 
-    __comptime_assert (
+    comptime assert (
         K10_BN % (16 * K10_TN) == 0
     ), "BN must be a multiple of 16*TN to avoid quantization effects"
-    __comptime_assert (
+    comptime assert (
         K10_BM % (16 * K10_TM) == 0
     ), "BM must be a multiple of 16*TM to avoid quantization effects"
 
-    __comptime_assert (K10_BM * K10_BK) % (
+    comptime assert (K10_BM * K10_BK) % (
         4 * K10_NUM_THREADS
     ) == 0, "BM*BK must be a multiple of 4*256 to vectorize loads"
-    __comptime_assert (K10_BN * K10_BK) % (
+    comptime assert (K10_BN * K10_BK) % (
         4 * K10_NUM_THREADS
     ) == 0, "BN*BK must be a multiple of 4*256 to vectorize loads"
 
-    __comptime_assert K10_TM % 4 == 0, "TM must be a multiple of 4"
+    comptime assert K10_TM % 4 == 0, "TM must be a multiple of 4"
 
-    __comptime_assert K10_TN % 4 == 0, "TN must be a multiple of 4"
+    comptime assert K10_TN % 4 == 0, "TN must be a multiple of 4"
 
     var a_host = alloc[Float32](M * K)
     var b_host = alloc[Float32](K * N)
@@ -407,10 +387,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i + 1
+        b_host[i] = Float32(i + 1)
 
     for i in range(M * N):
         c_host[i] = 0

@@ -167,18 +167,17 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         self._get_discr() = UInt8(idx)
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Creates a deep copy of an existing variant.
 
         Args:
-            other: The variant to copy from.
+            copy: The variant to copy from.
         """
 
         self = Self(unsafe_uninitialized=())
-        self._get_discr() = other._get_discr()
+        self._get_discr() = copy._get_discr()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Copyable),
@@ -189,20 +188,19 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
             comptime T = downcast[TUnknown, Copyable]
 
             if self._get_discr() == UInt8(i):
-                self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
+                self._get_ptr[T]().init_pointee_copy(copy._get_ptr[T]()[])
                 return
 
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move initializer for the variant.
 
         Args:
-            other: The variant to move.
+            take: The variant to move.
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._get_discr() = other._get_discr()
+        self._get_discr() = take._get_discr()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Movable),
@@ -214,14 +212,13 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
             if self._get_discr() == UInt8(i):
                 # Calls the correct __moveinit__
-                self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
+                self._get_ptr[T]().init_pointee_move_from(take._get_ptr[T]())
                 return
 
     fn __del__(deinit self):
         """Destroy the variant."""
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -267,14 +264,12 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     fn _write_value_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
         constrained_conforms_to_writable[*Self.Ts, Parent=Self]()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 ref value = trait_downcast[Writable](self.unsafe_get[T]())
 
-                @parameter
-                if is_repr:
+                comptime if is_repr:
                     value.write_repr_to(writer)
                 else:
                     value.write_to(writer)
@@ -315,7 +310,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     @always_inline("nodebug")
     fn _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
-        __comptime_assert idx != Self._sentinel, "not a union element type"
+        comptime assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.bitcast`[
             _type = UnsafePointer[T, origin_of(self)]._mlir_type,
@@ -479,8 +474,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
     @staticmethod
     fn _check[T: AnyType]() -> Int:
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel
@@ -548,11 +542,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
 
 fn _all_trivial_del[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], ImplicitlyDestructible):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
         else:
@@ -561,11 +552,8 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 
 fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Copyable):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Copyable):
             if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
                 return False
         else:
@@ -575,11 +563,8 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Movable):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Movable):
             if not downcast[Ts[i], Movable].__moveinit__is_trivial:
                 return False
         else:

@@ -38,24 +38,36 @@ from max.kv_cache.paged_kv_cache import PagedKVCacheManager
 
 @runtime_checkable
 class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
-    @property
-    def kv_managers(self) -> list[PagedKVCacheManager]: ...
+    """Protocol for pipelines that support text generation."""
 
     @property
-    def pipeline_config(self) -> PipelineConfig: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]:
+        """Returns the KV cache managers for this pipeline."""
+        ...
+
+    @property
+    def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
+        ...
 
     @property
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
         TextGenerationContextType, npt.NDArray[np.integer[Any]], RequestType
-    ]: ...
+    ]:
+        """Returns the tokenizer for this pipeline."""
+        ...
 
     def execute(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
-    ) -> PipelineOutputsDict[TextGenerationOutput]: ...
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Executes the pipeline for the given inputs."""
+        ...
 
-    def release(self, request_id: RequestID) -> None: ...
+    def release(self, request_id: RequestID) -> None:
+        """Releases resources for the given request."""
+        ...
 
     def generate(
         self, prompts: RequestType | list[RequestType]
@@ -85,6 +97,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     async def generate_async(
         self, prompts: RequestType | list[RequestType]
     ) -> Any:
+        """Generates outputs asynchronously for the given prompts."""
         if not isinstance(prompts, list):
             prompts = [prompts]
 
@@ -143,6 +156,17 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 num_steps=num_steps,
                             )
                 step_outputs = self.execute(inputs)
+
+                # Filter out all responses for requests that are already released.
+                # We can get a response for a request that is already released due to
+                # the quirk of overlap scheduling where the pipeline may produce an extra
+                # token after EOS.
+                step_outputs = {
+                    request_id: output
+                    for request_id, output in step_outputs.items()
+                    if request_id in batch_to_replica_idx
+                }
+
                 outputs = []
                 for request_id, output in step_outputs.items():
                     outputs.append(output)
@@ -166,7 +190,9 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                             kv_manager.release(
                                 request_id, replica_idx=replica_idx
                             )
-                yield outputs
+
+                if outputs:
+                    yield outputs
 
                 # Yield to the event loop.  If at no other point (e.g.
                 # tokenizer.decode which we await earlier does not yield to the

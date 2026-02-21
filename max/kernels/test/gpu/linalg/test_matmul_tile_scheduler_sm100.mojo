@@ -81,8 +81,7 @@ fn test_kernel[
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
-    @parameter
-    for i in range(num_stages):
+    comptime for i in range(num_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
         clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
@@ -173,8 +172,7 @@ fn test_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        for i in range(num_stages):
+        comptime for i in range(num_stages):
             clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                 clc_pipe_producer_state.phase()
             )
@@ -212,8 +210,8 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
     comptime grid_dim = (88, 16, 1)
 
     comptime cluster_dim = StaticTuple[Int32, 3](
-        Int(grid_dim[0] // cluster_shape[0]),
-        Int(grid_dim[1] // cluster_shape[1]),
+        Int32(Int(Int32(grid_dim[0]) // cluster_shape[0])),
+        Int32(Int(Int32(grid_dim[1]) // cluster_shape[1])),
         cluster_shape[2],
     )
     comptime kernel = test_kernel[2, cluster_shape]

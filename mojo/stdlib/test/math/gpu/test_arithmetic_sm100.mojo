@@ -131,8 +131,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
     c_expected.enqueue_fill(0)
     ctx.synchronize()
 
-    @parameter
-    if mode == "add":
+    comptime if mode == "add":
         comptime kernel = simd_add_kernel[width]
 
         ctx.enqueue_function_experimental[kernel](

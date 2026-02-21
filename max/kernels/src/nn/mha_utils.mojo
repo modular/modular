@@ -60,7 +60,7 @@ comptime is_sm90or100 = is_sm90 or is_sm100
 
 
 struct FlashAttentionAlgorithm(
-    Defaultable, Stringable, TrivialRegisterType, Writable
+    Defaultable, Stringable, TrivialRegisterPassable, Writable
 ):
     var _value: Int32
 
@@ -94,9 +94,7 @@ struct FlashAttentionAlgorithm(
     @always_inline
     fn init(self, dtype: DType) -> Self:
         if self._value == -1:
-
-            @parameter
-            if is_sm90or100:
+            comptime if is_sm90or100:
                 return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
             else:
                 return FlashAttentionAlgorithm(2)
@@ -118,7 +116,7 @@ struct FlashAttentionAlgorithm(
 
 
 @fieldwise_init
-struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
+struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -217,8 +215,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
         ) and sm_90
         sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
-        @parameter
-        if shared_kv:
+        comptime if shared_kv:
             num_smem_elements = (
                 self.q_smem_size(sm_90_fa3, persistent)
                 + self.kv_smem_size(sm_90_fa3)
@@ -379,8 +376,7 @@ fn _kernel_mask[
     var masked_vec = SIMD[dtype, width]()
 
     # TODO: use `select` to see if it generates the same code.
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         masked_vec[i] = (
             vec[i] if coord[0] < bound[0]
             and UInt32(coord[1]) + UInt32(i)
@@ -429,11 +425,13 @@ fn _copy_frag_to_smem_nvidia[
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
+    # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
+        ImmutAnyOrigin,
         address_space = AddressSpace.SHARED,
-    ](p_smem_iter.ptr)
+    ](p_smem_iter.ptr.as_immutable())
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
     )
@@ -441,11 +439,8 @@ fn _copy_frag_to_smem_nvidia[
 
     comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, Int(BK)]()
 
-    @parameter
-    for n_mma in range(num_n_mmas):
-
-        @parameter
-        for m_mma in range(num_m_mmas):
+    comptime for n_mma in range(num_n_mmas):
+        comptime for m_mma in range(num_m_mmas):
             var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
                 Int(m_mma), Int(n_mma)
             ).vectorize[1, Int(frag_simd_width)]()
@@ -454,8 +449,7 @@ fn _copy_frag_to_smem_nvidia[
             ](lane_id())
             var frag_offset = p_smem_frag.distance(p_smem_tile)
 
-            @parameter
-            for i in range(p_reg_vecs.shape[1]()):
+            comptime for i in range(p_reg_vecs.shape[1]()):
                 comptime offset_in_frag = type_of(p_smem_frag).layout(i)
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
@@ -527,22 +521,21 @@ fn _copy_frag_to_smem_amd[
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
+    # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
+        ImmutAnyOrigin,
         address_space = AddressSpace.SHARED,
-    ](p_smem_iter.ptr)
+    ](p_smem_iter.ptr.as_immutable())
 
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
     )
     var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
 
-    @parameter
-    for n_mma in range(num_n_mmas):
-
-        @parameter
-        for m_mma in range(num_m_mmas):
+    comptime for n_mma in range(num_n_mmas):
+        comptime for m_mma in range(num_m_mmas):
             var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
                 Int(m_mma), Int(n_mma)
             ).vectorize[Int(frag_simd_width), 1]()
@@ -551,8 +544,7 @@ fn _copy_frag_to_smem_amd[
             ](lane_id())
             var frag_offset = p_smem_frag.distance(p_smem_tile)
 
-            @parameter
-            for i in range(frag_simd_width):
+            comptime for i in range(frag_simd_width):
                 comptime offset_in_frag = BN * i
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 comptime OffsetType = type_of(frag_offset)
@@ -598,8 +590,7 @@ fn _copy_frag_to_smem[
     warp_x: UInt32,
     warp_y: UInt32,
 ):
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _copy_frag_to_smem_nvidia[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
@@ -672,23 +663,22 @@ fn dispatch_mask_and_score_mod[
         return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
 
     # TODO: attach string constants to mask types themselves.
-    @parameter
-    if MaskName.CAUSAL == mask_type:
+    comptime if MaskName.CAUSAL == mask_type:
         return outer_wrapper(CausalMask())
     elif MaskName.CHUNKED == mask_type:
-        __comptime_assert (
+        comptime assert (
             local_window_size > 0
         ), "You must specify local_window_size for ChunkedMask"
         return outer_wrapper(ChunkedMask[local_window_size]())
     elif MaskName.NULL == mask_type:
         return outer_wrapper(NullMask())
     elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
-        __comptime_assert (
+        comptime assert (
             local_window_size > 0
         ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
-        __comptime_assert (
+        comptime assert (
             local_window_size > 0
         ), "You must specify local_window_size for ChunkedCausalMask"
         return outer_wrapper(ChunkedCausalMask[local_window_size]())
@@ -708,7 +698,7 @@ fn dispatch_materialized_mask_and_score_mod[
     mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
 ) raises -> None:
@@ -736,9 +726,8 @@ fn _dispatch_score_mod[
     fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
         return callback_fn(score_mod)
 
-    @parameter
-    if score_mod_type == AlibiScoreMod.name_str:
-        __comptime_assert (
+    comptime if score_mod_type == AlibiScoreMod.name_str:
+        comptime assert (
             num_heads > 0
         ), "You must specify num_heads for AlibiScoreMod"
         return wrapper(AlibiScoreMod[num_heads]())
@@ -753,7 +742,7 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
+trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterPassable):
     comptime static_value: Optional[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -763,7 +752,7 @@ trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
 struct StaticInt[value: Int](
-    Defaultable, OptionallyStaticInt, TrivialRegisterType
+    Defaultable, OptionallyStaticInt, TrivialRegisterPassable
 ):
     comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
@@ -780,7 +769,7 @@ struct StaticInt[value: Int](
         return UInt32(Self.value)
 
 
-struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
+struct DynamicInt(OptionallyStaticInt, TrivialRegisterPassable):
     var value: UInt32
     comptime static_value: Optional[Int] = None
 
@@ -802,7 +791,7 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
-trait MHAPartitionScheme(Copyable, TrivialRegisterType):
+trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -818,7 +807,7 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterType):
 
 
 struct NoPartition[dtype: DType](
-    Defaultable, MHAPartitionScheme, TrivialRegisterType
+    Defaultable, MHAPartitionScheme, TrivialRegisterPassable
 ):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
@@ -838,7 +827,9 @@ struct NoPartition[dtype: DType](
         return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
 
 
-struct SplitKPartition[dtype: DType](MHAPartitionScheme, TrivialRegisterType):
+struct SplitKPartition[dtype: DType](
+    MHAPartitionScheme, TrivialRegisterPassable
+):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]

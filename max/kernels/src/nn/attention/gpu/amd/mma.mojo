@@ -38,29 +38,22 @@ fn mma[
     mut a_tile: a_register_buffer_type,
     mut b_tile: b_buffer_type,
 ):
-    __comptime_assert (
+    comptime assert (
         b_buffer_type._num_stages == 2
     ), "b_tile.num_stages must be 2"
     comptime num_k_mmas2 = ceildiv(
         BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
     )
 
-    @parameter
-    if not prefetched_b_tile:
+    comptime if not prefetched_b_tile:
         b_tile.load_from_dram()
 
-    @parameter
-    for i in range(beg_iter, beg_iter + num_iters):
-
-        @parameter
-        if i < beg_iter + num_iters - 1:
+    comptime for i in range(beg_iter, beg_iter + num_iters):
+        comptime if i < beg_iter + num_iters - 1:
             b_tile.load_from_dram()
 
-            @parameter
-            if i == beg_iter + num_iters - 2:
-
-                @parameter
-                if prefetch_function:
+            comptime if i == beg_iter + num_iters - 2:
+                comptime if prefetch_function:
                     comptime prefetch_func = prefetch_function.value()
                     prefetch_func()
 
@@ -68,8 +61,7 @@ fn mma[
 
         barrier()
 
-        @parameter
-        for k_mma in range(num_k_mmas2):
+        comptime for k_mma in range(num_k_mmas2):
             var a_reg_tile = a_tile.get_mma_tile[i, k_mma]()
 
             b_tile.load_from_shared[k_mma,]()

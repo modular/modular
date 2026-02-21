@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from sys import size_of, has_amd_gpu_accelerator
+from sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from itertools import product
 
 from buffer import NDBuffer
@@ -25,7 +25,12 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
+from gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceMulticastBuffer,
+    get_gpu_target,
+)
 from testing import assert_almost_equal, assert_true
 from collections import Optional
 
@@ -35,9 +40,13 @@ from utils import IndexList, StaticTuple
 comptime test_lengths = (
     0,  # No elements
     8 * 1024,  # Small latency bound
+    8 * 1024 + 8,  # Ragged: small +8-element offset over base
+    8 * 1024 + 24,  # Ragged: larger +24-element offset over base
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
     16 * 1024 * 1024,  # Bandwidth bound
+    16 * 1024 * 1024 + 8,  # Ragged: small +8-element offset over base
+    16 * 1024 * 1024 + 24,  # Ragged: larger +24-element offset over base
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
@@ -62,8 +71,8 @@ fn allreduce_test[
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -179,15 +188,11 @@ fn allreduce_test[
     # Precompute expected sum across GPUs for verification.
     var expected_sum = Scalar[dtype](0)
     for i in range(ngpus):
-        expected_sum += i + 1
+        expected_sum += Scalar[dtype](i + 1)
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
-        # For multimem, all GPUs share the same multicast buffer (in_bufs[0]).
-        # For non-multimem, each GPU uses its own input buffer (in_bufs[i]).
-        comptime input_idx = 0 if use_multimem else i
+    comptime for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
             output_lambda = Optional[elementwise_epilogue_type](
@@ -195,15 +200,14 @@ fn allreduce_test[
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
             use_quickreduce=use_quickreduce,
-        ](in_bufs[input_idx], out_bufs[i], rank_sigs, list_of_ctx[i])
+        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    @parameter
-    if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and has_amd_gpu_accelerator():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -220,11 +224,9 @@ fn allreduce_test[
 
             # Test RCCL.
             with vendor_ccl.group():
-
-                @parameter
-                for i in range(ngpus):
+                comptime for i in range(ngpus):
                     vendor_ccl.allreduce[ngpus=ngpus](
-                        in_bufs[i],
+                        in_bufs,
                         out_bufs_vendor[i],
                         rank_sigs,
                         list_of_ctx[i],
@@ -362,8 +364,7 @@ def allreduce_naive_test() -> None:
         )
 
     # Launch naive allreduce per device
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         _allreduce_naive_single[
             dtype = DType.float32,
             rank=1,
@@ -377,7 +378,7 @@ def allreduce_naive_test() -> None:
 
     var expected = Float32(0)
     for i in range(ngpus):
-        expected += i + 1
+        expected += Float32(i + 1)
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
 
     for i in range(ngpus):
@@ -393,8 +394,7 @@ fn run_allreduce_sweep[
     use_multimem: Bool, use_quickreduce: Bool = False
 ]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
+    comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
@@ -412,6 +412,16 @@ fn run_allreduce_sweep[
         comptime dtype = test_dtypes[dtype_idx]
         comptime length = test_lengths[length_idx]
         comptime use_custom_epilogue = epilogue_idx == 1
+
+        # Some checks for raggedness
+        comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
+        constrained[
+            length % simd_width == 0, "Length must be multiple of simd_width"
+        ]()
+        comptime quickreduce_tile_shape = simd_width * 8 * 256
+        if use_quickreduce and (length % quickreduce_tile_shape != 0):
+            # Quickreduce requires full tiles (a quickreduce specific concept)
+            continue
 
         print(
             _get_test_str[
@@ -456,8 +466,7 @@ def main():
     )
 
     # First, explicitly exercise the naive allreduce path by calling it directly.
-    # TODO(jtodd): disabled to test single input buf approach
-    # allreduce_naive_test()
+    allreduce_naive_test()
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()

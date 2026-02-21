@@ -66,7 +66,7 @@ fn increment_counter_if_first_thread(
 # ===----------------------------------------------------------------------=== #
 
 
-trait SyncStrategy(TrivialRegisterType):
+trait SyncStrategy(TrivialRegisterPassable):
     """Interface for synchronization strategies between producers and consumers.
 
     All methods have the same signature regardless of the specific implementation,
@@ -182,8 +182,7 @@ struct SingleCounterSync[
             alignment=32
         ]()
 
-        @parameter
-        for i in range(Self.total_tiles):
+        comptime for i in range(Self.total_tiles):
             self.sync_counter[i][] = 0
 
     @always_inline
@@ -261,8 +260,7 @@ struct SplitCounterSync[
             alignment=32
         ]()
 
-        @parameter
-        for i in range(Self.total_tiles):
+        comptime for i in range(Self.total_tiles):
             self.producer_counters[i][] = 0
             self.consumer_counters[i][] = 0
 

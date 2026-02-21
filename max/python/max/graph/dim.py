@@ -72,17 +72,18 @@ class Dim:
     def __new__(cls, value: DimLike):
         """Converts valid input values to Dim."""
         if cls is not Dim:
-            # Create subclass if given instead of redirecting to Dim.
+            # For subclass constructors, preserve identity only for same subclass.
+            if isinstance(value, cls):
+                return value
             return super().__new__(cls)
-
         if isinstance(value, Dim):
-            # Directly return existing Dim instance.
+            # For base Dim constructor, pass through any existing Dim.
             return value
-        elif isinstance(value, int | np.integer):
+        if isinstance(value, int | np.integer | builtin.IntegerAttr):
             return super().__new__(StaticDim)
-        elif isinstance(value, str):
+        if isinstance(value, str | kgen.ParamDeclRefAttr):
             return super().__new__(SymbolicDim)
-        elif isinstance(value, kgen.ParamOperatorAttr):
+        if isinstance(value, kgen.ParamOperatorAttr):
             return super().__new__(AlgebraicDim)
 
         raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
@@ -142,15 +143,13 @@ class Dim:
     def __add__(self, rhs: DimLike) -> Dim:
         return AlgebraicDim.apply(kgen.POC.add, self, rhs)
 
-    # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
     def __radd__(self, lhs: DimLike) -> Dim:
         return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:
         return AlgebraicDim.apply(kgen.POC.mul_no_wrap, self, rhs)
 
-    # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
-    def __rmul__(self, lhs: DimLike) -> Dim:  # type: ignore
+    def __rmul__(self, lhs: DimLike) -> Dim:
         return Dim(lhs) * self
 
     def __neg__(self) -> Dim:
@@ -185,7 +184,7 @@ class Dim:
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
+            attr: The MLIR Attribute to parse into a dimension.
 
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
@@ -240,9 +239,17 @@ class SymbolicDim(Dim):
     name: str
     """The name of the dimension."""
 
-    def __init__(self, name: str | SymbolicDim) -> None:
+    def __init__(self, name: str | builtin.TypedAttr | SymbolicDim) -> None:
+        if isinstance(name, kgen.ParamDeclRefAttr):
+            name = name.name.value
+        elif isinstance(name, SymbolicDim):
+            name = name.name
+        elif not isinstance(name, str):
+            raise TypeError(
+                f"SymbolicDim.__init__ only accepts str, kgen.ParamDeclRefAttr, or SymbolicDim, got {type(name).__name__}"
+            )
         # Can't assign directly to frozen dataclasses.
-        super().__setattr__("name", str(name))
+        super().__setattr__("name", name)
         # TODO(MSDK-695): less restrictive names
         if not re.match(r"^[a-zA-Z_]\w*$", self.name):
             raise ValueError("Invalid name for symbolic dimension")
@@ -263,6 +270,7 @@ class SymbolicDim(Dim):
 
         Args:
             other: The other dimension to check equality against.
+
         Returns:
             True if the dimensions have the same name, false otherwise.
         """
@@ -282,18 +290,20 @@ class SymbolicDim(Dim):
         return kgen.ParamDeclRefAttr(self.name, si64)
 
     @staticmethod
-    def from_mlir(attr: builtin.TypedAttr) -> Dim:
-        """Constructs a dimension from an ``mlir.Attribute``.
+    def from_mlir(attr: builtin.TypedAttr) -> SymbolicDim:
+        """Constructs a ``SymbolicDim`` from a ``kgen.ParamDeclRefAttr``.
 
         Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
+            attr: The ``kgen.ParamDeclRefAttr`` to parse into a ``SymbolicDim``.
 
         Returns:
-            Dim: The dimension represented by the MLIR Attr value.
+            SymbolicDim: The ``SymbolicDim`` represented by the ``kgen.ParamDeclRefAttr``.
         """
         if not isinstance(attr, kgen.ParamDeclRefAttr):
-            raise TypeError(f"Attr is not a symbolic dim: {attr}")
-        return SymbolicDim(attr.name.value)
+            raise TypeError(
+                f"SymbolicDim.from_mlir only accepts kgen.ParamDeclRefAttr, got {type(attr).__name__}"
+            )
+        return SymbolicDim(attr)
 
     @property
     def parameters(self) -> Iterable[SymbolicDim]:
@@ -303,8 +313,7 @@ class SymbolicDim(Dim):
 
 @dataclass(frozen=True)
 class AlgebraicDim(Dim):
-    """An algebraic tensor dimension to enable expressions over symbolic
-    dimensions.
+    """An algebraic tensor dimension to enable expressions over symbolic dimensions.
 
     That is, any expression over a symbolic dimension returns ``AlgebraicDim``.
     Furthermore, algebraic dimensions automatically simplify into a canonical
@@ -322,20 +331,25 @@ class AlgebraicDim(Dim):
 
     attr: kgen.ParamOperatorAttr
 
-    def __init__(self, attr: kgen.ParamOperatorAttr | AlgebraicDim) -> None:
-        super().__setattr__(
-            "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
-        )
+    def __init__(self, attr: builtin.TypedAttr | AlgebraicDim) -> None:
+        if isinstance(attr, AlgebraicDim):
+            attr = attr.attr
+        elif not isinstance(attr, kgen.ParamOperatorAttr):
+            raise TypeError(
+                f"AlgebraicDim.__init__ only accepts kgen.ParamOperatorAttr or AlgebraicDim, got {type(attr).__name__}"
+            )
+        super().__setattr__("attr", attr)
 
     @classmethod
     def apply(cls, op: kgen.POC, *operands: DimLike):  # noqa: ANN206
+        """Applies a parametric operator to operands and returns the resulting dimension."""
         # kgen.ParamOperatorAttr eagerly folds on construction!
         #  - this can return static or symbolic dims
-        #  - let Dim decide what type to returtn
+        #  - let Dim decide what type to return
         attr = kgen.ParamOperatorAttr(
             op, [Dim(operand).to_mlir() for operand in operands]
         )
-        return Dim.from_mlir(attr)
+        return Dim(attr)
 
     def __format__(self, format_spec: str) -> str:
         formatters: Mapping[str, Callable[[Any], str]] = {
@@ -357,7 +371,7 @@ class AlgebraicDim(Dim):
             kgen.POC.div: "//",
         }
         opcode = self.attr.opcode
-        dims = [Dim.from_mlir(operand) for operand in self.attr.operands]
+        dims = [Dim(operand) for operand in self.attr.operands]
         if opcode in opcodes:
             # Wrap algebraic sub-expressions in parens
             return f" {opcodes[opcode]} ".join(map(format, dims))
@@ -374,6 +388,7 @@ class AlgebraicDim(Dim):
 
     def to_mlir(self) -> kgen.ParamOperatorAttr:
         """Creates an mlir.Attribute representing this dimension.
+
         This is used internally when constructing tensor MLIR types.
 
         Returns:
@@ -382,16 +397,26 @@ class AlgebraicDim(Dim):
         return self.attr
 
     @staticmethod
-    def from_mlir(attr: builtin.TypedAttr) -> Dim:
+    def from_mlir(attr: builtin.TypedAttr) -> AlgebraicDim:
+        """Constructs an ``AlgebraicDim`` from a ``kgen.ParamOperatorAttr``.
+
+        Args:
+            attr: The ``kgen.ParamOperatorAttr`` to parse into an ``AlgebraicDim``.
+
+        Returns:
+            AlgebraicDim: The ``AlgebraicDim`` represented by the ``kgen.ParamOperatorAttr``.
+        """
         if not isinstance(attr, kgen.ParamOperatorAttr):
-            raise TypeError(f"Attribute is not an algebraic dimension: {attr}")
+            raise TypeError(
+                f"AlgebraicDim.from_mlir only accepts kgen.ParamOperatorAttr, got {type(attr).__name__}"
+            )
         return AlgebraicDim(attr)
 
     @property
     def parameters(self) -> Iterable[SymbolicDim]:
         """Lists the symbolic dimension names on which this dim depends."""
         for operand in self.attr.operands:
-            yield from Dim.from_mlir(operand).parameters
+            yield from Dim(operand).parameters
 
 
 @functools.total_ordering
@@ -415,9 +440,17 @@ class StaticDim(Dim):
     dim: int
     """The size of the static dimension."""
 
-    def __init__(self, dim: int | StaticDim) -> None:
+    def __init__(self, dim: int | builtin.TypedAttr | StaticDim) -> None:
+        if isinstance(dim, builtin.IntegerAttr):
+            dim = dim.value
+        elif isinstance(dim, StaticDim):
+            dim = dim.dim
+        elif not isinstance(dim, int):
+            raise TypeError(
+                f"StaticDim.__init__ only accepts int, builtin.IntegerAttr, or StaticDim, got {type(dim).__name__}"
+            )
         # Can't assign directly to frozen dataclasses.
-        super().__setattr__("dim", int(dim))
+        super().__setattr__("dim", dim)
         if not -(2**63) <= self.dim < 2**63:
             raise ValueError("Dim value must be -2**63 <= dim < 2**63")
 
@@ -461,18 +494,20 @@ class StaticDim(Dim):
         return builtin.IntegerAttr(si64, self.dim)
 
     @staticmethod
-    def from_mlir(attr: builtin.TypedAttr) -> Dim:
-        """Constructs a dimension from an ``mlir.Attribute``.
+    def from_mlir(attr: builtin.TypedAttr) -> StaticDim:
+        """Constructs a ``StaticDim`` from a ``builtin.IntegerAttr``.
 
         Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
+            attr: The ``builtin.IntegerAttr`` to parse into a ``StaticDim``.
 
         Returns:
-            The dimension represented by the MLIR Attr value.
+            StaticDim: The ``StaticDim`` represented by the ``builtin.IntegerAttr``.
         """
         if not isinstance(attr, builtin.IntegerAttr):
-            raise TypeError(f"Attribute is not a static dimension: {attr}")
-        return StaticDim(attr.value)
+            raise TypeError(
+                f"StaticDim.from_mlir only accepts builtin.IntegerAttr, got {type(attr).__name__}"
+            )
+        return StaticDim(attr)
 
     @property
     def parameters(self) -> Iterable[SymbolicDim]:
@@ -480,4 +515,4 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = int | str | Dim | np.integer[Any]
+DimLike = int | str | Dim | np.integer[Any] | builtin.TypedAttr

@@ -38,7 +38,7 @@ comptime ComplexFloat64 = ComplexScalar[DType.float64]
 
 
 struct ComplexSIMD[dtype: DType, size: Int](
-    Equatable, Stringable, TrivialRegisterType, Writable, _Expable
+    Equatable, Stringable, TrivialRegisterPassable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
 
@@ -143,8 +143,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         # buf.reserve(initial_buffer_size)
 
         # Print an opening `[`.
-        @parameter
-        if Self.size > 1:
+        comptime if Self.size > 1:
             writer.write("[")
 
         # Print each element.
@@ -161,8 +160,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
                 writer.write(" + ", im, "i")
 
         # Print a closing `]`.
-        @parameter
-        if Self.size > 1:
+        comptime if Self.size > 1:
             writer.write("]")
 
     @always_inline
@@ -375,7 +373,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         Returns:
             The exponential of the complex value.
         """
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
         var exp_re = math.exp(self.re)

@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -24,14 +25,15 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Type, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Type, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.kv_cache import PagedKVCacheManager, load_kv_managers
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
+    KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
@@ -46,7 +48,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -129,11 +130,22 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
+@dataclass
 class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
 
     This class encapsulates the input tensors required for the Gemma3 multi
-    modal model, for text and vision processing
+    modal model, for text and vision processing.
+
+    Args:
+        tokens: Input token IDs.
+        input_row_offsets: Input row offsets (ragged tensors).
+        return_n_logits: Number of logits to return.
+        signal_buffers: Device buffers for distributed communication.
+        kv_cache_inputs: Inputs for the KV cache.
+        pixel_values: Raw pixel values for vision inputs. Defaults to ``None``.
+        image_token_indices: Pre-computed indices of image tokens. Defaults to
+            ``None``.
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
@@ -147,40 +159,14 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
+    return_n_logits: Buffer
+    """Number of logits to return, used by speculative decoding for example."""
+
     pixel_values: list[Buffer] | None = None
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
     image_token_indices: list[Buffer] | None = None
     """Pre-computed indices of image tokens in the input sequence."""
-
-    return_n_logits: Buffer
-    """Number of logits to return, used by speculative decoding for example."""
-
-    def __init__(
-        self,
-        tokens: npt.NDArray[np.integer[Any]] | Buffer,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | list[Buffer],
-        return_n_logits: Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        pixel_values: list[Buffer] | None = None,
-        image_token_indices: list[Buffer] | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
-        self.pixel_values = pixel_values
-        self.image_token_indices = image_token_indices
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -193,9 +179,24 @@ class Gemma3_MultiModalModel(
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
-    This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
-    infrastructure, handling model loading, KV cache management, and input preparation
-    for inference.
+    This class integrates the Gemma 3 multimodal architecture with the MAX
+    pipeline infrastructure, handling model loading, KV cache management, and
+    input preparation for inference.
+
+    Args:
+        pipeline_config: The configuration settings for the entire pipeline.
+        session: The MAX inference session managing the runtime.
+        huggingface_config: The configuration loaded from HuggingFace
+            (:obj:`transformers.AutoConfig`).
+        devices: A list of MAX devices (:obj:`max.driver.Device`) to
+            run the model on.
+        kv_cache_config: Configuration settings for the Key-Value cache
+            (:obj:`max.pipelines.max_config.KVCacheConfig`).
+        weights: The model weights (:obj:`max.graph.weights.Weights`).
+        adapter: An optional adapter to modify weights before loading
+            (:obj:`max.graph.weights.WeightsAdapter`).
+        return_logits: The number of top logits to return from the model
+            execution.
     """
 
     language_model: Model
@@ -213,40 +214,15 @@ class Gemma3_MultiModalModel(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        """Initialize a PipelineModel with default values for signal_buffers,
-        then begin the loading of our vision and language models.
-
-        Args:
-            pipeline_config: The configuration settings for the entire pipeline.
-            session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
-                run the model on.
-            kv_cache_config: Configuration settings for the Key-Value cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            weights: The model weights (:obj:`max.graph.weights.Weights`).
-            adapter: An optional adapter to modify weights before loading
-                (:obj:`max.graph.weights.WeightsAdapter`).
-            return_logits: The number of top logits to return from the model
-                execution.
-        """
-
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -358,7 +334,7 @@ class Gemma3_MultiModalModel(
 
     def _language_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
-    ) -> Sequence[TensorType]:
+    ) -> Sequence[TensorType | BufferType]:
         """Prepare the Tensor input types that our language graph will work with"""
         device_ref = DeviceRef.from_device(self.devices[0])
         tokens_type = TensorType(
@@ -403,12 +379,6 @@ class Gemma3_MultiModalModel(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         return (
             tokens_type,
             return_n_logits_type,
@@ -416,7 +386,7 @@ class Gemma3_MultiModalModel(
             *image_embeddings_types,
             *image_token_indices_types,
             *signals.input_types(),
-            *flattened_kv_types,
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     def _build_language_graph(
@@ -720,15 +690,15 @@ class Gemma3_MultiModalModel(
         # Create tensor and distribute to device
         return [Buffer.from_numpy(np_indices).to(dev) for dev in self.devices]
 
-    def load_kv_manager(
+    def load_kv_managers(
         self,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         max_batch_size: int,
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
-        return load_kv_manager(
+    ) -> list[PagedKVCacheManager]:
+        return load_kv_managers(
             params=kv_params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,

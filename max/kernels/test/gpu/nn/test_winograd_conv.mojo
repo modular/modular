@@ -116,8 +116,7 @@ fn matmul[
     comptime N = Int(c_layout.shape[1])
     comptime K = Int(a_layout.shape[1])
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(M):
             for j in range(N):
                 var sum: SIMD[s_type, C.element_size] = 0
@@ -218,7 +217,7 @@ fn winograd_conv2d_gpu_nhwc[
     - NHWC input layout
     - RSCF filter layout
     """
-    __comptime_assert input.rank == filter.rank == output.rank == 4
+    comptime assert input.rank == filter.rank == output.rank == 4
 
     # Dimensions
     var C_in = input.dim[3]()  # input channels
@@ -486,7 +485,7 @@ fn test_winograd_conv_gpu[
     )
 
     # Run reference convolution
-    conv_gpu[input_layout, filter_layout, output_layout, dtype, dtype, dtype,](
+    conv_gpu[input_layout, filter_layout, output_layout, dtype, dtype, dtype](
         input_tensor.as_any_origin(),
         filter_tensor.as_any_origin(),
         output_ref_tensor.as_any_origin(),

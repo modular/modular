@@ -70,8 +70,8 @@ references](/mojo/manual/values/lifetimes).
 
 The life of a value in Mojo begins when a variable is initialized and continues
 up until the value is last used, at which point Mojo destroys it. Mojo destroys
-every value/object as soon as it's no longer used, using an “as soon as
-possible” (ASAP) destruction policy that runs after every sub-expression. The
+every value/object as soon as it's no longer used, using an "as soon as
+possible" (ASAP) destruction policy that runs after every sub-expression. The
 Mojo compiler takes care of releasing resources after last use when needed.
 
 As you might imagine, keeping track of a value's life can be difficult if a

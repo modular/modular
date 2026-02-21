@@ -49,11 +49,11 @@ fn scalb_fn(val: SIMD) -> type_of(val):
 
 
 fn gcd_fn(val: SIMD) -> type_of(val):
-    return gcd(Int(val), Int(val))
+    return type_of(val)(gcd(Int(val), Int(val)))
 
 
 fn lcm_fn(val: SIMD) -> type_of(val):
-    return lcm(Int(val), Int(val))
+    return type_of(val)(lcm(Int(val), Int(val)))
 
 
 fn sqrt_fn(val: SIMD) -> type_of(val):
@@ -99,8 +99,7 @@ def test_math():
         ](ctx: DeviceContext) raises:
             comptime ls = std.builtin.Variadic.size(kernel_fns)
 
-            @parameter
-            for idx in range(ls):
+            comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]
                 run_func[DType.float32, kernel_fn[]](ctx)
                 run_func[DType.float16, kernel_fn[]](ctx)

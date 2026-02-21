@@ -165,8 +165,8 @@ fn matmul[
     b: NDBuffer[_, 2, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
-    __comptime_assert is_valid_target[target](), "unsupported target"
-    __comptime_assert not transpose_a, "transpose_a not yet supported"
+    comptime assert is_valid_target[target](), "unsupported target"
+    comptime assert not transpose_a, "transpose_a not yet supported"
     debug_assert(
         is_cpu[target]() or Bool(ctx),
         "expected DeviceContext to be provided if target != cpu",
@@ -205,9 +205,7 @@ fn matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=OptionalReg(Int(ctx.value().id())) if ctx else None,
     ):
-
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             var kernel_type_m = a.shape.at[0]().or_else(0)
 
             # The CPU version of matmul doesn't support compute lambda
@@ -217,8 +215,7 @@ fn matmul[
             fn compute_lambda_wrapper[
                 _type: DType, _width: Int, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
-                @parameter
-                if elementwise_compute_lambda_fn:
+                comptime if elementwise_compute_lambda_fn:
                     comptime compute_lambda = elementwise_compute_lambda_fn.value()
                     var output = compute_lambda(coords, val)
                     c.store[alignment=alignment](

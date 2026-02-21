@@ -27,6 +27,9 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
@@ -70,13 +73,13 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     weight: LayoutTensor[
-        weight_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
@@ -152,20 +155,22 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     weight: LayoutTensor[
-        weight_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    bias: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    bias: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -238,19 +243,19 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     target: StaticString = "cpu",
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     weight: LayoutTensor[
-        weight_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_scale: LayoutTensor[
-        scale_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     weight_scale: LayoutTensor[
-        scale_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
@@ -260,10 +265,9 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     ctx: DeviceContextPtr,
     bias: OptionalReg[
         LayoutTensor[
-            mut=False,
             output_dtype,
             Layout.row_major(UNKNOWN_VALUE),
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ]
     ] = None,
@@ -361,13 +365,15 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     SF_VECTOR_SIZE: Int,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    hidden_state: LayoutTensor[mut=False, dtype, a_layout, MutAnyOrigin],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[weight_dtype, b_layout, MutAnyOrigin],
-    input_scale: LayoutTensor[scale_dtype, sfa_layout, MutAnyOrigin],
-    weight_scale: LayoutTensor[scale_dtype, sfb_layout, MutAnyOrigin],
+    weight: LayoutTensor[mut=False, weight_dtype, b_layout, MutAnyOrigin],
+    input_scale: LayoutTensor[mut=False, scale_dtype, sfa_layout, MutAnyOrigin],
+    weight_scale: LayoutTensor[
+        mut=False, scale_dtype, sfb_layout, MutAnyOrigin
+    ],
     tensor_sf: Float32,
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
@@ -462,13 +468,13 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     weight: LayoutTensor[
-        weight_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -494,10 +500,13 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var v_cache: OptionalReg[type_of(k_cache)] = None
+    comptime kv_params = collection_t.kv_params
 
-    @parameter
-    if is_gpu[target]():
+    comptime if not kv_params.is_mla:
+        v_cache = kv_collection.get_value_cache(layer_idx_cast)
+
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl[
@@ -528,20 +537,22 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     weight: LayoutTensor[
-        weight_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    bias: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    bias: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -564,8 +575,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_bias[
@@ -598,16 +608,16 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     target: StaticString,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     weight: LayoutTensor[
-        weight_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_scale: LayoutTensor[
-        scale_dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     weight_scale: LayoutTensor[
         scale_dtype, address_space = AddressSpace.GENERIC, ...
@@ -620,10 +630,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     context: DeviceContextPtr,
     bias: OptionalReg[
         LayoutTensor[
-            mut=False,
             output_dtype,
             Layout.row_major(UNKNOWN_VALUE),
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ]
     ] = None,
@@ -655,12 +664,10 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     var v_cache: OptionalReg[type_of(k_cache)] = None
     comptime kv_params = collection_t.kv_params
 
-    @parameter
-    if not kv_params.is_mla:
+    comptime if not kv_params.is_mla:
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
@@ -696,13 +703,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale_float4[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    hidden_state: LayoutTensor[mut=False, dtype, a_layout, MutAnyOrigin],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[weight_dtype, b_layout, MutAnyOrigin],
-    input_scale: LayoutTensor[scale_dtype, sfa_layout, MutAnyOrigin],
-    weight_scale: LayoutTensor[scale_dtype, sfb_layout, MutAnyOrigin],
+    weight: LayoutTensor[mut=False, weight_dtype, b_layout, MutAnyOrigin],
+    input_scale: LayoutTensor[mut=False, scale_dtype, sfa_layout, MutAnyOrigin],
+    weight_scale: LayoutTensor[
+        mut=False, scale_dtype, sfb_layout, MutAnyOrigin
+    ],
     tensor_sf: Float32,
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -738,12 +747,10 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale_float4[
     var v_cache: OptionalReg[type_of(k_cache)] = None
     comptime kv_params = collection_t.kv_params
 
-    @parameter
-    if not kv_params.is_mla:
+    comptime if not kv_params.is_mla:
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
@@ -783,7 +790,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         weight_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     k_cache: cache_t,
-    v_cache: cache_t,
+    v_cache: OptionalReg[cache_t],
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
@@ -809,7 +816,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     comptime kv_type = cache_t.dtype
     comptime kv_params = cache_t.kv_params
 
-    __comptime_assert (
+    comptime assert (
         kv_type == dtype
     ), "Mismatch in dtype between Q and KV tensors"
 
@@ -846,16 +853,23 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         var hd_idx: UInt
         var cache: cache_t
         var output_val = val
-        if idx[1] < qk_offset:
+
+        comptime if kv_params.is_mla:
             cache = k_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
-            )
+            h_idx = 0  # in MLA mode we only have one head
+            hd_idx = UInt(idx[1]) - UInt(q_dim)
+
         else:
-            cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
-            )
+            if idx[1] < qk_offset:
+                cache = k_cache
+                h_idx, hd_idx = divmod(
+                    UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                )
+            else:
+                cache = v_cache.value()
+                h_idx, hd_idx = divmod(
+                    UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                )
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -867,12 +881,11 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    @parameter
-    if group_size:
-        __comptime_assert (
+    comptime if group_size:
+        comptime assert (
             not has_zp.value()
         ), "Zero point is not supported for quantization."
-        __comptime_assert (
+        comptime assert (
             weight_dtype == DType.uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
@@ -883,7 +896,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         ](hidden_state, weight.bitcast[DType.uint8](), context)
 
     else:
-        __comptime_assert (
+        comptime assert (
             weight_dtype == dtype
         ), "Mismatch in dtype between weight and QKV tensors"
 
@@ -941,7 +954,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     comptime kv_type = cache_t.dtype
     comptime kv_params = cache_t.kv_params
 
-    __comptime_assert (
+    comptime assert (
         kv_type == dtype
     ), "Mismatch in dtype between Q and KV tensors"
 
@@ -1001,12 +1014,11 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    @parameter
-    if group_size:
-        __comptime_assert (
+    comptime if group_size:
+        comptime assert (
             not has_zp.value()
         ), "Zero point is not supported for quantization."
-        __comptime_assert (
+        comptime assert (
             weight_dtype == DType.uint8
         ), "Expect GPTQ weights to be a 'uint8' tensor."
 
@@ -1017,7 +1029,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         ](hidden_state, weight.bitcast[DType.uint8](), context)
 
     else:
-        __comptime_assert (
+        comptime assert (
             weight_dtype == dtype
         ), "Mismatch in dtype between weight and QKV tensors"
 
@@ -1124,8 +1136,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         var output_val: SIMD[dtype, width]
 
-        @parameter
-        if use_per_tensor:
+        comptime if use_per_tensor:
             var scale_a = input_scale[0, 0][0].cast[dtype]()
             var scale_b = weight_scale[0, 0][0].cast[dtype]()
             output_val = val * (scale_a * scale_b)
@@ -1167,8 +1178,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         var hd_idx: UInt
         var cache: cache_t
 
-        @parameter
-        if kv_params.is_mla:
+        comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
             hd_idx = UInt(idx[1]) - UInt(q_dim)
@@ -1195,13 +1205,12 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
         )
 
-    __comptime_assert (
+    comptime assert (
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
 
-    @parameter
-    if use_block_wise:
-        __comptime_assert is_gpu[
+    comptime if use_block_wise:
+        comptime assert is_gpu[
             target
         ](), "Blockwise scaled fp8 matmul only works on GPU."
 
@@ -1235,13 +1244,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    hidden_state: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[weight_dtype, b_layout, MutAnyOrigin],
-    input_scale: LayoutTensor[scale_dtype, sfa_layout, MutAnyOrigin],
-    weight_scale: LayoutTensor[scale_dtype, sfb_layout, MutAnyOrigin],
+    weight: LayoutTensor[weight_dtype, b_layout, ImmutAnyOrigin],
+    input_scale: LayoutTensor[scale_dtype, sfa_layout, ImmutAnyOrigin],
+    weight_scale: LayoutTensor[scale_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
@@ -1308,14 +1317,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
         var cache: cache_t
 
-        @parameter
-        if kv_params.is_mla:
+        comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
             hd_idx = UInt(idx[1]) - UInt(q_dim)
@@ -1342,11 +1350,11 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
         )
 
-    __comptime_assert (
+    comptime assert (
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
 
-    __comptime_assert is_gpu[
+    comptime assert is_gpu[
         target
     ](), "Blockwise scaled fp4 matmul only works on GPU."
 
@@ -1386,8 +1394,7 @@ fn _matmul_common[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
@@ -1413,8 +1420,7 @@ fn _matmul_common[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](c_nd, hidden_state, weight, context)
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         c_nd.ptr.free()
 
 
@@ -1435,7 +1441,7 @@ fn _qmatmul_common[
     ],
     context: Optional[DeviceContext],
 ) raises:
-    __comptime_assert is_gpu[target](), "GPTQ quantization only works on GPU."
+    comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
@@ -1485,7 +1491,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     ],
     context: DeviceContext,
 ) raises:
-    __comptime_assert is_gpu[
+    comptime assert is_gpu[
         target
     ](), "Blockwise scaled fp8 matmul only works on GPU."
 
@@ -1524,14 +1530,14 @@ fn _matmul_blockwise_scaled_fp4_common[
     SF_VECTOR_SIZE: Int = 16,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    input_scale: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
-    weight_scale: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
+    hidden_state: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    weight: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    input_scale: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
+    weight_scale: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
     context: DeviceContext,
 ) raises:
-    __comptime_assert is_gpu[
+    comptime assert is_gpu[
         target
     ](), "Blockwise scaled fp4 matmul only works on GPU."
 
@@ -1659,8 +1665,7 @@ fn _matmul_kv_cache_ragged[
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _matmul_kv_cache_ragged_impl[target=target](
@@ -1730,7 +1735,7 @@ fn _matmul_kv_cache_ragged_impl[
     ):
         comptime kv_type = cache_t.dtype
 
-        __comptime_assert (
+        comptime assert (
             kv_type == dtype
         ), "Mismatch in dtype between hidden state and KV tensors"
 
@@ -1884,8 +1889,7 @@ fn _matmul_k_cache_ragged[
     layer_idx_cast = Int(layer_idx)
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _matmul_k_cache_ragged_impl[target=target](
@@ -1942,7 +1946,7 @@ fn _matmul_k_cache_ragged_impl[
     ](idx: IndexList[2], val: SIMD[dtype, width],):
         comptime kv_type = cache_t.dtype
 
-        __comptime_assert (
+        comptime assert (
             kv_type == dtype
         ), "Mismatch in dtype between hidden state and KV tensors"
 
@@ -2043,7 +2047,7 @@ fn k_matmul_ragged_paged_scale[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=Int(ctx.get_device_context().id()),
     ):
-        __comptime_assert is_gpu[
+        comptime assert is_gpu[
             target
         ](), "Blockwise scaled fp8 matmul only works on GPU."
         var layer_idx_cast = Int(layer_idx)
@@ -2123,7 +2127,7 @@ fn _matmul_k_cache_ragged_scale_impl[
     ](idx: IndexList[2], val: SIMD[dtype, width],):
         comptime kv_type = cache_t.dtype
 
-        __comptime_assert (
+        comptime assert (
             kv_type == dtype
         ), "Mismatch in dtype between hidden state and KV tensors"
 
@@ -2149,7 +2153,7 @@ fn _matmul_k_cache_ragged_scale_impl[
             rebind[SIMD[kv_type, width]](val),
         )
 
-    __comptime_assert (
+    comptime assert (
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
     _matmul_blockwise_scaled_fp8_common[
@@ -2418,7 +2422,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     ](k_or_v_cache: cache_t, idx: IndexList[2], val: SIMD[dtype, width],):
         comptime k_or_v_type = cache_t.dtype
 
-        __comptime_assert (
+        comptime assert (
             k_or_v_type == dtype
         ), "Mismatch in dtype between hidden state and KV tensors"
 
@@ -2508,8 +2512,7 @@ fn _qmatmul_gguf_quantized_common[
         mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
     ],
 ) raises:
-    @parameter
-    if quantization_encoding == "q4_0":
+    comptime if quantization_encoding == "q4_0":
         matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
             hidden_state,
             weight,
@@ -2547,21 +2550,24 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
-    mrope_section: Optional[IntTuple] = None,
+    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
+        CoordLike
+    ],
+    mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
-    q_proj: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection,
-    freqs_cis: LayoutTensor[
+    freqs_cis: TileTensor[
         freq_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    position_ids: LayoutTensor[
+    position_ids: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     layer_idx: UInt32,
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -2584,10 +2590,17 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
                     trace_arg(
-                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "q_proj",
+                        coord_to_index_list(q_proj.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "freqs_cis",
+                        coord_to_index_list(freqs_cis.layout.shape_coord()),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -2610,27 +2623,23 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=Int(context.get_device_context().id()),
     ):
-
-        @parameter
-        if has_position_ids:
+        comptime if has_position_ids:
             fused_qk_rope_ragged[
                 kv_collection.CacheType,
                 interleaved=interleaved,
                 target=target,
+                PositionIdsLayoutType = position_ids.LayoutType,
+                mrope_types=mrope_types,
                 mrope_section=mrope_section,
             ](
                 q_proj,
                 input_row_offsets,
                 kv_collection,
                 freqs_cis,
-                LayoutTensor[
-                    position_ids.dtype, Layout.row_major[2](), MutAnyOrigin
-                ](
-                    position_ids.ptr,
-                    RuntimeLayout[Layout.row_major[2]()].row_major(
-                        position_ids.runtime_layout.shape.value
-                    ),
-                ),
+                TileTensor(
+                    position_ids.ptr.mut_cast[True]().as_any_origin(),
+                    position_ids.layout,
+                ).as_immut(),
                 layer_idx,
                 output,
                 dev_ctx,
@@ -2668,7 +2677,7 @@ fn generic_flash_attention_kv_cache_ragged[
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -2732,9 +2741,11 @@ fn _flash_attention_dispatch[
     score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
@@ -2744,7 +2755,7 @@ fn _flash_attention_dispatch[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -2762,8 +2773,7 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
                     input_row_offsets,
@@ -2818,7 +2828,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -2828,7 +2838,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     ],
     context: DeviceContextPtr,
     sink_weights: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ) raises:
     @always_inline
@@ -2872,7 +2882,9 @@ fn generic_flash_attention_kv_cache_ragged_sink[
             scale,
             output,
             context,
-            LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin](
+            LayoutTensor[
+                dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
                 sink_weights.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     sink_weights.runtime_layout.shape.value.canonicalize(),
@@ -2987,7 +2999,7 @@ fn _flare_mla_decode_kv_cache_ragged[
             (batch_size, num_heads, seq_len, head_size).
         context: Pointer containing the runtime context for the target device.
     """
-    __comptime_assert is_gpu[target](), "MLA is only supported on GPU"
+    comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
@@ -3028,17 +3040,23 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -3121,17 +3139,23 @@ fn _flare_mla_prefill_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -3157,7 +3181,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
             (total_seq_len, num_heads, kv_head_size).
         context: Pointer containing the runtime context for the target device.
     """
-    __comptime_assert is_gpu[target](), "MLA is only supported on GPU"
+    comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
     var layer_idx_cast = Int(layer_idx)
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
@@ -3221,7 +3245,7 @@ fn generic_flare_mla_prefill_ragged_paged_plan[
     ],
     context: DeviceContextPtr,
 ) raises:
-    __comptime_assert is_gpu[target](), "Planning MLA is only supported on GPU"
+    comptime assert is_gpu[target](), "Planning MLA is only supported on GPU"
 
     var cuda_ctx = context.get_device_context()
 
@@ -3266,7 +3290,7 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
     ],
     context: DeviceContextPtr,
 ) raises:
-    __comptime_assert is_gpu[target](), "MLA is only supported on GPU"
+    comptime assert is_gpu[target](), "MLA is only supported on GPU"
     var cuda_ctx = context.get_device_context()
 
     var buffer_length_int = Int(buffer_length)
@@ -3289,7 +3313,7 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
         buffer_length_int, latent_last_dim
     )
 
-    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout,](
+    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout](
         k_latent_buffer.ptr,
         RuntimeLayout[k_latent_layout].row_major(k_latent_dynamic_shape),
     )
@@ -3324,13 +3348,15 @@ fn _cross_attention_dispatch[
     score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     q_input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
@@ -3340,7 +3366,9 @@ fn _cross_attention_dispatch[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[
+            mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -3353,8 +3381,7 @@ fn _cross_attention_dispatch[
     fn _dispatch_flash_attention[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q,
                 q_input_row_offsets,
@@ -3387,7 +3414,7 @@ fn _cross_attention_dispatch[
                 LayoutTensor[
                     kv_input_row_offsets.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutAnyOrigin,
+                    ImmutAnyOrigin,
                 ](
                     kv_input_row_offsets.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -3434,7 +3461,7 @@ fn generic_cross_attention_kv_cache[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -3515,13 +3542,13 @@ fn generic_kv_cache_radd_dispatch[
 ) raises:
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
 
-    __comptime_assert (
+    comptime assert (
         dtype == collection_t.dtype
     ), "Mismatch in dtype between computation and KV tensors"
-    __comptime_assert (
+    comptime assert (
         a.layout.shape[1] != UNKNOWN_VALUE
     ), "Input tensor must have known shape in last dim"
-    __comptime_assert Int(a.layout.shape[1]) == Int(hidden_size * 2), (
+    comptime assert Int(a.layout.shape[1]) == Int(hidden_size * 2), (
         "Mismatch in hidden size between input "
         + String(Int(a.layout.shape[1]))
         + " and KV tensors "
@@ -3535,7 +3562,7 @@ fn generic_kv_cache_radd_dispatch[
     @parameter
     @__copy_capture(k_cache, v_cache, input_row_offsets)
     fn do_radd[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        __comptime_assert rank == 2, "Rank must be 2"
+        comptime assert rank == 2, "Rank must be 2"
 
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch
         var corrected_token_idx = UInt32(idx[0]) + input_row_offsets[0]
@@ -3576,9 +3603,9 @@ fn generic_kv_cache_radd_dispatch[
             a_val + old_val,
         )
 
-    @parameter
-    if is_gpu[target]():
-        debug_assert(ctx is not None, "ctx is None")
+    comptime if is_gpu[target]():
+        if ctx is None:
+            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
@@ -3609,16 +3636,18 @@ fn kv_cache_store_ragged[
     ],
     context: Optional[DeviceContext],
 ) raises:
-    __comptime_assert input_row_offsets.layout.rank() == 1, (
+    comptime assert input_row_offsets.layout.rank() == 1, (
         "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
         " + 1,)`"
     )
 
     @parameter
-    @__copy_capture(cache)
+    @__copy_capture(cache, input_row_offsets)
     fn write_to_cache[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+        width: Int,
+        rank: Int,
+        alignment: Int = 1,
+    ](idx: IndexList[rank]) capturing:
         var loaded_val = input_fn[width=width, alignment=alignment](
             rebind[IndexList[3]](idx)
         )
@@ -3636,9 +3665,74 @@ fn kv_cache_store_ragged[
             loaded_val,
         )
 
+    comptime if is_gpu[target]():
+        if context is None:
+            raise Error("ctx is None")
+        comptime compile_target = get_gpu_target()
+        comptime simd_width = simd_width_of[
+            cache_t.dtype, target=compile_target
+        ]()
+
+        elementwise[write_to_cache, simd_width, target=target](
+            input_shape, context.value()
+        )
+    else:
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[
+            cache_t.dtype, target=compile_target
+        ]()
+
+        elementwise[write_to_cache, simd_width, target=target](input_shape)
+
+
+fn kv_cache_store_padded[
+    cache_t: KVCacheT,
+    //,
+    target: StaticString,
+    input_fn: fn[width: Int, alignment: Int](
+        idx: IndexList[4]
+    ) capturing -> SIMD[cache_t.dtype, width],
+](
+    cache: cache_t,
+    input_shape: IndexList[4],
+    valid_lengths: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
+    ],
+    context: Optional[DeviceContext],
+) raises:
+    comptime assert (
+        valid_lengths.layout.rank() == 1
+    ), "Expected valid_lengths to be a 1D tensor of shape `(batch_size,)`"
+
     @parameter
-    if is_gpu[target]():
-        debug_assert(context is not None, "ctx is None")
+    @__copy_capture(cache, valid_lengths)
+    @always_inline
+    fn write_to_cache[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]) capturing:
+        var batch_idx = idx[0]
+        var token_idx = idx[1]
+        var valid_len = Int(valid_lengths[batch_idx])
+        if token_idx >= valid_len:
+            return
+        var loaded_val = input_fn[width=width, alignment=alignment](
+            rebind[IndexList[4]](idx)
+        )
+        var h_idx = idx[2]
+        var hd_idx = idx[3]
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+        cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            loaded_val,
+        )
+
+    comptime if is_gpu[target]():
+        if context is None:
+            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[
             cache_t.dtype, target=compile_target
@@ -3694,13 +3788,13 @@ fn kv_cache_2m_iadd_dispatch[
     """
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
     var kv_shape = kv.runtime_layout.shape.value.canonicalize()
-    __comptime_assert (
+    comptime assert (
         dtype == collection_t.dtype
     ), "Mismatch in dtype between computation and KV tensors"
-    __comptime_assert (
+    comptime assert (
         kv.layout.shape[1] != UNKNOWN_VALUE
     ), "Input tensor must have known shape in last dim"
-    __comptime_assert Int(kv.layout.shape[1]) == Int(hidden_size), (
+    comptime assert Int(kv.layout.shape[1]) == Int(hidden_size), (
         "Mismatch in hidden size between input "
         + String(Int(kv.layout.shape[1]))
         + " and KV tensors "
@@ -3719,7 +3813,7 @@ fn kv_cache_2m_iadd_dispatch[
     @parameter
     @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
     fn iadd[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        __comptime_assert rank == 2, "Rank must be 2"
+        comptime assert rank == 2, "Rank must be 2"
 
         var cache: collection_t.CacheType
         var row_idx: Int
@@ -3756,13 +3850,13 @@ fn kv_cache_2m_iadd_dispatch[
             a_val + old_val,
         )
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
+        if ctx is None:
+            raise Error("ctx is None")
         with Trace[TraceLevel.OP, target=target](
             "kv-cache-2m-iadd",
             task_id=Int(ctx.value().id()),
         ):
-            debug_assert(ctx is not None, "ctx is None")
             comptime compile_target = get_gpu_target()
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 

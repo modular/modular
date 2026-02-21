@@ -31,7 +31,7 @@ struct AddressSpace(
     ImplicitlyCopyable,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Address space of the pointer.
@@ -201,7 +201,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Stringable, TrivialRegisterType, Writable):
+](Stringable, TrivialRegisterPassable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -226,8 +226,6 @@ struct Pointer[
     ]
     comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    comptime Mutable = Self._with_origin[unsafe_origin_mutcast[Self.origin]]
-    """The mutable version of the `Pointer`."""
     comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
     """The immutable version of the `Pointer`."""
     # Fields

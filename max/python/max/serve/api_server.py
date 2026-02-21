@@ -26,13 +26,20 @@ from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.interfaces import (
+    BaseContext,
+    PipelineOutput,
+    PipelinesFactory,
+    PipelineTask,
+    PipelineTokenizer,
+)
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
     PipelineConfig,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -43,7 +50,12 @@ from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
-from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
+from max.serve.router import (
+    kserve_routes,
+    openai_routes,
+    openresponses_routes,
+    sagemaker_routes,
+)
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -54,6 +66,7 @@ ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
     APIType.SAGEMAKER: sagemaker_routes,
+    APIType.OPENRESPONSES: openresponses_routes,
 }
 
 logger = logging.getLogger("max.serve")
@@ -121,14 +134,17 @@ async def lifespan(
                     serving_settings.pipeline_config.audio_decoder
                 )
 
-        model_worker_interface = ZmqModelWorkerInterface(
+        model_worker_interface = ZmqModelWorkerInterface[
+            BaseContext, PipelineOutput
+        ](
             serving_settings.pipeline_task,
-            context_type=PIPELINE_REGISTRY.retrieve_context_type(
+            PIPELINE_REGISTRY.retrieve_context_type(
                 serving_settings.pipeline_config,
                 override_architecture=override_architecture,
+                task=serving_settings.pipeline_task,
             ),
         )
-        worker_monitor = await exit_stack.enter_async_context(
+        model_worker = await exit_stack.enter_async_context(
             start_model_worker(
                 serving_settings.model_factory,
                 serving_settings.pipeline_config,
@@ -149,23 +165,50 @@ async def lifespan(
 
         METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
 
-        pipeline_class = {
-            PipelineTask.TEXT_GENERATION: TokenGeneratorPipeline,
-            PipelineTask.EMBEDDINGS_GENERATION: TokenGeneratorPipeline,
-            PipelineTask.AUDIO_GENERATION: AudioGeneratorPipeline,
-        }[serving_settings.pipeline_task]
+        # For pixel generation, use GeneralPipelineHandler directly as the pipeline
+        # For other tasks, create modality-specific wrappers for legacy API routes
+        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+            # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
+            pipeline = GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            )
+        else:
+            # Create modality-specific pipeline wrapper for legacy API routes
+            pipeline_class = {
+                PipelineTask.TEXT_GENERATION: TokenGeneratorPipeline,
+                PipelineTask.EMBEDDINGS_GENERATION: TokenGeneratorPipeline,
+                PipelineTask.AUDIO_GENERATION: AudioGeneratorPipeline,
+            }[serving_settings.pipeline_task]
 
-        pipeline = pipeline_class(
-            model_name=serving_settings.pipeline_config.model.model_name,
-            tokenizer=serving_settings.tokenizer,
-            lora_queue=lora_queue,
-            model_worker_interface=model_worker_interface,
-        )
+            pipeline = pipeline_class(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                model_worker=model_worker,
+            )
 
+        # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
+        # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
+        # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
 
-        await exit_stack.enter_async_context(pipeline)
+        # Also store as handler for OpenResponses API route compatibility
+        # For pixel generation, this is the same as pipeline
+        # For other tasks, we also create a separate handler instance
+        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+            app.state.handler = pipeline
+        else:
+            app.state.handler = GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            )
+
         logger.info(
             f"\n\n{'*' * 80}\n\n"
             f"{f'🚀 Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)'.center(80)}\n\n"

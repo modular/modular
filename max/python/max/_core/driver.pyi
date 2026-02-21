@@ -180,12 +180,15 @@ class Device:
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
+    def _device_context_ptr(self) -> int:
+        """Gets the device context pointer. Returns 0 for host devices."""
+
     @staticmethod
     def cpu(id: int = -1) -> CPU:
         """Creates a CPU device. The id is ignored currently."""
 
 class Accelerator(Device):
-    def __init__(self, id: int = -1, device_memory_limit: int = -1) -> None:
+    def __init__(self, id: int = -1) -> None:
         """
         Creates an accelerator device with the specified ID and memory limit.
 
@@ -207,17 +210,10 @@ class Accelerator(Device):
           device = driver.Accelerator(id=1)  # Second GPU
           # Get device id
           device_id = device.id
-          # Optionally specify memory limit
-          device = driver.Accelerator(id=0, device_memory_limit=256*MB)
-          device2 = driver.Accelerator(id=0, device_memory_limit=512*MB)
-          # ... device2 will use the memory limit of 256*MB
 
         Args:
             id (int, optional): The device ID to use. Defaults to -1, which selects
                 the first available accelerator.
-            device_memory_limit (int, optional): The maximum amount of memory
-                in bytes that can be allocated on the device. Defaults to 99%
-                of free memory.
 
         Returns:
             Accelerator: A new Accelerator device object.

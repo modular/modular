@@ -69,13 +69,11 @@ fn _compute_kv_cache_dynamic_shape_strides[
     var out_index = kv_cache_rank - 1
     var stride = 1
 
-    @parameter
-    for i in reversed(range(blocks.rank)):
+    comptime for i in reversed(range(blocks.rank)):
         var dim = blocks.dim[i]()
 
         # Skip dimensions in the drop list (kv_idx and layer_idx).
-        @parameter
-        if i not in drop_list:
+        comptime if i not in drop_list:
             kv_cache_shape[out_index] = dim
             kv_cache_strides[out_index] = stride
             out_index = out_index - 1
@@ -85,7 +83,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
     return (kv_cache_shape, kv_cache_strides)
 
 
-struct KVCacheStaticParams(Equatable, TrivialRegisterType):
+struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -107,7 +105,7 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterType):
         self.is_mla = is_mla
 
 
-trait KVCacheT(DevicePassable, TrivialRegisterType):
+trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     """Trait for different KVCache types and implementations.
 
     Represents a single (key or value) cache.
@@ -284,7 +282,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterType):
 struct ContinuousBatchingKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
-](KVCacheT, TrivialRegisterType):
+](KVCacheT, TrivialRegisterPassable):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer
     model.
 
@@ -377,7 +375,7 @@ struct ContinuousBatchingKVCache[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        __comptime_assert (
+        comptime assert (
             not self.quantization_enabled
         ), "ContinuousBatchingKVCache does not support quantization"
         debug_assert(
@@ -555,7 +553,9 @@ struct ContinuousBatchingKVCache[
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]() - 1
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            self.blocks.dim[1]()
+        )
 
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
@@ -590,7 +590,9 @@ struct ContinuousBatchingKVCache[
             "BK must be a multiple of swizzle granularity",
         ]()
         var total_blocks = self.blocks.dim[0]()
-        var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            self.blocks.dim[1]()
+        )
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
             ctx,
             self.blocks.ptr,
@@ -637,7 +639,7 @@ struct PagedKVCache[
     page_size: Int,
     scale_dtype_: DType = DType.invalid,
     quantization_granularity: Int = 1,
-](KVCacheT, TrivialRegisterType):
+](KVCacheT, TrivialRegisterPassable):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
 
@@ -779,7 +781,7 @@ struct PagedKVCache[
 
     @always_inline
     fn _stride(self) -> UInt32:
-        return self.blocks.runtime_layout.stride.value[0] // UInt32(
+        return UInt32(self.blocks.runtime_layout.stride.value[0]) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
         )
 
@@ -794,7 +796,9 @@ struct PagedKVCache[
             "KVCache tok_idx out of range",
         )
 
-        debug_assert(batch_idx < self.cache_lengths.size(), "batch_idx is oob")
+        debug_assert(
+            batch_idx < UInt32(self.cache_lengths.size()), "batch_idx is oob"
+        )
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -804,7 +808,7 @@ struct PagedKVCache[
         )
         block_idx = self.lookup_table[Int(batch_idx), lut_block_index][0]
         # alias row_stride = Int(num_heads * head_size * Self.collection_size)
-        return block_idx * self._stride() + tok_in_block_idx
+        return block_idx * self._stride() + UInt32(tok_in_block_idx)
 
     @always_inline
     fn create_tma_tile[
@@ -837,7 +841,9 @@ struct PagedKVCache[
         #
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
-        var rows = (total_blocks - 1) * self._stride() + Self.page_size
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            Self.page_size
+        )
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
@@ -871,7 +877,9 @@ struct PagedKVCache[
             "BK must be a multiple of swizzle granularity",
         ]()
         var total_blocks = self.blocks.dim[0]()
-        var rows = (total_blocks - 1) * self._stride() + Self.page_size
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            Self.page_size
+        )
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
             ctx,
             self.blocks.ptr,
@@ -964,17 +972,15 @@ struct PagedKVCache[
     ]:
         """Loads an element from the given index."""
 
-        @parameter
-        if Self.quantization_enabled:
-            __comptime_assert output_dtype != Self.dtype, (
+        comptime if Self.quantization_enabled:
+            comptime assert output_dtype != Self.dtype, (
                 "Output type should not be FP8 when KVCache quantization is"
                 " disabled"
             )
 
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             var quantized_val = self.blocks.load[width=width](idx)
             var scale = self.load_scale[width=1](
                 bs, head_idx, tok_idx, head_dim_idx
@@ -1010,10 +1016,10 @@ struct PagedKVCache[
         Self.scale_dtype, width
     ]:
         """Loads a quantization scale from the given index."""
-        __comptime_assert (
+        comptime assert (
             Self.quantization_enabled
         ), "Scales only exist for quantized KVCache"
-        __comptime_assert (
+        comptime assert (
             Self.scale_dtype != DType.invalid
         ), "Invalid scale data type"
         debug_assert(
@@ -1034,9 +1040,8 @@ struct PagedKVCache[
     ):
         """Stores the quantization scales at the given index."""
 
-        @parameter
-        if Self.quantization_enabled:
-            __comptime_assert (
+        comptime if Self.quantization_enabled:
+            comptime assert (
                 Self.scale_dtype != DType.invalid
             ), "Valid quantization scale data type needed"
 
@@ -1056,7 +1061,7 @@ struct PagedKVCache[
         Self.dtype, width
     ]:
         """Loads a quantized element from the given index."""
-        __comptime_assert Self.quantization_enabled, (
+        comptime assert Self.quantization_enabled, (
             "Output type should not be quantized when KVCache quantization is"
             " disabled"
         )
@@ -1088,7 +1093,7 @@ struct PagedKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
-        __comptime_assert (
+        comptime assert (
             tile_size <= Self.page_size and Self.page_size % tile_size == 0
         ), (
             "Invalid tile size for PagedKVCache. tile_size must be less"
@@ -1111,7 +1116,7 @@ struct PagedKVCache[
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
         """Returns a pointer to the scales block at the requested indices."""
-        __comptime_assert (
+        comptime assert (
             self.quantization_enabled
         ), "Quantization must be enabled to request scales block"
         var full_scale_block_idx = self._get_scale_idx(
@@ -1209,7 +1214,7 @@ struct ContinuousBatchingKVCacheCollection[
             LayoutTensor[Self.scale_dtype, Layout.row_major[6](), MutAnyOrigin]
         ] = None,
     ):
-        __comptime_assert blocks.rank == 6
+        comptime assert blocks.rank == 6
         self.blocks = rebind[self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -1334,7 +1339,7 @@ struct PagedKVCacheCollection[
             LayoutTensor[Self.scale_dtype, Layout.row_major[6](), MutAnyOrigin]
         ] = None,
     ):
-        __comptime_assert blocks.rank == 6
+        comptime assert blocks.rank == 6
         self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -1361,14 +1366,14 @@ struct PagedKVCacheCollection[
 
     @always_inline
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
-        __comptime_assert (
+        comptime assert (
             not Self.kv_params.is_mla
         ), "Cannot call get_value_cache for MLA cache"
         return self._get_cache[1](layer_idx)
 
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
-        __comptime_assert (
+        comptime assert (
             kv_idx >= 0 and kv_idx < 2
         ), "Invalid kv_idx for KV cache"
 
@@ -1380,8 +1385,7 @@ struct PagedKVCacheCollection[
             ]
         ] = None
 
-        @parameter
-        if Self.CacheType.quantization_enabled:
+        comptime if Self.CacheType.quantization_enabled:
             if self.scales is not None:
                 scales_block = Self.CacheType.scales_block_type(
                     self.scales.value().ptr

@@ -70,7 +70,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
         ...
 
 
@@ -143,8 +143,8 @@ fn tiled_matmul_run[
     ](
         alg,
         c,
-        a,
-        b,
+        a.get_immutable(),
+        b.get_immutable(),
         tile_n_k,
         global_tile_offset,
         global_tile_shape,
@@ -156,7 +156,7 @@ fn tiled_matmul_run[
             b.shape,
             transpose_b,
             b_packed,
-        ].get(b, tile_n_k),
+        ].get(b.get_immutable(), tile_n_k),
         elementwise_epilogue_fn,
     )
     matmul._outer_k_loop()
@@ -165,9 +165,6 @@ fn tiled_matmul_run[
 # Tiled Matmul Implementation.
 @fieldwise_init
 struct TiledMatmul[
-    a_mut: Bool,
-    b_mut: Bool,
-    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
@@ -175,10 +172,10 @@ struct TiledMatmul[
     kernel_id: InnerKernelID,
     a_type: DType,
     a_shape: DimList,
-    a_origin: Origin[mut=a_mut],
+    a_origin: ImmutOrigin,
     b_type: DType,
     b_shape: DimList,
-    b_origin: Origin[mut=b_mut],
+    b_origin: ImmutOrigin,
     c_type: DType,
     c_shape: DimList,
     c_origin: MutOrigin,
@@ -290,8 +287,7 @@ struct TiledMatmul[
                     ),
                 )
 
-        @parameter
-        if Self.kernel_id == InnerKernelID.I8MM:
+        comptime if Self.kernel_id == InnerKernelID.I8MM:
             tile[
                 row_iteration,
                 VariadicList[Int](2 * Self.config.kernel_rows, 8, 6, 4, 2, 1),
@@ -336,8 +332,7 @@ struct TiledMatmul[
 
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
-        @parameter
-        if not Self.b_packed:
+        comptime if not Self.b_packed:
             comptime secondary_tiles = VariadicList[Int](
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
@@ -426,8 +421,7 @@ fn _small_matmul[
     var N = b.dim[0]() if transpose_b else b.dim[1]()
     var K = a.dim[1]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for var m in range(M):
             for var n in range(N):
                 var acc_vector = SIMD[c.type, simd_width]()
@@ -435,8 +429,7 @@ fn _small_matmul[
 
                 @always_inline
                 fn compute_fn[width: Int](k: Int) unified {mut}:
-                    @parameter
-                    if width == 1:
+                    comptime if width == 1:
                         acc_scalar += (
                             a[m, k].cast[c.type]() * b[n, k].cast[c.type]()
                         )
@@ -450,8 +443,7 @@ fn _small_matmul[
 
                 var val = acc_vector.reduce_add() + acc_scalar
 
-                @parameter
-                if epilogue_wrapper:
+                comptime if epilogue_wrapper:
                     comptime func = epilogue_wrapper.value()
                     func[c.type, 1](Index(m, n), val)
                 else:
@@ -472,8 +464,7 @@ fn _small_matmul[
         fn last_update[
             _dtype: DType, width: Int
         ](coords: IndexList[2], val: SIMD[_dtype, width]):
-            @parameter
-            if epilogue_wrapper:
+            comptime if epilogue_wrapper:
                 comptime func = epilogue_wrapper.value()
                 func[_dtype, width](coords, val)
             else:
@@ -521,8 +512,7 @@ fn _matmul_cpu_impl[
     b: NDBuffer[_, 2, _, _],
     num_threads: Int = -1,
 ) raises:
-    @parameter
-    if (
+    comptime if (
         single_thread_blocking_override
         and not b_packed
         and a.type == b.type
@@ -557,8 +547,7 @@ fn _matmul_cpu_impl[
         # directed to the special Apple-specific implementations.
         # apple_matmul handles generic matmuls.
         # apple_gemv handles cases with M=1 (where apple_matmul is suboptimal).
-        @parameter
-        if use_apple_accelerate_lib[c.type, a.type, b.type]():
+        comptime if use_apple_accelerate_lib[c.type, a.type, b.type]():
             if m == 1:
                 apple_gemv[
                     b_packed=b_packed,
@@ -703,8 +692,7 @@ fn matmul[
             kernel_type=kernel_type,
         ]()
 
-        @parameter
-        if kernel_id == InnerKernelID.DEFAULT:
+        comptime if kernel_id == InnerKernelID.DEFAULT:
             _matmul_cpu_impl[
                 config,
                 transpose_b,
@@ -791,8 +779,7 @@ fn _submatmul_sequential_sync[
     comptime simd_size = config.simd_size
 
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
@@ -841,8 +828,7 @@ fn _submatmul_sequential_sync[
 ):
     comptime kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
-    @parameter
-    if kernel_id == InnerKernelID.DEFAULT:
+    comptime if kernel_id == InnerKernelID.DEFAULT:
         _submatmul_sequential_sync[
             config,
             transpose_b,

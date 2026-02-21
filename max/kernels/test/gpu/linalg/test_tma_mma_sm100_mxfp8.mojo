@@ -119,8 +119,8 @@ fn block_scaled_mxfp8_kernel[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert num_threads == 256
-    __comptime_assert (
+    comptime assert num_threads == 256
+    comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
@@ -163,7 +163,7 @@ fn block_scaled_mxfp8_kernel[
         alignment=128,
     ]
 
-    __comptime_assert BM == BK == 128 and BN in (
+    comptime assert BM == BK == 128 and BN in (
         128,
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
@@ -195,16 +195,16 @@ fn block_scaled_mxfp8_kernel[
     comptime a_scales_size = a_scales_smem_layout.size()
     comptime b_scales_size = b_scales_smem_layout.size()
 
-    __comptime_assert (
+    comptime assert (
         (a_size * size_of[a_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (a_scales_size * size_of[a_scales_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_scales_size * size_of[b_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
@@ -260,8 +260,10 @@ fn block_scaled_mxfp8_kernel[
 
     comptime SFA_NUM_COLS = BM // 32
     comptime SFB_NUM_COLS = BN // 32
-    var a_scales_tmem_addr_start = tmem_addr + BN
-    var b_scales_tmem_addr_start = a_scales_tmem_addr_start + SFA_NUM_COLS
+    var a_scales_tmem_addr_start = tmem_addr + UInt32(BN)
+    var b_scales_tmem_addr_start = a_scales_tmem_addr_start + UInt32(
+        SFA_NUM_COLS
+    )
 
     if thread_idx.x >= 128:
         tmem_addr += 16 << 16  # offset for lane 16
@@ -295,7 +297,7 @@ fn block_scaled_mxfp8_kernel[
 
     for k_iter in range(num_iters):
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             a_tma_op.async_copy(
                 a_smem_tile,
@@ -338,15 +340,13 @@ fn block_scaled_mxfp8_kernel[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for i in range(BM // SF_MN_GROUP_SIZE):
+            comptime for i in range(BM // SF_MN_GROUP_SIZE):
                 comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                 comptime a_scales_offset = a_scales_smem_layout(idx) * size_of[
                     a_scales_type
                 ]()
-                var a_scales_tmem_addr = a_scales_tmem_addr_start + i * (
-                    SF_MN_GROUP_SIZE // 32
+                var a_scales_tmem_addr = a_scales_tmem_addr_start + UInt32(
+                    i * (SF_MN_GROUP_SIZE // 32)
                 )
                 var a_scales_desc = MMASmemDescriptor.create[
                     8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
@@ -355,14 +355,13 @@ fn block_scaled_mxfp8_kernel[
                     cta_group=1, datapaths=32, bits=128, multicast="warpx4"
                 ](a_scales_tmem_addr, a_scales_desc)
 
-            @parameter
-            for i in range(BN // SF_MN_GROUP_SIZE):
+            comptime for i in range(BN // SF_MN_GROUP_SIZE):
                 comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                 comptime b_scales_offset = b_scales_smem_layout(idx) * size_of[
                     b_scales_type
                 ]()
-                var b_scales_tmem_addr = b_scales_tmem_addr_start + i * (
-                    SF_MN_GROUP_SIZE // 32
+                var b_scales_tmem_addr = b_scales_tmem_addr_start + UInt32(
+                    i * (SF_MN_GROUP_SIZE // 32)
                 )
                 var b_scales_desc = MMASmemDescriptor.create[
                     8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
@@ -392,11 +391,10 @@ fn block_scaled_mxfp8_kernel[
                     c_scale=0,
                 )
 
-                @parameter
-                for j in range(1, num_k_mmas):
+                comptime for j in range(1, num_k_mmas):
                     runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
-                    ].update_desc_with_sf_id[j](
+                    ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
                     comptime idx = IntTuple(0, MMA_K * j)
@@ -412,12 +410,10 @@ fn block_scaled_mxfp8_kernel[
                         c_scale=1,
                     )
             else:
-
-                @parameter
-                for j in range(num_k_mmas):
+                comptime for j in range(num_k_mmas):
                     var runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
-                    ].update_desc_with_sf_id[j](
+                    ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
                     comptime idx = IntTuple(0, MMA_K * j)
@@ -459,11 +455,8 @@ fn block_scaled_mxfp8_kernel[
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
@@ -477,11 +470,8 @@ fn block_scaled_mxfp8_kernel[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
 
                     c_gmem_frag[m_vec, n_vec] = rebind[
@@ -521,9 +511,9 @@ fn sm100_block_scaled_mxfp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
@@ -535,7 +525,7 @@ fn sm100_block_scaled_mxfp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    __comptime_assert BM == BK == 128 and BN in (
+    comptime assert BM == BK == 128 and BN in (
         128,
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
@@ -546,23 +536,23 @@ fn sm100_block_scaled_mxfp8[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type and a_scales_type == MXFP8_SF_DTYPE
     ), "Only support F8-UE8M0 scales"
-    __comptime_assert (
+    comptime assert (
         a_scales.rank == b_scales.rank == 5
     ), "a_scales and b_scales must be 5D tensors"
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[2].value()
         == b_scales_layout.shape[2].value()
         == SF_ATOM_M[0]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[3].value()
         == b_scales_layout.shape[3].value()
         == SF_ATOM_M[1]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[4].value()
         == b_scales_layout.shape[4].value()
         == SF_ATOM_K
@@ -664,7 +654,9 @@ fn sm100_block_scaled_mxfp8[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -676,7 +668,7 @@ def test_block_scaled_mxfp8[
     umma_shape: IndexList[3],
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    __comptime_assert transpose_b, "transpose_b must be true"
+    comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value
@@ -941,8 +933,8 @@ def test_block_scaled_mxfp8[
         c_ref,
         a,
         b,
-        a_scales=a_scales,
-        b_scales=b_scales,
+        a_scales=a_scales.get_immutable(),
+        b_scales=b_scales.get_immutable(),
         transpose_b=True,
         c_row_major=True,
     )

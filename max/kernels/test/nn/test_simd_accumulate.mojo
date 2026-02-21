@@ -60,8 +60,7 @@ def test_accumulate[
     for i in range(2 * length):
         var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
 
-        @parameter
-        for j in range(num_cols):
+        comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
@@ -152,8 +151,7 @@ def test_accumulate_with_offsets[
     for i in range(2 * length):
         var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
 
-        @parameter
-        for j in range(num_cols):
+        comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var a_base_stack = InlineArray[Int32, num_rows](uninitialized=True)
@@ -161,7 +159,7 @@ def test_accumulate_with_offsets[
         a_base_stack.unsafe_ptr()
     )
     a_base_offsets[0] = 0
-    a_base_offsets[1] = length
+    a_base_offsets[1] = Int32(length)
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
@@ -186,7 +184,7 @@ def test_accumulate_with_offsets[
     )
 
     a_base_offsets[0] = 0
-    a_base_offsets[1] = 2 * length
+    a_base_offsets[1] = Int32(2 * length)
     acc.accumulate(
         length,
         a.unsafe_ptr(),
@@ -212,8 +210,8 @@ def test_accumulate_with_offsets[
         SIMD[type, simd_size](7.0),
     )
 
-    a_base_offsets[0] = length
-    a_base_offsets[1] = 3 * length
+    a_base_offsets[0] = Int32(length)
+    a_base_offsets[1] = Int32(3 * length)
 
     acc.accumulate(
         length,
@@ -255,11 +253,8 @@ def test_load_store[
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]
-    @parameter
-    for i in range(num_rows):
-
-        @parameter
-        for j in range(num_cols):
+    comptime for i in range(num_rows):
+        comptime for j in range(num_cols):
             a.unsafe_ptr().store(
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),
@@ -312,10 +307,9 @@ def test_load_store[
     # TODO: replace the following with simd.mojo:insert (after resolving its issue).
     @always_inline
     fn simd_insert(mut x: SIMD[type, _], y: SIMD[type, _]):
-        __comptime_assert x.size >= y.size
+        comptime assert x.size >= y.size
 
-        @parameter
-        for i in range(y.size):
+        comptime for i in range(y.size):
             x[i] = y[i]
 
     simd_insert(tile1[0, 2], residual_vec1)

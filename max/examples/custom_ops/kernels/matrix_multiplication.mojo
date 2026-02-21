@@ -141,7 +141,9 @@ fn naive_matrix_multiplication[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(OPTIMIZED_NUM_THREADS)
+    )
 )
 fn coalescing_matrix_multiplication[
     dtype: DType,
@@ -209,7 +211,9 @@ fn coalescing_matrix_multiplication[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(OPTIMIZED_NUM_THREADS)
+    )
 )
 fn tiled_matrix_multiplication[
     dtype: DType,

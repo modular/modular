@@ -122,8 +122,7 @@ fn topk_wrapper[
                 vector_idx
             ).cast[out_idx_type]()
 
-            @parameter
-            if is_top_p:
+            comptime if is_top_p:
                 # In top-p sampling, we check if the highest probability token exceeds
                 # the probability threshold (p_threshold). If it does, we can skip sorting
                 # since we'll just sample this token. Otherwise, we need to sort to find
@@ -221,8 +220,7 @@ fn normalize(
     """
     comptime dtype = value.dtype
 
-    @parameter
-    if dtype == DType.int32:
+    comptime if dtype == DType.int32:
         return normalize(rebind[Int32](value)).cast[result.dtype]()
     elif dtype == DType.uint32:
         return normalize(rebind[UInt32](value)).cast[result.dtype]()
@@ -343,8 +341,7 @@ fn radix_sort_pairs_kernel[
             counts[radix] += 1
 
     # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
-    @parameter
-    for i in range(NUM_BUCKETS):
+    comptime for i in range(NUM_BUCKETS):
         s_counts[tid * UInt(NUM_BUCKETS) + UInt(i)] = counts[i]
     barrier()
 
@@ -353,8 +350,7 @@ fn radix_sort_pairs_kernel[
         var sum = Int32(0)
         bucket_offset = tid
 
-        @parameter
-        for t in range(BLOCK_SIZE):
+        comptime for t in range(BLOCK_SIZE):
             sum += s_counts[t * NUM_BUCKETS + Int(bucket_offset)]
         total_counts[bucket_offset] = sum
     barrier()
@@ -363,21 +359,18 @@ fn radix_sort_pairs_kernel[
     if tid == 0:
         total_offsets[0] = 0
 
-        @parameter
-        for i in range(1, NUM_BUCKETS + 1):
+        comptime for i in range(1, NUM_BUCKETS + 1):
             total_offsets[i] = total_offsets[i - 1] + total_counts[i - 1]
 
     # Compute per-thread starting offsets per radix value
-    @parameter
-    for i in range(NUM_BUCKETS):
+    comptime for i in range(NUM_BUCKETS):
         s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(i)] = s_counts[
             tid * UInt(NUM_BUCKETS) + UInt(i)
         ]
     barrier()
 
     # Perform exclusive scan over s_thread_offsets per radix value
-    @parameter
-    for radix in range(NUM_BUCKETS):
+    comptime for radix in range(NUM_BUCKETS):
         # Initialize the offset to 1, which will be used to determine the distance
         # between threads whose values will be reduced/summed.
         var offset = 1
@@ -411,8 +404,7 @@ fn radix_sort_pairs_kernel[
         barrier()
 
     # Compute total_offsets_descending[NUM_BUCKETS] if needed
-    @parameter
-    if not ascending:
+    comptime if not ascending:
         if tid < UInt(NUM_BUCKETS):
             total_offsets_descending[tid] = (
                 total_offsets[NUM_BUCKETS] - total_offsets[tid + 1]
@@ -444,8 +436,7 @@ fn radix_sort_pairs_kernel[
             # Adjust global_offset for ascending or descending order
             var global_offset: Int
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 global_offset = Int(
                     total_offsets[radix]
                     + s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(radix)]
@@ -460,8 +451,7 @@ fn radix_sort_pairs_kernel[
 
             output_keys[global_offset] = key
 
-            @parameter
-            if current_bit == 0:
+            comptime if current_bit == 0:
                 output_key_ids[global_offset] = Scalar[out_idx_type](index)
             else:
                 output_key_ids[global_offset] = input_key_ids[index]
@@ -491,10 +481,10 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._selection = 0
         self._size = size
 
-    fn __copyinit__(out self, rhs: Self):
-        self._d_buffers = rhs._d_buffers.copy()
-        self._selection = rhs._selection
-        self._size = rhs._size
+    fn __copyinit__(out self, copy: Self):
+        self._d_buffers = copy._d_buffers.copy()
+        self._selection = copy._selection
+        self._size = copy._size
 
     @always_inline
     fn current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
@@ -543,8 +533,9 @@ fn run_radix_sort_pairs_gpu[
         owning=False,
     )
 
-    @parameter
-    for current_bit in range(0, bit_width_of[dtype](), NUM_BITS_PER_PASS):
+    comptime for current_bit in range(
+        0, bit_width_of[dtype](), NUM_BITS_PER_PASS
+    ):
         comptime kernel = radix_sort_pairs_kernel[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
@@ -601,8 +592,7 @@ fn topp_minp_sampling_kernel[
     var sorted_probs = sorted_probs_ + batch_id * UInt(vocab_size)
     var sorted_ids = sorted_ids_ + batch_id * UInt(vocab_size)
 
-    @parameter
-    if is_top_p:
+    comptime if is_top_p:
         if tid == 0:
             var rng_state = Random(seed=SEED)
             var rng = rng_state.step_uniform()
@@ -611,9 +601,7 @@ fn topp_minp_sampling_kernel[
                 r -= sorted_probs[i]
 
                 if r <= 0.0 or i == vocab_size - 1:
-
-                    @parameter
-                    if DEBUG_FILE:
+                    comptime if DEBUG_FILE:
                         print("sorted_probs[i]: ", sorted_probs[i])
                         print("r: ", r)
                         print("p_threshold: ", p_threshold)
@@ -645,8 +633,7 @@ fn topp_minp_sampling_kernel[
                 if r <= 0.0 or i == vocab_size - 1:
                     out_token_ids[batch_id] = sorted_ids[i]
 
-                    @parameter
-                    if DEBUG_FILE:
+                    comptime if DEBUG_FILE:
                         print("sorted_probs[i]: ", sorted_probs[i])
                         print("r: ", r)
                         print("p_threshold: ", p_threshold)
@@ -726,11 +713,11 @@ fn _topp_minp_sampling_gpu[
     - TensorRT-LLM: https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopPKernels.cu#L199-L323
     - InternLM: https://github.com/InternLM/lmdeploy/
     """
-    __comptime_assert p_thresholds.rank == 1, "p_thresholds must be rank 1"
-    __comptime_assert (
+    comptime assert p_thresholds.rank == 1, "p_thresholds must be rank 1"
+    comptime assert (
         input_logits.rank == 2 and out_token_ids.rank == 2
     ), "Only rank 2 tensors are supported"
-    __comptime_assert _is_supported_dtype[dtype](), String(
+    comptime assert _is_supported_dtype[dtype](), String(
         "Unsupported dtype: ", dtype
     )
 
@@ -820,8 +807,7 @@ fn _topp_minp_sampling_gpu[
         input_shape,
     )
 
-    @parameter
-    if _test_sort:
+    comptime if _test_sort:
         # Copy output of sort & softmax back to original input tensor
         # for testing and debugging purposes
         ctx.enqueue_copy(
@@ -871,8 +857,8 @@ fn top_p_sampling_gpu[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    __comptime_assert top_ps.rank == 1, "top_ps must be of rank 1"
-    __comptime_assert (
+    comptime assert top_ps.rank == 1, "top_ps must be of rank 1"
+    comptime assert (
         input_logits.rank == 2 and out_token_ids.rank == 2
     ), "Only rank 2 tensors are supported"
     _topp_minp_sampling_gpu[is_top_p=True, _test_sort=_test_sort](

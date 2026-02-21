@@ -27,21 +27,14 @@ from max.graph import Graph, TensorType, ops
 class TestMOInterpreter:
     """Tests for MOInterpreter class."""
 
-    def test_init_requires_device(self) -> None:
-        """Test that interpreter requires at least one device."""
-        with pytest.raises(ValueError, match="At least one device"):
-            MOInterpreter(devices=[])
-
-    def test_init_with_device(self) -> None:
-        """Test interpreter initialization with a device."""
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
-        assert interp.devices == [device]
+    def test_init(self) -> None:
+        """Test interpreter initialization."""
+        interp = MOInterpreter()
+        assert interp is not None
 
     def test_validate_inputs_wrong_count(self) -> None:
         """Test that validate_inputs catches input count mismatch."""
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
 
         class MockGraph:
             @property
@@ -52,6 +45,43 @@ class TestMOInterpreter:
         inputs: Any = [object()]
         with pytest.raises(ValueError, match="Expected 3 inputs, got 1"):
             interp._validate_inputs(graph, inputs)
+
+
+class TestCanExecute:
+    """Tests for MOInterpreter.can_execute() pre-flight check."""
+
+    def test_can_execute_supported_graph(self) -> None:
+        """Test can_execute returns True for a graph with only supported ops."""
+        with Graph("supported", input_types=[]) as graph:
+            a = ops.constant([1.0, 2.0], dtype=DType.float32, device=CPU())
+            b = ops.constant([3.0, 4.0], dtype=DType.float32, device=CPU())
+            c = ops.add(a, b)
+            graph.output(c)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is True
+
+    def test_can_execute_returns_false_for_compilation_required_op(
+        self,
+    ) -> None:
+        """Test can_execute returns False when graph contains a
+        compilation-required op (e.g. mo.CustomOp)."""
+        interp = MOInterpreter()
+
+        # Temporarily add ConstantOp to _COMPILATION_REQUIRED_OP_NAMES to
+        # simulate a compilation-required op without needing a real custom
+        # kernel.  ConstantOp is used because it's always present in simple
+        # graphs and its name is stable.
+        orig = MOInterpreter._COMPILATION_REQUIRED_OP_NAMES
+        MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = ("ConstantOp",)
+        try:
+            with Graph("custom", input_types=[]) as graph:
+                c = ops.constant([1.0, 1.0], dtype=DType.float32, device=CPU())
+                graph.output(c)
+
+            assert interp.can_execute(graph) is False
+        finally:
+            MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = orig
 
 
 class TestOpHandlerRegistry:
@@ -66,7 +96,7 @@ class TestOpHandlerRegistry:
         op_type: Any = MockOpType
 
         @register_op_handler(op_type)
-        def test_handler(interp: Any, op: Any, inputs: Any) -> list[Any]:
+        def test_handler(op: Any, inputs: Any) -> list[Any]:
             return []
 
         assert op_type in _MO_OP_HANDLERS
@@ -84,11 +114,11 @@ class TestOpHandlerRegistry:
         op_type: Any = MockOpType
 
         @register_op_handler(op_type)
-        def handler1(interp: Any, op: Any, inputs: Any) -> list[Any]:
+        def handler1(op: Any, inputs: Any) -> list[Any]:
             return [1]
 
         @register_op_handler(op_type)
-        def handler2(interp: Any, op: Any, inputs: Any) -> list[Any]:
+        def handler2(op: Any, inputs: Any) -> list[Any]:
             return [2]
 
         assert _MO_OP_HANDLERS[op_type] is handler2
@@ -108,8 +138,7 @@ class TestGraphExecution:
             graph.output(c)
 
         # Execute through interpreter
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         # Verify output
@@ -139,8 +168,7 @@ class TestGraphExecution:
         )
         input_buffer = Buffer.from_numpy(input_np)
 
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [input_buffer])
 
         assert len(outputs) == 1
@@ -169,8 +197,7 @@ class TestGraphExecution:
             e = ops.sub(d, one)  # [8, 11, 14]
             graph.output(e)
 
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -189,8 +216,7 @@ class TestGraphExecution:
             prod_ab = ops.mul(a, b)
             graph.output(sum_ab, prod_ab)
 
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 2

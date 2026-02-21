@@ -22,14 +22,17 @@ from typing import Any, cast
 
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
-from max import driver
+from max import driver, pipelines
 from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
-from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.nn.legacy.hooks import PrintHook
 from max.nn.legacy.layer import Module
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from max.tests.integration.tools.hf_config_overrides import (
     apply_hf_config_override,
     apply_non_strict_load,
@@ -124,7 +127,7 @@ def run_debug_model(
     framework_name: str,
     pipeline_name: str,
     output_path: Path,
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
     max_batch_size: int | None = None,
     log_hf_downloads: bool = False,
     num_steps: int = 1,
@@ -305,7 +308,7 @@ def load_intermediate_tensors(
     framework: str,
     output_dir: Path = Path("/tmp/intermediate_tensors/torch"),
     device_type: str = "default",
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
 ) -> dict[str, torch.Tensor]:
     """Run a Transformers model using Torch with print hooks enabled and return intermediate tensors as a dictionary mapping tensor name to torch.Tensor.
 
@@ -324,7 +327,9 @@ def load_intermediate_tensors(
         pipeline_name=model,
         framework_name=framework,
         output_path=output_dir,
-        device_specs=DevicesOptionType.device_specs(device_type),
+        device_specs=device_specs_from_normalized_device_handle(
+            normalize_device_specs_input(device_type)
+        ),
         encoding_name=encoding_name if encoding_name else None,
     )
     tensors_map: dict[str, torch.Tensor] = {}
@@ -353,7 +358,7 @@ def get_torch_testdata(
     module_name: str,
     output_dir: Path = Path("/tmp/intermediate_tensors/torch"),
     device_type: str = "default",
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get input and output tensors for a specific module from a torch model run.
 

@@ -46,7 +46,7 @@ fn test_scaled_mxfp8_cublaslt[
     output_type: DType,
     transpose_b: Bool,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
-    __comptime_assert (
+    comptime assert (
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled FP8 matmul"
 
@@ -262,8 +262,8 @@ fn test_scaled_mxfp8_cublaslt[
         c,
         a,
         b,
-        a_scales=a_scales,
-        b_scales=b_scales,
+        a_scales=a_scales.get_immutable(),
+        b_scales=b_scales.get_immutable(),
         transpose_b=True,
         c_row_major=True,
     )

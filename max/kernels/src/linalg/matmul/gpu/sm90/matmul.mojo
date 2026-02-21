@@ -46,8 +46,7 @@ fn _is_valid_cluster_shape[
     if num_tiles_n % cluster_shape[0] != 0:
         return False
 
-    @parameter
-    for i in range(2):
+    comptime for i in range(2):
         if (
             grid_shape[i] < cluster_shape[i]
             or grid_shape[i] % cluster_shape[i] != 0
@@ -124,10 +123,9 @@ fn warp_specialize_gemm_with_multicasting[
 ) raises:
     """Unified dispatcher for all matmul kernel variants."""
 
-    @parameter
-    if splits > 0:
+    comptime if splits > 0:
         # TODO: Remove if unnecessary otherwise add support
-        __comptime_assert (
+        comptime assert (
             swapAB == False
         ), "swapAB is not supported for split-k kernel"
         # Dispatch to split-k kernel
@@ -199,16 +197,16 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime N_static = c_shape.get[1]()
     comptime K_static = a_shape.get[1]()
 
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
     ), "swapAB does not support persistent kernels yet"
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         hilbert_swizzle == False
     ), "swapAB does not support hilbert swizzle yet"
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         use_tma_store == False
     ), "swapAB does not support TMA store yet"
-    __comptime_assert (
+    comptime assert (
         transpose_b == True
     ), "H100 matmul only supports transposed B"
 
@@ -255,8 +253,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     logger.info("cluster_shape:", config.cluster_shape)
     logger.info("mma_shape:", config.mma_shape)
 
-    @parameter
-    if schedule == MatmulSchedule.NONE:
+    comptime if schedule == MatmulSchedule.NONE:
         pass
     elif schedule == MatmulSchedule.DS_SCHEDULER:
         constrained[
@@ -343,8 +340,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
     ]()
 
-    @parameter
-    if use_tma_store:
+    comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
@@ -353,8 +349,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
 
-    @parameter
-    if hilbert_swizzle:
+    comptime if hilbert_swizzle:
         var grid_x = ceildiv(N, BN)
         var grid_y = ceildiv(M, BM)
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
@@ -447,11 +442,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Note that K * size_of[a_type]() decides the 2nd row's alignment
     # and Nvidia requires access alignment by access size.
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
-    @parameter
-    if k_align == 16:
-
-        @parameter
-        if not swapAB:
+    comptime if k_align == 16:
+        comptime if not swapAB:
             var a_tma_op = create_tensor_tile[
                 Index(
                     BM // Int(CLUSTER_N), BK
@@ -466,8 +458,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 swizzle_mode=b_swizzle,
             ](ctx, b)
 
-            @parameter
-            if schedule != MatmulSchedule.NONE:
+            comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
                     a_tma_op.layout,
                     b_tma_op.layout,
@@ -509,8 +500,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    a,
-                    b,
+                    a.get_immutable(),
+                    b.get_immutable(),
                     c,
                     lut_ptr,
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
@@ -536,8 +527,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 swizzle_mode=b_swizzle,
             ](ctx, a)
 
-            @parameter
-            if schedule == MatmulSchedule.NONE:
+            comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
                     a_tma_op.layout,
                     b_tma_op.layout,
@@ -551,8 +541,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    b,
-                    a,
+                    b.get_immutable(),
+                    a.get_immutable(),
                     c,
                     lut_ptr,
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
@@ -567,7 +557,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
     else:
         # TODO add support for swapAB
-        __comptime_assert (
+        comptime assert (
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
@@ -577,8 +567,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
         ctx.enqueue_function[kernel, kernel](
             c_tma_op,
-            a,
-            b,
+            a.get_immutable(),
+            b.get_immutable(),
             c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
@@ -608,7 +598,7 @@ fn _get_c_smem_layout[
 
     comptime available_smem_size: Int = H100.shared_memory_per_multiprocessor - 1024
 
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         a_type == b_type == c_type == DType.bfloat16
     ), "swapAB is only supported for bfloat16 dtypes"
 
@@ -628,7 +618,7 @@ fn _get_c_smem_layout[
     # this leaves little shared memory for other resources. To solve this we set the max shared memory N to 128, and
     # try to minimize it as much as possible.
 
-    # We cant make Shared Memory N 1, since we would like to use stmatrix. stmatrix transports
+    # We can't make Shared Memory N 1, since we would like to use stmatrix. stmatrix transports
     # matrices of sizes of 16bytes by 16bytes, and we need to also be able to use TMA. The lowest
     # TMA swizzle is 16 bytes. So we set the minimum shared memory N to 16.
 
@@ -637,8 +627,7 @@ fn _get_c_smem_layout[
     comptime min_wg_bn = 16
     comptime MIN_WG_BN = min_wg_bn if size_of[c_type]() == 2 else BN // 4
 
-    @parameter
-    if available_smem_size > (
+    comptime if available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
     ):
 
@@ -706,23 +695,21 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime BK = config.block_tile_shape[2]
     comptime k_group_size = config.k_group_size
 
-    __comptime_assert (
-        k_group_size == 1
-    ), "Only support k_group_size == 1 for now"
+    comptime assert k_group_size == 1, "Only support k_group_size == 1 for now"
 
-    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
-    __comptime_assert (
+    comptime assert (
         a_type != DType.float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    __comptime_assert (
+    comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
     ), "Either the epilogue lambda or the compute lambda can be used"
 
-    __comptime_assert BM > 64 or (
+    comptime assert BM > 64 or (
         BM == 64 and config.num_consumer == 1
     ), "Only support 1 consumer for BM=64"
 

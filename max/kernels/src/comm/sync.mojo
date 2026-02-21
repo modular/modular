@@ -13,7 +13,7 @@
 
 from utils import StaticTuple
 from sys import size_of
-from sys.ffi import _Global, external_call
+from ffi import _Global, external_call
 
 from gpu.host import DeviceContext
 from gpu import (
@@ -108,7 +108,7 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 
 
 @fieldwise_init
-struct Signal(TrivialRegisterType):
+struct Signal:
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
 
     This struct provides counter-based synchronization between thread blocks on different GPUs.
@@ -124,7 +124,6 @@ struct Signal(TrivialRegisterType):
     # Counter may overflow, but it's fine since unsigned int overflow is
     # well-defined behavior.
     comptime flag_t = DType.uint32
-    comptime ptr_t = NoneType
 
     var self_counter: StaticTuple[
         StaticTuple[Scalar[Self.flag_t], MAX_GPUS], MAX_NUM_BLOCKS_UPPER_BOUND
@@ -149,14 +148,6 @@ struct Signal(TrivialRegisterType):
     Contains two sets of counters to handle two synchronization points safely.
     The dual counter design prevents race conditions where a peer block arrives
     at the second sync point before the current block passes the first sync point.
-    """
-
-    var pointer_exchange: InlineArray[
-        UnsafePointer[Self.ptr_t, MutAnyOrigin], 128
-    ]
-    """
-    A 1D array sized for 64-bit addresses used to exchange input/output buffer
-    addresses with peers. Sized at 128 for alignment (1024 bytes).
     """
 
 
@@ -189,15 +180,14 @@ fn _multi_gpu_barrier[
     Implementation ported from VLLM's _multi_gpu_barrier in
     https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh#L169-L198
     """
-    __comptime_assert (
+    comptime assert (
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
-    @parameter
-    if not is_start:
+    comptime if not is_start:
         barrier()
 
-    __comptime_assert not (
+    comptime assert not (
         need_fence and is_start
     ), "Start barrier should not need fence"
     comptime flag_t = Signal.flag_t
@@ -244,8 +234,7 @@ fn _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        @parameter
-        if need_fence:
+        comptime if need_fence:
             # broadcast the value to all peers that I reached the barrier
             store_release(peer_counter_ptr, val)
             while load_acquire(self_counter_ptr) != val:
@@ -255,6 +244,5 @@ fn _multi_gpu_barrier[
             while self_counter_ptr.load[volatile=True]() != val:
                 pass
 
-    @parameter
-    if is_start or need_fence:
+    comptime if is_start or need_fence:
         barrier()

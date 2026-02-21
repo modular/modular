@@ -26,14 +26,17 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
-from max.interfaces.request import Request, RequestID
+from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
 
 @dataclass(frozen=True)
-class PixelGenerationRequest(Request):
+class PixelGenerationRequest:
+    request_id: RequestID = field()
+    """A unique identifier for the request."""
+
     model_name: str = field()
     """
     The name of the model to be used for generating pixels. This should match
@@ -83,6 +86,10 @@ class PixelGenerationRequest(Request):
     seed: int | None = None
     """
     Optional random number generator seed for reproducible generation.
+    """
+    input_image: npt.NDArray[np.uint8] | None = None
+    """
+    Optional input image for image-to-image generation (numpy array).
     """
 
     def __post_init__(self) -> None:
@@ -159,8 +166,7 @@ context type that implements the PixelGenerationContext protocol.
 class PixelGenerationInputs(
     PipelineInputs, Generic[PixelGenerationContextType]
 ):
-    """
-    Input data structure for pixel generation pipelines.
+    """Input data structure for pixel generation pipelines.
 
     This class represents the input data required for pixel generation operations
     within the pipeline framework. It extends PipelineInputs and provides type-safe
@@ -176,8 +182,7 @@ class PixelGenerationInputs(
 
 
 class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
-    """
-    Represents a response from the pixel generation API.
+    """Represents a response from the pixel generation API.
 
     This class encapsulates the result of a pixel generation request, including
     the request ID, final status, and generated pixel data.
@@ -196,8 +201,7 @@ class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the pixel generation process is complete.
+        """Indicates whether the pixel generation process is complete.
 
         Returns:
             bool: True if the generation is done, False otherwise.

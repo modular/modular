@@ -90,7 +90,7 @@ fn multistage_gemm_simple[
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
+            UInt32(config.shared_mem_usage())
         ),
     )
 
@@ -286,8 +286,7 @@ fn test_dual_matmul[
     var mat_b0_tensor = mat_b0.tensor()
     var mat_b1_tensor = mat_b1.tensor()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for n in range(N):
             for k in range(K // src_simd_width):
                 mat_b01v[n, k] = rebind[SIMD[src_type, mat_b01v.element_size]](

@@ -28,7 +28,7 @@ from .shapes import get_sliding_window_out_dim
 
 # Pooling method.
 @fieldwise_init
-struct PoolMethod(TrivialRegisterType):
+struct PoolMethod(TrivialRegisterPassable):
     var value: Int
     comptime MAX = PoolMethod(0)  # Max pooling.
     comptime AVG = PoolMethod(1)  # Average pooling not counting padded regions.
@@ -134,25 +134,28 @@ fn pool_shape_impl[
     Returns:
         The output shape.
     """
-    __comptime_assert (
-        input_buf.rank == 4
-    ), "[pooling] requires (input_rank == 4)"
-    __comptime_assert filter_buf.rank == 1
-    __comptime_assert strides_buf.rank == 1
-    __comptime_assert dilations_buf.rank == 1
-    __comptime_assert paddings_buf.rank == 1
+    comptime assert input_buf.rank == 4, "[pooling] requires (input_rank == 4)"
+    comptime assert filter_buf.flat_rank == 1
+    comptime assert strides_buf.flat_rank == 1
+    comptime assert dilations_buf.flat_rank == 1
+    comptime assert paddings_buf.flat_rank == 1
 
     if (
-        filter_buf.dim(0) != input_buf.rank - 2
-        or strides_buf.dim(0) != input_buf.rank - 2
-        or dilations_buf.dim(0) != input_buf.rank - 2
+        filter_buf.dim(0)
+        != Scalar[filter_buf.linear_idx_type](input_buf.rank - 2)
+        or strides_buf.dim(0)
+        != Scalar[strides_buf.linear_idx_type](input_buf.rank - 2)
+        or dilations_buf.dim(0)
+        != Scalar[dilations_buf.linear_idx_type](input_buf.rank - 2)
     ):
         raise Error(
             "[pooling] requires (len(filter) == len(strides) == len(dilations)"
             " == input rank - 2)"
         )
 
-    if paddings_buf.dim(0) != 2 * (input_buf.rank - 2):
+    if paddings_buf.dim(0) != Scalar[paddings_buf.linear_idx_type](
+        2 * (input_buf.rank - 2)
+    ):
         raise Error(
             "[pooling] requires (len(paddings) == 2 * (input rank - 2))"
         )
@@ -164,8 +167,7 @@ fn pool_shape_impl[
     output_shape[0] = batch_size
     output_shape[input_buf.rank - 1] = input_channels
 
-    @parameter
-    for i in range(0, input_buf.rank - 2):
+    comptime for i in range(0, input_buf.rank - 2):
         var input_spatial_dim = Int(input_buf.dim(i + 1))
         var filter = Int(filter_buf[i])
         var stride = Int(strides_buf[i])
@@ -208,10 +210,10 @@ fn max_pool_cpu[
         output: Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
-    __comptime_assert filter.rank == 1
-    __comptime_assert strides.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert paddings.rank == 1
+    comptime assert filter.flat_rank == 1
+    comptime assert strides.flat_rank == 1
+    comptime assert dilations.flat_rank == 1
+    comptime assert paddings.flat_rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -337,19 +339,19 @@ fn max_pool_cpu[
     if empty_padding and not ceil_mode:
         return stencil_empty_padding(
             rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape)
+                coord_to_index_list(output.layout.shape_coord())
             ),
             rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape)
+                coord_to_index_list(input.layout.shape_coord())
             ),
         )
     else:
         return stencil_with_padding(
             rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape),
+                coord_to_index_list(output.layout.shape_coord()),
             ),
             rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape),
+                coord_to_index_list(input.layout.shape_coord()),
             ),
         )
 
@@ -384,10 +386,10 @@ fn max_pool_gpu[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
-    __comptime_assert filter.rank == 1
-    __comptime_assert strides.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert paddings.rank == 1
+    comptime assert filter.flat_rank == 1
+    comptime assert strides.flat_rank == 1
+    comptime assert dilations.flat_rank == 1
+    comptime assert paddings.flat_rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -409,7 +411,7 @@ fn max_pool_gpu[
 
     var dilation_h = Int(dilations[0])
     var dilation_w = Int(dilations[1])
-    if dilations.layout.shape.product() > 2:
+    if dilations.layout.product() > 2:
         raise Error("Dilation not supported for size > 2")
 
     comptime stencil_rank = 2
@@ -505,9 +507,11 @@ fn max_pool_gpu[
     return stencil_gpu_fn(
         ctx,
         rebind[IndexList[output.rank]](
-            coord_to_index_list(output.layout.shape)
+            coord_to_index_list(output.layout.shape_coord())
         ),
-        rebind[IndexList[output.rank]](coord_to_index_list(input.layout.shape)),
+        rebind[IndexList[output.rank]](
+            coord_to_index_list(input.layout.shape_coord())
+        ),
     )
 
 
@@ -545,10 +549,10 @@ fn avg_pool_cpu[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
-    __comptime_assert filter.rank == 1
-    __comptime_assert strides.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert paddings.rank == 1
+    comptime assert filter.flat_rank == 1
+    comptime assert strides.flat_rank == 1
+    comptime assert dilations.flat_rank == 1
+    comptime assert paddings.flat_rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -759,31 +763,29 @@ fn avg_pool_cpu[
     if empty_padding and not ceil_mode:
         return stencil_empty_padding(
             rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape)
+                coord_to_index_list(output.layout.shape_coord())
             ),
             rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape)
+                coord_to_index_list(input.layout.shape_coord())
             ),
         )
     else:
-
-        @parameter
-        if count_boundary:
+        comptime if count_boundary:
             return stencil_with_padding(
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape)
+                    coord_to_index_list(output.layout.shape_coord())
                 ),
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape)
+                    coord_to_index_list(input.layout.shape_coord())
                 ),
             )
         else:
             return stencil_with_padding_count_exclude_boundary(
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape)
+                    coord_to_index_list(output.layout.shape_coord())
                 ),
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape)
+                    coord_to_index_list(input.layout.shape_coord())
                 ),
             )
 
@@ -823,10 +825,10 @@ fn avg_pool_gpu[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
-    __comptime_assert paddings.rank == 1
-    __comptime_assert filter.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert strides.rank == 1
+    comptime assert paddings.flat_rank == 1
+    comptime assert filter.flat_rank == 1
+    comptime assert dilations.flat_rank == 1
+    comptime assert strides.flat_rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -872,7 +874,7 @@ fn avg_pool_gpu[
 
     var dilation_h = Int(dilations[0])
     var dilation_w = Int(dilations[1])
-    if dilations.layout.shape.product() > 2:
+    if dilations.layout.product() > 2:
         raise Error("Dilation not supported for size > 2")
 
     comptime stencil_rank = 2
@@ -1031,33 +1033,31 @@ fn avg_pool_gpu[
         return stencil_gpu_fn(
             ctx,
             rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape)
+                coord_to_index_list(output.layout.shape_coord())
             ),
             rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape)
+                coord_to_index_list(input.layout.shape_coord())
             ),
         )
     else:
-
-        @parameter
-        if count_boundary:
+        comptime if count_boundary:
             return stencil_gpu_fn(
                 ctx,
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape)
+                    coord_to_index_list(output.layout.shape_coord())
                 ),
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape)
+                    coord_to_index_list(input.layout.shape_coord())
                 ),
             )
         else:
             return stencil_gpu_count_exclude_boundary(
                 ctx,
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape)
+                    coord_to_index_list(output.layout.shape_coord())
                 ),
                 rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape)
+                    coord_to_index_list(input.layout.shape_coord())
                 ),
             )
 
@@ -1078,8 +1078,7 @@ fn avg_pool[
     ceil_mode: Bool = False,
     ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         avg_pool_cpu[count_boundary=count_boundary](
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
@@ -1107,8 +1106,7 @@ fn max_pool[
     ceil_mode: Bool = False,
     ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         max_pool_cpu(
             input, filter, strides, dilations, paddings, output, ceil_mode
         )

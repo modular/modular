@@ -27,7 +27,7 @@ from utils import Index, IndexList
 from builtin.device_passable import DevicePassable
 
 
-trait MHAOperand(DevicePassable, TrivialRegisterType):
+trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     comptime dtype: DType
@@ -43,7 +43,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterType):
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
 
     @always_inline
@@ -100,7 +100,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterType):
 
 struct KVCacheMHAOperand[
     cache_t: KVCacheT,
-](MHAOperand, TrivialRegisterType):
+](MHAOperand, TrivialRegisterPassable):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
@@ -168,7 +168,7 @@ struct KVCacheMHAOperand[
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # Forward to the underlying cache's implementation
-        # TODO: remove `__comptime_assert` when the `where` clause is enough
+        # TODO: remove `comptime assert` when the `where` clause is enough
         constrained[
             (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
         ]()
@@ -208,7 +208,7 @@ struct KVCacheMHAOperand[
 
 
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
-    MHAOperand, TrivialRegisterType
+    MHAOperand, TrivialRegisterPassable
 ):
     """An implementation for LayoutTensor arguments to MHA kernels."""
 
@@ -325,15 +325,15 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
 
 
 struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
-    MHAOperand, TrivialRegisterType
+    MHAOperand, TrivialRegisterPassable
 ):
     """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
-    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, Self.cache_layout, MutAnyOrigin
+        DType.uint32, Self.cache_layout, ImmutAnyOrigin
     ]
 
     comptime device_type: AnyType = Self
@@ -347,15 +347,15 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, Self.cache_layout, MutAnyOrigin
+            DType.uint32, Self.cache_layout, ImmutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             buffer.rank == 3
         ), "only support rank 3 inputs for ragged inputs."
-        __comptime_assert (
+        comptime assert (
             cache_row_offsets.rank == 1
         ), "only support rank 1 inputs for cache offsets."
         self.buffer = buffer
@@ -370,7 +370,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
@@ -392,7 +392,10 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     @always_inline
     fn max_context_length(self) -> UInt32:
-        # NotImplemented
+        constrained[
+            False,
+            "For RaggedMHAOperand, max_context_length is not implemented.",
+        ]()
         return 0
 
     @always_inline

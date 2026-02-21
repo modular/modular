@@ -23,8 +23,7 @@ For new code, use sm100_structured directly:
 
 from sys import simd_width_of, size_of
 
-from gpu import WARP_SIZE, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
+from gpu import WARP_SIZE, lane_id, thread_idx, warp_id
 from gpu.primitives.cluster import elect_one_sync
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma import st_matrix
@@ -59,7 +58,7 @@ from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
-struct WarpRole[has_scheduler: Bool = True](TrivialRegisterType):
+struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     var _role: Int32
 
     comptime Mma = Self(6) if Self.has_scheduler else Self(5)
@@ -86,23 +85,23 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterType):
     @staticmethod
     @always_inline
     fn is_main_load() -> Bool:
-        return Self.MainLoad == get_warp_id()
+        return Self.MainLoad == warp_id()
 
     @staticmethod
     @always_inline
     fn is_mma() -> Bool:
-        return Self.Mma == get_warp_id()
+        return Self.Mma == warp_id()
 
     @staticmethod
     @always_inline
     fn is_epilogue() -> Bool:
-        return Self.Epilogue >= get_warp_id()
+        return Self.Epilogue >= warp_id()
 
     @staticmethod
     @always_inline
     fn is_scheduler() -> Bool:
         constrained[Self.has_scheduler, "Scheduler warp is not enabled"]()
-        return Self.Scheduler == get_warp_id()
+        return Self.Scheduler == warp_id()
 
 
 @always_inline
@@ -198,15 +197,12 @@ fn f32_frag_to_smem[
     var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
         lane_id()
     )
-    __comptime_assert (
+    comptime assert (
         2 * dst_frag.layout.size() == vec.size
     ), "2*dst_frag.layout.size() must be equal to vec.size"
 
-    @parameter
-    for i in range(dst_frag.layout.shape[0].value()):
-
-        @parameter
-        for j in range(dst_frag.layout.shape[1].value()):
+    comptime for i in range(dst_frag.layout.shape[0].value()):
+        comptime for j in range(dst_frag.layout.shape[1].value()):
             comptime i_vec = i + j * dst_frag.layout.shape[0].value()
             val = SIMD[dst.dtype, 2](
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
@@ -226,9 +222,8 @@ fn stsm_helper[
     dst: LayoutTensor[mut=True, _, _, address_space = AddressSpace.SHARED, ...],
     warp_offset: UInt32 = 0,
 ):
-    @parameter
-    if size_of[dst.dtype]() == 4:
-        __comptime_assert not transpose_c, "transpose_c must be False"
+    comptime if size_of[dst.dtype]() == 4:
+        comptime assert not transpose_c, "transpose_c must be False"
         return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
@@ -242,7 +237,7 @@ fn stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.layout.stride[0].value()
     comptime stride1 = dst.layout.stride[1].value()
-    __comptime_assert stride1 == 1, (
+    comptime assert stride1 == 1, (
         "stride1 must be 1. Got: "
         + String(stride1)
         + " for layout: "
@@ -272,19 +267,16 @@ fn stsm_helper[
     fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
         var tmp = SIMD[v.dtype, size]()
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             tmp[i] = v[i + offset]
         return tmp
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
-    @parameter
-    for i in range(shape0 // stsmx_row_size):
+    comptime for i in range(shape0 // stsmx_row_size):
         comptime n_offset = i * stsmx_tile_offset
         var offset: UInt32
 
-        @parameter
-        if transpose_c:
+        comptime if transpose_c:
             offset = (
                 swizzle(stsm_lane_offset + UInt32(n_offset) + warp_offset)
                 - warp_offset
@@ -333,11 +325,10 @@ fn shared_memory_epilogue_transpose[
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     comptime swizzle_dim = 64
 
-    @parameter
-    if warp_dim == 2:
+    comptime if warp_dim == 2:
         comptime layout_3d = Layout.row_major(2, Int(stageN), swizzle_dim)
         var rt_layout_3d = RLayout32Bits[layout_3d]()
-        __comptime_assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
+        comptime assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
         comptime thread_layout = Layout.row_major(1, 8, 1, 4)
         comptime result = zipped_divide(
             upcast(c_smem_layout, simd_size), thread_layout
@@ -353,11 +344,8 @@ fn shared_memory_epilogue_transpose[
         )
         comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
 
-        @parameter
-        for iter_i in range(result.shape[1][3].value()):
-
-            @parameter
-            for iter_j in range(result.shape[1][1].value()):
+        comptime for iter_i in range(result.shape[1][3].value()):
+            comptime for iter_j in range(result.shape[1][1].value()):
                 comptime rest_shape = IntTuple(
                     UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
                 )
@@ -388,8 +376,7 @@ fn shared_memory_epilogue_transpose[
                 var cj = logical_crd[1].get_int()
                 var ck = logical_crd[2].get_int()
 
-                @parameter
-                if cta_group == 2 and MMA_M == 128:
+                comptime if cta_group == 2 and MMA_M == 128:
                     # logical shared memory -> global layout Layout B:
                     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
                     local_i = cj + ci * UInt32(BN)
@@ -417,7 +404,7 @@ fn shared_memory_epilogue_transpose[
                     ptr.store[width=simd_size, alignment=alignment](reg_val)
     else:
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
-        __comptime_assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
+        comptime assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
         comptime thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
         comptime thread_bound = UInt(thread_layout.cosize())
         var lane = lane_id()
@@ -437,11 +424,8 @@ fn shared_memory_epilogue_transpose[
             comptime layout_2d = Layout.row_major(Int(stageN), swizzle_dim)
             var rt_layout_2d = RLayout32Bits[layout_2d]()
 
-            @parameter
-            for iter_i in range(result.shape[1][2].value()):
-
-                @parameter
-                for iter_j in range(result.shape[1][0].value()):
+            comptime for iter_i in range(result.shape[1][2].value()):
+                comptime for iter_j in range(result.shape[1][0].value()):
                     comptime rest_shape = IntTuple(
                         iter_j,
                         UNKNOWN_VALUE,
@@ -523,7 +507,7 @@ fn shared_memory_epilogue[
 
     var staged_c_col = c_col + stage * stageN
 
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
     var shared_memory_row = warp_id * 32
 
     var shared_memory_row_upper_half = shared_memory_row
@@ -555,8 +539,7 @@ fn shared_memory_epilogue[
     shared_memory_row_lower_half += local_row
     shared_memory_row_upper_half += local_row
 
-    @parameter
-    for i in range(fragment_size):
+    comptime for i in range(fragment_size):
         comptime alignment = align_of[SIMD[c_type, Int(simd_size)]]()
 
         # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
@@ -580,8 +563,7 @@ fn shared_memory_epilogue[
         # index, in gmem. However the data will be stored in tensor memory differently depending on
         # MMA_M size, we take that into account here.
 
-        @parameter
-        if MMA_M != 256:
+        comptime if MMA_M != 256:
             comptime blocked_m_128_layout = blocked_product(
                 Layout.row_major(Int(data_paths * 2), Int(stageN)),
                 Layout.col_major(2, 2),
@@ -712,11 +694,8 @@ fn _compute_register_lambda_fn[
     # In normal case, simd_top and simd_bottom are elements on the M dimension
     # when transpose_c is true, they are on the N dimension. We change the index order
     # when we do the transpose and pass the SIMD sector one-by-one to the lambda function.
-    @parameter
-    for i in range(simd_top.size):
-
-        @parameter
-        if not transpose_c:
+    comptime for i in range(simd_top.size):
+        comptime if not transpose_c:
             simd_top[i] = compute_lambda_fn(
                 IndexList[2](
                     Int(top_frag_upper_coord[0]),
@@ -779,13 +758,13 @@ fn register_epilogue[
     c_col: UInt32,
     N: UInt32,
 ):
-    __comptime_assert (
+    comptime assert (
         bits == 256 and data_paths == 16
     ), "Only 16x256b tensor memory load is supported"
 
     comptime load_width = UInt(2)
 
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     # get global memory offset based on tile coordinates
 
@@ -793,8 +772,7 @@ fn register_epilogue[
     var staged_c_col = c_col + UInt32(stage * stageN)
     var staged_c_row = c_row
 
-    @parameter
-    if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
+    comptime if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
         # based on layout A/D (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a)
         staged_c_row += UInt32(warp_id * 32)
     elif MMA_M == 64 and cta_group == 1:
@@ -828,8 +806,7 @@ fn register_epilogue[
         top_frag_lower_coord_left[0] + 8, top_frag_lower_coord_left[1]
     )
 
-    @parameter
-    for i in range(repeats):
+    comptime for i in range(repeats):
         # each tensor memory load (16x256b) may be repeated based on our desired size.
         # if thats the case our fragment will be repeated as well. So process it in chunks i.e
         # one 16x256b at a time.
@@ -856,8 +833,7 @@ fn register_epilogue[
             staged_c_col,
         )
 
-        @parameter
-        if is_lower_frag_required:
+        comptime if is_lower_frag_required:
             helper(
                 top_frag_lower_coord_left,
                 bottom_frag_lower_coord_left,
@@ -871,8 +847,7 @@ fn register_epilogue[
 fn accum_arrive[
     cta_group: Int
 ](mma_output_pipeline: ProducerConsumerPipeline, mma_output_stage: UInt32):
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(mma_output_stage))
     else:
         umma_arrive_leader_cta(

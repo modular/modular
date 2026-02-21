@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable
 struct __ParameterClosureCaptureList[
     fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable):
+](ImplicitlyCopyable, RegisterPassable):
     var value: __mlir_type.`!kgen.pointer<none>`
 
     # Parameter closure invariant requires this function be marked 'capturing'.
@@ -27,9 +26,9 @@ struct __ParameterClosureCaptureList[
         ]()
 
     @always_inline
-    fn __copyinit__(out self, existing: Self):
+    fn __copyinit__(out self, copy: Self):
         self.value = __mlir_op.`kgen.capture_list.copy`[callee = Self.fn_ref](
-            existing.value
+            copy.value
         )
 
     @always_inline

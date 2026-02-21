@@ -17,9 +17,7 @@ from .param_env import env_get_string, is_defined
 
 @always_inline("nodebug")
 fn _build_type() -> StaticString:
-    __comptime_assert is_defined[
-        "BUILD_TYPE"
-    ](), "the build type must be defined"
+    comptime assert is_defined["BUILD_TYPE"](), "the build type must be defined"
     return env_get_string["BUILD_TYPE"]()
 
 
@@ -32,8 +30,7 @@ fn is_debug_build() -> Bool:
         Bool: True if the build is in debug mode and False otherwise.
     """
 
-    @parameter
-    if is_defined["DEBUG"]():
+    comptime if is_defined["DEBUG"]():
         return True
     elif is_defined["BUILD_TYPE"]():
         return _build_type() == "debug"
@@ -50,8 +47,7 @@ fn is_release_build() -> Bool:
         Bool: True if the build is in release mode and False otherwise.
     """
 
-    @parameter
-    if is_defined["DEBUG"]():
+    comptime if is_defined["DEBUG"]():
         return False
     elif is_defined["BUILD_TYPE"]():
         comptime build_type = _build_type()

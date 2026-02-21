@@ -90,7 +90,7 @@ fn gemm_naive_elementwise[
 
     for i in range(m):
         for j in range(n):
-            c[i, j] += val
+            c[i, j] += Scalar[c.dtype](val)
 
 
 def test_matmul[
@@ -185,8 +185,7 @@ def test_matmul[
 
     bench_fn_matmul()
 
-    @parameter
-    if do_benchmarking:
+    comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
         benchmark.keep(c[0, 0])
         print(
@@ -195,11 +194,10 @@ def test_matmul[
             n,
             k,
             "): ",
-            1e-9 * ((2 * m * k * n) / matmul_perf.mean()),
+            1e-9 * (Float64((2 * m * k * n)) / matmul_perf.mean()),
         )
 
-    @parameter
-    if epilogue_fn:
+    comptime if epilogue_fn:
         gemm_naive_elementwise[transpose_b](
             a, b, golden, m, n, k, some_constant
         )
@@ -302,11 +300,11 @@ def test_matmul[
 
     for i in range(m):
         for p in range(k):
-            a[IndexList[2]((i, p))] = Scalar[a_type](0.001) * i
+            a[IndexList[2]((i, p))] = Scalar[a_type](0.001) * Scalar[a_type](i)
 
     for p in range(n if transpose_b else k):
         for j in range(k if transpose_b else n):
-            b[IndexList[2]((p, j))] = Scalar[b_type](0.002) * p
+            b[IndexList[2]((p, j))] = Scalar[b_type](0.002) * Scalar[b_type](p)
             if b_packed and not transpose_b:
                 bp[IndexList[2]((j, p))] = b[IndexList[2]((p, j))]
             else:
@@ -324,8 +322,7 @@ def test_matmul[
     ](coords: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
 
-    @parameter
-    if lambdas_have_fusion:
+    comptime if lambdas_have_fusion:
         errors = test_matmul[
             a_type,
             a_shape,
@@ -480,7 +477,7 @@ fn bmm_naive(
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c[batch, i, j] += val
+                c[batch, i, j] += Scalar[c.dtype](val)
 
 
 def test_batched_matmul[
@@ -502,12 +499,12 @@ def test_batched_matmul[
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[batch, i, j] = (i + j) * Scalar[a.type](0.001)
+                a[batch, i, j] = Scalar[a.dtype](i + j) * Scalar[a.type](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[batch, i, j] = (i + k) * Scalar[b.type](0.001)
+                b[batch, i, j] = Scalar[b.dtype](i + k) * Scalar[b.type](0.001)
 
     for batch in range(batches):
         for i in range(m):
@@ -534,8 +531,7 @@ def test_batched_matmul[
     @__copy_capture(c, a, b)
     @parameter
     fn bench_fn_batched_matmul() raises:
-        @parameter
-        if has_lambda:
+        comptime if has_lambda:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=False,
@@ -549,8 +545,7 @@ def test_batched_matmul[
 
     bench_fn_batched_matmul()
 
-    @parameter
-    if do_benchmarking:
+    comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
         benchmark.keep(c[0, 0, 0])
         print(
@@ -560,11 +555,11 @@ def test_batched_matmul[
             n,
             k,
             "): ",
-            1e-9 * ((2 * batches * m * k * n) / batched_matmul_perf.mean()),
+            1e-9
+            * (Float64((2 * batches * m * k * n)) / batched_matmul_perf.mean()),
         )
 
-    @parameter
-    if has_lambda:
+    comptime if has_lambda:
         bmm_naive(golden, a, b, batches, m, n, k, some_constant)
     else:
         bmm_naive(golden, a, b, batches, m, n, k)

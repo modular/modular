@@ -20,15 +20,19 @@ import tempfile
 # Standard library
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 # 3rd-party
 import click
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
-from max import driver
+from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -81,6 +85,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--encoding",
     "encoding_name",
+    type=click.Choice(get_args(pipelines.SupportedEncoding)),
     required=False,
     help="Quantization encoding to run pipeline with.",
 )
@@ -139,7 +144,7 @@ def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str | None,
+    encoding_name: pipelines.SupportedEncoding | None,
     output_path: str | None,
     reference_path: Path | None,
     print_output: bool,
@@ -177,7 +182,9 @@ def main(
         )
     try:
         generate_llm_logits(
-            device_specs=DevicesOptionType.device_specs(device_type),
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
+            ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,
@@ -200,7 +207,7 @@ def generate_llm_logits(
     pipeline_name: str,
     output_path: Path,
     print_output: bool,
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
     max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
@@ -210,7 +217,7 @@ def generate_llm_logits(
     """Output logits to a file for a model based on a fixed set of prompts.
 
     The resulting logit golden files for two different frameworks can be used
-    with //max/tests/integration/pipelines/python/llama3/verify to check their
+    with //max/tests/integration/architectures/llama3/verify to check their
     similarity.
 
     """
@@ -230,7 +237,7 @@ def generate_llm_logits(
         num_steps = 1
     else:
         inputs = pipeline_oracle.inputs
-        num_steps = NUM_STEPS
+        num_steps = getattr(pipeline_oracle, "num_steps", NUM_STEPS)
 
     evaluation_batch_size: int | list[int]
     if max_batch_size is None:

@@ -15,7 +15,7 @@
 from math import iota
 
 from random import random_float64
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
@@ -41,9 +41,7 @@ fn top_p_sampling[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    __comptime_assert (
-        input_logits.rank == 2
-    ), "Only rank 2 tensors are supported"
+    comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
     _topp_minp_sampling[is_top_p=True, _test_sort=_test_sort](
         top_ps, input_logits, out_token_ids, temperature
     )
@@ -103,14 +101,14 @@ fn _topp_minp_sampling[
         out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
-    __comptime_assert (
-        input_logits.rank == 2
+    comptime assert (
+        input_logits.flat_rank == 2
     ), "Only rank 2 tensors are supported"
-    __comptime_assert (
-        out_token_ids.rank == 2
+    comptime assert (
+        out_token_ids.flat_rank == 2
     ), "Only rank 2 tensors are supported"
-    __comptime_assert p_thresholds.rank == 1
-    var input_shape = coord_to_index_list(input_logits.layout.shape)
+    comptime assert p_thresholds.flat_rank == 1
+    var input_shape = coord_to_index_list(input_logits.layout.shape_coord())
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
@@ -126,8 +124,8 @@ fn _topp_minp_sampling[
         row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
 
-    __comptime_assert sorted_probs.element_size == out_token_ids.element_size
-    __comptime_assert out_token_ids.element_size == 1
+    comptime assert sorted_probs.element_size == out_token_ids.element_size
+    comptime assert out_token_ids.element_size == 1
 
     # Initialize sorted_ids with iota values
     for batch_id in range(batch_size):
@@ -150,9 +148,8 @@ fn _topp_minp_sampling[
 
     var shape = IndexList[input_logits.rank]()
 
-    @parameter
-    for i in range(input_logits.rank):
-        shape[i] = input_logits.layout.shape[i].value()
+    comptime for i in range(input_logits.rank):
+        shape[i] = input_logits.layout.shape[i]().value()
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
@@ -163,8 +160,7 @@ fn _topp_minp_sampling[
     sort_buf_descending(sorted_probs, sorted_ids, vocab_size)
 
     # Copy sorted probs back to input_logits if testing
-    @parameter
-    if _test_sort:
+    comptime if _test_sort:
         for i in range(batch_size * vocab_size):
             input_logits.ptr[i] = sorted_probs.ptr[i]
 
@@ -172,20 +168,14 @@ fn _topp_minp_sampling[
     for batch in range(batch_size):
         var p_threshold = p_thresholds[batch]
 
-        @parameter
-        if is_top_p:
+        comptime if is_top_p:
             # Sample using top-p (nucleus) sampling
             var r = p_threshold * random_float64().cast[dtype]()
             for i in range(vocab_size):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
                     sid = sorted_ids[batch, i]
-
-                    @parameter
-                    if out_token_ids.rank == 1:
-                        out_token_ids[batch] = sid
-                    else:
-                        out_token_ids[batch, 0] = sid
+                    out_token_ids[batch, 0] = sid
                     break
         else:
             # Sample using min-p sampling
@@ -209,12 +199,7 @@ fn _topp_minp_sampling[
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
                     sid = sorted_ids[batch, i]
-
-                    @parameter
-                    if out_token_ids.rank == 1:
-                        out_token_ids[batch] = sid
-                    else:
-                        out_token_ids[batch] = sid
+                    out_token_ids[batch, 0] = sid
                     break
 
     sorted_ids_ptr.free()
@@ -231,7 +216,7 @@ fn sort_buf_descending[
 ):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    __comptime_assert buf_keys.rank == 2, "rank must be 2"
+    comptime assert buf_keys.rank == 2, "rank must be 2"
     var batch_size = buf_keys.numel() // vocab_size
 
     for batch_id in range(batch_size):

@@ -42,7 +42,7 @@ from gpu import (
     barrier,
     block_idx,
     thread_idx,
-    warp_id as get_warp_id,
+    warp_id,
 )
 from gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor
@@ -127,7 +127,7 @@ fn determine_thread_role[
     producer_b_warps: Int,
 ]() -> Tuple[ThreadRole, Int]:
     """Returns (role, consumer_warp_id within role group)."""
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
     comptime producer_thread_count = (
         producer_a_warps + producer_b_warps
     ) * WARP_SIZE
@@ -293,14 +293,12 @@ fn run_producer[
     with ring_buffer.producer[warps_processed_per_producer]() as producer_view:
         var scatter_gather = ScatterGatherAmd[thread_layout](matrix)
 
-        @parameter
-        for producer_iteration in range(warps_processed_per_producer):
+        comptime for producer_iteration in range(warps_processed_per_producer):
             var warp_tile_idx = (
                 Int(warp_id) + producer_iteration * producer_warps
             )
 
-            @parameter
-            for tile_num in range(tile_count):
+            comptime for tile_num in range(tile_count):
                 comptime stage = tile_num % pipeline_stages
 
                 var gmem_tile = matrix.tile[block_rows, block_cols](
@@ -402,7 +400,7 @@ fn warp_specialized_matmul_kernel[
     var role_info = determine_thread_role[a_producer_warps, b_producer_warps]()
     var role = role_info[0]
     var role_group = role_info[1]
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     comptime swizzle = Swizzle(3, 0, 1)
 
@@ -546,16 +544,16 @@ fn warp_specialized_matmul_kernel[
             warps_computed_per_consumer
         ]() as consumer_view_b:
             # Process each tile completely before moving to the next
-            @parameter
-            for consumer_iteration in range(warps_computed_per_consumer):
+            comptime for consumer_iteration in range(
+                warps_computed_per_consumer
+            ):
                 var m_warp_idx, n_warp_idx = compute_indices(consumer_iteration)
 
                 # Reset accumulator for this new M,N position
                 tile_operator.reset_accumulator()
 
                 # Accumulate across all K tiles for this M, N position
-                @parameter
-                for tile_num in range(tile_count):
+                comptime for tile_num in range(tile_count):
                     comptime stage = tile_num % pipeline_stages
 
                     # Get tiles using consumer view context
@@ -567,15 +565,13 @@ fn warp_specialized_matmul_kernel[
                         comptime num_k_tiles = tile_operator.total_k_tiles
 
                         # Load all K tiles
-                        @parameter
-                        for k_idx in range(num_k_tiles):
+                        comptime for k_idx in range(num_k_tiles):
                             tile_operator.load_tile_fragment[k_idx](
                                 smem_tile_a[0], smem_tile_b[0]
                             )
 
                         # Perform MMA computation
-                        @parameter
-                        for k_idx in range(num_k_tiles):
+                        comptime for k_idx in range(num_k_tiles):
                             tile_operator.mma_compute[k_idx]()
 
                 # Write this tile's result to global memory

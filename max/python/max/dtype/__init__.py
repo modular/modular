@@ -13,3 +13,4 @@
 
 from . import dtype_extension
 from .dtype import DType
+from .dtype_extension import finfo

@@ -83,15 +83,14 @@ fn _horner_evaluate[
         The polynomial specified by the coefficients evaluated at value x.
     """
     comptime num_coefficients = len(coefficients)
-    __comptime_assert num_coefficients > 0, (
+    comptime assert num_coefficients > 0, (
         "the number of coefficients for the polynomial evaluation should be"
         " a positive number"
     )
 
     comptime c_last = coefficients[num_coefficients - 1]
 
-    @parameter
-    if num_coefficients == 1:
+    comptime if num_coefficients == 1:
         # The degenerate case is when the number of coefficients is 1. In those
         # cases we need to return c0.
         return c_last
@@ -100,8 +99,7 @@ fn _horner_evaluate[
 
     var result = x.fma(c_last, c_second_from_last)
 
-    @parameter
-    for i in reversed(range(num_coefficients - 2)):
+    comptime for i in reversed(range(num_coefficients - 2)):
         comptime c = coefficients[i]
         result = result.fma(x, c)
 

@@ -14,12 +14,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -37,9 +34,9 @@ gemma3_arch = SupportedArchitecture(
         # We have a different architecture for >=4B models. See gemma3multimodal
         # for more information.
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16": ["paged"],
     },
     pipeline_model=Gemma3Model,
     task=PipelineTask.TEXT_GENERATION,
@@ -47,7 +44,7 @@ gemma3_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

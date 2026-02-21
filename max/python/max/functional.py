@@ -33,12 +33,12 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypeAlias, TypeVar, overload
 
 from max import _realization_context as rc
 from max import driver, tensor
+from max._mlir_context import MLIRThreadPoolExecutor
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -98,7 +98,7 @@ def _run(coro: Coroutine[Any, Any, Result]) -> Result:
 
     # Run self.realize in another thread
     loop = asyncio.new_event_loop()
-    with ThreadPoolExecutor() as pool:
+    with MLIRThreadPoolExecutor() as pool:
         fut = pool.submit(loop.run_until_complete, coro)
     return fut.result()
 
@@ -193,9 +193,10 @@ def in_graph_context() -> bool:
 
 
 def functional(op: Op[..., Any]) -> Op[..., Any]:
-    """Decorator that converts a graph operation to support multiple tensor
-    types."""
+    """Converts a graph operation to support multiple tensor types.
 
+    Returns a wrapped op that can be called with various tensor types.
+    """
     op = _return_tensors(op)
 
     @functools.wraps(op)
@@ -708,6 +709,26 @@ permute = functional(ops.permute)
 #: Raises tensor elements to a power.
 #: See :func:`max.graph.ops.pow` for details.
 pow = functional(ops.pow)
+
+
+@functional
+def prod(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Computes the product along specified axes.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to compute the product. If None,
+            computes the product across all elements (flattened).
+
+    Returns:
+        A tensor containing the product values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.prod(x, axis=axis)
+
+
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
 arange = functional(ops.range)

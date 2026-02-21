@@ -148,9 +148,7 @@ fn gemv_tma_kernel[
     )
 
     if thread_idx.x == 0:
-
-        @parameter
-        for i in range(NUM_PIPELINE_STAGES):
+        comptime for i in range(NUM_PIPELINE_STAGES):
             tma_mbar[i].init()
 
     barrier()
@@ -201,16 +199,19 @@ fn gemv_tma_kernel[
         tma_mbar[stage].wait(phase)
 
         # Process current buffer.
-        var current_a_tile = a_smem.next_unsafe(Int(stage))[]
-        var current_b_tile = b_smem.next_unsafe(Int(stage))[]
+        var current_a_tile = a_smem.next_unsafe(
+            a_smem.linear_uint_type(Int(stage))
+        )[]
+        var current_b_tile = b_smem.next_unsafe(
+            b_smem.linear_uint_type(Int(stage))
+        )[]
 
         for k_idx in range(0, current_block_size, WARP_SIZE):
             var col_idx = k_idx + Int(lane_id())
             if col_idx < Int(current_block_size):
                 var b_val = current_b_tile[col_idx]
 
-                @parameter
-                for i in range(ROWS_PER_WARP):
+                comptime for i in range(ROWS_PER_WARP):
                     var row_idx = warp_row_offset + i
                     if global_row_idx + i < M:
                         var a_val = current_a_tile[row_idx, col_idx]
@@ -220,8 +221,7 @@ fn gemv_tma_kernel[
 
         consumer_phase.step()
 
-    @parameter
-    for i in range(ROWS_PER_WARP):
+    comptime for i in range(ROWS_PER_WARP):
         var global_row = global_row_idx + i
         if global_row < M:
             var final_dot_product = warp.sum(dot_products[i])
@@ -259,9 +259,9 @@ def gemv_tma[
     var b = from_ndbuffer_row_major(b_device_nd)
     var c = from_ndbuffer_row_major(c_device_nd)
 
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 1
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 1
 
     var tma_desc_a = create_tma_descriptor[dtype, 2](
         a_device,
@@ -309,7 +309,9 @@ def gemv_tma[
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -424,7 +426,7 @@ def test_gemv_tma[
             num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         # Round TFLOPS to two decimal places for cleaner output.
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 3)

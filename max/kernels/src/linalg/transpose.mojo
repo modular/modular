@@ -42,8 +42,8 @@ fn _transpose_inplace_4x4[
     cols: Int,
     dtype: DType,
 ](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
-    __comptime_assert rows == 4
-    __comptime_assert cols == 4
+    comptime assert rows == 4
+    comptime assert cols == 4
     var buf = rebind[
         NDBuffer[
             dtype,
@@ -80,8 +80,8 @@ fn _transpose_inplace_4x4[
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
 
-    __comptime_assert rows == 4
-    __comptime_assert cols == 4
+    comptime assert rows == 4
+    comptime assert cols == 4
     var buf = bufloat0.reshape[Layout.row_major(4, 4)]()
 
     var idx0 = buf.runtime_layout(
@@ -130,8 +130,8 @@ fn _transpose_inplace_8x8[
     cols: Int,
     dtype: DType,
 ](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
-    __comptime_assert rows == 8
-    __comptime_assert cols == 8
+    comptime assert rows == 8
+    comptime assert cols == 8
     var buf = rebind[
         NDBuffer[
             dtype,
@@ -228,8 +228,8 @@ fn _transpose_inplace_8x8[
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
-    __comptime_assert rows == 8
-    __comptime_assert cols == 8
+    comptime assert rows == 8
+    comptime assert cols == 8
 
     var buf = bufloat0.reshape[Layout.row_major(8, 8)]()
 
@@ -360,8 +360,8 @@ fn _transpose_inplace_16x16[
     cols: Int,
     dtype: DType,
 ](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
-    __comptime_assert rows == 16
-    __comptime_assert cols == 16
+    comptime assert rows == 16
+    comptime assert cols == 16
     var buf = rebind[
         NDBuffer[
             dtype,
@@ -543,8 +543,8 @@ fn _transpose_inplace_16x16[
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
-    __comptime_assert rows == 16
-    __comptime_assert cols == 16
+    comptime assert rows == 16
+    comptime assert cols == 16
 
     var buf = bufloat0.reshape[Layout.row_major(16, 16)]()
 
@@ -826,10 +826,9 @@ fn transpose_inplace[
     dtype: DType,
 ](buf: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
     # Reject sizes covered by specialized implementations
-    __comptime_assert rows == cols
+    comptime assert rows == cols
 
-    @parameter
-    if rows == 4:
+    comptime if rows == 4:
         _transpose_inplace_4x4[rows, cols, dtype](buf)
     elif rows == 8:
         _transpose_inplace_8x8[rows, cols, dtype](buf)
@@ -845,13 +844,12 @@ fn transpose_inplace[
     dtype: DType,
 ](buf: LayoutTensor[mut=True, dtype, ...]):
     # Reject sizes covered by specialized implementations
-    __comptime_assert buf.rank == 2
-    __comptime_assert rows == cols
-    __comptime_assert rows == Int(buf.layout.shape[0])
-    __comptime_assert cols == Int(buf.layout.shape[1])
+    comptime assert buf.rank == 2
+    comptime assert rows == cols
+    comptime assert rows == Int(buf.layout.shape[0])
+    comptime assert cols == Int(buf.layout.shape[1])
 
-    @parameter
-    if rows == 4:
+    comptime if rows == 4:
         _transpose_inplace_4x4(buf)
     elif rows == 8:
         _transpose_inplace_8x8(buf)
@@ -873,8 +871,7 @@ fn _permute_data[
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
 
-    @parameter
-    for idx in range(size):
+    comptime for idx in range(size):
         var perm_axis = perms.load(idx)[0]
         var perm_data = input.load(perm_axis)
         output[idx] = perm_data
@@ -911,11 +908,10 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    __comptime_assert rank > 0
+    comptime assert rank > 0
     strides[rank - 1] = 1
 
-    @parameter
-    for idx in range(rank - 1):
+    comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
@@ -934,12 +930,13 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    __comptime_assert buf.rank > 0
-    __comptime_assert strides.rank == 1 and strides.static_shape[0] == buf.rank
+    comptime assert buf.rank > 0
+    comptime assert strides.rank == 1 and strides.static_shape[0] == buf.rank
+    # Provide evidence for flat indexing constraint
+    comptime assert strides.flat_rank == 1
     strides[buf.rank - 1] = 1
 
-    @parameter
-    for idx in range(buf.rank - 1):
+    comptime for idx in range(buf.rank - 1):
         comptime axis = buf.rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
@@ -1009,8 +1006,7 @@ fn _simplify_transpose_perms_impl[
     mut simplified_shape: IndexList[tuple_size],
     mut simplified_perms: IndexList[tuple_size],
 ):
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
 
     else:
@@ -1090,21 +1086,16 @@ fn _process_tile[
     var input_vals = StaticTuple[SIMD[dtype, tile_size_m], tile_size_n]()
     var output_vals = StaticTuple[SIMD[dtype, tile_size_n], tile_size_m]()
 
-    @parameter
-    for i in range(tile_size_n):
+    comptime for i in range(tile_size_n):
         input_vals[i] = in_ptr.load[width=tile_size_m](
             input_tile_offset + M * i
         )
 
-    @parameter
-    for m in range(tile_size_m):
-
-        @parameter
-        for n in range(tile_size_n):
+    comptime for m in range(tile_size_m):
+        comptime for n in range(tile_size_n):
             output_vals[m][n] = input_vals[n][m]
 
-    @parameter
-    for i in range(tile_size_m):
+    comptime for i in range(tile_size_m):
         out_ptr.store(output_tile_offset + N * i, output_vals[i])
 
 
@@ -1120,8 +1111,7 @@ fn _transpose_2d_serial_tiled[
 ):
     comptime simd_width = simd_width_of[dtype]()
 
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
     # The input tile is MxN, the output tile is NxM.
     # We want to do:
@@ -1182,8 +1172,7 @@ fn _transpose_2d_parallel_tiled[
     simplified_rank: Int,
     offset: Int,
 ):
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
 
     comptime simd_width = simd_width_of[dtype]()
@@ -1249,8 +1238,7 @@ fn transpose_2d[
     simplified_rank: Int,
     offset: Int,
 ):
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
 
     comptime simd_width = simd_width_of[dtype]()
@@ -1356,8 +1344,7 @@ fn transpose_4d_swap_middle[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
-    @parameter
-    if rank < 4:
+    comptime if rank < 4:
         return
     # The input tile is LxMxNxK, the output tile is LxNxMxK.
     # We want to do:
@@ -1383,8 +1370,7 @@ fn transpose_3d_swap_outer[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
-    @parameter
-    if rank < 3:
+    comptime if rank < 3:
         return
     # The input tile is MxNxK, the output tile is NxMxK.
     # We want to do:
@@ -1408,8 +1394,7 @@ fn transpose_3d_swap_inner[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
-    @parameter
-    if rank < 3:
+    comptime if rank < 3:
         return
     # simplified perms must be 0, 2, 1
     var offset = 0

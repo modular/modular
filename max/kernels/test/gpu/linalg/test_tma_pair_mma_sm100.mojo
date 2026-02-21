@@ -73,7 +73,7 @@ fn tma_umma_kernel_pair_cta[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert a_type == b_type and a_type in (
+    comptime assert a_type == b_type and a_type in (
         DType.float8_e4m3fn,
         DType.bfloat16,
     ), "a_type and b_type must be the same and either float8_e4m3fn or bfloat16"
@@ -156,7 +156,7 @@ fn tma_umma_kernel_pair_cta[
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
@@ -164,7 +164,9 @@ fn tma_umma_kernel_pair_cta[
 
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
-        mma_mbar[0].init(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
+        mma_mbar[0].init(
+            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+        )
 
     cluster_sync()
 
@@ -219,13 +221,11 @@ fn tma_umma_kernel_pair_cta[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+    comptime for i in range(CLUSTER_N):
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+    comptime for i in range(CLUSTER_M // cta_group):
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -240,7 +240,7 @@ fn tma_umma_kernel_pair_cta[
     for i in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
-                tma_mbar[0].expect_bytes(expected_bytes)
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
                 a_tma_rows
@@ -284,8 +284,7 @@ fn tma_umma_kernel_pair_cta[
                             adesc, bdesc, tmem_addr, idesc
                         )
 
-                    @parameter
-                    for j in range(1, BK // mma_shape[2]):
+                    comptime for j in range(1, BK // mma_shape[2]):
                         adesc += mma_shape[2] * size_of[a_type]()
                         bdesc += b_k_stride
                         if elect_one_thread:
@@ -293,9 +292,7 @@ fn tma_umma_kernel_pair_cta[
                                 adesc, bdesc, tmem_addr, idesc
                             )
                 else:
-
-                    @parameter
-                    for j in range(BK // mma_shape[2]):
+                    comptime for j in range(BK // mma_shape[2]):
                         if elect_one_thread:
                             mma[cta_group, c_scale=1](
                                 adesc, bdesc, tmem_addr, idesc
@@ -319,22 +316,20 @@ fn tma_umma_kernel_pair_cta[
     tcgen05_load_wait()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
     var c_gmem_block = c.tile[MMA_M, MMA_N](
         Int(peer_cta_coord[1]), Int(peer_cta_coord[2])
     )
     var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
 
-    @parameter
-    if MMA_M == 128:
+    comptime if MMA_M == 128:
         var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
             Int(warp_id() % 2), Int(warp_id() // 2)
         ).vectorize[1, 2]()
 
-        @parameter
-        for i in range(c_frag_size // 2):
+        comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
                 SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
                     c_type
@@ -345,8 +340,7 @@ fn tma_umma_kernel_pair_cta[
             Int(warp_id()), 0
         ).vectorize[1, 2]()
 
-        @parameter
-        for i in range(c_frag_size // 2):
+        comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
                 SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
                     c_type
@@ -434,12 +428,14 @@ def test_tma_umma_pair_cta[
     ](ctx)
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
+        ) if transpose_b else Index(
+            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -477,11 +473,12 @@ def test_tma_umma_pair_cta[
         ),
         block_dim=(128),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
-    @parameter
-    if a_type == DType.float8_e4m3fn and (not transpose_b):
+    comptime if a_type == DType.float8_e4m3fn and (not transpose_b):
         # NOTE: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major = b_col_major.tensor()
         var b_tensor = b.tensor()
@@ -533,13 +530,10 @@ def test_tma_umma_pair_cta[
 
 def main():
     with DeviceContext() as ctx:
-
-        @parameter
-        for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
+        comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
             comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
 
-            @parameter
-            for swizzle in [
+            comptime for swizzle in [
                 TensorMapSwizzle.SWIZZLE_32B,
                 TensorMapSwizzle.SWIZZLE_64B,
                 TensorMapSwizzle.SWIZZLE_128B,

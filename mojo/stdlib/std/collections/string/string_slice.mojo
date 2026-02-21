@@ -36,7 +36,7 @@ from format._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of
-from sys.ffi import c_char
+from ffi import c_char
 from sys.intrinsics import likely, unlikely
 
 from bit import count_trailing_zeros
@@ -157,8 +157,7 @@ struct CodepointSliceIter[
         if len(self._slice) <= 0:
             raise StopIteration()
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             return self.next().value()
         else:
             return self.next_back().value()
@@ -476,7 +475,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Representable,
     Sized,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """A non-owning view into encoded string data.
@@ -537,8 +536,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Mutable = StringSlice[unsafe_origin_mutcast[Self.origin]]
-    """The mutable version of the `StringSlice`."""
     comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""
     # Fields
@@ -2033,8 +2030,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return ptr[0] == 0xE2 and ptr[1] == 0x80 and last_byte
             return False
 
-        @parameter
-        if single_character:
+        comptime if single_character:
             return _is_space_char(self)
         else:
             for s in self.codepoint_slices():
@@ -2157,8 +2153,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var ptr = self.unsafe_ptr()
         var length = self.byte_length()
 
-        @parameter
-        if single_character:
+        comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
                 ptr, 0, ptr[0], UInt(length)
             )
@@ -2209,14 +2204,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
                     debug_assert(
-                        line_end + char_len <= UInt(length),
+                        line_end + UInt(char_len) <= UInt(length),
                         "corrupted sequence causing unsafe memory access",
                     )
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                        _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
                     )
-                    line_end += char_len
+                    line_end += UInt(char_len)
 
                 var str_len = line_end - line_start
 
@@ -2226,8 +2221,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 # When keep=False it is much faster because the previous
                 # character is stored in a variable instead of having to deref a
                 # pointer
-                @parameter
-                if keep:
+                comptime if keep:
                     var is_r = unlikely(b0 == `\r`)
                     var may_be_r_n = is_r and likely(line_end < UInt(length))
                     var is_r_n = UInt(
@@ -2236,7 +2230,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     line_end += is_r_n
                     str_len += is_r_n
                 else:
-                    str_len -= UInt(splat(likely(is_new_line))) & char_len
+                    str_len -= UInt(splat(likely(is_new_line))) & UInt(char_len)
                     var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
@@ -2886,8 +2880,7 @@ fn _split[
     comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
-    @parameter
-    if has_maxsplit:
+    comptime if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
     output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
@@ -2903,8 +2896,7 @@ fn _split[
         # if not found go to the end
         rhs += is_negative(rhs) & (str_byte_len + 1)
 
-        @parameter
-        if has_maxsplit:
+        comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
@@ -2924,8 +2916,7 @@ fn _split[
     comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
-    @parameter
-    if has_maxsplit:
+    comptime if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
     output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
@@ -2955,8 +2946,7 @@ fn _split[
                 break
             rhs += s.byte_length()
 
-        @parameter
-        if has_maxsplit:
+        comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 

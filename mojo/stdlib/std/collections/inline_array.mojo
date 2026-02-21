@@ -40,7 +40,8 @@ from builtin.rebind import downcast
 from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from compile import get_type_name
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+import format._utils as fmt
+from memory import UnsafeMaybeUninit
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -55,12 +56,12 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    __comptime_assert (
+    comptime assert (
         size >= 0
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[ElementType: Copyable, size: Int,](
+struct InlineArray[ElementType: Copyable, size: Int](
     Copyable,
     Defaultable,
     DevicePassable,
@@ -183,14 +184,14 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         out self,
         *,
         var unsafe_assume_initialized: InlineArray[
-            UnsafeMaybeUninitialized[Self.ElementType], Self.size
+            UnsafeMaybeUninit[Self.ElementType], Self.size
         ],
     ):
         """Constructs an `InlineArray` from an `InlineArray` of
-        `UnsafeMaybeUninitialized`.
+        `UnsafeMaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized`
+            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:
@@ -253,15 +254,12 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         var ptr = self.unsafe_ptr()
 
         for _ in range(0, unroll_end, batch_size):
-
-            @parameter
-            for _ in range(batch_size):
+            comptime for _ in range(batch_size):
                 ptr.init_pointee_copy(fill)
                 ptr += 1
 
         # Fill the remainder
-        @parameter
-        for _ in range(unroll_end, Self.size):
+        comptime for _ in range(unroll_end, Self.size):
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
@@ -325,8 +323,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
                 UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
@@ -337,11 +334,11 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
-            other: The array to copy from.
+            copy: The array to copy from.
 
         Examples:
 
@@ -351,27 +348,31 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         ```
         """
 
-        self = Self(uninitialized=True)
+        comptime if Self.ElementType.__copyinit__is_trivial:
+            self._array = copy._array
+        else:
+            self = Self(uninitialized=True)
+            for idx in range(Self.size):
+                var ptr = self.unsafe_ptr() + idx
+                ptr.init_pointee_copy(copy.unsafe_get(idx))
 
-        for idx in range(Self.size):
-            var ptr = self.unsafe_ptr() + idx
-            ptr.init_pointee_copy(other.unsafe_get(idx))
-
-    fn __moveinit__(out self, deinit other: Self):
+    fn __moveinit__(out self, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
-            other: The array to move from.
+            take: The array to move from.
 
         Notes:
             Moves the elements from the source array into this array.
         """
 
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-
-        for idx in range(Self.size):
-            var other_ptr = other.unsafe_ptr() + idx
-            (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
+        comptime if Self.ElementType.__moveinit__is_trivial:
+            self._array = take._array
+        else:
+            self = Self(uninitialized=True)
+            for idx in range(Self.size):
+                var other_ptr = take.unsafe_ptr() + idx
+                (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):
         """Deallocates the array and destroys its elements."""
@@ -386,11 +387,8 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             Self.ElementType, ImplicitlyDestructible
         ]
 
-        @parameter
-        if not TDestructible.__del__is_trivial:
-
-            @parameter
-            for idx in range(Self.size):
+        comptime if not TDestructible.__del__is_trivial:
+            comptime for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.bitcast[TDestructible]().destroy_pointee()
 
@@ -462,7 +460,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        __comptime_assert (
+        comptime assert (
             -Self.size <= index(idx) < Self.size
         ), "Index must be within bounds."
         comptime normalized_index = normalize_index["InlineArray"](
@@ -620,8 +618,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             to support equality comparison.
         """
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             if self[i] == value:
                 return True
         return False
@@ -630,38 +627,52 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # String representation
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    fn _write_self_to[
+        f: fn(Self.ElementType, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
+
+        var index = 0
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            if index >= Self.size:
+                raise StopIteration()
+            f(self.unsafe_get(index), w)
+            index += 1
+
+        fmt.write_sequence_to[ElementFn=iterate](writer)
+        _ = index
+
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the InlineArray representation to a Writer.
 
         Constraints:
-            ElementType must conform to `Representable`.
+            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
 
-        writer.write("InlineArray[")
-        writer.write(get_type_name[Self.ElementType]())
-        writer.write(", ")
-        writer.write(String(Self.size))
-        writer.write("](")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of this InlineArray to a Writer.
 
-        for i in range(Self.size):
-            ref element = self.unsafe_get(i)
-            ref representable_element = trait_downcast[Representable](element)
-            writer.write(repr(representable_element))
-            if i < Self.size - 1:
-                writer.write(", ")
+        Constraints:
+            ElementType must conform to `Writable`.
 
-        writer.write(")")
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+
+        fmt.FormatStruct(writer, "InlineArray").params(
+            fmt.TypeNames[Self.ElementType](),
+            Self.size,
+        ).fields[FieldsFn=write_fields]()
 
     @always_inline
     fn __str__(self) -> String:
@@ -681,4 +692,6 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Returns:
             A string representation of the array.
         """
-        return self.__str__()
+        output = String()
+        self.write_repr_to(output)
+        return output^

@@ -100,15 +100,14 @@ def test_data_layout_asm():
 
 
 def test_cross_compile():
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         # TODO: MOCO-2593, this test deadlocks in mojo build in ASAN
         return
 
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
     fn test_kernel():
-        __comptime_assert (
+        comptime assert (
             _cdna_4_or_newer()
         ), "test_kernel is only supported on CDNA4+"
 

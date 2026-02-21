@@ -87,7 +87,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole(TrivialRegisterPassable):
     var _role: Int32
 
     comptime Mma = Self(6)
@@ -221,7 +221,7 @@ fn load_AB[
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[stage].expect_bytes(expected_bytes)
+            tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
@@ -336,8 +336,7 @@ fn stsm_helper[
     var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
-    @parameter
-    for i in range(shape0 // stsmx4_row_size):
+    comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
         var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
         var v = vec.slice[
@@ -395,7 +394,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -424,14 +423,13 @@ fn multi_stage_store_C[
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols + tmem_addr
+    var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
-        var stage_tmem_addr = tmem_offset + (stage * stageN)
+        var stage_tmem_addr = tmem_offset + UInt32((stage * stageN))
         var upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -450,8 +448,7 @@ fn multi_stage_store_C[
 
         tcgen05_load_wait()
 
-        @parameter
-        if stage == num_stages - 1:
+        comptime if stage == num_stages - 1:
             umma_arrive_leader_cta(accum_empty_mbar + index)
 
         # Assume double-buffer for shared memory packing
@@ -467,7 +464,7 @@ fn multi_stage_store_C[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * WARP_SIZE]()
+        named_barrier[Int32(num_output_warps * WARP_SIZE)]()
         var lane = lane_id()
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
@@ -482,18 +479,16 @@ fn multi_stage_store_C[
             # c_tma_op.wait_group[0]()
 
             # Keep one tma store in fly
-            @parameter
-            if stage < num_stages - 1:
+            comptime if stage < num_stages - 1:
                 c_tma_op.wait_group[1]()
             # Last stage guard all tma store to finish
             else:
                 c_tma_op.wait_group[0]()
 
-        @parameter
-        if stage > 0 and stage < num_stages - 1:
+        comptime if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -538,8 +533,10 @@ fn kernel_8[
     comptime EPILOGUE_THREADS = num_output_warps * WARP_SIZE
     comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
     comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
-        TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
+    comptime clc_consumer_arv_count = Int32(
+        SCHEDULER_THREADS
+    ) + CLUSTER_SIZE * Int32(
+        (TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS)
     )
 
     # For ld from TMEM, use same per-stage stride in column field.
@@ -684,27 +681,24 @@ fn kernel_8[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // cta_group + cluster_shape[1] - 1
+                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
 
-        @parameter
-        for i in range(num_accum_pipeline_stages):
+        comptime for i in range(num_accum_pipeline_stages):
             accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
-            accum_empty_mbar[i].init(accum_pipeline_consumer_arv_count)
+            accum_empty_mbar[i].init(Int32(accum_pipeline_consumer_arv_count))
 
-        tmem_dealloc_mbar[].init(EPILOGUE_THREADS * cta_group)
+        tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * cta_group))
 
-    @parameter
-    for i in range(num_clc_pipeline_stages):
+    comptime for i in range(num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
-        clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
-        clc_throttle_empty_mbar[i].init(clc_throttle_consumer_arv_count)
+        clc_throttle_full_mbar[i].init(Int32(clc_throttle_producer_arv_count))
+        clc_throttle_empty_mbar[i].init(Int32(clc_throttle_consumer_arv_count))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -771,14 +765,12 @@ fn kernel_8[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+    comptime for i in range(CLUSTER_N):
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+    comptime for i in range(CLUSTER_M // cta_group):
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -832,8 +824,7 @@ fn kernel_8[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             mma_mbar[producer_phase.index()].wait(producer_phase.phase())
             producer_phase.step()
 
@@ -863,18 +854,17 @@ fn kernel_8[
             clc_pipe_consumer_state.step()
 
         # make sure all pipes are empty before kernel exit
-        @parameter
-        for i in range(num_clc_pipeline_stages):
+        comptime for i in range(num_clc_pipeline_stages):
             clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                 clc_pipe_producer_state.phase()
             )
             clc_pipe_producer_state.step()
 
     if WarpRole.is_mma():
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
         syncwarp()
         # non blocking, arrives and proceeds
-        named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
         tmem_addr = ptr_tmem_addr[0]
 
@@ -890,7 +880,9 @@ fn kernel_8[
                 var accum_phase = accum_pipeline_producer_state.phase()
                 accum_empty_mbar[accum_index].wait(accum_phase)
 
-                var tmem_offset = tmem_addr + (accum_index * stage_stride_cols)
+                var tmem_offset = tmem_addr + (
+                    accum_index * UInt32(stage_stride_cols)
+                )
                 for i in range(num_iters):
                     consumer_main_loop[
                         block_tile_shape=block_tile_shape,
@@ -916,20 +908,20 @@ fn kernel_8[
                 if elect_one_sync():
                     mma_arrive_multicast[cta_group](
                         accum_full_mbar + accum_index,
-                        mma_complete_mask,
+                        UInt16(mma_complete_mask),
                     )
                 accum_pipeline_producer_state.step()
             work_info = next_work_info
 
-        tcgen05_release_allocation_lock[cta_group]()
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
 
         # wait for epilogue to finish
         tmem_dealloc_mbar[].wait()
 
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
-        named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
         tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
@@ -992,7 +984,7 @@ fn blackwell_kernel_8[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -1003,13 +995,15 @@ fn blackwell_kernel_8[
     comptime MMA_K = umma_shape[2]
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
+        ) if transpose_b else Index(
+            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -1120,7 +1114,9 @@ fn blackwell_kernel_8[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        grid_dim[0] // cluster_shape[0], grid_dim[1] // cluster_shape[1], 1
+        Int32(grid_dim[0]) // cluster_shape[0],
+        Int32(grid_dim[1]) // cluster_shape[1],
+        1,
     )
 
     ctx.enqueue_function[kernel, kernel](
@@ -1133,7 +1129,9 @@ fn blackwell_kernel_8[
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
 
@@ -1236,8 +1234,7 @@ def test_blackwell_kernel_8[
         ctx,
     )
 
-    @parameter
-    if benchmark:
+    comptime if benchmark:
         comptime num_runs = 10000
         comptime num_warmup = 100
 
@@ -1269,7 +1266,7 @@ def test_blackwell_kernel_8[
             Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         # Round TFLOPS to two decimal places for cleaner output
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 2)
@@ -1279,7 +1276,7 @@ def test_blackwell_kernel_8[
             tflops_rounded,
         )
     else:
-        __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )
@@ -1338,8 +1335,7 @@ fn make_dic_of_shapes() -> (
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
-    @parameter
-    for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+    comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
         print("Benchmarking blackwell_matmul_tma_umma_kernel")
         print("============================================")
         print("dtype, M, N, K, time(ms), TFLOPS")
@@ -1354,8 +1350,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         comptime c_type = DType.bfloat16
         comptime dic_of_shapes = make_dic_of_shapes()
 
-        @parameter
-        for i in range(len(dic_of_shapes)):
+        comptime for i in range(len(dic_of_shapes)):
             comptime shape = get_dic_of_shapes(i, dic_of_shapes)
             try:
                 test_blackwell_kernel_8[

@@ -555,6 +555,23 @@ class OpView(_OperationBase):
         Parses a specific, generated OpView based on class level attributes.
         """
 
+class OpAdaptor:
+    @overload
+    def __init__(self, operands: list, attributes: OpAttributeMap) -> None:
+        """Creates an OpAdaptor with the given operands and attributes."""
+
+    @overload
+    def __init__(self, operands: list, opview: OpView) -> None:
+        """Creates an OpAdaptor with the given operands and operation view."""
+
+    @property
+    def operands(self) -> list:
+        """Returns the operands of the adaptor."""
+
+    @property
+    def attributes(self) -> OpAttributeMap:
+        """Returns the attributes of the adaptor."""
+
 class Region:
     @property
     def blocks(self) -> BlockList:

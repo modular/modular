@@ -27,8 +27,10 @@ from max.interfaces import (
     RequestID,
     SamplingParams,
     SamplingParamsInput,
+    TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
@@ -72,7 +74,7 @@ class LLM:
     _pending_requests: dict[RequestID, queue.Queue[_Response]]
 
     def __init__(self, pipeline_config: PipelineConfig) -> None:
-        settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
+        settings = Settings(offline_inference=True)
         self._pc = ThreadControl()
         self._request_queue = queue.Queue()
         self._pending_requests = {}
@@ -204,7 +206,9 @@ async def _async_worker(
         else None
     )
     # Create Queues
-    model_worker_interface = ZmqModelWorkerInterface(
+    model_worker_interface = ZmqModelWorkerInterface[
+        TextAndVisionContext | TextContext, TextGenerationOutput
+    ](
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(pipeline_config),
     )
@@ -216,14 +220,15 @@ async def _async_worker(
             settings=settings,
             metric_client=metric_client,
             model_worker_interface=model_worker_interface,
-        ) as worker_monitor,
-        TokenGeneratorPipeline(
+        ) as model_worker,
+    ):
+        pipeline = TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
             lora_queue=lora_queue,
-            model_worker_interface=model_worker_interface,
-        ) as pipeline,
-    ):
+            model_worker=model_worker,
+        )
+
         pc.ready.set()
         while True:
             if pc.cancel.is_set():

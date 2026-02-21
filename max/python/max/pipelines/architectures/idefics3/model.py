@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -24,7 +25,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -47,7 +48,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -158,6 +158,7 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
+@dataclass
 class Idefics3Inputs(ModelInputs):
     """A class representing inputs for the Idefics3 model."""
 
@@ -167,31 +168,15 @@ class Idefics3Inputs(ModelInputs):
     input_row_offsets: Buffer
     """Tensor containing the offsets for each row in the ragged input sequence."""
 
+    return_n_logits: Buffer
+    """Number of logits to return, used by speculative decoding for example."""
+
     # Vision inputs
     pixel_values: Buffer | None = None
     """Pixel values for vision inputs."""
 
     image_token_indices: Buffer | None = None
     """Pre-computed indices of image tokens in the input sequence."""
-
-    return_n_logits: Buffer
-    """Number of logits to return, used by speculative decoding for example."""
-
-    def __init__(
-        self,
-        input_ids: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        pixel_values: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | None = None,
-        image_token_indices: Buffer | None = None,
-    ) -> None:
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
-        self.pixel_values = pixel_values
-        self.kv_cache_inputs = kv_cache_inputs
-        self.image_token_indices = image_token_indices
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -215,8 +200,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -226,8 +209,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -246,7 +227,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the maximum sequence length for the Idefics3 model."""
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
 
@@ -384,15 +365,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             return graph, vision_model.state_dict()
 
-    def _language_graph_input_types(self) -> Sequence[TensorType]:
+    def _language_graph_input_types(self) -> Sequence[TensorType | BufferType]:
         # Generate DeviceRef.
         device_ref = DeviceRef.from_device(self.devices[0])
 
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -417,18 +396,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             DType.int32, shape=["total_image_tokens"], device=device_ref
         )
 
-        # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
             image_embeddings_type,
             image_token_indices_type,
-            *flattened_kv_types,
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     def _unflatten_kv_inputs(

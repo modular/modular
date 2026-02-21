@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -35,7 +36,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
     upper_bounded_default,
 )
 from transformers import AutoConfig
@@ -46,18 +46,10 @@ from .model_config import BertModelConfig
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class BertInputs(ModelInputs):
     next_tokens_batch: Buffer
     attention_mask: Buffer
-
-    def __init__(
-        self,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> None:
-        self.next_tokens_batch = next_tokens_batch
-        self.attention_mask = attention_mask
-        self.kv_cache_inputs = None
 
 
 class BertPipelineModel(PipelineModel[TextContext]):
@@ -65,8 +57,6 @@ class BertPipelineModel(PipelineModel[TextContext]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -76,8 +66,6 @@ class BertPipelineModel(PipelineModel[TextContext]):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -93,12 +81,12 @@ class BertPipelineModel(PipelineModel[TextContext]):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Bert, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e

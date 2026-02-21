@@ -26,13 +26,16 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
-from max.interfaces.request import Request, RequestID
+from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from typing_extensions import TypeVar
 
 
 @dataclass(frozen=True)
-class AudioGenerationRequest(Request):
+class AudioGenerationRequest:
+    request_id: RequestID = field()
+    """A unique identifier for the request."""
+
     model: str = field()
     """The name of the model to be used for generating audio chunks. This should match
     the available models on the server and determines the behavior and
@@ -72,6 +75,9 @@ class AudioGenerationRequest(Request):
     to the audio decoder.
     """
 
+    def __str__(self) -> str:
+        return str(self.request_id)
+
     def __post_init__(self) -> None:
         if self.prompt is None and self.input is None:
             raise RuntimeError("either token_ids or input must be provided.")
@@ -80,8 +86,7 @@ class AudioGenerationRequest(Request):
 class AudioGenerationMetadata(
     msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
 ):
-    """
-    Represents metadata associated with audio generation.
+    """Represents metadata associated with audio generation.
 
     This class will eventually replace the metadata dictionary used throughout
     the AudioGenerationOutput object, providing a structured and type-safe
@@ -112,8 +117,7 @@ class AudioGenerationMetadata(
     echo: str | None = None
 
     def to_dict(self) -> dict[str, int | float | str | bool]:
-        """
-        Convert the metadata to a dictionary format.
+        """Convert the metadata to a dictionary format.
 
         Returns:
             dict[str, any]: Dictionary representation of the metadata.

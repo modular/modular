@@ -33,10 +33,9 @@ from layout.layout_tensor import (
 )
 
 from layout._tile_tensor import TileTensor, stack_allocation
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._coord import (
     Coord,
-    CoordLike,
     coord,
     Idx,
     ComptimeInt,
@@ -52,14 +51,11 @@ fn is_benchmark() -> Bool:
 
 fn gemm_kernel[
     c_dtype: DType,
-    c_shape_types: Variadic.TypesOfTrait[CoordLike],
-    c_stride_types: Variadic.TypesOfTrait[CoordLike],
+    CLayoutType: TensorLayout,
     a_dtype: DType,
-    a_shape_types: Variadic.TypesOfTrait[CoordLike],
-    a_stride_types: Variadic.TypesOfTrait[CoordLike],
+    ALayoutType: TensorLayout,
     b_dtype: DType,
-    b_shape_types: Variadic.TypesOfTrait[CoordLike],
-    b_stride_types: Variadic.TypesOfTrait[CoordLike],
+    BLayoutType: TensorLayout,
     NUM_THREADS: Int,
     BM: Int where BM > -1,
     BN: Int where BN > -1,
@@ -69,24 +65,9 @@ fn gemm_kernel[
     TM: Int where TM > -1,
     TN: Int where TN > -1,
 ](
-    mat_c: TileTensor[
-        shape_types=c_shape_types,
-        stride_types=c_stride_types,
-        c_dtype,
-        MutExternalOrigin,
-    ],
-    mat_a: TileTensor[
-        shape_types=a_shape_types,
-        stride_types=a_stride_types,
-        a_dtype,
-        MutExternalOrigin,
-    ],
-    mat_b: TileTensor[
-        shape_types=b_shape_types,
-        stride_types=b_stride_types,
-        b_dtype,
-        MutExternalOrigin,
-    ],
+    mat_c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
+    mat_a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
+    mat_b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
 ) where (
     mat_a.rank == 2
     and mat_b.rank == 2
@@ -131,7 +112,7 @@ fn gemm_kernel[
 
     comptime warp_layout = row_major[8, 4]()
 
-    for k_i in range(ceildiv(K, BK)):
+    for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
         var a_tile_dram = mat_a.tile[BM, BK](
             (Idx(Int(block_idx.y)), Idx(Int(k_i)))
         )
@@ -149,8 +130,7 @@ fn gemm_kernel[
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
+        comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
                 (Idx(warp_m), Idx(0))
             ).slice[:, k_j : k_j + 1]()
@@ -198,10 +178,10 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
@@ -217,14 +197,11 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     comptime kernel = gemm_kernel[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         NUM_THREADS,
         BM,
         BN,
@@ -237,8 +214,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[kernel](
         mat_c,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -251,21 +228,18 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         BLOCK_DIM,
     ]
 
     ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         M,
         N,
         K,
@@ -293,8 +267,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         fn run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
-                mat_a,
-                mat_b,
+                mat_a.as_immut(),
+                mat_b.as_immut(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -303,8 +277,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         for i in range(nwarmup):
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
-                mat_a,
-                mat_b,
+                mat_a.as_immut(),
+                mat_b.as_immut(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -351,10 +325,10 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     # Initialize with sequential integers like the main test
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
@@ -370,14 +344,11 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     comptime kernel = gemm_kernel[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         NUM_THREADS,
         BM,
         BN,
@@ -390,8 +361,8 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[kernel](
         mat_c,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -404,21 +375,18 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         BLOCK_DIM,
     ]
 
     ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         M,
         N,
         K,
@@ -529,40 +497,22 @@ def main():
 
 fn matmul_kernel_naive[
     c_dtype: DType,
-    c_shape_types: Variadic.TypesOfTrait[CoordLike],
-    c_stride_types: Variadic.TypesOfTrait[CoordLike],
+    CLayoutType: TensorLayout,
     a_dtype: DType,
-    a_shape_types: Variadic.TypesOfTrait[CoordLike],
-    a_stride_types: Variadic.TypesOfTrait[CoordLike],
+    ALayoutType: TensorLayout,
     b_dtype: DType,
-    b_shape_types: Variadic.TypesOfTrait[CoordLike],
-    b_stride_types: Variadic.TypesOfTrait[CoordLike],
+    BLayoutType: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     s_type: DType = get_accum_type[c_dtype](),
 ](
-    c: TileTensor[
-        shape_types=c_shape_types,
-        stride_types=c_stride_types,
-        c_dtype,
-        MutExternalOrigin,
-    ],
-    a: TileTensor[
-        shape_types=a_shape_types,
-        stride_types=a_stride_types,
-        a_dtype,
-        MutExternalOrigin,
-    ],
-    b: TileTensor[
-        shape_types=b_shape_types,
-        stride_types=b_stride_types,
-        b_dtype,
-        MutExternalOrigin,
-    ],
+    c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
+    a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
+    b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
     m: Int,
     n: Int,
     k: Int,
-) where (c.rank == 2 and a.rank == 2 and b.rank == 2):
+) where (c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2):
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -571,8 +521,7 @@ fn matmul_kernel_naive[
 
     var accum = Scalar[s_type]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(k):
             accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
                 Scalar[s_type]
@@ -588,19 +537,11 @@ fn matmul_kernel_naive[
 
 
 @always_inline
-fn outer_product_acc[
-    M: Int, N: Int
-](
-    res: TileTensor[
-        mut=True,
-        shape_types = Variadic.types[
-            T=CoordLike, ComptimeInt[M], ComptimeInt[N]
-        ],
-        ...,
-    ],
+fn outer_product_acc(
+    res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,
-) where (lhs.rank == 1 and rhs.rank == 1):
+) where lhs.flat_rank == 1 and rhs.flat_rank == 1:
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
@@ -619,17 +560,16 @@ fn outer_product_acc[
         `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
     """
 
-    __comptime_assert lhs.element_size == res.element_size
-    __comptime_assert lhs.element_size == rhs.element_size
+    comptime assert lhs.element_size == res.element_size
+    comptime assert lhs.element_size == rhs.element_size
+    comptime assert res.flat_rank == 2
 
     comptime dtype = res.dtype
+    comptime M = res.static_shape[0]
+    comptime N = res.static_shape[1]
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
-            var idx = coord[i, j]()
-            res[idx] += rebind[res.ElementType](
+    comptime for i in range(M):
+        comptime for j in range(N):
+            res[i, j] += rebind[res.ElementType](
                 (lhs[(Idx[i](),)]).cast[dtype]()
             ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())

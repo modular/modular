@@ -66,8 +66,7 @@ def test_product2():
 def test_product2_param():
     var trip_count = 0
 
-    @parameter
-    for i, j in product(range(2), range(2)):
+    comptime for i, j in product(range(2), range(2)):
         assert_true(i in (0, 1))
         assert_true(j in (0, 1))
         trip_count += 1
@@ -184,8 +183,7 @@ def test_product3_param():
     """Tests the product of three iterables with parameter for loop."""
     var trip_count = 0
 
-    @parameter
-    for i, j, k in product(range(2), range(2), range(2)):
+    comptime for i, j, k in product(range(2), range(2), range(2)):
         assert_true(i in (0, 1))
         assert_true(j in (0, 1))
         assert_true(k in (0, 1))
@@ -217,8 +215,7 @@ def test_product4_param():
     """Tests the product of four iterables with parameter for loop."""
     var trip_count = 0
 
-    @parameter
-    for i, j, k, l in product(range(2), range(2), range(2), range(2)):
+    comptime for i, j, k, l in product(range(2), range(2), range(2), range(2)):
         assert_true(i in (0, 1))
         assert_true(j in (0, 1))
         assert_true(k in (0, 1))
@@ -276,7 +273,9 @@ struct TestCopyIterator[
     var counter: Observable[CopyOrigin = Self.CopyOrigin]
 
     fn __init__(out self, ref[Self.CopyOrigin] copies: Int):
-        self.counter = Observable(copies=Pointer(to=copies))
+        self.counter = Observable[CopyOrigin = Self.CopyOrigin](
+            copies=Pointer(to=copies)
+        )
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
         return None

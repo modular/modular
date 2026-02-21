@@ -32,7 +32,7 @@ from format._utils import (
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
-from sys.ffi import c_char, CStringSlice
+from ffi import c_char, CStringSlice
 from sys.info import is_32bit
 
 from bit import count_leading_zeros
@@ -664,27 +664,16 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, deinit other: Self):
-        """Move initialize the string from another string.
-
-        Args:
-            other: The string to move.
-        """
-        self._ptr_or_data = other._ptr_or_data
-        self._len_or_data = other._len_or_data
-        self._capacity_or_data = other._capacity_or_data
-
-    @always_inline("nodebug")
-    fn __copyinit__(out self, other: Self):
+    fn __copyinit__(out self, copy: Self):
         """Copy initialize the string from another string.
 
         Args:
-            other: The string to copy.
+            copy: The string to copy.
         """
         # Keep inline strings inline, and static strings static.
-        self._ptr_or_data = other._ptr_or_data
-        self._len_or_data = other._len_or_data
-        self._capacity_or_data = other._capacity_or_data
+        self._ptr_or_data = copy._ptr_or_data
+        self._len_or_data = copy._len_or_data
+        self._capacity_or_data = copy._capacity_or_data
 
         # Increment the refcount if it has a mutable buffer.
         self._add_ref()
@@ -2520,8 +2509,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
 
 
 fn _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
-    @parameter
-    if reason:
+    comptime if reason:
         return Error(
             "String is not convertible to float: '",
             str_ref,
@@ -2628,7 +2616,7 @@ fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
 
 
 fn _calc_initial_buffer_size(n0: Int) -> Int:
-    var sign = 0 if n0 > 0 else 1
+    var sign = 0 if n0 >= 0 else 1
 
     # Add 1 for the terminator
     return sign + n0._decimal_digit_count() + 1
@@ -2639,13 +2627,11 @@ fn _calc_initial_buffer_size(n: Float64) -> Int:
 
 
 fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         var n = abs(n0)
-        var sign = 0 if n0 > 0 else 1
+        var sign = 0 if n0 >= 0 else 1
 
-        @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        comptime if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
@@ -2665,8 +2651,7 @@ fn _calc_format_buffer_size[dtype: DType]() -> Int:
     # TODO:
     #   Use a smaller size based on the `dtype`, e.g. we don't need as much
     #   space to store a formatted int8 as a float64.
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return 64 + 1
     else:
         return 128 + 1  # Add 1 for the terminator

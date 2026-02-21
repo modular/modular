@@ -18,7 +18,7 @@
 
 
 from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 
 # TODO Refactor -- we should decide on and put them into a more common file
@@ -37,7 +37,7 @@ fn _fill[
     value: Scalar[dtype],
     count: Int,
 ):
-    _ = TileTensor[dtype, layout](dst, row_major(Idx(count))).fill(value)
+    _ = TileTensor(dst, row_major(Idx(count))).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -94,10 +94,10 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     fn _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
-    fn __copyinit__(out self, other: Self):
-        self.cur = other.cur
-        self.loop_bounds = other.loop_bounds.copy()
-        self.early_stop = other.early_stop
+    fn __copyinit__(out self, copy: Self):
+        self.cur = copy.cur
+        self.loop_bounds = copy.loop_bounds.copy()
+        self.early_stop = copy.early_stop
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
@@ -281,18 +281,21 @@ fn pad_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert paddings_buf.rank == 1, "paddings_buf must be of rank 1"
+    comptime assert (
+        paddings_buf.flat_rank == 1
+    ), "paddings_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
-    if paddings_buf.dim[0]() != 2 * input_buf.rank:
+    if paddings_buf.dim[0]() != Scalar[paddings_buf.linear_idx_type](
+        2 * input_buf.rank
+    ):
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
     var output_shape = IndexList[input_buf.rank]()
 
-    @parameter
-    for axis in range(input_buf.rank):
+    comptime for axis in range(input_buf.rank):
         var pre_pad = Int(paddings_buf[2 * axis])
         var post_pad = Int(paddings_buf[2 * axis + 1])
         output_shape[axis] = pre_pad + Int(input_buf.dim[axis]()) + post_pad
@@ -301,7 +304,7 @@ fn pad_shape[
 
 
 fn _do_pad[
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     //,
     dtype: DType,
     paddings_type: DType,
@@ -311,15 +314,15 @@ fn _do_pad[
         ],
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
         UnsafePointer[Scalar[paddings_type]],
-        IndexList[Variadic.size(output_shape_types)],
+        IndexList[OutputLayoutType.rank],
         UnsafePointer[mut=True, Scalar[DType.int]],
         UnsafePointer[Scalar[DType.int]],
     ) capturing[_] -> None,
 ](
     output: TileTensor[
         mut=True,
-        shape_types=output_shape_types,
         dtype,
+        OutputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
@@ -343,8 +346,7 @@ fn _do_pad[
 
     var output_shape = IndexList[output.rank]()
 
-    @parameter
-    for axis in range(output.rank):
+    comptime for axis in range(output.rank):
         output_shape[axis] = Int(output.dim[axis]())
 
     return pad_impl_fn(
@@ -358,7 +360,7 @@ fn _do_pad[
 
 
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -459,8 +461,7 @@ fn _pad_constant_axis[
     input_strides: UnsafePointer[Scalar[DType.int]],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
 ):
-    @parameter
-    if axis == (rank - 1):
+    comptime if axis == (rank - 1):
         axis_params[axis].base(output, input, constant, output_shape[axis])
     else:
         var output_axis_stride = Int(output_strides[axis])
@@ -516,8 +517,7 @@ fn _pad_constant_impl[
         _AxisParams[rank, dtype, paddings_type], rank
     ]()
 
-    @parameter
-    for r in range(rank):
+    comptime for r in range(rank):
         axis_params[r] = _AxisParams[rank, dtype, paddings_type](
             r, paddings, output_shape
         )
@@ -567,8 +567,7 @@ fn _memcpy_regions_fast[
         for curr in range(num_iters):
             var copy_from: Int
 
-            @parameter
-            if singleton:  # non_pad == 1
+            comptime if singleton:  # non_pad == 1
                 # handle singleton case
                 copy_from = pre_pad
             else:
@@ -598,7 +597,7 @@ fn _memcpy_regions_fast[
 
 
 struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
-    TrivialRegisterType
+    TrivialRegisterPassable
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -707,8 +706,7 @@ fn _pad_reflect_axis[
     var input_offset: Int
     var output_offset: Int
 
-    @parameter
-    if axis == 0:
+    comptime if axis == 0:
         input_offset = 0
         output_offset = 0
         # CRITICAL: setting output_offset, input_offset, output and input pointers for the first axis in padding.
@@ -721,8 +719,7 @@ fn _pad_reflect_axis[
         output_offset = axis_params[axis - 1].next_output_offset
         input_offset = axis_params[axis - 1].next_input_offset
 
-    @parameter
-    if axis == rank - 1:
+    comptime if axis == rank - 1:
         axis_params[axis].base(output_offset, input_offset, output, input)
     else:
         var output_axis_stride_next = Int(output_strides[axis + 1])
@@ -836,9 +833,8 @@ fn pad_repeat[
         fill=IndexList[2](0)
     )
 
-    @parameter
-    for i in range(output.rank):
-        loop_bounds[i] = IndexList[2](0, input.layout.shape[i].value())
+    comptime for i in range(output.rank):
+        loop_bounds[i] = IndexList[2](0, input.layout.shape[i]().value())
 
     var non_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
 

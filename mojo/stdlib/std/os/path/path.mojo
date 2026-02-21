@@ -23,9 +23,9 @@ from os.path import isdir
 from collections.string.string_slice import _unsafe_strlen
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import CompilationTarget, external_call
+from ffi import MAX_PATH, c_char, external_call, get_errno
+from sys import CompilationTarget
 from sys._libc import realpath as libc_realpath
-from sys.ffi import MAX_PATH, c_char, get_errno
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -46,8 +46,7 @@ from ..os import sep
 
 @always_inline
 fn _get_stat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
@@ -57,8 +56,7 @@ fn _get_stat_st_mode(var path: String) raises -> Int:
 
 @always_inline
 fn _get_lstat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)

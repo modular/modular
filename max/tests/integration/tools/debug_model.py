@@ -18,12 +18,17 @@ import sys
 
 # Standard library
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 # 3rd-party
 import click
 import torch
+from max import pipelines
 from max.entrypoints.cli import DevicesOptionType
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from max.tests.integration.tools.debugging_utils import run_debug_model
 from max.tests.integration.tools.hf_config_overrides import (
     create_layer_overrides,
@@ -64,6 +69,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--encoding",
     "encoding_name",
+    type=click.Choice(get_args(pipelines.SupportedEncoding)),
     required=False,
     help="Quantization encoding to run pipeline with.",
 )
@@ -129,7 +135,7 @@ def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str | None,
+    encoding_name: pipelines.SupportedEncoding | None,
     output_path: Path,
     max_batch_size: int | None,
     log_hf_downloads: bool,
@@ -172,7 +178,9 @@ def main(
 
     try:
         run_debug_model(
-            device_specs=DevicesOptionType.device_specs(device_type),
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
+            ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,

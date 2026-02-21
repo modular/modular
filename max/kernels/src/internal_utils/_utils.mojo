@@ -65,7 +65,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             not Self.dim.is_dynamic()
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
@@ -74,7 +74,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         self.value = v
 
 
-struct InitializationType(DevicePassable, Equatable, TrivialRegisterType):
+struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -126,7 +126,7 @@ fn bench_compile_time[
     func: func_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
-    __comptime_assert emission_kind in ("asm", "llvm", "ptx")
+    comptime assert emission_kind in ("asm", "llvm", "ptx")
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
@@ -135,8 +135,7 @@ fn bench_compile_time[
         @always_inline
         @parameter
         fn bench_iter() raises:
-            @parameter
-            if emission_kind == "asm" or emission_kind == "llvm":
+            comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
@@ -184,13 +183,11 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
-    @parameter
-    for i in range(len(name)):
+    comptime for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
-        __comptime_assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
+        comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
-        @parameter
-        if name_unsafe_ptr[i] == x_ptr:
+        comptime if name_unsafe_ptr[i] == x_ptr:
             vals.append(sum)
             sum = 0
             continue
@@ -224,8 +221,7 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
 fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
     return t
@@ -282,7 +278,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-struct Mode(Stringable, TrivialRegisterType):
+struct Mode(Stringable, TrivialRegisterPassable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -394,11 +390,8 @@ fn init_vector_gpu[
 
     @parameter
     fn apply(values: SIMD[dtype, 4]):
-        @parameter
-        for i in range(4):
-
-            @parameter
-            if i == 3:
+        comptime for i in range(4):
+            comptime if i == 3:
                 if tid >= UInt(len):
                     return
             x[tid] = values[i]

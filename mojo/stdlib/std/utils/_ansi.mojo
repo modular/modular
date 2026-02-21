@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import _Global
+from ffi import _Global
 from sys._io import stdout
 
 

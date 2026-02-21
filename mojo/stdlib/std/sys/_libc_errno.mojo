@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, external_call
+from ffi import c_int, external_call
 from sys.info import CompilationTarget, platform_map
 
 
 fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
     elif CompilationTarget.is_macos():
         result = external_call["__error", type_of(result)]()
@@ -59,11 +58,11 @@ fn set_errno(errno: ErrNo):
 
 
 # Alias to shorten the error definitions below
-comptime pm = platform_map
+comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init
-struct ErrNo(Equatable, Stringable, TrivialRegisterType, Writable):
+struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -72,7 +71,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterType, Writable):
     Example:
         ```mojo
         import os
-        from sys.ffi import get_errno, set_errno, ErrNo
+        from ffi import get_errno, set_errno, ErrNo
 
         try:
             _ = os.path.realpath("non-existent-file")
@@ -421,8 +420,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterType, Writable):
             writer: The writer to write the error description to.
         """
 
-        @parameter
-        if CompilationTarget.is_macos():
+        comptime if CompilationTarget.is_macos():
             debug_assert(
                 self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
             )

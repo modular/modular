@@ -41,6 +41,16 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
+def _validate_loaded_parameter(
+    name: str, existing: Tensor, loaded: Tensor
+) -> None:
+    if loaded.shape != existing.shape or loaded.dtype != existing.dtype:
+        raise ValueError(
+            f"{name!r}: Loaded tensor {loaded.type} not assignable to "
+            f"parameter {existing.type}."
+        )
+
+
 class Module(Generic[_P, _R]):
     """The core unit of composition for modeling in MAX.
 
@@ -296,7 +306,6 @@ class Module(Generic[_P, _R]):
 
                 Returns the new tensor value to replace the parameter.
         """
-
         self.apply_to_local_parameters(f)
         for prefix, child in self.children:
             # Bind an explicit reference to `prefix` into the closure
@@ -424,13 +433,7 @@ class Module(Generic[_P, _R]):
         def lookup(name: str, existing: Tensor) -> DLPackArray:
             loaded.add(name)
             value = Tensor.from_dlpack(state[name])
-
-            if value.shape != existing.shape or value.dtype != existing.dtype:
-                raise ValueError(
-                    f"{name!r}: Loaded tensor {value.type} not assignable to "
-                    f"parameter {existing.type}."
-                )
-
+            _validate_loaded_parameter(name, existing, value)
             return value
 
         self.load_state(lookup)
@@ -636,6 +639,17 @@ class Module(Generic[_P, _R]):
                 else weight_tensors[name].to(data.device)
             )
             weights = weight_tensors
+        else:
+            for name, existing in self.parameters:
+                if name not in weights:
+                    raise KeyError(
+                        f"Weight '{name}' is missing from the provided weights mapping."
+                    )
+                _validate_loaded_parameter(
+                    name,
+                    existing,
+                    Tensor.from_dlpack(weights[name]),
+                )
         compiled = F.functional(session.load(graph, weights_registry=weights))
 
         if unary:
@@ -714,6 +728,38 @@ def module_dataclass(  # noqa: ANN201
     The decorator applies Python's ``@dataclass`` decorator internally while
     preserving :obj:`Module`'s specialized ``__repr__`` method for better
     debugging experience when printing module structures.
+
+    .. code-block:: python
+
+        from max.nn import Module, Linear, module_dataclass
+        from max.tensor import Tensor
+        from max import functional as F
+
+        @module_dataclass
+        class MLP(Module):
+            fc1: Linear
+            fc2: Linear
+
+            def forward(self, x: Tensor) -> Tensor:
+                x = self.fc1(x)
+                x = F.relu(x)
+                x = self.fc2(x)
+                return x
+
+        # Create module with automatic parameter tracking
+        mlp = MLP(
+            fc1=Linear(128, 256),
+            fc2=Linear(256, 128)
+        )
+
+        # All parameters are automatically tracked
+        print(dict(mlp.parameters).keys())
+        # {'fc1.weight', 'fc1.bias', 'fc2.weight', 'fc2.bias'}
+
+        # Use the module
+        x = Tensor.randn([4, 128])
+        output = mlp(x)
+        print(output.shape)  # (4, 128)
 
     Args:
         cls: The class to decorate. Must define a ``forward`` method.

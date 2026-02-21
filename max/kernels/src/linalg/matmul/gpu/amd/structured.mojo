@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of
 from gpu import WARP_SIZE
 from gpu.compute.mma import mma
@@ -29,7 +26,7 @@ from utils import IndexList, StaticTuple
 from gpu.intrinsics import load_acquire, store_release
 
 
-trait Enum(TrivialRegisterType):
+trait Enum(TrivialRegisterPassable):
     @always_inline
     fn value(self) -> Int:
         ...
@@ -104,7 +101,7 @@ struct SMemBuffer[
     BN: Int,
     WM: Int,
     WN: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
 
     """Manages shared memory and returns 2D tile slices of the buffer."""
 
@@ -147,40 +144,40 @@ struct SMemBuffer[
         return self.buffer.tile[Self.BM, Self.BN](0, stage)
 
 
-struct AMDSharedMemoryBarrier(TrivialRegisterType):
+struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
     var __repr: Int32
 
     @always_inline
-    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
+    fn initialize[origin: MutOrigin](ref[AddressSpace.SHARED, origin] self):
         self.__repr = 0
 
     @always_inline
-    fn value(ref[AddressSpace.SHARED] self) -> Int32:
-        var bar = rebind[
-            UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
-            ]
-        ](Pointer(to=self.__repr))
+    fn value[origin: MutOrigin](ref[AddressSpace.SHARED, origin] self) -> Int32:
+        var bar = UnsafePointer(to=self.__repr).address_space_cast[
+            AddressSpace.SHARED
+        ]()
         return load_acquire(bar)
 
     @always_inline
-    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
-        var bar = rebind[
-            UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
-            ]
-        ](Pointer(to=self.__repr))
+    fn increment[
+        origin: MutOrigin
+    ](ref[AddressSpace.SHARED, origin] self, warp_id: Int):
+        var bar = UnsafePointer(to=self.__repr).address_space_cast[
+            AddressSpace.SHARED
+        ]()
         store_release(bar, load_acquire(bar) + 1)
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
+    fn wait_until_greater_or_equal_to[
+        origin: MutOrigin
+    ](ref[AddressSpace.SHARED, origin] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
             ]()
 
 
-struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
+struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
@@ -191,8 +188,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
     fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var sum: Int32 = 0
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             sum += self.__repr[i]
         return sum
 
@@ -200,7 +196,9 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
     fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
+                Scalar[DType.int32],
+                MutAnyOrigin,
+                address_space = AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
@@ -218,7 +216,7 @@ struct MMAConfig[
     OutType: DType,
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime mma = TensorCore[
         Self.OutType,
         Self.InType,
@@ -256,7 +254,7 @@ struct AmdTileOperator[
     mma_shape: IndexList[3],
     swizzle: Optional[Swizzle] = None,
     transpose_b: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Manages tensor core operations for matrix multiplication on AMD GPUs.
 
     This operator handles loading matrix fragments from shared memory to registers
@@ -430,8 +428,7 @@ struct AmdTileOperator[
 
         # Only load if this is the first fragment in the group
         # (tensor core loads k_group_size tiles at once)
-        @parameter
-        if fragment_idx == 0:
+        comptime if fragment_idx == 0:
             Self.tensor_core.load_a[swizzle = Self.swizzle](
                 smem_tile_a,
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
@@ -467,14 +464,12 @@ struct AmdTileOperator[
         var b_tile = self.b_reg_tile(group_idx)
 
         # Perform MMA for this specific fragment within the group
-        @parameter
-        for mma_m_idx in range(Self.num_m_mmas):
+        comptime for mma_m_idx in range(Self.num_m_mmas):
             var a_fragment = a_tile.tile[1, Self._registers_per_thread_a](
                 mma_m_idx, fragment_idx
             )
 
-            @parameter
-            for mma_n_idx in range(Self.num_n_mmas):
+            comptime for mma_n_idx in range(Self.num_n_mmas):
                 var b_fragment = b_tile.tile[1, Self._registers_per_thread_b](
                     mma_n_idx, fragment_idx
                 )

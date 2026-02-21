@@ -36,7 +36,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
     ]()
 
     if thread_idx.x == 0:
-        mbar[0].init(NUM_THREADS)
+        mbar[0].init(Int32(NUM_THREADS))
 
     barrier()
 
@@ -46,7 +46,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
 
         _ = mbar[0].arrive()
     else:
-        mbar[0].wait(mbar[0].arrive())
+        mbar[0].wait(UInt32(mbar[0].arrive()))
         if thread_idx.x % 8 == 0:
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
@@ -81,8 +81,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
         alignment=8,
     ]()
 
-    @parameter
-    for i in range(Q_SIZE):
+    comptime for i in range(Q_SIZE):
         if thread_idx.x == 0:
             producer_mbar[i].init(1)
             consumer_mbar[i].init(128)
@@ -91,8 +90,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
 
     var k_tile = 0
 
-    @parameter
-    for i in range(Q_SIZE):
+    comptime for i in range(Q_SIZE):
         if thread_idx.x == 0:
             # pretend to load into smem tile
             print("prefetch: ", i)
@@ -170,8 +168,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
 
-            @parameter
-            for j in range(size_per_copy):
+            comptime for j in range(size_per_copy):
                 smem[offset + j] = -1000.0
 
     barrier()
@@ -189,8 +186,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         alignment=8,
     ]()
 
-    @parameter
-    for i in range(num_stages):
+    comptime for i in range(num_stages):
         if thread_idx.x == 0:
             produced_mbar[i].init(128)
             consumed_mbar[i].init(128)
@@ -220,9 +216,8 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
             offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
 
-            @parameter
-            for j in range(size_per_copy):
-                smem[offset + j] += i
+            comptime for j in range(size_per_copy):
+                smem[offset + j] += Float32(i)
 
             read_pipeline_states.step()
 
@@ -230,8 +225,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
 
-            @parameter
-            for j in range(size_per_copy):
+            comptime for j in range(size_per_copy):
                 dst[offset + j] = smem[offset + j]
 
 
@@ -283,10 +277,10 @@ def test_cpasync_producer_consumer_pipeline[
             for i in range(num_stages):
                 for j in range(size_per_stage):
                     idx = i * size_per_stage + j
-                    if src[idx] + i != dst[idx]:
+                    if src[idx] + Float32(i) != dst[idx]:
                         print(idx, src[idx], dst[idx])
                         return
-                    assert_equal(src[idx] + i, dst[idx])
+                    assert_equal(src[idx] + Float32(i), dst[idx])
 
 
 def main():

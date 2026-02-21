@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
+# RUN: %mojo %s
 
 from os import getenv, listdir, setenv
 from os.path import dirname
 from pathlib import Path, cwd
 from subprocess import run
-from sys.ffi import c_int
+from ffi import c_int
 from sys.param_env import env_get_string
 
 from gpu.host.device_attribute import DeviceAttribute

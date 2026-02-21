@@ -31,6 +31,7 @@ from max.interfaces import (
     GenerationStatus,
     Pipeline,
     PipelinesFactory,
+    PipelineTask,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -59,6 +60,7 @@ def patch_pipeline_registry_context_type(
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 
@@ -124,7 +126,7 @@ def app(
         tokenizer=MockTokenizer(),
     )
     app = fastapi_app(
-        Settings(api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False),
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
         serving_settings,
     )
     yield app
@@ -249,9 +251,9 @@ async def test_ttft_recorded_once_per_chunk() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[TextGenerationOutput, None]:
+    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
         for response in scheduler_responses:
-            yield response
+            yield [response]
 
     # Mock context returned by tokenizer
     # Create mock tokens with proper __len__ and active_length
@@ -270,7 +272,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
     # Mock decode to return combined tokens text
     pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
-    pipeline.engine_queue.stream = mock_stream
+    pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
 
     # Patch METRICS and call the real next_token_chunk method.

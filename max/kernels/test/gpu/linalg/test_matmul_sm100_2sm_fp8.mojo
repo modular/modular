@@ -27,6 +27,9 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    lt_to_tt,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -181,13 +184,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
     ](
-        from_ndbuffer_row_major(c_device_nd),
-        from_ndbuffer_row_major(a_device_nd),
-        from_ndbuffer_row_major(b_device_nd),
+        lt_to_tt(from_ndbuffer_row_major(c_device_nd)),
+        lt_to_tt(from_ndbuffer_row_major(a_device_nd)),
+        lt_to_tt(from_ndbuffer_row_major(b_device_nd)),
         ctx,
     )
 
-    __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -232,17 +235,13 @@ def main():
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
 
-        @parameter
-        for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+        comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
             comptime BK = (swizzle.bytes() // size_of[dtype]())
             comptime MMA_K = 32
 
             # we support all range of bn in range(8, 128+1, 8) but the test will time out so we only test a subset
-            @parameter
-            for bm in [64, 128]:
-
-                @parameter
-                for bn in [
+            comptime for bm in [64, 128]:
+                comptime for bn in [
                     8,
                     24,
                     32,
@@ -275,8 +274,7 @@ def main():
                         static[1024 + 16](),
                     )
 
-                    @parameter
-                    for swapAB in [False, True]:
+                    comptime for swapAB in [False, True]:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,

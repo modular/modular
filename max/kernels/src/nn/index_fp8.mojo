@@ -65,7 +65,7 @@ fn fp8_index_kernel[
     k_s: LayoutTensor[DType.float32, ks_layout, MutAnyOrigin],
     k_lut: k_type,
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
 ):
     comptime BM = block_tile_shape[0]
@@ -188,8 +188,7 @@ fn fp8_index_kernel[
         Int(thread_idx.x // thread_dim_x), Int(thread_idx.y)
     )
 
-    @parameter
-    for q_frag_idx in range(num_heads // thread_dim_y):
+    comptime for q_frag_idx in range(num_heads // thread_dim_y):
         q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
 
     copy_dram_to_sram[
@@ -238,21 +237,14 @@ fn fp8_index_kernel[
         _ = logits_sum.fill(0)
 
         for k in range(depth):
-
-            @parameter
-            for mma_m in range(BN // thread_dim_x):
-
-                @parameter
-                for mma_n in range(num_heads // thread_dim_y):
+            comptime for mma_m in range(BN // thread_dim_x):
+                comptime for mma_n in range(num_heads // thread_dim_y):
                     logits[mma_m, mma_n] += (
                         k_smem_frag[mma_m, k][0] * q_smem_frag[mma_n, k][0]
                     ).cast[DType.float32]()
 
-        @parameter
-        for l_i in range(BN // thread_dim_x):
-
-            @parameter
-            for l_j in range(num_heads // thread_dim_y):
+        comptime for l_i in range(BN // thread_dim_x):
+            comptime for l_j in range(num_heads // thread_dim_y):
                 logits[l_i, l_j] = (
                     max(logits[l_i, l_j], 0) * q_s_reg_tile[0, l_j][0]
                 )
@@ -385,7 +377,7 @@ fn _index_matmul_max[
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
     k: LayoutTensor[dtype, k_layout, MutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
     max_seq_len: Int,
@@ -453,7 +445,7 @@ fn _reduce_logits[
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
     k_s: LayoutTensor[DType.float32, ks_layout, MutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
 ):

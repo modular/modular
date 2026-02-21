@@ -434,7 +434,7 @@ Add your architecture to the constraint list in the `_get_info_from_target`
 function:
 
 ```mojo
-__comptime_assert StaticString(target_arch)
+comptime assert StaticString(target_arch)
     in (
         # NVIDIA
         StaticString("cuda"),
@@ -449,8 +449,7 @@ __comptime_assert StaticString(target_arch)
 Then add the mapping in the `@parameter` block:
 
 ```mojo
-@parameter
-if target_arch == "52":
+comptime if target_arch == "52":
     return materialize[GTX970]()
 elif target_arch == "90a":  # Add your mapping here
     return materialize[YourGPU]()
@@ -704,7 +703,7 @@ comptime AppleMetalFamily = AcceleratorArchitectureFamily(
 
 
 @fieldwise_init
-struct AcceleratorArchitectureFamily(TrivialRegisterType):
+struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
     """Defines common defaults for a GPU architecture family.
 
     This struct captures the shared characteristics across GPUs in the same
@@ -733,7 +732,7 @@ struct AcceleratorArchitectureFamily(TrivialRegisterType):
 
 
 @fieldwise_init
-struct Vendor(Equatable, TrivialRegisterType, Writable):
+struct Vendor(Equatable, TrivialRegisterPassable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -1995,8 +1994,7 @@ comptime Radeon860m = GPUInfo.from_family(
 
 
 @fieldwise_init
-@register_passable
-struct GPUInfo(Equatable, Stringable, Writable):
+struct GPUInfo(Equatable, RegisterPassable, Stringable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
@@ -2268,8 +2266,7 @@ fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 
     var prefix: String
 
-    @parameter
-    if target_arch == "":
+    comptime if target_arch == "":
         prefix = "Unknown GPU architecture detected."
     else:
         prefix = String(
@@ -2382,12 +2379,11 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("metal:", "apple-m")
     )
 
-    __comptime_assert (
+    comptime assert (
         StaticString(target_arch) in _all_targets
     ), _build_unsupported_arch_error[target_arch0]()
 
-    @parameter
-    if target_arch == "sm_52":
+    comptime if target_arch == "sm_52":
         return materialize[GTX970]()
     elif target_arch == "sm_60":
         return materialize[TeslaP100]()

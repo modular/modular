@@ -48,8 +48,8 @@ fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     # Initialize the input and outputs with known values.
     with in0_dev1.map_to_host() as in0_host1, in0_dev2.map_to_host() as in0_host2:
         for i in range(length):
-            in0_host1[i] = i
-            in0_host2[i] = i
+            in0_host1[i] = Float32(i)
+            in0_host2[i] = Float32(i)
 
     # Setup right side constants.
     in1_dev1.enqueue_fill(2.0)
@@ -85,7 +85,7 @@ fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
                 print("at index", i, "the value is", out_host2[i])
             assert_equal(
                 out_host1[i],
-                i + 2,
+                Float32(i + 2),
                 String(
                     "at index ",
                     i,
@@ -95,7 +95,7 @@ fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             )
             assert_equal(
                 out_host2[i],
-                i + 2,
+                Float32(i + 2),
                 String(
                     "at index ",
                     i,

@@ -20,10 +20,10 @@ comptime OpaquePointer = LegacyUnsafePointer[
 from memory import UnsafePointer as RealUnsafePointer
 from sys import has_amd_gpu_accelerator
 from pathlib import Path
-from sys.ffi import _get_global_or_null, external_call
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import OwnedDLHandle, _Global
+from ffi import _get_global_or_null, external_call
+from ffi import _find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import OwnedDLHandle, _Global
 from collections.optional import Optional
 from buffer import NDBuffer
 from gpu.host import DeviceContext, DeviceBuffer
@@ -37,7 +37,7 @@ comptime ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
-struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
+struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
@@ -52,7 +52,7 @@ struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct ncclRedOp_t(TrivialRegisterType):
+struct ncclRedOp_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclSum = Self(0)
 
@@ -61,7 +61,7 @@ struct ncclRedOp_t(TrivialRegisterType):
 
 
 @fieldwise_init
-struct ncclDataType_t(TrivialRegisterType):
+struct ncclDataType_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclFloat16 = Self(6)
     comptime ncclFloat32 = Self(7)
@@ -89,8 +89,7 @@ comptime NCCL_LIBRARY_PATHS: List[Path] = [
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
 fn _init_ccl_dylib() -> OwnedDLHandle:
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
     else:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())
@@ -219,8 +218,7 @@ fn _ccl_broadcast(
 
 @always_inline
 fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return HIP(ctx.stream()).bitcast[NoneType]()
     else:
         return CUDA(ctx.stream()).bitcast[NoneType]()
@@ -231,14 +229,13 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
-    fn __copyinit__(out self, rhs: Self):
-        self.ngpus = rhs.ngpus
-        self.comms = rhs.comms.copy()
+    fn __copyinit__(out self, copy: Self):
+        self.ngpus = copy.ngpus
+        self.comms = copy.comms.copy()
 
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return ncclDataType_t.ncclFloat32
     elif dtype == DType.bfloat16:
         return ncclDataType_t.ncclBfloat16
@@ -301,7 +298,9 @@ fn allreduce[
     use_multimem: Bool = False,
     use_quickreduce: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffers: InlineArray[
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+    ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[
         RealUnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS
@@ -315,21 +314,25 @@ fn allreduce[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not output_lambda
     ), "vendor_ccl allreduce does not support output epilogue lambdas yet"
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
-    __comptime_assert (
+    comptime assert (
         not use_quickreduce
     ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
-    var count = input_buffer.num_elements()
+    var count = input_buffers[0].num_elements()
     var dtype_ccl = _dtype_to_ccl[dtype]()
     var op = ncclRedOp_t.ncclSum
     var comms = _get_global_comms(ngpus)
+
+    var input_buffer = input_buffers[0] if use_multimem else input_buffers[
+        device_rank
+    ]
 
     _check_ccl_ok(
         _ccl_allreduce(
@@ -450,7 +453,7 @@ fn broadcast[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl broadcast does not support multimem path"
     # Determine this device's rank from its context id.

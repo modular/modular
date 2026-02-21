@@ -90,7 +90,7 @@ comptime MbarPtr = UnsafePointer[
 ]
 
 
-struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
+struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
     """A producer-consumer pipeline using shared memory barriers to
     enforce synchronization (between producer and consumer warps).
 
@@ -288,8 +288,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
         This function must be called by a single thread and must be called before any the pipeline object is used.
         """
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.full[i].init(producer_arrive_count)
             self.empty[i].init(consumer_arrive_count)
 
@@ -501,13 +500,6 @@ struct ProducerStage[
         self._mbar = mbar
 
     @always_inline
-    fn __moveinit__(out self, deinit other: Self):
-        """Move constructor for Optional support."""
-        self.pipeline = other.pipeline
-        self._index = other._index
-        self._mbar = other._mbar
-
-    @always_inline
     fn index(self) -> UInt32:
         """Get the current stage index."""
         return self._index
@@ -621,13 +613,6 @@ struct ConsumerStage[
         self.pipeline = pipeline
         self._index = index
         self._mbar = mbar
-
-    @always_inline
-    fn __moveinit__(out self, deinit other: Self):
-        """Move constructor for Optional support."""
-        self.pipeline = other.pipeline
-        self._index = other._index
-        self._mbar = other._mbar
 
     @always_inline
     fn index(self) -> UInt32:

@@ -36,7 +36,7 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -105,7 +105,7 @@ struct AdvanceAfterWorkContext[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
 
     - __enter__: Returns current work_info for use in the block
@@ -154,7 +154,7 @@ struct AdvanceAfterWorkContext[
 
 struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Context for waiting on CLC barrier and advancing work iterator.
 
     Encapsulates the CLC response barrier synchronization:
@@ -200,7 +200,7 @@ struct WorkIterator[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Per-warp work iterator that owns work_info and pipeline state.
 
     Each warp creates its own WorkIterator which internally manages both
@@ -314,7 +314,7 @@ struct SchedulerWorkIterator[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Work iterator for Scheduler warp - owns work_info and both pipeline states.
 
     The Scheduler warp uniquely needs to:
@@ -405,8 +405,7 @@ struct SchedulerWorkIterator[
         CLC pipeline stages are properly synchronized before exit.
         """
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.scheduler.empty_mbar[self.producer_state.index()].wait(
                 self.producer_state.phase()
             )
@@ -420,7 +419,7 @@ struct TileScheduler[
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
@@ -519,32 +518,30 @@ struct TileScheduler[
     ) -> WorkInfo:
         comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
 
-        var normalized_m = FastUInt(Int(work_info.m)) / Self.log_cluster_m
-        var normalized_n = FastUInt(Int(work_info.n)) / Self.log_cluster_n
+        var normalized_m = FastUInt(work_info.m) / Self.log_cluster_m
+        var normalized_n = FastUInt(work_info.n) / Self.log_cluster_n
         comptime log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
 
         var linear_cluster_id = (
-            normalized_m * FastUInt(Int(cluster_dim[1])) + normalized_n
+            normalized_m * FastUInt(cluster_dim[1]) + normalized_n
         )
 
         # CLC rasterize along M by default.
-        @parameter
-        if Self.rasterize_order == RasterOrder.AlongM:
+        comptime if Self.rasterize_order == RasterOrder.AlongM:
             new_normalized_m = normalized_m
             new_normalized_n = normalized_n
         else:
             new_normalized_m = linear_cluster_id % log_cluster_dim_m
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
-        @parameter
-        if Self.block_swizzle_size != 0:
+        comptime if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
-                FastUInt(Int(cluster_dim[0])) / log_block_swizzle_size
+                FastUInt(cluster_dim[0]) / log_block_swizzle_size
             )
             var swizzle_n_size = (
-                FastUInt(Int(cluster_dim[1])) / log_block_swizzle_size
+                FastUInt(cluster_dim[1]) / log_block_swizzle_size
             )
 
             var m_local = (new_normalized_m / log_block_swizzle_size) + (
@@ -608,8 +605,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         # num_stages == 0 implies there is only one wave. Only initial
         # work info is valid, next work info is invalid.
-        @parameter
-        if Self.num_stages == 0:
+        comptime if Self.num_stages == 0:
             return WorkInfo(0, 0, 0, False)
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())

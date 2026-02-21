@@ -1061,11 +1061,10 @@ class DistributedAllgatherOp(max._core.Operation):
 
 class DistributedAllreduceSumOp(max._core.Operation):
     """
-    Allreduce takes a single input tensor from this device and performs a sum
-    reduction across all devices. Peer input addresses are obtained via signal
-    buffer payloads at runtime (P2P access required). This op instance executes
-    on a specific device (specified by the device attribute) and produces the
-    output for that device.
+    Allreduce takes in inputs each coming from a different device with
+    the same shape as the final output and performs a sum reduction
+    across the devices. This op instance executes on a specific device
+    (specified by the device attribute) and produces the output for that device.
 
     Multiple instances of this op are created (one per device) to enable
     multi-threaded execution.
@@ -1077,13 +1076,14 @@ class DistributedAllreduceSumOp(max._core.Operation):
         location: Location,
         output: TensorType,
         out_chain: ChainType,
-        input: max._core.Value[TensorType],
+        inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
+        has_device_barrier: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @property
-    def input(self) -> max._core.Value[TensorType]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
@@ -1092,6 +1092,12 @@ class DistributedAllreduceSumOp(max._core.Operation):
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+    @property
+    def has_device_barrier(self) -> bool: ...
+    @has_device_barrier.setter
+    def has_device_barrier(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
 
 class AndOp(max._core.Operation):
     """

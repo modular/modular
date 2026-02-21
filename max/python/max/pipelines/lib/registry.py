@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
@@ -47,17 +48,17 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import PipelineRole, RopeType, SupportedEncoding
+from .config_enums import RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
+from .pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
-    SpeculativeMethod,
     StandaloneSpeculativeDecodingPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
@@ -71,10 +72,10 @@ PipelineTypes: TypeAlias = Pipeline[Any, Any]
 def _infer_task_from_hf_pipeline_tag(
     pipeline_tag: str | None,
 ) -> PipelineTask | None:
-    """Map HuggingFace pipeline tag to MAX PipelineTask.
+    """Map Hugging Face pipeline tag to MAX PipelineTask.
 
     Args:
-        pipeline_tag: The pipeline tag from HuggingFace Hub model info.
+        pipeline_tag: The pipeline tag from Hugging Face Hub model info.
 
     Returns:
         The corresponding PipelineTask or None if no mapping exists.
@@ -88,6 +89,8 @@ def _infer_task_from_hf_pipeline_tag(
         "feature-extraction": PipelineTask.EMBEDDINGS_GENERATION,
         "sentence-similarity": PipelineTask.EMBEDDINGS_GENERATION,
         "audio-generation": PipelineTask.AUDIO_GENERATION,
+        "text-to-image": PipelineTask.PIXEL_GENERATION,
+        "image-to-image": PipelineTask.PIXEL_GENERATION,
         # Add more mappings as needed
     }
 
@@ -100,11 +103,21 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
     | type[AudioGeneratorPipeline]
+    | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
+    """Returns the pipeline class for the given task and config.
+
+    Args:
+        task: The pipeline task (e.g. text generation, embeddings).
+        pipeline_config: Pipeline configuration (may select speculative path).
+
+    Returns:
+        The pipeline class to use for this task and config.
+    """
     if (
         task == PipelineTask.TEXT_GENERATION
         and pipeline_config.speculative is not None
@@ -116,9 +129,12 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
-        if spec_method == SpeculativeMethod.STANDALONE:
+        if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
-        elif spec_method == SpeculativeMethod.EAGLE:
+        elif (
+            pipeline_config.speculative.is_eagle()
+            or pipeline_config.speculative.is_mtp()
+        ):
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
@@ -126,7 +142,7 @@ def get_pipeline_for_task(
         role = pipeline_config.pipeline_role
         if (
             task == PipelineTask.TEXT_GENERATION
-            and role == PipelineRole.PrefillAndDecode
+            and role == "prefill_and_decode"
         ):
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
@@ -142,15 +158,14 @@ def get_pipeline_for_task(
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
     elif task == PipelineTask.PIXEL_GENERATION:
-        raise NotImplementedError("Pixel generation not yet implemented")
+        return PixelGenerationPipeline
 
 
 @dataclass(frozen=False)
 class SupportedArchitecture:
-    """
-    Represents a model architecture configuration for MAX pipelines.
+    """Represents a model architecture configuration for MAX pipelines.
 
-    This class defines all the necessary components and settings required to
+    Defines the components and settings required to
     support a specific model architecture within the MAX pipeline system.
     Each `SupportedArchitecture` instance encapsulates the model implementation,
     tokenizer, supported encodings, and other architecture-specific configuration.
@@ -166,10 +181,10 @@ class SupportedArchitecture:
                 example_repo_ids=[
                     "your-org/your-model-name",  # Add example model repository IDs
                 ],
-                default_encoding=SupportedEncoding.q4_k,
+                default_encoding="q4_k",
                 supported_encodings={
-                    SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-                    SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+                    "q4_k": ["paged"],
+                    "bfloat16": ["paged"],
                     # Add other encodings your model supports
                 },
                 pipeline_model=MyModel,
@@ -177,7 +192,7 @@ class SupportedArchitecture:
                 context_type=TextContext,
                 config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
-                rope_type=RopeType.none,
+                rope_type="none",
                 weight_adapters={
                     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
                     # Add other weight formats if needed
@@ -228,7 +243,7 @@ class SupportedArchitecture:
     implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
     """
 
-    rope_type: RopeType = RopeType.none
+    rope_type: RopeType = "none"
     """The type of RoPE (Rotary Position Embedding) used by the model."""
 
     weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
@@ -283,6 +298,7 @@ class SupportedArchitecture:
 
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
+        """Returns the tokenizer class for this architecture."""
         if isinstance(self.tokenizer, type):
             return self.tokenizer
         # Otherwise fall back to PipelineTokenizer.
@@ -290,6 +306,28 @@ class SupportedArchitecture:
 
 
 class PipelineRegistry:
+    """Registry for managing supported model architectures and their pipelines.
+
+    This class maintains a collection of :class:`SupportedArchitecture`
+    instances, each defining how a particular model architecture should be
+    loaded, configured, and executed.
+
+    .. note::
+
+        Do not instantiate this class directly. Always use the global
+        :obj:`PIPELINE_REGISTRY` singleton, which is automatically populated
+        with all built-in architectures when you import :mod:`max.pipelines`.
+
+    Use :obj:`PIPELINE_REGISTRY` when you want to:
+
+    - **Register a custom architectures**: Call :meth:`register` to add a new
+      MAX model architecture to the registry before loading it.
+    - **Query supported models**: Call :meth:`retrieve_architecture` to check
+      if a Hugging Face model repository is supported before attempting to load it.
+    - **Access cached configs**: Methods like :meth:`get_active_huggingface_config` and
+      :meth:`get_active_tokenizer` provide cached access to model configurations and tokenizers.
+    """
+
     def __init__(self, architectures: list[SupportedArchitecture]) -> None:
         # Primary lookup by architecture name
         self.architectures = {arch.name: arch for arch in architectures}
@@ -356,22 +394,24 @@ class PipelineRegistry:
         use_legacy_module: bool = True,
         task: PipelineTask | None = None,
     ) -> SupportedArchitecture | None:
-        """Retrieve architecture matching the HuggingFace model config.
+        """Retrieve architecture matching the Hugging Face model config.
 
         Args:
-            huggingface_repo: The HuggingFace repository to match against.
+            huggingface_repo: The Hugging Face repository to match against.
             use_legacy_module: Whether to use legacy Module architecture (default=True).
                 When True, appends "_Legacy" suffix to find legacy graph-based architecture.
-                When False, uses the standard HuggingFace architecture name for new API.
+                When False, uses the standard Hugging Face architecture name for new API.
             task: Optional task to disambiguate when multiple architectures share the same name.
                   If not provided and multiple architectures share the same name, the task will
-                  be inferred from the HuggingFace Hub's pipeline_tag.
+                  be inferred from the Hugging Face Hub's pipeline_tag.
 
         Returns:
             The matching SupportedArchitecture or None if no match found.
         """
         # Retrieve model architecture names
-        if not is_diffusion_pipeline(huggingface_repo):
+        is_diffusion = is_diffusion_pipeline(huggingface_repo)
+
+        if not is_diffusion:
             hf_config = self.get_active_huggingface_config(
                 huggingface_repo=huggingface_repo
             )
@@ -381,8 +421,10 @@ class PipelineRegistry:
                 huggingface_repo=huggingface_repo
             )
             if diffusers_config is None:
-                logger.debug(
-                    f"No diffusers_config found for {huggingface_repo.repo_id}"
+                logger.warning(
+                    f"Could not load diffusers config (model_index.json) for {huggingface_repo.repo_id}. "
+                    f"This may be a gated model requiring authentication. "
+                    f"Please set HF_TOKEN environment variable or run 'huggingface-cli login'."
                 )
                 return None
             if diffusers_arch := diffusers_config.get("_class_name"):
@@ -400,8 +442,11 @@ class PipelineRegistry:
             return None
 
         for architecture_name in architecture_names:
-            if use_legacy_module:
-                architecture_name += "_Legacy"
+            lookup_name = (
+                architecture_name + "_Legacy"
+                if use_legacy_module
+                else architecture_name
+            )
 
             # If task not provided, check if we need to infer it
             inferred_task = task
@@ -410,7 +455,7 @@ class PipelineRegistry:
                 matching_tasks = [
                     arch_task
                     for arch_name, arch_task in self._architectures_by_task
-                    if arch_name == architecture_name
+                    if arch_name == lookup_name
                 ]
 
                 # If multiple architectures share the name, infer task from pipeline_tag
@@ -434,15 +479,21 @@ class PipelineRegistry:
                             f"Using first registered architecture."
                         )
 
-            # Try task-specific lookup first
-            if inferred_task is not None:
-                task_key = (architecture_name, inferred_task)
-                if task_key in self._architectures_by_task:
-                    return self._architectures_by_task[task_key]
+            if arch := self._resolve_architecture(lookup_name, inferred_task):
+                return arch
 
-            # Fall back to name-only match
-            if architecture_name in self.architectures:
-                return self.architectures[architecture_name]
+            # Fallback: if only one variant exists, use it
+            fallback_name = (
+                architecture_name
+                if use_legacy_module
+                else architecture_name + "_Legacy"
+            )
+            if arch := self._resolve_architecture(fallback_name, inferred_task):
+                logger.debug(
+                    f"Falling back from '{lookup_name}' to"
+                    f" '{fallback_name}' (only one variant registered)"
+                )
+                return arch
 
         logger.debug(
             f"optimized architecture not available for {huggingface_repo.repo_id} in MAX REGISTRY"
@@ -453,11 +504,10 @@ class PipelineRegistry:
     def get_active_huggingface_config(
         self, huggingface_repo: HuggingFaceRepo
     ) -> AutoConfig:
-        """Retrieves or creates a cached HuggingFace AutoConfig for the given
-        model configuration.
+        """Retrieves or creates a cached Hugging Face AutoConfig for the given model.
 
-        This method maintains a cache of HuggingFace configurations to avoid
-        reloading them unnecessarily which incurs a huggingface hub API call.
+        Maintains a cache of Hugging Face configurations to avoid
+        reloading them unnecessarily which incurs a Hugging Face Hub API call.
         If a config for the given model hasn't been loaded before, it will
         create a new one using AutoConfig.from_pretrained() with the model's
         settings.
@@ -471,7 +521,7 @@ class PipelineRegistry:
             huggingface_repo: The HuggingFaceRepo containing the model.
 
         Returns:
-            AutoConfig: The HuggingFace configuration object for the model.
+            AutoConfig: The Hugging Face configuration object for the model.
         """
         if huggingface_repo not in self._cached_huggingface_configs:
             self._cached_huggingface_configs[huggingface_repo] = (
@@ -504,14 +554,19 @@ class PipelineRegistry:
                 # Check if model_index.json exists to identify diffusion pipelines
                 import json
 
-                from huggingface_hub import hf_hub_download
+                if huggingface_repo.repo_type == RepoType.local:
+                    config_path = os.path.join(
+                        huggingface_repo.repo_id, "model_index.json"
+                    )
+                else:
+                    from huggingface_hub import hf_hub_download
 
-                # Try to download model_index.json
-                config_path = hf_hub_download(
-                    repo_id=huggingface_repo.repo_id,
-                    filename="model_index.json",
-                    revision=huggingface_repo.revision,
-                )
+                    # Try to download model_index.json
+                    config_path = hf_hub_download(
+                        repo_id=huggingface_repo.repo_id,
+                        filename="model_index.json",
+                        revision=huggingface_repo.revision,
+                    )
 
                 # Load the config
                 with open(config_path) as f:
@@ -530,11 +585,10 @@ class PipelineRegistry:
     def get_active_tokenizer(
         self, huggingface_repo: HuggingFaceRepo
     ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
-        """Retrieves or creates a cached HuggingFace AutoTokenizer for the given
-        model configuration.
+        """Retrieves or creates a cached Hugging Face AutoTokenizer for the given model.
 
-        This method maintains a cache of HuggingFace tokenizers to avoid
-        reloading them unnecessarily which incurs a huggingface hub API call.
+        Maintains a cache of Hugging Face tokenizers to avoid
+        reloading them unnecessarily which incurs a Hugging Face Hub API call.
         If a tokenizer for the given model hasn't been loaded before, it will
         create a new one using AutoTokenizer.from_pretrained() with the model's
         settings.
@@ -543,7 +597,7 @@ class PipelineRegistry:
             huggingface_repo: The HuggingFaceRepo containing the model.
 
         Returns:
-            PreTrainedTokenizer | PreTrainedTokenizerFast: The HuggingFace tokenizer for the model.
+            PreTrainedTokenizer | PreTrainedTokenizerFast: The Hugging Face tokenizer for the model.
         """
         if huggingface_repo not in self._cached_huggingface_tokenizers:
             self._cached_huggingface_tokenizers[huggingface_repo] = (
@@ -556,16 +610,42 @@ class PipelineRegistry:
 
         return self._cached_huggingface_tokenizers[huggingface_repo]
 
+    def _resolve_architecture(
+        self, name: str, task: PipelineTask | None = None
+    ) -> SupportedArchitecture | None:
+        """Look up an architecture by name, optionally disambiguating by task.
+
+        When multiple architectures share the same name (e.g., a text generation
+        model and a TTS model both using LlamaForCausalLM), the task parameter
+        allows selecting the correct one.
+
+        Args:
+            name: The architecture name to look up.
+            task: Optional task to disambiguate when multiple architectures
+                share the same name.
+
+        Returns:
+            The matching SupportedArchitecture, or None if not found.
+        """
+        if task is not None:
+            task_key = (name, task)
+            if task_key in self._architectures_by_task:
+                return self._architectures_by_task[task_key]
+        return self.architectures.get(name)
+
     def retrieve_tokenizer(
         self,
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> PipelineTokenizer[Any, Any, Any]:
         """Retrieves a tokenizer for the given pipeline configuration.
 
         Args:
             pipeline_config: Configuration for the pipeline
             override_architecture: Optional architecture override string
+            task: Optional pipeline task to disambiguate when multiple
+                architectures share the same name but serve different tasks.
 
         Returns:
             PipelineTokenizer: The configured tokenizer
@@ -574,13 +654,13 @@ class PipelineRegistry:
             ValueError: If no architecture is found
         """
         # MAX pipeline
-        arch: SupportedArchitecture | None = None
         if override_architecture:
-            arch = self.architectures[override_architecture]
+            arch = self._resolve_architecture(override_architecture, task)
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_legacy_module=pipeline_config.use_legacy_module,
+                task=task,
             )
 
         if arch is None:
@@ -638,15 +718,15 @@ class PipelineRegistry:
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], Callable[[], PipelineTypes]]:
+        """Retrieves the tokenizer and a factory that creates the pipeline instance."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         # MAX pipeline
-        arch: SupportedArchitecture | None = None
         if override_architecture:
-            arch = self.architectures[override_architecture]
+            arch = self._resolve_architecture(override_architecture, task)
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
@@ -654,14 +734,65 @@ class PipelineRegistry:
                 task=task,
             )
 
-        # Load HuggingFace Config
-        huggingface_config = pipeline_config.model.huggingface_config
-
         # Architecture should not be None here, as the engine is MAX.
         if arch is None:
             raise ValueError(
                 f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
             )
+
+        # For pixel generation (diffusion models), we don't need HuggingFace transformers config
+        if task == PipelineTask.PIXEL_GENERATION:
+            # Pixel generation pipelines use a different tokenizer with subfolder parameters
+            # Check if there's a secondary tokenizer (tokenizer_2) in the diffusers config
+            diffusers_config = pipeline_config.model.diffusers_config
+            has_tokenizer_2 = False
+            if diffusers_config and "components" in diffusers_config:
+                has_tokenizer_2 = (
+                    "tokenizer_2" in diffusers_config["components"]
+                )
+
+            # Standard max_length for CLIP tokenizer (primary)
+            # and T5 tokenizer (secondary, if present)
+            tokenizer_kwargs = {
+                "model_path": pipeline_config.model.model_path,
+                "pipeline_config": pipeline_config,
+                "subfolder": "tokenizer",
+                "max_length": 77,  # Standard for CLIP
+                "revision": pipeline_config.model.huggingface_model_revision,
+                "trust_remote_code": pipeline_config.model.trust_remote_code,
+            }
+
+            if has_tokenizer_2:
+                tokenizer_kwargs["subfolder_2"] = "tokenizer_2"
+                tokenizer_kwargs["secondary_max_length"] = (
+                    512  # Standard for T5
+                )
+
+            tokenizer = arch.tokenizer(**tokenizer_kwargs)
+
+            # Pixel generation pipeline only needs pipeline_config and pipeline_model
+            pixel_factory_kwargs: dict[str, Any] = {
+                "pipeline_config": pipeline_config,
+                "pipeline_model": arch.pipeline_model,
+            }
+
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(  # type: ignore
+                    pipeline_class, **pixel_factory_kwargs
+                ),
+            )
+
+            # Cast tokenizer for return (pixel generation tokenizer doesn't have eos)
+            typed_tokenizer = cast(
+                PipelineTokenizer[Any, Any, Any],
+                tokenizer,
+            )
+
+            return typed_tokenizer, pipeline_factory
+
+        # Load HuggingFace Config for text generation and other tasks
+        huggingface_config = pipeline_config.model.huggingface_config
 
         if huggingface_config is None:
             raise ValueError(
@@ -756,6 +887,7 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
@@ -769,6 +901,8 @@ class PipelineRegistry:
                 based on the model repository. This is useful for cases like audio generation
                 where the pipeline uses a different architecture (e.g., audio decoder) than
                 the underlying model repository.
+            task: Optional pipeline task to disambiguate when multiple architectures share
+                the same name but serve different tasks.
 
         Returns:
             The context class type associated with the architecture, which implements
@@ -778,37 +912,32 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository
                 or override architecture name.
         """
-        arch: SupportedArchitecture | None = None
         if override_architecture:
-            arch = self.architectures.get(override_architecture)
-            if arch is None:
-                raise ValueError(
-                    f"Architecture '{override_architecture}' not found in registry"
-                )
+            arch = self._resolve_architecture(override_architecture, task)
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_legacy_module=pipeline_config.use_legacy_module,
+                task=task,
             )
 
         if arch:
             return arch.context_type
 
         raise ValueError(
-            f"MAX Optimized architecture not supported for {pipeline_config.model.huggingface_model_repo.repo_id}"
+            f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
         )
 
     def retrieve_pipeline_task(
         self, pipeline_config: PipelineConfig
     ) -> PipelineTask:
-        """
-        Retrieve the pipeline task associated with the architecture for the given pipeline configuration.
+        """Retrieves the pipeline task for the given pipeline configuration.
 
         Args:
-            pipeline_config (PipelineConfig): The configuration for the pipeline.
+            pipeline_config: The configuration for the pipeline.
 
         Returns:
-            PipelineTask: The task associated with the architecture.
+            The task associated with the architecture.
 
         Raises:
             ValueError: If no supported architecture is found for the given model repository.
@@ -829,12 +958,14 @@ class PipelineRegistry:
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
+        """Retrieves the tokenizer and an instantiated pipeline for the config."""
         tokenizer, pipeline_factory = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )
         return tokenizer, pipeline_factory()
 
     def reset(self) -> None:
+        """Clears all registered architectures (mainly for tests)."""
         self.architectures.clear()
         self._architectures_by_task.clear()
 

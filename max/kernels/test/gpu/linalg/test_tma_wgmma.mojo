@@ -69,7 +69,7 @@ fn _load_a_reg_tile[
         ...,
     ],
 ):
-    __comptime_assert ret.layout[0].shape[0].value() > 0
+    comptime assert ret.layout[0].shape[0].value() > 0
     ret = type_of(ret).stack_allocation()
     var tid = thread_idx.x
     comptime WGMMA_M = wgmma_shape[0]
@@ -80,18 +80,13 @@ fn _load_a_reg_tile[
 
     comptime num_wgmma_m = ceildiv(rows, WGMMA_M)
     comptime num_wgmma_k = ceildiv(cols, WGMMA_K)
-    __comptime_assert (
-        num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()
-    )
+    comptime assert num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()
 
     comptime simd_size = 4 // size_of[dtype]()
     var vret = ret.vectorize[1, simd_size]()
 
-    @parameter
-    for m_mma in range(num_wgmma_m):
-
-        @parameter
-        for k_mma in range(num_wgmma_k):
+    comptime for m_mma in range(num_wgmma_m):
+        comptime for k_mma in range(num_wgmma_k):
             comptime r_id = m_mma + k_mma * num_wgmma_m
             var smem_wg = (
                 smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
@@ -194,7 +189,7 @@ fn tma_wgmma_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
@@ -221,8 +216,7 @@ fn tma_wgmma_kernel[
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
 
-        @parameter
-        if a_smem:
+        comptime if a_smem:
             wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         else:
             var a_reg_tile = _load_a_reg_tile[wgmma_shape](a_smem_tile)
@@ -235,11 +229,8 @@ fn tma_wgmma_kernel[
 
     c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # (m_mma, n_mma) is coordinates for a warp group's tile.
@@ -434,8 +425,7 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
-        @parameter
-        for log2BN in range(6, 8):
+        comptime for log2BN in range(6, 8):
             comptime BN = 1 << log2BN
             test_tma_wgmma[
                 DType.bfloat16,

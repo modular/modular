@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
@@ -52,7 +52,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
@@ -66,7 +65,7 @@ from .util import compute_multimodal_merge_indices
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass(eq=False)
+@dataclass
 class Qwen2_5VLInputs(ModelInputs):
     """A class representing inputs for the Qwen2.5VL model.
 
@@ -89,7 +88,7 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs
+    kv_cache_inputs: KVCacheInputs = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -151,8 +150,6 @@ class Qwen2_5VLModel(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -162,8 +159,6 @@ class Qwen2_5VLModel(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

@@ -21,7 +21,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from sys.ffi import external_call
+from ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.primitives.grid_controls import PDLLevel
@@ -102,7 +102,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterType, Writable):
+](Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -237,8 +237,7 @@ struct MatmulConfig[
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
         comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
-        @parameter
-        if static_info_match:
+        comptime if static_info_match:
             return (
                 self.block_tile_shape == rhs.block_tile_shape
                 and self.num_pipeline_stages == rhs.num_pipeline_stages
@@ -299,16 +298,12 @@ struct MatmulConfig[
 # Actual BK should be multiple of BK_base.
 fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
     if type.is_float8():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 128
         else:
             return 64
     elif type.is_half_float():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 64
         else:
             return 32
@@ -334,7 +329,7 @@ fn _shared_memory_usage[
 @fieldwise_init
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.

@@ -76,7 +76,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole(TrivialRegisterPassable):
     var _role: Int32
 
     comptime MainLoad = Self(4)
@@ -186,7 +186,7 @@ fn load_AB[
     mma_mbar[stage].wait(phase)
 
     if elect_one_cta:
-        tma_mbar[stage].expect_bytes(expected_bytes)
+        tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
     var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
         a_tma_rows
@@ -358,7 +358,7 @@ fn store_C[
     comptime remainder_elements = elements_per_row - main_load_elements
 
     # if i do have non-power of 2, then remainder_elements must be divisible by 32 (can extend to support more values later)
-    __comptime_assert (
+    comptime assert (
         remainder_elements % 32 == 0
     ), "remainder_elements must be divisible by 32"
 
@@ -422,8 +422,7 @@ fn store_C[
         width = c_lower_pow_2_main.size,
     ](tmem_addr | UInt32((warp_id * 32 + 16) << 16))
 
-    @parameter
-    if MMA_N != prev_power_of_two(MMA_N):
+    comptime if MMA_N != prev_power_of_two(MMA_N):
         # no mma_n can be larger than 256, so if there's a remainder,
         # we've loaded the smallest power of 2, 128, and the rem is after
         # 128. this is why tmem address is offset by 128
@@ -472,8 +471,7 @@ fn store_C[
         Int(split_coord_x), 0
     )
 
-    @parameter
-    for tma_n in range(NUM_ST_MATRIX):
+    comptime for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
             Int(warp_id % 2 if MMA_M == 128 else warp_id), 0
@@ -484,11 +482,8 @@ fn store_C[
         var d_reg_upper: SIMD[DType.bfloat16, 8]
         var d_reg_lower: SIMD[DType.bfloat16, 8]
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range((TMA_BN // 16)):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for i in range((TMA_BN // 16)):
                 var st_matrix_args = RuntimeTuple[
                     IntTuple(
                         UNKNOWN_VALUE,
@@ -507,8 +502,7 @@ fn store_C[
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists
                 # and for last iteration we load remainder registers (for the remainder 32 )
-                @parameter
-                if (
+                comptime if (
                     MMA_N == prev_power_of_two(MMA_N)
                     or tma_n < NUM_ST_MATRIX - 1
                 ):
@@ -568,8 +562,8 @@ fn store_C[
         c_tma_op.wait_group[0]()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, UInt32(max_tmem_cols))
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(max_tmem_cols))
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -711,7 +705,7 @@ fn kernel_6[
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
@@ -722,12 +716,11 @@ fn kernel_6[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // cta_group + cluster_shape[1] - 1
+                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
         compute_barrier[].init()
 
@@ -767,14 +760,12 @@ fn kernel_6[
     var a_multicast_mask: UInt16 = 0x0
     var b_multicast_mask: UInt16 = 0x0
 
-    @parameter
-    for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+    comptime for i in range(CLUSTER_N):
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+    comptime for i in range(CLUSTER_M // cta_group):
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -832,7 +823,9 @@ fn kernel_6[
 
         # mma arrive multicast will track completion of all mma prior to this barrier.
         if elect_one_sync():
-            mma_arrive_multicast[cta_group](compute_barrier, mma_complete_mask)
+            mma_arrive_multicast[cta_group](
+                compute_barrier, UInt16(mma_complete_mask)
+            )
 
     if WarpRole.is_epilogue():
         compute_barrier[].wait()
@@ -879,7 +872,7 @@ fn blackwell_kernel_6[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -890,13 +883,15 @@ fn blackwell_kernel_6[
     comptime MMA_K = umma_shape[2]
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
+        ) if transpose_b else Index(
+            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -966,7 +961,9 @@ fn blackwell_kernel_6[
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
         block_dim=(32 * 6),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
 
@@ -1098,7 +1095,7 @@ def test_blackwell_kernel_6[
             Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         # Round TFLOPS to two decimal places for cleaner output
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 2)
@@ -1174,8 +1171,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("============================================")
     print("M, N, K, time(ms), TFLOPS")
 
-    @parameter
-    for i in range(len(dic_of_shapes)):
+    comptime for i in range(len(dic_of_shapes)):
         comptime shape = get_dic_of_shapes(i, dic_of_shapes)
         try:
             test_blackwell_kernel_6[

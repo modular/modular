@@ -47,7 +47,7 @@ struct RuntimeLayout[
     *,
     element_type: DType = DType.int64,
     linear_idx_type: DType = DType.int64,
-](Defaultable, Stringable, TrivialRegisterType, Writable):
+](Defaultable, Stringable, TrivialRegisterPassable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
@@ -100,7 +100,7 @@ struct RuntimeLayout[
             dimensions known.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.layout.all_dims_known()
         ), "Static layout with known dims is required"
 
@@ -201,8 +201,7 @@ struct RuntimeLayout[
             shape, False otherwise.
         """
 
-        @parameter
-        for i in range(Self.layout.rank()):
+        comptime for i in range(Self.layout.rank()):
             comptime dim_i = Int(Self.layout.shape[i])
             if self.shape.value[i] != dim_i:
                 return True
@@ -272,8 +271,7 @@ struct RuntimeLayout[
         var c_stride = 1
         stride[rank - 1] = c_stride
 
-        @parameter
-        for i in reversed(range(rank - 1)):
+        comptime for i in reversed(range(rank - 1)):
             var dim = shape[i + 1]
             stride[i] = dim * c_stride
             c_stride *= dim
@@ -309,8 +307,7 @@ struct RuntimeLayout[
         var c_stride = 1
         stride[0] = c_stride
 
-        @parameter
-        for i in range(1, rank):
+        comptime for i in range(1, rank):
             var dim = shape[i - 1]
             stride[i] = dim * c_stride
             c_stride *= dim
@@ -409,7 +406,7 @@ fn coalesce[
         A new `RuntimeLayout` with coalesced dimensions.
     """
 
-    __comptime_assert not keep_rank, "Unsupported coalesce mode"
+    comptime assert not keep_rank, "Unsupported coalesce mode"
 
     var res_shape = RuntimeTuple[
         coalesce_layout(l, keep_rank).shape, element_type = layout.element_type
@@ -424,8 +421,7 @@ fn coalesce[
 
     var idx = 0
 
-    @parameter
-    for i in range(len(flatten(l.shape))):
+    comptime for i in range(len(flatten(l.shape))):
         comptime shape = Int(l.shape[i])
         comptime stride = Int(l.stride[i])
 
@@ -499,13 +495,11 @@ fn make_layout[
     comptime a_length = len(flatten(l1.shape))
     comptime b_length = len(flatten(l2.shape))
 
-    @parameter
-    for i in range(a_length):
+    comptime for i in range(a_length):
         res_shape.value[i] = a.shape.value[i]
         res_stride.value[i] = a.stride.value[i]
 
-    @parameter
-    for i in range(b_length):
+    comptime for i in range(b_length):
         res_shape.value[a_length + i] = b.shape.value[i]
         res_stride.value[a_length + i] = b.stride.value[i]
 

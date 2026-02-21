@@ -23,33 +23,22 @@ Additional SMEM allocations:
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TMADescriptor
 from layout import Layout
-from layout.tma_async import SharedMemBarrier
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_sf_layout_k_major,
-)
-from memory import UnsafePointer
-
-from linalg.fp4_utils import (
-    SF_MN_GROUP_SIZE,
-    SF_ATOM_M,
-    SF_ATOM_K,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage import (
-    InputPipelineStorage,
-    OutputPipelineStorage,
-    ClcPipelineStorage,
-    TmemDeallocStorage,
+from layout.tensor_core_async import tile_sf_layout_k_major
+from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.pipeline_storage import (
     BlockScaledTileStorage,
+    SmemPipelineBundle,
+    SmemLayouts,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
-    BlockScaledTilePayload,
+from ..block_scaled.block_scaled_smem import (
+    sf_k_group_size,
+    sf_bk,
+    sfa_dim0,
+    sfa_dim1,
+    sfb_dim0,
+    sfb_dim1,
 )
-from linalg.structuring import SMemTileArray, SMemArray
+from ..structured_kernels.tile_pipeline import BlockScaledTilePayload
 
 
 # Number of tensormap descriptors for grouped GEMM
@@ -107,20 +96,24 @@ struct GroupedBlockScaledSmem[
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
     # ========== Layout Definitions ==========
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
-    ]()
-
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
-    ]()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
+    comptime Layouts = SmemLayouts[
+        Self.a_type,
+        Self.b_type,
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.OutputM,
+        Self.OutputN,
+        Self.config.a_swizzle,
+        Self.config.b_swizzle,
+        Self.transpose_b,
+    ]
+    comptime a_smem_layout = Self.Layouts.a_smem_layout
+    comptime b_smem_layout = Self.Layouts.b_smem_layout
+    comptime c_smem_layout = Self.Layouts.c_smem_layout
 
     # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
-    comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size
+    comptime SF_K_GROUP_SIZE = sf_k_group_size[Self.config]()
 
     comptime sfa_smem_layout = tile_sf_layout_k_major[
         Self.BM,
@@ -134,23 +127,41 @@ struct GroupedBlockScaledSmem[
         Self.config.vec_sf_size,
     ]()
 
+    # SF tile dimensions (computed via shared helper functions)
+    comptime SF_BK = sf_bk[Self.config]()
+    comptime SFA_DIM0 = sfa_dim0[Self.config]()
+    comptime SFA_DIM1 = sfa_dim1[Self.config]()
+    comptime SFB_DIM0 = sfb_dim0[Self.config]()
+    comptime SFB_DIM1 = sfb_dim1[Self.config]()
+
     # ========== Tile Storage ==========
+    # Layouts are used by tile storage types for allocation and sizing
     comptime Tiles = BlockScaledTileStorage[
         Self.a_type,
         Self.b_type,
         Self.c_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
-        Self.c_smem_layout,
-        Self.sfa_smem_layout,
-        Self.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.BM,
+        Self.BK,
+        # B tile dimensions (BN x BK)
+        Self.BN,
+        Self.BK,
+        # C tile dimensions (OutputM x OutputN)
+        Self.OutputM,
+        Self.OutputN,
+        # SFA tile dimensions
+        Self.SFA_DIM0,
+        Self.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SFB_DIM0,
+        Self.SFB_DIM1,
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types for external use
+    # Re-export tile array types
     comptime ATileArray = Self.Tiles.ATileArray
     comptime BTileArray = Self.Tiles.BTileArray
     comptime CTileArray = Self.Tiles.CTileArray
@@ -164,32 +175,32 @@ struct GroupedBlockScaledSmem[
     # Tile storage (same position as BlockScaledSmem)
     var tiles: Self.Tiles
 
-    # ========== Pipeline Storage (Embedded) ==========
-    comptime InputPipeline = InputPipelineStorage[
+    # ========== Pipeline Storage (Composed Bundle) ==========
+    comptime Pipelines = SmemPipelineBundle[
         Self.num_group_pipeline_stages,
+        Self.num_accum_pipeline_stages,
+        Self.num_clc_pipeline_stages,
         BlockScaledTilePayload[
             Self.a_type,
             Self.b_type,
             Self.sfa_dtype,
             Self.sfb_dtype,
-            Self.a_smem_layout,
-            Self.b_smem_layout,
-            Self.sfa_smem_layout,
-            Self.sfb_smem_layout,
+            # A tile dimensions (BM x BK)
+            Self.BM,
+            Self.BK,
+            # B tile dimensions (BN x BK)
+            Self.BN,
+            Self.BK,
+            # SFA tile dimensions
+            Self.SFA_DIM0,
+            Self.SFA_DIM1,
+            # SFB tile dimensions
+            Self.SFB_DIM0,
+            Self.SFB_DIM1,
             Self.num_pipeline_stages,
         ],
     ]
-    comptime OutputPipeline = OutputPipelineStorage[
-        Self.num_accum_pipeline_stages
-    ]
-    comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
-    comptime TmemDeallocPipeline = TmemDeallocStorage
-
-    # Storage fields - embedded in SMEM (same position as BlockScaledSmem)
-    var input_pipeline: Self.InputPipeline
-    var output_pipeline: Self.OutputPipeline
-    var clc_pipeline: Self.ClcPipeline
-    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
+    var pipelines: Self.Pipelines
 
     # Tensormap descriptors at END (5 x 128 bytes = 640 bytes)
     # These are only used for multi-group dynamic updates
@@ -199,86 +210,32 @@ struct GroupedBlockScaledSmem[
     var tensormap_sfb: TMADescriptor
     var tensormap_c: TMADescriptor
 
-    # Type aliases for accessor return types
-    comptime InputBarriers = Self.InputPipeline.BarrierArray
-    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
-    comptime ClcBarriers = Self.ClcPipeline.BarrierArray
-    comptime ClcThrottleBarriers = Self.ClcPipeline.ThrottleArray
-    comptime ClcResponse = Self.ClcPipeline.ResponseArray
-    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
-    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
-
-    # ========== Tensormap Descriptor Notes ==========
-    # Access tensormap fields directly from the SMEM reference:
-    #   ref smem = external_memory[...].bitcast[Self]()[]
-    #   # Then access: smem.tensormap_a, smem.tensormap_b, etc.
-    #
-    # To get a pointer for TMA APIs:
-    #   var desc_ptr = UnsafePointer(to=smem.tensormap_a)
-    #
-    # The tensormap fields are stored inline in SMEM at the start
-    # of the struct, before tile storage, ensuring proper layout.
-
-    # ========== Tile Accessors (Delegated) ==========
+    # ========== Tile Accessors (TileTensor - Delegated) ==========
 
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+        """Get A tile array accessor."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+        """Get B tile array accessor."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor."""
         return self.tiles.c_tiles()
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
+        """Get SFA tile array accessor."""
         return self.tiles.sfa_tiles()
 
     @always_inline
     fn sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
+        """Get SFB tile array accessor."""
         return self.tiles.sfb_tiles()
-
-    # ========== Barrier Accessors (Delegated to Pipelines) ==========
-
-    @always_inline
-    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
-        """Returns input tile pipeline barriers."""
-        return self.input_pipeline.barriers.barriers()
-
-    @always_inline
-    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
-        """Returns accumulator pipeline barriers."""
-        return self.output_pipeline.barriers.barriers()
-
-    @always_inline
-    fn clc_mbars_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.full()
-
-    @always_inline
-    fn clc_mbars_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
-        return self.clc_pipeline.empty()
-
-    @always_inline
-    fn clc_throttle_mbars(
-        ref[AddressSpace.SHARED] self,
-    ) -> Self.ClcThrottleBarriers:
-        return self.clc_pipeline.throttle()
-
-    @always_inline
-    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
-        return self.clc_pipeline.response()
-
-    @always_inline
-    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
-        """Returns TMEM deallocation barrier."""
-        return self.tmem_dealloc_pipeline.barrier()
-
-    @always_inline
-    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
-        return self.tmem_dealloc_pipeline.addr()
 
     # ========== Size Utilities ==========
 

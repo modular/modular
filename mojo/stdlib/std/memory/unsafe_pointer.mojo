@@ -31,7 +31,7 @@ from compile import get_type_name
 from format._utils import FormatStruct, Named, TypeNames
 from memory import memcpy
 from memory.memory import _free, _malloc
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from os import abort
 from python import PythonObject
 
@@ -88,7 +88,7 @@ fn alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = get_type_name[type]()
-    __comptime_assert size_of_t > 0, "size must be greater than zero"
+    comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
@@ -187,7 +187,7 @@ struct UnsafePointer[
     ImplicitlyCopyable,
     Intable,
     Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """`UnsafePointer` represents an indirect reference to one or more values
@@ -359,9 +359,9 @@ struct UnsafePointer[
             caller must ensure the address is valid before writing to it, and
             that the memory is initialized before reading from it. The caller
             must also ensure the pointer's origin and mutability is valid for
-            the address, failure to to do may result in undefined behavior.
+            the address, failure to do may result in undefined behavior.
         """
-        __comptime_assert (
+        comptime assert (
             size_of[type_of(self)]() == size_of[Int]()
         ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
@@ -1454,7 +1454,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        unsafe_origin_mutcast[Self.origin, target_mut]
+        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1475,7 +1475,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        unsafe_origin_mutcast[Self.origin, target_mut]
+        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1543,52 +1543,23 @@ struct UnsafePointer[
         self,
     ) -> UnsafePointer[
         Self.type,
-        ImmutAnyOrigin,
+        AnyOrigin[mut = Self.mut],
         address_space = Self.address_space,
-    ] where not type_of(self).mut:
-        """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
+    ]:
+        """Casts the origin of a pointer to `AnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `ImmutAnyOrigin`.
+            A pointer with the origin set to `AnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `AnyOrigin`. However, if it is needed, keep in mind that
+        `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
                 Self.type,
-                ImmutAnyOrigin,
-                address_space = Self.address_space,
-            ]._mlir_type,
-        ](self.address)
-
-    @always_inline("builtin")
-    fn as_any_origin(
-        self,
-    ) -> UnsafePointer[
-        Self.type,
-        MutAnyOrigin,
-        address_space = Self.address_space,
-    ] where type_of(self).mut:
-        """Casts the origin of a mutable pointer to `MutAnyOrigin`.
-
-        Returns:
-            A pointer with the origin set to `MutAnyOrigin`.
-
-        This requires the pointer to already be mutable as casting mutability
-        is inherently very unsafe.
-
-        It is usually preferred to maintain concrete origin values instead of
-        using `MutAnyOrigin`. However, if it is needed, keep in mind that
-        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the pointer.
-        """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointer[
-                Self.type,
-                MutAnyOrigin,
+                AnyOrigin[mut = Self.mut],
                 address_space = Self.address_space,
             ]._mlir_type,
         ](self.address)

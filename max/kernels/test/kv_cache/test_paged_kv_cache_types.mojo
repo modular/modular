@@ -59,9 +59,9 @@ def do_test[
         ),
     ).fill(0)
     for i in range(batch_size):
-        cache_lengths[i] = i
+        cache_lengths[i] = UInt32(i)
         for j in range(max_num_blocks):
-            lookup_table[i, j] = j
+            lookup_table[i, j] = UInt32(j)
 
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
@@ -70,8 +70,7 @@ def do_test[
         LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin]
     ] = None
 
-    @parameter
-    if scale_dtype == DType.float8_e4m3fn:
+    comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks
         var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
         scales = LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
@@ -232,7 +231,7 @@ fn test_paged_kv_cache_offset_correctness() raises:
     comptime layout_2d = Layout.row_major[2]()
     var lookup_table_ptr = alloc[UInt32](batch_size * num_blocks)
     for i in range(num_blocks):
-        lookup_table_ptr[i] = i  # Identity mapping
+        lookup_table_ptr[i] = UInt32(i)  # Identity mapping
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(

@@ -61,8 +61,7 @@ fn is_benchmark() -> Bool:
 
 @always_inline
 fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
-    @parameter
-    if swap:
+    comptime if swap:
         return Tuple(arg_1, arg_0)
     else:
         return Tuple(arg_0, arg_1)
@@ -194,8 +193,7 @@ fn repack_Q4_0_for_sm8x[
                 .distribute[thd_layout](UInt(lane_id))
             )
 
-            @parameter
-            for i_ele in range(16):
+            comptime for i_ele in range(16):
                 var val = thread_tile.load[2](i_ele // 2, i_ele % 2)
                 frag_0[i_ele] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
                 frag_1[i_ele] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
@@ -360,8 +358,7 @@ fn create_ref_b[
         mma_tile_iter_1[].vectorize[1, 2]()[0, 0]
     )
 
-    @parameter
-    for i in range(0, TILE_N // 8, 2):
+    comptime for i in range(0, TILE_N // 8, 2):
         var q_int = vec[i // 2]
 
         var v1 = int4tobf16(
@@ -581,7 +578,9 @@ fn test_repack_Q4_0_for_sm8x(
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_usage)
+        ),
     )
 
     comptime dequan = create_ref_b[
@@ -599,7 +598,9 @@ fn test_repack_Q4_0_for_sm8x(
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_usage)
+        ),
     )
 
     ctx.enqueue_copy(repacked_b_host_ptr, repacked_b_device)
@@ -798,7 +799,7 @@ fn test_quantized[
 
         var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         print(
             "Transpose B ",
             "True",

@@ -44,7 +44,17 @@ from gpu.primitives.cluster import cluster_sync, elect_one_sync
 from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
 from gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from sys import inlined_assembly
-from layout import Layout, LayoutTensor
+from layout import Layout as LegacyLayout, LayoutTensor
+from layout._layout import TensorLayout
+from layout._tile_tensor import TileTensor
+from layout._layout import RowMajorLayout, _IntToComptimeInt
+from layout._coord import ComptimeInt
+from ..structured_kernels.tile_types import (
+    TMATile,
+    TmaOpType,
+    tma_desc_layout_3d,
+    tma_desc_layout_5d,
+)
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -62,6 +72,29 @@ from utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
+from linalg.structuring import SMemPtr
+from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.tile_types import internal_k_major_128B
+from ..structured_kernels.kernel_common import WarpRole, KernelContext
+from ..structured_kernels.tile_pipeline import (
+    InputTilePipeline,
+    InputProducerStage,
+    InputConsumerStage,
+    OutputTilePipeline,
+    BlockScaledTilePayload,
+)
+from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
+from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.warp_context import (
+    MmaWarpContext,
+    EpilogueWarpContext,
+)
+from ..structured_kernels.output_writer import TileWriter
+from ..structured_kernels.tile_scheduler import (
+    TileScheduler as WorkingTileScheduler,
+)
+from ..block_scaled.block_scaled_smem import BlockScaledSmem
+from .grouped_block_scaled_smem import GroupedBlockScaledSmem
 from .grouped_tile_scheduler import (
     GroupedTileScheduler,
     GroupedWorkInfo,
@@ -69,47 +102,20 @@ from .grouped_tile_scheduler import (
     GroupedCLCWorkIterator,
     GroupedCLCSchedulerIterator,
 )
-from linalg.structuring import SMemPtr
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-from .grouped_block_scaled_smem import (
-    GroupedBlockScaledSmem,
-)
-from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_smem import (
-    BlockScaledSmem,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
-    WarpRole,
-    KernelContext,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
-    InputTilePipeline,
-    InputProducerStage,
-    InputConsumerStage,
-    BlockScaledTilePayload,
-    OutputTilePipeline,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
-    BlockScaledTmem,
-    TmemAllocation,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
-    TmemDeallocBarrier,
-    WarpGroupBarrier,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.warp_context import (
-    MmaWarpContext,
-    EpilogueWarpContext,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
-    TileWriter,
-)
 
-# Import working TileScheduler for minimal 2SM kernel (proven working pattern)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_scheduler import (
-    TileScheduler as WorkingTileScheduler,
-)
+
+comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
+    ComptimeInt[max_groups], ComptimeInt[1]
+]
+comptime _GroupPtrTile[max_groups: Int] = TileTensor[
+    DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+]
+comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
+    ComptimeInt[max_groups], ComptimeInt[4]
+]
+comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
+    DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+]
 
 
 # =============================================================================
@@ -129,7 +135,7 @@ comptime NUM_TENSORMAPS = 5
 
 
 @fieldwise_init
-struct GroupedTensormapSmem(TrivialRegisterType):
+struct GroupedTensormapSmem(TrivialRegisterPassable):
     """Shared memory pointers for tensormap descriptors.
 
     Points to 5 TMA descriptors (128 bytes each) in SMEM for dynamic updates:
@@ -196,7 +202,7 @@ struct GroupedTensormapSmem(TrivialRegisterType):
 
 
 @fieldwise_init
-struct GroupedTensormapManager(TrivialRegisterType):
+struct GroupedTensormapManager(TrivialRegisterPassable):
     """Manages tensormap SMEM state and updates for grouped GEMM.
 
     Handles the 4-step CuTe DSL update pattern:
@@ -280,18 +286,10 @@ struct GroupedTensormapManager(TrivialRegisterType):
     ](
         self,
         group_idx: UInt32,
-        group_a_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
-        group_b_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
-        group_sfa_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
-        group_sfb_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
+        group_a_ptrs: _GroupPtrTile[max_groups],
+        group_b_ptrs: _GroupPtrTile[max_groups],
+        group_sfa_ptrs: _GroupPtrTile[max_groups],
+        group_sfb_ptrs: _GroupPtrTile[max_groups],
         tma_a: UnsafePointer[
             TMATensorTile[a_dtype, a_layout, a_desc], MutAnyOrigin
         ],
@@ -366,9 +364,7 @@ struct GroupedTensormapManager(TrivialRegisterType):
     ](
         self,
         group_idx: UInt32,
-        group_c_ptrs: LayoutTensor[
-            DType.uint64, Layout.row_major(max_groups, 1), MutAnyOrigin
-        ],
+        group_c_ptrs: _GroupPtrTile[max_groups],
         tma_c: UnsafePointer[
             TMATensorTile[c_dtype, c_layout, c_desc], MutAnyOrigin
         ],
@@ -529,17 +525,6 @@ struct GroupedBlockScaledMatmulKernel[
     c_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
-    # Tensor layouts (from TMA descriptors)
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    sfa_desc_layout: Layout,
-    sfb_desc_layout: Layout,
     # Configuration
     transpose_b: Bool,
     config: BlockScaledMatmulConfig[
@@ -657,25 +642,41 @@ struct GroupedBlockScaledMatmulKernel[
     # Per-block updatable tensormaps (not grid constants)
 
     comptime TMATensorTileArrayA = TMATensorTileArray[
-        Self.CLUSTER_SIZE, Self.a_type, Self.a_layout, Self.a_desc_layout
+        Self.CLUSTER_SIZE,
+        Self.a_type,
+        Self.ATmaOp.layout,
+        Self.ATmaOp.desc_layout,
     ]
     comptime TMATensorTileArrayB = TMATensorTileArray[
-        Self.CLUSTER_SIZE, Self.b_type, Self.b_layout, Self.b_desc_layout
+        Self.CLUSTER_SIZE,
+        Self.b_type,
+        Self.BTmaOp.layout,
+        Self.BTmaOp.desc_layout,
     ]
     comptime TMATensorTileArraySFA = TMATensorTileArray[
-        Self.CLUSTER_SIZE, Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
+        Self.CLUSTER_SIZE,
+        Self.sfa_dtype,
+        Self.SFATmaOp.layout,
+        Self.SFATmaOp.desc_layout,
     ]
     comptime TMATensorTileArraySFB = TMATensorTileArray[
-        Self.CLUSTER_SIZE, Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
+        Self.CLUSTER_SIZE,
+        Self.sfb_dtype,
+        Self.SFBTmaOp.layout,
+        Self.SFBTmaOp.desc_layout,
     ]
     comptime TMATensorTileArrayC = TMATensorTileArray[
-        Self.CLUSTER_SIZE, Self.c_type, Self.c_layout, Self.c_desc_layout
+        Self.CLUSTER_SIZE,
+        Self.c_type,
+        Self.CTmaOp.layout,
+        Self.CTmaOp.desc_layout,
     ]
 
     # ========== Per-Group Pointer Layout ==========
     # Layout for arrays of per-group tensor pointers
 
-    comptime GroupPtrLayout = Layout.row_major(Self.max_groups, 1)
+    comptime GroupPtrLayout = _GroupPtrLayout[Self.max_groups]
+    comptime GroupPtrTile = _GroupPtrTile[Self.max_groups]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -749,16 +750,25 @@ struct GroupedBlockScaledMatmulKernel[
     ]
 
     # ========== Tile Pipeline Types ==========
+    # TileTensor-native payload - passed directly to TMA/MMA
 
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.SmemType.sfa_smem_layout,
-        Self.SmemType.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
+        # SFA tile dimensions
+        Self.SmemType.SFA_DIM0,
+        Self.SmemType.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SmemType.SFB_DIM0,
+        Self.SmemType.SFB_DIM1,
         Self.SmemType.num_pipeline_stages,
     ]
 
@@ -832,7 +842,8 @@ struct GroupedBlockScaledMatmulKernel[
         num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_layout = Self.SmemType.c_smem_layout,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
@@ -863,10 +874,106 @@ struct GroupedBlockScaledMatmulKernel[
         + Self.sfb_expected_bytes
     ) * Self.config.k_group_size
 
-    comptime a_tma_load_size = Self.a_desc_layout.size()
-    comptime b_tma_load_size = Self.b_desc_layout.size()
-    comptime a_tma_rows = Self.a_desc_layout.shape[1].value()
-    comptime b_tma_rows = Self.b_desc_layout.shape[1].value()
+    # ========== TMA Layouts (computed from config, new Layout types) ==========
+    # 3D batched layouts for A, B, C (batch dim = 1 for per-group updates)
+
+    comptime a_tile_dim1 = Self.BM // Self.CLUSTER_N
+    comptime b_tile_dim1 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
+        Self.a_type
+    ]()
+    comptime b_swizzle_elems = Self.config.b_swizzle.bytes() // size_of[
+        Self.b_type
+    ]()
+    comptime c_swizzle_elems = Self.config.c_swizzle.bytes() // size_of[
+        Self.c_type
+    ]()
+
+    # C tile dims -- same AB_swapped-aware logic as other kernels
+    comptime c_tile_dim1 = Self.OutputM if (
+        Self.MMA_M == 256 or Self.cta_group == 1 or Self.config.AB_swapped
+    ) else 64
+    comptime c_tile_dim2 = Self.c_swizzle_elems if (
+        Self.config.AB_swapped
+    ) else Self.OutputN
+
+    # A, B, C: 3D TMA layouts (batch=1, rows, cols)
+    comptime ATileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.a_tile_dim1, Self.BK]
+    ]
+    comptime ADescLayout = tma_desc_layout_3d[
+        Self.a_type, 1, Self.a_tile_dim1, Self.config.a_swizzle
+    ]
+    comptime BTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.b_tile_dim1, Self.BK]
+    ]
+    comptime BDescLayout = tma_desc_layout_3d[
+        Self.b_type, 1, Self.b_tile_dim1, Self.config.b_swizzle
+    ]
+    comptime CTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.c_tile_dim1, Self.c_tile_dim2]
+    ]
+    comptime CDescLayout = tma_desc_layout_3d[
+        Self.c_type, 1, Self.c_tile_dim1, Self.config.c_swizzle
+    ]
+
+    # SFA, SFB: 5D TMA layouts (batch=1, then 4D scale factor dims)
+    comptime SFATileLayout = RowMajorLayout[
+        *_IntToComptimeInt[
+            1,
+            Self.BM // SF_MN_GROUP_SIZE,
+            Self.config.num_sf_k_tiles,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ]
+    ]
+    comptime SFADescLayout = tma_desc_layout_5d[
+        Self.sfa_dtype,
+        1,
+        Self.BM // SF_MN_GROUP_SIZE,
+        Self.config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        TensorMapSwizzle.SWIZZLE_NONE,
+    ]
+    comptime SFBTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[
+            1,
+            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.config.num_sf_k_tiles,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ]
+    ]
+    comptime SFBDescLayout = tma_desc_layout_5d[
+        Self.sfb_dtype,
+        1,
+        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        TensorMapSwizzle.SWIZZLE_NONE,
+    ]
+
+    # TMA operation types
+    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime ATmaOp = Self.ATmaTile.InnerType
+    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime CTmaOp = Self.CTmaTile.InnerType
+    comptime SFATmaTile = TMATile[
+        Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
+    ]
+    comptime SFATmaOp = Self.SFATmaTile.InnerType
+    comptime SFBTmaTile = TMATile[
+        Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
+    ]
+    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
+
+    # TMA load size constants
+    comptime a_tma_load_size = Self.a_tile_dim1 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim1 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim1
+    comptime b_tma_rows = Self.b_tile_dim1
 
     # ========== Validation ==========
 
@@ -926,7 +1033,8 @@ struct GroupedBlockScaledMatmulKernel[
 
     # ========== Problem Sizes Layout ==========
     # Layout for problem_sizes tensor: (max_groups, 4) with [M, N, K, L] per group
-    comptime ProblemSizesLayout = Layout.row_major(Self.max_groups, 4)
+    comptime ProblemSizesLayout = _ProblemSizesLayout[Self.max_groups]
+    comptime ProblemSizesTile = _ProblemSizesTile[Self.max_groups]
 
     @staticmethod
     @always_inline
@@ -938,21 +1046,11 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     fn run(
         # Template tensormaps for SMEM initialization
-        a_tma_template: TMATensorTile[
-            Self.a_type, Self.a_layout, Self.a_desc_layout
-        ],
-        b_tma_template: TMATensorTile[
-            Self.b_type, Self.b_layout, Self.b_desc_layout
-        ],
-        c_tma_template: TMATensorTile[
-            Self.c_type, Self.c_layout, Self.c_desc_layout
-        ],
-        sfa_tma_template: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_template: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
+        a_tma_template: Self.ATmaOp,
+        b_tma_template: Self.BTmaOp,
+        c_tma_template: Self.CTmaOp,
+        sfa_tma_template: Self.SFATmaOp,
+        sfb_tma_template: Self.SFBTmaOp,
         # Per-block updatable tensormaps
         device_tma_a: Self.TMATensorTileArrayA,
         device_tma_b: Self.TMATensorTileArrayB,
@@ -960,25 +1058,13 @@ struct GroupedBlockScaledMatmulKernel[
         device_tma_sfb: Self.TMATensorTileArraySFB,
         device_tma_c: Self.TMATensorTileArrayC,
         # Per-group pointer arrays (uint64 addresses)
-        group_a_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_b_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_c_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfa_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfb_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
+        group_a_ptrs_lt: Self.GroupPtrTile,
+        group_b_ptrs_lt: Self.GroupPtrTile,
+        group_c_ptrs_lt: Self.GroupPtrTile,
+        group_sfa_ptrs_lt: Self.GroupPtrTile,
+        group_sfb_ptrs_lt: Self.GroupPtrTile,
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
-        problem_sizes: LayoutTensor[
-            DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
-        ],
+        problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int,
     ):
@@ -988,6 +1074,14 @@ struct GroupedBlockScaledMatmulKernel[
         tensormap updates at group boundaries.
         """
         Self.validate_config()
+
+        # Alias kernel args for internal methods
+        var group_a_ptrs = group_a_ptrs_lt
+        var group_b_ptrs = group_b_ptrs_lt
+        var group_c_ptrs = group_c_ptrs_lt
+        var group_sfa_ptrs = group_sfa_ptrs_lt
+        var group_sfb_ptrs = group_sfb_ptrs_lt
+        var problem_sizes = problem_sizes_lt
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
@@ -1004,9 +1098,9 @@ struct GroupedBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var tmem_addr_storage = smem.tmem_addr().ptr
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var tmem_addr_storage = smem.pipelines.tmem_addr().ptr
 
         # Create input pipeline with tile payload
         var tile_payload = Self.TilePayload(
@@ -1037,21 +1131,23 @@ struct GroupedBlockScaledMatmulKernel[
             Self.InputTilePipelineType.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
 
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
-            smem.tmem_dealloc().ptr[].init(
-                Self.EPILOGUE_THREADS * Self.cta_group
+            smem.pipelines.tmem_dealloc().ptr[].init(
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
         fence_mbarrier_init()
@@ -1166,13 +1262,13 @@ struct GroupedBlockScaledMatmulKernel[
             # Barrier sync with TMA warp - signal init complete
             Self.TensormapAbInitBarrier.sync()
 
-            var tmem = Self.Tmem.allocate(smem.tmem_addr())
+            var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             var tmem_region = Self.TmemRegion(tmem)
@@ -1235,13 +1331,13 @@ struct GroupedBlockScaledMatmulKernel[
 
             Self.MmaEpilogueSync.wait()
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             with epi_ctx:
@@ -1279,14 +1375,10 @@ struct GroupedBlockScaledMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
-        sfa_tma_op: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_op: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
         tiles: InputProducerStage[
             tiles_origin,
             Self.TilePayload,
@@ -1321,25 +1413,29 @@ struct GroupedBlockScaledMatmulKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
                     )
                 )
 
+                # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.layout,
                 )
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
+                # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
                     a_peer_tile,
                     barrier[0],
@@ -1353,13 +1449,16 @@ struct GroupedBlockScaledMatmulKernel[
                     b_multicast_mask,
                 )
 
+                # TMA 5D now has TileTensor overload - pass tiles directly
                 sfa_tma_op.async_copy_5d[Self.cta_group](
                     sfa_tile,
                     barrier[0],
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
                     ),
@@ -1370,7 +1469,9 @@ struct GroupedBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[1])
                         * (Self.MMA_N // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
@@ -1399,11 +1500,10 @@ struct GroupedBlockScaledMatmulKernel[
     ):
         """Execute MMA operations using InputConsumerStage."""
         if elect_one_sync():
-
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
@@ -1419,6 +1519,8 @@ struct GroupedBlockScaledMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
+                # MMA has TileTensor overload - pass tiles directly
+                # (layout is extracted from TileTensor type parameters)
                 mma_op.mma(
                     a_tile,
                     b_tile,
@@ -1438,7 +1540,7 @@ struct GroupedBlockScaledMatmulKernel[
     @always_inline
     fn epilogue(
         c_tiles: Self.SmemType.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
+        c_tma_op: Self.CTmaOp,
         stage: Self.TileWriterType.Stage,
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
@@ -1467,21 +1569,11 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     fn run_2sm(
         # Template tensormaps for SMEM initialization
-        a_tma_template: TMATensorTile[
-            Self.a_type, Self.a_layout, Self.a_desc_layout
-        ],
-        b_tma_template: TMATensorTile[
-            Self.b_type, Self.b_layout, Self.b_desc_layout
-        ],
-        c_tma_template: TMATensorTile[
-            Self.c_type, Self.c_layout, Self.c_desc_layout
-        ],
-        sfa_tma_template: TMATensorTile[
-            Self.sfa_dtype, Self.sfa_layout, Self.sfa_desc_layout
-        ],
-        sfb_tma_template: TMATensorTile[
-            Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
-        ],
+        a_tma_template: Self.ATmaOp,
+        b_tma_template: Self.BTmaOp,
+        c_tma_template: Self.CTmaOp,
+        sfa_tma_template: Self.SFATmaOp,
+        sfb_tma_template: Self.SFBTmaOp,
         # Per-block updatable tensormaps
         device_tma_a: Self.TMATensorTileArrayA,
         device_tma_b: Self.TMATensorTileArrayB,
@@ -1489,25 +1581,13 @@ struct GroupedBlockScaledMatmulKernel[
         device_tma_sfb: Self.TMATensorTileArraySFB,
         device_tma_c: Self.TMATensorTileArrayC,
         # Per-group pointer arrays (uint64 addresses)
-        group_a_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_b_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_c_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfa_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
-        group_sfb_ptrs: LayoutTensor[
-            DType.uint64, Self.GroupPtrLayout, MutAnyOrigin
-        ],
+        group_a_ptrs_lt: Self.GroupPtrTile,
+        group_b_ptrs_lt: Self.GroupPtrTile,
+        group_c_ptrs_lt: Self.GroupPtrTile,
+        group_sfa_ptrs_lt: Self.GroupPtrTile,
+        group_sfb_ptrs_lt: Self.GroupPtrTile,
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
-        problem_sizes: LayoutTensor[
-            DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
-        ],
+        problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int,
     ):
@@ -1525,6 +1605,14 @@ struct GroupedBlockScaledMatmulKernel[
         """
         Self.validate_config()
 
+        # Alias kernel args for internal methods
+        var group_a_ptrs = group_a_ptrs_lt
+        var group_b_ptrs = group_b_ptrs_lt
+        var group_c_ptrs = group_c_ptrs_lt
+        var group_sfa_ptrs = group_sfa_ptrs_lt
+        var group_sfb_ptrs = group_sfb_ptrs_lt
+        var problem_sizes = problem_sizes_lt
+
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
@@ -1540,13 +1628,13 @@ struct GroupedBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays
-        var input_barriers = smem.input_barriers()
-        var accum_barriers = smem.accum_barriers()
-        var clc_full = smem.clc_mbars_full()
-        var clc_empty = smem.clc_mbars_empty()
-        var clc_throttle = smem.clc_throttle_mbars()
-        var clc_response = smem.clc_response()
-        var tmem_addr_storage = smem.tmem_addr().ptr
+        var input_barriers = smem.pipelines.input_barriers()
+        var accum_barriers = smem.pipelines.accum_barriers()
+        var clc_full = smem.pipelines.clc_full()
+        var clc_empty = smem.pipelines.clc_empty()
+        var clc_throttle = smem.pipelines.clc_throttle()
+        var clc_response = smem.pipelines.clc_response()
+        var tmem_addr_storage = smem.pipelines.tmem_addr().ptr
 
         # Create input pipeline with tile payload
         var tile_payload = Self.TilePayload(
@@ -1578,34 +1666,38 @@ struct GroupedBlockScaledMatmulKernel[
             Self.InputTilePipelineType.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // 2  # cta_group=2
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // 2  # cta_group=2
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
 
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm):
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Self.clc_consumer_arv_count)
+                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
             # Initialize throttle barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm * 2):
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm * 2):
                 clc_throttle.ptr[i].init(
-                    Self.clc_throttle_producer_arv_count if i
-                    < Self.num_clc_pipeline_stages_2sm else Self.clc_throttle_consumer_arv_count
+                    Int32(
+                        Self.clc_throttle_producer_arv_count if i
+                        < Self.num_clc_pipeline_stages_2sm else Self.clc_throttle_consumer_arv_count
+                    )
                 )
 
             # Initialize TMEM deallocation barrier (for cta_group=2)
-            smem.tmem_dealloc().ptr[].init(Self.EPILOGUE_THREADS * 2)
+            smem.pipelines.tmem_dealloc().ptr[].init(
+                Int32(Self.EPILOGUE_THREADS * 2)
+            )
 
         fence_mbarrier_init()
         cluster_sync()
@@ -1757,13 +1849,13 @@ struct GroupedBlockScaledMatmulKernel[
             # Barrier sync with TMA warp
             Self.TensormapAbInitBarrier.sync()
 
-            var tmem = Self.Tmem.allocate(smem.tmem_addr())
+            var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             var tmem_region = Self.TmemRegion(tmem)
@@ -1844,13 +1936,13 @@ struct GroupedBlockScaledMatmulKernel[
 
             Self.MmaEpilogueSync.wait()
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             # Create work iterator for epilogue (uses simple advance, not CLC)
@@ -1900,9 +1992,7 @@ struct GroupedBlockScaledMatmulKernel[
     @staticmethod
     @always_inline
     fn _compute_initial_work(
-        problem_sizes: LayoutTensor[
-            DType.int32, Self.ProblemSizesLayout, MutAnyOrigin
-        ],
+        problem_sizes: Self.ProblemSizesTile,
         num_groups: Int,
         linear_idx: UInt32,
     ) -> GroupedWorkInfo:
@@ -1910,8 +2000,7 @@ struct GroupedBlockScaledMatmulKernel[
         # Build cumulative tiles
         var cumulative = StaticTuple[UInt32, Self.max_groups + 1]()
 
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             cumulative[i] = 0
 
         var cumsum: UInt32 = 0

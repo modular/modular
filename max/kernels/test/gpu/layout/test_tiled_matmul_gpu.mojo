@@ -161,8 +161,7 @@ fn sram_blocked_matmul[
 
         barrier()
 
-        @parameter
-        for kk in range(BK):
+        comptime for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -410,8 +409,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
         barrier()
 
-        @parameter
-        for kk in range(BK):
+        comptime for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -447,9 +445,9 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     var mat_b_ptr = UnsafePointer[Float32].alloc(K * N)
 
     for i in range(M * K):
-        mat_a_ptr[i] = i
+        mat_a_ptr[i] = Float32(i)
     for i in range(K * N):
-        mat_b_ptr[i] = i
+        mat_b_ptr[i] = Float32(i)
     for i in range(M * N):
         mat_c_ptr[i] = 0
 

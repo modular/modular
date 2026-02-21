@@ -124,8 +124,7 @@ fn _allgather_p2p_kernel[
 
     # Copy data from each source GPU to corresponding output buffer.
     # outputs[i] should contain data from GPU i.
-    @parameter
-    for src_gpu in range(ngpus):
+    comptime for src_gpu in range(ngpus):
         var length = lengths[src_gpu]
         var num_simd_vectors = length // simd_width
         var remainder = length % simd_width
@@ -173,8 +172,7 @@ fn _allgather_p2p[
     ]()
     var lengths = StaticTuple[Int, ngpus]()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_in_ptrs[i] = input_buffers[i].data
         lengths[i] = input_buffers[i].num_elements()
 
@@ -189,8 +187,7 @@ fn _allgather_p2p[
             UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
         ]()
 
-        @parameter
-        for src_idx in range(ngpus):
+        comptime for src_idx in range(ngpus):
             var output_idx = gpu_idx * ngpus + src_idx
             output_ptrs[src_idx] = output_buffers[output_idx].data
 
@@ -265,8 +262,7 @@ fn allgather[
     # Return early, if all input buffers are empty
     var all_empty = True
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         if input_buffers[i].num_elements() > 0:
             all_empty = False
             break

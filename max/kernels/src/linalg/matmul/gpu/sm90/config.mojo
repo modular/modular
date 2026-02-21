@@ -26,7 +26,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable):
     """Static configuration of SM90 GPU matmul."""
 
     # Mandatory parameters
@@ -404,8 +404,7 @@ fn swapAB_smallM[
 
     var final_mma_n: UInt = 0
 
-    @parameter
-    for mma_n in range(UInt(8), UInt(256) + 1, UInt(8)):
+    comptime for mma_n in range(UInt(8), UInt(256) + 1, UInt(8)):
         var total_n_computed = align_up(N, mma_n)
         var num_ctas = ceildiv(M, BM) * ceildiv(N, mma_n)
 
@@ -416,8 +415,7 @@ fn swapAB_smallM[
 
         var condition: Bool
 
-        @parameter
-        if prioritize_compute_over_ctas:
+        comptime if prioritize_compute_over_ctas:
             condition = current_compute_ratio < compute_ratio
         else:
             condition = num_ctas > ctas_used

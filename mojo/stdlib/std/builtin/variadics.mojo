@@ -385,7 +385,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: TrivialRegisterType](
+struct _VariadicListIter[type: TrivialRegisterPassable](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
@@ -419,8 +419,8 @@ struct _VariadicListIter[type: TrivialRegisterType](
         return (len, {len})
 
 
-struct VariadicList[type: TrivialRegisterType](
-    Iterable, Sized, TrivialRegisterType
+struct VariadicList[type: TrivialRegisterPassable](
+    Iterable, Sized, TrivialRegisterPassable
 ):
     """A utility class to access homogeneous variadic function arguments.
 
@@ -594,7 +594,7 @@ struct VariadicListMem[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](Sized):
+](Movable, Sized):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
     way that can be enumerated.  Each element may be accessed with `elt[]`.
@@ -634,23 +634,13 @@ struct VariadicListMem[
         self.value = value
 
     @always_inline
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves constructor.
-
-        Args:
-          existing: The existing VariadicListMem.
-        """
-        self.value = existing.value
-
-    @always_inline
     fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         # Destroy each element if this variadic has owned elements, destroy
         # them.  We destroy in backwards order to match how arguments are
         # normally torn down when CheckLifetimes is left to its own devices.
-        @parameter
-        if Self.is_owned:
+        comptime if Self.is_owned:
             _constrained_conforms_to[
                 conforms_to(Self.element_type, ImplicitlyDestructible),
                 Parent=Self,
@@ -679,7 +669,7 @@ struct VariadicListMem[
                          list.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.is_owned
         ), "consume_elements may only be called on owned variadic lists"
 
@@ -717,7 +707,9 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        unsafe_origin_mutcast[origin_of(Self.origin, self), Self.elt_is_mutable]
+        Origin[mut = Self.elt_is_mutable](
+            unsafe_mut_cast=origin_of(Self.origin, self)
+        )
     ] Self.element_type:
         """Gets a single element on the variadic list.
 
@@ -750,7 +742,6 @@ struct VariadicListMem[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
@@ -758,7 +749,7 @@ struct VariadicPack[
     is_owned: Bool,
     element_trait: type_of(AnyType),
     *element_types: element_trait,
-](Sized):
+](RegisterPassable, Sized):
     """A utility class to access heterogeneous variadic function arguments.
 
     `VariadicPack` is used when you need to accept variadic arguments where each
@@ -789,8 +780,7 @@ struct VariadicPack[
         var total = 0
 
         # Must use @parameter for loop because args is a VariadicPack
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             # Each args[i] has a different concrete type from *ArgTypes
             # The compiler generates specific code for each iteration
             total += Int(args[i])
@@ -845,11 +835,8 @@ struct VariadicPack[
     fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
-        @parameter
-        if Self.is_owned:
-
-            @parameter
-            for i in reversed(range(Self.__len__())):
+        comptime if Self.is_owned:
+            comptime for i in reversed(range(Self.__len__())):
                 # FIXME(MOCO-2953):
                 #   Due to a compiler limitation, we can't use
                 #   conforms_to() here, meaning the `trait_downcast` below
@@ -881,12 +868,11 @@ struct VariadicPack[
                          pack.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.is_owned
         ), "consume_elements may only be called on owned variadic packs"
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
@@ -993,17 +979,17 @@ struct VariadicPack[
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
 
     fn _write_to[
-        O1: ImmutOrigin = StaticConstantOrigin,
-        O2: ImmutOrigin = StaticConstantOrigin,
-        O3: ImmutOrigin = StaticConstantOrigin,
+        O1: ImmutOrigin,
+        O2: ImmutOrigin,
+        O3: ImmutOrigin,
         *,
         is_repr: Bool = False,
     ](
         self: VariadicPack[_, Writable, ...],
         mut writer: Some[Writer],
-        start: StringSlice[O1] = rebind[StringSlice[O1]](StaticString("")),
-        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString("")),
-        sep: StringSlice[O3] = rebind[StringSlice[O3]](StaticString(", ")),
+        start: StringSlice[O1] = StaticString(""),
+        end: StringSlice[O2] = StaticString(""),
+        sep: StringSlice[O3] = StaticString(", "),
     ):
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
@@ -1026,15 +1012,11 @@ struct VariadicPack[
         """
         writer.write_string(start)
 
-        @parameter
-        for i in range(self.__len__()):
-
-            @parameter
-            if i != 0:
+        comptime for i in range(self.__len__()):
+            comptime if i != 0:
                 writer.write_string(sep)
 
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 self[i].write_repr_to(writer)
             else:
                 self[i].write_to(writer)

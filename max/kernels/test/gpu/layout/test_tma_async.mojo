@@ -74,7 +74,7 @@ fn tma_ragged_store_kernel[
 
     if thread_idx.x == 0:
         for i in range(sequence_length * shared_n):
-            smem_tensor.ptr[i] = i
+            smem_tensor.ptr[i] = Scalar[dtype](i)
 
     var smem_iterator = smem_tensor.tiled_iterator[
         sequence_store_length, shared_n, axis=0
@@ -135,7 +135,7 @@ fn test_tma_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy(
             tile,
             mbar[0],
@@ -189,7 +189,7 @@ fn test_tma_multiple_loads_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
             tma_tile.async_copy(
                 tile,
                 mbar[0],
@@ -211,8 +211,7 @@ fn sum_index_list[
 ]() -> Int:
     var sum = 0
 
-    @parameter
-    for i in range(len(index_list)):
+    comptime for i in range(len(index_list)):
         sum += index_list[i]
     return sum
 
@@ -288,8 +287,7 @@ def test_tma_ragged_store[
     with device_buffer.map_to_host() as host_buffer:
         var running_sequence = 0
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             comptime sequence_length = sequence_lengths[i]
 
             var adjusted_ptr = host_buffer.unsafe_ptr() + (
@@ -299,8 +297,7 @@ def test_tma_ragged_store[
                 adjusted_ptr
             )
 
-            @parameter
-            if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
+            comptime if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
                 for i in range(global_host_tensor.size()):
                     assert_equal(adjusted_ptr[i], Scalar[dtype](i))
             else:
@@ -328,8 +325,7 @@ def test_tma_load_row_major[
         dtype, Layout.row_major(M_roundup, N_roundup)
     ](ctx)
 
-    @parameter
-    if dtype == DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         random(src.tensor())
     else:
         arange(src.tensor(), 0)
@@ -337,8 +333,7 @@ def test_tma_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
-    @parameter
-    if load_along_last_dim:
+    comptime if load_along_last_dim:
         comptime kernel = test_tma_multiple_loads_kernel[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
@@ -477,8 +472,7 @@ def test_tma_async_store[
 
     ctx.synchronize()
 
-    @parameter
-    if load_along_last_dim:
+    comptime if load_along_last_dim:
         comptime kernel = test_tma_async_multiple_store_kernel[
             type_of(tma_tensor).dtype,
             type_of(tma_tensor).layout,
@@ -612,8 +606,7 @@ def test_tma_async_reduce[
 
     ctx.synchronize()
 
-    @parameter
-    if load_along_last_dim:
+    comptime if load_along_last_dim:
         comptime kernel = test_tma_async_multiple_reduce_kernel[
             type_of(tma_tensor).dtype,
             type_of(tma_tensor).layout,
@@ -648,7 +641,10 @@ def test_tma_async_reduce[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                src_host[m, n].cast[DType.float32]() + 3546 + m * dst_N + n,
+                src_host[m, n].cast[DType.float32]()
+                + 3546
+                + Float32(m * dst_N)
+                + Float32(n),
                 dst_host[m, n].cast[DType.float32](),
             )
 
@@ -711,7 +707,7 @@ fn test_tma_loads_two_buffers_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(Int32(expected_bytes * 2))
             a_tma_tile.async_copy(
                 a_tile,
                 mbar[0],
@@ -870,7 +866,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(Int32(expected_bytes * 2))
             a_tma_src_tile.async_copy(
                 a_tile,
                 mbar[0],

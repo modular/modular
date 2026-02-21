@@ -75,7 +75,7 @@ fn named_barrier[
     """
 
     debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
@@ -107,7 +107,7 @@ fn named_barrier_arrive[
         - All threads participating in the barrier must specify the same num_threads value.
     """
     debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
     __mlir_op.`nvvm.barrier.arrive`(to_i32(id), to_i32(num_threads))
@@ -122,11 +122,10 @@ fn barrier():
     memory operations before the barrier are visible to all threads after the barrier.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.barrier0`()
     elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
-        __comptime_assert is_amd_gpu()
+        comptime assert is_amd_gpu()
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
@@ -143,7 +142,7 @@ fn barrier():
 
 
 @fieldwise_init
-struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
+struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -277,8 +276,7 @@ fn schedule_barrier(
         raise a compile time error.
     """
 
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
     else:
         constrained[False, "schedule_barrier is only supported on AMDGPU."]()
@@ -306,8 +304,7 @@ fn schedule_group_barrier(
         The sync_id parameter allows creating multiple schedule groups that can be ordered relative to each other.
     """
 
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
             Int32(Int(mask)), size, sync_id
         )
@@ -336,7 +333,7 @@ struct _WaitCountArg:
 
     @staticmethod
     fn from_vmcnt(cnt: UInt32) -> UInt32:
-        __comptime_assert (
+        comptime assert (
             _is_amd_cdna()
         ), "from_vmcnt is only supported on AMD CDNA GPUs"
         debug_assert(
@@ -347,7 +344,7 @@ struct _WaitCountArg:
 
     @staticmethod
     fn from_expcnt(cnt: UInt32) -> UInt32:
-        __comptime_assert (
+        comptime assert (
             _is_amd_cdna()
         ), "from_expcnt is only supported on AMD CDNA GPUs"
         debug_assert(
@@ -358,7 +355,7 @@ struct _WaitCountArg:
 
     @staticmethod
     fn from_lgkmcnt(cnt: UInt32) -> UInt32:
-        __comptime_assert (
+        comptime assert (
             _is_amd_cdna()
         ), "from_lgkmcnt is only supported on AMD CDNA GPUs"
         debug_assert(
@@ -394,7 +391,7 @@ fn s_waitcnt[
         - The counters should be set carefully to avoid deadlocks or missed synchronization.
         - For example, s_waitcnt(vmcnt=0, expcnt=0, lgkmcnt=0) waits until all memory operations are complete.
     """
-    __comptime_assert (
+    comptime assert (
         _is_amd_cdna()
     ), "s_waitcnt is only supported on AMD CDNA GPUs"
     comptime waitcnt_val = (
@@ -428,7 +425,7 @@ fn s_waitcnt_barrier[
         - Use this to guarantee memory visibility and thread ordering for precise synchronization.
         - For example, s_waitcnt_barrier(0,0,0) ensures all outstanding memory instructions are completed and then all threads are synchronized.
     """
-    __comptime_assert (
+    comptime assert (
         _is_amd_cdna()
     ), "s_waitcnt_barrier is only supported on AMD CDNA GPUs"
     s_waitcnt[vmcnt=vmcnt, expcnt=expcnt, lgkmcnt=lgkmcnt]()
@@ -465,8 +462,7 @@ fn syncwarp(mask: Int = -1):
         - Threads not participating in the sync must still execute the instruction.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
             __mlir_op.`index.casts`[_type = __mlir_type.i32](mask._mlir_value)
         )
@@ -503,8 +499,7 @@ fn _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    @parameter
-    if address_space == AddressSpace.SHARED:
+    comptime if address_space == AddressSpace.SHARED:
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
             address
         )
@@ -537,8 +532,7 @@ fn async_copy_arrive[
         address: Pointer to the memory barrier object location.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _mbarrier_impl(address)
     else:
         return CompilationTarget.unsupported_target_error[
@@ -569,8 +563,7 @@ fn mbarrier_init[
         num_threads: Number of threads that will synchronize on this barrier.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
             shared_mem, num_threads
         )
@@ -604,8 +597,7 @@ fn mbarrier_arrive[
         An integer representing the current state of the memory barrier.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic["llvm.nvvm.mbarrier.arrive.shared", Int](
             shared_mem
         )
@@ -642,8 +634,7 @@ fn mbarrier_test_wait[
         True if all threads have arrived, False otherwise.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
             shared_mem, state
         )
@@ -675,8 +666,7 @@ fn mbarrier_arrive_expect_tx_shared[
         tx_count: Number of expected transactions to track.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type = __mlir_type.i64](
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
@@ -714,25 +704,23 @@ fn mbarrier_arrive_expect_tx_relaxed[
         The state.
     """
 
-    __comptime_assert scope == Scope.BLOCK or scope == Scope.CLUSTER, (
+    comptime assert scope == Scope.BLOCK or scope == Scope.CLUSTER, (
         "mbarrier_arrive_expect_tx_relaxed scope is only supported for"
         " cluster or block/CTA scope."
     )
 
-    __comptime_assert space == Scope.BLOCK or space == Scope.CLUSTER, (
+    comptime assert space == Scope.BLOCK or space == Scope.CLUSTER, (
         "mbarrier_arrive_expect_tx_relaxed space is only supported for"
         " cluster or block/CTA scope."
     )
 
-    @parameter
-    if space == Scope.CLUSTER:
-        __comptime_assert scope == Scope.CLUSTER, (
+    comptime if space == Scope.CLUSTER:
+        comptime assert scope == Scope.CLUSTER, (
             "mbarrier_arrive_expect_tx_relaxed scope and space must be the"
             " same if space is cluster."
         )
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime asm = (
             """mbarrier.arrive.expect_tx.relaxed."""
             + scope.mnemonic()
@@ -777,8 +765,7 @@ fn mbarrier_try_wait_parity_shared[
         ticks: Timeout period in nanoseconds.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.mbarrier.try_wait.parity`(
             to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
         )
@@ -829,8 +816,7 @@ fn cp_async_bulk_commit_group():
         non-NVIDIA GPUs will result in a compile time error.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
     else:
         return CompilationTarget.unsupported_target_error[
@@ -876,8 +862,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
             return base + ".read"
         return base
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic[
             get_asm(),
             NoneType,

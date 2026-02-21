@@ -25,7 +25,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _cdna_4_or_newer
+from sys.info import _cdna_4_or_newer, _is_amd_rdna
 import gpu.primitives.warp as warp
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -73,6 +73,8 @@ from memory import stack_allocation
 
 from .attention.gpu.amd.mha_gfx942 import MHAAttentionConfig
 from .attention.gpu.amd.mha_gfx950 import Attention
+from .attention.gpu.amd.mha_rdna import MHAAttentionConfigRDNA
+from .attention.gpu.amd.attention_rdna import AttentionRDNA
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -130,15 +132,17 @@ fn flash_attention[
     sink: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     # TODO docstring
@@ -200,17 +204,39 @@ fn get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
     comptime sm_count = ctx.default_device_info.sm_count
-    # TODO: This is dumb, make it more granular as a follow up
-    if num_keys > 512:
-        return min(
-            next_power_of_two(
-                min(
-                    sm_count // (batch_size * (num_heads // group)),
-                    num_keys // 512,
-                )
-            ),
-            32,
-        )
+
+    comptime if has_amd_gpu_accelerator():
+        # AMD split-k strategy: scale partitioning based on occupancy
+        # 256: min context length where split-k overhead is worthwhile
+        if num_keys <= 256:
+            return 1
+
+        # Compute total work items (occupancy)
+        work_items = batch_size * (num_heads // group)
+
+        # High occupancy when work_items >= sm_count (≥1 work item per CU)
+        if work_items >= sm_count:
+            # High occupancy: scale partition size to avoid over-partitioning
+            # 128: base partition size matching kernel block (BN=128)
+            # 64: scaling factor - reduces partitions as occupancy increases
+            occupancy_scale = work_items // 64
+            return min(ceildiv(num_keys, 256 * occupancy_scale), WARP_SIZE)
+        else:
+            # Low occupancy: aggressive partitioning for more parallelism
+            # 128: keys per partition (matches kernel BN=128)
+            # WARP_SIZE (64): max partitions (AMD wavefront size, reduction limit)
+            return min(ceildiv(num_keys, 256), WARP_SIZE)
+    else:
+        if num_keys > 512:
+            return min(
+                next_power_of_two(
+                    min(
+                        sm_count // (batch_size * (num_heads // group)),
+                        num_keys // 512,
+                    )
+                ),
+                32,
+            )
     return 1
 
 
@@ -264,25 +290,27 @@ fn flash_attention[
     naive_kernel: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: Optional[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Flash attention 2 algorithm.
@@ -309,16 +337,16 @@ fn flash_attention[
     This kernels handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert (
+    comptime assert (
         ragged or q.rank == 4
     ), "only support rank 4 inputs for non-ragged inputs."
-    __comptime_assert (
+    comptime assert (
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert (
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -394,7 +422,9 @@ fn flash_attention[
             ctx,
             rebind[
                 LayoutTensor[
-                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                    DType.uint32,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    ImmutAnyOrigin,
                 ]
             ](valid_length),
             kv_input_row_offsets,
@@ -404,13 +434,14 @@ fn flash_attention[
 
 
 @always_inline
-fn q_num_matrix_view_rows[dtype: DType, //](q: LayoutTensor[dtype, ...]) -> Int:
+fn q_num_matrix_view_rows[
+    dtype: DType, //
+](q: LayoutTensor[mut=False, dtype, ...]) -> Int:
     # for tma if decoding, we view q as a rows x depth matrix
     # otherwise, we view q as a rows x (depth*num_heads) matrix
     var num_rows: Int = q.dim[0]()
 
-    @parameter
-    for i in range(1, q.rank - 2):
+    comptime for i in range(1, q.rank - 2):
         num_rows *= q.dim[i]()
     return num_rows
 
@@ -445,8 +476,10 @@ fn flash_attention_dispatch[
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -458,17 +491,17 @@ fn flash_attention_dispatch[
     ctx: DeviceContext,
     valid_length: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     comptime num_heads = config.num_heads
@@ -478,12 +511,11 @@ fn flash_attention_dispatch[
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     comptime is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
-    __comptime_assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
+    comptime assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
+    comptime assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
     var batch_size: Int
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         batch_size = valid_length.value().dim[0]() - 1
     # This branch holds for both KVCache and NDBuffer inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
@@ -498,15 +530,13 @@ fn flash_attention_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    @parameter
-    if _is_flash_attention_applicable:
+    comptime if _is_flash_attention_applicable:
         comptime is_sm90 = ctx.default_device_info == H100
         comptime is_sm100 = ctx.default_device_info == B200
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
-            @parameter
-            if (
+            comptime if (
                 (is_sm90 or is_sm100)
                 and q_half_float
                 and (ragged or not _use_valid_length)
@@ -514,8 +544,7 @@ fn flash_attention_dispatch[
             ):
                 num_rows_q = q_num_matrix_view_rows(q)
 
-                @parameter
-                if is_sm90:
+                comptime if is_sm90:
                     mha_sm90_dispatch[
                         config=config,
                         group = Int(group),
@@ -542,10 +571,11 @@ fn flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    __comptime_assert is_sm100
+                    comptime assert is_sm100
 
-                    @parameter
-                    if depth == 256 or not env_get_bool["ENABLE_FA4", True]():
+                    comptime if depth == 256 or not env_get_bool[
+                        "ENABLE_FA4", True
+                    ]():
                         mha_sm100_1q_dispatch[
                             config=config,
                             group = Int(group),
@@ -672,8 +702,7 @@ fn flash_attention_dispatch[
             var shared_mem_bytes = BM * Int(depth) * size_of[q.dtype]()
 
             # separate KV smem if we have enough smem
-            @parameter
-            if not is_shared_kv:
+            comptime if not is_shared_kv:
                 shared_mem_bytes += (
                     2 * Int(BN) * Int(depth) * size_of[k_t.dtype]()
                 )
@@ -705,8 +734,7 @@ fn flash_attention_dispatch[
                 and config.algorithm == FlashAttentionAlgorithm(3)
             )
 
-            @parameter
-            if (not use_fa3_kernel) and (depth % 64) != 0:
+            comptime if (not use_fa3_kernel) and (depth % 64) != 0:
                 # FA2 kernel only supports depth % 64 == 0
                 # Assumes BSHD.
                 mha_gpu_naive[
@@ -760,13 +788,10 @@ fn flash_attention_dispatch[
                 ]
 
                 if num_partitions_value == 1:
-
-                    @parameter
-                    if use_fa3_kernel:
+                    comptime if use_fa3_kernel:
                         num_rows_q = q_num_matrix_view_rows(q)
 
-                        @parameter
-                        if is_sm90:
+                        comptime if is_sm90:
                             mha_sm90_dispatch[
                                 config=config,
                                 group = Int(group),
@@ -863,8 +888,13 @@ fn flash_attention_dispatch[
                     # We split partitions and then reduce
                     # allocate memory for intermediate results
                     # q # [B, S, H, D]
+
+                    # Determine intermediate buffer type based on platform
+                    # AMD uses float32 for higher precision with aggressive split-k
+                    comptime intermediate_dtype = output.dtype
+
                     var output_intermediate_data = ctx.enqueue_create_buffer[
-                        output.dtype
+                        intermediate_dtype
                     ](
                         Int(
                             num_heads
@@ -875,7 +905,7 @@ fn flash_attention_dispatch[
                     )
 
                     var output_intermediate = LayoutTensor[
-                        output.dtype, Layout.row_major[4]()
+                        intermediate_dtype, Layout.row_major[4]()
                     ](
                         output_intermediate_data.unsafe_ptr(),
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -927,12 +957,10 @@ fn flash_attention_dispatch[
                         ctx, qk_max.ptr, qk_max.size(), owning=False
                     )
 
-                    @parameter
-                    if use_fa3_kernel:
+                    comptime if use_fa3_kernel:
                         num_rows_q = q_num_matrix_view_rows(q)
 
-                        @parameter
-                        if is_sm90:
+                        comptime if is_sm90:
                             mha_sm90_dispatch[
                                 config=config,
                                 group = Int(group),
@@ -991,7 +1019,35 @@ fn flash_attention_dispatch[
                                 sink_weights,
                             )
                     else:
-                        ctx.enqueue_function[kernel, kernel](
+                        # For split-k, instantiate kernel with intermediate dtype
+                        comptime kernel_splitk = mha_decoding[
+                            q.dtype,
+                            k_t,
+                            v_t,
+                            intermediate_dtype,
+                            mask_t,
+                            score_mod_t,
+                            type_of(valid_length.value()).layout,
+                            BM=BM,
+                            BN=BN,
+                            BK = UInt(BK),
+                            WM=WM,
+                            WN=WN,
+                            depth=depth,
+                            num_heads=num_heads,
+                            num_threads = UInt(num_threads),
+                            num_pipeline_stages = UInt(num_pipeline_stages),
+                            group=group,
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            is_shared_kv=is_shared_kv,
+                            sink=sink,
+                            _use_valid_length=_use_valid_length,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                            decoding_warp_split_k=decoding_warp_split_k,
+                        ]
+
+                        ctx.enqueue_function[kernel_splitk, kernel_splitk](
                             q_device,
                             k,
                             v,
@@ -1022,6 +1078,7 @@ fn flash_attention_dispatch[
                         )
 
                     comptime kernel_reduce = mha_splitk_reduce[
+                        intermediate_dtype,
                         output.dtype,
                         depth=depth,
                         num_heads=num_heads,
@@ -1117,9 +1174,11 @@ fn flash_attention[
     sink: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -1128,16 +1187,16 @@ fn flash_attention[
     num_partitions: Optional[Int] = None,
     valid_length: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ] = None,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     # See the kV cache overloads for comments.
 
-    __comptime_assert q.rank == 4, "only support rank 4 inputs."
+    comptime assert q.rank == 4, "only support rank 4 inputs."
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()
@@ -1221,14 +1280,16 @@ fn flash_attention_ragged[
     naive_kernel: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[type, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, type, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     max_prompt_len: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -1239,14 +1300,12 @@ fn flash_attention_ragged[
 ) raises:
     # See the kV cache overloads for comments.
 
-    __comptime_assert (
-        q.rank == 3
-    ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert q.rank == 3, "only support rank 3 inputs for ragged inputs."
+    comptime assert (
         q.dtype == k.dtype == v.dtype == output.dtype
     ), "Q, K, V, output should have same type."
 
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1305,7 +1364,7 @@ fn flash_attention_ragged[
         ctx,
         OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ](input_row_offsets),
         None,
@@ -1356,15 +1415,15 @@ fn mha[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -1384,8 +1443,7 @@ fn mha[
     fn q_block_idx() -> UInt:
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         # treat valid_lengths as a input_row_offsets
         start_of_seq = Int(valid_length[batch_idx])
         end_of_seq = Int(valid_length[batch_idx + 1])
@@ -1394,8 +1452,7 @@ fn mha[
         if seq_len < Int(q_block_idx() * config.block_m()):
             return
 
-        @parameter
-        if not _is_cache_length_accurate:
+        comptime if not _is_cache_length_accurate:
             start_pos = UInt32(k.cache_length(Int(batch_idx)))
 
         # this is used for cross attention where we get the num_keys
@@ -1419,8 +1476,7 @@ fn mha[
         if seq_len < Int(q_block_idx() * config.block_m()):
             return
 
-        @parameter
-        if not _is_cache_length_accurate:
+        comptime if not _is_cache_length_accurate:
             var cache_length = k.cache_length(Int(batch_idx))
             start_pos = UInt32(cache_length)
 
@@ -1430,9 +1486,7 @@ fn mha[
         )
     # NDBuffer inputs, homogeneous and padded batching.
     else:
-
-        @parameter
-        if _padded_ndbuffer:
+        comptime if _padded_ndbuffer:
             seq_len = Int(valid_length[batch_idx])
             num_keys = seq_len
         else:
@@ -1449,11 +1503,8 @@ fn mha[
         # prefix preceding the input seq_len.
         start_pos = UInt32(num_keys - seq_len)
 
-    @parameter
-    if is_nvidia_gpu():
-
-        @parameter
-        if is_shared_kv:
+    comptime if is_nvidia_gpu():
+        comptime if is_shared_kv:
             mha_single_batch_pipelined[
                 config=config,
                 group=group,
@@ -1497,8 +1548,29 @@ fn mha[
                 Int(batch_idx),
                 sink_weights,
             )
+    elif _is_amd_rdna():
+        comptime assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
+
+        comptime rdna_config = MHAAttentionConfigRDNA[False, config, group]()
+        var attention = AttentionRDNA[config, group, False, sink](
+            rdna_config,
+            output_ptr + q_batch_offset,
+            q_ptr + q_batch_offset,
+            k,
+            v,
+            mask,
+            sink_weights,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+        )
+        attention.mha_prefill_rdna()
     elif is_amd_gpu():
-        __comptime_assert (
+        comptime assert (
             use_score_mod == False
         ), "use_score_mod must be False for AMD flash attention"
 
@@ -1518,8 +1590,7 @@ fn mha[
             Int(start_pos),
         )
 
-        @parameter
-        if attention_config.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL:
+        comptime if attention_config.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL:
             attention.mha_prefill_experimental()
         else:
             attention.mha_prefill()
@@ -1547,7 +1618,7 @@ fn mha_single_batch[
     use_score_mod: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -1561,7 +1632,7 @@ fn mha_single_batch[
     score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
@@ -1578,7 +1649,7 @@ fn mha_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -1591,7 +1662,7 @@ fn mha_single_batch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -1738,11 +1809,8 @@ fn mha_single_batch[
         Int(WM), accum_type, alignment=row_alignment
     ]()
 
-    @parameter
-    for i in range(0, Int(WM), 2):
-
-        @parameter
-        if sink:
+    comptime for i in range(0, Int(WM), 2):
+        comptime if sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -1802,8 +1870,7 @@ fn mha_single_batch[
         Int(BK // UInt(simd_size)),
     )
 
-    @parameter
-    for q_id in range(depth // BK):
+    comptime for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(
             q_smem_iter.layout_uint_type(q_id)
         )[]
@@ -1928,8 +1995,7 @@ fn mha_single_batch[
         )
 
         # load K tile into smem
-        @parameter
-        for k_id in range(depth // BK):
+        comptime for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(
                 k_smem_iter.layout_uint_type(k_id)
             )[]
@@ -1983,11 +2049,8 @@ fn mha_single_batch[
                 * log2e
             )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2004,8 +2067,7 @@ fn mha_single_batch[
                         lane * UInt32(p_frag_simdwidth) % UInt32(MMA_N)
                     )
 
-                    @parameter
-                    for i in range(2):
+                    comptime for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_row = (
@@ -2017,10 +2079,9 @@ fn mha_single_batch[
 
                         score_row_with_start_pos = score_row + start_pos
 
-                        @parameter
-                        if masked:
+                        comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32,](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2033,11 +2094,10 @@ fn mha_single_batch[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        @parameter
-                        if use_score_mod:
+                        comptime if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -2094,7 +2154,7 @@ fn mha_single_batch[
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -2109,14 +2169,12 @@ fn mha_single_batch[
         )
 
         # load V tile into smem
-        @parameter
-        for v_id in range(BN // BK):
+        comptime for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(
                 v_smem_iter.layout_uint_type(v_id)
             )[]
 
-            @parameter
-            if not not_last_iter:
+            comptime if not not_last_iter:
                 var num_rows_bound = min(
                     Int(BK), end - (kv_tile_start_row + Int(v_id * BK))
                 )
@@ -2137,8 +2195,7 @@ fn mha_single_batch[
 
         async_copy_commit_group()
 
-        @parameter
-        if num_warps_n > 1:
+        comptime if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
                 BM,
@@ -2211,16 +2268,12 @@ fn mha_single_batch[
     tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](0, num_keys)
 
     # Apply softmax denumerator.
-    @parameter
-    for m_mma in range(num_m_mmas):
+    comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
         var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
-        @parameter
-        for n_mma in range(num_n_mmas):
-
-            @parameter
-            for i in range(p_frag_size // 2):
+        comptime for n_mma in range(num_n_mmas):
+            comptime for i in range(p_frag_size // 2):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= rowsum_inv0
                 output_reg_tile[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
@@ -2253,8 +2306,7 @@ fn mha_single_batch[
     )
 
     # Write to global memory.
-    @parameter
-    if output_type.is_half_float():
+    comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
         ]()
@@ -2316,7 +2368,7 @@ fn mha_single_batch_pipelined[
     use_score_mod: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -2330,7 +2382,7 @@ fn mha_single_batch_pipelined[
     score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
@@ -2347,7 +2399,7 @@ fn mha_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -2360,7 +2412,7 @@ fn mha_single_batch_pipelined[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2495,11 +2547,8 @@ fn mha_single_batch_pipelined[
         Int(WM), accum_type, alignment=row_alignment
     ]()
 
-    @parameter
-    for i in range(0, Int(WM), p_frag_simdwidth):
-
-        @parameter
-        if sink:
+    comptime for i in range(0, Int(WM), p_frag_simdwidth):
+        comptime if sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -2732,11 +2781,8 @@ fn mha_single_batch_pipelined[
                 * log2e
             )
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2753,8 +2799,7 @@ fn mha_single_batch_pipelined[
                         lane * UInt32(p_frag_simdwidth) % UInt32(MMA_N)
                     )
 
-                    @parameter
-                    for i in range(2):
+                    comptime for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_row = (
@@ -2766,10 +2811,9 @@ fn mha_single_batch_pipelined[
 
                         var score_row_with_start_pos = score_row + start_pos
 
-                        @parameter
-                        if masked:
+                        comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32,](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2783,11 +2827,10 @@ fn mha_single_batch_pipelined[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        @parameter
-                        if use_score_mod:
+                        comptime if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -2850,7 +2893,7 @@ fn mha_single_batch_pipelined[
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, p_frag_simdwidth
             ](),
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -2860,8 +2903,7 @@ fn mha_single_batch_pipelined[
             Layout.row_major(Int(BK), Int(BN))
         ]().bitcast[v_type]()
 
-        @parameter
-        if num_warps_n > 1:
+        comptime if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
                 BM,
@@ -2928,16 +2970,12 @@ fn mha_single_batch_pipelined[
 
     tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](0, num_keys)
 
-    @parameter
-    for m_mma in range(num_m_mmas):
+    comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
         var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
-        @parameter
-        for n_mma in range(num_n_mmas):
-
-            @parameter
-            for i in range(p_frag_size // 2):
+        comptime for n_mma in range(num_n_mmas):
+            comptime for i in range(p_frag_size // 2):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= rowsum_inv0
                 output_reg_tile[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
@@ -2970,8 +3008,7 @@ fn mha_single_batch_pipelined[
     )
 
     # Write to global memory.
-    @parameter
-    if output_type.is_half_float():
+    comptime if output_type.is_half_float():
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
@@ -3055,7 +3092,7 @@ fn mha_decoding[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -3068,10 +3105,10 @@ fn mha_decoding[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],  # valid length per batch
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -3103,8 +3140,7 @@ fn mha_decoding[
     var q_batch_offset: Int
     var start_pos: UInt32 = 0
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         # treat valid_lengths as a input_row_offsets
         start_of_seq = Int(valid_length[batch_idx])
         end_of_seq = Int(valid_length[batch_idx + 1])
@@ -3120,15 +3156,11 @@ fn mha_decoding[
 
     var num_keys = k.cache_length(Int(batch_idx))
 
-    @parameter
-    if not _is_cache_length_accurate:
+    comptime if not _is_cache_length_accurate:
         num_keys += seq_len
 
-    @parameter
-    if is_nvidia_gpu():
-
-        @parameter
-        if is_shared_kv:
+    comptime if is_nvidia_gpu():
+        comptime if is_shared_kv:
             mha_decoding_single_batch_pipelined[
                 BM=BM,
                 BN=BN,
@@ -3190,6 +3222,62 @@ fn mha_decoding[
                 Int(batch_idx),
                 sink_weights,
             )
+    elif _is_amd_rdna():
+        comptime config = MHAConfig[q_type](
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
+        )
+        comptime assert (
+            use_score_mod == False
+        ), "use_score_mod must be False for AMD flash attention"
+        var sink_weights_lt: OptionalReg[
+            LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ]
+        ] = None
+        if sink_weights:
+            sink_weights_lt = LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ](
+                sink_weights.value().ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](sink_weights.value().size())
+                ),
+            )
+
+        comptime rdna_config = MHAAttentionConfigRDNA[
+            True, config, Int(group)
+        ]()
+        var attention = AttentionRDNA[config, Int(group), True, sink](
+            rdna_config,
+            output_ptr + output_batch_offset,
+            q_ptr + q_batch_offset,
+            k,
+            v,
+            mask,
+            sink_weights_lt,
+            Int(batch_idx),
+            scale,
+            1,
+            num_keys,
+            0,
+        )
+        attention.mha_decoding_rdna(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
+        )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
             num_heads,
@@ -3202,21 +3290,21 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        __comptime_assert (
+        comptime assert (
             use_score_mod == False
         ), "use_score_mod must be False for AMD flash attention"
         var sink_weights_lt: OptionalReg[
             LayoutTensor[
                 q_ptr.type.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutAnyOrigin,
+                ImmutAnyOrigin,
             ]
         ] = None
         if sink_weights:
             sink_weights_lt = LayoutTensor[
                 q_ptr.type.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutAnyOrigin,
+                ImmutAnyOrigin,
             ](
                 sink_weights.value().ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -3296,8 +3384,7 @@ fn scale_and_mask_helper[
     # only 12 groups. Such results are ignored when output to global memory.
     comptime num_groups_per_thread = ceildiv(group, 8)
 
-    @parameter
-    for n_mma in range(num_n_mmas):
+    comptime for n_mma in range(num_n_mmas):
         # offset in fragment
         var frag_offset = n_mma * MMA_N
         # Current thread's offset mapped in num_keys dim
@@ -3305,13 +3392,11 @@ fn scale_and_mask_helper[
         # Current thread's index in current mma tile, e.g. T1 and T5 are 1 in 16x8 mma output.
         var frag_lane_col = Int((lane % 4) * UInt(simd_width))
 
-        @parameter
-        for i_group in range(num_groups_per_thread):
+        comptime for i_group in range(num_groups_per_thread):
             var group_idx = UInt(i_group) * 8 + lane // 4
             var q_head_idx = block_idx.y * UInt(group) + group_idx
 
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 var score_row = batch_cache_valid_length
                 var score_col = (
                     kv_tile_start_row + key_offset + frag_lane_col + i
@@ -3328,8 +3413,7 @@ fn scale_and_mask_helper[
                     * scale_log2e.cast[p_type](),
                 )
 
-                @parameter
-                if use_score_mod:
+                comptime if use_score_mod:
                     p_reg_tile[n_mma, i + i_group * simd_width] = (
                         score_mod.score_mod(
                             Index(
@@ -3386,7 +3470,7 @@ fn mha_decoding_single_batch[
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -3400,27 +3484,27 @@ fn mha_decoding_single_batch[
     score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ):
     """Flash attention v2 algorithm."""
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
-    __comptime_assert group <= 16, String(
+    comptime assert group <= 16, String(
         "Only support GQA with group <= 16 for Nvidia, but got a group = '",
         group,
         "'.",
@@ -3533,11 +3617,8 @@ fn mha_decoding_single_batch[
     var rowmax = stack_allocation[Int(WM), accum_type, alignment=row_align]()
     var rowsum = stack_allocation[Int(WM), accum_type, alignment=row_align]()
 
-    @parameter
-    for i in range(WM):
-
-        @parameter
-        if sink:
+    comptime for i in range(WM):
+        comptime if sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -3630,8 +3711,7 @@ fn mha_decoding_single_batch[
             {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
         }
 
-    @parameter
-    for q_id in range(depth // BK):
+    comptime for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(
             q_smem_iter.layout_uint_type(q_id)
         )[]
@@ -3690,14 +3770,12 @@ fn mha_decoding_single_batch[
         )
 
         # load K tile into smem
-        @parameter
-        for k_id in range(depth // BK):
+        comptime for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(
                 k_smem_iter.layout_uint_type(k_id)
             )[]
 
-            @parameter
-            if not not_last_iter:
+            comptime if not not_last_iter:
                 k_tensor = _mask_tensor_row(k_gmem_iter[], kv_tile_num_rows)
             else:
                 k_tensor = k_gmem_iter[]
@@ -3762,8 +3840,7 @@ fn mha_decoding_single_batch[
 
         # For 16x8 mma output, group <= 8 only uses the first 8x8 matrix
         # each thread only has one fragment vector of size 2.
-        @parameter
-        if group <= 8:
+        comptime if group <= 8:
             var output_reg_vecs = output_reg_tile.tile[
                 Int(num_output_rows_full), p_frag_size // 2
             ](0, 0).vectorize[1, p_frag_simdwidth]()
@@ -3781,7 +3858,9 @@ fn mha_decoding_single_batch[
             ](
                 output_reg_vecs,
                 p_reg_vecs,
-                warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+                warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](
+                    0, Int(warp_y)
+                ),
                 rowmax,
                 rowsum,
             )
@@ -3807,7 +3886,9 @@ fn mha_decoding_single_batch[
             ](
                 output_reg_vecs,
                 p_reg_vecs,
-                warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+                warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](
+                    0, Int(warp_y)
+                ),
                 rowmax,
                 rowsum,
             )
@@ -3833,14 +3914,12 @@ fn mha_decoding_single_batch[
         )
 
         # load V tile into smem
-        @parameter
-        for v_id in range(BN // BK):
+        comptime for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(
                 v_smem_iter.layout_uint_type(v_id)
             )[]
 
-            @parameter
-            if not not_last_iter:
+            comptime if not not_last_iter:
                 var num_rows_bound = max(
                     0, end - (kv_tile_start_row + Int(v_id * BK))
                 )
@@ -3861,8 +3940,7 @@ fn mha_decoding_single_batch[
 
         async_copy_commit_group()
 
-        @parameter
-        if not decoding_warp_split_k:
+        comptime if not decoding_warp_split_k:
             # Copy score fragments to shared memory with swizzling to resolve bank
             # conflicts for ldmatrix in the 2nd matmul.
             # warp_split_k does not need the copy as warps don't perform reduction
@@ -3886,8 +3964,7 @@ fn mha_decoding_single_batch[
         #   S[m, (0:WN) + n*WN] @ V[(0:WN) + n*WN, :]
         # else:
         #   S[m, :] @ V[:, (0:WN) + n*WN]
-        @parameter
-        if decoding_warp_split_k:
+        comptime if decoding_warp_split_k:
             var p_reg_iter = p_reg_tile.tiled_iterator[
                 MMA_K // MMA_N * Int(num_m_mmas), p_frag_size
             ](0, 0)
@@ -3945,8 +4022,7 @@ fn mha_decoding_single_batch[
 
     tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](start, end)
 
-    @parameter
-    if decoding_warp_split_k:
+    comptime if decoding_warp_split_k:
         var output_reg_vecs = output_reg_tile.tile[
             Int(num_warps_n * num_m_mmas * num_n_mmas), p_frag_size // 2
         ](0, 0).vectorize[1, p_frag_size // 2]()
@@ -3978,24 +4054,18 @@ fn mha_decoding_single_batch[
         )
 
     # Apply softmax denumerator.
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        if m_mma * UInt(MMA_M) < group:
+    comptime for m_mma in range(num_m_mmas):
+        comptime if m_mma * UInt(MMA_M) < group:
             var rowsum_inv = recip(rowsum[2 * Int(m_mma)])
 
-            @parameter
-            for n_mma in range(num_n_mmas):
+            comptime for n_mma in range(num_n_mmas):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 0] *= rowsum_inv
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 1] *= rowsum_inv
 
-        @parameter
-        if m_mma * UInt(MMA_M) + UInt(MMA_M // 2) < group:
+        comptime if m_mma * UInt(MMA_M) + UInt(MMA_M // 2) < group:
             var rowsum_inv = recip(rowsum[2 * Int(m_mma) + 1])
 
-            @parameter
-            for n_mma in range(num_n_mmas):
+            comptime for n_mma in range(num_n_mmas):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 2] *= rowsum_inv
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 3] *= rowsum_inv
 
@@ -4011,8 +4081,7 @@ fn mha_decoding_single_batch[
         q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN
     )
 
-    @parameter
-    if decoding_warp_split_k:
+    comptime if decoding_warp_split_k:
         accum_smem_warp_ptr += (
             (num_warps_n * (num_warps_n - 1))
             * WM
@@ -4029,8 +4098,7 @@ fn mha_decoding_single_batch[
         num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
     ]()
 
-    @parameter
-    if decoding_warp_split_k:
+    comptime if decoding_warp_split_k:
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4), swizzle=swizzle
         ](
@@ -4099,7 +4167,7 @@ fn mha_decoding_single_batch_pipelined[
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -4110,7 +4178,7 @@ fn mha_decoding_single_batch_pipelined[
     num_partitions: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -4120,18 +4188,18 @@ fn mha_decoding_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    __comptime_assert group <= 8, String(
+    comptime assert group <= 8, String(
         "Only support GQA with group <= 8 for Nvidia, but got a group = '",
         group,
         "'.",
@@ -4233,11 +4301,8 @@ fn mha_decoding_single_batch_pipelined[
 
     var partition_idx = block_idx.x
 
-    @parameter
-    for i in range(WM):
-
-        @parameter
-        if sink:
+    comptime for i in range(WM):
+        comptime if sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -4439,7 +4504,7 @@ fn mha_decoding_single_batch_pipelined[
         ](
             output_reg_vecs,
             p_reg_vecs,
-            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -4490,12 +4555,10 @@ fn mha_decoding_single_batch_pipelined[
 
     # Apply softmax denumerator.
 
-    @parameter
-    for m_mma in range(num_m_mmas):
+    comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = 1.0 / rowsum[2 * Int(m_mma)]
 
-        @parameter
-        for n_mma in range(num_n_mmas):
+        comptime for n_mma in range(num_n_mmas):
             output_reg_tile[n_mma, 0] *= rowsum_inv0
             output_reg_tile[n_mma, 1] *= rowsum_inv0
 
@@ -4558,6 +4621,7 @@ fn mha_decoding_single_batch_pipelined[
 
 
 fn mha_splitk_reduce[
+    intermediate_type: DType,
     output_type: DType,
     depth: UInt,
     num_heads: UInt,
@@ -4565,7 +4629,7 @@ fn mha_splitk_reduce[
     group: UInt = 1,
     use_exp2: Bool = False,
 ](
-    intermediate_ptr: UnsafePointer[Scalar[output_type], ImmutAnyOrigin],
+    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     exp_sum_ptr: UnsafePointer[
         Scalar[get_accum_type[output_type]()], MutAnyOrigin
@@ -4577,7 +4641,7 @@ fn mha_splitk_reduce[
     num_partitions: Int,
 ):
     # we only reduce over a warp so limit number of warps to 1
-    __comptime_assert num_threads == UInt(WARP_SIZE), (
+    comptime assert num_threads == UInt(WARP_SIZE), (
         "num_threads: "
         + String(num_threads)
         + " should be equal to the warp_size:"
@@ -4620,7 +4684,9 @@ fn mha_splitk_reduce[
     comptime intermediate_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, Int(num_heads), Int(depth)
     )
-    var intermediate_output = LayoutTensor[output_type, intermediate_layout](
+    var intermediate_output = LayoutTensor[
+        intermediate_type, intermediate_layout
+    ](
         intermediate_ptr,
         RuntimeLayout[intermediate_layout].row_major(
             Index(num_partitions, batch_size, num_heads, depth)
@@ -4657,6 +4723,8 @@ fn mha_splitk_reduce[
     ]()
 
     var acc = SIMD[accum_type, Int(width)](0)
+    # Kahan summation compensation for improved precision with many partitions
+    var compensation = SIMD[accum_type, Int(width)](0)
     var depth_idx = thread_idx.x * width
 
     # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
@@ -4675,17 +4743,22 @@ fn mha_splitk_reduce[
             partition_idx // simd_width
         ]
 
-        @parameter
-        for i in range(simd_width):
+        comptime for i in range(simd_width):
             var ptr = base_ptr + (partition_idx + i) * partition_stride
             var x_load = ptr.load[
                 width = Int(width),
-                alignment = Int(width) * size_of[output_type](),
+                alignment = Int(width) * size_of[intermediate_type](),
             ]().cast[accum_type]()
             var scale = partition_exp_sum[i]
             var mask = SIMD[DType.bool, Int(width)](fill=scale > 0)
             var safe_load = mask.select(x_load, type_of(x_load)(0))
-            acc += safe_load * type_of(safe_load)(scale)
+            var term = safe_load * type_of(safe_load)(scale)
+
+            # Kahan summation: compensate for lost low-order bits
+            var y = term - compensation
+            var t = acc + y
+            compensation = (t - acc) - y
+            acc = t
 
     if depth_idx < depth:
         # simd_width=8 is based on experimentation
@@ -4728,15 +4801,15 @@ fn mha_gpu_naive[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -4747,7 +4820,9 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q.dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[
+            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
     ] = None,
 ) raises:
     comptime q_type = q.dtype
@@ -4868,7 +4943,7 @@ fn _bmm0_bs[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     scale: Float32,
     batch_size: Int,
@@ -4896,11 +4971,8 @@ fn _bmm0_bs[
     var p_offset = batch_head * UInt(max_prompt_len) * UInt(padded_num_keys)
     var start_pos: UInt32 = 0
 
-    @parameter
-    if ragged:
-
-        @parameter
-        if not _is_cache_length_accurate:
+    comptime if ragged:
+        comptime if not _is_cache_length_accurate:
             start_pos = UInt32(k.cache_length(Int(batch)))
 
         seq_start = Int(valid_length[batch])
@@ -4947,8 +5019,7 @@ fn _bmm0_bs[
         #       supported on AMD, this stopgap AMD path should be eliminated to
         #       function as a generic fall-back (i.e., without vectorization).
         #       REL: KERN-1343.
-        @parameter
-        if is_amd_gpu():
+        comptime if is_amd_gpu():
             var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
 
             fn accum_fn[width: Int](offset: Int) unified {mut}:
@@ -4959,8 +5030,7 @@ fn _bmm0_bs[
                 var k_val = k_ptr.load[width=width, alignment=alignment](offset)
                 var qk_val = (q_val * k_val).cast[p_type]()
 
-                @parameter
-                if width == 1:
+                comptime if width == 1:
                     accum += rebind[type_of(accum)](qk_val)
                 else:
                     accum_vec += rebind[type_of(accum_vec)](qk_val)
@@ -5006,7 +5076,7 @@ fn _bmm1_bs[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     max_prompt_len: Int,
     max_cache_size: Int,
@@ -5031,11 +5101,8 @@ fn _bmm1_bs[
     var p_offset = batch_head * UInt(max_prompt_len) * UInt(padded_num_keys)
     var start_pos: UInt32 = 0
 
-    @parameter
-    if ragged:
-
-        @parameter
-        if not _is_cache_length_accurate:
+    comptime if ragged:
+        comptime if not _is_cache_length_accurate:
             start_pos = UInt32(v.cache_length(Int(batch)))
 
         seq_start = Int(valid_length[batch])
@@ -5097,10 +5164,18 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[mask_type, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, k_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, v_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: LayoutTensor[
+        mut=False, mask_type, address_space = AddressSpace.GENERIC, ...
+    ],
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
@@ -5113,7 +5188,7 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     mha_gpu_naive[sink=sink](
@@ -5154,9 +5229,15 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, k_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, v_type, address_space = AddressSpace.GENERIC, ...
+    ],
     mask: MaskType,
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -5170,7 +5251,7 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     var k_operand = LayoutTensorMHAOperand(
@@ -5190,7 +5271,7 @@ fn mha_gpu_naive[
         )
     )
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         UnsafePointer[UInt32, MutAnyOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -5224,7 +5305,9 @@ fn mha_gpu_naive[
     ragged: Bool = False,
     sink: Bool = False,
 ](
-    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
@@ -5232,7 +5315,7 @@ fn mha_gpu_naive[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5243,7 +5326,7 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     var k_operand = KVCacheMHAOperand(k)
@@ -5282,10 +5365,18 @@ fn _naive_attention_with_transpose[
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
@@ -5433,10 +5524,18 @@ fn _naive_attention[
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.

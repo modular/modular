@@ -14,22 +14,16 @@
 
 from __future__ import annotations
 
-import enum
 import logging
-from collections.abc import Mapping
-from enum import Enum
+from typing import Literal
 
 from max.config import ConfigFileModel
 from pydantic import Field
 
 logger = logging.getLogger("max.pipelines")
 
-
-class SpeculativeMethod(str, Enum):
-    """The supported methods for speculative decoding."""
-
-    STANDALONE = "standalone"
-    EAGLE = "eagle"
+SpeculativeMethod = Literal["standalone", "eagle", "mtp"]
+"""The supported methods for speculative decoding."""
 
 
 class SpeculativeConfig(ConfigFileModel):
@@ -49,16 +43,13 @@ class SpeculativeConfig(ConfigFileModel):
     MAXConfig file."""
 
     def is_eagle(self) -> bool:
-        """Whether the speculative method is eagle i.e. it shares embedding and lm_head weights between the target and draft models and only takes the last hidden state from the target model"""
-        return self.speculative_method == SpeculativeMethod.EAGLE
+        """Returns whether the speculative method is EAGLE (shared embedding/lm_head)."""
+        return self.speculative_method == "eagle"
 
     def is_standalone(self) -> bool:
-        """Whether the speculative method is a standalone model"""
-        return self.speculative_method == SpeculativeMethod.STANDALONE
+        """Returns whether the speculative method is a standalone model."""
+        return self.speculative_method == "standalone"
 
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for SpeculativeConfig."""
-        return {
-            "speculative_method": SpeculativeMethod,
-        }
+    def is_mtp(self) -> bool:
+        """Returns whether the speculative method is MTP."""
+        return self.speculative_method == "mtp"
