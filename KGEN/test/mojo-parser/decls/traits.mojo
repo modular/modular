@@ -478,7 +478,7 @@ struct RegPassableRequiredType(RequiredType):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}RequiredType
-    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}fn(::Int) -> ::Int
+    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}fn(arg: ::Int) -> ::Int
 
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
@@ -1024,4 +1024,20 @@ trait TraitWDefault:
 
 struct TestTraitWDefault(TraitWDefault):
     fn test[linear_idx_type: Int = 0](self) -> Int:
+        pass
+
+# MOCO-3309: Ensure that keyword arguments work with trait conformance.
+trait HasFooKw:
+    fn __init__(out self, *, foo: Self):
+        ...
+
+trait HasBarKw:
+    fn __init__(out self, *, bar: Self):
+        ...
+
+struct TestKWArgs(HasFooKw, HasBarKw):
+    fn __init__(out self, *, foo: Self):
+        pass
+
+    fn __init__(out self, *, bar: Self):
         pass

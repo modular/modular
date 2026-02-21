@@ -201,10 +201,18 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
     ASTType actualValueAstType =
         RefType::stripRefConvention(actualAstType, actualConv);
     // Now check that the argument types line up.
-    if (actualValueAstType.isEqualCanon(expectedAstValueType))
-      continue;
+    if (!actualValueAstType.isEqualCanon(expectedAstValueType))
+      return false;
 
-    return false;
+    // If the argument has a required keyword, then the two must match names.
+    if (actual.getArgListAttrs().getPassingKind(actualArgIndex) ==
+            PassingKind::KwOnly ||
+        expected.getArgListAttrs().getPassingKind(actualArgIndex) ==
+            PassingKind::KwOnly) {
+      if (actual.getArgName(actualArgIndex) !=
+          expected.getArgName(actualArgIndex))
+        return false;
+    }
   }
 
   // The type the actual argument will be compared against. If the actual
@@ -310,29 +318,25 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
       ASTType(paramRefRemapper.replace(expected.getBody())), declScope);
 }
 
+// Strip out irrelevant details of a function that can be rebound away to make
+// convertibility checking easier.
 static FnType getReducedFnType(FnType sig) {
   MLIRContext *ctx = sig.getContext();
 
   auto origPogListAttr = sig.getArgListAttrs();
   ArrayRef<PogMetadataAttr> pogs = origPogListAttr.getPogs();
 
-  SmallVector<PassingKind> passingKinds(sig.getNumArguments(),
-                                        PassingKind::PosOnly);
-  SmallVector<StringAttr> names(sig.getNumArguments(), StringAttr::get(ctx));
+  SmallVector<PassingKind> passingKinds;
+  SmallVector<StringAttr> names;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<VariadicKind> variadics;
-  SmallVector<TypedAttr> defaults;
+  SmallVector<TypedAttr> defaults(sig.getNumArguments(), {});
   for (size_t i = 0, e = sig.getNumArguments(); i != e; ++i) {
+    passingKinds.push_back(origPogListAttr.getPassingKind(i));
+    names.push_back(pogs[i].getName());
     variadics.push_back(origPogListAttr.getVariadicKind(i));
     constraints.emplace_back(pogs[i].getConstraints());
   }
-  defaults.resize(variadics.size(), {});
-
-  // The passing kinds for results slots must be implicit.
-  if (sig.hasMemoryOnlyResult())
-    passingKinds.back() = PassingKind::Implicit;
-  if (sig.isThrows())
-    passingKinds.end()[-2] = PassingKind::Implicit;
 
   auto newPogListAttr = PogListAttr::get(
       ctx, names, passingKinds, variadics, defaults,
@@ -1034,17 +1038,21 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       from.getFnEffects() != to.getFnEffects())
     return false;
 
-  // The input argument types may have different implicit origins.
-  for (auto [fromTy, toTy, conv] : llvm::zip(
+  // The input argument types may have different implicit origins but otherwise
+  // must match exactly.
+  for (auto [idx, fromTy, toTy, conv] : llvm::enumerate(
            from.getArguments(), to.getArguments(), from.getArgConventions())) {
-    Type fromTyCmp = fromTy;
-    Type toTyCmp = toTy;
-    if (hasImplicitOrigin(conv)) {
-      fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
-      toTyCmp = ASTType(toTyCmp).getReferenceElementType();
-    }
+    Type fromTyCmp = RefType::stripRefConvention(fromTy, conv);
+    Type toTyCmp = RefType::stripRefConvention(toTy, conv);
     if (!ASTType(fromTyCmp).isEqualCanon(toTyCmp))
       return false;
+
+    // If the argument has a required keyword, then the two must match names.
+    if (from.getArgListAttrs().getPassingKind(idx) == PassingKind::KwOnly ||
+        to.getArgListAttrs().getPassingKind(idx) == PassingKind::KwOnly) {
+      if (from.getArgName(idx) != to.getArgName(idx))
+        return false;
+    }
   }
 
   // Otherwise, everything seems compatible.

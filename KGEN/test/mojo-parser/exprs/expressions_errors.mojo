@@ -217,6 +217,12 @@ fn test_func_type():
     # expected-error @below {{'fn() raises Int -> None' value to 'fn() raises String -> None'}}
     comptime f9: fn () raises String = throws_int
 
+    fn has_foo_kw(*, foo: Int): pass
+    # expected-error @+1 {{cannot implicitly convert 'fn(*, foo: Int) -> None' value to 'fn(*, bar: Int) -> None'}}
+    var f10: fn (*, bar: Int) -> None = has_foo_kw
+
+
+
 ##===----------------------------------------------------------------------===##
 # LValue and RValues
 ##===----------------------------------------------------------------------===##

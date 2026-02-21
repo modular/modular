@@ -25,12 +25,14 @@ fn thunk[T: AnyType](x: T):
     pass
 
 
-# CHECK-LABEL: lit.fn @"test
-fn test():
+# CHECK-LABEL: lit.fn @"test_fn
+fn test_fn():
+    # CHECK: lit.call {{.*}}foo
     _ = foo()
+    # CHECK: lit.call {{.*}}bar
     _ = bar()
 
-    # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
+    # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(x: ::Int) -> None|{{.*}}[fn(x: ::Int) -> None](::Int)"
     var f: fn(Int) -> None = thunk[Int]
 
 
@@ -38,19 +40,19 @@ fn test():
 
 # CHECK-LABEL: lit.package @std attributes {postParseModule =
 
-# CHECK-NOT: lit.fn @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
+# CHECK-NOT: lit.fn @"fn(::Int, /) -> None|fn(y: ::Int) -> None|{{.*}}[fn(y: ::Int) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_foo
 # CHECK-SAME: postParseModule
 # CHECK: lit.fn @"foo
-# CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(y: ::Int) -> None|{{.*}}[fn(y: ::Int) -> None](::Int)"
 
-# CHECK-COUNT-1: lit.fn @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
+# CHECK-COUNT-1: lit.fn @"fn(::Int, /) -> None|fn(y: ::Int) -> None|{{.*}}[fn(y: ::Int) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_bar
 # CHECK-SAME: postParseModule
 # CHECK: lit.fn @"bar
-# CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(y: ::Int) -> None|{{.*}}[fn(y: ::Int) -> None](::Int)"
 
 # CHECK-NOT: lit.fn @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
