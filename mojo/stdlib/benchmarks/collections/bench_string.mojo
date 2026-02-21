@@ -275,6 +275,42 @@ fn bench_string_find_multiple[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string is_ascii_digit
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_is_ascii_digit[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = StringSlice(make_string[length](filename + ".txt"))
+
+    @always_inline
+    fn call_fn() unified {read}:
+        for _ in range(10**6 // length):
+            var res = black_box(items).is_ascii_digit()
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string is_ascii_printable
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_is_ascii_printable[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = StringSlice(make_string[length](filename + ".txt"))
+
+    @always_inline
+    fn call_fn() unified {read}:
+        for _ in range(10**6 // length):
+            var res = black_box(items).is_ascii_printable()
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -473,6 +509,12 @@ def main():
             )
             m.bench_function[bench_string_find_multiple[length, fname]](
                 BenchId(String("bench_string_find_multiple", suffix))
+            )
+            m.bench_function[bench_string_is_ascii_digit[length, fname]](
+                BenchId(String("bench_string_is_ascii_digit", suffix))
+            )
+            m.bench_function[bench_string_is_ascii_printable[length, fname]](
+                BenchId(String("bench_string_is_ascii_printable", suffix))
             )
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
                 BenchId(String("bench_string_is_valid_utf8", suffix))

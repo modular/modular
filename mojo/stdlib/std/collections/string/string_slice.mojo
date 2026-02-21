@@ -2289,10 +2289,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         if not self:
             return False
-        for char in self.codepoints():
-            if not char.is_ascii_digit():
-                return False
-        return True
+        return _all_bytes_in_ascii_range[Byte(ord("0")), Byte(ord("9"))](
+            self.as_bytes()
+        )
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string are uppercase and
@@ -2344,10 +2343,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if all characters are printable else False.
         """
-        for char in self.codepoints():
-            if not char.is_ascii_printable():
-                return False
-        return True
+        return _all_bytes_in_ascii_range[Byte(ord(" ")), Byte(ord("~"))](
+            self.as_bytes()
+        )
 
     fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice right justified in a string of specified width.
@@ -2678,6 +2676,49 @@ fn _unsafe_strlen(
     while offset < max and ptr[offset]:
         offset += 1
     return offset
+
+
+@always_inline
+fn _all_bytes_in_ascii_range[lo: Byte, hi: Byte](
+    bytes: Span[mut=False, Byte, ...],
+) -> Bool:
+    """Returns True if every byte in `bytes` lies in the closed range `[lo, hi]`.
+
+    Uses the unsigned-subtraction trick: `(byte - lo) > (hi - lo)` catches
+    both bytes below `lo` (unsigned underflow wraps to a large value) and
+    bytes above `hi`, collapsing two comparisons into one.
+
+    Parameters:
+        lo: The inclusive lower bound of the ASCII range.
+        hi: The inclusive upper bound of the ASCII range.
+
+    Args:
+        bytes: The byte span to check.
+
+    Returns:
+        True if all bytes are in `[lo, hi]`, False otherwise.
+    """
+    var ptr = bytes.unsafe_ptr()
+    var length = len(bytes)
+    if is_compile_time() or length < simd_width_of[DType.bool]():
+        for i in range(length):
+            if (ptr[i] - lo) > (hi - lo):
+                return False
+        return True
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    comptime hi_minus_lo = hi - lo
+    var lo_vec = SIMD[DType.uint8, bool_mask_width](lo)
+    var range_vec = SIMD[DType.uint8, bool_mask_width](hi_minus_lo)
+    var vectorized_end = align_down(length, bool_mask_width)
+    for i in range(0, vectorized_end, bool_mask_width):
+        var block = ptr.load[width=bool_mask_width](i)
+        var out_of_range = (block - lo_vec).gt(range_vec)
+        if pack_bits(out_of_range):
+            return False
+    for i in range(vectorized_end, length):
+        if (ptr[i] - lo) > (hi - lo):
+            return False
+    return True
 
 
 @always_inline

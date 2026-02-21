@@ -930,10 +930,72 @@ def test_is_ascii_digit():
     assert_false(StringSlice("123asdg").is_ascii_digit())
 
 
+def test_is_ascii_digit_large_strings():
+    # Tests exercising the SIMD path (strings longer than SIMD register width).
+    # 65 bytes: one full SIMD block + scalar tail
+    all_digits_65 = "1" * 65
+    assert_true(StringSlice(all_digits_65).is_ascii_digit())
+
+    # Non-digit at the very start (SIMD block)
+    non_digit_at_start = "a" + "1" * 64
+    assert_false(StringSlice(non_digit_at_start).is_ascii_digit())
+
+    # Non-digit at the very end (scalar tail after last SIMD block)
+    non_digit_at_end = "1" * 64 + "a"
+    assert_false(StringSlice(non_digit_at_end).is_ascii_digit())
+
+    # 128 bytes: exactly two SIMD blocks
+    all_digits_128 = "9" * 128
+    assert_true(StringSlice(all_digits_128).is_ascii_digit())
+
+    # Non-digit in the middle of the second SIMD block
+    mixed_128 = "1" * 64 + "a" + "1" * 63
+    assert_false(StringSlice(mixed_128).is_ascii_digit())
+
+    # 257 bytes: four SIMD blocks + one byte scalar tail
+    all_digits_257 = "0" * 257
+    assert_true(StringSlice(all_digits_257).is_ascii_digit())
+
+    # Boundary: last byte is a non-digit
+    non_digit_last_257 = "1" * 256 + "a"
+    assert_false(StringSlice(non_digit_last_257).is_ascii_digit())
+
+
 def test_is_ascii_printable():
     assert_true(StringSlice("aasdg").is_ascii_printable())
     assert_false(StringSlice("aa\nae").is_ascii_printable())
     assert_false(StringSlice("aa\tae").is_ascii_printable())
+
+
+def test_is_ascii_printable_large_strings():
+    # Tests exercising the SIMD path (strings longer than SIMD register width).
+    # 65 bytes: one full SIMD block + scalar tail
+    all_printable_65 = "a" * 65
+    assert_true(StringSlice(all_printable_65).is_ascii_printable())
+
+    # Non-printable (newline) at the very start (SIMD block)
+    non_printable_at_start = "\n" + "a" * 64
+    assert_false(StringSlice(non_printable_at_start).is_ascii_printable())
+
+    # Non-printable at the very end (scalar tail after last SIMD block)
+    non_printable_at_end = "a" * 64 + "\n"
+    assert_false(StringSlice(non_printable_at_end).is_ascii_printable())
+
+    # 128 bytes: exactly two SIMD blocks, all printable
+    all_printable_128 = "z" * 128
+    assert_true(StringSlice(all_printable_128).is_ascii_printable())
+
+    # Non-printable in the middle of the second SIMD block
+    mixed_128 = "a" * 64 + "\t" + "a" * 63
+    assert_false(StringSlice(mixed_128).is_ascii_printable())
+
+    # 257 bytes: four SIMD blocks + one byte scalar tail
+    all_printable_257 = "!" * 257
+    assert_true(StringSlice(all_printable_257).is_ascii_printable())
+
+    # Boundary: last byte is non-printable
+    non_printable_last_257 = "a" * 256 + "\n"
+    assert_false(StringSlice(non_printable_last_257).is_ascii_printable())
 
 
 def test_ascii_rjust():
