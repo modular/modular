@@ -177,7 +177,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn init[
         o: MutOrigin
-    ](ref[o, AddressSpace.SHARED] self, num_threads: Int32 = 1):
+    ](ref [o, AddressSpace.SHARED]self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 
         Sets up the barrier to expect arrivals from the specified number of threads
@@ -196,7 +196,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn expect_bytes[
         o: MutOrigin
-    ](ref[o, AddressSpace.SHARED] self, bytes: Int32):
+    ](ref [o, AddressSpace.SHARED]self, bytes: Int32):
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -214,7 +214,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline
     fn expect_bytes_relaxed[
         o: MutOrigin
-    ](ref[o, AddressSpace.SHARED] self, bytes: Int32) -> UInt64:
+    ](ref [o, AddressSpace.SHARED]self, bytes: Int32) -> UInt64:
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -236,7 +236,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     fn arrive_and_expect_bytes[
         o: MutOrigin
     ](
-        ref[o, AddressSpace.SHARED] self,
+        ref [o, AddressSpace.SHARED]self,
         bytes: Int32,
         cta_id: UInt32,
         pred: UInt32,
@@ -272,7 +272,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn wait[
         ticks: Optional[UInt32] = None
-    ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -323,7 +323,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn wait_acquire[
         scope: Scope
-    ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Acquire and wait until the barrier is satisfied.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -367,7 +367,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn wait_relaxed[
         scope: Scope
-    ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied with relaxed ordering.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -409,7 +409,7 @@ struct SharedMemBarrier(TrivialRegisterType):
         )
 
     @always_inline("nodebug")
-    fn try_wait(ref[AddressSpace.SHARED] self, phase: UInt32 = 0) -> Bool:
+    fn try_wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0) -> Bool:
         """Non-blocking check if barrier phase is complete.
 
         Performs a single non-blocking check to see if the barrier has completed
@@ -444,61 +444,32 @@ struct SharedMemBarrier(TrivialRegisterType):
 
     @always_inline
     fn unsafe_ptr[
-        origin: ImmutOrigin
+        origin: Origin
     ](
-        ref[origin, AddressSpace.SHARED] self,
+        ref [origin, AddressSpace.SHARED]self,
     ) -> UnsafePointer[
         Int64,
         origin=origin,
         address_space = AddressSpace.SHARED,
     ]:
-        """Get an unsafe pointer to the barrier's memory location (immutable origin).
+        """Get an unsafe pointer to the barrier's memory location.
 
         Provides low-level access to the shared memory location storing the barrier state.
         This method is primarily used internally by other barrier operations that need
         direct access to the underlying memory.
 
         Parameters:
-            origin: Origin of self (must be immutable).
+            origin: Origin of self.
 
         Returns:
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return UnsafePointer[
-            Int64, ImmutAnyOrigin, address_space = AddressSpace.SHARED
-        ](to=self.mbar).unsafe_origin_cast[origin]()
-
-    @always_inline
-    fn unsafe_ptr[
-        origin: MutOrigin
-    ](
-        ref[origin, AddressSpace.SHARED] self,
-    ) -> UnsafePointer[
-        Int64,
-        origin=origin,
-        address_space = AddressSpace.SHARED,
-    ]:
-        """Get an unsafe pointer to the barrier's memory location (mutable origin).
-
-        Provides low-level access to the shared memory location storing the barrier state.
-        This method is primarily used internally by other barrier operations that need
-        direct access to the underlying memory.
-
-        Parameters:
-            origin: Origin of self (must be mutable).
-
-        Returns:
-            An unsafe pointer to the barrier's memory location in shared memory,
-            properly typed and aligned for barrier operations.
-        """
-        return UnsafePointer[
-            Int64, MutAnyOrigin, address_space = AddressSpace.SHARED
-        ](to=self.mbar).unsafe_origin_cast[origin]()
+        return UnsafePointer(to=self.mbar).unsafe_origin_cast[origin]()
 
     @always_inline
     fn arrive_cluster(
-        ref[AddressSpace.SHARED] self, cta_id: UInt32, count: UInt32 = 1
+        ref [AddressSpace.SHARED]self, cta_id: UInt32, count: UInt32 = 1
     ):
         """Signal arrival at the barrier from a specific CTA (Cooperative Thread Array) in a cluster.
 
@@ -520,7 +491,7 @@ struct SharedMemBarrier(TrivialRegisterType):
         )
 
     @always_inline("nodebug")
-    fn arrive[o: MutOrigin](ref[o, AddressSpace.SHARED] self) -> Int:
+    fn arrive[o: MutOrigin](ref [o, AddressSpace.SHARED]self) -> Int:
         """Signal arrival at the barrier and return the arrival count.
 
         This method increments the arrival count at the barrier and returns
@@ -764,16 +735,14 @@ struct TMATensorTile[
         self.descriptor = other.descriptor
 
     @always_inline
-    fn prefetch_descriptor(ref self):
+    fn prefetch_descriptor(self):
         """
         Prefetches the TMA descriptor into cache to reduce latency.
 
         This method helps hide memory access latency by prefetching the descriptor
         before it's needed for actual data transfers.
         """
-        var desc_ptr = UnsafePointer[TMADescriptor, ImmutAnyOrigin](
-            to=self.descriptor
-        ).bitcast[NoneType]()
+        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
@@ -781,9 +750,9 @@ struct TMATensorTile[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
-        ref self,
+        self,
         dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
     ):
         """
@@ -879,11 +848,11 @@ struct TMATensorTile[
     fn async_copy_3d[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
     ):
         """
@@ -975,11 +944,11 @@ struct TMATensorTile[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
     ):
         """
@@ -1073,11 +1042,11 @@ struct TMATensorTile[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int, Int],
     ):
         """
@@ -1190,11 +1159,11 @@ struct TMATensorTile[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, rank],
     ):
         """Schedules an asynchronous copy from global memory to shared memory for N-dimensional tensors.
@@ -1262,7 +1231,7 @@ struct TMATensorTile[
     fn async_store[
         rank: Int, //, cta_group: Int = 1
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
@@ -1324,11 +1293,11 @@ struct TMATensorTile[
     fn async_multicast_load[
         cta_group: Int = 1
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
     ):
@@ -1397,11 +1366,11 @@ struct TMATensorTile[
     fn async_multicast_load_3d[
         cta_group: Int = 1
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
         multicast_mask: UInt16,
     ):
@@ -1498,7 +1467,7 @@ struct TMATensorTile[
         tma_rows: Int,
         tma_load_size: Int,
     ](
-        ref self,
+        self,
         dst: LayoutTensor[
             Self.dtype,
             _,
@@ -1506,7 +1475,7 @@ struct TMATensorTile[
             alignment=128,
             ...,
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         rank: UInt,
         coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
@@ -1552,7 +1521,7 @@ struct TMATensorTile[
 
     @always_inline
     fn async_store(
-        ref self,
+        self,
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
@@ -1611,7 +1580,7 @@ struct TMATensorTile[
 
     @always_inline
     fn async_store_3d(
-        ref self,
+        self,
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
@@ -1694,7 +1663,7 @@ struct TMATensorTile[
 
     @always_inline
     fn async_store_4d(
-        ref self,
+        self,
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
@@ -1775,7 +1744,7 @@ struct TMATensorTile[
 
     @always_inline
     fn async_store_5d(
-        ref self,
+        self,
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
@@ -1875,7 +1844,7 @@ struct TMATensorTile[
     fn async_reduce[
         reduction_kind: ReduceOp
     ](
-        ref self,
+        self,
         src: LayoutTensor[
             Self.dtype, Self.layout, address_space = AddressSpace.SHARED, ...
         ],
@@ -1937,7 +1906,7 @@ struct TMATensorTile[
 
     @always_inline
     fn smem_tensormap_init(
-        ref self,
+        self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
@@ -1985,7 +1954,7 @@ struct TMATensorTile[
     @always_inline
     fn replace_tensormap_global_address_in_gmem[
         _dtype: DType,
-    ](ref self, src_ptr: UnsafePointer[Scalar[_dtype], MutAnyOrigin],):
+    ](self, src_ptr: UnsafePointer[Scalar[_dtype], MutAnyOrigin],):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -2011,9 +1980,7 @@ struct TMATensorTile[
             AddressSpace.GLOBAL,
         ), "src address space must be GENERIC or GLOBAL."
 
-        var desc_ptr = UnsafePointer[TMADescriptor, ImmutAnyOrigin](
-            to=self.descriptor
-        ).bitcast[NoneType]()
+        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
 
         inlined_assembly[
             "tensormap.replace.tile.global_address.global.b1024.b64 [$0], $1;",
@@ -2023,7 +1990,7 @@ struct TMATensorTile[
         ](desc_ptr, src_ptr.bitcast[NoneType]())
 
     @always_inline
-    fn tensormap_fence_acquire(ref self):
+    fn tensormap_fence_acquire(self):
         """
         Establishes a memory fence for TMA operations with acquire semantics.
 
@@ -2051,7 +2018,7 @@ struct TMATensorTile[
         )
 
     @always_inline
-    fn tensormap_fence_release(ref self):
+    fn tensormap_fence_release(self):
         """
         Establishes a memory fence for TMA operations with release semantics.
 
@@ -2077,7 +2044,7 @@ struct TMATensorTile[
     fn replace_tensormap_global_address_in_shared_mem[
         _dtype: DType,
     ](
-        ref self,
+        self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor,
             MutAnyOrigin,
@@ -2130,7 +2097,7 @@ struct TMATensorTile[
 
     @always_inline
     fn tensormap_cp_fence_release(
-        ref self,
+        self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
@@ -2180,9 +2147,9 @@ struct TMATensorTile[
         *,
         rank: Int,
     ](
-        ref self,
+        self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            mut=True, TMADescriptor, address_space = AddressSpace.SHARED
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -2258,7 +2225,7 @@ struct TMATensorTile[
         tensor_rank: Int,
         dim_idx: Int,
     ](
-        ref self,
+        self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
@@ -3236,13 +3203,13 @@ struct RaggedTMA3DTile[
     fn async_copy_to[
         cta_group: Int = 1
     ](
-        ref self,
+        self,
         dst: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         *,
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
@@ -3289,7 +3256,7 @@ struct RaggedTMA3DTile[
     fn async_copy_from[
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
-        ref self,
+        self,
         src: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
@@ -3337,15 +3304,13 @@ struct RaggedTMA3DTile[
             )
 
     @always_inline
-    fn prefetch_descriptor(ref self):
+    fn prefetch_descriptor(self):
         """
         Prefetches the TMA descriptor into cache.
         """
 
         prefetch_tma_descriptor(
-            UnsafePointer[TMADescriptor, ImmutAnyOrigin](
-                to=self.descriptor
-            ).bitcast[NoneType]()
+            UnsafePointer(to=self.descriptor).bitcast[NoneType]()
         )
 
 
@@ -3592,7 +3557,7 @@ struct RaggedTensorMap[
     @always_inline
     fn _get_descriptor_ptr(ref self) -> UnsafePointer[NoneType, MutAnyOrigin]:
         return (
-            UnsafePointer[TMADescriptor, ImmutAnyOrigin](to=self.descriptor)
+            UnsafePointer(to=self.descriptor)
             .bitcast[NoneType]()
             .unsafe_mut_cast[True]()
             .unsafe_origin_cast[MutAnyOrigin]()
@@ -3746,7 +3711,7 @@ struct RaggedTensorMap[
                 tile_iterator._incr()
 
     @always_inline
-    fn prefetch_descriptor(self):
+    fn prefetch_descriptor(ref self):
         """
         Prefetches the TMA descriptor into cache.
         """
