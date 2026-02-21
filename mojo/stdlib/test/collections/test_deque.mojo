@@ -1174,6 +1174,103 @@ def test_write_repr_to():
     check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
 
 
+# ===-----------------------------------------------------------------------===#
+# Bulk memory operation tests (trivial types with wrap-around)
+# ===-----------------------------------------------------------------------===#
+
+
+fn test_copy_trivial_wraparound() raises:
+    """Tests __copyinit__ with wrap-around in the source deque."""
+    q = Deque[Int](capacity=8)
+    # Fill to create a wrap-around: append 6 elements, popleft 4, append 4 more
+    for i in range(6):
+        q.append(i)
+    for _ in range(4):
+        _ = q.popleft()
+    for i in range(6, 10):
+        q.append(i)
+    # Now q has elements [4,5,6,7,8,9] wrapping around the buffer
+
+    p = q.copy()
+    assert_equal(len(p), len(q))
+    for i in range(len(q)):
+        assert_equal(p[i], q[i])
+
+    # Verify deep copy
+    p[0] = 99
+    assert_equal(q[0], 4)
+    assert_equal(p[0], 99)
+
+
+fn test_realloc_trivial_wraparound() raises:
+    """Tests _realloc by triggering capacity growth with wrap-around."""
+    q = Deque[Int](capacity=4)
+    # Create wrap-around: fill, popleft, then trigger realloc
+    q.append(1)
+    q.append(2)
+    q.append(3)
+    _ = q.popleft()
+    _ = q.popleft()
+    q.append(4)
+    q.append(5)
+    # Now q = [3, 4, 5] wrapping around capacity=4 buffer
+    assert_equal(len(q), 3)
+
+    # Trigger realloc by filling to capacity
+    q.append(6)
+    # Should have reallocated and linearized
+    assert_equal(q._head, 0)
+    assert_equal(len(q), 4)
+    assert_equal(q[0], 3)
+    assert_equal(q[1], 4)
+    assert_equal(q[2], 5)
+    assert_equal(q[3], 6)
+
+
+fn test_extend_trivial_wraparound() raises:
+    """Tests extend where destination wraps around."""
+    q = Deque[Int](capacity=8)
+    # Position tail near end of buffer to force wrap-around during extend
+    for i in range(5):
+        q.append(i)
+    for _ in range(4):
+        _ = q.popleft()
+    # Now head=4, tail=5, one element [4] in buffer, near the end
+
+    # Extend with enough elements to wrap the tail around
+    q.extend([10, 11, 12, 13, 14])
+    assert_equal(len(q), 6)
+    assert_equal(q[0], 4)
+    assert_equal(q[1], 10)
+    assert_equal(q[2], 11)
+    assert_equal(q[3], 12)
+    assert_equal(q[4], 13)
+    assert_equal(q[5], 14)
+
+
+fn test_prepare_for_new_elements_trivial() raises:
+    """Tests _prepare_for_new_elements via extend triggering realloc."""
+    q = Deque[Int](capacity=4)
+    # Create wrap-around state
+    q.append(1)
+    q.append(2)
+    q.append(3)
+    _ = q.popleft()
+    q.append(4)
+    # q = [2, 3, 4] wrapping, capacity=4
+
+    # Extend with enough to trigger realloc via _prepare_for_new_elements
+    q.extend([5, 6, 7, 8])
+    assert_equal(len(q), 7)
+    assert_equal(q[0], 2)
+    assert_equal(q[1], 3)
+    assert_equal(q[2], 4)
+    assert_equal(q[3], 5)
+    assert_equal(q[4], 6)
+    assert_equal(q[5], 7)
+    assert_equal(q[6], 8)
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
