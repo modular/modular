@@ -19,7 +19,6 @@ import importlib
 import logging
 import os
 import sys
-from pathlib import Path
 from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
@@ -173,16 +172,6 @@ class PipelineConfig(ConfigFileModel):
 
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
-    )
-
-    chat_template: Path | None = Field(
-        default=None,
-        description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config. If a path is provided, the file is read "
-            "during config resolution and the content stored as a string. If "
-            "None, the model's default chat template is used."
-        ),
     )
 
     use_experimental_kernels: str = Field(
