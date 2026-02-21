@@ -1203,7 +1203,7 @@ fn test_origin_ctor_folding[orig1: Origin](abcdef: A):
 
     # MOCO-1467: Origin type equality problem.
     # CHECK-NEXT: lit.alias.decl *"y{{.*}}:origin<#lit.struct.extract<:!Bool *"orig1.mut`", "_mlir_value">> *"orig1._mlir_origin`1">>
-    comptime y = Origin[orig1._mlir_origin]()
+    comptime y = Origin[_mlir_origin = orig1._mlir_origin]()
 
     # Check that origin_of works on origins as well as MValues.
     # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<0> {*"abcdef`2", (mutcast mut={{.*}}, *"orig1._mlir_origin`1")}>>

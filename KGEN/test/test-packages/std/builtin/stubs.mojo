@@ -14,13 +14,14 @@ comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 comptime AnyOrigin[*, mut: Bool] = Origin[
-    __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
+    _mlir_origin = __mlir_attr[
+        `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
+    ]
 ]()
 comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
 comptime ExternalOrigin[*, mut: Bool] = Origin[
-    mut=mut,
-    __mlir_attr[
+    _mlir_origin = __mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
         `>`,
@@ -29,7 +30,7 @@ comptime ExternalOrigin[*, mut: Bool] = Origin[
 comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
 comptime MutExternalOrigin = ExternalOrigin[mut=True]
 comptime StaticConstantOrigin = Origin[
-    __mlir_attr[
+    _mlir_origin = __mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<0>`,
         `, "__constants__"> : !lit.origin<0>`,
@@ -45,7 +46,7 @@ comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
 ]
 
 
-struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
+struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     TrivialRegisterPassable
 ):
     @always_inline("builtin")
@@ -54,14 +55,14 @@ struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin[_]) -> ImmutOrigin[v._mlir_origin]:
+    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin = v._mlir_origin]:
         return {}
 
     @always_inline("builtin")
     fn __init__(
         *, unsafe_mut_cast: Origin
     ) -> Origin[
-        __mlir_attr[
+        _mlir_origin = __mlir_attr[
             `#lit.origin.mutcast<`,
             unsafe_mut_cast._mlir_origin,
             `> : !lit.origin<`,
@@ -73,7 +74,7 @@ struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
 
 
 comptime _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
-    __mlir_attr[
+    _mlir_origin = __mlir_attr[
         `#lit.indirect.origin<`,
         base._mlir_origin,
         `> : `,
