@@ -50,5 +50,15 @@ def main():
             BenchId(String("bench_rfind_char[", size, "]"))
         )
 
+    results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
-        print(info.name, info.result.mean("ms"), sep=",")
+        n = info.name
+        time = info.result.mean("ms")
+        avg, amnt = results.get(n, (Float64(0), 0))
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
+    print("")
+    for k_v in results.items():
+        print(k_v.key, k_v.value[0], sep=",")
