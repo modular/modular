@@ -39,7 +39,7 @@ from sys import is_compile_time, simd_width_of
 from ffi import c_char
 from sys.intrinsics import likely, unlikely
 
-from bit import count_trailing_zeros
+from bit import count_leading_zeros, count_trailing_zeros
 from bit._mask import is_negative, splat
 from memory import (
     Span,
@@ -2827,10 +2827,46 @@ fn _memrchr[
 ) -> type_of(source):
     if not len:
         return {}
-    for i in reversed(range(len)):
+    if is_compile_time() or len < simd_width_of[DType.bool]():
+        for i in reversed(range(len)):
+            if source[i] == char:
+                return source + i
+        return {}
+    else:
+        return _memrchr_impl[dtype](source, char, len)
+
+
+@always_inline
+fn _memrchr_impl[
+    dtype: DType
+](
+    source: UnsafePointer[mut=False, Scalar[dtype]],
+    char: Scalar[dtype],
+    length: Int,
+    out output: type_of(source),
+):
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var first_needle = SIMD[dtype, bool_mask_width](char)
+    var vectorized_end = align_down(length, bool_mask_width)
+
+    for i in reversed(range(vectorized_end, length)):
         if source[i] == char:
-            return source + i
-    return {}
+            output = source + i
+            return
+
+    var i = vectorized_end - bool_mask_width
+    while i >= 0:
+        var bool_mask = source.load[width=bool_mask_width](i).eq(first_needle)
+        var mask = pack_bits(bool_mask)
+        if mask:
+            var last_pos = Int(
+                type_of(mask)(bool_mask_width - 1) - count_leading_zeros(mask)
+            )
+            output = source + i + last_pos
+            return
+        i -= bool_mask_width
+
+    output = {}
 
 
 @always_inline
