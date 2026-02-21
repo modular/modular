@@ -34,9 +34,9 @@ from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
     fused_qkv_ragged_matmul_scaled_float8,
-    mla_decode_branch_fp8,
-    mla_prefill_branch_fp8,
-    mla_prefill_decode_graph_fp8,
+    mla_decode_graph,
+    mla_prefill_decode_graph,
+    mla_prefill_graph,
     quantize_dynamic_scaled_float8,
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -605,7 +605,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             "q": xq,
             "input_row_offsets": input_row_offsets,
             "freqs_cis": freqs_cis,
-            "kv_a_proj_layernorm": kv_a_proj_layernorm,
+            "kv_norm_gamma": kv_a_proj_layernorm,
             "kv_params": self.kv_params,
             "kv_collection": kv_collection,
             "layer_idx": layer_idx,
@@ -646,11 +646,11 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             attn_kwargs["w_uv_scale"] = w_uv_scale
 
         if self.graph_mode == "prefill":
-            result = mla_prefill_branch_fp8(**attn_kwargs)
+            result = mla_prefill_graph(**attn_kwargs)
         elif self.graph_mode == "decode":
-            result = mla_decode_branch_fp8(**attn_kwargs)
+            result = mla_decode_graph(**attn_kwargs)
         else:
-            result = mla_prefill_decode_graph_fp8(**attn_kwargs)
+            result = mla_prefill_decode_graph(**attn_kwargs)
 
         return result.reshape((-1, self.n_heads * self.v_head_dim))
 

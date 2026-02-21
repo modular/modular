@@ -1141,7 +1141,6 @@ fn mla_prefill_decode_graph_fp8[
 
 
 fn mla_prefill_branch_bf16[
-    dtype: DType,
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
@@ -1149,9 +1148,9 @@ fn mla_prefill_branch_bf16[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.bfloat16, address_space = AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1168,8 +1167,8 @@ fn mla_prefill_branch_bf16[
         mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    w_k: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill path.
@@ -1246,7 +1245,7 @@ fn mla_prefill_branch_bf16[
     )
 
     # allocate buffers for latent KV
-    var k_latent_buf = ctx.enqueue_create_buffer[dtype](
+    var k_latent_buf = ctx.enqueue_create_buffer[DType.bfloat16](
         buffer_length * kv_latent_dim
     )
     var k_latent = TileTensor(
@@ -1266,7 +1265,7 @@ fn mla_prefill_branch_bf16[
         ctx,
     )
 
-    var k_buf = ctx.enqueue_create_buffer[dtype](
+    var k_buf = ctx.enqueue_create_buffer[DType.bfloat16](
         buffer_length * num_heads * qk_nope_head_dim
     )
     var k_flat = TileTensor(
@@ -1284,7 +1283,7 @@ fn mla_prefill_branch_bf16[
         w_uv.ptr,
         row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
     )
-    var v_buf = ctx.enqueue_create_buffer[dtype](
+    var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
         buffer_length * num_heads * v_head_dim
     )
     var v_flat = TileTensor(
@@ -1334,7 +1333,6 @@ fn mla_prefill_branch_bf16[
 
 
 fn mla_decode_branch_bf16[
-    dtype: DType,
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
@@ -1342,9 +1340,9 @@ fn mla_decode_branch_bf16[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.bfloat16, address_space = AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1354,8 +1352,8 @@ fn mla_decode_branch_bf16[
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    w_uk: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA decode path.
@@ -1393,7 +1391,7 @@ fn mla_decode_branch_bf16[
         return
 
     # First, create a input buffer for the mla decode kernel
-    var mla_decode_input_buf = ctx.enqueue_create_buffer[dtype](
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[DType.bfloat16](
         seq_len * num_heads * k_cache_dim
     )
     var mla_decode_input = TileTensor(
@@ -1467,7 +1465,7 @@ fn mla_decode_branch_bf16[
     )
 
     # Perform MLA decode
-    var raw_output_buf = ctx.enqueue_create_buffer[dtype](
+    var raw_output_buf = ctx.enqueue_create_buffer[DType.bfloat16](
         seq_len * num_heads * kv_latent_dim
     )
     var raw_output = TileTensor(
@@ -1520,7 +1518,6 @@ fn mla_decode_branch_bf16[
 
 @always_inline
 fn mla_prefill_decode_graph_bf16[
-    dtype: DType,
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
@@ -1528,9 +1525,9 @@ fn mla_prefill_decode_graph_bf16[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.bfloat16, address_space = AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1548,9 +1545,9 @@ fn mla_prefill_decode_graph_bf16[
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    w_k: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uk: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill/decode graph.
