@@ -469,16 +469,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        # Use pointer arithmetic so this works on both macOS and Linux toolchains
-        # (UnsafePointer(to=self.mbar) requires a ref and can fail on Linux).
-        var self_ptr = UnsafePointer[
-            Self, origin, address_space = AddressSpace.SHARED
-        ](to=self)
-        comptime mbar_offset = offset_of[Self, index=0]()
-        var mbar_addr = Int(self_ptr) + mbar_offset
-        return UnsafePointer[
-            Int64, MutAnyOrigin, address_space = AddressSpace.SHARED
-        ](unsafe_from_address=mbar_addr).unsafe_origin_cast[origin]()
+        return UnsafePointer(to=self.mbar).unsafe_origin_cast[origin]()
 
     @always_inline
     fn arrive_cluster(
@@ -3362,13 +3353,14 @@ fn _split_tma_gmem_tensor[
     //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        ptr.origin,
+        origin,
     ],
 ):
     comptime split_rank = len(flatten(ret.layout.shape))
@@ -3388,14 +3380,15 @@ fn _split_tma_gmem_tensor[
     //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        ptr.origin,
+        origin,
     ],
 ):
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
@@ -3453,7 +3446,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
         ptr, runtime_dim0
     )
     res = create_tensor_tile[
@@ -3508,7 +3501,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
         ptr, runtime_dim0, runtime_dim1
     )
     res = create_tensor_tile[
