@@ -23,7 +23,7 @@ from builtin.builtin_slice import ContiguousSlice
 from reflection import call_location
 from bit._mask import splat
 from bit import pop_count
-from memory import pack_bits
+from memory import pack_bits, uninit_copy_n
 from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
@@ -504,8 +504,19 @@ struct Span[
             len(self) == len(other),
             "Spans must be of equal length",
         )
-        for i in range(len(self)):
-            self[i] = other[i].copy()
+        # For trivial types, uninit_copy_n is a single memcpy (no destroy
+        # needed). For non-trivial types, we keep the single-pass assignment
+        # loop rather than destroy_n + uninit_copy_n, which would be two
+        # passes over memory with worse cache locality.
+        comptime if _T.__copyinit__is_trivial:
+            uninit_copy_n[overlapping=False](
+                dest=self.unsafe_ptr(),
+                src=other.unsafe_ptr(),
+                count=len(self),
+            )
+        else:
+            for i in range(len(self)):
+                self[i] = other[i].copy()
 
     fn __bool__(self) -> Bool:
         """Check if a span is non-empty.
