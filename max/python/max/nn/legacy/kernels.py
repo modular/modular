@@ -2182,8 +2182,10 @@ def mla_prefill_branch_fp8(
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
-    kv_b_proj: TensorValue,
-    kv_b_proj_scale: TensorValue,
+    w_k: TensorValue,
+    w_k_scale: TensorValue,
+    w_uv: TensorValue,
+    w_uv_scale: TensorValue,
     kv_params: KVCacheParams,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
@@ -2199,8 +2201,7 @@ def mla_prefill_branch_fp8(
     - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Copy the KV latent values from PagedKVCache to a contiguous buffer.
     - Quantize the KV latent values to fp8.
-    - Up-project the latent KV values to full K and V through a matmul.
-    - Split the concatenated KV into K and V.
+    - Up-project the latent KV values to full K and V through two matmuls.
     - Perform MLA prefill.
 
     Args:
@@ -2219,11 +2220,12 @@ def mla_prefill_branch_fp8(
             from which to copy KV latent values for each request. This is a 1D
             tensor of shape [num_batches + 1].
         buffer_length: The total number of tokens in the KV cache. Scalar.
-        kv_b_proj: Weight matrix for up-projecting the KV latent values to full
-            K and V. Shape: [num_heads * (qk_nope_head_dim + v_head_dim),
-            kv_latent_dim].
-        kv_b_proj_scale: The scale for the weight matrix. Shape varies
-            depending on the float8_config.
+        w_k: Weight matrix for up-projecting latent KV values to full K.
+            Shape: [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_k_scale: Scale tensor for `w_k`.
+        w_uv: Weight tensor for up-projecting latent KV values to full V.
+            Shape: [num_heads, v_head_dim, kv_latent_dim].
+        w_uv_scale: Scale tensor for `w_uv`.
         kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
@@ -2278,8 +2280,10 @@ def mla_prefill_branch_fp8(
         buffer_row_offsets[0],  # one-shot prefill.
         cache_offsets[0],  # one-shot prefill.
         buffer_length[0],  # one-shot prefill.
-        kv_b_proj,
-        kv_b_proj_scale,
+        w_k,
+        w_k_scale,
+        w_uv,
+        w_uv_scale,
         *kv_collection,
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2498,8 +2502,8 @@ def mla_prefill_decode_graph_fp8(
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
-    kv_b_proj: TensorValue,
-    kv_b_proj_scale: TensorValue,
+    w_k: TensorValue,
+    w_k_scale: TensorValue,
     w_uk: TensorValue,
     w_uk_scale: TensorValue,
     w_uv: TensorValue,
@@ -2525,7 +2529,7 @@ def mla_prefill_decode_graph_fp8(
         freqs_cis: RoPE frequency tensor.
         kv_a_proj_layernorm: RMSNorm gamma for KV cache.
         buffer_row_offsets, cache_offsets, buffer_length: One-shot prefill plan.
-        kv_b_proj, kv_b_proj_scale: KV up-projection weights and scales.
+        w_k, w_k_scale: Prefill K up-projection weights and scales.
         w_uk, w_uk_scale, w_uv, w_uv_scale: Decode projection weights/scales.
         kv_params: KV cache parameters.
         kv_collection: Paged KV cache values.
@@ -2569,8 +2573,8 @@ def mla_prefill_decode_graph_fp8(
         buffer_row_offsets[0],  # one-shot prefill.
         cache_offsets[0],  # one-shot prefill.
         buffer_length[0],  # one-shot prefill.
-        kv_b_proj,
-        kv_b_proj_scale,
+        w_k,
+        w_k_scale,
         w_uk,
         w_uk_scale,
         w_uv,
@@ -2597,7 +2601,7 @@ def mla_prefill_decode_graph_bf16(
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
-    kv_b_proj: TensorValue,
+    w_k: TensorValue,
     w_uk: TensorValue,
     w_uv: TensorValue,
     kv_params: KVCacheParams,
@@ -2619,7 +2623,7 @@ def mla_prefill_decode_graph_bf16(
         freqs_cis: RoPE frequency tensor.
         kv_norm_gamma: RMSNorm gamma for KV cache.
         buffer_row_offsets, cache_offsets, buffer_length: One-shot prefill plan.
-        kv_b_proj: KV up-projection weights.
+        w_k: Prefill K up-projection weights.
         w_uk, w_uv: Decode/output projection weights.
         kv_params: KV cache parameters.
         kv_collection: Paged KV cache values.
@@ -2655,7 +2659,7 @@ def mla_prefill_decode_graph_bf16(
         buffer_row_offsets[0],  # one-shot prefill.
         cache_offsets[0],  # one-shot prefill.
         buffer_length[0],  # one-shot prefill.
-        kv_b_proj,
+        w_k,
         w_uk,
         w_uv,
         *kv_collection,

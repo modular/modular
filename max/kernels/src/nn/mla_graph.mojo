@@ -337,78 +337,6 @@ fn mla_fused_rope_rmsnorm[
 
 
 # ===-----------------------------------------------------------------------===#
-# Shared helpers
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn split_kv_buffer[
-    dtype: DType,
-    target: StaticString = "cpu",
-](
-    kv: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k: TileTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
-    v: TileTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
-    ctx: DeviceContext,
-) raises:
-    """Split a packed KV buffer into separate K and V tensors.
-
-    Expects kv shape [S, H * (Dk + Dv)] and writes k/v shapes [S, H, Dk/Dv].
-    """
-    comptime qk_nope_head_dim = k.static_shape[2]
-    comptime v_head_dim = v.static_shape[2]
-
-    comptime assert kv.rank == 2, "rank should be equal to 2"
-    comptime assert k.rank == 3, "rank should be equal to 3"
-    comptime assert v.rank == 3, "rank should be equal to 3"
-
-    @always_inline
-    @parameter
-    @__copy_capture(kv, k, v)
-    fn split_kv_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 2, "rank should be equal to 2"
-        comptime assert kv.flat_rank == 2
-        comptime assert k.flat_rank == 3
-        comptime assert v.flat_rank == 3
-
-        comptime assert (
-            qk_nope_head_dim % width == 0
-        ), "qk_nope_head_dim should be divisible by simd width"
-        comptime assert (
-            v_head_dim % width == 0
-        ), "v_head_dim should be divisible by simd width"
-        var idx = rebind[IndexList[2]](idx_arg)
-        var token_idx = idx[0]
-        var hid_idx = idx[1]
-
-        var val = kv.load[width=width]((Idx(token_idx), Idx(hid_idx)))
-
-        var head_idx, head_dim_idx = divmod(
-            hid_idx, qk_nope_head_dim + v_head_dim
-        )
-
-        if head_dim_idx < qk_nope_head_dim:
-            k.store[width=width](
-                (Idx(token_idx), Idx(head_idx), Idx(head_dim_idx)), val
-            )
-        else:
-            head_dim_idx -= qk_nope_head_dim
-            v.store[width=width](
-                (Idx(token_idx), Idx(head_idx), Idx(head_dim_idx)), val
-            )
-
-    var launch_shape = IndexList[2](Int(kv.dim(0)), Int(kv.dim(1)))
-    comptime target_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
-    _elementwise_impl_gpu[
-        func=split_kv_fn, simd_width = UInt(target_simd_width)
-    ](launch_shape, ctx)
-
-
-# ===-----------------------------------------------------------------------===#
 # Manually fused MLA prefill branch (FP8)
 # ===-----------------------------------------------------------------------===#
 
@@ -446,8 +374,12 @@ fn mla_prefill_branch_fp8[
         mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    kv_b_proj: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    kv_b_proj_scale: TileTensor[
+    w_k: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k_scale: TileTensor[
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    w_uv: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -458,8 +390,7 @@ fn mla_prefill_branch_fp8[
     - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Copy the KV latent values from PagedKVCache to a contiguous buffer.
     - Quantize the KV latent values to fp8.
-    - Up-project the latent KV values to full K and V through a matmul.
-    - Split the concatenated KV into K and V.
+    - Up-project the latent KV values to full K and V through two matmuls.
     - Perform MLA prefill.
 
     Parameters:
@@ -498,11 +429,12 @@ fn mla_prefill_branch_fp8[
             from which to copy KV latent values for each request. This is a 1D
             tensor of shape [num_batches + 1].
         buffer_length: The total number of tokens in the KV cache. Scalar.
-        kv_b_proj: Weight matrix for up-projecting the KV latent values to full
-            K and V. Shape: [num_heads * (qk_nope_head_dim + v_head_dim),
-            kv_latent_dim].
-        kv_b_proj_scale: The scale for the weight matrix. Shape varies
-            depending on the float8_config.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_k_scale: Scale tensor for `w_k`.
+        w_uv: Weight tensor for projecting latent values to V. Shape:
+            [num_heads, v_head_dim, kv_latent_dim].
+        w_uv_scale: Scale tensor for `w_uv`.
         ctx: Device context.
     """
     comptime kv_params = collection_t.kv_params
@@ -515,14 +447,21 @@ fn mla_prefill_branch_fp8[
     comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
 
-    comptime assert kv_b_proj.shape_known, "kv_b_proj's shape should be static"
-    comptime assert kv_b_proj.static_shape[0] == num_heads * (
-        qk_nope_head_dim + v_head_dim
-    ), (
-        "kv_b_proj.layout.shape[0] should be equal to num_heads *"
-        " (qk_nope_head_dim + v_head_dim)"
-    )
-    comptime kv_latent_dim = kv_b_proj.static_shape[1]
+    comptime assert w_k.shape_known, "w_k's shape should be static"
+    comptime assert (
+        w_k.static_shape[0] == num_heads * qk_nope_head_dim
+    ), "w_k.shape[0] should be equal to num_heads * qk_nope_head_dim"
+    comptime kv_latent_dim = w_k.static_shape[1]
+    comptime assert w_uv.shape_known, "w_uv's shape should be static"
+    comptime assert (
+        w_uv.static_shape[0] == num_heads
+    ), "w_uv.shape[0] should be equal to num_heads"
+    comptime assert (
+        w_uv.static_shape[1] == v_head_dim
+    ), "w_uv.shape[1] should be equal to v_head_dim"
+    comptime assert (
+        w_uv.static_shape[2] == kv_latent_dim
+    ), "w_uv.shape[2] should be equal to kv_latent_dim"
 
     comptime assert m_scale_granularity == 1, "m_scale_granularity should be 1"
     comptime assert (
@@ -637,21 +576,14 @@ fn mla_prefill_branch_fp8[
         Int(k_latent.dim[0]()),
     )
 
-    # allocate buffers for concatenated KV
-    var kv_buf = ctx.enqueue_create_buffer[dtype](
-        buffer_length * num_heads * (qk_nope_head_dim + v_head_dim)
+    # Up-project latent KV values to K.
+    var k_buf = ctx.enqueue_create_buffer[dtype](
+        buffer_length * num_heads * qk_nope_head_dim
     )
-    var kv = TileTensor(
-        kv_buf,
-        row_major(
-            (
-                Idx(buffer_length),
-                Idx[num_heads * (qk_nope_head_dim + v_head_dim)](),
-            )
-        ),
+    var k_flat = TileTensor(
+        k_buf,
+        row_major((Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())),
     )
-
-    # up-project the latent KV values to full K and V
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="block",
         weight_scale_granularity="block",
@@ -661,21 +593,54 @@ fn mla_prefill_branch_fp8[
         transpose_b=True,
         target=target,
     ](
-        kv,
+        k_flat,
         fp8_k_latent,
-        kv_b_proj,
+        w_k,
         fp8_k_latent_scale,
-        kv_b_proj_scale,
+        w_k_scale,
         ctx,
     )
 
-    # allocate buffers for full K and V
-    var k_buf = ctx.enqueue_create_buffer[dtype](
-        buffer_length * num_heads * qk_nope_head_dim
+    # Reuse decode's rank-3 w_uv by flattening [H, Dv, K] -> [H*Dv, K].
+    var w_v = TileTensor(
+        w_uv.ptr,
+        row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
     )
+    var w_v_scale = TileTensor(
+        w_uv_scale.ptr,
+        row_major(
+            (
+                Idx[num_heads * (v_head_dim // n_scale_granularity)](),
+                Idx[kv_latent_dim // k_scale_granularity](),
+            )
+        ),
+    )
+
+    # Up-project latent KV values to V.
     var v_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * num_heads * v_head_dim
     )
+    var v_flat = TileTensor(
+        v_buf,
+        row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+    )
+    matmul_dynamic_scaled_fp8[
+        input_scale_granularity="block",
+        weight_scale_granularity="block",
+        m_scale_granularity=m_scale_granularity,
+        n_scale_granularity=n_scale_granularity,
+        k_scale_granularity=k_scale_granularity,
+        transpose_b=True,
+        target=target,
+    ](
+        v_flat,
+        fp8_k_latent,
+        w_v,
+        fp8_k_latent_scale,
+        w_v_scale,
+        ctx,
+    )
+
     var k = TileTensor(
         k_buf,
         row_major(
@@ -686,10 +651,6 @@ fn mla_prefill_branch_fp8[
         v_buf,
         row_major((Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())),
     )
-
-    # split the concatenated KV into K and V
-    # TODO: Remove this once matmul_dynamic_scaled_fp8 supports epilogue
-    split_kv_buffer[dtype](kv, k, v, ctx)
 
     generic_flare_mla_prefill_kv_cache_ragged[
         target=target,
@@ -1091,8 +1052,8 @@ fn mla_prefill_decode_graph_fp8[
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    kv_b_proj: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    kv_b_proj_scale: TileTensor[
+    w_k: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     w_uk: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
@@ -1166,8 +1127,10 @@ fn mla_prefill_decode_graph_fp8[
             buffer_row_offsets,
             cache_offsets,
             buffer_length,
-            kv_b_proj,
-            kv_b_proj_scale,
+            w_k,
+            w_k_scale,
+            w_uv,
+            w_uv_scale,
             ctx,
         )
 
@@ -1205,12 +1168,13 @@ fn mla_prefill_branch_bf16[
         mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    kv_b_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill path.
 
-    Applies RoPE and RMSNorm, up-projects latent KV to full K/V, then runs
+    Applies RoPE and RMSNorm, up-projects latent KV to full K and V, then runs
     prefill attention.
     """
     comptime kv_params = collection_t.kv_params
@@ -1223,14 +1187,21 @@ fn mla_prefill_branch_bf16[
     comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
 
-    comptime assert kv_b_proj.shape_known, "kv_b_proj's shape should be static"
-    comptime assert kv_b_proj.static_shape[0] == num_heads * (
-        qk_nope_head_dim + v_head_dim
-    ), (
-        "kv_b_proj.layout.shape[0] should be equal to num_heads *"
-        " (qk_nope_head_dim + v_head_dim)"
-    )
-    comptime kv_latent_dim = kv_b_proj.static_shape[1]
+    comptime assert w_k.shape_known, "w_k's shape should be static"
+    comptime assert (
+        w_k.static_shape[0] == num_heads * qk_nope_head_dim
+    ), "w_k.shape[0] should be equal to num_heads * qk_nope_head_dim"
+    comptime kv_latent_dim = w_k.static_shape[1]
+    comptime assert w_uv.shape_known, "w_uv's shape should be static"
+    comptime assert (
+        w_uv.static_shape[0] == num_heads
+    ), "w_uv.shape[0] should be equal to num_heads"
+    comptime assert (
+        w_uv.static_shape[1] == v_head_dim
+    ), "w_uv.shape[1] should be equal to v_head_dim"
+    comptime assert (
+        w_uv.static_shape[2] == kv_latent_dim
+    ), "w_uv.shape[2] should be equal to kv_latent_dim"
 
     if buffer_length == 0:
         return
@@ -1274,26 +1245,13 @@ fn mla_prefill_branch_bf16[
         ctx,
     )
 
-    # allocate buffers for latent and full KV
+    # allocate buffers for latent KV
     var k_latent_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * kv_latent_dim
     )
     var k_latent = TileTensor(
         k_latent_buf,
         row_major((Idx(buffer_length), Idx[kv_latent_dim]())),
-    )
-
-    var kv_buf = ctx.enqueue_create_buffer[dtype](
-        buffer_length * num_heads * (qk_nope_head_dim + v_head_dim)
-    )
-    var kv = TileTensor(
-        kv_buf,
-        row_major(
-            (
-                Idx(buffer_length),
-                Idx[num_heads * (qk_nope_head_dim + v_head_dim)](),
-            )
-        ),
     )
 
     var buffer_length_int = Int(buffer_length)
@@ -1308,33 +1266,48 @@ fn mla_prefill_branch_bf16[
         ctx,
     )
 
-    matmul[target=target, transpose_b=True](
-        kv.to_layout_tensor(),
-        k_latent.to_layout_tensor(),
-        kv_b_proj.to_layout_tensor(),
-        Optional(ctx),
-    )
-
-    # split the concatenated KV into K and V
     var k_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * num_heads * qk_nope_head_dim
     )
+    var k_flat = TileTensor(
+        k_buf,
+        row_major((Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())),
+    )
+    matmul[target=target, transpose_b=True](
+        k_flat.to_layout_tensor(),
+        k_latent.to_layout_tensor(),
+        w_k.to_layout_tensor(),
+        Optional(ctx),
+    )
+
+    var w_v = TileTensor(
+        w_uv.ptr,
+        row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
+    )
+    var v_buf = ctx.enqueue_create_buffer[dtype](
+        buffer_length * num_heads * v_head_dim
+    )
+    var v_flat = TileTensor(
+        v_buf,
+        row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+    )
+    matmul[target=target, transpose_b=True](
+        v_flat.to_layout_tensor(),
+        k_latent.to_layout_tensor(),
+        w_v.to_layout_tensor(),
+        Optional(ctx),
+    )
+
     var k = TileTensor(
         k_buf,
         row_major(
             (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
         ),
     )
-
-    var v_buf = ctx.enqueue_create_buffer[dtype](
-        buffer_length * num_heads * v_head_dim
-    )
     var v = TileTensor(
         v_buf,
         row_major((Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())),
     )
-
-    split_kv_buffer[dtype](kv, k, v, ctx)
 
     generic_flare_mla_prefill_kv_cache_ragged[
         target=target,
@@ -1575,7 +1548,7 @@ fn mla_prefill_decode_graph_bf16[
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    kv_b_proj: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     w_uk: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     w_uv: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
@@ -1627,6 +1600,7 @@ fn mla_prefill_decode_graph_bf16[
             buffer_row_offsets,
             cache_offsets,
             buffer_length,
-            kv_b_proj,
+            w_k,
+            w_uv,
             ctx,
         )

@@ -527,46 +527,68 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         return (wqkv, wqkv_scale)
 
     @property
-    def w_uk_uv(self) -> list[TensorValue]:
-        """The concatenation of q, k, and v weight vectors."""
+    def _kv_b_proj_weight(self) -> TensorValue:
+        """Returns `kv_b_proj` reshaped for per-head projection slicing."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
-
         kv_b_proj_weight = kv_b_proj_weight.reshape(
-            (
-                self.kv_lora_rank,
-                self.n_heads,
-                (self.qk_nope_head_dim + self.v_head_dim),
-            )
+            (self.kv_lora_rank, self.n_heads, -1)
         )
+        return kv_b_proj_weight
 
-        w_uk, w_uv = ops.split(
-            kv_b_proj_weight, [self.qk_nope_head_dim, self.v_head_dim], axis=2
-        )
-        w_uv = w_uv.permute([1, 2, 0])
-        w_uk_t = w_uk.transpose(0, 1)
+    @property
+    def _qk_nope_head_scale_dim(self) -> int:
+        return self.qk_nope_head_dim // self.weight_block_size[0]
 
-        # Transform the scales the same way
+    @property
+    def _v_head_scale_dim(self) -> int:
+        return self.v_head_dim // self.weight_block_size[0]
+
+    @property
+    def _kv_b_proj_weight_scale(self) -> TensorValue:
+        """Returns reshaped `kv_b_proj_scale` aligned with `_kv_b_proj_weight`."""
         kv_b_proj_weight_scale = self.kv_b_proj_scale.transpose(0, 1)
-
-        qk_nope_head_scale_dim = (
-            self.qk_nope_head_dim // self.weight_block_size[0]
-        )
-        v_head_scale_dim = self.v_head_dim // self.weight_block_size[0]
         kv_b_proj_weight_scale = kv_b_proj_weight_scale.reshape(
-            (
-                self.kv_lora_rank // self.weight_block_size[0],
-                self.n_heads,
-                qk_nope_head_scale_dim + v_head_scale_dim,
-            )
+            (self.kv_lora_rank // self.weight_block_size[0], self.n_heads, -1)
         )
-        w_uk_scale, w_uv_scale = ops.split(
-            kv_b_proj_weight_scale,
-            [qk_nope_head_scale_dim, v_head_scale_dim],
-            axis=2,
+        return kv_b_proj_weight_scale
+
+    @property
+    def w_uk(self) -> tuple[TensorValue, TensorValue]:
+        """Returns decode K-projection tensor/scale with shape [H, kv_rank, qk_nope_dim]."""
+        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+        w_uk = w_uk_base.transpose(0, 1)
+
+        w_uk_scale_base = self._kv_b_proj_weight_scale[
+            ..., : self._qk_nope_head_scale_dim
+        ]
+        w_uk_scale = w_uk_scale_base.transpose(0, 1)
+        return (w_uk, w_uk_scale)
+
+    @property
+    def w_uv(self) -> tuple[TensorValue, TensorValue]:
+        """Returns decode V-projection tensor/scale with shape [H, v_dim, kv_rank]."""
+        w_uv_base = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
+        w_uv = w_uv_base.permute([1, 2, 0])
+
+        w_uv_scale_base = self._kv_b_proj_weight_scale[
+            ..., self._qk_nope_head_scale_dim :
+        ]
+        w_uv_scale = w_uv_scale_base.permute([1, 2, 0])
+        return (w_uv, w_uv_scale)
+
+    @property
+    def w_k(self) -> tuple[TensorValue, TensorValue]:
+        """Returns prefill K-projection tensor/scale with shape [H*qk_nope_dim, kv_rank]."""
+        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+        w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
+
+        w_uk_scale_base = self._kv_b_proj_weight_scale[
+            ..., : self._qk_nope_head_scale_dim
+        ]
+        w_k_scale = w_uk_scale_base.permute([1, 2, 0]).reshape(
+            (-1, self.kv_lora_rank // self.weight_block_size[0])
         )
-        w_uv_scale = w_uv_scale.permute([1, 2, 0])
-        w_uk_t_scale = w_uk_scale.transpose(0, 1)
-        return [w_uk_t, w_uk_t_scale, w_uv, w_uv_scale]
+        return (w_k, w_k_scale)
 
     def _mla_impl(
         self,
@@ -594,6 +616,9 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             "float8_config": self.float8_config,
         }
 
+        w_k, w_k_scale = self.w_k
+        w_uk, w_uk_scale = self.w_uk
+        w_uv, w_uv_scale = self.w_uv
         if self.graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(
@@ -609,11 +634,12 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             attn_kwargs["buffer_length"] = (
                 mla_prefill_metadata.buffer_lengths.to(DeviceRef.CPU())
             )
-            attn_kwargs["kv_b_proj"] = self.kv_b_proj
-            attn_kwargs["kv_b_proj_scale"] = self.kv_b_proj_scale
+            attn_kwargs["w_k"] = w_k
+            attn_kwargs["w_k_scale"] = w_k_scale
+            attn_kwargs["w_uv"] = w_uv
+            attn_kwargs["w_uv_scale"] = w_uv_scale
 
         if self.graph_mode in ["decode", "auto"]:
-            w_uk, w_uk_scale, w_uv, w_uv_scale = self.w_uk_uv
             attn_kwargs["w_uk"] = w_uk
             attn_kwargs["w_uk_scale"] = w_uk_scale
             attn_kwargs["w_uv"] = w_uv
