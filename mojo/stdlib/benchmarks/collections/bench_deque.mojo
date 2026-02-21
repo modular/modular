@@ -29,7 +29,7 @@ fn bench_deque_copy_int[size: Int](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var p = black_box(q).copy()
-        keep(p[size - 1])
+        keep(p)
 
     b.iter[call_fn]()
     keep(Bool(q))
