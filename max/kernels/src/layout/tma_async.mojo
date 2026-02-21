@@ -3446,7 +3446,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, MutAnyOrigin](
         ptr, runtime_dim0
     )
     res = create_tensor_tile[
@@ -3501,7 +3501,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, ImmutAnyOrigin](
         ptr, runtime_dim0, runtime_dim1
     )
     res = create_tensor_tile[
