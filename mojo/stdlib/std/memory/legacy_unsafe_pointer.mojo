@@ -56,7 +56,9 @@ struct LegacyUnsafePointer[
     _mlir_origin: _lit_origin_type_of_mut[mut] = AnyOrigin[
         mut=mut
     ]._mlir_origin,
-    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[_mlir_origin](),
+    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[
+        _mlir_origin=_mlir_origin
+    ](),
 ](
     Boolable,
     Comparable,
