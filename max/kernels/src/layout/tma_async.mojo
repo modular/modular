@@ -3412,9 +3412,10 @@ fn create_split_tma[
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,
@@ -3434,6 +3435,7 @@ fn create_split_tma[
         smem_shape: The shape of the tile in shared memory.
         gmem_shape: The shape of the global memory tensor.
         swizzle_mode: The swizzling mode for memory access optimization.
+        origin: The memory origin/provenance for the pointer.
 
     Args:
         ctx: The CUDA device context used to create the TMA descriptor.
@@ -3446,7 +3448,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, MutAnyOrigin](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
         ptr, runtime_dim0
     )
     res = create_tensor_tile[
@@ -3465,9 +3467,10 @@ fn create_split_tma[
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -3488,6 +3491,7 @@ fn create_split_tma[
         smem_shape: The shape of the tile in shared memory.
         gmem_shape: The shape of the global memory tensor.
         swizzle_mode: The swizzling mode for memory access optimization.
+        origin: The memory origin/provenance for the pointer.
 
     Args:
         ctx: The CUDA device context used to create the TMA descriptor.
@@ -3501,7 +3505,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, ImmutAnyOrigin](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
         ptr, runtime_dim0, runtime_dim1
     )
     res = create_tensor_tile[
@@ -3735,9 +3739,10 @@ struct RaggedTMA3DTile[
     fn create[
         *,
         depth: Int = Self.BN,
+        origin: Origin,
     ](
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], origin],
         *,
         rows: Int,
         middle_dim: Int,
@@ -3747,6 +3752,7 @@ struct RaggedTMA3DTile[
 
         Parameters:
             depth: The size of the inner-most, contiguous, dimension.
+            origin: The memory origin/provenance for the pointer.
 
         Args:
             ctx: The device context used to create the TMA descriptors.
