@@ -55,7 +55,7 @@ NON_XL = set(RUNNERS) - XL
 # fmt: off
 MODELS: dict[str, set[str]] = {
     "allenai/olmo-3-7b-instruct": MULTI | {"max"},
-    "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "allenai/olmocr-2-7b-1025-fp8": MULTI | {"sglang"},
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
     "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
     "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "vllm@B200"},
@@ -89,10 +89,10 @@ MODELS: dict[str, set[str]] = {
 # These models are hardcoded to run on module-V3. They're duplicates
 # of the model from the org listed in the comment next to the model name.
 V3_MODELS: dict[str, set[str]] = {
-    "tbmod/Meta-Llama-3.1-8B-Instruct": MULTI, # unsloth/
-    "tbmod/Llama-3.2-1B-Instruct": MULTI, # unsloth/
-    "tbmod/gpt-oss-20b-BF16": XL | {"max@H100"}, # unsloth/
-    "tbmod/Phi-3.5-mini-instruct": MULTI, # microsoft/
+    "tbmod/meta-llama-3.1-8b-instruct": MULTI, # unsloth/
+    "tbmod/llama-3.2-1b-instruct": MULTI, # unsloth/
+    "tbmod/gpt-oss-20b-bf16": MULTI | {"max@H100"}, # unsloth/
+    "tbmod/phi-3.5-mini-instruct": MULTI, # microsoft/
     "tbmod/phi-4": MULTI, # microsoft/
 }
 

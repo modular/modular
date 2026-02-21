@@ -17,6 +17,11 @@ from click.testing import CliRunner
 from smoke_tests import smoke_test_github_matrix
 
 
+def test_model_keys_are_lowercase() -> None:
+    bad = [k for k in smoke_test_github_matrix.MODELS if k != k.lower()]
+    assert not bad, f"Model keys must be lowercase: {bad}"
+
+
 def test_smoke_test_github_matrix_b200_max_ci() -> None:
     runner = CliRunner()
     result = runner.invoke(
