@@ -275,6 +275,26 @@ fn bench_string_find_multiple[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string rfind multiple
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_rfind_multiple[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+    var sequence = "ZZZZ"  # something that probably won't be there
+
+    @always_inline
+    fn call_fn() unified {read}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            var res = black_box(items).rfind(black_box(sequence))
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -473,6 +493,9 @@ def main():
             )
             m.bench_function[bench_string_find_multiple[length, fname]](
                 BenchId(String("bench_string_find_multiple", suffix))
+            )
+            m.bench_function[bench_string_rfind_multiple[length, fname]](
+                BenchId(String("bench_string_rfind_multiple", suffix))
             )
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
                 BenchId(String("bench_string_is_valid_utf8", suffix))
