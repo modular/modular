@@ -184,6 +184,11 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
   header.mlirChecksum = bufferStr.take_until([](char c) { return c == '\0'; });
   bufferStr = bufferStr.drop_front(header.mlirChecksum.size());
 
+  // Skip past the NUL terminator (as readVersion does for version labels).
+  if (bufferStr.empty() || bufferStr.front() != '\0')
+    return Error("invalid Mojo package - invalid checksum encoding");
+  bufferStr = bufferStr.drop_front(1);
+
   header.headerSize =
       llvm::alignTo(buffer.getBufferSize() - bufferStr.size(), 8);
   if (buffer.getBufferSize() < header.headerSize)
