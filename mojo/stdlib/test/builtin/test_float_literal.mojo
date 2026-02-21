@@ -169,5 +169,16 @@ def test_float_conversion():
     assert_equal((0.0).__float__(), 0.0)
 
 
+def test_float_literal_writable():
+    assert_equal(String(4.5), String(Float64(4.5)))
+    assert_equal(repr(4.5), repr(Float64(4.5)))
+
+    assert_equal(String(0.0), String(Float64(0.0)))
+    assert_equal(repr(0.0), repr(Float64(0.0)))
+
+    assert_equal(String(FloatLiteral.infinity), "inf")
+    assert_equal(String(FloatLiteral.negative_infinity), "-inf")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
