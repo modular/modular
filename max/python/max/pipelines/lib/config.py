@@ -171,11 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    enable_echo: bool = Field(
-        default=False,
-        description="Whether the model should be built with echo capabilities.",
-    )
-
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )

@@ -80,7 +80,7 @@ class BertModelConfig(ArchConfig):
             device=DeviceRef(
                 device_type=device_spec.device_type, id=device_spec.id
             ),
-            pool_embeddings=pipeline_config.model.pool_embeddings,
+            pool_embeddings=pipeline_config.pool_embeddings,
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
         )

@@ -219,11 +219,6 @@ class MAXModelConfig(MAXModelConfigBase):
         description="Whether the model should be built with echo capabilities.",
     )
 
-    pool_embeddings: bool = Field(
-        default=True,
-        description="Whether to pool embedding outputs.",
-    )
-
     chat_template: Path | None = Field(
         default=None,
         description=(
