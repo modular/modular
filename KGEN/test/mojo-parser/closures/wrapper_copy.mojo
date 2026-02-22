@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.fn @"__copyinit__{{.*}}(%copy: {{.*}}!MemType1{{.*}}read_mem
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy: {{.*}}!MemType1{{.*}}read_mem
 # CHECK-SAME: %self: !lit.ref<!MemType1, mut {{.*}}> byref_result)
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %copy[field0]
@@ -38,17 +38,17 @@
 
 # CHECK-LABEL: lit.fn @"materialize_escaping_closure
 
-# CHECK: lit.fn @"fn{{.*}}_copyinit_`_CI_{{.*}}(%other: !kgen.pointer<none>, |)
+# CHECK: lit.fn @"fn{{.*}}_copyinit_`_CI_{{.*}}(*, %copy: !kgen.pointer<none>)
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant = <get_sizeof(
 # CHECK-NEXT:  %[[ALIGNOF:.*]] = kgen.param.constant = <get_alignof(
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %[[ALIGNOF]], %[[SIZEOF]]
-# CHECK-NEXT:  %[[V1:.*]] = pop.pointer.bitcast %other
+# CHECK-NEXT:  %[[V1:.*]] = pop.pointer.bitcast %copy
 # CHECK-NEXT:  %[[REF0:.*]] = lit.ref.from_pointer %[[V0]]
 # CHECK-NEXT:  %[[REF1:.*]] = lit.ref.from_pointer %[[V1]]
 # CHECK-NEXT:  %[[REF2:.*]] = lit.ref.immut %[[REF1]]
-# CHECK-NEXT:  lit.call {{.*}}__copyinit__{{.*}}(%[[REF2]], %[[REF0]])
+# CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}"{{.*}}(%[[REF2]], %[[REF0]]){{.*}}*, "copy"
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast %[[V0]]

@@ -245,8 +245,8 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %value: !lit.ref<:!ImplicitlyCopyable T, imm {{.*}}> read_mem, ?,
 # CHECK-SAME: %__result__: !lit.ref<:!ImplicitlyCopyable T, mut {{.*}}> byref_result
 fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
-    # CHECK-NEXT: lit.call tail[!lit.generator<[2]("copy": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "std::builtin::stubs::Copyable", "__copyinit__{{.*}}">]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: lit.call tail[!lit.generator<[2](*, "copy": {{.*}}T, {{.*}}> read_mem, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
+    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "std::builtin::stubs::Copyable", "__init__(copy:$0)">]{{.*}}(%value, %__result__)
     return value
 
 
@@ -256,7 +256,7 @@ fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!Movable T, "std::builtin::stubs::Movable", "__moveinit__{{.*}}">]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!Movable T, "std::builtin::stubs::Movable", "__init__(take:$0$)">]{{.*}}(%value, %__result__)
     return value^
 
 
@@ -496,16 +496,16 @@ fn bind_regpassable_required_type():
 struct RegTrivialSpecial(TrivialRegisterPassable, AnyType, ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__moveinit__
-    # CHECK: lit.fn @"__copyinit__
+    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
+    # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
 # COM: TrivialRegisterPassable should behave the same as
 # COM: @register_passable("trivial")
 struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
     pass
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__moveinit__
-    # CHECK: lit.fn @"__copyinit__
+    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
+    # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
@@ -513,7 +513,7 @@ struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
         pass
 
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__moveinit__
+    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
@@ -686,7 +686,7 @@ struct Item(TrivialRegisterPassable, InCollection):
     pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}Movable
-    # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}"
+    # CHECK-NEXT: kgen.witness "__init__(take:$0$)"
 
 
 fn take_movable(x: MovableType[Item]):

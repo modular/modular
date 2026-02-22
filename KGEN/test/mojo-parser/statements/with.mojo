@@ -149,14 +149,14 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
-    # CHECK-NEXT:     lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__inner_error__, %__with_error__)
+    # CHECK-NEXT:     lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__inner_error__, %__with_error__){{.*}}*, "take"
     # CHECK-NEXT:     lit.raise
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   }
     # CHECK-NEXT:   lit.try.yield
     # CHECK:      } finally {
     # CHECK:    } except {
-    # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__with_error__, %__error__)
+    # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "take"
     # CHECK:    } finally {
     # CHECK-NEXT: %__finally_error__ = lit.var.decl
     # CHECK-NEXT: lit.try
@@ -379,7 +379,7 @@ fn unconditional_exit() raises:
         # CHECK-NEXT:  lit.try.yield
         noop(42)
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__with_error__, %__error__)
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "take"
     # CHECK-NEXT:   lit.raise
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } else {

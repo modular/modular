@@ -135,7 +135,7 @@ private:
   MLIRContext *ctx;
 
   // Cached attributes and types.
-  StringAttr selfName, otherName, ptrToImplName, dtorFieldAttr;
+  StringAttr selfName, copyName, ptrToImplName, dtorFieldAttr;
   StringAttr copyFieldAttr, callFieldAttr, callMethodAttr;
   PointerType opaquePtrType;
 

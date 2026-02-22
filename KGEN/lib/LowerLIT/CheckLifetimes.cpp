@@ -2382,7 +2382,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   FnOp callee =
       valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
   if (!callee ||
-      callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
+      callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyCtor)
     return DtorEmissionResult::KeepOp;
 
   // Register passable and memory types both pass the source in memory.

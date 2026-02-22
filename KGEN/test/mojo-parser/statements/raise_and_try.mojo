@@ -77,7 +77,7 @@ fn tryFinally():
             # CHECK-NEXT: lit.try.yield
             pass
         # CHECK-NEXT: except
-        # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__try_error___1, %__try_error___0)
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error___1, %__try_error___0){{.*}}*, "take"
         # CHECK-NEXT: lit.raise
         finally:
             pass
@@ -153,7 +153,7 @@ fn rethrowsToRethrow():
             maybeRaises()  # expected-warning {{'Int' value is unused}}
         # CHECK: } except {
         except:
-            # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}([[TRY_ERROR2]], [[TRY_ERROR1]])
+            # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}([[TRY_ERROR2]], [[TRY_ERROR1]]){{.*}}*, "take"
             # CHECK-NEXT: lit.raise
             raise
         # CHECK: }

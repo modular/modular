@@ -807,11 +807,11 @@ trait AnyType:
 
 @explicit_destroy
 trait Copyable(Movable):
-    fn __copyinit__(out self, copy: Self, /):
+    fn __init__(out self, *, copy: Self):
         ...
 
     fn copy(self) -> Self:
-        return Self.__copyinit__(self)
+        return Self(copy=self)
 
     comptime __copyinit__is_trivial: Bool
 
@@ -845,7 +845,7 @@ trait ExplicitlyDestroyedMovable:
 
 @explicit_destroy
 trait Movable:
-    fn __moveinit__(out self, deinit take: Self, /):
+    fn __init__(out self, *, deinit take: Self):
         ...
 
     comptime __moveinit__is_trivial: Bool

@@ -2060,9 +2060,20 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                StringAttr baseName)
     : paramList(paramList), argList(argList) {
 
-  if (baseName) // Function pointer types don't have a name.
+  if (baseName) { // Function pointer types don't have a name.
     fnInfo =
         SpecialFunctionInfo::get(SpecialFunctionInfo::lookupKind(baseName));
+
+    // Recognize copy and move constructors by their keyword arg.
+    if (fnInfo.kind == SpecialFunctionKind::kInit &&
+        argList.parsedArgs.size() == 1 &&
+        argList.parsedArgs[0].kwArgHandling == KWArgHandling::kKeywordOnly) {
+      if (argList.parsedArgs[0].name.strref() == "take")
+        fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kMoveCtor);
+      else if (argList.parsedArgs[0].name.strref() == "copy")
+        fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyCtor);
+    }
+  }
   SharedState &shared = paramList.shared;
   IREmitter typeEmitter(paramList.declScope, EC_Type);
 
@@ -2109,21 +2120,21 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
 
     // @register_passable values are movable by passing the register around, so
-    // they can't define a moveinit.
-    if (fnInfo.kind == SpecialFunctionKind::kMoveInit &&
+    // they can't define a move ctor.
+    if (fnInfo.kind == SpecialFunctionKind::kMoveCtor &&
         selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
-      shared.emitError(fnDecl->getLoc(),
-                       "'@register_passable' types may not have a '")
-          << fnInfo.name
-          << "' method, they are always movable by copying a register";
+      shared.emitError(fnDecl->getLoc())
+          << "'@register_passable' types may not have an explicit move "
+             "constructor, they are always movable by copying a register";
       return failure();
     }
 
-    // Trivial types are copyable with memcpy so they can't define copyinit.
-    if (fnInfo.kind == SpecialFunctionKind::kCopyInit &&
+    // Trivial types are copyable with memcpy so they can't define copy ctor.
+    if (fnInfo.kind == SpecialFunctionKind::kCopyCtor &&
         selfType.isTrivial(fnDecl->getLoc(), shared)) {
-      shared.emitError(fnDecl->getLoc(), "trivial types may not have a '")
-          << fnInfo.name << "' method, they are always trivially copyable";
+      shared.emitError(fnDecl->getLoc())
+          << "trivial types may not have an explicit copy constructor, they "
+             "are always trivially copyable";
       return failure();
     }
 
@@ -2149,7 +2160,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     fnInfo = SpecialFunctionInfo();
   }
 
-  // Trivial types are copyable with memcpy so they can't define copyinit.
+  // Trivial types are copyable with memcpy so they can't define a dtor.
   if (fnInfo.kind == SpecialFunctionKind::kDel &&
       selfType.isTrivial(fnDecl->getLoc(), shared)) {
     fnDecl->setErroneous();
@@ -2313,14 +2324,24 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
   // Reject special functions declared as throwing when that is invalid.
   if (argList.effects.isThrows() &&
       fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
+    const char *fnName;
+    if (fnInfo.kind == SpecialFunctionKind::kCopyCtor)
+      fnName = "copy constructor";
+    else if (fnInfo.kind == SpecialFunctionKind::kMoveCtor)
+      fnName = "move constructor";
+    else {
+      assert(fnInfo.kind == SpecialFunctionKind::kDel);
+      fnName = "destructor";
+    }
+
     // Specialize the error if raising is implicit because it was defined as a
     // def.
     if (funcOp.isDef()) {
-      emitError() << "cannot define " << name
+      emitError() << "cannot define " << fnName
                   << " as 'def'; 'def' implicitly raises"
                   << FixIt::replaceToken(decl.getLoc(), "fn");
     } else {
-      emitError() << name << " cannot be declared as raising an exception";
+      emitError() << fnName << " cannot be declared as raising an exception";
     }
   }
 
@@ -2356,24 +2377,16 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
     if (!declaredResultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
-  case SpecialFunctionKind::kCopyInit: {
+  case SpecialFunctionKind::kCopyCtor: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
     if (parsedArgs[kSelfArgNo].convention != ParsedArgument::kConventionRead)
       emitErrorLoc(parsedArgs[kSelfArgNo].loc,
                    "existing value argument must be passed as 'read'");
-    // The source argument of __copyinit__ must be named 'copy'.
-    if (parsedArgs[kSelfArgNo].name != "copy")
-      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
-                   "source argument of '__copyinit__' must be named 'copy'");
     break;
   }
-  case SpecialFunctionKind::kMoveInit: {
+  case SpecialFunctionKind::kMoveCtor: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
     diagnoseSelfForDelAndMoveInit("existing");
-    // The take argument of __moveinit__ must be named 'take'.
-    if (parsedArgs[kSelfArgNo].name != "take")
-      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
-                   "take argument of '__moveinit__' must be named 'take'");
     break;
   }
   case SpecialFunctionKind::kDel:

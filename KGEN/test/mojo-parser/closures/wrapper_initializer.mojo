@@ -31,7 +31,7 @@
 
 # Copy source (stack) into target (heap)
 # CHECK-NEXT:  %[[V0REF:.*]] = lit.ref.from_pointer %[[V0]]
-# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%impl, %[[V0REF]])
+# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__init__{{.*}}"{{.*}}(%impl, %[[V0REF]]){{.*}}*, "take"
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<{{.*}}> to !kgen.pointer<none>

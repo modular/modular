@@ -710,27 +710,27 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
 
 FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   ASTType selfType = structDecl.getTypeDeclSelf();
-  StringRef name = isMove ? "__moveinit__" : "__copyinit__";
   MLIRContext *ctx = shared.getContext();
   Builder b(ctx);
-  StringAttr existingName = b.getStringAttr(isMove ? "move" : "copy");
+  StringAttr srcName = b.getStringAttr(isMove ? "take" : "copy");
 
-  // If the type is register passable trivial, the 'existing' value will be
+  // If the type is register passable trivial, the 'src' value will be
   // passed as a register, otherwise a reference.
-  Type existingArgType = selfType.getRefForArgument("existing", isMove);
-  ArgConvention existingConv =
+  Type srcArgType = selfType.getRefForArgument(srcName.strref(), isMove);
+  ArgConvention srcConv =
       isMove ? ArgConvention::DeinitMem : ArgConvention::ReadMem;
 
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);
   auto argListAttrs =
-      PogListAttr::get(ctx, {existingName, b.getStringAttr("self")},
-                       {PassingKind::PosOnly, PassingKind::Implicit});
+      PogListAttr::get(ctx, {srcName, b.getStringAttr("self")},
+                       {PassingKind::KwOnly, PassingKind::Implicit});
   auto [resultFn, resultDecl] = synthesizeMethodInStruct(
-      name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
-      /*argTypes*/ {existingArgType, selfArgType},
-      /*argConvs*/ {existingConv, ArgConvention::ByRefResult}, argListAttrs,
+      "__init__", /*params=*/{},
+      /*paramListAttrs=*/PogListAttr::get(getContext()),
+      /*argTypes*/ {srcArgType, selfArgType},
+      /*argConvs*/ {srcConv, ArgConvention::ByRefResult}, argListAttrs,
       shared.getNoneType(),
-      isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit);
+      isMove ? SpecialFunctionKind::kMoveCtor : SpecialFunctionKind::kCopyCtor);
   if (!resultFn)
     return {};
   resultDecl->resolvedness = DeclResolvedness::signature;
@@ -748,10 +748,10 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
 }
 
 /// Given a function of the form
-///    fn __copyinit__(existing: MyStruct, out self: MyStruct)
+///    fn __init__(out self: MyStruct, *, copy: MyStruct)
 /// populate the method with the following:
 ///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
-///   %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
+///   %sourceField0Ptr = lit.ref.struct.ger %copy[field0]
 ///   copyinit_of_type_of_field0(%targetField0, %field)
 LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // This method body resolves the decl.
@@ -822,12 +822,12 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared) &&
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
         return emitError(fieldASTDecl.getLoc())
-               << "cannot synthesize " << fn.getSpecialFunctionInfo().name
-               << " because field '" << fieldOp.getName()
+               << "cannot synthesize move constructor because field '"
+               << fieldOp.getName()
                << "' has non-copyable and non-movable type " << fieldType;
       }
     } else {
-      // We only synthesize __copyinit__ for `ImplicitlyCopyable` object iff all
+      // We only synthesize copy ctor for `ImplicitlyCopyable` object iff all
       // its fields are `ImplicitlyCopyable`. That is, we won't synthesize for
       // the following struct:
       // ```
@@ -837,9 +837,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
                                 isImplicitlyCopyableStruct)) {
         return emitError(fieldASTDecl.getLoc())
-               << "cannot synthesize " << fn.getSpecialFunctionInfo().name
-               << " because field '" << fieldOp.getName()
-               << "' has non-copyable type " << fieldType;
+               << "cannot synthesize copy constructor because field '"
+               << fieldOp.getName() << "' has non-copyable type " << fieldType;
       }
 
       // If this a copy constructor and the field is only `Copyable` but not
@@ -849,13 +848,14 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       // with the MLIR types.
       if (!isImplicitlyCopyableStruct &&
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
-
+        // Invoke `T(*, copy: Self)`.
         ValueDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         SyntheticNode expr(location);
-        (void)emitter.emitNamedMethodCall(
-            "__copyinit__",
-            CallOperands{CallSyntax::kImplicitCopyInit, &expr, {{src, &expr}}},
-            dest);
+
+        CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr);
+        operands.add(StringAttr::get(shared.getContext(), "copy"),
+                     {src, &expr});
+        (void)emitter.emitConstructorCall(fieldType, std::move(operands), dest);
         continue;
       }
     }
@@ -976,8 +976,6 @@ void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
 
 std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
   auto &shared = structDecl.getShared();
-  auto structOp = cast<StructDeclOp>(*structDecl.getIfOperation());
-
   ValueInfo result;
   auto find = [&](StringRef name, SpecialFunctionKind kind,
                   FnOp &member) -> LogicalResult {
@@ -986,13 +984,8 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
                                     /*searchParentScopes=*/false);
     if (!lookupResult.isSuccess())
       return success();
-    if (lookupResult.getIfSuccess().size() > 1)
-      return shared.emitError(structOp.getLoc())
-             << "multiple overloaded methods named '" << name << "'";
-
-    if (lookupResult.getIfSuccess().size() == 1) {
-      ASTDecl *result = lookupResult.getIfSuccess().front();
-      if (auto func = dyn_cast_or_null<FnOp>(result->getIfOperation()))
+    for (ASTDecl *decl : lookupResult.getIfSuccess()) {
+      if (auto func = dyn_cast_or_null<FnOp>(decl->getIfOperation()))
         if (SpecialFunctionKind(func.getSpecialFnKind()) == kind)
           member = func;
     }
@@ -1000,10 +993,10 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
     return success();
   };
   if (failed(find("__del__", SpecialFunctionKind::kDel, result.del)) ||
-      failed(find("__copyinit__", SpecialFunctionKind::kCopyInit,
-                  result.copyinit)) ||
-      failed(find("__moveinit__", SpecialFunctionKind::kMoveInit,
-                  result.moveinit)) ||
+      failed(
+          find("__init__", SpecialFunctionKind::kCopyCtor, result.copyctor)) ||
+      failed(
+          find("__init__", SpecialFunctionKind::kMoveCtor, result.movector)) ||
       failed(find("copy", SpecialFunctionKind::kNormal, result.copy)))
     return {};
 
@@ -1026,12 +1019,12 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
       addTraitParent(structDeclOp, traitDecl);
   };
 
-  if (!valueInfo->copyinit && !structDeclOp.isRegisterPassableTrivial())
-    valueInfo->copyinit = synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
+  if (!valueInfo->copyctor && !structDeclOp.isRegisterPassableTrivial())
+    valueInfo->copyctor = synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
   addCopyOrMoveBuiltinTrait("ImplicitlyCopyable");
 
-  if (!valueInfo->moveinit && !structDeclOp.isRegisterPassable())
-    valueInfo->moveinit = synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
+  if (!valueInfo->movector && !structDeclOp.isRegisterPassable())
+    valueInfo->movector = synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
   addCopyOrMoveBuiltinTrait("Movable");
 
   // NOTE: The  behavior of this is scary: if there is no method named "copy"
@@ -1064,10 +1057,24 @@ ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
 }
 
 TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
-  assert((kind == SpecialFunctionKind::kDel ||
-          kind == SpecialFunctionKind::kCopyInit ||
-          kind == SpecialFunctionKind::kMoveInit) &&
-         "unknown synthesized alias");
+  StringRef baseName;
+  StringRef traitName;
+  switch (kind) {
+  case SpecialFunctionKind::kDel:
+    baseName = "__del__";
+    traitName = "ImplicitlyDestructible";
+    break;
+  case SpecialFunctionKind::kCopyCtor:
+    baseName = "__copyinit__";
+    traitName = "Copyable";
+    break;
+  case SpecialFunctionKind::kMoveCtor:
+    baseName = "__moveinit__";
+    traitName = "Movable";
+    break;
+  default:
+    llvm_unreachable("unknown synthesized alias");
+  }
 
   IREmitter emitter(structDecl, EC_AliasValue);
   // NOTE: we have to first synthesize the bit to `i1` (instead of `Bool`) to
@@ -1079,6 +1086,20 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
         .getIfPValue();
   };
 
+  LookupResult spDecls = shared.lookupAndResolveDecl(
+      kind == SpecialFunctionKind::kDel ? "__del__" : "__init__",
+      structDecl.getLoc(), structDecl,
+      /*searchParentScope=*/false);
+  if (spDecls.isErroneous())
+    return nullptr;
+  for (ASTDecl *decl : spDecls.getIfSuccess()) {
+    if (cast<FnOp>(decl->getIfOperation()).getSpecialFunctionKind() == kind) {
+      // If has a user provided implementation, consider them as non-trivial.
+      if (!decl->getCursor().isInvalid())
+        return emitBoolAttr(BoolAttr::get(emitter.getContext(), false));
+    }
+  }
+
   // This emits an "and" as a PValue expression, maintaining the type of lhs/rhs
   // (which are Bool) instead of turning them into i1.
   auto emitAnd = [this, &emitter](PValue lhs, PValue rhs) {
@@ -1088,34 +1109,10 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return ParamOperatorAttr::get(POC::Cond, {lhsI1Val, rhs, lhs});
   };
 
-  auto spFnInfo = SpecialFunctionInfo::get(kind);
-  LookupResult spDecls = shared.lookupAndResolveDecl(
-      spFnInfo.name, structDecl.getLoc(), structDecl,
-      /*searchParentScope=*/false);
-  if (spDecls.isErroneous())
-    return nullptr;
-  ArrayRef<ASTDecl *> decls = spDecls.getIfSuccess();
-  assert(decls.size() == 1 && "special fn decls cannot be overloaded");
-
-  // If has a user provided implementation, consider them as non-trivial.
-  if (!decls.front()->getCursor().isInvalid())
-    return emitBoolAttr(BoolAttr::get(emitter.getContext(), false));
-
-  // We have a synthesize __del__/__moveinit__/__copyinit__ function, in this
-  // case all the fields have to conform to AnyType/Movable/Copyable or it will
-  // fail to synthesize the special function during `populateMoveCopy`.
-  StringRef traitName = [kind] {
-    if (kind == SpecialFunctionKind::kDel)
-      return "ImplicitlyDestructible";
-    else if (kind == SpecialFunctionKind::kCopyInit)
-      return "Copyable";
-    return "Movable";
-  }();
-
   ASTDecl *traitDecl = shared.lookupBuiltinTrait(
       traitName, structDecl.getParentDecl(), structDecl.getLoc());
   auto witnessName =
-      StringAttr::get(getContext(), Twine(spFnInfo.name) + "is_trivial");
+      StringAttr::get(getContext(), Twine(baseName) + "is_trivial");
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
 
   TypedAttr ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));

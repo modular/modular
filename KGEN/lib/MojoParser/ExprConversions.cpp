@@ -534,7 +534,14 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       value = MBPValue(argForActual);
       break;
     }
-    operands.add({value, node});
+
+    // Pass any required-keyword args with a name.
+    StringAttr name;
+    if (!actualArgIsForVariadic &&
+        thunkSignature.getArgListAttrs().getPassingKind(actualArgIndex) ==
+            PassingKind::KwOnly)
+      name = thunkSignature.getArgName(actualArgIndex);
+    operands.add(name, {value, node});
   }
 
   // Allocate the value dest for the call. Set the value dest to the result
@@ -1390,8 +1397,8 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
         continue;
 
       // MLIR types are movable, copyable, and destructible only.
-      if (llvm::is_contained({SpecialFunctionKind::kMoveInit,
-                              SpecialFunctionKind::kCopyInit,
+      if (llvm::is_contained({SpecialFunctionKind::kMoveCtor,
+                              SpecialFunctionKind::kCopyCtor,
                               SpecialFunctionKind::kDel},
                              traitFn.getSpecialFunctionKind()))
         continue;

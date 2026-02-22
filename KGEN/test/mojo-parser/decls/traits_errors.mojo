@@ -9,7 +9,7 @@
 
 # expected-note @below {{trait 'MyMovable' declared here}}
 trait MyMovable:
-    # expected-note @below {{required function '__moveinit__' is not implemented}}
+    # expected-note @below {{required function '__init__' is not implemented}}
     fn __moveinit__(out self, deinit take: Self, /):
         ...
 
@@ -39,7 +39,7 @@ fn invalid_trait_bind():
 fn different_trait_types[
     T: ImplicitlyCopyable, U: ImplicitlyCopyable
 ](x: T) -> U:
-    # expected-error @below {{cannot implicitly convert 'T' value to 'U' in return value}}
+    # expected-error @below {{cannot implicitly convert 'T' value to 'U'}}
     return x
 
 

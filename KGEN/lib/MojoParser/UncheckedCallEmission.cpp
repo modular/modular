@@ -652,7 +652,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     // FIXME: This is pretty grotty, basically doing dataflow analysis here in
     // the parser.  It would be better to just always emit a temporary (when the
     // type movable and the function throws) and then use a pass (CheckLifetimes
-    // or similar) to eliminate the moveinit+temporary when possible.
+    // or similar) to eliminate the movector+temporary when possible.
 
     // See if the destination buffer is something that ownership can track.
     Value underlyingDest =
@@ -810,7 +810,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // All argument conventions take things in the default address space, so any
     // use of references in other address spaces need to do a copyinit.  Right
-    // now __copyinit__ requires the source to be borrowed (it doesn't allow a
+    // now Copyable requires the source to be borrowed (it doesn't allow a
     // `ref ` existing so there is no way to define a
     // non-@register_passable("trivial") type in another address space. Diagnose
     // this error with a specific message, and copy trivially-copyable types
@@ -1606,11 +1606,11 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   case CallSyntax::kImplicitConvert:
     diag << "implicit conversion ";
     break;
-  case CallSyntax::kImplicitCopyInit:
-    diag << "implicit __copyinit__ call ";
+  case CallSyntax::kImplicitCopyCtor:
+    diag << "implicit copy constructor ";
     break;
-  case CallSyntax::kImplicitMoveInit:
-    diag << "implicit __moveinit__ call ";
+  case CallSyntax::kImplicitMoveCtor:
+    diag << "implicit move constructor ";
     break;
   }
 

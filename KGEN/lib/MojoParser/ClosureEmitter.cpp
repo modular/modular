@@ -86,32 +86,31 @@ static void updateLocationScope(Location nestedLocation,
 static FnOp getInit(StructDeclOp structDeclOp) {
   FnOp init;
   for (auto fn : structDeclOp.getFields().getOps<FnOp>()) {
-    if (fn.getSourceName() == "__init__") {
-      assert(!init && "Wrapper has exactly one constructor.");
+    if (fn.getSpecialFunctionKind() == SpecialFunctionKind::kInit) {
+      assert(!init && "Wrapper has exactly one normal ctor");
       init = fn;
     }
   }
-  assert(init && "Wrapper has exactly one constructor but could not find it.");
-
+  assert(init && "Wrapper has exactly one constructor but could not find it");
   return init;
 }
 
 ClosureEmitter::ClosureEmitter(SharedState &shared)
     : FunctionEmitter(shared), ctx(shared.getContext()),
       selfName(StringAttr::get(ctx, "self")),
-      otherName(StringAttr::get(ctx, "other")),
+      copyName(StringAttr::get(ctx, "copy")),
       dtorFieldAttr(StringAttr::get(ctx, "dtor")),
       copyFieldAttr(StringAttr::get(ctx, "_copy")),
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
       anyParent("AnyType", "", ClosureMethod::NONE),
-      moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
+      moveParent("Movable", "__init__", ClosureMethod::MOVE),
       implicitlyDestructibleParent("ImplicitlyDestructible", "__del__",
                                    ClosureMethod::DEL),
       trivialRegisterTypeParent("TrivialRegisterPassable", "",
                                 ClosureMethod::NONE),
-      copyParent("Copyable", "__copyinit__", ClosureMethod::COPY),
+      copyParent("Copyable", "__init__", ClosureMethod::COPY),
       implicitlyCopyableParent("ImplicitlyCopyable", "", ClosureMethod::NONE) {}
 
 TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
@@ -311,9 +310,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto b = ImplicitLocOpBuilder::atBlockEnd(
       translateLocation(decl.getLoc()),
       &cast<StructDeclOp>(decl.getIfOperation()).getFields().front());
-  auto argListAttrs =
-      PogListAttr::get(ctx, {otherName, selfName},
-                       {PassingKind::PosOrKw, PassingKind::Implicit});
+  auto argListAttrs = PogListAttr::get(
+      ctx, {copyName, selfName}, {PassingKind::KwOnly, PassingKind::Implicit});
   auto [func, _] = synthesizeFunction(
       decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
       {fnPtrType, selfType.getRefForArgument("self", /*isMut=*/true)},
@@ -827,7 +825,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
         cast<mlir::SymbolOpInterface>(traitParent.getOperation()));
     StringAttr parentName =
         b.getStringAttr(getFlattenedSymbolName(parentSymbol));
-    if (name == "__moveinit__")
+    if (fnOp.getSpecialFunctionKind() == SpecialFunctionKind::kMoveCtor)
       moveParentStrAttr = parentName;
 
     ConformanceOp witnessTable =
@@ -853,7 +851,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     }
   }
 
-  assert(moveParentStrAttr && "closures are expected to conform to move");
+  assert(moveParentStrAttr && "closures are expected to conform to Movable");
   auto initName = StringAttr::get(ctx, "__init__");
   SmallVector<Type> initArgumentTypes;
   SmallVector<PogMetadataAttr> argPogs;
@@ -1031,12 +1029,12 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   declOp.setDestructorAttr(getSymbolNoParamValues(declOp, delFnOp));
   addWitnessEntry(implicitlyDestructibleParent, delFnOp);
 
-  // Empty __moveinit__
+  // Empty move ctor.
   auto moveFnOp = structEmitter.synthesizeEmptyMoveOrCopyInit(true);
   declOp.setMoveInitAttr(getSymbolNoParamValues(declOp, moveFnOp));
   addWitnessEntry(moveParent, moveFnOp);
 
-  // Empty __copyinit__
+  // Empty copy ctor
   auto copyFnOp = structEmitter.synthesizeEmptyMoveOrCopyInit(false);
   declOp.setCopyInitAttr(getSymbolNoParamValues(declOp, copyFnOp));
   addWitnessEntry(copyParent, copyFnOp);
@@ -1291,7 +1289,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto fnType =
       b.getType<FunctionType>(ArrayRef<Type>{opaquePtrType}, opaquePtrType);
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly}));
+      PogListAttr::get(ctx, {copyName}, {PassingKind::KwOnly}));
   auto cpySignatureType = FuncTypeGeneratorType::get(
       /*paramTypes=*/{}, fnType, {ArgConvention::ReadReg},
       /*effects=*/{}, metadata, PogListAttr::get(ctx));
@@ -1325,13 +1323,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
           /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
 
-  FnOp copyCtr = stubs->copyinit;
+  FnOp copyCtr = stubs->copyctor;
   SymbolConstantAttr copyCtrRef =
       copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
 
-  FnOp moveCtr = stubs->moveinit;
+  FnOp moveCtr = stubs->movector;
   SymbolConstantAttr moveCtrRef =
       moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
   ASTDecl *moveCtrDecl =
@@ -1871,8 +1869,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
                                              PassingKind::Implicit);
   auto paramListAttrs = PogListAttr::get(ctx, getDemangledNames(topLevelParams),
                                          paramPassingKinds);
-  auto argListAttrs =
-      PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly});
+  auto argListAttrs = PogListAttr::get(ctx, {copyName}, {PassingKind::KwOnly});
   auto fileModuleOp = cast<FileModuleOp>(moduleDecl.getIfOperation());
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
@@ -3103,8 +3100,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
                 ->getResults()
                 .front();
 
-        // Invoke Copyable.__copyinit__(existing: read_mem, self:
-        // byref_result)
+        // Invoke T(copy=value)
         ASTDecl &moduleDecl = *structDecl.getNearestDeclOfType<FileModuleOp>();
         FnOp copyFn = copyParent.getDefiningOp(moduleDecl);
         FnTypeGeneratorType copySignature =

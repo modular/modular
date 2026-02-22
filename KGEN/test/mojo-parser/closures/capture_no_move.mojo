@@ -22,8 +22,8 @@ fn use(x: StringNoMove):
 # CHECK-NEXT: copy :!lit.generator
 # CHECK: lit.struct.field field0 : !StringNoMove
 # CHECK: lit.fn @"__del__
-# CHECK: lit.fn @"__copyinit__
-# CHECK: lit.fn @"__moveinit__
+# CHECK: lit.fn @"__init__{{.*}}*, %copy:
+# CHECK: lit.fn @"__init__{{.*}}*, %take
 fn makes_escaping_closure_from_nomove(m: StringNoMove):
     fn foo():
         use(m)

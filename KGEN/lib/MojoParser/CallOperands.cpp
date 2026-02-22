@@ -47,9 +47,9 @@ StringRef LIT::stringifyCallSyntax(CallSyntax val) {
     return "attribute";
   case CallSyntax::kImplicitConvert:
     return "implicit_convert";
-  case CallSyntax::kImplicitCopyInit:
+  case CallSyntax::kImplicitCopyCtor:
     return "implicit_copy";
-  case CallSyntax::kImplicitMoveInit:
+  case CallSyntax::kImplicitMoveCtor:
     return "implicit_move";
   case CallSyntax::kDestructor:
     return "destructor";

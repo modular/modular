@@ -603,7 +603,7 @@ fn test_typed_raises_fn4() raises Float32:
 
     # Make sure to emit ValueDest outside the try block.
     # CHECK: %str = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%anonymous2A, %str)
+    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}(%anonymous2A, %str){{.*}}*, "take"
     var str = test_typed_raises_fn2()
     _ = str.__len__()
 
@@ -864,11 +864,11 @@ fn initializersAsFunctions():
     var fn_ptr2: fn () -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %fn_ptr4 = lit.var.decl "fn_ptr4"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
     var fn_ptr4: fn (
-        :StructExample
-    ) -> StructExample = StructExample.__copyinit__
+        *, copy: StructExample
+    ) -> StructExample = StructExample.__init__
 
     # Memory
     # CHECK-NEXT: %fn_ptr5 = lit.var.decl
@@ -1384,7 +1384,7 @@ struct RegPassableInitSelfInit(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         self.a = 42
 
-    # CHECK: lit.fn @"__copyinit__
+    # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
     # CHECK-SAME: -> !RegPassableInitSelfInit
     fn __copyinit__(out self, copy: Self):
         self.a = copy.a
@@ -1398,7 +1398,7 @@ fn testRegPassableInitSelf():
     var x = RegPassableInitSelfInit()
     # CHECK-NEXT: %x2 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %x
-    # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[TMP]])
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}__init__{{.*}}"{{.*}}([[TMP]]){{.*}}*, "copy"
     # CHECK-NEXT: lit.ref.store [[TMP2]], %x2
     var x2 = x
 

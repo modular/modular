@@ -1034,7 +1034,9 @@ struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
 fn infer_implicit_params(var p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"p.lt._mlir_origin``",
+    # CHECK: lit.call {{.*}}ClosureParam::@"__init__
+    # CHECK-SAME: *, "take"
+    # CHECK-SAME: <:origin<1> *"p.lt._mlir_origin``",
     # CHECK-SAME: :!lit.generator<:{mut *"p.lt._mlir_origin``"}:() capturing -> !kgen.none> *"p.f`2">
     var tmp = p^
     _ = tmp^

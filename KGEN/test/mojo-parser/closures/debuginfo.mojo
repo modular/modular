@@ -13,7 +13,7 @@
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!Int
 # CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure)
 # CHECK-NEXT:    lit.ownership.use %myclosure
-# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%myclosure, %__result__){{.*}} loc(#[[LOC26:.*]])
+# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__init__{{.*}}"{{.*}}(%myclosure, %__result__){{.*}}*, "take"{{.*}} loc(#[[LOC26:.*]])
 
 # CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(#Int_name, #Int_name) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", {{.*}}, line = [[#LN42:]],

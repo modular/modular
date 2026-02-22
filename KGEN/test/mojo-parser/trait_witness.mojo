@@ -47,7 +47,7 @@ struct S1[X: Int](TrivialRegisterPassable, R1, R1Child, R2):
 
     # CHECK: lit.fn @"__del__[[DEL_NAME:.+]]"[
     # Synthesized function:
-    # CHECK: lit.fn @"__moveinit__[[MOVEINIT_NAME:.+]]"[
+    # CHECK: lit.fn @"__init__[[MOVEINIT_NAME:.+]]"[
 
     # CHECK: kgen.conformance @{{.*}}AnyType
     # CHECK-NEXT: }
@@ -58,7 +58,7 @@ struct S1[X: Int](TrivialRegisterPassable, R1, R1Child, R2):
     # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@ImplicitlyDestructible]]
 
     # CHECK: kgen.conformance @{{.*}}Movable
-    # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__moveinit__{{.*}}"<:!Int X>
+    # CHECK-NEXT: kgen.witness "__init__{{.*}}(*, "take":{{.*}} = {{.*}}@S1::@"__init__{{.*}}"{{.*}}<:!Int X>
     # CHECK-NEXT: kgen.witness "__moveinit__is_trivial" : !Bool = {:i1 1}
     # CHECK-NEXT: traitRef = @std::@builtin::@stubs::@Movable
 
