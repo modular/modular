@@ -3169,14 +3169,6 @@ LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
                                     /*implicit*/ false);
       return success();
     }
-    if (declRef->spelling == "value") {
-      // TODO(Mojo 25.7): remove this entirely.
-      shared.emitError(declRef->getLoc(),
-                       "'@value' has been removed, please use "
-                       "'@fieldwise_init' and explicit "
-                       "`Copyable` and `Movable` conformances instead");
-      return success();
-    }
     if (declRef->spelling == "explicit_destroy")
       return success();
   }
