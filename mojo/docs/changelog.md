@@ -681,3 +681,7 @@ what we publish.
 
 - `LinkedList.reverse()`: Fixed missing `prev` pointer updates, which caused
   `__reversed__()` to produce wrong results after reversing.
+
+- Mojo would previously consider types Movable if they had a `__moveinit__`
+  method, even if they didn't conform to `Movable`.  Movability is now tied to
+  the conformance which implies the method.
