@@ -31,7 +31,7 @@ struct MovableMem(ImplicitlyCopyable):
         self.str1 = str1
         self.str2 = str2
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.str1 = copy.str1
         self.str2 = copy.str2
         print("copied mem")

@@ -18,8 +18,8 @@ fn use_any[*Ts: AnyType](*args: *Ts): pass
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample(ImplicitlyCopyable):
   fn __init__(out self): pass
-  fn __moveinit__(out self, deinit take: Self): pass
-  fn __copyinit__(out self, copy: Self): pass
+  fn __init__(out self, *, deinit take: Self): pass
+  fn __init__(out self, *, copy: Self): pass
   fn __del__(deinit self): pass
   fn noop(self): pass
   fn mutate(mut self): pass

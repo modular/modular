@@ -46,7 +46,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
   fn __init__(out self, value: Int):
     pass
 
-  fn __copyinit__(out self, copy: Self): # CHECK: lit.fn @"__init__{{.*}}%copy
+  fn __init__(out self, *, copy: Self): # CHECK: lit.fn @"__init__{{.*}}%copy
     return
 
   fn noop(self): pass
@@ -275,7 +275,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
     self.f1 = a
     self.f2 = b
 
-  fn __copyinit__(out self, copy: Self):
+  fn __init__(out self, *, copy: Self):
     self = Self(copy.f1, copy.f2)
 
   # CHECK-LABEL: lit.fn @"mutate
@@ -505,7 +505,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     self.b = RegExample()
 
   # CHECK-LABEL: lit.fn @"__init__{{.*}}"{{.*}}*, %copy:
-  fn __copyinit__(out self, copy: Self):
+  fn __init__(out self, *, copy: Self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %copy[a]

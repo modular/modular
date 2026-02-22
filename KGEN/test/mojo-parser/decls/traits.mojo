@@ -230,7 +230,7 @@ struct StaticMethodStruct(StaticMethodTrait, ImplicitlyCopyable):
     fn foobar():
         pass
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
 
@@ -266,7 +266,7 @@ trait TraitForReg:
     fn __init__(out self, x: Int):
         ...
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         ...
 
     @staticmethod
@@ -290,7 +290,7 @@ struct RegTraitType(RegisterPassable, TraitForReg):
     fn __init__(out self, x: Int):
         pass
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
     @staticmethod
@@ -509,7 +509,7 @@ struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
     # CHECK: lit.fn @"__del__
@@ -727,7 +727,7 @@ struct HasMyPointerSelf(AnyType):
     var x: MyPointer[Self]
     # CHECK: lit.fn @"__del__
 
-    fn __moveinit__(out self, deinit take: Self, /):
+    fn __init__(out self, *, deinit take: Self):
         pass
 
 

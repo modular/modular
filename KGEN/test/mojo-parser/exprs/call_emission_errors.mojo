@@ -136,7 +136,7 @@ struct MemExample(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
 

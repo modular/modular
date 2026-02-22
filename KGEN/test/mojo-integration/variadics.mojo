@@ -56,7 +56,7 @@ struct TalkativeCopableReg(
         self.state = state
         print("initializing", state)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.state = copy.state
         print("copying", self.state)
 
@@ -79,11 +79,11 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Stringable, Writable):
         self.state = state
         print("initializing", state)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.state = copy.state
         print("copying", self.state)
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.state = take.state
         print("moving", self.state)
 

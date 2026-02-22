@@ -235,7 +235,7 @@ fn assignRValue():
 
 struct LValuesRvalues:
   fn __init__(out self): pass
-  fn __copyinit__(out self, copy: Self): pass
+  fn __init__(out self, *, copy: Self): pass
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
@@ -437,7 +437,7 @@ fn bad_func return fn() -> __mlir_type.index
 
 struct WeirdBoolish(RegisterPassable):
   fn __bool__(self) -> Bool: return False
-  fn __copyinit__(out self, copy: Self): pass;
+  fn __init__(out self, *, copy: Self): pass;
 
 fn badParamAnd[a: Bool, b: WeirdBoolish]():
   #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
@@ -654,7 +654,7 @@ def testInExpr(x: Int, y: Int):
 
 struct CopyAndInitMemType(ImplicitlyCopyable):
   fn __init__(out self): pass
-  fn __copyinit__(out self, copy: Self): pass
+  fn __init__(out self, *, copy: Self): pass
   # expected-note @+1 {{function declared here}}
   fn __le__(self, other: Self) -> Self: return self
   fn __mlir_i1__(self) -> __mlir_type.i1: pass

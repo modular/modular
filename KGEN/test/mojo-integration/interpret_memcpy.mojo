@@ -42,7 +42,7 @@ struct Data(ImplicitlyCopyable, Stringable):
         for i in range(num_elems):
             self._data[i] = data[i]
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self._size = copy._size
         self._data = alloc[Int](self._size)
         for i in range(self._size):

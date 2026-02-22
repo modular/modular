@@ -24,11 +24,11 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Stringable, Writable):
         self.elts.append(value)
 
     @always_inline
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.elts = take.elts^
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.elts = copy.elts.copy()
 
     @always_inline
