@@ -414,7 +414,7 @@ def test_list_extend_non_trivial():
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
-    #   - extend() using optimal number of __moveinit__() calls
+    #   - extend() using optimal number of move constructor calls
     var v1 = LinkedList[MoveCounter[String]]()
     v1.append(MoveCounter[String]("Hello"))
     v1.append(MoveCounter[String]("World"))

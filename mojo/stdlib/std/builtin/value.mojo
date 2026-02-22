@@ -20,8 +20,8 @@ These are Mojo built-ins, so you don't need to import them.
 trait Movable:
     """The Movable trait denotes a type whose value can be moved.
 
-    Implement the `Movable` trait on `Foo` which requires the `__moveinit__`
-    method:
+    Implement the `Movable` trait on `Foo` which requires the
+    `fn __init__(out self, *, deinit take: Self)` method:
 
     ```mojo
     struct Foo(Movable):
@@ -32,8 +32,7 @@ trait Movable:
             print("moving")
     ```
 
-    You can now use the ^ suffix to move the object instead of copying
-    it inside generic functions:
+    You can now use the ^ suffix to transfer owned values instead of copying:
 
     ```mojo
     fn return_foo[T: Movable](var foo: T) -> T:
@@ -58,7 +57,7 @@ trait Movable:
 
     comptime __move_ctor_is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
-    of `__moveinit__` is trivial.
+    of move constructor is trivial.
 
     The implementation of a move constructor is considered to be trivial if:
     - The struct has a compiler-generated trivial move constructor because all
@@ -74,7 +73,7 @@ trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
     Example implementing the `Copyable` trait on `Foo`, which requires the
-    `__init__(*, copy: Self)` method:
+    `fn __init__(out self,*, copy: Self)` method:
 
     ```mojo
     struct Foo(Copyable):
@@ -239,13 +238,13 @@ trait TrivialRegisterPassable(
      following constraints:
 
      - The type implicitly conforms to Copyable and the compiler synthesizes
-     `__copyinit__` that does a memcpy.
+       copy ctor that does a memcpy.
      - A trivial `__del__` member is synthesized by the compiler too,
-     so the type can’t be a linear type.
+       so the type can’t be a linear type.
      - All declared members are required to also conforms to this trait,
-     since you can’t memcpy or trivially destroy a container if one
-     of its stored members has a non-trivial copy constructor.
-     - You are not allowed to define a custom `__copyinit__` or `__del__`.
+       since you can’t memcpy or trivially destroy a container if one
+       of its stored members has a non-trivial copy constructor.
+     - You are not allowed to define a custom copy ctor or `__del__`.
 
 
      ```mojo
@@ -270,8 +269,8 @@ trait RegisterPassable(Movable):
 
      - The type implicitly conforms to Movable and the compiler synthesizes
        a trivial move constructor. The compiler needs to be able to move around
-       values of the type by loading and storing them. A custom defined
-       __moveinit__ is not allowed.
+       values of the type by loading and storing them. A custom
+       move constructor is not allowed.
 
      - Compiler checks that any stored member (`var`s) also conforms to this
        trait. It wouldn’t be possible to provide identity for a contained

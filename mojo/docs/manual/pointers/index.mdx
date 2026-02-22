@@ -222,14 +222,14 @@ store a dictionary. Copying an instance of `SharedDict` only copies the
 ```mojo
 from memory import ArcPointer
 
-struct SharedDict:
+struct SharedDict(Copyable):
     var attributes: ArcPointer[Dict[String, String]]
 
     fn __init__(out self):
         attributesDict: Dict[String, String] = {}
         self.attributes = ArcPointer(attributesDict)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.attributes = copy.attributes
 
     def __setitem__(mut self, key: String, value: String):

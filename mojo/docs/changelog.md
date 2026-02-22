@@ -126,7 +126,8 @@ what we publish.
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
   concise `...` to unbind any unspecified parameter explicitly.
 
-- The `__moveinit__` and `__copyinit__` methods [are being
+- As part of "init unification", the `__moveinit__` and `__copyinit__` methods
+  [are now
   renamed](https://github.com/modular/modular/blob/main/mojo/proposals/remove_move_and_copy_init.md)
   to `__init__(*, take=)` and `__init__(*, copy=)` respectively.  Mojo now
   accepts these names for initializers, but also supports the legacy

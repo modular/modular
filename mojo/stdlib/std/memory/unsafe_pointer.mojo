@@ -1592,7 +1592,7 @@ struct UnsafePointer[
         The pointer must not be null, and the pointer memory location is assumed
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
-        more efficient because it doesn't invoke `__moveinit__`.
+        more efficient because it doesn't invoke a move constructor.
 
         Parameters:
             T: Pointee type that can be destroyed implicitly (without
@@ -1715,7 +1715,7 @@ struct UnsafePointer[
         `init_pointee_*()` operation.
 
         This transfers the value out of `src` and into `self` using at most one
-        `__moveinit__()` call.
+        move constructor call.
 
         Example:
 

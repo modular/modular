@@ -92,7 +92,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = take.actions
         self.value = take.value
-        self.actions.unsafe_mut_cast[True]()[0].append("__moveinit__")
+        self.actions.unsafe_mut_cast[True]()[0].append("move ctor")
 
     fn __del__(deinit self):
         """Destroys the instance and records the operation."""
@@ -321,7 +321,7 @@ struct MoveCopyCounter(ImplicitlyCopyable):
 @fieldwise_init
 struct TriviallyCopyableMoveCounter(Copyable):
     """Type used for testing that collections still perform moves and not copies
-    when a type has a custom __moveinit__() but is also trivially copyable.
+    when a type has a custom move constructor but is also trivially copyable.
 
     Types with this property are rare in practice, but its still important to
     get the modeling right. If a type author wants their type to be moved

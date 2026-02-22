@@ -211,7 +211,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
             comptime T = downcast[TUnknown, Movable]
 
             if self._get_discr() == UInt8(i):
-                # Calls the correct __moveinit__
+                # Calls the correct move constructor
                 self._get_ptr[T]().init_pointee_move_from(take._get_ptr[T]())
                 return
 

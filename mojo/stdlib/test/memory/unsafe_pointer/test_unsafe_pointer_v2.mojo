@@ -120,7 +120,7 @@ def test_unsafepointer_of_move_only_type():
     ptr.init_pointee_move(ObserveType(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
-    assert_equal(actions_ptr[0][1], "__moveinit__", msg="emplace_value")
+    assert_equal(actions_ptr[0][1], "move ctor", msg="emplace_value")
     assert_equal(ptr[0].value, 42)
 
     # Stop compiler warnings
@@ -129,7 +129,7 @@ def test_unsafepointer_of_move_only_type():
     if true:  # scope value
         var value = ptr.take_pointee()
         assert_equal(len(actions_ptr[0]), 3)
-        assert_equal(actions_ptr[0][2], "__moveinit__")
+        assert_equal(actions_ptr[0][2], "move ctor")
         assert_equal(value.value, 42)
 
     ptr.free()

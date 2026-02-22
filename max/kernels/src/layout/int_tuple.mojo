@@ -702,7 +702,7 @@ struct IntTuple(
         """Create a deep copy of this `IntTuple` with its own memory ownership.
 
         This method creates a completely independent copy of the `IntTuple` with
-        newly allocated memory. Unlike `__copyinit__`, this method can be called
+        newly allocated memory. Unlike copy init, this method can be called
         on an existing instance to create a separate copy.
 
         Returns:

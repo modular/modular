@@ -390,7 +390,7 @@ struct Layout(
         Args:
             shape: The dimensions of the layout.
         """
-        # FIXME: all these owned_copy() calls are annoying, fix __copyinit__
+        # FIXME: all these owned_copy() calls are annoying, fix copy ctor
         self.shape = shape.owned_copy()
         self.stride = prefix_product(self.shape)
 

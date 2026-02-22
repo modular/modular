@@ -310,7 +310,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
     # should never get called.
     fn __init__(out self, *, copy: Self):
-        abort("_TaskGroupBox.__copyinit__ should never get called")
+        abort("_TaskGroupBox copy ctor should never get called")
 
 
 struct TaskGroup(Defaultable):

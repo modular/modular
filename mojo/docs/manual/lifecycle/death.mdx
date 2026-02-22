@@ -236,9 +236,10 @@ more in the following section.
 
 :::note Destructors cannot raise errors
 
-Currently a Mojo `__del__()` destructor isn't allowed to raise an error. This means that the
-destructor must be defined as an `fn` function without the `raises` keyword.
-Mojo won't allow you to define `__del__()`  using `fn raises` or `def`.
+Currently a Mojo `__del__()` destructor isn't allowed to raise an error. This
+means that the destructor must be defined as an `fn` function without the
+`raises` keyword. Mojo won't allow you to define `__del__()`  using `fn raises`
+or `def`.
 
 :::
 
