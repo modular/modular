@@ -26,6 +26,8 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
+from format._utils import FormatStruct
+
 from collections.optional import Optional, OptionalReg
 from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
@@ -70,7 +72,7 @@ from ..intrinsics import Scope
 
 
 @fieldwise_init
-struct CacheOperation(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct CacheOperation(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -186,15 +188,6 @@ struct CacheOperation(Equatable, Representable, Stringable, TrivialRegisterPassa
 
         return "unknown cache operation"
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the cache operation.
-
-        Returns:
-            A string describing the cache operation.
-        """
-        return String.write(self)
-
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the cache operation to a writer.
@@ -202,25 +195,23 @@ struct CacheOperation(Equatable, Representable, Stringable, TrivialRegisterPassa
         Args:
             writer: The writer to output the cache operation to.
         """
-        writer.write(self.mnemonic())
+        writer.write_string(self.mnemonic())
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the cache operation to a writer.
 
-        The repr is type-qualified, e.g. ``CacheOperation.ca``.
-
         Args:
             writer: The writer to output the cache operation to.
         """
-        writer.write("CacheOperation.", self)
+        FormatStruct(writer, "CacheOperation").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the cache operation.
 
         Returns:
-            A type-qualified string, e.g. ``CacheOperation.ca``.
+            A string representation of the form ``CacheOperation(mnemonic)``.
         """
         var string = String()
         self.write_repr_to(string)
@@ -233,7 +224,7 @@ struct CacheOperation(Equatable, Representable, Stringable, TrivialRegisterPassa
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct CacheEviction(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -323,15 +314,6 @@ struct CacheEviction(Equatable, Representable, Stringable, TrivialRegisterPassab
             return "no_allocate"
         return "unknown cache eviction"
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the cache eviction policy.
-
-        Returns:
-            A string describing the cache eviction policy.
-        """
-        return String.write(self)
-
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the cache eviction policy to a writer.
@@ -339,25 +321,23 @@ struct CacheEviction(Equatable, Representable, Stringable, TrivialRegisterPassab
         Args:
             writer: The writer to output the cache eviction policy to.
         """
-        writer.write(self.mnemonic())
+        writer.write_string(self.mnemonic())
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the cache eviction policy to a writer.
 
-        The repr is type-qualified, e.g. ``CacheEviction.evict_normal``.
-
         Args:
             writer: The writer to output the cache eviction policy to.
         """
-        writer.write("CacheEviction.", self)
+        FormatStruct(writer, "CacheEviction").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the cache eviction policy.
 
         Returns:
-            A type-qualified string, e.g. ``CacheEviction.evict_normal``.
+            A string representation of the form ``CacheEviction(mnemonic)``.
         """
         var string = String()
         self.write_repr_to(string)
@@ -370,7 +350,7 @@ struct CacheEviction(Equatable, Representable, Stringable, TrivialRegisterPassab
 
 
 @fieldwise_init
-struct Fill(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct Fill(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -410,7 +390,13 @@ struct Fill(Equatable, Representable, Stringable, TrivialRegisterPassable, Writa
         Returns:
             A string describing the fill pattern.
         """
-        return String.write(self)
+        if self == Self.NONE:
+            return "none"
+        if self == Self.ZERO:
+            return "zero"
+        if self == Self.NAN:
+            return "nan"
+        return "unknown fill"
 
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -420,31 +406,29 @@ struct Fill(Equatable, Representable, Stringable, TrivialRegisterPassable, Writa
             writer: The writer to output the fill pattern to.
         """
         if self == Self.NONE:
-            writer.write("none")
+            writer.write_string("none")
         elif self == Self.ZERO:
-            writer.write("zero")
+            writer.write_string("zero")
         elif self == Self.NAN:
-            writer.write("nan")
+            writer.write_string("nan")
         else:
-            writer.write("unknown fill")
+            writer.write_string("unknown fill")
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the fill pattern to a writer.
 
-        The repr is type-qualified, e.g. ``Fill.none``.
-
         Args:
             writer: The writer to output the fill pattern to.
         """
-        writer.write("Fill.", self)
+        FormatStruct(writer, "Fill").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the fill pattern.
 
         Returns:
-            A type-qualified string, e.g. ``Fill.none``.
+            A string representation of the form ``Fill(pattern)``.
         """
         var string = String()
         self.write_repr_to(string)
@@ -457,7 +441,7 @@ struct Fill(Equatable, Representable, Stringable, TrivialRegisterPassable, Writa
 
 
 @fieldwise_init
-struct Consistency(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct Consistency(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -508,7 +492,7 @@ struct Consistency(Equatable, Representable, Stringable, TrivialRegisterPassable
         Returns:
             A string describing the consistency level.
         """
-        return String.write(self)
+        return String(self.mnemonic())
 
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -517,25 +501,23 @@ struct Consistency(Equatable, Representable, Stringable, TrivialRegisterPassable
         Args:
             writer: The writer to output the consistency level to.
         """
-        writer.write(self.mnemonic())
+        writer.write_string(self.mnemonic())
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the consistency level to a writer.
 
-        The repr is type-qualified, e.g. ``Consistency.weak``.
-
         Args:
             writer: The writer to output the consistency level to.
         """
-        writer.write("Consistency.", self)
+        FormatStruct(writer, "Consistency").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the consistency level.
 
         Returns:
-            A type-qualified string, e.g. ``Consistency.weak``.
+            A string representation of the form ``Consistency(level)``.
         """
         var string = String()
         self.write_repr_to(string)
@@ -566,7 +548,7 @@ struct Consistency(Equatable, Representable, Stringable, TrivialRegisterPassable
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct ReduceOp(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -635,7 +617,7 @@ struct ReduceOp(Equatable, Representable, Stringable, TrivialRegisterPassable, W
         Returns:
             A string describing the reduction operation.
         """
-        return String.write(self)
+        return String(self.mnemonic())
 
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -644,25 +626,23 @@ struct ReduceOp(Equatable, Representable, Stringable, TrivialRegisterPassable, W
         Args:
             writer: The writer to output the reduction operation to.
         """
-        writer.write(self.mnemonic())
+        writer.write_string(self.mnemonic())
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the reduction operation to a writer.
 
-        The repr is type-qualified, e.g. ``ReduceOp.add``.
-
         Args:
             writer: The writer to output the reduction operation to.
         """
-        writer.write("ReduceOp.", self)
+        FormatStruct(writer, "ReduceOp").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the reduction operation.
 
         Returns:
-            A type-qualified string, e.g. ``ReduceOp.add``.
+            A string representation of the form ``ReduceOp(mnemonic)``.
         """
         var string = String()
         self.write_repr_to(string)

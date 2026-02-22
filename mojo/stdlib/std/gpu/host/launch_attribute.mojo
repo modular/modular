@@ -29,13 +29,14 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from format._utils import FormatStruct
 from sys import size_of
 
 from utils import StaticTuple
 
 
 @fieldwise_init
-struct LaunchAttributeID(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct LaunchAttributeID(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -205,19 +206,17 @@ struct LaunchAttributeID(Equatable, Representable, Stringable, TrivialRegisterPa
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the `LaunchAttributeID` to a writer.
 
-        The repr is type-qualified, e.g. ``LaunchAttributeID.1``.
-
         Args:
             writer: The writer to write to.
         """
-        writer.write("LaunchAttributeID.", self)
+        FormatStruct(writer, "LaunchAttributeID").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the `LaunchAttributeID`.
 
         Returns:
-            A type-qualified string, e.g. ``LaunchAttributeID.1``.
+            A string representation of the form ``LaunchAttributeID(value)``.
         """
         var string = String()
         self.write_repr_to(string)
@@ -279,7 +278,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct AccessProperty(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct AccessProperty(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -342,28 +341,26 @@ struct AccessProperty(Equatable, Representable, Stringable, TrivialRegisterPassa
             writer: The writer instance to write the formatted string to.
         """
         if self == Self.NORMAL:
-            return writer.write("NORMAL")
+            return writer.write_string("NORMAL")
         if self == Self.STREAMING:
-            return writer.write("STREAMING")
-        return writer.write("PERSISTING")
+            return writer.write_string("STREAMING")
+        return writer.write_string("PERSISTING")
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the `AccessProperty` to a writer.
 
-        The repr is type-qualified, e.g. ``AccessProperty.NORMAL``.
-
         Args:
             writer: The writer instance to write the formatted string to.
         """
-        writer.write("AccessProperty.", self)
+        FormatStruct(writer, "AccessProperty").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the `AccessProperty`.
 
         Returns:
-            A type-qualified string, e.g. ``AccessProperty.NORMAL``.
+            A string representation of the form ``AccessProperty(value)``.
         """
         var string = String()
         self.write_repr_to(string)
@@ -435,7 +432,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         return res
 
 
-struct AccessPolicyWindow(Defaultable, Stringable, TrivialRegisterPassable, Writable):
+struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and

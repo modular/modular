@@ -556,6 +556,7 @@ See real-world examples by searching for these functions:
 Each example demonstrates the complete target configuration for that GPU family.
 """
 
+from format._utils import FormatStruct
 from math import ceildiv, floor
 from os import abort
 from sys.info import CompilationTarget, _accelerator_arch, _TargetType
@@ -732,7 +733,7 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Vendor(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct Vendor(Equatable, Representable, TrivialRegisterPassable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -788,16 +789,16 @@ struct Vendor(Equatable, Representable, Stringable, TrivialRegisterPassable, Wri
             writer: The writer to output vendor information to.
         """
         if self == Vendor.NO_GPU:
-            writer.write("no_gpu")
+            writer.write_string("no_gpu")
             return
         if self == Vendor.AMD_GPU:
-            writer.write("amd_gpu")
+            writer.write_string("amd_gpu")
             return
         if self == Vendor.APPLE_GPU:
-            writer.write("apple_gpu")
+            writer.write_string("apple_gpu")
             return
         if self == Vendor.NVIDIA_GPU:
-            writer.write("nvidia_gpu")
+            writer.write_string("nvidia_gpu")
             return
 
         abort("unable to format unrecognized `Vendor` value")
@@ -815,19 +816,17 @@ struct Vendor(Equatable, Representable, Stringable, TrivialRegisterPassable, Wri
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the vendor to a writer.
 
-        The repr is type-qualified, e.g. ``Vendor.nvidia_gpu``.
-
         Args:
             writer: The writer to output the vendor to.
         """
-        writer.write("Vendor.", self)
+        FormatStruct(writer, "Vendor").fields(self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the vendor.
 
         Returns:
-            A type-qualified string, e.g. ``Vendor.nvidia_gpu``.
+            A string representation of the form ``Vendor(vendor_name)``.
         """
         var string = String()
         self.write_repr_to(string)
