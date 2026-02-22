@@ -177,6 +177,8 @@ def test_prefetch_options_str():
 
 def test_prefetch_locality_repr():
     assert_equal(repr(PrefetchLocality.NONE), "PrefetchLocality.NONE")
+    assert_equal(repr(PrefetchLocality.LOW), "PrefetchLocality.LOW")
+    assert_equal(repr(PrefetchLocality.MEDIUM), "PrefetchLocality.MEDIUM")
     assert_equal(repr(PrefetchLocality.HIGH), "PrefetchLocality.HIGH")
 
 
