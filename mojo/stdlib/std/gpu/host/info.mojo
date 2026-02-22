@@ -732,7 +732,7 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Vendor(Equatable, TrivialRegisterPassable, Writable):
+struct Vendor(Equatable, Stringable, TrivialRegisterPassable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
