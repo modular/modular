@@ -2689,6 +2689,7 @@ fn _all_bytes_in_ascii_range[lo: Byte, hi: Byte](
     Returns:
         True if all bytes are in `[lo, hi]`, False otherwise.
     """
+    comptime assert lo < hi, "`lo` must be strictly less than `hi`"
     var ptr = bytes.unsafe_ptr()
     var length = len(bytes)
     if is_compile_time() or length < simd_width_of[DType.bool]():
