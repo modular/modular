@@ -136,11 +136,26 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
 - **Always** sign commits with `Signed-off-by` (use `git commit -s`)
 - **Always** follow the Apache License v2.0 with LLVM Exceptions
 
+## Mojo Language Conventions
+
+- Use `comptime assert condition, "msg"` — not deprecated `constrained[condition, "msg"]()`
+- Use `comptime` — not deprecated `@parameter`
+- Implement `Writable` for formatting — not deprecated `Stringable` or `Representable`
+- `write_to` signature: `fn write_to(self, mut writer: Some[Writer])` — not `[W: Writer]`
+- Use `writer.write_string("literal")` for string literals, not `writer.write("literal")`
+- Use `FormatStruct` from `format._utils` for `write_repr_to` on structured types
+- `write_repr_to` on enum-like types: include the type name (e.g. `writer.write("MyEnum.", self)`)
+- Enum-style `write_to`: always add `else: writer.write_string("<<unknown>>")` fallback
+- Test `Writable` with `check_write_to(value, expected="...", is_repr=False/True)` — not `String(x)` or `repr(x)`
+
 ## Performance Considerations
 
 - Performance improvements must include benchmarks
 - Don't sacrifice readability for minor performance gains
 - Use the benchmarking infrastructure to track regressions
+- Always wrap benchmark measured values with `black_box()` + `keep()`
+- Do not include object construction in the benchmark hot loop; use `iter_with_setup` for destructive benchmarks
+- SIMD test comments must be platform-agnostic — do not assume a specific register width
 
 ## Platform Support
 
