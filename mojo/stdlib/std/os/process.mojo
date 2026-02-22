@@ -117,7 +117,14 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Strin
         Args:
             writer: The object to write to.
         """
-        self.write_to(writer)
+        writer.write("ProcessStatus(")
+        if self.exit_code:
+            writer.write("exit_code=", self.exit_code.value())
+        elif self.term_signal:
+            writer.write("term_signal=", self.term_signal.value())
+        else:
+            writer.write("running=True")
+        writer.write(")")
 
     @no_inline
     fn __repr__(self) -> String:
@@ -126,7 +133,9 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Strin
         Returns:
             A string representation of `ProcessStatus`.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 struct Pipe:
