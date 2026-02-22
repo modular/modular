@@ -94,6 +94,16 @@ def test_processstatus_str():
     assert_equal(String(ProcessStatus.running()), "ProcessStatus(running)")
 
 
+def test_processstatus_repr():
+    assert_equal(
+        ProcessStatus(exit_code=0).__repr__(), "ProcessStatus(exit_code: 0)"
+    )
+    assert_equal(
+        ProcessStatus(term_signal=15).__repr__(), "ProcessStatus(term_signal: 15)"
+    )
+    assert_equal(ProcessStatus.running().__repr__(), "ProcessStatus(running)")
+
+
 def main():
     test_process_run()
     test_process_run_missing()
@@ -101,3 +111,4 @@ def main():
     test_process_kill()
     test_pipe()
     test_processstatus_str()
+    test_processstatus_repr()
