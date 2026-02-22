@@ -252,7 +252,9 @@ struct StridedSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
         Returns:
             The string representation of the strided slice.
         """
-        return String.write(self)
+        var output = String()
+        self.write_to(output)
+        return output
 
     @no_inline
     fn __repr__(self) -> String:
@@ -261,7 +263,9 @@ struct StridedSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
         Returns:
             The string representation of the strided slice.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -336,7 +340,9 @@ struct ContiguousSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
         Returns:
             The string representation of the contiguous slice.
         """
-        return String.write(self)
+        var output = String()
+        self.write_to(output)
+        return output
 
     @no_inline
     fn __repr__(self) -> String:
@@ -345,7 +351,9 @@ struct ContiguousSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
         Returns:
             The string representation of the contiguous slice.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
