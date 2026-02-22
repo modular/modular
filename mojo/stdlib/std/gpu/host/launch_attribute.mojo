@@ -35,7 +35,7 @@ from utils import StaticTuple
 
 
 @fieldwise_init
-struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
+struct LaunchAttributeID(Equatable, Stringable, TrivialRegisterPassable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -257,7 +257,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
+struct AccessProperty(Equatable, Stringable, TrivialRegisterPassable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -391,7 +391,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         return res
 
 
-struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
+struct AccessPolicyWindow(Defaultable, Stringable, TrivialRegisterPassable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
