@@ -744,30 +744,15 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
   if (isRegisterPassable(loc, shared))
     return true;
 
-  // Look for a move constructor.
-  // TODO: this should be changed to trait conformance check as well.
-  return shared.typeHasMember(*typeDecl, "__moveinit__", loc);
-}
-
-/// Return true if this type is movable, either because it is trivial, a
-/// register passable type, or has a move constructor. Note: this resolves the
-/// body of a struct type.
-bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
-                            SharedState &shared) const {
-  ASTDecl *typeDecl = getDecl(shared);
-  if (!typeDecl) // MLIR Types are movable.
-    return true;
-
-  // If the type is register passable at all, then it is movable.
-  if (isRegisterPassable(value.expr->getLoc(), shared))
-    return true;
-
-  // Check all the available candidate to see if we have one that cooperates
-  // with this value kind.
-  if (!value.ir.getIfRValue())
+  // Check whether the type conforms to `Movable` trait.
+  ASTDecl *traitDecl =
+      shared.lookupBuiltinTrait("Movable", typeDecl, typeDecl->getLoc());
+  if (!traitDecl)
     return false;
-
-  return isMovable(value.expr->getLoc(), shared);
+  auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
+  if (!trait)
+    return false;
+  return typeDecl->doesNominalTypeConformTo(trait.bindReference());
 }
 
 template <typename CheckFnT>

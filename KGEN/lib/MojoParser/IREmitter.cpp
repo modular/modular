@@ -1534,8 +1534,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
   // has no __moveinit__, or it's invalid to use its __moveinit__, then copy it
   // into the destination.
-  if (!value.ir.getIfRValue() || !valueType.isMovableFrom(value, shared) ||
-      value.ir.getIfPValue() || (!isDefaultAS && !isRegisterPassable)) {
+  if (!value.ir.getIfRValue() || value.ir.getIfPValue() ||
+      (!isDefaultAS && !isRegisterPassable)) {
     ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
     if (!result)
@@ -1568,7 +1568,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use __moveinit__ if present.
-  if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
+  if (valueType.isMovable(exprLoc, shared)) {
     // `__moveinit__(owned existing: Self) -> Self`.
     ValueDest moveDest(destRef, context);
     if (!emitNamedMethodCall(
@@ -1582,7 +1582,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // Otherwise, we have to move this thing but don't have a move constructor!
   emitError(value.expr->getLoc())
       << "cannot transfer value into destination, because " << valueType
-      << " doesn't implement `__moveinit__`";
+      << " doesn't conform to 'Movable'";
   return {};
 }
 

@@ -141,8 +141,7 @@ def loop_variable_scoped():
 # With
 ##===----------------------------------------------------------------------===##
 
-struct ExampleCM:
-  fn __moveinit__(out self, deinit take: Self): pass
+struct ExampleCM(Movable):
   fn __enter__(self) -> Int:
     return 42
   fn __exit__(self):

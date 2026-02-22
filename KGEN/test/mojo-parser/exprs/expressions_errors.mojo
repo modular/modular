@@ -913,7 +913,7 @@ fn test_implicit_copy_errors():
     # expected-note @below {{consider transferring the value with '^'}}
     x.consume()
 
-    # expected-error @below {{value of type 'MemType' cannot be copied or moved; consider conforming it to 'Movable'}}
+    # expected-error @below {{cannot transfer value into destination, because 'MemType' doesn't conform to 'Movable'}}
     var y = x^
 
     var l1 = List[Int]()
