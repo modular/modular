@@ -28,7 +28,7 @@ trait Movable:
         fn __init__(out self):
             pass
 
-        fn __moveinit__(out self, deinit take: Self):
+        fn __init__(out self, *, deinit take: Self):
             print("moving")
     ```
 
@@ -48,7 +48,7 @@ trait Movable:
     ```
     """
 
-    fn __moveinit__(out self, deinit take: Self, /):
+    fn __init__(out self, *, deinit take: Self):
         """Create a new instance of the value by moving the value of another.
 
         Args:
@@ -60,9 +60,9 @@ trait Movable:
     """A flag (often compiler generated) to indicate whether the implementation
     of `__moveinit__` is trivial.
 
-    The implementation of `__moveinit__` is considered to be trivial if:
-    - The struct has a compiler-generated `__moveinit__` and all its fields
-      have a trivial `__moveinit__` method.
+    The implementation of a move constructor is considered to be trivial if:
+    - The struct has a compiler-generated trivial move constructor because all
+      its fields have trivial move constructors.
 
     In practice, it means the value can be moved by moving the bits from
     one location to another without side effects.
@@ -83,7 +83,7 @@ trait Copyable(Movable):
         fn __init__(out self, s: String):
             self.s = s
 
-        fn __copyinit__(out self, copy: Self):
+        fn __init__(out self, *, copy: Self):
             print("copying value")
             self.s = other.s
     ```
@@ -104,7 +104,7 @@ trait Copyable(Movable):
     ```
     """
 
-    fn __copyinit__(out self, copy: Self, /):
+    fn __init__(out self, *, copy: Self):
         """Create a new instance of the value by copying an existing one.
 
         Args:
@@ -118,15 +118,15 @@ trait Copyable(Movable):
         Returns:
             A copy of this value.
         """
-        return Self.__copyinit__(self)
+        return Self(copy=self)
 
     comptime __copyinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__copyinit__` is trivial.
 
-    The implementation of `__copyinit__` is considered to be trivial if:
-    - The struct has a compiler-generated trivial `__copyinit__` and all its fields
-      have a trivial `__copyinit__` method.
+    A copy constructor is considered to be trivial if:
+    - The struct has a compiler-generated trivial copy constructor because all
+      its fields have trivial copy constructors.
 
     In practice, it means the value can be copied by copying the bits from
     one location to another without side effects.

@@ -286,10 +286,13 @@ what we publish.
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
   concise `...` to unbind any unspecified parameter explicitly.
 
-- The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
-  to standardize construction. As such, the argument name for `__moveinit__`
-  must now be named `take` and the argument name for `__copyinit__` must now be
-  named `copy`.
+- The `__moveinit__` and `__copyinit__` methods [are being
+  renamed](https://github.com/modular/modular/blob/main/mojo/proposals/remove_move_and_copy_init.md)
+  to `__init__(*, take=)` and `__init__(*, copy=)` respectively.  Mojo now
+  accepts these names for initializers, but also supports the legacy
+  `__moveinit__` and `__copyinit__` names as well (for now).  However, the
+  argument name for these legacy methods must now be named `take` and `copy`
+  respectively.  Please move to the more modern names.
 
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
