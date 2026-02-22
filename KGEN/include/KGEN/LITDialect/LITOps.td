@@ -384,7 +384,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     This includes a 'destructor' field if the type has a non-trivial destructor,
     allowing SSA passes to perform origin optimizations.  It includes a
-    'moveInit' field if the type implements the `__moveinit__` special
+    'moveInit' field if the type implements the move ctor special
     functions if present.
   }];
 
@@ -1975,7 +1975,7 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                                        %x:index,
                                        %z: !lit.ref<@String, imm B>) -> !kgen.none {
       %ptr = lit.closure.init[#type_value](%y:[ref: imm A], %x,
-             %z[@String::@__copyinit__[2](!lit.ref<@String, imm *[0,0]>, !lit.ref<@String, imm *[0,1]>)]
+             %z[@String::@__init__[2](!lit.ref<@String, imm *[0,0]>, !lit.ref<@String, imm *[0,1]>)]
              )(%arg1: index) -> index {
           lit.end_fn
       } : (index), !lit.ref<!ClosureImpl, mut C>

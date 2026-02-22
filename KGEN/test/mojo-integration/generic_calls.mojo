@@ -38,7 +38,7 @@ fn test_owned(var x: RegPassable, var y: MemOnly):
     # CHECK: kgen.call {{.*}}borrowed_generic{{.*}}"(%arg1)
     borrowed_generic(y)
 
-    # COM: check callsite to inlined RegPassable::__copyinit__
+    # COM: check callsite to inlined RegPassable copy ctor
     # NOTE: The copy is optimized away since it is trivial.
     # CHECK: kgen.call {{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x)
@@ -66,7 +66,7 @@ fn test_borrowed(x: RegPassable, y: MemOnly):
     # CHECK: kgen.call {{.*}}borrowed_generic{{.*}}"(%arg1)
     borrowed_generic(y)
 
-    # COM: check callsite to inlined RegPassable::__copyinit__
+    # COM: check callsite to inlined RegPassable copy ctor
     # CHECK: kgen.call {{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x)
 

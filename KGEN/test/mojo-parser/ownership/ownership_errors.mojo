@@ -20,11 +20,8 @@ struct MemExample(ImplicitlyCopyable):
     fn __init__(out self):  # expected-note {{'self' declared here}}
         pass
 
-    # expected-error @below {{'self.y' is uninitialized at the implicit return from this function}}
-    fn __copyinit__(
-        out self,  # expected-note {{'self' declared here}}
-        copy: Self,
-    ):
+    # expected-error @+1 {{'self.y' is uninitialized at the implicit return from this function}}
+    fn __init__(out self, *, copy: Self):  # expected-note {{'self' declared here}}
         self.x = copy.x
 
     fn noop(self):

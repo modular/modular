@@ -842,7 +842,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       }
 
       // If this a copy constructor and the field is only `Copyable` but not
-      // implicitly copyable, generate the explicit call to `__copyinit__` so
+      // implicitly copyable, generate the explicit call to copy ctor so
       // the rest of the compiler doesn't have to know about explicit copying.
       // We only do this when not-implicitly copyable so we don't have to deal
       // with the MLIR types.
