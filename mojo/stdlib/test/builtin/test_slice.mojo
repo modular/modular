@@ -114,6 +114,38 @@ def test_contiguous_slice_stringable():
     assert_equal(s[:], "slice(None, None, None)")
 
 
+struct StridedSliceRepresentable:
+    fn __init__(out self):
+        pass
+
+    fn __getitem__(self, a: StridedSlice) -> String:
+        return repr(a)
+
+
+def test_strided_slice_representable():
+    var s = StridedSliceRepresentable()
+    assert_equal(s[1:10:2], "slice(1, 10, 2)")
+    assert_equal(s[::3], "slice(None, None, 3)")
+    # repr == str for StridedSlice
+    assert_equal(s[2::-1], String(StridedSlice(2, None, -1)))
+
+
+struct ContiguousSliceRepresentable:
+    fn __init__(out self):
+        pass
+
+    fn __getitem__(self, a: ContiguousSlice) -> String:
+        return repr(a)
+
+
+def test_contiguous_slice_representable():
+    var s = ContiguousSliceRepresentable()
+    assert_equal(s[0:10], "slice(0, 10, None)")
+    assert_equal(s[:5], "slice(None, 5, None)")
+    # repr == str for ContiguousSlice
+    assert_equal(s[3:], String(ContiguousSlice(3, None, None)))
+
+
 def test_slice_eq():
     assert_equal(slice(1, 2, 3), slice(1, 2, 3))
     assert_equal(slice(None, 1, None), slice(1))
