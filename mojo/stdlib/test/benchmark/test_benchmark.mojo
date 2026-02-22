@@ -14,7 +14,7 @@
 from time import sleep, time_function
 
 from benchmark import Report, clobber_memory, keep, run
-from testing import TestSuite, assert_true
+from testing import TestSuite, assert_equal, assert_true
 
 
 def test_stopping_criteria():
@@ -155,14 +155,30 @@ def test_report():
 
 def test_report_stringable():
     var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
-    var s = report.__str__()
+    var s = String(report)
     assert_true(len(s) > 0)
     assert_true("Benchmark Report (s)" in s)
+    assert_true("Mean:" in s)
+    assert_true("Total:" in s)
+    assert_true("Iters:" in s)
+    assert_true("Warmup Total:" in s)
+    assert_true("Fastest Mean:" in s)
+    assert_true("Slowest Mean:" in s)
+
+
+def test_report_str_units():
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    assert_true("Benchmark Report (ms)" in report.as_string("ms"))
+    assert_true("Benchmark Report (us)" in report.as_string("us"))
+    assert_true("Benchmark Report (ns)" in report.as_string("ns"))
 
 
 def test_report_representable():
     var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
-    assert_true(report.__repr__() == report.__str__())
+    # repr == str for Report (display type)
+    assert_equal(repr(report), String(report))
+    # verify repr contains expected sections
+    assert_true("Benchmark Report" in repr(report))
 
 
 def main():
