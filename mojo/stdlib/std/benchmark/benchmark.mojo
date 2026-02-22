@@ -210,7 +210,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Report(Copyable, Defaultable, Representable, Stringable, Writable):
+struct Report(Copyable, Defaultable, Writable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """
@@ -335,45 +335,21 @@ struct Report(Copyable, Defaultable, Representable, Stringable, Writable):
         ]
         return "\n".join(lines)
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the report.
-
-        Returns:
-            The string representation of the Report.
-        """
-        return self.as_string()
-
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the report to a writer.
-
-        Parameters:
-            W: The type of the writer.
 
         Args:
             writer: The writer to write to.
         """
-        writer.write(String(self))
+        writer.write_string(self.as_string())
 
-    fn write_repr_to[W: Writer](self, mut writer: W):
-        """Writes the repr of the report to a writer. Same as str for Report.
-
-        Parameters:
-            W: The type of the writer.
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of the report to a writer. Same as write_to for Report.
 
         Args:
             writer: The writer to write to.
         """
         self.write_to(writer)
-
-    fn __repr__(self) -> String:
-        """Returns the repr of the report.
-
-        Returns:
-            The string representation of the Report.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
     fn print(self, unit: String = Unit.s):
         """
