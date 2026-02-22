@@ -142,7 +142,7 @@ fn barrier():
 
 
 @fieldwise_init
-struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
+struct AMDScheduleBarrierMask(Equatable, Intable, Stringable, TrivialRegisterPassable, Writable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -219,30 +219,38 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
         Returns:
             A string representation of the mask, or aborts if the value is invalid.
         """
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the `AMDScheduleBarrierMask` to a writer.
+
+        Args:
+            writer: The writer to output the mask to.
+        """
         if self == Self.NONE:
-            return "NONE"
+            writer.write("NONE")
         elif self == Self.ALL_ALU:
-            return "ALL_ALU"
+            writer.write("ALL_ALU")
         elif self == Self.VALU:
-            return "VALU"
+            writer.write("VALU")
         elif self == Self.SALU:
-            return "SALU"
+            writer.write("SALU")
         elif self == Self.MFMA:
-            return "MFMA"
+            writer.write("MFMA")
         elif self == Self.ALL_VMEM:
-            return "ALL_VMEM"
+            writer.write("ALL_VMEM")
         elif self == Self.VMEM_READ:
-            return "VMEM_READ"
+            writer.write("VMEM_READ")
         elif self == Self.VMEM_WRITE:
-            return "VMEM_WRITE"
+            writer.write("VMEM_WRITE")
         elif self == Self.ALL_DS:
-            return "ALL_DS"
+            writer.write("ALL_DS")
         elif self == Self.DS_READ:
-            return "DS_READ"
+            writer.write("DS_READ")
         elif self == Self.DS_WRITE:
-            return "DS_WRITE"
+            writer.write("DS_WRITE")
         elif self == Self.TRANS:
-            return "TRANS"
+            writer.write("TRANS")
         else:
             abort("invalid AMDScheduleBarrierMask value")
 
