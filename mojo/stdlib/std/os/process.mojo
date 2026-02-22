@@ -22,6 +22,7 @@ _ = Process.run("echo", ["== TEST_ECHO"])
 """
 from collections import List, Optional
 from collections.string import StringSlice
+from format._utils import FormatStruct
 from sys import CompilationTarget
 from sys._libc import (
     waitpid,
@@ -44,7 +45,7 @@ from sys.os import abort, sep
 # ===----------------------------------------------------------------------=== #
 
 
-struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Stringable, Writable):
+struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Writable):
     """Represents the termination status of a process.
 
     This struct is returned by `poll()` and `wait()`.
@@ -88,15 +89,6 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Strin
         return Bool(self.exit_code) or Bool(self.term_signal)
 
     @no_inline
-    fn __str__(self) -> String:
-        """Constructs a string representation of `ProcessStatus`.
-
-        Returns:
-            A string representation of `ProcessStatus`.
-        """
-        return String.write(self)
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Formats this `ProcessStatus` to the provided Writer.
 
@@ -106,9 +98,11 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Strin
         if self.exit_code:
             writer.write("ProcessStatus(exit_code: ", self.exit_code.value(), ")")
         elif self.term_signal:
-            writer.write("ProcessStatus(term_signal: ", self.term_signal.value(), ")")
+            writer.write(
+                "ProcessStatus(term_signal: ", self.term_signal.value(), ")"
+            )
         else:
-            writer.write("ProcessStatus(running)")
+            writer.write_string("ProcessStatus(running)")
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -117,25 +111,19 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Strin
         Args:
             writer: The object to write to.
         """
-        writer.write("ProcessStatus(")
-        if self.exit_code:
-            writer.write("exit_code=", self.exit_code.value())
-        elif self.term_signal:
-            writer.write("term_signal=", self.term_signal.value())
-        else:
-            writer.write("running=True")
-        writer.write(")")
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Constructs a repr of `ProcessStatus`.
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            if exit_code := self.exit_code:
+                w.write_string("exit_code=")
+                w.write(exit_code[])
+            elif term_signal := self.term_signal:
+                w.write_string("term_signal=")
+                w.write(term_signal[])
+            else:
+                w.write_string("running=True")
 
-        Returns:
-            A string representation of `ProcessStatus`.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
+        FormatStruct(writer, "ProcessStatus").fields[FieldsFn=fields]()
 
 
 struct Pipe:
