@@ -679,11 +679,11 @@ documentation](/mojo/manual/decorators/register-passable).
 The use of a decorator to identify trivial types will be phased out in favor
 of a more granular set of aliases, which are boolean flags set by the compiler:
 
-- The `Copyable` trait defines the alias `__copyinit__is_trivial`, which is an
+- The `Copyable` trait defines the alias `__copy_ctor_is_trivial`, which is an
   optimization hint that guarantees that the value can be copied by its bits
   from one location to another without causing any side effects.
 
-- The `Movable` trait defines the alias `__moveinit__is_trivial`, which is an
+- The `Movable` trait defines the alias `__move_ctor_is_trivial`, which is an
   optimization hint that guarantees that the value can be moved by its bits
   from one location to another without causing any side effects.
 

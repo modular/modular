@@ -101,12 +101,12 @@ def test_triviality():
         ]
     ]
 
-    assert_true(Trivial.__copyinit__is_trivial)
-    assert_true(Trivial.__moveinit__is_trivial)
+    assert_true(Trivial.__copy_ctor_is_trivial)
+    assert_true(Trivial.__move_ctor_is_trivial)
     assert_true(Trivial.__del__is_trivial)
 
-    assert_false(NotTrivial.__copyinit__is_trivial)
-    assert_false(NotTrivial.__moveinit__is_trivial)
+    assert_false(NotTrivial.__copy_ctor_is_trivial)
+    assert_false(NotTrivial.__move_ctor_is_trivial)
     # UnsafeMaybeUninit always has a trivial destructor
     assert_true(NotTrivial.__del__is_trivial)
 

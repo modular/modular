@@ -56,7 +56,7 @@ trait Movable:
         """
         ...
 
-    comptime __moveinit__is_trivial: Bool
+    comptime __move_ctor_is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__moveinit__` is trivial.
 
@@ -120,7 +120,7 @@ trait Copyable(Movable):
         """
         return Self(copy=self)
 
-    comptime __copyinit__is_trivial: Bool
+    comptime __copy_ctor_is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of the copy constructor is trivial.
 

@@ -99,8 +99,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
     comptime __del__is_trivial: Bool = downcast[
         Self.ElementType, ImplicitlyDestructible
     ].__del__is_trivial
-    comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
-    comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
+    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
+    comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
 
     # Fields
     comptime type = __mlir_type[
@@ -348,7 +348,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        comptime if Self.ElementType.__copyinit__is_trivial:
+        comptime if Self.ElementType.__copy_ctor_is_trivial:
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -366,7 +366,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if Self.ElementType.__moveinit__is_trivial:
+        comptime if Self.ElementType.__move_ctor_is_trivial:
             self._array = take._array
         else:
             self = Self(uninitialized=True)

@@ -294,6 +294,10 @@ what we publish.
   argument name for these legacy methods must now be named `take` and `copy`
   respectively.  Please move to the more modern names.
 
+- As part of move unification, the `__moveinit__is_trivial` and
+  `__copyinit__is_trivial` members of `Movable` and `Copyable` have been renamed
+  to `__move_ctor_is_trivial` and `__copy_ctor_is_trivial` respectively.
+
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
   keyword argument to disambiguate slices. If you have defined your own range
@@ -370,7 +374,7 @@ what we publish.
   `memory` module for efficient bulk memory operations. These functions handle
   moving, copying, and destroying multiple values in contiguous memory, with
   automatic optimization for trivial types using `memcpy`. They encapsulate the
-  common pattern of checking `__moveinit__is_trivial`, `__copyinit__is_trivial`,
+  common pattern of checking `__move_ctor_is_trivial`, `__copy_ctor_is_trivial`,
   or `__del__is_trivial` and selecting the appropriate implementation. The `List`
   collection now uses these functions internally for improved code clarity and
   maintainability.

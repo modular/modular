@@ -508,7 +508,7 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if _T.__copyinit__is_trivial:
+        comptime if _T.__copy_ctor_is_trivial:
             uninit_copy_n[overlapping=False](
                 dest=self.unsafe_ptr(),
                 src=other.unsafe_ptr(),

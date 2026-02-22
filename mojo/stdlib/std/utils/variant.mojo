@@ -129,8 +129,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     """
 
     comptime __del__is_trivial = _all_trivial_del[*Self.Ts]()
-    comptime __copyinit__is_trivial = _all_trivial_copyinit[*Self.Ts]()
-    comptime __moveinit__is_trivial = _all_trivial_moveinit[*Self.Ts]()
+    comptime __copy_ctor_is_trivial = _all_trivial_copyinit[*Self.Ts]()
+    comptime __move_ctor_is_trivial = _all_trivial_moveinit[*Self.Ts]()
 
     # Fields
     comptime _sentinel: Int = -1
@@ -554,7 +554,7 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Variadic.size(Ts)):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
+            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
         else:
             return False
@@ -565,7 +565,7 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Variadic.size(Ts)):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__moveinit__is_trivial:
+            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False
         else:
             return False

@@ -68,7 +68,7 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Variadic.size(Ts)):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
+            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
         else:
             return False
@@ -80,7 +80,7 @@ fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Variadic.size(Ts)):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__moveinit__is_trivial:
+            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False
         else:
             return False
@@ -176,8 +176,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Union uses bitwise copy/move and has no destructor, so all operations
     # are trivial regardless of element types.
     comptime __del__is_trivial = True
-    comptime __copyinit__is_trivial = True
-    comptime __moveinit__is_trivial = True
+    comptime __copy_ctor_is_trivial = True
+    comptime __move_ctor_is_trivial = True
 
     # Use pop.union directly for C-compatible memory layout
     comptime _union_type = __mlir_type[

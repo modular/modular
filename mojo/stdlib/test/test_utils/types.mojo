@@ -182,7 +182,7 @@ struct CopyCounter[
         trivial_copy: Weather the copy constructor should be considered trivial.
     """
 
-    comptime __copyinit__is_trivial = Self.trivial_copy
+    comptime __copy_ctor_is_trivial = Self.trivial_copy
 
     var value: Self.T
     """The wrapped value."""
@@ -200,7 +200,7 @@ struct CopyCounter[
             s: The value to wrap.
         """
         comptime assert (
-            Self.T.__copyinit__is_trivial or not Self.trivial_copy
+            Self.T.__copy_ctor_is_trivial or not Self.trivial_copy
         ), (
             "You cannot override CopyCounter's trivial copy construct when T"
             " does not have one"
@@ -243,7 +243,7 @@ struct MoveCounter[
         trivial_move: Weather the move constructor should be treated as trivial.
     """
 
-    comptime __moveinit__is_trivial = Self.trivial_move
+    comptime __move_ctor_is_trivial = Self.trivial_move
 
     var value: Self.T
     """The wrapped value."""
@@ -258,7 +258,7 @@ struct MoveCounter[
             value: The value to wrap.
         """
         comptime assert (
-            Self.T.__moveinit__is_trivial or not Self.trivial_move
+            Self.T.__move_ctor_is_trivial or not Self.trivial_move
         ), (
             "You cannot override MoveCounter's trivial move construct when T"
             " does not have one"
@@ -331,7 +331,7 @@ struct TriviallyCopyableMoveCounter(Copyable):
     """Number of times this instance has been moved."""
 
     # Copying this type is trivial, it doesn't care to track copies.
-    comptime __copyinit__is_trivial = True
+    comptime __copy_ctor_is_trivial = True
 
     fn __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the count.
@@ -597,8 +597,8 @@ struct ConfigureTrivial[
     """
 
     comptime __del__is_trivial = Self.del_is_trivial
-    comptime __copyinit__is_trivial = Self.copyinit_is_trivial
-    comptime __moveinit__is_trivial = Self.moveinit_is_trivial
+    comptime __copy_ctor_is_trivial = Self.copyinit_is_trivial
+    comptime __move_ctor_is_trivial = Self.moveinit_is_trivial
 
 
 # ===----------------------------------------------------------------------=== #

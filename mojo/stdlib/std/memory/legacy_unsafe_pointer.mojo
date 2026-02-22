@@ -632,7 +632,7 @@ struct LegacyUnsafePointer[
               of `T`.
         """
 
-        comptime if U.__moveinit__is_trivial:
+        comptime if U.__move_ctor_is_trivial:
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.

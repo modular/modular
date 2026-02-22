@@ -58,8 +58,8 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
     """
 
     comptime __del__is_trivial = True
-    comptime __moveinit__is_trivial = _is_trivially_movable[Self.T]()
-    comptime __copyinit__is_trivial = _is_trivially_copyable[Self.T]()
+    comptime __move_ctor_is_trivial = _is_trivially_movable[Self.T]()
+    comptime __copy_ctor_is_trivial = _is_trivially_copyable[Self.T]()
 
     comptime _mlir_type = __mlir_type[`!pop.array<1, `, Self.T, `>`]
 
@@ -113,7 +113,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         """
         comptime assert (
             conforms_to(Self.T, Copyable)
-            and downcast[Self.T, Copyable].__copyinit__is_trivial
+            and downcast[Self.T, Copyable].__copy_ctor_is_trivial
         )
         self._array = copy._array
 
@@ -129,7 +129,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         """
         comptime assert (
             conforms_to(Self.T, Movable)
-            and downcast[Self.T, Movable].__moveinit__is_trivial
+            and downcast[Self.T, Movable].__move_ctor_is_trivial
         )
         self._array = take._array
 
@@ -212,12 +212,12 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
 @always_inline
 fn _is_trivially_copyable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Copyable):
-        return downcast[T, Copyable].__copyinit__is_trivial
+        return downcast[T, Copyable].__copy_ctor_is_trivial
     return False
 
 
 @always_inline
 fn _is_trivially_movable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Movable):
-        return downcast[T, Movable].__moveinit__is_trivial
+        return downcast[T, Movable].__move_ctor_is_trivial
     return False
