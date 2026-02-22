@@ -1698,7 +1698,7 @@ fn mgp_assert(
 @always_inline
 fn split_dim_indices[
     rank: Int, axis: Int
-](indices: IndexList[rank], new_shape_dim: Int64) -> IndexList[rank + 1]:
+](indices: IndexList[rank], new_shape_dim: Int) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
     # This op is transforming the INDICES of an access into a reshaped tensor.
@@ -1710,9 +1710,9 @@ fn split_dim_indices[
 
     comptime for i in range(rank + 1):
         comptime if i == axis:
-            out[i] = indices[axis] // Int(new_shape_dim)
+            out[i] = indices[axis] // new_shape_dim
         elif i == axis + 1:
-            out[i] = indices[axis] % Int(new_shape_dim)
+            out[i] = indices[axis] % new_shape_dim
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
@@ -1725,7 +1725,7 @@ fn split_dim_indices[
 @always_inline
 fn merge_dim_indices[
     rank: Int, axis: Int
-](indices: IndexList[rank], old_shape_dim: Int64) -> IndexList[rank - 1]:
+](indices: IndexList[rank], old_shape_dim: Int) -> IndexList[rank - 1]:
     var out = IndexList[rank - 1]()
 
     # This op is transforming the INDICES of an access into a reshaped tensor.
@@ -1737,7 +1737,7 @@ fn merge_dim_indices[
 
     comptime for i in range(rank - 1):
         comptime if i == axis:
-            out[i] = fma(indices[i], Int(old_shape_dim), indices[i + 1])
+            out[i] = fma(indices[i], old_shape_dim, indices[i + 1])
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
