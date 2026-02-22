@@ -909,10 +909,10 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   generateIsTrivialSpecialAlias("__del__is_trivial", trivialValue, shared,
                                 structDecl, implicitlyDestructibleParent,
                                 moduleDecl);
-  generateIsTrivialSpecialAlias("__moveinit__is_trivial", trivialValue, shared,
+  generateIsTrivialSpecialAlias("__move_ctor_is_trivial", trivialValue, shared,
                                 structDecl, moveParent, moduleDecl);
   if (isCopyable)
-    generateIsTrivialSpecialAlias("__copyinit__is_trivial", trivialValue,
+    generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", trivialValue,
                                   shared, structDecl, copyParent, moduleDecl);
 
   return &structDecl;
@@ -1042,9 +1042,9 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   // All of these operations are trivial in all cases; the struct has no fields.
   generateIsTrivialSpecialAlias("__del__is_trivial", true, shared, structDecl,
                                 implicitlyDestructibleParent, moduleDecl);
-  generateIsTrivialSpecialAlias("__moveinit__is_trivial", true, shared,
+  generateIsTrivialSpecialAlias("__move_ctor_is_trivial", true, shared,
                                 structDecl, moveParent, moduleDecl);
-  generateIsTrivialSpecialAlias("__copyinit__is_trivial", true, shared,
+  generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", true, shared,
                                 structDecl, copyParent, moduleDecl);
 
   // Generate the __call__ method based on the function signature.

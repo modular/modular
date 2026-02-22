@@ -122,9 +122,9 @@ fn function(arg: Foo):
         "__del__",
         "__init__",
         "__dunder__",
-        "__copyinit__is_trivial",
+        "__copy_ctor_is_trivial",
         "__del__is_trivial",
-        "__moveinit__is_trivial",
+        "__move_ctor_is_trivial",
         "___another__",
         "__other",
       ]

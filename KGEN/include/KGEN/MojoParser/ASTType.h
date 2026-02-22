@@ -131,12 +131,12 @@ public:
                                             SharedState &shared) const;
 
   /// Return true if this type is provably implicitly 'trivially' copyable, as
-  /// defined by its '__copyinit__is_trivial' member and whether or not it
+  /// defined by its '__copy_ctor_is_trivial' member and whether or not it
   /// adheres to the ImplicitlyCopyable trait.
   bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                              SharedState &shared) const;
   /// Return true if this type is provably 'trivially' moveable, as defined by
-  /// its '__moveinit__is_trivial' member.
+  /// its '__move_ctor_is_trivial' member.
   bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
   /// Return true if this type is provably 'trivially' deletable, as defined by
   /// its '__del__is_trivial' member.

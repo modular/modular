@@ -813,7 +813,7 @@ trait Copyable(Movable):
     fn copy(self) -> Self:
         return Self(copy=self)
 
-    comptime __copyinit__is_trivial: Bool
+    comptime __copy_ctor_is_trivial: Bool
 
 
 trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
@@ -848,7 +848,7 @@ trait Movable:
     fn __init__(out self, *, deinit take: Self):
         ...
 
-    comptime __moveinit__is_trivial: Bool
+    comptime __move_ctor_is_trivial: Bool
 
 
 trait ImplicitlyDestructible:

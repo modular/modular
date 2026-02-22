@@ -580,11 +580,11 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
     break;
   case SpecialFunctionKind::kCopyCtor:
     traitName = "Copyable";
-    isTrivialHook = "__copyinit__is_trivial";
+    isTrivialHook = "__copy_ctor_is_trivial";
     break;
   case SpecialFunctionKind::kMoveCtor:
     traitName = "Movable";
-    isTrivialHook = "__moveinit__is_trivial";
+    isTrivialHook = "__move_ctor_is_trivial";
     break;
   }
 

@@ -3350,7 +3350,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       moveFn = StructEmitter(structDecl)
                    .synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
     if (moveFn) {
-      synthesizeTrivialFlagIfNeeded("__moveinit__");
+      synthesizeTrivialFlagIfNeeded("__move_ctor_");
       structOp.setMoveInitAttr(moveFn.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext()));
     }
@@ -3363,7 +3363,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     if (copyFn) {
       // NOTE: We don't need to synthesize copy() here, there should be a
       // default implementation.
-      synthesizeTrivialFlagIfNeeded("__copyinit__");
+      synthesizeTrivialFlagIfNeeded("__copy_ctor_");
       structOp.setCopyInitAttr(copyFn.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext()));
     }
@@ -4136,9 +4136,9 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
     // decls so it should be robust.
     if (trivialTagName == "__del__is_trivial")
       return SpecialFunctionKind::kDel;
-    if (trivialTagName == "__moveinit__is_trivial")
+    if (trivialTagName == "__move_ctor_is_trivial")
       return SpecialFunctionKind::kMoveCtor;
-    if (trivialTagName == "__copyinit__is_trivial")
+    if (trivialTagName == "__copy_ctor_is_trivial")
       return SpecialFunctionKind::kCopyCtor;
 
     return SpecialFunctionKind::kNormal;

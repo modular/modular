@@ -12,9 +12,9 @@ comptime TestFn = fn(x: Int) raises -> Tuple[Bool, Int]
 fn printIt[T: AnyType & ImplicitlyCopyable]():
     if T.__del__is_trivial:
         print("del trivial")
-    if T.__moveinit__is_trivial:
+    if T.__move_ctor_is_trivial:
         print("move trivial")
-    if T.__copyinit__is_trivial:
+    if T.__copy_ctor_is_trivial:
         print("copy trivial")
 
 
