@@ -39,7 +39,7 @@ fn test_owned(var x: RegPassable, var y: MemOnly):
 
     # CHECK: [[XIMM:%.*]] = lit.ref.immut %x
     # CHECK: [[XCOPY:%.*]] = lit.var.decl
-    # CHECK: lit.call {{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XIMM]], [[XCOPY]])
+    # CHECK: lit.call {{.*}}::@RegPassable::@"__init__{{.*}}copy"
     # CHECK: lit.call {{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 
@@ -64,7 +64,7 @@ fn test_borrowed(x: RegPassable, y: MemOnly):
     borrowed_generic(y)
 
     # CHECK: [[XCOPY:%.*]] = lit.var.decl
-    # CHECK: lit.call {{.*}}::@RegPassable::@"__copyinit__{{.*}}(%x, [[XCOPY]])
+    # CHECK: lit.call {{.*}}::@RegPassable::@"__init__{{.*}}copy"
     # CHECK: lit.call {{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 

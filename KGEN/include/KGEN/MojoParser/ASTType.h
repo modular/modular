@@ -124,7 +124,7 @@ public:
   bool isTrivial(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return the 'kind' of triviality this type possesses for the given
-  /// function: '__copyinit__', '__moveinit__', or '__del__'. Returns either
+  /// trait: 'ImplicitlyDestructible', 'Copyable', or 'Movable'. Returns either
   /// provably trivial, provably non-trivial, or unprovable (unfolded member).
   FnTriviality getSpecialFunctionTriviality(llvm::SMLoc loc,
                                             SpecialFunctionKind kind,

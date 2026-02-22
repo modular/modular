@@ -1320,7 +1320,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitCResult(value.ir, value.expr, dest);
   }
 
-  // Otherwise, we'll need to memcpy or invoke the copyinit method which will
+  // Otherwise, we'll need to memcpy or invoke the copy ctor method which will
   // take the destination by reference, so we're dealing with a memory case.
   bool isNonDefaultAddressSpace = dest.isNonDefaultAddressSpace();
 
@@ -1344,7 +1344,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitCResult(value.ir, value.expr, dest);
   }
 
-  // Memory-only copyinit will take the destination as address space zero, so
+  // Memory-only copy ctor will take the destination as address space zero, so
   // we need to reject ValueDest's expecting it in GPU memory.
   if (isNonDefaultAddressSpace) {
     emitError(exprLoc, "value of type ")
@@ -1433,10 +1433,10 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return {};
   }
 
-  // __copyinit__ has signature: `(existing: Self) -> Self`.
-  return emitNamedMethodCall(
-      "__copyinit__",
-      CallOperands(CallSyntax::kImplicitCopyInit, value.expr, {value}), dest);
+  // Invoke `T(*, copy: Self)`.
+  CallOperands operands(CallSyntax::kImplicitCopyCtor, value.expr);
+  operands.add(StringAttr::get(shared.getContext(), "copy"), value);
+  return emitConstructorCall(valueType, std::move(operands), dest);
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
@@ -1521,7 +1521,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   bool isDefaultAS = cast<RefType>(destRef.getType()).isDefaultAddrSpace();
 
   // Verify that the result MLValue is in the right address space for a
-  // __copyinit__/__moveinit__ call, if it would come down to that.
+  // copy/move constructor call, if it would come down to that.
   if (!isDefaultAS &&
       !valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared)) {
     emitError(exprLoc, "value of type ")
@@ -1532,7 +1532,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   }
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
-  // has no __moveinit__, or it's invalid to use its __moveinit__, then copy it
+  // has no move ctor, or it's invalid to use its move ctor, then copy it
   // into the destination.
   if (!value.ir.getIfRValue() || value.ir.getIfPValue() ||
       (!isDefaultAS && !isRegisterPassable)) {
@@ -1567,14 +1567,13 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   }
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
-  // to use __moveinit__ if present.
+  // to use move ctor if present.
   if (valueType.isMovable(exprLoc, shared)) {
-    // `__moveinit__(owned existing: Self) -> Self`.
+    // Invoke `T(*, deinit take: Self)`.
     ValueDest moveDest(destRef, context);
-    if (!emitNamedMethodCall(
-            "__moveinit__",
-            CallOperands{CallSyntax::kImplicitMoveInit, value.expr, {value}},
-            moveDest))
+    CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr);
+    operands.add(StringAttr::get(shared.getContext(), "take"), value);
+    if (!emitConstructorCall(valueType, std::move(operands), moveDest))
       return {};
     return MBValue(destRef);
   }

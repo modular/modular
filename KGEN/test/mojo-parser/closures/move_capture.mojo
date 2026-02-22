@@ -7,7 +7,7 @@
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
 # CHECK: lit.fn @"__init__{{.*}}%fld0: !lit.ref<!Thing, mut {{.*}}> owned_in_mem
-# CHECK: @Thing::@"__moveinit__
+# CHECK: lit.call {{.*}}@Thing::@"__init__{{.*}}*, "take"
 
 
 @fieldwise_init
@@ -21,7 +21,7 @@ fn use(u: Thing):
 
 # CHECK-LABEL: lit.fn @"outer
 fn outer(var x: Thing):
-    # CHECK: call {{.*}}__init__{{.*}}(%x, %{{.*}})
+    # CHECK: lit.call {{.*}}__init__{{.*}}(%x, %{{.*}}){{.*}}owned_in_mem
     @__move_capture(x)
     fn nested() escaping:
         use(x)

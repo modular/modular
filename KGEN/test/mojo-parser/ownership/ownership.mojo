@@ -46,7 +46,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
   fn __init__(out self, value: Int):
     pass
 
-  fn __copyinit__(out self, copy: Self): # CHECK: lit.fn @"__copyinit__
+  fn __copyinit__(out self, copy: Self): # CHECK: lit.fn @"__init__{{.*}}%copy
     return
 
   fn noop(self): pass
@@ -372,7 +372,7 @@ fn test_result_optimization():
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: lit.var.lifetime.end %example
   # CHECK-NEXT: lit.var.lifetime.start %example
-  # CHECK-NEXT: lit.call {{.*}}@"__moveinit__{{.*}}(%__call_result_tmp__, %example)
+  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}take"
   # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
   example = use_and_return(example)
 
@@ -386,7 +386,7 @@ fn test_result_optimization():
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1_2]])
-  # CHECK-NEXT: lit.call {{.*}}@"__moveinit__{{.*}}(%__call_result_tmp___0, [[F1]])
+  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}take"
   # CHECK-NEXT: lifetime.end %__call_result_tmp___0
 
   # Mutating self through a reference forces a temporary.
@@ -400,7 +400,7 @@ fn test_result_optimization():
   # copy into it.
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[RETREF]])
 
-  # CHECK-NEXT: lit.call {{.*}}@"__moveinit__{{.*}}([[TMPVAR]], [[RETREF]])
+  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}take"
   # CHECK-NEXT: lifetime.end [[TMPVAR]]
   return_ref(example) = use_and_return(example)
 
@@ -479,7 +479,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   var example2 = MemExample()
 
   # CHECK-NEXT: lit.ownership.use %example2
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%example2, %__result__)
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
   # CHECK-NEXT: lifetime.end %example2
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
@@ -504,16 +504,16 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     self.a = RegExample()
     self.b = RegExample()
 
-  # CHECK-LABEL: lit.fn @"__copyinit__
+  # CHECK-LABEL: lit.fn @"__init__{{.*}}"{{.*}}*, %copy:
   fn __copyinit__(out self, copy: Self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %copy[a]
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[EA]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SA]]
     # CHECK-NEXT: [[SB:%.*]] = lit.ref.struct.ger %self[b]
     # CHECK-NEXT: [[EB:%.*]] = lit.ref.struct.ger %copy[b]
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[EB]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SB]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
@@ -550,7 +550,7 @@ fn bigreg_test():
 
   # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %varThing[b]
   # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.immut [[BREF]]
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[BVAL]])
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
   # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: lifetime.start [[ANON]]
   # CHECK-NEXT: lit.ref.store [[TMP]], [[ANON]]
@@ -918,7 +918,7 @@ struct HasMemExample:
       # CHECK-NEXT: }
 
       # On success we move the result value into the destination.
-      # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__call_result_tmp__, [[FIELD]])
+      # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
       # CHECK-NEXT: lifetime.end %__call_result_tmp__
       # CHECK-NEXT: lit.try.yield
     except:
@@ -1001,7 +1001,7 @@ fn test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExampl
 
     # Copy into a local temporary.
     # CHECK-NEXT:  [[IRES:%.*]] = lit.ref.immut [[RES]]
-    # CHECK-NEXT:  [[RESULT:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[IRES]])
+    # CHECK-NEXT:  [[RESULT:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
 
     # Last use of both x and b.
     # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
@@ -1026,7 +1026,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable]:
         # CHECK-NEXT: lit.ownership.use [[BREF]]
 
         # Rvalue can be moved into the result slot.
-        # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}([[BREF]], %result)
+        # CHECK-NEXT: lit.call{{.*}}*, "take"{{.*}}__init__
         result = self.b^
 
         # Full object bit is explicitly destroyed.
@@ -1042,7 +1042,7 @@ fn field_sensitive_ref_last_use(var write_state : IntAndOptional):
 
     _ = msg.__len__()
 
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %msg)
+    # CHECK: lit.call {{.*}}__init__{{.*}}copy"
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
 
 @fieldwise_init
@@ -1217,7 +1217,7 @@ fn testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
   # Mojo Issue #49: https://github.com/modular/mojo/issues/49
 
   # CHECK-NEXT: hlcf.if %cond -> !RegExample {
-  # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%reg)
+  # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
@@ -1229,7 +1229,7 @@ fn testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%reg)
+  # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: }
   _ = i if cond else reg
@@ -1260,7 +1260,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   # CHECK-NEXT:   lit.var.lifetime.start [[TMP]]
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
   # CHECK-NEXT:   lit.var.lifetime.start [[IF]]
-  # CHECK-NEXT:   lit.call {{.*}}__moveinit__{{.*}}([[TMP]], [[IF]])
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}take"
 
   # CHECK-NEXT:   lit.var.lifetime.end [[TMP]]
   # CHECK-NEXT:   hlcf.yield
@@ -1295,13 +1295,13 @@ fn testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
   # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    lit.var.lifetime.start %t1
-  # CHECK-NEXT:    lit.call {{.*}}__moveinit__{{.*}}(%a, %t1)
+  # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}take"
   # CHECK-NEXT:    hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT:    lit.ownership.use %b
   # CHECK-NEXT:    lit.var.lifetime.start %t1
-  # CHECK-NEXT:    lit.call {{.*}}__moveinit__{{.*}}(%b, %t1)
+  # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}"{{.*}}(%b, %t1){{.*}}*, "take"
   # CHECK-NEXT:    hlcf.yield
   # CHECK-NEXT: }
   var t1 = a^ if cond else b^

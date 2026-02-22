@@ -43,8 +43,7 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT:    lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.fn @"__copyinit__(
-# CHECK-SAME:   %copy: !lit.ref<{{.*}}> read_mem,
+# CHECK-LABEL: lit.fn @"__init__{{.*}}*, %copy: !lit.ref<{{.*}}> read_mem,
 # CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT:   [[V0:%.*]] = lit.ref.struct.ger %self[field0]
@@ -63,23 +62,22 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.fn @"__moveinit__(
-# CHECK-SAME:   %move: !lit.ref<{{.*}}> deinit_mem,
+# CHECK-LABEL: lit.fn @"__init__{{.*}}*, %take: !lit.ref<{{.*}}> deinit_mem,
 # CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 4 : i8
 # CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:   [[W1:%.*]] = lit.ref.struct.ger %move[field0]
-# CHECK-NEXT:   [[W2:%.*]] = lit.call {{.*}}__moveinit__{{.*}}([[W1]], [[W0]])
+# CHECK-NEXT:   [[W1:%.*]] = lit.ref.struct.ger %take[field0]
+# CHECK-NEXT:   [[W2:%.*]] = lit.call {{.*}}__init__{{.*}}"{{.*}}([[W1]], [[W0]]){{.*}}*, "take"
 # CHECK-NEXT:   [[W3:%.*]] = lit.ref.struct.ger %self[field1]
-# CHECK-NEXT:   [[W4:%.*]] = lit.ref.struct.ger %move[field1]
+# CHECK-NEXT:   [[W4:%.*]] = lit.ref.struct.ger %take[field1]
 # CHECK-NEXT:   [[W5:%.*]] = lit.load.consume [[W4]]
 # CHECK-NEXT:   lit.ref.store [[W5]], [[W3]]
 # CHECK-NEXT:   [[W6:%.*]] = lit.ref.struct.ger %self[field2]
-# CHECK-NEXT:   [[W7:%.*]] = lit.ref.struct.ger %move[field2]
+# CHECK-NEXT:   [[W7:%.*]] = lit.ref.struct.ger %take[field2]
 # CHECK-NEXT:   [[W8:%.*]] = lit.load.consume [[W7]]
 # CHECK-NEXT:   lit.ref.store [[W8]], [[W6]]
 # CHECK-NEXT:   [[W9:%.*]] = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:   lit.ownership.mark_destroyed %move
+# CHECK-NEXT:   lit.ownership.mark_destroyed %take
 # CHECK-NEXT:   lit.return %none : !kgen.none
 # CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }

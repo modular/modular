@@ -130,7 +130,7 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%shouldBeMovedFrom, [[MREF]])
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
   # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
@@ -302,7 +302,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
   # CHECK: [[ITEM:%.*]] = lit.call tail @std::@builtin::@stubs::@VariadicPack::@"__getitem__
   # CHECK: %_x = lit.var.decl
-  # CHECK: lit.call[{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
+  # CHECK: lit.call[!lit.generator<[2](*, "copy"{{.*}}#kgen.get_witness<{{.*}}__init__{{.*}}([[ITEM]], %_x)
   var _x = args[4]
 
   # CHECK-NEXT: lit.call[{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
@@ -368,7 +368,7 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   # Copy the result of __next__ into !lit.ref
   # CHECK-NEXT: [[ELTREFIMM:%.*]] = lit.ref.immut [[ELTREF]]
   # CHECK-NEXT: lifetime.start %x
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ELTREFIMM]], %x)
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}copy"
   try:
     var x : MemExample = iter.__next__()
 
@@ -437,14 +437,14 @@ fn test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) rai
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}({{.*}}, [[TEMP]])
   a = HasRaisingInit()
   # EH logic.
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[TEMP]], %a)
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}take"
 
   # CHECK: [[FIELDREF:%.*]] = lit.ref.struct.ger %b[field]
   # CHECK: [[TEMP:%.*]] = lit.var.decl
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}({{.*}}, [[TEMP]])
   b.field = HasRaisingInit()
   # EH logic.
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[TEMP]], [[FIELDREF:%.*]]) :
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}(*, "take":
 
 # CHECK-LABEL: lit.fn @"test_parameter_closure_captures
 fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):

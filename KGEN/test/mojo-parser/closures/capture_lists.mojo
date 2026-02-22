@@ -19,10 +19,10 @@ fn use(a:String, d:MoveMe):
 # CHECK:  lit.fn @"moveMeUser
 fn moveMeUser(byCopy:String, prefix:String, var byMove: MoveMe):
     # CHECK: [[V0:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call {{.*}}::@String::@"__copyinit__(::String)"[{{.*}}](%byCopy, [[V0]])
+    # CHECK-NEXT: lit.call {{.*}}::@String::@"__init__{{.*}}(%byCopy, [[V0]]){{.*}}(*, "copy":
     # CHECK: [[V1:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call {{.*}}::@MoveMe::@"__moveinit__({{.*}})"[{{.*}}](%byMove, [[V1]])
-    # CHECK: [[V0]][@{{.*}}::@String::@"__copyinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__moveinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__del__({{.*}})" !lit.generator<{{.*}}>], [[V1]]
+    # CHECK-NEXT: lit.call {{.*}}::@MoveMe::@"__init__{{.*}}(%byMove, [[V1]]){{.*}}(*, "take":
+    # CHECK: [[V0]][@{{.*}}::@String::@"__init__(copy:::String)
     fn myclosure(prefix: String) unified {var byCopy, var byMove^} -> String:
         use(byCopy, byMove)
         return prefix
@@ -116,8 +116,8 @@ fn toy(A: String, B: String, mut C: String, mut D: String):
         return A
     takeIt(readAll)
 
-    # CHECK: @String::@"__copyinit__
-    # CHECK: @String::@"__copyinit__
+    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "copy"
+    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "copy"
     # CHECK: lit.closure.init
     fn copyAll() unified {var} -> String:
         use(A, B)
@@ -125,8 +125,8 @@ fn toy(A: String, B: String, mut C: String, mut D: String):
 
     takeIt(copyAll)
 
-    # CHECK: @String::@"__moveinit__
-    # CHECK: @String::@"__moveinit__
+    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "take"
+    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "take"
     # CHECK: lit.closure.init
     fn moveAll() unified {var^} -> String:
         use(C, D)
@@ -145,7 +145,7 @@ fn use(y: MyCopyableType, wy:MyCopyableType):
 
 # CHECK: lit.fn @"testOnce
 fn testOnce(x: MyCopyableType):
-    # CHECK-COUNT: 1 @MyCopyableType::@"__copyinit__
+    # CHECK-COUNT: 1 @MyCopyableType::@"__init__{{.*}}"{{.*}}*, "copy"
     fn myclosure() unified {var}:
         use(x, x)
 

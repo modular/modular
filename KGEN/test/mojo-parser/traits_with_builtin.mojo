@@ -8,12 +8,9 @@
 
 
 # COM: Just check that conformance checking succeeds.
-trait TraitForReg:
+trait TraitForReg(Copyable):
     @implicit
     fn __init__(out self, x: Int):
-        ...
-
-    fn __copyinit__(out self, copy: Self):
         ...
 
     @staticmethod

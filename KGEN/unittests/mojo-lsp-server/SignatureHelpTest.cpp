@@ -43,14 +43,18 @@ fn test():
                      })
       .signatureHelp(doc, ranges[1].end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       ASSERT_EQ((int)signatureHelp.signatures.size(), 3);
+                       ASSERT_EQ((int)signatureHelp.signatures.size(), 5);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "fn __init__() -> Self");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn function(arg: Int) -> Int");
+                                 "fn __init__(out self, *, deinit take: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
+                                 "fn __init__(out self, *, copy: Self)");
+                       EXPECT_EQ(signatureHelp.signatures[3].label,
+                                 "fn function(arg: Int) -> Int");
+                       EXPECT_EQ(signatureHelp.signatures[4].label,
                                  "fn function(arg: Bool, arg2: Int) -> Int");
                      })
       .signatureHelp(doc, ranges[2].end,
@@ -63,12 +67,16 @@ fn test():
                      })
       .signatureHelp(doc, doc.findLastRange("True,")->end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       ASSERT_EQ((int)signatureHelp.signatures.size(), 2);
+                       ASSERT_EQ((int)signatureHelp.signatures.size(), 4);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "fn __init__() -> Self");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
+                                 "fn __init__(out self, *, deinit take: Self)");
+                       EXPECT_EQ(signatureHelp.signatures[2].label,
+                                 "fn __init__(out self, *, copy: Self)");
+                       EXPECT_EQ(signatureHelp.signatures[3].label,
                                  "fn function(arg: Bool, arg2: Int) -> Int");
                      })
       .execute();

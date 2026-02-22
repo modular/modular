@@ -200,8 +200,8 @@ static const char *getCalleeKind(CallSyntax syntax) {
   case CallSyntax::kDirectCall:       //< f()
   case CallSyntax::kTypeCall:         //< T()
   case CallSyntax::kImplicitConvert:  //< Conversion in an argument context
-  case CallSyntax::kImplicitCopyInit: //< Implicit __copyinit__ call.
-  case CallSyntax::kImplicitMoveInit: //< Implicit __moveinit__ call.
+  case CallSyntax::kImplicitCopyCtor: //< Implicit copy ctor call.
+  case CallSyntax::kImplicitMoveCtor: //< Implicit move ctor call.
     return "function";
   case CallSyntax::kParamBindings: //< symbol[x, val=y]
   case CallSyntax::kIndirectCall:  //< expr()
@@ -632,10 +632,10 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     case CallSyntax::kImplicitConvert:
       diag << "implicit conversion";
       break;
-    case CallSyntax::kImplicitCopyInit:
+    case CallSyntax::kImplicitCopyCtor:
       diag << "implicit copy";
       break;
-    case CallSyntax::kImplicitMoveInit:
+    case CallSyntax::kImplicitMoveCtor:
       diag << "implicit move";
       break;
     }

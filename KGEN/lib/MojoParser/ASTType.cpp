@@ -564,23 +564,29 @@ bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
 FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
                                                    SpecialFunctionKind kind,
                                                    SharedState &shared) const {
-  assert((kind == SpecialFunctionKind::kDel ||
-          kind == SpecialFunctionKind::kCopyInit ||
-          kind == SpecialFunctionKind::kMoveInit) &&
-         "Invalid special function kind");
-
   // MLIR types and types conforming to AnyTrivialRegType are assumed to be
   // trivial for all purposes
   if (isTrivialRegisterType(loc, shared))
     return FnTriviality::ProvablyTrivial;
 
-  StringRef traitName = [kind] {
-    if (kind == SpecialFunctionKind::kDel)
-      return "ImplicitlyDestructible";
-    else if (kind == SpecialFunctionKind::kCopyInit)
-      return "Copyable";
-    return "Movable";
-  }();
+  StringRef traitName;
+  StringRef isTrivialHook;
+  switch (kind) {
+  default:
+    llvm_unreachable("Invalid special function kind");
+  case SpecialFunctionKind::kDel:
+    traitName = "ImplicitlyDestructible";
+    isTrivialHook = "__del__is_trivial";
+    break;
+  case SpecialFunctionKind::kCopyCtor:
+    traitName = "Copyable";
+    isTrivialHook = "__copyinit__is_trivial";
+    break;
+  case SpecialFunctionKind::kMoveCtor:
+    traitName = "Movable";
+    isTrivialHook = "__moveinit__is_trivial";
+    break;
+  }
 
   ASTDecl *typeDecl = getDecl(shared);
   assert(typeDecl && "MLIR types shouldn't reach here");
@@ -601,10 +607,7 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
   if (!typeDecl->getParentDecl())
     return FnTriviality::Unknown;
 
-  auto info = SpecialFunctionInfo::get(kind);
-  auto trivialFnName = (llvm::Twine(info.name) + "is_trivial").str();
-
-  auto witnessName = StringAttr::get(shared.getContext(), trivialFnName);
+  auto witnessName = StringAttr::get(shared.getContext(), isTrivialHook);
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
 
   ASTType boolType = shared.getBuiltinBoolType(*typeDecl->getParentDecl(), loc);
@@ -635,13 +638,13 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
 bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                                     SharedState &shared) const {
   return isImplicitlyCopyable(loc, shared) &&
-         getSpecialFunctionTriviality(loc, SpecialFunctionKind::kCopyInit,
+         getSpecialFunctionTriviality(loc, SpecialFunctionKind::kCopyCtor,
                                       shared) == FnTriviality::ProvablyTrivial;
 }
 
 bool ASTType::isProvablyTriviallyMoveable(llvm::SMLoc loc,
                                           SharedState &shared) const {
-  return getSpecialFunctionTriviality(loc, SpecialFunctionKind::kMoveInit,
+  return getSpecialFunctionTriviality(loc, SpecialFunctionKind::kMoveCtor,
                                       shared) == FnTriviality::ProvablyTrivial;
 }
 

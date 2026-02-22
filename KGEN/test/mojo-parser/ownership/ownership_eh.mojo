@@ -31,7 +31,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
 
     fn __copyinit__(
         out self, copy: Self
-    ):  # CHECK: lit.fn @"__copyinit__
+    ):  # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
         return
 
     # Test a raising constructor.
@@ -139,7 +139,7 @@ fn finally_may_raise() raises:
         # CHECK-NEXT: lit.try.raise
         raise Error()
         # CHECK-NEXT: } except {
-        # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__try_error__, %__error__)
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error__, %__error__){{.*}}*, "take"
         # CHECK-NEXT: lit.var.lifetime.end %__try_error__
         # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
         # CHECK-NEXT: %__finally_error__ = lit.var.decl
@@ -152,7 +152,7 @@ fn finally_may_raise() raises:
         # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      } except {
-        # CHECK-NEXT:   lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__finally_error__, %__error__)
+        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "take"
         # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
         # CHECK:      else
         # CHECK-NEXT:   lit.try.yield
@@ -179,7 +179,7 @@ struct ThrowingExit:
 
 # CHECK-LABEL: lit.fn @"context_mgr_exit_raises
 fn context_mgr_exit_raises() raises:
-    # CHECK: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__with_error__, %__error__)
+    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "take"
     # CHECK-NEXT: lit.var.lifetime.end %__with_error__
     # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
     # CHECK-NEXT: %__finally_error__ = lit.var.decl
@@ -206,7 +206,7 @@ fn context_mgr_exit_raises() raises:
     # CHECK:        else
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
     # CHECK:      } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__finally_error__, %__error__)
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "take"
     # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
     # CHECK:      else
     # CHECK-NEXT:   lit.try.yield
@@ -312,7 +312,7 @@ struct DestructSome:
         somethingThatRaises()
 
         # CHECK: [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
-        # CHECK-NEXT: __copyinit__{{.*}}(%a, [[FIELD]])
+        # CHECK-NEXT: __init__{{.*}}"{{.*}}(%a, [[FIELD]]){{.*}}*, "copy"
         self.a = a
 
         # CHECK:      lifetime.start %__call_result_tmp__
@@ -327,7 +327,7 @@ struct DestructSome:
         somethingThatRaises()
 
         # CHECK: [[FIELD:%.*]] = lit.ref.struct.ger %self[b]
-        # CHECK-NEXT: __copyinit__{{.*}}(%b, [[FIELD]])
+        # CHECK-NEXT: __init__{{.*}}"{{.*}}(%b, [[FIELD]]){{.*}}*, "copy"
         self.b = b
 
         # At this point 'self' is fully initialized, so any exit out should

@@ -697,7 +697,7 @@ struct SpecialFunctions:
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
-  # expected-error @+1 {{'__del__' cannot be declared as raising an exception}}
+  # expected-error @+1 {{destructor cannot be declared as raising an exception}}
   fn __del__(deinit self) raises:
      pass
 
@@ -720,6 +720,7 @@ struct TestVarDeinitErrors:
   fn __moveinit__(out self, var take: String): pass
 
 
+# expected-note @+1 {{previous definition here}}
 struct WrongType(RegisterPassable):
   # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
@@ -734,7 +735,8 @@ struct WrongType(RegisterPassable):
   # TODO: Should err.
   fn __copyinit__(out self, copy: Int): pass
 
-  # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
+  # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
+  # expected-error @+1 {{'@register_passable' types may not have an explicit move constructor, they are always movable by copying a register}}
   fn __moveinit__(out self, deinit take: Self): pass
 
 
@@ -744,7 +746,6 @@ struct WrongSelfType[a: Int]:
   fn goodMethod(mut self: WrongSelfType[Self.a]): pass
 
   # Issue #13358
-  # expected-error @+1 {{'__copyinit__' requires 1 operand}}
   fn __copyinit__(out self, copy: Self, moar: Int): pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
@@ -779,7 +780,7 @@ struct InMemStruct: pass
 # expected-error @+1 {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
 struct InRegStruct(RegisterPassable):
   var x: Int # ok
-  # expected-error @+1 {{cannot synthesize __moveinit__ because field 'y' has non-copyable and non-movable type 'InMemStruct'}}
+  # expected-error @+1 {{cannot synthesize move constructor because field 'y' has non-copyable and non-movable type 'InMemStruct'}}
   var y: InMemStruct # expected-note {{'y' declared with type 'InMemStruct'}}
 
 struct OtherInMemStruct:
@@ -791,12 +792,13 @@ struct MoveInitTakeWrongName:
   # expected-error @+1 {{take argument of '__moveinit__' must be named 'take'}}
   fn __moveinit__(out self, deinit existing: Self): pass
 
-
+# expected-note @+1 {{previous definition here}}
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
-  # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
+  # expected-error @+1 {{'@register_passable' types may not have an explicit move constructor, they are always movable by copying a register}}
   fn __moveinit__(out self, deinit take: Self): pass
-  # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
+  # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
+  # expected-error @+1 {{trivial types may not have an explicit copy constructor, they are always trivially copyable}}
   fn __copyinit__(out self, copy: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   fn __del__(deinit self): pass
@@ -837,8 +839,8 @@ fn test_deinit_fn_types():
 @fieldwise_init
 struct CantSynthesize(ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
-# expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
-# expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize move constructor because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize copy constructor because field 'x' has non-copyable type 'InMemStruct'}}
   var x : InMemStruct
 
 
@@ -886,8 +888,8 @@ struct NotRegisterPassable:
 
 @fieldwise_init
 struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
-    # expected-error @below {{cannot synthesize __moveinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
-    # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable type 'NotRegisterPassable'}}
+    # expected-error @below {{cannot synthesize move constructor because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
+    # expected-error @below {{cannot synthesize copy constructor because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
     var _inner: NotRegisterPassable
     fn __init__(out self):
@@ -902,13 +904,13 @@ struct StructWithoutBody(RegisterPassable):
 
 @fieldwise_init
 struct OkayStruct(ImplicitlyCopyable, RegisterPassable):
-# expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'StructWithoutBody'}}
+# expected-error @below {{cannot synthesize copy constructor because field 'begin' has non-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
 @fieldwise_init
 struct ExplicitlyCopyableStructWithNonCopyableBody(Copyable, RegisterPassable):
-# expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'StructWithoutBody'}}
+# expected-error @below {{cannot synthesize copy constructor because field 'begin' has non-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
@@ -917,7 +919,7 @@ struct ExplicitlyCopyableStructWithoutBody(Copyable, RegisterPassable):
 
 @fieldwise_init
 struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterPassable):
-  # expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'ExplicitlyCopyableStructWithoutBody'}}
+  # expected-error @below {{cannot synthesize copy constructor because field 'begin' has non-copyable type 'ExplicitlyCopyableStructWithoutBody'}}
     var begin: ExplicitlyCopyableStructWithoutBody
 
 
@@ -1057,12 +1059,12 @@ struct DTypePointer: # expected-error {{cannot define a struct here with name 'D
 struct copy_init_def:
   var field: Int
 
-  # expected-error @+1 {{cannot define '__copyinit__' as 'def'; 'def' implicitly raises}}
+  # expected-error @+1 {{cannot define copy constructor as 'def'; 'def' implicitly raises}}
   def __copyinit__(out self, copy: Self):
     self.field = existing.field
 
 struct copy_init_raises:
-  # expected-error @+1 {{'__copyinit__' cannot be declared as raising an exception}}
+  # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
   fn __copyinit__(out self, copy: Self) raises:
      pass
 
@@ -1075,15 +1077,15 @@ struct Inner:
 
 @fieldwise_init
 struct Outer(RegisterPassable): # expected-error {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
-    # expected-error @+1{{cannot synthesize __moveinit__ because field 'inner' has non-copyable and non-movable type 'Inner'}}
+    # expected-error @+1{{cannot synthesize move constructor because field 'inner' has non-copyable and non-movable type 'Inner'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
 @fieldwise_init
 struct AnyTypeMember[T: AnyType](ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
-# expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
-# expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable type 'T'}}
+# expected-error @below {{cannot synthesize move constructor because field 'value' has non-copyable and non-movable type 'T'}}
+# expected-error @below {{cannot synthesize copy constructor because field 'value' has non-copyable type 'T'}}
     var value: Self.T
 
 

@@ -8,7 +8,7 @@
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
 # CHECK:         lit.struct.field field0 : !Int
-# CHECK:         lit.fn @"__copyinit__
+# CHECK:         lit.fn @"__init__{{.*}}*, %copy:
 
 
 # CHECK-LABEL: lit.fn @"foo

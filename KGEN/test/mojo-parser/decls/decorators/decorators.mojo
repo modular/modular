@@ -276,27 +276,27 @@ struct StructExample(ImplicitlyCopyable, RegisterPassable):
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable)
-# CHECK: move :!lit.generator<[2]({{.*}} deinit_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
+# CHECK: move :!lit.generator<[2]({{.*}} deinit_mem, ?, {{.*}} byref_result) {{.*}}@ValueMem::@"__init__(take:
 @fieldwise_init
 struct ValueMem(ImplicitlyCopyable):
     var a: Int  # Trivial
     var b: StructExample  # Copy ctor
 
 
-# CHECK: lit.fn @"__moveinit__(
-# CHECK-SAME:  %move: !lit.ref<!ValueMem, mut {{.*}}> deinit_mem,
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*,
+# CHECK-SAME:  %take: !lit.ref<!ValueMem, mut {{.*}}> deinit_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
-# CHECK-NEXT: %1 = lit.ref.struct.ger %move[a]
+# CHECK-NEXT: %1 = lit.ref.struct.ger %take[a]
 # CHECK-NEXT: %2 = lit.load.consume %1
 # CHECK-NEXT: lit.ref.store %2, %0
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
-# CHECK-NEXT: %4 = lit.ref.struct.ger %move[b]
+# CHECK-NEXT: %4 = lit.ref.struct.ger %take[b]
 # CHECK-NEXT: %5 = lit.load.consume %4
 # CHECK-NEXT: lit.ref.store %5, %3
 
-# CHECK: lit.fn @"__copyinit__(
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}*,
 # CHECK-SAME:  %copy: !lit.ref<!ValueMem, imm {{.*}}> read_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
@@ -306,7 +306,7 @@ struct ValueMem(ImplicitlyCopyable):
 # CHECK-NEXT: lit.ref.store %2, %0
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %4 = lit.ref.struct.ger %copy[b]
-# CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%4)
+# CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}"{{.*}}(%4){{.*}}*, "copy"
 # CHECK-NEXT: lit.ref.store [[TMP]], %3
 
 # CHECK: lit.fn @"__init__(
@@ -338,15 +338,15 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
 # CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable_RegisterPassable_TrivialRegisterPassable) register_passable_trivial
 
-# CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%move: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}[{{.*}}](*, %take: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
-# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %move : <!ValueRegTrivial
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %take : <!ValueRegTrivial
 # CHECK-NEXT: lit.ref.store [[V0]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT: lit.ownership.mark_destroyed %move
+# CHECK-NEXT: lit.ownership.mark_destroyed %take
 # CHECK-NEXT: lit.return %none : !kgen.none
 
-# CHECK: lit.fn @"__copyinit__{{.*}}"[{{.*}}](%copy: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}[{{.*}}](*, %copy: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %copy : <!ValueRegTrivial
 # CHECK-NEXT: lit.ref.store [[V0]], %self
@@ -365,8 +365,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
     var b: StructExample
 
 
-# CHECK: lit.fn @"__copyinit__
-# CHECK-SAME: (%copy: !lit.ref<!ValueReg, imm *"existing`"> read_mem,
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy: !lit.ref<!ValueReg, imm *"copy`"> read_mem,
 # CHECK-SAME : %self: !lit.ref<!ValueReg, mut *"self`"> byref_result)
 # CHECK-SAME: attributes {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT: [[SELFA:%.*]] = lit.ref.struct.ger %self[a]
@@ -375,7 +374,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
 # CHECK-NEXT: lit.ref.store [[TMP]], [[SELFA]]
 # CHECK-NEXT: [[SELFB:%.*]] = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: [[OTHERB:%.*]] = lit.ref.struct.ger %copy[b]
-# CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[OTHERB]])
+# CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}"{{.*}}([[OTHERB]]){{.*}}*, "copy"
 # CHECK-NEXT: lit.ref.store [[TMP]], [[SELFB]]
 
 # CHECK: lit.fn @"__init__(
@@ -414,15 +413,15 @@ struct ParamVarArg[*I: Int](TrivialRegisterPassable):
 @fieldwise_init
 struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable):
     var value: Self.T
-    # CHECK: lit.fn @"__moveinit__
-    # CHECK: call{{.*}}__moveinit__
-    # CHECK: lit.fn @"__copyinit__
-    # CHECK: call{{.*}}__copyinit__
+    # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %take:
+    # CHECK: lit.call{{.*}}__init__(take:$0$)">
+    # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
+    # CHECK: lit.call{{.*}}__init__(copy:$0)">
 
 
 # CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
-# CHECK: lit.fn @"__moveinit__{{.*}}synthetic
-# CHECK: lit.fn @"__copyinit__{{.*}}synthetic
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %take:{{.*}}synthetic
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}synthetic
 @fieldwise_init
 struct NotSynthetic(ImplicitlyCopyable):

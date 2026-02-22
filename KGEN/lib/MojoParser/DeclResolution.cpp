@@ -1120,8 +1120,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     // These are the trait methods that MOGG is interested in.
     for (auto [traitName, entryName] :
          SmallVector<std::pair<StringRef, StringRef>>{
-             {"ImplicitlyDestructible", "__del__"},
-             {"Movable", "__moveinit__"}}) {
+             {"ImplicitlyDestructible", "__del__"}, {"Movable", "__init__"}}) {
       auto traitDecl = shared.lookupBuiltinTrait(traitName, &decl, smloc);
       if (!traitDecl)
         continue;
@@ -1584,6 +1583,30 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(p);
 
+  // TODO(Mojo 26.3): Remove this.
+  // If the function is a legacy __copyinit__ or __moveinit__ method, hard
+  // rewrite it to the modern __init__ method.
+  if (baseName == "__copyinit__" && fnSignature.parsedArgs.size() == 1) {
+    if (fnSignature.parsedArgs[0].name.strref() != "copy") {
+      emitError(fnSignature.parsedArgs[0].loc,
+                "source argument of '__copyinit__' must be named 'copy'");
+      fnSignature.parsedArgs[0].isErroneous = true;
+    } else {
+      baseName = StringAttr::get(shared.getContext(), "__init__");
+      fnSignature.parsedArgs[0].kwArgHandling = KWArgHandling::kKeywordOnly;
+    }
+  }
+  if (baseName == "__moveinit__" && fnSignature.parsedArgs.size() == 1) {
+    if (fnSignature.parsedArgs[0].name.strref() != "take") {
+      emitError(fnSignature.parsedArgs[0].loc,
+                "take argument of '__moveinit__' must be named 'take'");
+      fnSignature.parsedArgs[0].isErroneous = true;
+    } else {
+      baseName = StringAttr::get(shared.getContext(), "__init__");
+      fnSignature.parsedArgs[0].kwArgHandling = KWArgHandling::kKeywordOnly;
+    }
+  }
+
   // Parse the constraints if present.
   if (failed(fnSignature.parseConstraintsIfPresent(p)))
     return failure();
@@ -2008,10 +2031,10 @@ LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
            "unknown synthetic function to synthesize");
     gen.populateExplicitCopy(decl);
     return success();
-  case SpecialFunctionKind::kMoveInit:
+  case SpecialFunctionKind::kMoveCtor:
     (void)gen.populateMoveCopy(decl, /*isMove*/ true);
     return success();
-  case SpecialFunctionKind::kCopyInit:
+  case SpecialFunctionKind::kCopyCtor:
     (void)gen.populateMoveCopy(decl, /*isMove*/ false);
     return success();
   }
@@ -3007,17 +3030,22 @@ lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
 /// Look up a special method impl for the specified `type` when there is exactly
 /// one implementation (not overloaded).  This returns the method if successful,
 /// and returns null if there is none.
-static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
-                                              StringRef name,
-                                              SpecialFunctionKind specialKind) {
-  LookupResult inits = structDecl.getShared().lookupAndResolveDecl(
-      name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
+static FnOp lookupSpecialInit(ASTDecl &structDecl,
+                              SpecialFunctionKind specialKind) {
+  auto &shared = structDecl.getShared();
+  LookupResult inits =
+      shared.lookupAndResolveDecl("__init__", structDecl.getLoc(), structDecl,
+                                  /*searchParentScopes=*/false);
 
   for (ASTDecl *candidate : inits.getIfSuccess()) {
     FnOp func = dyn_cast_or_null<FnOp>(candidate->getIfOperation());
-    if (func && func.getSpecialFunctionKind() == specialKind)
-      return func.getBoundSymbolRef(
-          structDecl.getShared().getEvaluationContext());
+    if (!func || failed(shared.getDeclResolver().resolveSignature(
+                     *candidate, candidate->getLoc())))
+      continue;
+
+    // Found it.
+    if (func.getSpecialFunctionKind() == specialKind)
+      return func;
   }
   return {};
 }
@@ -3317,24 +3345,28 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // implementations of the corresponding methods, add signatures for them.
   // These can all be synthesized without resolving the members.
   if (conformsToTrait("Movable")) {
-    if (!shared.typeHasMember(structDecl, "__moveinit__", structDecl.getLoc()))
-      StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
-    synthesizeTrivialFlagIfNeeded("__moveinit__");
-    if (auto moveInitAttr = lookupSpecialMethod(structDecl, "__moveinit__",
-                                                SpecialFunctionKind::kMoveInit))
-      structOp.setMoveInitAttr(moveInitAttr);
+    FnOp moveFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kMoveCtor);
+    if (!moveFn)
+      moveFn = StructEmitter(structDecl)
+                   .synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
+    if (moveFn) {
+      synthesizeTrivialFlagIfNeeded("__moveinit__");
+      structOp.setMoveInitAttr(moveFn.getBoundSymbolRef(
+          structDecl.getShared().getEvaluationContext()));
+    }
   }
   if (conformsToTrait("Copyable")) {
-    // TODO: this should synthesize a keyword only copy argument:
-    // __copyinit__(out self, *, copy=others)
-    if (!shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
-      StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
-    // NOTE: We don't need to synthesize copy() here, there should be a default
-    // implementation.
-    synthesizeTrivialFlagIfNeeded("__copyinit__");
-    if (auto copyInitAttr = lookupSpecialMethod(structDecl, "__copyinit__",
-                                                SpecialFunctionKind::kCopyInit))
-      structOp.setCopyInitAttr(copyInitAttr);
+    FnOp copyFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kCopyCtor);
+    if (!copyFn)
+      copyFn = StructEmitter(structDecl)
+                   .synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
+    if (copyFn) {
+      // NOTE: We don't need to synthesize copy() here, there should be a
+      // default implementation.
+      synthesizeTrivialFlagIfNeeded("__copyinit__");
+      structOp.setCopyInitAttr(copyFn.getBoundSymbolRef(
+          structDecl.getShared().getEvaluationContext()));
+    }
   }
 
   // If we synthesized a destructor but the fields are all trivial, just drop
@@ -3997,8 +4029,11 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
 
   // Signature resolve all corresponding overloads in the child trait decl.
   for (auto &childOverload : childFnDecls) {
+    auto childOverloadOp = childOverload->getIfOperation();
+    if (!childOverloadOp) // Other inits may not even be signature resolved.
+      continue;
     auto actualParentTraitRef = getFullyResolvedSymbolRef(
-        cast<TraitDeclOp>(childOverload->getIfOperation()->getParentOp()));
+        cast<TraitDeclOp>(childOverloadOp->getParentOp()));
 
     // Skip processing any inherited members to avoid cycles.
     if (actualParentTraitRef != getFullyResolvedSymbolRef(childTraitDeclOp))
@@ -4102,9 +4137,9 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
     if (trivialTagName == "__del__is_trivial")
       return SpecialFunctionKind::kDel;
     if (trivialTagName == "__moveinit__is_trivial")
-      return SpecialFunctionKind::kMoveInit;
+      return SpecialFunctionKind::kMoveCtor;
     if (trivialTagName == "__copyinit__is_trivial")
-      return SpecialFunctionKind::kCopyInit;
+      return SpecialFunctionKind::kCopyCtor;
 
     return SpecialFunctionKind::kNormal;
   };

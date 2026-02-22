@@ -2396,8 +2396,8 @@ static bool shouldNotifyListenerForCall(CallSyntax syntax) {
   case CallSyntax::kReversedOperator:
   case CallSyntax::kSubscript:
   case CallSyntax::kImplicitConvert:
-  case CallSyntax::kImplicitCopyInit:
-  case CallSyntax::kImplicitMoveInit:
+  case CallSyntax::kImplicitCopyCtor:
+  case CallSyntax::kImplicitMoveCtor:
   case CallSyntax::kDestructor:
   case CallSyntax::kTupleGetItem:
     return false;
@@ -2418,8 +2418,8 @@ void SharedState::notifyListenerOnCall(ArrayRef<ASTDecl *> decls,
   // Ignore synthetic calls to functions.
   if (syntax == CallSyntax::kMethodCallSynthetic ||
       syntax == CallSyntax::kImplicitConvert ||
-      syntax == CallSyntax::kImplicitCopyInit ||
-      syntax == CallSyntax::kImplicitMoveInit)
+      syntax == CallSyntax::kImplicitCopyCtor ||
+      syntax == CallSyntax::kImplicitMoveCtor)
     return;
 
   if (isListenerInterestedInLoc(parserListener, rParenLoc))

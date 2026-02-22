@@ -22,8 +22,8 @@ namespace M::KGEN::LIT {
 class ValueInfo {
 public:
   FnOp del;      // __del__
-  FnOp copyinit; // __copyinit__
-  FnOp moveinit; // __moveinit__
+  FnOp copyctor; // __init__(*, copy=)
+  FnOp movector; // __init__(*, move=)
   FnOp copy;     // copy
 
   static std::optional<ValueInfo> lookupExisting(ASTDecl &structDecl);
@@ -74,8 +74,7 @@ public:
   /// field dels as needed, and makes sure that anything that refers to this
   /// struct properly runs its destructor.
   FnOp synthesizeEmptyDtor();
-  /// Add an empty `__moveinit__` or `__copyinit__` stub for this struct, to be
-  /// filled in later.
+  /// Add an empty move/copy ctor stub for this struct, to be filled in later.
   FnOp synthesizeEmptyMoveOrCopyInit(bool isMove);
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.

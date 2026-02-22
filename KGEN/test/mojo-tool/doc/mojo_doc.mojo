@@ -785,7 +785,7 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
 # CHECK:     "signature": "__init__(out self)",
-# CHECK:  "signature": "__copyinit__(out self, copy: Self)",
+# CHECK:  "signature": "__init__(out self, *, copy: Self)",
 # CHECK:  "name": "__del__",
 
 # CHECK: "name": "__add__",

@@ -3109,6 +3109,13 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   auto fnOp = FnOp::create(builder, translateLocation(loc), emptyStr, emptyStr,
                            signatureType);
 
+  // Replace the base name of these legacy methods with __init__.  Signature
+  // processing will also rewrite them to __init__ as needed, but we need
+  // lookups for "__init__" to work even if they aren't signature resolved yet.
+  // FIXME(26.2): Remove this when we have migrated completely.
+  if (baseName == "__copyinit__" || baseName == "__moveinit__")
+    baseName = StringAttr::get(ctx, "__init__");
+
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need
   // to set it during signature resolution phase of the parser.

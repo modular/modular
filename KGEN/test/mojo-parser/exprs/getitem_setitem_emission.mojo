@@ -242,7 +242,7 @@ fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, var str: String) r
   # CHECK: lit.call {{.*}}__getitem__
   # CHECK: lit.call {{.*}}unsafe_ptr
   _ = rrio[].unsafe_ptr()
-  # CHECK-NOT: __copyinit__
+  # CHECK-NOT: __init__{{.*}}"copy"
   # CHECK: lit.call {{.*}}__setitem__
   rrio[] = str^
 
