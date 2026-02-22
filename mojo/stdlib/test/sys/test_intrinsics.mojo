@@ -19,7 +19,15 @@ from sys import (
     strided_load,
     strided_store,
 )
-from sys.intrinsics import assume, likely, unlikely
+from sys.intrinsics import (
+    PrefetchCache,
+    PrefetchLocality,
+    PrefetchOptions,
+    PrefetchRW,
+    assume,
+    likely,
+    unlikely,
+)
 
 from memory import memset_zero
 from testing import assert_equal
@@ -135,6 +143,36 @@ def test_likely_unlikely():
 
 def test_assume():
     assume(True)
+
+
+def test_prefetch_locality_str():
+    assert_equal(String(PrefetchLocality.NONE), "NONE")
+    assert_equal(String(PrefetchLocality.LOW), "LOW")
+    assert_equal(String(PrefetchLocality.MEDIUM), "MEDIUM")
+    assert_equal(String(PrefetchLocality.HIGH), "HIGH")
+
+
+def test_prefetch_rw_str():
+    assert_equal(String(PrefetchRW.READ), "READ")
+    assert_equal(String(PrefetchRW.WRITE), "WRITE")
+
+
+def test_prefetch_cache_str():
+    assert_equal(String(PrefetchCache.INSTRUCTION), "INSTRUCTION")
+    assert_equal(String(PrefetchCache.DATA), "DATA")
+
+
+def test_prefetch_options_str():
+    assert_equal(
+        String(PrefetchOptions()),
+        "PrefetchOptions(rw=READ, locality=HIGH, cache=DATA)",
+    )
+    assert_equal(
+        String(
+            PrefetchOptions().for_write().no_locality().to_instruction_cache()
+        ),
+        "PrefetchOptions(rw=WRITE, locality=NONE, cache=INSTRUCTION)",
+    )
 
 
 def main():
