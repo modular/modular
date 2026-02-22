@@ -24,7 +24,6 @@ public:
   FnOp del;      // __del__
   FnOp copyctor; // __init__(*, copy=)
   FnOp movector; // __init__(*, move=)
-  FnOp copy;     // copy
 
   static std::optional<ValueInfo> lookupExisting(ASTDecl &structDecl);
 
@@ -79,10 +78,6 @@ public:
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.
   LogicalResult populateMoveCopy(ASTDecl &fnDecl, bool isMove);
-
-  /// Add `copy()` method for this struct.
-  FnOp synthesizeEmptyExplicitCopy(ASTDecl &structDecl);
-  void populateExplicitCopy(ASTDecl &fnDecl);
 
   /// Populate a trait function with its default implementation. Returns
   /// failure() if the meta-type to trait conversion fails; in this case the
