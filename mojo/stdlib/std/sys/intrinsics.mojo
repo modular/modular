@@ -21,6 +21,7 @@ from sys import PrefetchLocality
 
 import math
 from collections.string.string_slice import _get_kgen_string
+from format._utils import FormatStruct
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
@@ -252,7 +253,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(Representable, Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchLocality(TrivialRegisterPassable, Writable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -289,13 +290,13 @@ struct PrefetchLocality(Representable, Stringable, TrivialRegisterPassable, Writ
             writer: The writer to write to.
         """
         if self.value == 0:
-            writer.write("NONE")
+            writer.write_string("NONE")
         elif self.value == 1:
-            writer.write("LOW")
+            writer.write_string("LOW")
         elif self.value == 2:
-            writer.write("MEDIUM")
+            writer.write_string("MEDIUM")
         else:
-            writer.write("HIGH")
+            writer.write_string("HIGH")
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -304,30 +305,10 @@ struct PrefetchLocality(Representable, Stringable, TrivialRegisterPassable, Writ
         Args:
             writer: The writer to write to.
         """
-        writer.write("PrefetchLocality.", self)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the representation of the prefetch locality.
-
-        Returns:
-            A string such as `"PrefetchLocality.HIGH"`.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of the prefetch locality.
-
-        Returns:
-            A string representation of the locality value.
-        """
-        return String.write(self)
+        FormatStruct(writer, "PrefetchLocality").fields(self)
 
 
-struct PrefetchRW(Representable, Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchRW(TrivialRegisterPassable, Writable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -367,9 +348,9 @@ struct PrefetchRW(Representable, Stringable, TrivialRegisterPassable, Writable):
             writer: The writer to write to.
         """
         if self.value == 0:
-            writer.write("READ")
+            writer.write_string("READ")
         else:
-            writer.write("WRITE")
+            writer.write_string("WRITE")
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -378,31 +359,11 @@ struct PrefetchRW(Representable, Stringable, TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write to.
         """
-        writer.write("PrefetchRW.", self)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the representation of the prefetch read-write option.
-
-        Returns:
-            A string such as `"PrefetchRW.READ"`.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of the prefetch read-write option.
-
-        Returns:
-            A string representation of the read-write value.
-        """
-        return String.write(self)
+        FormatStruct(writer, "PrefetchRW").fields(self)
 
 
 # LLVM prefetch cache type
-struct PrefetchCache(Representable, Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchCache(TrivialRegisterPassable, Writable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -430,9 +391,9 @@ struct PrefetchCache(Representable, Stringable, TrivialRegisterPassable, Writabl
             writer: The writer to write to.
         """
         if self.value == 0:
-            writer.write("INSTRUCTION")
+            writer.write_string("INSTRUCTION")
         else:
-            writer.write("DATA")
+            writer.write_string("DATA")
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -441,30 +402,10 @@ struct PrefetchCache(Representable, Stringable, TrivialRegisterPassable, Writabl
         Args:
             writer: The writer to write to.
         """
-        writer.write("PrefetchCache.", self)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the representation of the prefetch cache type.
-
-        Returns:
-            A string such as `"PrefetchCache.DATA"`.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of the prefetch cache type.
-
-        Returns:
-            A string representation of the cache type.
-        """
-        return String.write(self)
+        FormatStruct(writer, "PrefetchCache").fields(self)
 
 
-struct PrefetchOptions(Defaultable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchOptions(Defaultable, TrivialRegisterPassable, Writable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -597,15 +538,16 @@ struct PrefetchOptions(Defaultable, Representable, Stringable, TrivialRegisterPa
         Args:
             writer: The writer to write to.
         """
-        writer.write(
-            "PrefetchOptions(rw=",
-            self.rw,
-            ", locality=",
-            self.locality,
-            ", cache=",
-            self.cache,
-            ")",
-        )
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            self.rw.write_to(w)
+            w.write_string(", ")
+            self.locality.write_to(w)
+            w.write_string(", ")
+            self.cache.write_to(w)
+
+        FormatStruct(writer, "PrefetchOptions").fields[FieldsFn=fields]()
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -614,35 +556,16 @@ struct PrefetchOptions(Defaultable, Representable, Stringable, TrivialRegisterPa
         Args:
             writer: The writer to write to.
         """
-        writer.write(
-            "PrefetchOptions(rw=",
-            self.rw.__repr__(),
-            ", locality=",
-            self.locality.__repr__(),
-            ", cache=",
-            self.cache.__repr__(),
-            ")",
-        )
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the representation of the prefetch options.
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            self.rw.write_repr_to(w)
+            w.write_string(", ")
+            self.locality.write_repr_to(w)
+            w.write_string(", ")
+            self.cache.write_repr_to(w)
 
-        Returns:
-            A string such as `"PrefetchOptions(rw=PrefetchRW.READ, locality=PrefetchLocality.HIGH, cache=PrefetchCache.DATA)"`.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of the prefetch options.
-
-        Returns:
-            A string representation of the prefetch options.
-        """
-        return String.write(self)
+        FormatStruct(writer, "PrefetchOptions").fields[FieldsFn=fields]()
 
 
 @always_inline("nodebug")
