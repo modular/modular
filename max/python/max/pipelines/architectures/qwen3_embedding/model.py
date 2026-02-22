@@ -303,7 +303,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             # Extract hidden states
             hidden_states = outputs[0]
 
-            if self.pipeline_config.pool_embeddings:
+            if self.pipeline_config.model.pool_embeddings:
                 # Apply last token pooling
                 embeddings = last_token_pool(
                     hidden_states, input_row_offsets.tensor

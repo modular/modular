@@ -170,10 +170,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    pool_embeddings: bool = Field(
-        default=True, description="Whether to pool embedding outputs."
-    )
-
     use_experimental_kernels: str = Field(
         default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
         description=(
