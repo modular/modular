@@ -1065,11 +1065,11 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     traitName = "ImplicitlyDestructible";
     break;
   case SpecialFunctionKind::kCopyCtor:
-    baseName = "__copyinit__";
+    baseName = "__copy_ctor_";
     traitName = "Copyable";
     break;
   case SpecialFunctionKind::kMoveCtor:
-    baseName = "__moveinit__";
+    baseName = "__move_ctor_";
     traitName = "Movable";
     break;
   default:

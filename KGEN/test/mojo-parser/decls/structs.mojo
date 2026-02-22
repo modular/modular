@@ -107,7 +107,7 @@ fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
 struct IntPairNT(ImplicitlyCopyable):
     var x: Int
     var y: Int
-    comptime __copyinit__is_trivial = False
+    comptime __copy_ctor_is_trivial = False
 
 
 struct IntPairWrapperNT(ImplicitlyCopyable):
