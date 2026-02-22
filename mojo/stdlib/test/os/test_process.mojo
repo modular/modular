@@ -96,12 +96,14 @@ def test_processstatus_str():
 
 def test_processstatus_repr():
     assert_equal(
-        ProcessStatus(exit_code=0).__repr__(), "ProcessStatus(exit_code: 0)"
+        ProcessStatus(exit_code=0).__repr__(), "ProcessStatus(exit_code=0)"
     )
     assert_equal(
-        ProcessStatus(term_signal=15).__repr__(), "ProcessStatus(term_signal: 15)"
+        ProcessStatus(term_signal=15).__repr__(), "ProcessStatus(term_signal=15)"
     )
-    assert_equal(ProcessStatus.running().__repr__(), "ProcessStatus(running)")
+    assert_equal(
+        ProcessStatus.running().__repr__(), "ProcessStatus(running=True)"
+    )
 
 
 def main():
