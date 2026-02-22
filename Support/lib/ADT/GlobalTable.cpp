@@ -24,8 +24,7 @@ struct GlobalTable::LockFreeGlobalEntry {
   std::atomic<LockFreeGlobalEntry *> nextInOrder{nullptr};
   std::string name;
 
-  LockFreeGlobalEntry(llvm::StringRef nameRef, void *val,
-                      void (*destroyer)(void *))
+  LockFreeGlobalEntry(StringRef nameRef, void *val, void (*destroyer)(void *))
       : value(val), destroyFn(destroyer), name(nameRef.str()) {}
 
   void destroy() {
@@ -37,7 +36,7 @@ struct GlobalTable::LockFreeGlobalEntry {
   void *getValue() const { return value.load(std::memory_order_acquire); }
 }; // struct LockFreeGlobalEntry
 
-void *GlobalTable::getOrCreate(llvm::StringRef name, void *(*initFn)(),
+void *GlobalTable::getOrCreate(StringRef name, void *(*initFn)(),
                                void (*destroyFn)(void *)) {
   uint64_t hash = llvm::hash_value(name);
   size_t startIndex = hash & (kTableSize - 1);
@@ -159,8 +158,7 @@ void *GlobalTable::getFromOverflow(StringRef name) const {
   return (it != overflowTable.end()) ? it->second.value : nullptr;
 }
 
-void *GlobalTable::getOrCreateInOverflow(llvm::StringRef name,
-                                         void *(*initFn)(),
+void *GlobalTable::getOrCreateInOverflow(StringRef name, void *(*initFn)(),
                                          void (*destroyFn)(void *)) {
   std::lock_guard<std::mutex> lock(overflowMutex);
 
