@@ -9,8 +9,8 @@
 
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/MapVector.h"
-
 #include "llvm/Support/ErrorHandling.h"
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -44,7 +44,7 @@ struct OverflowGlobalEntry {
     if (destroyFn && value)
       destroyFn(value);
   }
-}; // struct OverflowGlobalEntry
+};
 
 /// GlobalTable is a generic typeless storage used by Mojo's CompilerRT
 /// interface to ffi._Globals.
@@ -56,9 +56,7 @@ struct GlobalTable {
   void *getOrCreate(llvm::StringRef name, void *(*initFn)(),
                     void (*destroyFn)(void *));
 
-  void
-
-  clear();
+  void clear();
 
 private:
   struct LockFreeGlobalEntry;
@@ -77,7 +75,7 @@ private:
   std::atomic<bool> hasOverflowEntries{false};
   mutable std::mutex overflowMutex;
   llvm::MapVector<std::string, OverflowGlobalEntry> overflowTable;
-}; // struct GlobalTable
+};
 
 } // namespace M
 
