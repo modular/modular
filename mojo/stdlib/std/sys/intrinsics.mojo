@@ -252,7 +252,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(TrivialRegisterPassable):
+struct PrefetchLocality(Stringable, TrivialRegisterPassable, Writable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -281,8 +281,33 @@ struct PrefetchLocality(TrivialRegisterPassable):
         """
         self.value = Int32(value)
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch locality to a writer.
 
-struct PrefetchRW(TrivialRegisterPassable):
+        Args:
+            writer: The writer to write to.
+        """
+        if self.value == 0:
+            writer.write("NONE")
+        elif self.value == 1:
+            writer.write("LOW")
+        elif self.value == 2:
+            writer.write("MEDIUM")
+        else:
+            writer.write("HIGH")
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the prefetch locality.
+
+        Returns:
+            A string representation of the locality value.
+        """
+        return String.write(self)
+
+
+struct PrefetchRW(Stringable, TrivialRegisterPassable, Writable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -314,9 +339,30 @@ struct PrefetchRW(TrivialRegisterPassable):
         """
         return self.value == other.value
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch read-write option to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        if self.value == 0:
+            writer.write("READ")
+        else:
+            writer.write("WRITE")
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the prefetch read-write option.
+
+        Returns:
+            A string representation of the read-write value.
+        """
+        return String.write(self)
+
 
 # LLVM prefetch cache type
-struct PrefetchCache(TrivialRegisterPassable):
+struct PrefetchCache(Stringable, TrivialRegisterPassable, Writable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -336,8 +382,29 @@ struct PrefetchCache(TrivialRegisterPassable):
         """
         self.value = Int32(value)
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch cache type to a writer.
 
-struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
+        Args:
+            writer: The writer to write to.
+        """
+        if self.value == 0:
+            writer.write("INSTRUCTION")
+        else:
+            writer.write("DATA")
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the prefetch cache type.
+
+        Returns:
+            A string representation of the cache type.
+        """
+        return String.write(self)
+
+
+struct PrefetchOptions(Defaultable, Stringable, TrivialRegisterPassable, Writable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -462,6 +529,32 @@ struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
         var updated = self
         updated.cache = PrefetchCache.INSTRUCTION
         return updated
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch options to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            "PrefetchOptions(rw=",
+            self.rw,
+            ", locality=",
+            self.locality,
+            ", cache=",
+            self.cache,
+            ")",
+        )
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the prefetch options.
+
+        Returns:
+            A string representation of the prefetch options.
+        """
+        return String.write(self)
 
 
 @always_inline("nodebug")
