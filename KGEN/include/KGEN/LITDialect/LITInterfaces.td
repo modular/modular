@@ -99,6 +99,15 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
     InterfaceMethod<[{
       Set the deprecation info attribute for this decl.
     }], "void", "setDeprecationInfoAttr", (ins "DeprecationInfoAttr":$deprecation)>,
+
+    InterfaceMethod<[{
+      Return the 'since' version string attribute if this decl has an
+      @stable(since="version") decorator, or nullptr if not specified.
+    }], "StringAttr", "getStableSinceVersionAttr", (ins)>,
+
+    InterfaceMethod<[{
+      Set the 'since' version string attribute for this decl.
+    }], "void", "setStableSinceVersionAttr", (ins "StringAttr":$version)>,
   ];
 
   let extraSharedClassDeclaration = [{
@@ -120,6 +129,13 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
       if (auto info = $_op.getDeprecationInfoAttr())
         return info.getReplacement();
       return nullptr;
+    }
+
+    /// Returns the 'since' version string, or empty string if not specified.
+    StringRef getSinceVersion() {
+      if (auto v = $_op.getStableSinceVersionAttr())
+        return v.getValue();
+      return {};
     }
   }];
 }

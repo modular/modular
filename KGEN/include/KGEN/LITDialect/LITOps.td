@@ -89,6 +89,8 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
+    // Present if the decl has an @stable(since="version") decorator.
+    OptionalAttr<StrAttr>:$stableSinceVersion,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
@@ -407,6 +409,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
+    // Present if the decl has an @stable(since="version") decorator.
+    OptionalAttr<StrAttr>:$stableSinceVersion,
     OptionalAttr<SourceNameAttr>:$sourceName,
     // Explicit minimum alignment specified via @align(N) decorator.
     OptionalAttr<AttrOfType<Index>>:$minAlignment,
@@ -688,6 +692,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
+    // Present if the decl has an @stable(since="version") decorator.
+    OptionalAttr<StrAttr>:$stableSinceVersion,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
@@ -892,7 +898,9 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     // decl is defaulted or not without body resolve it first.
     UnitAttr:$defaultedAssociatedAlias,
     // Present if the decl has an @stable decorator on it.
-    UnitAttr:$hasStableDecorator
+    UnitAttr:$hasStableDecorator,
+    // Present if the decl has an @stable(since="version") decorator.
+    OptionalAttr<StrAttr>:$stableSinceVersion
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
@@ -916,7 +924,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
               CArg<"TypedAttr", "{}">:$value), [{
       build($_builder, $_state, decl, value, /*docString=*/{},
             /*deprecationInfo=*/{},
-            /*inheritedFrom=*/{}, /*defaultedAssociatedAlias=*/false);
+            /*inheritedFrom=*/{}, /*defaultedAssociatedAlias=*/false,
+            /*hasStableDecorator=*/false, /*stableSinceVersion=*/{});
     }]>,
   ];
 

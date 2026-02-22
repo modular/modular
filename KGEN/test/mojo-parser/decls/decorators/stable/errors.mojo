@@ -4,16 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %parse-mojo-isolated -mojo-search-paths=%S %s 2>&1 | FileCheck %s
+# RUN: %parse-mojo-isolated -mojo-search-paths=%S -verify-diagnostics %s
 
 # Test error cases for @stable decorator.
-# Use CHECK-DAG since errors may be emitted in any order.
 #
 # Note: Tests for "@stable member in unstable struct/trait" are located in
 # test_std_mock/__init__.mojo since those errors only apply in opted-in packages.
 
-# Error: @stable with arguments is not yet supported.
-# CHECK-DAG: error: @stable decorator does not support arguments
+# Error: @stable with a positional (non-keyword) argument is not supported.
+# expected-error @+1 {{@stable only accepts the keyword argument 'since'}}
 @stable("since 1.0")
 struct StableWithArg:
     pass
@@ -21,7 +20,7 @@ struct StableWithArg:
 
 # Error: @stable on local variable is not supported.
 fn test_local_var():
-    # CHECK-DAG: error: 'var' statement in function body does not allow decorators
+    # expected-error @+2 {{'var' statement in function body does not allow decorators}}
     @stable
     var x = 1
 
@@ -29,6 +28,7 @@ fn test_local_var():
 # @stable on alias is now supported (as of escape hatches feature).
 # Verify it doesn't error - this alias will be verified in a separate test.
 @stable
+# expected-warning @+1 {{'alias' is deprecated, use 'comptime' instead}}
 alias MY_STABLE_ALIAS = 42
 
 
@@ -62,6 +62,6 @@ trait TraitInNonOptedInPackage:
 
 
 # Error: Decorators are not allowed on import statements.
-# CHECK-DAG: error: 'from' statement does not allow decorators
+# expected-error @+2 {{'from' statement does not allow decorators}}
 @stable
 from test_std_mock import *
