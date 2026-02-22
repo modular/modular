@@ -14,7 +14,7 @@
 from collections import List
 from os.path import exists
 from os import Process
-from os.process import Pipe
+from os.process import Pipe, ProcessStatus
 
 from testing import (
     assert_false,
@@ -81,9 +81,23 @@ def test_process_run_missing():
         _ = Process.run(missing_executable_file, List[String]())
 
 
+def test_processstatus_str():
+    assert_equal(
+        String(ProcessStatus(exit_code=0)), "ProcessStatus(exit_code: 0)"
+    )
+    assert_equal(
+        String(ProcessStatus(exit_code=1)), "ProcessStatus(exit_code: 1)"
+    )
+    assert_equal(
+        String(ProcessStatus(term_signal=15)), "ProcessStatus(term_signal: 15)"
+    )
+    assert_equal(String(ProcessStatus.running()), "ProcessStatus(running)")
+
+
 def main():
     test_process_run()
     test_process_run_missing()
     test_process_wait()
     test_process_kill()
     test_pipe()
+    test_processstatus_str()
