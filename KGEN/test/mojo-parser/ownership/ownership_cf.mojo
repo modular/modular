@@ -38,10 +38,10 @@ struct MemExample(ImplicitlyCopyable):
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.x = take.x
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.x = copy.x
 
     fn __bool__(self) -> Bool:
@@ -460,7 +460,7 @@ struct MyStringReturningCtx(Movable):
     fn __enter__(var self) -> Self:
         return self^
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.s = ""
 
     fn read(self) raises -> String:
@@ -670,7 +670,7 @@ fn loop_any_origin(var mem: MemExample, cond: Bool):
 
 # 4694: or/and handling of comparisons on PythonObject
 struct PyObjLike(RegisterPassable):
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
     fn __eq__(self, other: Self) raises -> Self:

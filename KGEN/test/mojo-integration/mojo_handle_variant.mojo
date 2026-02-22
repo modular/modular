@@ -20,7 +20,7 @@ struct S:
     fn __del__(deinit self):
         print("destroy", self.v)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.v = copy.v
 
 

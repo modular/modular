@@ -712,14 +712,6 @@ struct TestOwnedDeinitErrors:
   # expected-error @+1 {{expected ')' in argument list}}
   fn method(owned x): pass
 
-struct TestVarDeinitErrors:
-  # expected-error @+1 {{the 'self' argument should be declared 'deinit'}}
-  fn __del__(var self): pass
-
-  # expected-error @+1 {{the 'existing' argument should be declared 'deinit'}}
-  fn __moveinit__(out self, var take: String): pass
-
-
 # expected-note @+1 {{previous definition here}}
 struct WrongType(RegisterPassable):
   # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
@@ -733,11 +725,11 @@ struct WrongType(RegisterPassable):
   fn __copyinit__(out self, mut copy: Self): pass
 
   # TODO: Should err.
-  fn __copyinit__(out self, copy: Int): pass
+  fn __init__(out self, *, copy: Int): pass
 
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{'@register_passable' types may not have an explicit move constructor, they are always movable by copying a register}}
-  fn __moveinit__(out self, deinit take: Self): pass
+  fn __init__(out self, *, deinit take: Self): pass
 
 
 struct WrongSelfType[a: Int]:
@@ -746,7 +738,7 @@ struct WrongSelfType[a: Int]:
   fn goodMethod(mut self: WrongSelfType[Self.a]): pass
 
   # Issue #13358
-  fn __copyinit__(out self, copy: Self, moar: Int): pass
+  fn __init__(out self, *, copy: Self, moar: Int): pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
   fn __add__(self): pass
@@ -796,10 +788,10 @@ struct MoveInitTakeWrongName:
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
   # expected-error @+1 {{'@register_passable' types may not have an explicit move constructor, they are always movable by copying a register}}
-  fn __moveinit__(out self, deinit take: Self): pass
+  fn __init__(out self, *, deinit take: Self): pass
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{trivial types may not have an explicit copy constructor, they are always trivially copyable}}
-  fn __copyinit__(out self, copy: Self): pass
+  fn __init__(out self, *, copy: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   fn __del__(deinit self): pass
 
@@ -1065,7 +1057,7 @@ struct copy_init_def:
 
 struct copy_init_raises:
   # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
-  fn __copyinit__(out self, copy: Self) raises:
+  fn __init__(out self, *, copy: Self) raises:
      pass
 
 

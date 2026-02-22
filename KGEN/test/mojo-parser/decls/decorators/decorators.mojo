@@ -268,7 +268,7 @@ struct DecoratorOrder4(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 struct StructExample(ImplicitlyCopyable, RegisterPassable):
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
     fn __init__(out self):

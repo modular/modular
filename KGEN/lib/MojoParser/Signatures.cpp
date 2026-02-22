@@ -2347,15 +2347,6 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
 
   // Shared logic to diagnose the 'self' argument of __del__ and __moveinit__.
   auto diagnoseSelfForDelAndMoveInit = [&](const char *argName) {
-    // This 'if' implements migration logic to help convert from
-    // __del__(var self) -> __del__(deinit self).
-    // FIXME(Mojo 25.7): Allow 'var' after the world migrates to 'deinit'.
-    if (parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionVar) {
-      shared.emitError(parsedArgs[kSelfArgNo].loc, "the '")
-          << argName << "' argument should be declared 'deinit'";
-      parsedArgs[kSelfArgNo].convention = ParsedArgument::kConventionDeinit;
-    }
-
     // This method is going to consume the passed value.
     if (parsedArgs[kSelfArgNo].convention != ParsedArgument::kConventionVar &&
         parsedArgs[kSelfArgNo].convention !=

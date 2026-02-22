@@ -66,7 +66,7 @@ fn test_any_type_error[T: AnyType](var x: T):
 
 # @explicit_destroy
 # struct LinearCopyableStruct(LinearCopyable):
-#     fn __copyinit__(out self, copy: Self, /):
+#     fn __init__(out self, *, copy: Self):
 #         pass
 
 

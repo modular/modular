@@ -25,7 +25,7 @@ struct MemoryOnlyInt(ImplicitlyCopyable):
   fn __del__(deinit self): pass
 
   # CHECK-LABEL: lit.fn @"__init__{{.*}}*, %copy
-  fn __copyinit__(out self, copy: Self):
+  fn __init__(out self, *, copy: Self):
     self.x = copy.x
 
   @staticmethod
@@ -48,7 +48,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
 
   # CHECK: lit.fn @"__init__{{.*}}(*, %copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
-  fn __copyinit__(out self, copy: MemoryOnlyPair):
+  fn __init__(out self, *, copy: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[x]
     # CHECK-NEXT: %1 = lit.ref.struct.ger %copy[x]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}"{{.*}}(%1, %0){{.*}}*, "copy"
@@ -417,13 +417,13 @@ trait Boolable:
         ...
 
 struct Boolish(Boolable, ImplicitlyCopyable, RegisterPassable):
-  fn __copyinit__(out self, copy: Self): pass
+  fn __init__(out self, *, copy: Self): pass
   fn __bool__(self) -> Bool: return True
 
 struct MemBoolish(ImplicitlyCopyable):
   @implicit
   fn __init__(out self, value: Boolish): pass
-  fn __copyinit__(out self, copy: Self): pass
+  fn __init__(out self, *, copy: Self): pass
   fn __bool__(self) -> Bool: return True
 
 # CHECK-LABEL: @"unary
@@ -985,7 +985,7 @@ fn test_call_method():
     _ = value(2)
 
 struct MemoryType:
-  fn __copyinit__(out self, copy: Self):
+  fn __init__(out self, *, copy: Self):
     pass
 
 struct RegType(RegisterPassable): pass

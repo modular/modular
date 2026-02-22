@@ -393,7 +393,7 @@ fn unconditional_exit() raises:
 
 
 struct ExampleCMTuple(ImplicitlyCopyable):
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
     fn __enter__(self) -> Tuple[Int, Int]:

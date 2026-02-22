@@ -58,7 +58,7 @@ struct Bar(ImplicitlyCopyable, RegisterPassable):
     var x: Int
     var y: Int
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
 # expected-note @+1 {{function declared here}}

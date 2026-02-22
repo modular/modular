@@ -51,7 +51,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         self.regstate = 1
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.regstate = 12
 
     fn __del__(deinit self):
@@ -628,7 +628,7 @@ fn test_linear_type() raises:
 @fieldwise_init
 @explicit_destroy
 struct ImpCopyableLinear(ImplicitlyCopyable):
-    fn __copyinit__(out self, copy: Self): pass
+    fn __init__(out self, *, copy: Self): pass
     fn destroy(deinit self): pass
 
 fn test_imp_copyable_linear(var x: ImpCopyableLinear, var y: ImpCopyableLinear):

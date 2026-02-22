@@ -115,7 +115,7 @@ struct Error(Copyable):
     fn __del__(deinit self):
         pass
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
     # A method for testing.
@@ -651,10 +651,10 @@ struct String(ImplicitlyCopyable, KeyElement):
     fn __init__[T: Stringable](out self, value: T):
         self = value.__str__()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
-    fn __moveinit__(out self, deinit take: String):
+    fn __init__(out self, *, deinit take: String):
         pass
 
     fn __del__(deinit self):
@@ -839,7 +839,7 @@ fn materialize[T: AnyType, //, value: T](out result: T):
 
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
-    fn __moveinit__(out self, deinit take: Self, /):
+    fn __init__(out self, *, deinit take: Self):
         ...
 
 
@@ -1031,7 +1031,7 @@ struct __ParameterClosureCaptureList[
         self.value = __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.value = __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
             copy.value
         )
@@ -1142,10 +1142,10 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __init__(out self, *args: * Self.element_types):
         pass
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         pass
 
     fn __getitem__[i: Int](ref self) -> ref[self] Self.element_types[i]:

@@ -135,7 +135,7 @@ struct CheckImplicit:
 
     # expected-error @+1 {{'@implicit' may only be applied to '__init__' methods}}
     @implicit
-    fn __copyinit__(out self, copy: Self): pass
+    fn __init__(out self, *, copy: Self): pass
 
     # expected-error @+1 {{'@implicit' may not have more than 1 operand, got 2}}
     @implicit(123, "abc")

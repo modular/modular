@@ -12,7 +12,7 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.start = copy.start
         self.end = copy.end
         self.list = copy.list
