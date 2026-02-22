@@ -9,15 +9,15 @@
 
 # MOCO-2327
 struct Foo(TrivialRegisterPassable):
-    # CHECK: lit.fn @"__init__(::Int)"
+    # CHECK: lit.fn @"__init__(a:::Int)"
     fn __init__(out self, *, a: Int):
         pass
 
-    # CHECK: lit.fn @"__init__(::Int)_0"
+    # CHECK: lit.fn @"__init__(b:::Int)"
     fn __init__(out self, *, b: Int):
         pass
 
 
 def main():
-    # CHECK: lit.alias.decl *"{{.*}}": !Foo = <apply(:!lit.generator<(*, "b": !Int) -> !Foo> @decl_name_collision::@Foo::@"__init__(::Int)_0", {42})>
+    # CHECK: lit.alias.decl *"{{.*}}": !Foo = <apply(:!lit.generator<(*, "b": !Int) -> !Foo> @decl_name_collision::@Foo::@"__init__(b:::Int)", {42})>
     comptime _foo = Foo(b=42)

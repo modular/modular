@@ -509,7 +509,7 @@ struct OverloadedKwArgs:
         return self.vals[idx]
 
     # expected-error @below {{redefinition of function '__getitem__' cannot overload on return type only}}
-    fn __getitem__(self, *, idx: Int) -> Bool:
+    fn __getitem__(self, idx: Int) -> Bool:
         return self.vals[idx] > 0
 
 # Test that static methods don't get dispatched if their first arg is self type.

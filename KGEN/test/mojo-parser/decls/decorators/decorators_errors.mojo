@@ -143,7 +143,7 @@ struct CheckImplicit:
 
     # expected-error @+1 {{'@implicit' may only have a keyword argument 'deprecated' with literal boolean value}}
     @implicit(123)
-    fn __init__(out self, a: Int): pass
+    fn __init__(out self, *, a: Int): pass
 
     # expected-error @+1 {{'@implicit' may only have a keyword argument 'deprecated' with literal boolean value}}
     @implicit(deprecated=123)
