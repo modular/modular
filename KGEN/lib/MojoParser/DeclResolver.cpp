@@ -1420,6 +1420,10 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     if (argNo != 0)
       mangledName += ",";
 
+    // Required keyword arguments can be overloaded on.
+    if (fullSig.getArgListAttrs().getPassingKind(argNo) == PassingKind::KwOnly)
+      mangledName += fullSig.getArgName(argNo).str() + ":";
+
     // If this had adjustments added to it because of its argument convention /
     // variadic state, strip them off.
     unsigned numStars = 0;
