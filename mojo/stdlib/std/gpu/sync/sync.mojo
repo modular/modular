@@ -142,7 +142,7 @@ fn barrier():
 
 
 @fieldwise_init
-struct AMDScheduleBarrierMask(Equatable, Intable, Stringable, TrivialRegisterPassable, Writable):
+struct AMDScheduleBarrierMask(Equatable, Intable, Representable, Stringable, TrivialRegisterPassable, Writable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -253,6 +253,24 @@ struct AMDScheduleBarrierMask(Equatable, Intable, Stringable, TrivialRegisterPas
             writer.write("TRANS")
         else:
             abort("invalid AMDScheduleBarrierMask value")
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the `AMDScheduleBarrierMask` to a writer.
+
+        Args:
+            writer: The writer to output the mask to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the debug representation of the `AMDScheduleBarrierMask`.
+
+        Returns:
+            A string representation of the mask.
+        """
+        return String(self)
 
     fn __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.

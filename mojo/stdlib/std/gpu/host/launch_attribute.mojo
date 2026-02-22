@@ -35,7 +35,7 @@ from utils import StaticTuple
 
 
 @fieldwise_init
-struct LaunchAttributeID(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct LaunchAttributeID(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -201,6 +201,24 @@ struct LaunchAttributeID(Equatable, Stringable, TrivialRegisterPassable, Writabl
         """
         return writer.write(self._value)
 
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the attribute to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the debug representation of the `LaunchAttributeID`.
+
+        Returns:
+            A string representation of the attribute.
+        """
+        return String(self)
+
 
 @fieldwise_init
 struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
@@ -257,7 +275,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct AccessProperty(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct AccessProperty(Equatable, Representable, Stringable, TrivialRegisterPassable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -325,6 +343,24 @@ struct AccessProperty(Equatable, Stringable, TrivialRegisterPassable, Writable):
             return writer.write("STREAMING")
         return writer.write("PERSISTING")
 
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the `AccessProperty` to a writer.
+
+        Args:
+            writer: The writer instance to write the formatted string to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the debug representation of the `AccessProperty`.
+
+        Returns:
+            A string representation of the `AccessProperty`.
+        """
+        return String(self)
+
 
 @fieldwise_init
 struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
@@ -391,7 +427,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         return res
 
 
-struct AccessPolicyWindow(Defaultable, Stringable, TrivialRegisterPassable, Writable):
+struct AccessPolicyWindow(Defaultable, Representable, Stringable, TrivialRegisterPassable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
@@ -498,3 +534,21 @@ struct AccessPolicyWindow(Defaultable, Stringable, TrivialRegisterPassable, Writ
             ", miss_prop: ",
             self.miss_prop,
         )
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the `AccessPolicyWindow` to a writer.
+
+        Args:
+            writer: The writer instance to write the formatted string to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the debug representation of the `AccessPolicyWindow`.
+
+        Returns:
+            A string representation of the `AccessPolicyWindow`.
+        """
+        return String(self)
