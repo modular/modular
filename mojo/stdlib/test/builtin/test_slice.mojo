@@ -93,9 +93,16 @@ struct StridedSliceStringable:
 
 def test_strided_slice_stringable():
     var s = StridedSliceStringable()
+    # Positive stride
     assert_equal(s[1:10:2], "slice(1, 10, 2)")
-    assert_equal(s[::3], "slice(None, None, 3)")
+    assert_equal(s[0:5:1], "slice(0, 5, 1)")
+    # Negative stride
     assert_equal(s[2::-1], "slice(2, None, -1)")
+    assert_equal(s[1:-1:2], "slice(1, -1, 2)")
+    # None start or end
+    assert_equal(s[::3], "slice(None, None, 3)")
+    assert_equal(s[:5:2], "slice(None, 5, 2)")
+    assert_equal(s[1::2], "slice(1, None, 2)")
 
 
 struct ContiguousSliceStringable:
@@ -108,9 +115,15 @@ struct ContiguousSliceStringable:
 
 def test_contiguous_slice_stringable():
     var s = ContiguousSliceStringable()
+    # Both bounds present
+    assert_equal(s[1:5], "slice(1, 5, None)")
     assert_equal(s[0:10], "slice(0, 10, None)")
+    # Only end
+    assert_equal(s[:3], "slice(None, 3, None)")
     assert_equal(s[:5], "slice(None, 5, None)")
+    # Only start
     assert_equal(s[3:], "slice(3, None, None)")
+    # Neither
     assert_equal(s[:], "slice(None, None, None)")
 
 
@@ -124,10 +137,16 @@ struct StridedSliceRepresentable:
 
 def test_strided_slice_representable():
     var s = StridedSliceRepresentable()
+    # Verify exact repr output
     assert_equal(s[1:10:2], "slice(1, 10, 2)")
+    assert_equal(s[2::-1], "slice(2, None, -1)")
+    assert_equal(s[1:-1:2], "slice(1, -1, 2)")
     assert_equal(s[::3], "slice(None, None, 3)")
     # repr == str for StridedSlice
-    assert_equal(s[2::-1], String(StridedSlice(2, None, -1)))
+    assert_equal(repr(StridedSlice(1, 10, 2)), String(StridedSlice(1, 10, 2)))
+    assert_equal(
+        repr(StridedSlice(None, None, 3)), String(StridedSlice(None, None, 3))
+    )
 
 
 struct ContiguousSliceRepresentable:
@@ -140,10 +159,20 @@ struct ContiguousSliceRepresentable:
 
 def test_contiguous_slice_representable():
     var s = ContiguousSliceRepresentable()
+    # Verify exact repr output
+    assert_equal(s[1:5], "slice(1, 5, None)")
     assert_equal(s[0:10], "slice(0, 10, None)")
-    assert_equal(s[:5], "slice(None, 5, None)")
+    assert_equal(s[:3], "slice(None, 3, None)")
+    assert_equal(s[3:], "slice(3, None, None)")
+    assert_equal(s[:], "slice(None, None, None)")
     # repr == str for ContiguousSlice
-    assert_equal(s[3:], String(ContiguousSlice(3, None, None)))
+    assert_equal(
+        repr(ContiguousSlice(1, 5, None)), String(ContiguousSlice(1, 5, None))
+    )
+    assert_equal(
+        repr(ContiguousSlice(None, 3, None)),
+        String(ContiguousSlice(None, 3, None)),
+    )
 
 
 def test_slice_eq():
