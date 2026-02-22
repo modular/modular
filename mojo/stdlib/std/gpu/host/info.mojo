@@ -733,7 +733,7 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Vendor(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct Vendor(Equatable, TrivialRegisterPassable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -821,16 +821,6 @@ struct Vendor(Equatable, Representable, TrivialRegisterPassable, Writable):
         """
         FormatStruct(writer, "Vendor").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the vendor.
-
-        Returns:
-            A string representation of the form ``Vendor(vendor_name)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
 
 # ===-----------------------------------------------------------------------===#

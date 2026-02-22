@@ -36,7 +36,7 @@ from utils import StaticTuple
 
 
 @fieldwise_init
-struct LaunchAttributeID(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -211,16 +211,6 @@ struct LaunchAttributeID(Equatable, Representable, TrivialRegisterPassable, Writ
         """
         FormatStruct(writer, "LaunchAttributeID").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the `LaunchAttributeID`.
-
-        Returns:
-            A string representation of the form ``LaunchAttributeID(value)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
 
 @fieldwise_init
@@ -278,7 +268,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct AccessProperty(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -355,16 +345,6 @@ struct AccessProperty(Equatable, Representable, TrivialRegisterPassable, Writabl
         """
         FormatStruct(writer, "AccessProperty").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the `AccessProperty`.
-
-        Returns:
-            A string representation of the form ``AccessProperty(value)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
 
 @fieldwise_init

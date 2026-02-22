@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Writable and Representable implementations on GPU types."""
+"""Tests for Writable implementations on GPU types."""
 
 from gpu.memory import CacheEviction, CacheOperation, Consistency, Fill, ReduceOp
 from gpu.host.info import Vendor
@@ -25,8 +25,7 @@ from testing import assert_equal, TestSuite
 # ===----------------------------------------------------------------------=== #
 
 
-fn _test_repr[T: Representable & Writable](value: T, expected: String) raises:
-    assert_equal(value.__repr__(), expected)
+fn _test_write_repr_to[T: Writable](value: T, expected: String) raises:
     var string = String()
     value.write_repr_to(string)
     assert_equal(string, expected)
@@ -48,11 +47,11 @@ def test_cache_operation_write_to():
     assert_equal(String.write(CacheOperation.WORKGROUP), "wg")
 
 
-def test_cache_operation_repr():
-    _test_repr(CacheOperation.ALWAYS, "CacheOperation(ca)")
-    _test_repr(CacheOperation.GLOBAL, "CacheOperation(cg)")
-    _test_repr(CacheOperation.STREAMING, "CacheOperation(cs)")
-    _test_repr(CacheOperation.WRITE_BACK, "CacheOperation(wb)")
+def test_cache_operation_write_repr_to():
+    _test_write_repr_to(CacheOperation.ALWAYS, "CacheOperation(ca)")
+    _test_write_repr_to(CacheOperation.GLOBAL, "CacheOperation(cg)")
+    _test_write_repr_to(CacheOperation.STREAMING, "CacheOperation(cs)")
+    _test_write_repr_to(CacheOperation.WRITE_BACK, "CacheOperation(wb)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -68,10 +67,10 @@ def test_cache_eviction_write_to():
     assert_equal(String.write(CacheEviction.NO_ALLOCATE), "no_allocate")
 
 
-def test_cache_eviction_repr():
-    _test_repr(CacheEviction.EVICT_NORMAL, "CacheEviction(evict_normal)")
-    _test_repr(CacheEviction.EVICT_FIRST, "CacheEviction(evict_first)")
-    _test_repr(CacheEviction.NO_ALLOCATE, "CacheEviction(no_allocate)")
+def test_cache_eviction_write_repr_to():
+    _test_write_repr_to(CacheEviction.EVICT_NORMAL, "CacheEviction(evict_normal)")
+    _test_write_repr_to(CacheEviction.EVICT_FIRST, "CacheEviction(evict_first)")
+    _test_write_repr_to(CacheEviction.NO_ALLOCATE, "CacheEviction(no_allocate)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -85,10 +84,10 @@ def test_fill_str():
     assert_equal(Fill.NAN.__str__(), "nan")
 
 
-def test_fill_repr():
-    _test_repr(Fill.NONE, "Fill(none)")
-    _test_repr(Fill.ZERO, "Fill(zero)")
-    _test_repr(Fill.NAN, "Fill(nan)")
+def test_fill_write_repr_to():
+    _test_write_repr_to(Fill.NONE, "Fill(none)")
+    _test_write_repr_to(Fill.ZERO, "Fill(zero)")
+    _test_write_repr_to(Fill.NAN, "Fill(nan)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -103,11 +102,11 @@ def test_consistency_str():
     assert_equal(Consistency.RELEASE.__str__(), "release")
 
 
-def test_consistency_repr():
-    _test_repr(Consistency.WEAK, "Consistency(weak)")
-    _test_repr(Consistency.RELAXED, "Consistency(relaxed)")
-    _test_repr(Consistency.ACQUIRE, "Consistency(acquire)")
-    _test_repr(Consistency.RELEASE, "Consistency(release)")
+def test_consistency_write_repr_to():
+    _test_write_repr_to(Consistency.WEAK, "Consistency(weak)")
+    _test_write_repr_to(Consistency.RELAXED, "Consistency(relaxed)")
+    _test_write_repr_to(Consistency.ACQUIRE, "Consistency(acquire)")
+    _test_write_repr_to(Consistency.RELEASE, "Consistency(release)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -124,10 +123,10 @@ def test_reduce_op_str():
     assert_equal(ReduceOp.XOR.__str__(), "xor")
 
 
-def test_reduce_op_repr():
-    _test_repr(ReduceOp.ADD, "ReduceOp(add)")
-    _test_repr(ReduceOp.MIN, "ReduceOp(min)")
-    _test_repr(ReduceOp.XOR, "ReduceOp(xor)")
+def test_reduce_op_write_repr_to():
+    _test_write_repr_to(ReduceOp.ADD, "ReduceOp(add)")
+    _test_write_repr_to(ReduceOp.MIN, "ReduceOp(min)")
+    _test_write_repr_to(ReduceOp.XOR, "ReduceOp(xor)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -142,11 +141,11 @@ def test_vendor_str():
     assert_equal(Vendor.APPLE_GPU.__str__(), "apple_gpu")
 
 
-def test_vendor_repr():
-    _test_repr(Vendor.NO_GPU, "Vendor(no_gpu)")
-    _test_repr(Vendor.AMD_GPU, "Vendor(amd_gpu)")
-    _test_repr(Vendor.NVIDIA_GPU, "Vendor(nvidia_gpu)")
-    _test_repr(Vendor.APPLE_GPU, "Vendor(apple_gpu)")
+def test_vendor_write_repr_to():
+    _test_write_repr_to(Vendor.NO_GPU, "Vendor(no_gpu)")
+    _test_write_repr_to(Vendor.AMD_GPU, "Vendor(amd_gpu)")
+    _test_write_repr_to(Vendor.NVIDIA_GPU, "Vendor(nvidia_gpu)")
+    _test_write_repr_to(Vendor.APPLE_GPU, "Vendor(apple_gpu)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -161,10 +160,10 @@ def test_launch_attribute_id_str():
     assert_equal(LaunchAttributeID.PRIORITY.__str__(), "8")
 
 
-def test_launch_attribute_id_repr():
-    _test_repr(LaunchAttributeID.IGNORE, "LaunchAttributeID(0)")
-    _test_repr(LaunchAttributeID.ACCESS_POLICY_WINDOW, "LaunchAttributeID(1)")
-    _test_repr(LaunchAttributeID.COOPERATIVE, "LaunchAttributeID(2)")
+def test_launch_attribute_id_write_repr_to():
+    _test_write_repr_to(LaunchAttributeID.IGNORE, "LaunchAttributeID(0)")
+    _test_write_repr_to(LaunchAttributeID.ACCESS_POLICY_WINDOW, "LaunchAttributeID(1)")
+    _test_write_repr_to(LaunchAttributeID.COOPERATIVE, "LaunchAttributeID(2)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -178,10 +177,10 @@ def test_access_property_str():
     assert_equal(AccessProperty.PERSISTING.__str__(), "PERSISTING")
 
 
-def test_access_property_repr():
-    _test_repr(AccessProperty.NORMAL, "AccessProperty(NORMAL)")
-    _test_repr(AccessProperty.STREAMING, "AccessProperty(STREAMING)")
-    _test_repr(AccessProperty.PERSISTING, "AccessProperty(PERSISTING)")
+def test_access_property_write_repr_to():
+    _test_write_repr_to(AccessProperty.NORMAL, "AccessProperty(NORMAL)")
+    _test_write_repr_to(AccessProperty.STREAMING, "AccessProperty(STREAMING)")
+    _test_write_repr_to(AccessProperty.PERSISTING, "AccessProperty(PERSISTING)")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -204,11 +203,11 @@ def test_amd_schedule_barrier_mask_str():
     assert_equal(AMDScheduleBarrierMask.TRANS.__str__(), "TRANS")
 
 
-def test_amd_schedule_barrier_mask_repr():
-    _test_repr(AMDScheduleBarrierMask.NONE, "AMDScheduleBarrierMask(NONE)")
-    _test_repr(AMDScheduleBarrierMask.ALL_ALU, "AMDScheduleBarrierMask(ALL_ALU)")
-    _test_repr(AMDScheduleBarrierMask.MFMA, "AMDScheduleBarrierMask(MFMA)")
-    _test_repr(AMDScheduleBarrierMask.TRANS, "AMDScheduleBarrierMask(TRANS)")
+def test_amd_schedule_barrier_mask_write_repr_to():
+    _test_write_repr_to(AMDScheduleBarrierMask.NONE, "AMDScheduleBarrierMask(NONE)")
+    _test_write_repr_to(AMDScheduleBarrierMask.ALL_ALU, "AMDScheduleBarrierMask(ALL_ALU)")
+    _test_write_repr_to(AMDScheduleBarrierMask.MFMA, "AMDScheduleBarrierMask(MFMA)")
+    _test_write_repr_to(AMDScheduleBarrierMask.TRANS, "AMDScheduleBarrierMask(TRANS)")
 
 
 # ===----------------------------------------------------------------------=== #

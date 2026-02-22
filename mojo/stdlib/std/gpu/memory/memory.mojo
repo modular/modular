@@ -72,7 +72,7 @@ from ..intrinsics import Scope
 
 
 @fieldwise_init
-struct CacheOperation(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct CacheOperation(Equatable, TrivialRegisterPassable, Writable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -206,16 +206,6 @@ struct CacheOperation(Equatable, Representable, TrivialRegisterPassable, Writabl
         """
         FormatStruct(writer, "CacheOperation").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the cache operation.
-
-        Returns:
-            A string representation of the form ``CacheOperation(mnemonic)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -224,7 +214,7 @@ struct CacheOperation(Equatable, Representable, TrivialRegisterPassable, Writabl
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct CacheEviction(Equatable, TrivialRegisterPassable, Writable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -332,16 +322,6 @@ struct CacheEviction(Equatable, Representable, TrivialRegisterPassable, Writable
         """
         FormatStruct(writer, "CacheEviction").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the cache eviction policy.
-
-        Returns:
-            A string representation of the form ``CacheEviction(mnemonic)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -350,7 +330,7 @@ struct CacheEviction(Equatable, Representable, TrivialRegisterPassable, Writable
 
 
 @fieldwise_init
-struct Fill(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct Fill(Equatable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -423,16 +403,6 @@ struct Fill(Equatable, Representable, TrivialRegisterPassable, Writable):
         """
         FormatStruct(writer, "Fill").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the fill pattern.
-
-        Returns:
-            A string representation of the form ``Fill(pattern)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -441,7 +411,7 @@ struct Fill(Equatable, Representable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct Consistency(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct Consistency(Equatable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -512,17 +482,6 @@ struct Consistency(Equatable, Representable, TrivialRegisterPassable, Writable):
         """
         FormatStruct(writer, "Consistency").fields(self)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the consistency level.
-
-        Returns:
-            A string representation of the form ``Consistency(level)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
-
     @always_inline
     fn mnemonic(self) -> StaticString:
         """Returns the mnemonic string for the consistency level.
@@ -548,7 +507,7 @@ struct Consistency(Equatable, Representable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, Representable, TrivialRegisterPassable, Writable):
+struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -636,17 +595,6 @@ struct ReduceOp(Equatable, Representable, TrivialRegisterPassable, Writable):
             writer: The writer to output the reduction operation to.
         """
         FormatStruct(writer, "ReduceOp").fields(self)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the reduction operation.
-
-        Returns:
-            A string representation of the form ``ReduceOp(mnemonic)``.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
     @always_inline
     fn mnemonic(self) -> StaticString:
