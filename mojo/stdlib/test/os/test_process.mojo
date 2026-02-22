@@ -82,11 +82,21 @@ def test_process_run_missing():
 
 
 def test_processstatus_str():
+    # Common exit codes.
     assert_equal(
         String(ProcessStatus(exit_code=0)), "ProcessStatus(exit_code: 0)"
     )
     assert_equal(
         String(ProcessStatus(exit_code=1)), "ProcessStatus(exit_code: 1)"
+    )
+    assert_equal(
+        String(ProcessStatus(exit_code=127)), "ProcessStatus(exit_code: 127)"
+    )
+    assert_equal(
+        String(ProcessStatus(exit_code=128)), "ProcessStatus(exit_code: 128)"
+    )
+    assert_equal(
+        String(ProcessStatus(exit_code=255)), "ProcessStatus(exit_code: 255)"
     )
     assert_equal(
         String(ProcessStatus(term_signal=15)), "ProcessStatus(term_signal: 15)"
@@ -95,14 +105,23 @@ def test_processstatus_str():
 
 
 def test_processstatus_repr():
+    # exit_code cases.
+    assert_equal(repr(ProcessStatus(exit_code=0)), "ProcessStatus(exit_code=0)")
+    assert_equal(repr(ProcessStatus(exit_code=1)), "ProcessStatus(exit_code=1)")
+    # Common signals: SIGHUP=1, SIGKILL=9, SIGTERM=15.
     assert_equal(
-        ProcessStatus(exit_code=0).__repr__(), "ProcessStatus(exit_code=0)"
+        repr(ProcessStatus(term_signal=1)), "ProcessStatus(term_signal=1)"
     )
     assert_equal(
-        ProcessStatus(term_signal=15).__repr__(), "ProcessStatus(term_signal=15)"
+        repr(ProcessStatus(term_signal=9)), "ProcessStatus(term_signal=9)"
     )
     assert_equal(
-        ProcessStatus.running().__repr__(), "ProcessStatus(running=True)"
+        repr(ProcessStatus(term_signal=15)), "ProcessStatus(term_signal=15)"
+    )
+    assert_equal(repr(ProcessStatus.running()), "ProcessStatus(running=True)")
+    # str uses ': ' format, repr uses '=' format — they must differ.
+    assert_true(
+        String(ProcessStatus(exit_code=0)) != repr(ProcessStatus(exit_code=0))
     )
 
 
