@@ -252,7 +252,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchLocality(Representable, Stringable, TrivialRegisterPassable, Writable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -298,6 +298,24 @@ struct PrefetchLocality(Stringable, TrivialRegisterPassable, Writable):
             writer.write("HIGH")
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch locality to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the representation of the prefetch locality.
+
+        Returns:
+            A string representation of the locality value.
+        """
+        return String(self)
+
+    @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the prefetch locality.
 
@@ -307,7 +325,7 @@ struct PrefetchLocality(Stringable, TrivialRegisterPassable, Writable):
         return String.write(self)
 
 
-struct PrefetchRW(Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchRW(Representable, Stringable, TrivialRegisterPassable, Writable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -352,6 +370,24 @@ struct PrefetchRW(Stringable, TrivialRegisterPassable, Writable):
             writer.write("WRITE")
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch read-write option to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the representation of the prefetch read-write option.
+
+        Returns:
+            A string representation of the read-write value.
+        """
+        return String(self)
+
+    @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the prefetch read-write option.
 
@@ -362,7 +398,7 @@ struct PrefetchRW(Stringable, TrivialRegisterPassable, Writable):
 
 
 # LLVM prefetch cache type
-struct PrefetchCache(Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchCache(Representable, Stringable, TrivialRegisterPassable, Writable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -395,6 +431,24 @@ struct PrefetchCache(Stringable, TrivialRegisterPassable, Writable):
             writer.write("DATA")
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch cache type to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the representation of the prefetch cache type.
+
+        Returns:
+            A string representation of the cache type.
+        """
+        return String(self)
+
+    @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the prefetch cache type.
 
@@ -404,7 +458,7 @@ struct PrefetchCache(Stringable, TrivialRegisterPassable, Writable):
         return String.write(self)
 
 
-struct PrefetchOptions(Defaultable, Stringable, TrivialRegisterPassable, Writable):
+struct PrefetchOptions(Defaultable, Representable, Stringable, TrivialRegisterPassable, Writable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -546,6 +600,24 @@ struct PrefetchOptions(Defaultable, Stringable, TrivialRegisterPassable, Writabl
             self.cache,
             ")",
         )
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch options to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the representation of the prefetch options.
+
+        Returns:
+            A string representation of the prefetch options.
+        """
+        return String(self)
 
     @no_inline
     fn __str__(self) -> String:
