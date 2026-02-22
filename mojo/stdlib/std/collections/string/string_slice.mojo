@@ -1140,15 +1140,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    fn __reversed__(self) -> CodepointSliceIter[Self.origin, False]:
-        """Iterate backwards over the string, returning immutable references.
-
-        Returns:
-            A reversed iterator of references to the string elements.
-        """
-        return self.codepoint_slices_reversed()
-
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 

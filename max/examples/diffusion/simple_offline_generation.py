@@ -150,6 +150,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Profile timings of the pipeline.",
     )
+    parser.add_argument(
+        "--num-warmups",
+        type=int,
+        default=3,
+        help="Number of warmups to run before profiling.",
+    )
+    parser.add_argument(
+        "--num-profile-iterations",
+        type=int,
+        default=3,
+        help="Number of iterations to run for profiling.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -376,13 +388,47 @@ async def generate_image(args: argparse.Namespace) -> None:
         batch={context.request_id: context}
     )
 
+    # Step 6-1: Prepare warmup input
+    if args.profile_timings:
+        body_warmup = OpenResponsesRequestBody(
+            model=args.model,
+            input="warmup",
+            seed=args.seed,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    negative_prompt=args.negative_prompt,
+                    height=args.height,
+                    width=args.width,
+                    steps=args.num_inference_steps,
+                    guidance_scale=args.guidance_scale,
+                )
+            ),
+        )
+        request_warmup = OpenResponsesRequest(
+            request_id=RequestID(), body=body_warmup
+        )
+        input_image = Image.open(args.input_image) if args.input_image else None
+        context_warmup = await tokenizer.new_context(
+            request_warmup, input_image=input_image
+        )
+        inputs_warmup = PixelGenerationInputs[PixelContext](
+            batch={context_warmup.request_id: context_warmup}
+        )
+
     # Step 7: Execute the pipeline
     print("Running diffusion model...")
     if args.profile_timings:
+        for i in range(args.num_warmups):
+            print(f"Running warmup {i + 1} of {args.num_warmups}")
+            pipeline.execute(inputs_warmup)
         with profile_execute(
             pipeline, patch_concat=True, patch_tensor_ops=True
         ) as prof:
-            outputs = pipeline.execute(inputs)
+            for i in range(args.num_profile_iterations):
+                print(
+                    f"Running inference {i + 1} of {args.num_profile_iterations}"
+                )
+                outputs = pipeline.execute(inputs)
         print(f"Method timings:\n{prof.report(unit='ms')}")
         print(f"Module timings:\n{prof.report_modules(unit='ms')}")
     else:

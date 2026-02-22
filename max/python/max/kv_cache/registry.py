@@ -42,6 +42,7 @@ def _load_single_kv_manager(
     params: KVCacheParams,
     total_num_pages: int,
     session: InferenceSession,
+    max_batch_size: int,
 ) -> PagedKVCacheManager:
     # In compile-only mode (virtual device mode), use the null KV manager
     # to avoid GPU memory allocation
@@ -67,6 +68,7 @@ def _load_single_kv_manager(
         total_num_pages=total_num_pages,
         total_num_host_pages=params.compute_num_host_blocks(),
         session=session,
+        max_batch_size=max_batch_size,
     )
 
 
@@ -91,20 +93,38 @@ def load_kv_manager(
         max_seq_len=max_seq_len,
     )
 
-    return _load_single_kv_manager(params, total_num_pages, session)
+    return _load_single_kv_manager(
+        params=params,
+        total_num_pages=total_num_pages,
+        session=session,
+        max_batch_size=max_batch_size,
+    )
 
 
 def _load_kv_managers(
     params: KVCacheParamInterface,
     total_num_pages: int,
     session: InferenceSession,
+    max_batch_size: int,
 ) -> list[PagedKVCacheManager]:
     if isinstance(params, KVCacheParams):
-        return [_load_single_kv_manager(params, total_num_pages, session)]
+        return [
+            _load_single_kv_manager(
+                params=params,
+                total_num_pages=total_num_pages,
+                session=session,
+                max_batch_size=max_batch_size,
+            )
+        ]
     elif isinstance(params, MultiKVCacheParams):
         return list(
             itertools.chain.from_iterable(
-                _load_kv_managers(p, total_num_pages, session)
+                _load_kv_managers(
+                    params=p,
+                    total_num_pages=total_num_pages,
+                    session=session,
+                    max_batch_size=max_batch_size,
+                )
                 for p in params.params
             )
         )
@@ -130,7 +150,12 @@ def load_kv_managers(
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
     )
-    return _load_kv_managers(params, total_num_pages, session)
+    return _load_kv_managers(
+        params=params,
+        total_num_pages=total_num_pages,
+        session=session,
+        max_batch_size=max_batch_size,
+    )
 
 
 def estimate_kv_cache_size(

@@ -248,9 +248,6 @@ struct _Product3[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn copy(self) -> Self:
-        return Self(_inner=self._inner.copy())
-
     fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
@@ -382,9 +379,6 @@ struct _Product4[
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    fn copy(self) -> Self:
-        return Self(_inner=self._inner.copy())
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
@@ -541,12 +535,6 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    @always_inline
-    fn copy(self) -> Self:
-        var result = Self(self._orig.copy())
-        result._iter = self._iter.copy()
-        return result^
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> Self.Element:
@@ -876,10 +864,6 @@ struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    @always_inline
-    fn copy(self) -> Self:
-        return Self(self.element.copy(), self.remaining)
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> Self.ElementType:

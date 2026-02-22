@@ -21,6 +21,32 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports `comptime if` and `comptime for` as the preferred syntax
+  for compile-time conditional and loop constructs, replacing the legacy
+  `@parameter if` and `@parameter for` decorator forms:
+
+  ```mojo
+  # Old syntax (still accepted, deprecated in a future release)
+  @parameter
+  if some_condition:
+      ...
+
+  @parameter
+  for i in range(10):
+      ...
+
+  # New syntax
+  comptime if some_condition:
+      ...
+
+  comptime for i in range(10):
+      ...
+  ```
+
+  Both syntaxes are accepted in this release. The `@parameter` forms will be
+  deprecated soon, and the parser will generate a warning and a fixit suggestion
+  to migrate to the new syntax.
+
 - `@register_passable("trivial")` is now deprecated,
    conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
@@ -326,7 +352,13 @@ what we publish.
 - Unstable `__comptime_assert` syntax is now finalized as `comptime assert`. A
   deprecation warning is emitted with a fixit for the old syntax.
 
+- `comptime assert` no longer errors on always false conditions. The assertion
+  will only trigger if its parent scope is concretized.
+
 ### Library changes
+
+- `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
+  Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
   `issubset()` traversal instead of two full traversals.
@@ -614,6 +646,11 @@ what we publish.
   - `--print-supported-accelerators`: Lists all supported GPU and accelerator
     architectures (NVIDIA, AMD, Apple Metal).
 
+- `mojo format` now only formats Mojo files (`.mojo`, `.🔥`) by default when
+  run on a directory. Previously it would also format Python files, which
+  conflicted with Python-specific formatters in pre-commit hooks. Users who
+  want to format Python files can use `mblack` directly.
+
 ### ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
@@ -644,3 +681,7 @@ what we publish.
 
 - `LinkedList.reverse()`: Fixed missing `prev` pointer updates, which caused
   `__reversed__()` to produce wrong results after reversing.
+
+- Mojo would previously consider types Movable if they had a `__moveinit__`
+  method, even if they didn't conform to `Movable`.  Movability is now tied to
+  the conformance which implies the method.

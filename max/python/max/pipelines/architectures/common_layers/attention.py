@@ -113,8 +113,10 @@ class AttentionWithRope(Module[..., Tensor]):
         self.q_weight_dim = q_weight_dim
 
         if stacked_qkv:
-            self.qkv_proj = Tensor.zeros(
-                [q_weight_dim + 2 * kv_weight_dim, hidden_size]
+            self.qkv_proj = Linear(
+                in_dim=hidden_size,
+                out_dim=q_weight_dim + 2 * kv_weight_dim,
+                bias=False,
             )
         else:
             self.q_proj = Linear(
@@ -147,7 +149,7 @@ class AttentionWithRope(Module[..., Tensor]):
     def wqkv(self) -> Tensor:
         """The concatenation of q, k, and v weight vectors."""
         if self.stacked_qkv:
-            return self.qkv_proj
+            return self.qkv_proj.weight
         else:
             wq: Tensor = self.q_proj.weight
             wk: Tensor = self.k_proj.weight

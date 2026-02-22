@@ -442,9 +442,7 @@ def main():
     var b = Bench()
 
     with DeviceContext() as ctx:
-
-        @parameter
-        if N > 0 and K > 0 and num_groups > 0:
+        comptime if N > 0 and K > 0 and num_groups > 0:
             # kbench mode: use env parameters
             bench_grouped_block_scaled_gemm[
                 a_type,

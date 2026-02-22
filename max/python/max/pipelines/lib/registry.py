@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RepoType, RopeType, SupportedEncoding
+from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -554,7 +554,7 @@ class PipelineRegistry:
                 # Check if model_index.json exists to identify diffusion pipelines
                 import json
 
-                if huggingface_repo.repo_type == RepoType.local:
+                if huggingface_repo.repo_type == "local":
                     config_path = os.path.join(
                         huggingface_repo.repo_id, "model_index.json"
                     )
@@ -698,7 +698,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -707,7 +707,7 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
             )
 
         return tokenizer
@@ -778,9 +778,7 @@ class PipelineRegistry:
 
             pipeline_factory = cast(
                 Callable[[], PipelineTypes],
-                functools.partial(  # type: ignore
-                    pipeline_class, **pixel_factory_kwargs
-                ),
+                functools.partial(pipeline_class, **pixel_factory_kwargs),
             )
 
             # Cast tokenizer for return (pixel generation tokenizer doesn't have eos)
@@ -824,7 +822,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
         else:
@@ -834,7 +832,7 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.retrieve_chat_template(),
+                chat_template=pipeline_config.model.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
         # Cast tokenizer to the proper type for text generation pipeline compatibility
@@ -871,9 +869,7 @@ class PipelineRegistry:
 
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
-            functools.partial(  # type: ignore
-                pipeline_class, **factory_kwargs
-            ),
+            functools.partial(pipeline_class, **factory_kwargs),
         )
 
         if tokenizer.eos is None:

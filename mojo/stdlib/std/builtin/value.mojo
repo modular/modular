@@ -181,14 +181,6 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
     pass
 
 
-@deprecated(
-    "Use `Copyable` or `ImplicitlyCopyable` instead. `Copyable` on its own no"
-    " longer implies implicit copyability."
-)
-comptime ExplicitlyCopyable = Copyable
-"""Deprecated alias for `Copyable`."""
-
-
 fn materialize[T: AnyType, //, value: T](out result: T):
     """Explicitly materialize a compile-time parameter into a run-time value.
 

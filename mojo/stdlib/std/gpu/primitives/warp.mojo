@@ -121,7 +121,7 @@ fn _shuffle[
         ).cast[dtype]()
 
     else:
-        constrained[False, "unhandled shuffle dtype"]()
+        comptime assert False, "unhandled shuffle dtype"
         return 0
 
 
@@ -153,7 +153,7 @@ fn _shuffle_amd_helper[
             var result = shuffle1.interleave(shuffle2)
             return bitcast[dtype, simd_width](result)
         else:
-            constrained[False, "unhandled shuffle dtype"]()
+            comptime assert False, "unhandled shuffle dtype"
             return 0
 
 

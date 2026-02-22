@@ -14,8 +14,7 @@
 
 from __future__ import annotations
 
-import enum
-from typing import Any, get_args, get_origin
+from typing import Any
 
 import yaml
 from pydantic import ConfigDict, Field, model_validator
@@ -123,62 +122,7 @@ class ConfigFileModel(MAXBaseModel):
                     )
                 loaded_data = section_data
 
-            # TODO: This call is only needed for DType since it's not a (str, enum) type.
-            loaded_data = cls._coerce_enum_fields(loaded_data)
-
             # Merge: config file values are loaded, then overridden by CLI args + env vars.
             # Note: Due to cyclopts processing order, env vars override config files.
             data = loaded_data | data
         return data
-
-    @classmethod
-    def _coerce_enum_fields(cls, loaded_data: dict[str, Any]) -> dict[str, Any]:
-        """Coerce string values in loaded YAML into Enum members when possible.
-
-        Pydantic's default enum parsing prefers enum *values* (often integers),
-        which is inconvenient for config files where users commonly provide the
-        enum *name* (e.g. "float16"). For enum-typed fields, if the YAML provides
-        a string, try to map it to a member name case-insensitively.
-        """
-        for field_name, field_info in cls.model_fields.items():
-            if field_name not in loaded_data:
-                continue
-            value = loaded_data[field_name]
-            if not isinstance(value, str):
-                continue
-
-            enum_type = cls._extract_enum_type(field_info.annotation)
-            if enum_type is None:
-                continue
-
-            value_casefolded = value.casefold()
-            for enum_member in enum_type:
-                if enum_member.name.casefold() == value_casefolded:
-                    loaded_data[field_name] = enum_member
-                    break
-            else:
-                # Fall back to the Enum's constructor, which may have custom
-                # string handling (e.g. DType supports MLIR strings like "f16").
-                try:
-                    loaded_data[field_name] = enum_type(value)
-                except Exception:
-                    pass
-
-        return loaded_data
-
-    @staticmethod
-    def _extract_enum_type(annotation: Any) -> type[enum.Enum] | None:
-        """Extract an Enum type from a field annotation, handling Optional/Union."""
-        if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
-            return annotation
-
-        origin = get_origin(annotation)
-        if origin is None:
-            return None
-
-        args = get_args(annotation)
-        for arg in args:
-            if isinstance(arg, type) and issubclass(arg, enum.Enum):
-                return arg
-
-        return None

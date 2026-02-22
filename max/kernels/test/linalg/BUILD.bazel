@@ -54,7 +54,6 @@ _EXTRA_CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "//max:internal_utils",
@@ -78,5 +77,4 @@ lit_tests(
         "//max:linalg",
         "@mojo//:std",
     ],
-    tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
 )

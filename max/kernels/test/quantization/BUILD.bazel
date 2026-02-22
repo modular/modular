@@ -6,7 +6,6 @@ package(default_visibility = ["//max:consumers"])
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
         deps = [
             "//max:quantization",
             "@mojo//:std",
@@ -24,8 +23,6 @@ mojo_test(
     srcs = ["test_per_channel_grouped_4bit.mojo"],
     tags = [
         "manual",
-        # TODO: Debug why this only fails on public github actions, not locally
-        "skip-external-ci-macos-15",
     ],
     deps = [
         "//max:quantization",

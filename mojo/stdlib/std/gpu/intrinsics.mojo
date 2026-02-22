@@ -640,7 +640,7 @@ fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
     elif dtype in (DType.int32, DType.uint32):
         return "i32"
     else:
-        constrained[False, "unsupported dtype for air atomic intrinsics"]()
+        comptime assert False, "unsupported dtype for air atomic intrinsics"
         return ""
 
 

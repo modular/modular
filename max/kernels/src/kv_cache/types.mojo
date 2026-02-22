@@ -116,6 +116,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     comptime page_size_: Int
     comptime scale_dtype: DType = DType.invalid
     comptime quantization_enabled: Bool = False
+    comptime quantization_granularity: Int = 1
 
     fn cache_lengths_nd(
         self,
@@ -230,6 +231,18 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         """Returns a pointer to the scales block at the requested indices."""
         ...
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        """Returns the base pointer to the scales tensor.
+
+        For PagedKVCache with quantization enabled, this returns the raw
+        base pointer of the scales LayoutTensor. For caches without
+        quantization, returns a null pointer.
+        """
+        ...
+
     @staticmethod
     fn max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
@@ -302,6 +315,7 @@ struct ContinuousBatchingKVCache[
     comptime page_size_ = 0
     # Note: quantization not supported for `ContinuousBatchingKVCache`.
     comptime scale_dtype = DType.float32
+    comptime quantization_granularity = 1
     # Shape is [num_blocks, max_seq_len, num_heads, head_size].
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
@@ -632,13 +646,21 @@ struct ContinuousBatchingKVCache[
         """
         return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        """Returns a null pointer. ContinuousBatchingKVCache does not support
+        quantization."""
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+
 
 struct PagedKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
     scale_dtype_: DType = DType.invalid,
-    quantization_granularity: Int = 1,
+    quantization_granularity_: Int = 1,
 ](KVCacheT, TrivialRegisterPassable):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
@@ -654,7 +676,7 @@ struct PagedKVCache[
         kv_params_: The kv-cache static parameters.
         page_size: The size of the page.
         scale_dtype_: Dtype of the quantization scales (if quantization enabled).
-        quantization_granularity:  Block size used for quantization (e.g. 128).
+        quantization_granularity_:  Block size used for quantization (e.g. 128).
     """
 
     comptime dtype = Self.dtype_
@@ -662,6 +684,7 @@ struct PagedKVCache[
     comptime page_size_ = Self.page_size
     comptime scale_dtype = Self.scale_dtype_
     comptime quantization_enabled = Self.scale_dtype_ != DType.invalid
+    comptime quantization_granularity = Self.quantization_granularity_
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
     # This tensor is a view of a 6D parent tensor with shape
@@ -703,6 +726,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
+    # Number of quantization scale values per token.
     comptime head_dim_granularity = ceildiv(
         Int(Self.kv_params.head_size),
         Self.quantization_granularity,
@@ -712,7 +736,7 @@ struct PagedKVCache[
         UNKNOWN_VALUE,  # num_blocks
         Self.page_size,  # page_size
         Int(Self.kv_params.num_heads),  # num_heads
-        Self.head_dim_granularity,  # block size
+        Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
     comptime scales_block_type = LayoutTensor[
@@ -1132,6 +1156,18 @@ struct PagedKVCache[
         )
         return scales_ptr
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        """Returns the base pointer to the scales tensor, or null if scales
+        are not set."""
+
+        @parameter
+        if Self.quantization_enabled:
+            return self.scales.value().ptr
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+
 
 trait KVCollectionT(ImplicitlyCopyable):
     """Trait for a pair of caches (keys and values)."""
@@ -1264,13 +1300,18 @@ struct PagedKVCacheCollection[
     kv_params_: KVCacheStaticParams,
     page_size: Int,
     scale_dtype_: DType = DType.invalid,
+    quantization_granularity_: Int = 1,
 ](KVCollectionT):
     comptime name_str = "paged"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
     comptime scale_dtype = Self.scale_dtype_
     comptime CacheType = PagedKVCache[
-        Self.dtype, Self.kv_params, Self.page_size, Self.scale_dtype
+        Self.dtype,
+        Self.kv_params,
+        Self.page_size,
+        Self.scale_dtype,
+        Self.quantization_granularity_,
     ]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
@@ -1289,6 +1330,7 @@ struct PagedKVCacheCollection[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
+    # Match PagedKVCache.head_dim_granularity.
     comptime head_dim_granularity = ceildiv(
         Int(Self.kv_params.head_size),
         Self.CacheType.quantization_granularity,
@@ -1300,7 +1342,7 @@ struct PagedKVCacheCollection[
         UNKNOWN_VALUE,  # num_layers
         Self.page_size,  # page_size
         Int(Self.kv_params.num_heads),  # num_heads
-        Self.head_dim_granularity,  # block size
+        Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
     comptime scales_type = LayoutTensor[

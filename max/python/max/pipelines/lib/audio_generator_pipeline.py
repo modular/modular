@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, no_type_check
+from typing import TYPE_CHECKING
 
 from max.driver import load_devices
 from max.interfaces import (
@@ -53,11 +53,10 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
 
     pipeline_model: PipelineModel[TTSContext]
 
-    @no_type_check
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[TTSContext]],
         **unused_kwargs,
     ) -> None:
         # Create the pipeline model.
@@ -65,12 +64,10 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         devices = load_devices(pipeline_config.model.device_specs)
         self.pipeline_model = pipeline_model(
             pipeline_config=pipeline_config,
-            session=None,
-            huggingface_config=None,
-            encoding=None,
+            session=None,  # type: ignore
             devices=devices,
-            kv_cache_config=None,
-            weights=None,
+            kv_cache_config=None,  # type: ignore
+            weights=None,  # type: ignore
             adapter=None,
             return_logits=ReturnLogits.ALL,
         )

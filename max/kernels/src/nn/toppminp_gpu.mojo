@@ -234,7 +234,7 @@ fn normalize(
     elif dtype == DType.bfloat16:
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
-        constrained[False, "unhandled normalize type"]()
+        comptime assert False, "unhandled normalize type"
         return 0
 
 

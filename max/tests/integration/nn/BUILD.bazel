@@ -55,7 +55,11 @@ modular_py_library(
         imports = ["."],
         tags = [
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
-        ],
+        ] + (["skip-external-ci"] if src in [
+            # FIXME: SDLC-3032
+            "test_conv.py",
+            "test_mlp.py",
+        ] else []),
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
             "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN

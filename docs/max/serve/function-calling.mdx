@@ -1,0 +1,366 @@
+---
+title: Function calling and tool use
+sidebar_label: Function calling
+description: Implement OpenAI-compatible function calling and tool use for agentic GenAI workflows
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import MDXListing from '@site/src/components/Listing/MDXListing';
+import InstallModular from '@site/docs/_includes/install-modular.mdx';
+import InstallOpenAI from '@site/docs/_includes/install-openai.mdx';
+
+Function calling is a feature available with some large language models (LLMs)
+that allows them to call external program functions (or tools). This allows the
+model to interact with external systems to retrieve new data for use as input
+or execute other tasks. This is a foundational building block for agentic AI
+applications, in which an LLM can chain together various functions to achieve
+complex objectives.
+
+Function calling is also called "tool use" because the manner in which you tell
+the LLM what functions are available is with a `tools` parameter in the request
+body.
+
+:::note
+
+Function calling is enabled by default with MAX, but its availability is
+model-dependent and will produce valid output only if the model is pretrained
+to return tool-use responses.
+
+:::
+
+## When to use function calling
+
+You should use function calling when you want your LLM to:
+
+- **Fetch data**: Such as fetch weather data, stock prices, or news updates
+from a database. The model will call a function to get information, and then
+incorporate that data into its final response.
+
+- **Perform actions**: Such as modify application states, invoke workflows, or
+call upon other AI systems. The model will call another tool to perform an
+action, effectively handing off the request after it determines what the user
+wants.
+
+## How function calling works
+
+When you send an inference request to a model that supports function calling,
+you can specify which functions are available to the model using the `tools`
+body parameter.
+
+The `tools` parameter provides information that allows the LLM to understand:
+
+- What each function can do
+- How to call each function (the arguments it accepts/requires)
+
+For example, here's a request with the [chat completions
+API](/max/api/serve#operation/createChatCompletion) that declares an available
+function named `get_weather()`:
+
+```python
+from openai import OpenAI
+
+def get_weather(city: str) -> str:
+    print("Get weather:", city)
+
+client = OpenAI(base_url="http://0.0.0.0:8000/v1", api_key="EMPTY")
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get current temperature for a given location.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City and country e.g. Bogotá, Colombia"
+                }
+            },
+            "required": [
+                "location"
+            ],
+            "additionalProperties": False
+        },
+        "strict": True
+    }
+}]
+
+messages = [
+  {
+    "role": "user",
+    "content": "What's the weather like in San Francisco today?"
+  }
+]
+
+completion = client.chat.completions.create(
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    messages=messages,
+    tools=tools
+)
+```
+
+Let's take a closer look at each parameter shown in the `tools` property:
+
+- `type`: Currently this is always `function`
+- `function`: Definition of the function
+  - `name`: The function name used by the LLM to call it
+  - `description`: A function description that helps the LLM understand when to use it
+  - `parameters`: Definition of the function parameters
+    - `type`: Defines this as an object containing parameters
+    - `properties`: Lists all possible function arguments and their types
+    - `required`: Specifies which function arguments are required
+
+This format follows the [OpenAI function calling
+specification](https://platform.openai.com/docs/guides/function-calling) to
+specify functions as tools that a model can use.
+
+Using this information, the model will decide whether to call any functions
+specified in `tools`. In this case, we expect the model to call `get_weather()`
+and incorporate that information into its final response. So, the initial
+`completion` response from above includes a `tool_calls` parameter like this:
+
+```python
+print(completion.choices[0].message.tool_calls)
+```
+
+```js
+[ChatCompletionMessageToolCall(
+  id='call_a175692d9ff54554',
+  function=Function(
+    arguments='{
+      "location": "San Francisco, USA"
+    }',
+    name='get_weather'
+  ),
+  type='function'
+)]
+```
+
+From here, you must parse the `tool_calls` body and execute the function as
+appropriate. For example:
+
+```py
+import json
+
+tool_call = completion.choices[0].message.tool_calls[0]
+args = json.loads(tool_call.function.arguments)
+
+result = get_weather(args["location"])
+```
+
+If the function is designed to **fetch data** for the model, you should call
+the function and then call the model again with the function results appended
+as a message using the `tool` role.
+
+If the function is designed to **perform an action**, then you don't need to
+call the model again.
+
+For detail about how to execute the function and feed the results back to the
+model, see the [OpenAI docs about handling function
+calls](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#handling-function-calls).
+
+The OpenAI function calling spec is compatible with multiple agent frameworks,
+such as [AutoGen](https://github.com/microsoft/autogen),
+[CrewAI](https://github.com/crewAIInc/crewAI), and more.
+
+:::caution
+
+MAX currently doesn't support [streaming with function
+calling](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#streaming).
+If using a model that provides streaming, be sure to set the `stream` parameter
+to `False` when making requests with function calling.
+
+:::
+
+## Supported models
+
+Function calling is model-dependent and will produce valid output only if the
+model is pretrained to return tool use responses. Here are just a few that
+we've verified work with function calling:
+
+- [Meta's Llama 3.1 models & evals](https://huggingface.co/collections/meta-llama/metas-llama-31-models-and-evals-675bfd70e574a62dd0e40565) collection
+- [Meta's Llama 3.2 language models & evals](https://huggingface.co/collections/meta-llama/metas-llama-32-language-models-and-evals-675bfd70e574a62dd0e40586) collection
+
+:::note
+
+The Meta Llama 3 models are hosted in gated repositories on Hugging Face. You
+must have a Hugging Face account with access to these repositories and an
+[access token](https://huggingface.co/settings/tokens) configured in your
+environment to deploy these models.
+
+:::
+
+## Quickstart
+
+Here's how you can quickly try the example code from above using a
+locally-hosted endpoint:
+
+1. Create a virtual environment and install the `max` CLI:
+
+    <InstallModular folder="function-calling" />
+
+2. Start an endpoint with a model that supports function calling:
+
+    ```sh
+    max serve --model meta-llama/Llama-3.1-8B-Instruct
+    ```
+
+3. Wait until you see this message:
+
+    ```output
+    Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+    ```
+
+    Then open a new terminal send a request with the `tools` parameter:
+
+    <Tabs groupId="client">
+    <TabItem value="python" label="Python">
+
+    First install the `openai` API (make sure your current working directory
+    is still the `function-calling` directory):
+
+    <InstallOpenAI />
+
+    Then, create a program to send a request specifying the available
+    `get_weather()` function:
+
+    ```python title="function-calling.py"
+    from openai import OpenAI
+    import json
+
+    def get_weather(city: str) -> str:
+        print("Get weather:", city)
+
+    client = OpenAI(base_url="http://0.0.0.0:8000/v1", api_key="EMPTY")
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current temperature for a given location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City and country e.g. Bogotá, Colombia"
+                    }
+                },
+                "required": [
+                    "location"
+                ],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }]
+
+    messages = [
+      {
+        "role": "user",
+        "content": "What's the weather like in San Francisco today?"
+      }
+    ]
+
+    completion = client.chat.completions.create(
+        model="meta-llama/Llama-3.1-8B-Instruct",
+        messages=messages,
+        tools=tools
+    )
+
+    tool_call = completion.choices[0].message.tool_calls[0]
+    args = json.loads(tool_call.function.arguments)
+
+    result = get_weather(args["location"])
+    ```
+
+    Run it and the `get_weather()` function should print the argument received
+    (make sure you're in the virtual environment—for example, first run `pixi
+    shell`):
+
+    ```sh
+    python function-calling.py
+    ```
+
+    ```output
+    Get weather: San Francisco, USA
+    ```
+
+    </TabItem>
+    <TabItem value="curl" label="curl">
+
+    Use the following `curl` command to send a request specifying the available
+    `get_weather()` function:
+
+    ```bash
+    curl -N http://0.0.0.0:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "meta-llama/Llama-3.1-8B-Instruct",
+        "stream": false,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is the weather like in Boston today?"}
+        ],
+        "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Get the current weather in a given location",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "location": {
+                  "type": "string",
+                  "description": "The city and state, e.g. Los Angeles, CA"
+                }
+              },
+              "required": ["location"]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    }'
+    ```
+
+    You should receive a response similar to this:
+
+    ```json
+    "tool_calls": [
+      {
+        "id": "call_ac73df14fe184349",
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Boston, MA\"}"
+        }
+      }
+    ]
+    ```
+
+    </TabItem>
+    </Tabs>
+
+For a more complete walkthrough of how to handle a `tools_call` response and
+send the function results back to the LLM as input, see the [OpenAI docs about
+handling function
+calls](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#handling-function-calls).
+
+
+
+## Next steps
+
+Now that you know the basics of function calling, you can get started with MAX
+on GPUs.
+
+export const docs = [
+  '../../serve/structured-output.mdx',
+  '../../serve/offline-inference.mdx',
+  '../../deploy/local-to-cloud.mdx',
+];
+
+<MDXListing mdxList={docs} />

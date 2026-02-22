@@ -1,0 +1,109 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+# eager_simple.py
+modular_py_binary(
+    name = "eager_simple",
+    srcs = ["eager_simple.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+    ],
+)
+
+modular_run_binary_test(
+    name = "eager_simple_test",
+    binary = "eager_simple",
+)
+
+# graph_simple.py
+modular_py_binary(
+    name = "graph_simple",
+    srcs = ["graph_simple.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "graph_simple_test",
+    binary = "graph_simple",
+)
+
+# arithmetic_ops.py
+modular_py_binary(
+    name = "arithmetic_ops",
+    srcs = ["arithmetic_ops.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "arithmetic_ops_test",
+    binary = "arithmetic_ops",
+)
+
+# functional_api.py
+modular_py_binary(
+    name = "functional_api",
+    srcs = ["functional_api.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+    ],
+)
+
+modular_run_binary_test(
+    name = "functional_api_test",
+    binary = "functional_api",
+)
+
+# when_to_use_eager.py
+modular_py_binary(
+    name = "when_to_use_eager",
+    srcs = ["when_to_use_eager.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "when_to_use_eager_test",
+    binary = "when_to_use_eager",
+)
+
+# eager_workflow.py
+modular_py_binary(
+    name = "eager_workflow",
+    srcs = ["eager_workflow.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "eager_workflow_test",
+    binary = "eager_workflow",
+)

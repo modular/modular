@@ -217,7 +217,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         elif Self.bit_width == 6:
             return self._pack_int6(src_ptr)
         else:
-            constrained[False, "unsupported bit width"]()
+            comptime assert False, "unsupported bit width"
 
     @always_inline
     fn unpack[
@@ -232,7 +232,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         elif Self.bit_width == 6:
             return self._unpack_int6[zero_point](dst_ptr)
         else:
-            constrained[False, "unsupported bit width"]()
+            comptime assert False, "unsupported bit width"
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
@@ -502,7 +502,7 @@ fn _pack_block_Q4_K[
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + split_width] = q_mins_row_1_val
             else:
-                constrained[False, "unsupported architecture"]()
+                comptime assert False, "unsupported architecture"
 
     dst_ptr[].q_scales_and_mins.pack(q_scales_and_mins_buf.unsafe_ptr())
     dst_ptr[].q_bits.pack(q_bits_block_buf.unsafe_ptr())
@@ -731,7 +731,7 @@ fn _matmul_group_stream[
             a_q_bits_ptr, c_int32_group
         )
     else:
-        constrained[False, "unsupported architecture"]()
+        comptime assert False, "unsupported architecture"
 
 
 @always_inline
@@ -873,7 +873,7 @@ fn _apply_zero_point_correction[
                     )
 
         else:
-            constrained[False, "unsupported architecture"]()
+            comptime assert False, "unsupported architecture"
 
     # Scale the correction value by the shared base minimum and update the
     # float accumulator.

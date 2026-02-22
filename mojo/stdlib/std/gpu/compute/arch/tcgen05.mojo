@@ -295,7 +295,7 @@ fn tcgen05_ld[
             ]
         ]()
     else:
-        constrained[False, "width must be a power of 2 in the range [1, 128]."]()
+        comptime assert False, "width must be a power of 2 in the range [1, 128]."
         abort()
     # fmt: on
 

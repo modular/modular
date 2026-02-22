@@ -154,6 +154,7 @@ def generate_max_outputs(
         params=kv_params,
         total_num_pages=1,
         session=session,
+        max_batch_size=128,
     )
     assert isinstance(kv_manager, PagedKVCacheManager)
 

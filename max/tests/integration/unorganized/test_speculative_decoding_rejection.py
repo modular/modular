@@ -75,7 +75,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=num_steps,
     )
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)

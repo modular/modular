@@ -364,14 +364,6 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
         """Records this instance's value when destroyed."""
         self.destructor_recorder.unsafe_mut_cast[True]()[].append(self.value)
 
-    fn copy(self) -> Self:
-        """Creates a copy of this instance.
-
-        Returns:
-            A new instance with the same value and recorder.
-        """
-        return Self(self.value, self.destructor_recorder)
-
 
 # ===----------------------------------------------------------------------=== #
 # ObservableDel

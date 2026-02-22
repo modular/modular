@@ -43,7 +43,6 @@ from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
 from ..interfaces import ModelOutputs, PipelineModel
 from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
@@ -214,7 +213,7 @@ class SpeculativeDecodingPipelineBase(
         weight_paths: list[Path] = []
         if (
             self.pipeline_config.model.huggingface_weight_repo.repo_type
-            == RepoType.online
+            == "online"
         ):
             # Download weight files if not existent.
             weight_paths = download_weight_files(
@@ -330,7 +329,7 @@ class SpeculativeDecodingPipelineBase(
         draft_weight_paths: list[Path] = []
         if (
             self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
-            == RepoType.online
+            == "online"
         ):
             # Download weight files if not existent.
             draft_weight_paths = download_weight_files(
@@ -721,8 +720,9 @@ class SpeculativeDecodingPipelineBase(
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 
-            # Construct generation output
-            res[context.request_id] = context.to_generation_output()
+            output = context.to_generation_output()
+            if output.tokens:
+                res[context.request_id] = output
 
         return res
 
