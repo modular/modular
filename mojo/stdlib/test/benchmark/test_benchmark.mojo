@@ -153,5 +153,12 @@ def test_report():
     assert_true("Slowest Mean: " in report_string)
 
 
+def test_report_stringable():
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var s = report.__str__()
+    assert_true(len(s) > 0)
+    assert_true("Benchmark Report (s)" in s)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
