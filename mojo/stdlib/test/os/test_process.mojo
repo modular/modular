@@ -16,6 +16,7 @@ from os.path import exists
 from os import Process
 from os.process import Pipe, ProcessStatus
 
+from test_utils import check_write_to
 from testing import (
     assert_false,
     assert_raises,
@@ -83,45 +84,75 @@ def test_process_run_missing():
 
 def test_processstatus_str():
     # Common exit codes.
-    assert_equal(
-        String(ProcessStatus(exit_code=0)), "ProcessStatus(exit_code: 0)"
+    check_write_to(
+        ProcessStatus(exit_code=0),
+        expected="ProcessStatus(exit_code: 0)",
+        is_repr=False,
     )
-    assert_equal(
-        String(ProcessStatus(exit_code=1)), "ProcessStatus(exit_code: 1)"
+    check_write_to(
+        ProcessStatus(exit_code=1),
+        expected="ProcessStatus(exit_code: 1)",
+        is_repr=False,
     )
-    assert_equal(
-        String(ProcessStatus(exit_code=127)), "ProcessStatus(exit_code: 127)"
+    check_write_to(
+        ProcessStatus(exit_code=127),
+        expected="ProcessStatus(exit_code: 127)",
+        is_repr=False,
     )
-    assert_equal(
-        String(ProcessStatus(exit_code=128)), "ProcessStatus(exit_code: 128)"
+    check_write_to(
+        ProcessStatus(exit_code=128),
+        expected="ProcessStatus(exit_code: 128)",
+        is_repr=False,
     )
-    assert_equal(
-        String(ProcessStatus(exit_code=255)), "ProcessStatus(exit_code: 255)"
+    check_write_to(
+        ProcessStatus(exit_code=255),
+        expected="ProcessStatus(exit_code: 255)",
+        is_repr=False,
     )
-    assert_equal(
-        String(ProcessStatus(term_signal=15)), "ProcessStatus(term_signal: 15)"
+    check_write_to(
+        ProcessStatus(term_signal=15),
+        expected="ProcessStatus(term_signal: 15)",
+        is_repr=False,
     )
-    assert_equal(String(ProcessStatus.running()), "ProcessStatus(running)")
+    check_write_to(
+        ProcessStatus.running(),
+        expected="ProcessStatus(running)",
+        is_repr=False,
+    )
 
 
 def test_processstatus_repr():
     # exit_code cases.
-    assert_equal(repr(ProcessStatus(exit_code=0)), "ProcessStatus(exit_code=0)")
-    assert_equal(repr(ProcessStatus(exit_code=1)), "ProcessStatus(exit_code=1)")
+    check_write_to(
+        ProcessStatus(exit_code=0),
+        expected="ProcessStatus(exit_code=0)",
+        is_repr=True,
+    )
+    check_write_to(
+        ProcessStatus(exit_code=1),
+        expected="ProcessStatus(exit_code=1)",
+        is_repr=True,
+    )
     # Common signals: SIGHUP=1, SIGKILL=9, SIGTERM=15.
-    assert_equal(
-        repr(ProcessStatus(term_signal=1)), "ProcessStatus(term_signal=1)"
+    check_write_to(
+        ProcessStatus(term_signal=1),
+        expected="ProcessStatus(term_signal=1)",
+        is_repr=True,
     )
-    assert_equal(
-        repr(ProcessStatus(term_signal=9)), "ProcessStatus(term_signal=9)"
+    check_write_to(
+        ProcessStatus(term_signal=9),
+        expected="ProcessStatus(term_signal=9)",
+        is_repr=True,
     )
-    assert_equal(
-        repr(ProcessStatus(term_signal=15)), "ProcessStatus(term_signal=15)"
+    check_write_to(
+        ProcessStatus(term_signal=15),
+        expected="ProcessStatus(term_signal=15)",
+        is_repr=True,
     )
-    assert_equal(repr(ProcessStatus.running()), "ProcessStatus(running=True)")
-    # str uses ': ' format, repr uses '=' format — they must differ.
-    assert_true(
-        String(ProcessStatus(exit_code=0)) != repr(ProcessStatus(exit_code=0))
+    check_write_to(
+        ProcessStatus.running(),
+        expected="ProcessStatus(running=True)",
+        is_repr=True,
     )
 
 
