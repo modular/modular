@@ -135,7 +135,7 @@ what we publish.
   argument name for these legacy methods must now be named `take` and `copy`
   respectively.  Please move to the more modern names.
 
-- As part of move unification, the `__moveinit__is_trivial` and
+- As part of init unification, the `__moveinit__is_trivial` and
   `__copyinit__is_trivial` members of `Movable` and `Copyable` have been renamed
   to `__move_ctor_is_trivial` and `__copy_ctor_is_trivial` respectively.
 

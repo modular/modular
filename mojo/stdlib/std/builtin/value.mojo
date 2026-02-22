@@ -111,8 +111,10 @@ trait Copyable(Movable):
         """
         ...
 
+    @always_inline
     fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
+        """Explicitly construct a copy of self, a convenience method for
+        `Self(copy=self)` when the type is inconvenient to write out.
 
         Returns:
             A copy of this value.
