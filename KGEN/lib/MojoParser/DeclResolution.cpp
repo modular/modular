@@ -270,40 +270,80 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
 }
 
 LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
-  // Check for @stable with arguments (CallNode) - emit error since arguments
-  // are not yet supported.
-  if (auto callNode = dyn_cast<CallNode>(expr)) {
-    if (auto callee = dyn_cast<DeclRefNode>(callNode->callee);
-        callee && callee->spelling == "stable") {
-      shared.emitError(expr->getLoc(),
-                       "@stable decorator does not support arguments");
-      return success(); // Handled (with error).
+  // Common logic applied once @stable has been matched on a supported decl.
+  auto applyStable = [&](StringAttr sinceVersion = {}) -> LogicalResult {
+    Operation *op = decl.getIfOperation();
+    auto stabilityInterface =
+        op ? dyn_cast<StabilityDecoratorInterface>(op) : nullptr;
+    if (!stabilityInterface) {
+      shared.emitError(
+          expr->getLoc(),
+          "@stable decorator is not supported on this declaration");
+      return success();
     }
+    // Check for @stable member in an unstable struct/trait - this is an error.
+    if (checkStableMemberInUnstableParent(decl, expr->getLoc(), shared))
+      return success(); // Handled (with error).
+    stabilityInterface.setHasStableDecorator(true);
+    if (sinceVersion)
+      stabilityInterface.setStableSinceVersionAttr(sinceVersion);
+    return success();
+  };
+
+  // Handle @stable(since="version") form.
+  if (auto callNode = dyn_cast<CallNode>(expr)) {
+    auto callee = dyn_cast<DeclRefNode>(callNode->callee);
+    if (!callee || callee->spelling != "stable")
+      return failure(); // Not our decorator.
+
+    // From here on, we've matched @stable(...) - all paths must return
+    // success().
+
+    if (callNode->operands.size() != 1) {
+      shared.emitError(expr->getLoc(),
+                       "@stable accepts only the 'since' argument");
+      return success();
+    }
+
+    auto &arg = callNode->operands.front();
+    if (!arg.isKeyword() || arg.name != "since") {
+      shared.emitError(arg.expr->getLoc(),
+                       "@stable only accepts the keyword argument 'since'");
+      return success();
+    }
+
+    auto strExpr = dyn_cast<StringLiteralNode>(arg.expr);
+    if (!strExpr) {
+      shared.emitError(arg.expr->getLoc(),
+                       "'since' argument must be a string literal");
+      return success();
+    }
+
+    // Own the string to avoid a dangling StringRef (getValue() returns
+    // std::string by value).
+    std::string versionStr = strExpr->getValue();
+    StringRef version = versionStr;
+    // Validate relaxed semver: non-empty, starts with a digit, contains only
+    // alphanumeric characters and dots (e.g. "1.0", "1.2.3", "2.0rc1").
+    if (version.empty() || !llvm::isDigit(version.front()) ||
+        !llvm::all_of(version,
+                      [](char c) { return llvm::isAlnum(c) || c == '.'; })) {
+      shared.emitError(arg.expr->getLoc(),
+                       "'since' argument must be a valid version string "
+                       "(e.g. \"1.0\", \"1.2.3\", \"2.0rc1\")");
+      return success();
+    }
+
+    return applyStable(StringAttr::get(getContext(), version));
   }
 
-  // Only handle bare `@stable` decorator (no arguments for now).
+  // Handle bare `@stable` decorator (no arguments).
   auto declRef = dyn_cast<DeclRefNode>(expr);
   if (!declRef || declRef->spelling != "stable")
     return failure(); // Not a @stable decorator, let other handlers try.
 
   // From here on, we've matched @stable - all paths must return success().
-
-  // Check that the decl's operation implements StabilityDecoratorInterface.
-  Operation *op = decl.getIfOperation();
-  auto stabilityInterface =
-      op ? dyn_cast<StabilityDecoratorInterface>(op) : nullptr;
-  if (!stabilityInterface) {
-    shared.emitError(expr->getLoc(),
-                     "@stable decorator is not supported on this declaration");
-    return success();
-  }
-
-  // Check for @stable member in an unstable struct/trait - this is an error.
-  if (checkStableMemberInUnstableParent(decl, expr->getLoc(), shared))
-    return success(); // Handled (with error).
-
-  stabilityInterface.setHasStableDecorator(true);
-  return success();
+  return applyStable();
 }
 
 void Decorators::applySignatureDecorators(

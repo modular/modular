@@ -924,8 +924,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         builder.getI8IntegerAttr(uint8_t(SpecialFunctionKind::kNormal)),
         StringAttr(), sourceName, /*inheritedFrom=*/{}, StringAttr(),
         DocStringAttr(), /*deprecationInfo=*/{},
-        /*hasStableDecorator=*/none, ArrayAttr::get(ctx, {}),
-        ArrayAttr::get(ctx, {}), Attribute());
+        /*hasStableDecorator=*/none, /*stableSinceVersion=*/{},
+        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
 
@@ -1134,7 +1134,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
         /*docString=*/{}, /*deprecationInfo=*/{},
-        /*hasStableDecorator=*/{}, /*sourceName=*/{},
+        /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
         /*minAlignment=*/{}, /*convention=*/{});
   result.regions[0]->push_back(new Block());
 }
@@ -1696,7 +1696,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         /*definesClosure=*/none,
         /*dtorWitness=*/{}, /*docString=*/{},
         /*deprecationInfo=*/{},
-        /*hasStableDecorator=*/{},
+        /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{},
         /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {});
   result.regions[0]->push_back(new Block());
 }
