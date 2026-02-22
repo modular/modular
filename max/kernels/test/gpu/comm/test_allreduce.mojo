@@ -61,7 +61,6 @@ fn allreduce_test[
     ngpus: Int,
     *,
     use_multimem: Bool,
-    use_quickreduce: Bool = False,
     use_custom_epilogue: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
@@ -199,7 +198,6 @@ fn allreduce_test[
                 outputs_lambda[input_index=i]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
-            use_quickreduce=use_quickreduce,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
@@ -276,11 +274,9 @@ fn allreduce_test[
 fn _get_test_str[
     dtype: DType,
     use_multimem: Bool,
-    use_quickreduce: Bool = False,
     use_custom_epilogue: Bool = False,
 ](ngpus: Int, length: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
-    var quickreduce_tag = "-quickreduce" if use_quickreduce else ""
     var epilogue_tag = "-custom_epilogue" if use_custom_epilogue else ""
     return String(
         "====allreduce-",
@@ -288,7 +284,6 @@ fn _get_test_str[
         "-",
         ngpus,
         multimem_tag,
-        quickreduce_tag,
         epilogue_tag,
         "-",
         human_readable_size(size_of[dtype]() * length),
@@ -390,9 +385,7 @@ def allreduce_naive_test() -> None:
 
 
 @parameter
-fn run_allreduce_sweep[
-    use_multimem: Bool, use_quickreduce: Bool = False
-]() raises:
+fn run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),
@@ -418,15 +411,11 @@ fn run_allreduce_sweep[
         constrained[
             length % simd_width == 0, "Length must be multiple of simd_width"
         ]()
-        comptime quickreduce_tile_shape = simd_width * 8 * 256
-        if use_quickreduce and (length % quickreduce_tile_shape != 0):
-            # Quickreduce requires full tiles (a quickreduce specific concept)
-            continue
 
         print(
-            _get_test_str[
-                dtype, use_multimem, use_quickreduce, use_custom_epilogue
-            ](num_gpus, length)
+            _get_test_str[dtype, use_multimem, use_custom_epilogue](
+                num_gpus, length
+            )
         )
         try:
             allreduce_test[
@@ -434,7 +423,6 @@ fn run_allreduce_sweep[
                 rank=1,
                 ngpus=num_gpus,
                 use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
                 use_custom_epilogue=use_custom_epilogue,
             ](ctx, length)
         except e:
@@ -444,7 +432,6 @@ fn run_allreduce_sweep[
                     _get_test_str[
                         dtype,
                         use_multimem,
-                        use_quickreduce,
                         use_custom_epilogue,
                     ](num_gpus, length),
                 )
@@ -470,4 +457,3 @@ def main():
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()
-    run_allreduce_sweep[use_multimem=False, use_quickreduce=True]()
