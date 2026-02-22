@@ -210,7 +210,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Report(Copyable, Defaultable, Stringable, Writable):
+struct Report(Copyable, Defaultable, Representable, Stringable, Writable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """
@@ -353,6 +353,25 @@ struct Report(Copyable, Defaultable, Stringable, Writable):
             writer: The writer to write to.
         """
         writer.write(String(self))
+
+    fn write_repr_to[W: Writer](self, mut writer: W):
+        """Writes the debug representation of the report to a writer.
+
+        Parameters:
+            W: The type of the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self.write_to(writer)
+
+    fn __repr__(self) -> String:
+        """Returns a debug string representation of the report.
+
+        Returns:
+            The string representation of the Report.
+        """
+        return self.as_string()
 
     fn print(self, unit: String = Unit.s):
         """

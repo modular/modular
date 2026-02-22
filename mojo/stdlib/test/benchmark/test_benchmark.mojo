@@ -160,5 +160,10 @@ def test_report_stringable():
     assert_true("Benchmark Report (s)" in s)
 
 
+def test_report_representable():
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    assert_true(report.__repr__() == report.__str__())
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
