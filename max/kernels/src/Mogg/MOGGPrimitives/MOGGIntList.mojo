@@ -104,7 +104,7 @@ struct IntList[static_values: DimList = DimList()](
         self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.stack_alloc_data = copy.stack_alloc_data
         self.length = copy.length
         self.data = UnsafePointer[Int, MutExternalOrigin]()

@@ -367,7 +367,7 @@ struct HostBuffer[dtype: DType](
         self._host_ptr = host_ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing host buffer by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying host buffer
@@ -959,7 +959,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing device buffer by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying device buffer
@@ -1419,7 +1419,7 @@ struct DeviceStream(ImplicitlyCopyable):
         self._handle = result
 
     @doc_private
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing stream by incrementing its reference count.
 
         Args:
@@ -1767,7 +1767,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         self._handle = existing
 
     @doc_private
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing event by incrementing its reference count.
 
         Args:
@@ -1867,7 +1867,7 @@ struct DeviceFunction[
     var _context: DeviceContext
     """The device context backing the function."""
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing DeviceFunction.
 
         This increases the reference count of the underlying device function handle.
@@ -2943,7 +2943,7 @@ struct DeviceExternalFunction:
     var _handle: _DeviceFunctionPtr
     """Internal handle to the native device function object."""
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing device function by incrementing its reference count.
 
         Args:
@@ -3353,7 +3353,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         self._handle = ctx_ptr
         self._owning = False
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing device context by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying device context

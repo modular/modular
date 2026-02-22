@@ -1283,7 +1283,7 @@ struct MyInt(Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(out self, deinit take: MyInt):
+    fn __init__(out self, *, deinit take: MyInt):
         print("MyInt.__moveinit__", take.val)
         self.val = take.val
 

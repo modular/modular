@@ -45,7 +45,7 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_DEL)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.events = copy.events
 
         comptime if Self.T.__copyinit__is_trivial:
@@ -53,7 +53,7 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_COPY)
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.events = take.events
 
         comptime if Self.T.__moveinit__is_trivial:

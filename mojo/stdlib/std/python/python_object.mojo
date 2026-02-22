@@ -378,7 +378,7 @@ struct PythonObject(
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=dict_ptr)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy the object.
 
         This increments the underlying refcount of the existing object.

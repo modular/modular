@@ -16,7 +16,7 @@
 struct Foobat(ImplicitlyCopyable):
     var x: Int
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.x = copy.x
         print("__copyinit__")
 

@@ -94,7 +94,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     fn _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.cur = copy.cur
         self.loop_bounds = copy.loop_bounds.copy()
         self.early_stop = copy.early_stop

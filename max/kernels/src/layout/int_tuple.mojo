@@ -147,7 +147,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = size
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntArray`.
 
         For owned arrays, this performs a deep copy of the data.
@@ -644,7 +644,7 @@ struct IntTuple(
             self.append(tup)
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntTuple`.
 
         Creates a deep copy of the provided `IntTuple`, copying all its data

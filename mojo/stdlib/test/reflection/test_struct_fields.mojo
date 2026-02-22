@@ -930,7 +930,7 @@ struct NonCopyableValue:
     fn __init__(out self, data: Int):
         self.data = data
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         # If this is called, we have a bug!
         print("ERROR: NonCopyableValue was copied!")
         self.data = copy.data

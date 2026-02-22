@@ -74,7 +74,7 @@ trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
     Example implementing the `Copyable` trait on `Foo`, which requires the
-    `__copyinit__` method:
+    `__init__(*, copy: Self)` method:
 
     ```mojo
     struct Foo(Copyable):
@@ -122,7 +122,7 @@ trait Copyable(Movable):
 
     comptime __copyinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
-    of `__copyinit__` is trivial.
+    of the copy constructor is trivial.
 
     A copy constructor is considered to be trivial if:
     - The struct has a compiler-generated trivial copy constructor because all
@@ -134,8 +134,8 @@ trait Copyable(Movable):
 
 
 trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
-    """A marker trait to permit compiler to insert implicit calls to `__copyinit__`
-    in order to make a copy of the object when needed.
+    """A marker trait to permit compiler to insert implicit calls to the copy
+    constructor in order to make a copy of the object when needed.
 
     Conforming a type to `ImplicitlyCopyable` gives the Mojo language permission
     to implicitly insert a call to that types copy constructor whenever a borrowed
@@ -162,7 +162,7 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
 
     A type can opt-in to implicit copying by conforming to `ImplicitlyCopyable`
     (in the example below, the compiler also synthesizes a default field-wise
-    `__copyinit__()` implementation, as the user didn't provide a definition):
+    copy constructor, as the user didn't provide a definition):
 
     ```
     @fieldwise_init

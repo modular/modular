@@ -167,7 +167,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         self._get_discr() = UInt8(idx)
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of an existing variant.
 
         Args:
@@ -191,7 +191,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
                 self._get_ptr[T]().init_pointee_copy(copy._get_ptr[T]()[])
                 return
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move initializer for the variant.
 
         Args:

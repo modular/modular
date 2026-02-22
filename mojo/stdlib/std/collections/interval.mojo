@@ -117,7 +117,7 @@ struct Interval[T: IntervalElement](
         self.start = interval[0].copy()
         self.end = interval[1].copy()
 
-    fn __copyinit__(out self, copy: Self, /):
+    fn __init__(out self, *, copy: Self):
         """Create a new instance of the interval by copying the values
         from an existing one.
 
@@ -393,7 +393,7 @@ struct _IntervalNode[
         self.parent = parent.or_else({})
         self._is_red = is_red
 
-    fn __copyinit__(out self, copy: Self, /):
+    fn __init__(out self, *, copy: Self):
         """Create a new instance of the interval node by copying the values
         from an existing one.
 

@@ -491,7 +491,7 @@ fn use(arg: Balloons):
 fn consume_and_use():
     var balloons = Balloons("blue", 8)
     consume(balloons.color^)
-    # String.__moveinit__() runs here, which invalidates balloons.color
+    # String(take=) runs here, which invalidates balloons.color
     # Now balloons is only partially initialized
 
     # use(balloons)  # This fails because balloons.color is uninitialized
@@ -530,7 +530,7 @@ look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         # Initializes a new `self` by consuming the contents of `take`
     fn __del__(deinit self):
         # Destroys all resources in `self`

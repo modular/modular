@@ -101,7 +101,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         memset_zero(UnsafePointer(to=result), 1)
         return result^
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copies the raw bits from another `UnsafeMaybeUninit` instance.
 
         This performs a bitwise copy of the underlying memory without invoking
@@ -117,7 +117,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         )
         self._array = copy._array
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Moves the raw bits from another `UnsafeMaybeUninit` instance.
 
         This performs a bitwise move of the underlying memory without invoking

@@ -100,7 +100,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = 0
         self.capacity = capacity
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.allocated_bytes = copy.allocated_bytes
         self.count = copy.count
         self.capacity = copy.capacity
@@ -229,7 +229,7 @@ struct StringDict[
         else:
             self.deleted_mask = alloc[UInt8](0)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.count = copy.count
         self.capacity = copy.capacity
         self.keys = copy.keys

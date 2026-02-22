@@ -88,7 +88,7 @@ struct _Accumulator[
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)

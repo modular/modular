@@ -224,7 +224,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         elements^.consume_elements[init_elt]()
 
-    fn __copyinit__(out self, read copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize this list as a copy of another list.
 
         Args:
