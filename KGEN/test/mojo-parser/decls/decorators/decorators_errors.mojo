@@ -307,11 +307,6 @@ struct DecoratorSameLine:
   @staticmethod def same_line_decorator(): pass
 
 
-@value # expected-error {{'@value' has been removed, please use '@fieldwise_init' and explicit `Copyable` and `Movable` conformances instead}}
-struct LegacyValueDecorator:
-  pass
-
-
 @fieldwise_init # expected-error {{'FieldwiseInitExample' has an explicitly declared fieldwise initializer}}
 struct FieldwiseInitExample[T: Movable]:
   var x: Int
