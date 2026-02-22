@@ -79,7 +79,7 @@ struct OriginTrackable {
   ExitInitState endInitState = ExitInitState::EndsUninit;
 
   /// True if this is a byref_result argument on an initializer: the self
-  /// argument of an __init__/__copyinit__ method.  These have magic behavior so
+  /// argument of an __init__ method.  These have magic behavior so
   /// they become fully initialized when all their fields are initialized.
   bool isFullObjectLiveOnEntry = false;
 };

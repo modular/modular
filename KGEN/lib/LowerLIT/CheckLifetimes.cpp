@@ -505,7 +505,7 @@ struct ValueInfo {
   const bool isIndirect;
 
   /// True if this is a byref_result argument for a self argument in an
-  /// __init__/__copyinit__ method.  These have magic behavior so they become
+  /// __init__ method.  These have magic behavior so they become
   /// fully initialized when all their fields are initialized.
   const bool isFullObjectLiveOnEntry;
 
@@ -2100,7 +2100,7 @@ void DestructorInserter::dump() const {
 /// to be deleted by the caller.
 DestructorInserter::DtorEmissionResult
 DestructorInserter::emitDestructors(Operation *opWithUse) {
-  // If this is a __copyinit__ call, we can do elision, which may subsume
+  // If this is a copy ctor call, we can do elision, which may subsume
   // one of our dtors that we need to emit.
   DtorEmissionResult removedOp = optimizeCopyDestroys(opWithUse);
 
@@ -2348,18 +2348,18 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
 /// eliminate the copy in favor of more uses of the now-dead input.
 ///
 ///   %tmp = lit.var.decl "anonymous"
-///   kgen.call __copyinit__(%src, %tmp)
+///   kgen.call __init__(copy=)(%src, %tmp)
 ///   kgen.call __del__(%src)   <<= Thinking about inserting this.
 ///   kgen.call user(%tmp)      <<= Consuming call.
 ///
 /// If this happens, we want to generate:
 ///    REMOVED: %tmp = lit.var.decl "anonymous"
-///    REMOVED: kgen.call __copyinit__(%src, %tmp)
+///    REMOVED: kgen.call __init__(copy=)(%src, %tmp)
 ///    NOTADDED: kgen.call __del__(%src)
 ///    kgen.call user(%src)      <<= Use %src instead.
 ///
 /// Similar, for a register form, we want to transform:
-///    %tmp = kgen.call __copyinit__(%src)
+///    %tmp = kgen.call __init__(copy=)(%src)
 ///    kgen.call __del__(%src)   <<= Thinking about inserting this.
 ///    ...
 ///    lit.ref.store %tmp, %copy
@@ -2405,7 +2405,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // values when the input is a reference with an origin set containing
   // multiple things.  We prefer to delete the copy entirely if we can.
 
-  // Handle the register form: `__copyinit__(src) -> T`.
+  // Handle the register form: `__init__(*, copy: src) -> T`.
   if (copyInitCall.getNumOperands() == 1) {
     assert(copyInitCall.getCalleeType().getArgConvention(0) ==
                ArgConvention::ReadMem &&
@@ -2417,7 +2417,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
         continue; // Can only optimize full object destructions.
 
       // Check to see if the destination is unused.  If so, we can just drop the
-      // __copyinit__ entirely.
+      // copy ctor entirely.
       if (elt.value == copyDst && !elt.valueRef.isIndirect) {
         Value immSrc = copyInitCall.getOperand(0); // src as immutable reference
         copyInitCall->dropAllReferences();
@@ -2454,11 +2454,11 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
     return DtorEmissionResult::KeepOp;
   }
 
-  // Otherwise we have the memory form of `__copyinit__(src, dest)`.
+  // Otherwise we have the memory form of `__init__(copy: T, dest: T)`.
   Value copyDstMem = copyInitCall.getOperand(1);
 
   // Check to see if the destination is unused.  If so, we can just drop the
-  // __copyinit__ entirely.  We need to do this before checking to see if the
+  // copy ctor entirely.  We need to do this before checking to see if the
   // source is dead.
   ValueToDestroy *deadSrc = nullptr;
   for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
@@ -2528,7 +2528,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // "tmp" and where "src" gets mutated before the use of "tmp", e.g.:
 //
 //    %tmp = lit.var.decl "anonymous"
-//    kgen.call __copyinit__(%src, %tmp)  <<== Last use of %src
+//    kgen.call __init__(copy=)(%src, %tmp)  <<== Last use of %src
 // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
 //    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
 //    use(%tmp) use(%src)
@@ -2593,7 +2593,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       // this pattern:
 
       //    %tmp = lit.var.decl "anonymous"
-      //    kgen.call __copyinit__(%src, %tmp)  <<== Last use of %src
+      //    kgen.call __init__(copy=)(%src, %tmp)  <<== Last use of %src
       // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
       //    use(%tmp)       <= use the temp
       //    consume(%tmp)   <= eventually consume it.
@@ -2678,8 +2678,8 @@ void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
 }
 
 /// We need to destroy the source for the specified call to a memory-only
-/// __copyinit__ call.  Attempt to elide it completely or strength reduce it to
-/// a __moveinit__.  The 'copyInitSrc' value is the src operand with
+/// copy ctor call.  Attempt to elide it completely or strength reduce it
+/// to a move ctor.  The 'copyInitSrc' value is the src operand with
 /// lit.ref.immut instructions stripped off.
 DestructorInserter::CopyInitSuccess
 DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,

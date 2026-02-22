@@ -29,9 +29,8 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     fn __init__(out self):
         return
 
-    fn __copyinit__(
-        out self, copy: Self
-    ):  # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
+    # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
+    fn __init__(out self, *, copy: Self):
         return
 
     # Test a raising constructor.

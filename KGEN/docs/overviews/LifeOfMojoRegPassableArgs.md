@@ -122,11 +122,11 @@ struct MyRPType(Movable, Copyable, RegisterPassable):
     fn __init__(out self): pass
 
     # Trivial types can't define a copyinit, but this is just RP.
-    fn __copyinit__(out self, other: MyRPType): pass
+    fn __init__(out self, *, other: MyRPType): pass
 
     # RP Types cannot declare a moveinit, but they always implicitly have one
     # that is defined to transfer ownership.
-    #fn __moveinit__(out self, deinit take: MyRPType): pass
+    #fn __init__(out self, *, deinit take: MyRPType): pass
 
     fn __del__(deinit self): pass
 
@@ -174,7 +174,7 @@ lit.fn @example2():
 
   // Call the initializer, note that RP-nontrivial types are returned in
   // registers even at the parser level because we don't need exclusivity
-  // checks and CheckLifetimes is cool with it, see also the __copyinit__ below.
+  // checks and CheckLifetimes is cool with it, see also the copy ctor below.
   %0 = lit.call @MyRPType::@__init__()
   lit.ref.store %0, %a_rp
 
