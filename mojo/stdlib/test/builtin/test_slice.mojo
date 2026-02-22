@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin.builtin_slice import ContiguousSlice, StridedSlice
 from testing import assert_equal, assert_true, TestSuite
 
 
@@ -80,6 +81,37 @@ def test_slice_stringable():
     assert_equal(s[::4], "slice(None, None, 4)")
     assert_equal(repr(slice(None, 2, 3)), "slice(None, 2, 3)")
     assert_equal(repr(slice(10)), "slice(None, 10, None)")
+
+
+struct StridedSliceStringable:
+    fn __init__(out self):
+        pass
+
+    fn __getitem__(self, a: StridedSlice) -> String:
+        return String(a)
+
+
+def test_strided_slice_stringable():
+    var s = StridedSliceStringable()
+    assert_equal(s[1:10:2], "slice(1, 10, 2)")
+    assert_equal(s[::3], "slice(None, None, 3)")
+    assert_equal(s[2::-1], "slice(2, None, -1)")
+
+
+struct ContiguousSliceStringable:
+    fn __init__(out self):
+        pass
+
+    fn __getitem__(self, a: ContiguousSlice) -> String:
+        return String(a)
+
+
+def test_contiguous_slice_stringable():
+    var s = ContiguousSliceStringable()
+    assert_equal(s[0:10], "slice(0, 10, None)")
+    assert_equal(s[:5], "slice(None, 5, None)")
+    assert_equal(s[3:], "slice(3, None, None)")
+    assert_equal(s[:], "slice(None, None, None)")
 
 
 def test_slice_eq():
