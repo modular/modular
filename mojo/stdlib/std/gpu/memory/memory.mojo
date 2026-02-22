@@ -208,19 +208,23 @@ struct CacheOperation(Equatable, Representable, Stringable, TrivialRegisterPassa
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the cache operation to a writer.
 
+        The repr is type-qualified, e.g. ``CacheOperation.ca``.
+
         Args:
             writer: The writer to output the cache operation to.
         """
-        self.write_to(writer)
+        writer.write("CacheOperation.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the cache operation.
 
         Returns:
-            A string representation of the cache operation.
+            A type-qualified string, e.g. ``CacheOperation.ca``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -341,19 +345,23 @@ struct CacheEviction(Equatable, Representable, Stringable, TrivialRegisterPassab
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the cache eviction policy to a writer.
 
+        The repr is type-qualified, e.g. ``CacheEviction.evict_normal``.
+
         Args:
             writer: The writer to output the cache eviction policy to.
         """
-        self.write_to(writer)
+        writer.write("CacheEviction.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the cache eviction policy.
 
         Returns:
-            A string representation of the cache eviction policy.
+            A type-qualified string, e.g. ``CacheEviction.evict_normal``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -424,19 +432,23 @@ struct Fill(Equatable, Representable, Stringable, TrivialRegisterPassable, Writa
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the fill pattern to a writer.
 
+        The repr is type-qualified, e.g. ``Fill.none``.
+
         Args:
             writer: The writer to output the fill pattern to.
         """
-        self.write_to(writer)
+        writer.write("Fill.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the fill pattern.
 
         Returns:
-            A string representation of the fill pattern.
+            A type-qualified string, e.g. ``Fill.none``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -511,19 +523,23 @@ struct Consistency(Equatable, Representable, Stringable, TrivialRegisterPassable
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the consistency level to a writer.
 
+        The repr is type-qualified, e.g. ``Consistency.weak``.
+
         Args:
             writer: The writer to output the consistency level to.
         """
-        self.write_to(writer)
+        writer.write("Consistency.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the consistency level.
 
         Returns:
-            A string representation of the consistency level.
+            A type-qualified string, e.g. ``Consistency.weak``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     @always_inline
     fn mnemonic(self) -> StaticString:
@@ -634,19 +650,23 @@ struct ReduceOp(Equatable, Representable, Stringable, TrivialRegisterPassable, W
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the reduction operation to a writer.
 
+        The repr is type-qualified, e.g. ``ReduceOp.add``.
+
         Args:
             writer: The writer to output the reduction operation to.
         """
-        self.write_to(writer)
+        writer.write("ReduceOp.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the reduction operation.
 
         Returns:
-            A string representation of the reduction operation.
+            A type-qualified string, e.g. ``ReduceOp.add``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     @always_inline
     fn mnemonic(self) -> StaticString:

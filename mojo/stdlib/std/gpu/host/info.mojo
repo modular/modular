@@ -815,19 +815,23 @@ struct Vendor(Equatable, Representable, Stringable, TrivialRegisterPassable, Wri
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the vendor to a writer.
 
+        The repr is type-qualified, e.g. ``Vendor.nvidia_gpu``.
+
         Args:
             writer: The writer to output the vendor to.
         """
-        self.write_to(writer)
+        writer.write("Vendor.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the vendor.
 
         Returns:
-            A string representation of the vendor.
+            A type-qualified string, e.g. ``Vendor.nvidia_gpu``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 # ===-----------------------------------------------------------------------===#

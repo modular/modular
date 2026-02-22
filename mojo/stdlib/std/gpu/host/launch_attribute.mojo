@@ -203,21 +203,25 @@ struct LaunchAttributeID(Equatable, Representable, Stringable, TrivialRegisterPa
 
     @always_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the debug representation of the attribute to a writer.
+        """Writes the debug representation of the `LaunchAttributeID` to a writer.
+
+        The repr is type-qualified, e.g. ``LaunchAttributeID.1``.
 
         Args:
             writer: The writer to write to.
         """
-        self.write_to(writer)
+        writer.write("LaunchAttributeID.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the `LaunchAttributeID`.
 
         Returns:
-            A string representation of the attribute.
+            A type-qualified string, e.g. ``LaunchAttributeID.1``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 @fieldwise_init
@@ -347,19 +351,23 @@ struct AccessProperty(Equatable, Representable, Stringable, TrivialRegisterPassa
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the `AccessProperty` to a writer.
 
+        The repr is type-qualified, e.g. ``AccessProperty.NORMAL``.
+
         Args:
             writer: The writer instance to write the formatted string to.
         """
-        self.write_to(writer)
+        writer.write("AccessProperty.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the `AccessProperty`.
 
         Returns:
-            A string representation of the `AccessProperty`.
+            A type-qualified string, e.g. ``AccessProperty.NORMAL``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
 
 @fieldwise_init
@@ -427,7 +435,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         return res
 
 
-struct AccessPolicyWindow(Defaultable, Representable, Stringable, TrivialRegisterPassable, Writable):
+struct AccessPolicyWindow(Defaultable, Stringable, TrivialRegisterPassable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
@@ -535,20 +543,3 @@ struct AccessPolicyWindow(Defaultable, Representable, Stringable, TrivialRegiste
             self.miss_prop,
         )
 
-    @always_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the debug representation of the `AccessPolicyWindow` to a writer.
-
-        Args:
-            writer: The writer instance to write the formatted string to.
-        """
-        self.write_to(writer)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the debug representation of the `AccessPolicyWindow`.
-
-        Returns:
-            A string representation of the `AccessPolicyWindow`.
-        """
-        return String(self)

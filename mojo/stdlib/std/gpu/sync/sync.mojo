@@ -258,19 +258,23 @@ struct AMDScheduleBarrierMask(Equatable, Intable, Representable, Stringable, Tri
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the debug representation of the `AMDScheduleBarrierMask` to a writer.
 
+        The repr is type-qualified, e.g. ``AMDScheduleBarrierMask.NONE``.
+
         Args:
             writer: The writer to output the mask to.
         """
-        self.write_to(writer)
+        writer.write("AMDScheduleBarrierMask.", self)
 
     @no_inline
     fn __repr__(self) -> String:
         """Returns the debug representation of the `AMDScheduleBarrierMask`.
 
         Returns:
-            A string representation of the mask.
+            A type-qualified string, e.g. ``AMDScheduleBarrierMask.NONE``.
         """
-        return String(self)
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     fn __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
