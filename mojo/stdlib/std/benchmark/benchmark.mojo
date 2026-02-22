@@ -355,7 +355,7 @@ struct Report(Copyable, Defaultable, Representable, Stringable, Writable):
         writer.write(String(self))
 
     fn write_repr_to[W: Writer](self, mut writer: W):
-        """Writes the debug representation of the report to a writer.
+        """Writes the repr of the report to a writer. Same as str for Report.
 
         Parameters:
             W: The type of the writer.
@@ -366,12 +366,14 @@ struct Report(Copyable, Defaultable, Representable, Stringable, Writable):
         self.write_to(writer)
 
     fn __repr__(self) -> String:
-        """Returns a debug string representation of the report.
+        """Returns the repr of the report.
 
         Returns:
             The string representation of the Report.
         """
-        return self.as_string()
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     fn print(self, unit: String = Unit.s):
         """
