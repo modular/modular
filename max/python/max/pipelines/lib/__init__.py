@@ -57,6 +57,7 @@ from .lora_config import LoRAConfig
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
+from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
@@ -112,6 +113,7 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PipelineRuntimeConfig",
     "PixelGenerationPipeline",
     "PixelGenerationTokenizer",
     "PreTrainedPipelineTokenizer",
