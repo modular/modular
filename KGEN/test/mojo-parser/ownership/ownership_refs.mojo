@@ -415,11 +415,8 @@ struct FieldRefPropagation:
 
 # Issue #3444 (nightly) Raising init causing use of uninitialized variable
 # https://github.com/modular/mojo/issues/3444
-struct HasRaisingInit:
+struct HasRaisingInit(Copyable):
   fn __init__(out self) raises: pass
-  fn __moveinit__(out self, deinit take: Self): pass
-  fn __copyinit__(out self, copy: Self): pass
-  fn __del__(deinit self): pass
 
 struct ImmovableRaisingInit:
   fn __init__(out self) raises: pass

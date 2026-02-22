@@ -1319,7 +1319,7 @@ fn paramfor_next_value[
         abort()
 
 
-struct Optional[T: ImplicitlyCopyable]:
+struct Optional[T: Movable](Copyable):
     fn __del__(deinit self):
         pass
 
@@ -1328,7 +1328,8 @@ struct Optional[T: ImplicitlyCopyable]:
 
     @implicit
     fn __init__(out self, var value: Self.T):
-        pass
+        # This isn't correct impl, but silences an error.
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(value))
 
     @implicit
     fn __init__(out self, value: NoneType):
@@ -1337,12 +1338,6 @@ struct Optional[T: ImplicitlyCopyable]:
     # FIXME: None literal should be of NoneType not !kgen.none.
     @implicit
     fn __init__(out self, x: __mlir_type.`!kgen.none`):
-        pass
-
-    fn __copyinit__(out self, copy: Self):
-        pass
-
-    fn __moveinit__(out self, deinit take: Self):
         pass
 
     fn value(ref self) -> ref[self] Self.T:

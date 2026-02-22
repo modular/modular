@@ -1028,9 +1028,8 @@ fn signature_inference[dt: DType, rank: Int]():
     implicit_signature[func]()
 
 
-struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]:
-    fn __moveinit__(out self, deinit take: Self):
-        pass
+struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None](Movable):
+  pass
 
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params

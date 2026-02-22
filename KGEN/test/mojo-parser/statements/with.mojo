@@ -231,11 +231,8 @@ def testWithInDef(a: ExampleCM):
 # https://github.com/modularml/modular/issues/21990
 
 
-struct CMWithoutExit:
+struct CMWithoutExit(Movable):
     fn __init__(out self):
-        pass
-
-    fn __moveinit__(out self, deinit take: Self):
         pass
 
     # This context manager consumes itself and returns it as the value.

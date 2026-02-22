@@ -55,7 +55,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
 
 # This type is a unique value that cannot be moved without ending lifetime.
 # CHECK-LABEL: lit.struct.decl @MemoryUniqueMovable
-struct MemoryUniqueMovable:
+struct MemoryUniqueMovable(Movable):
     var state: MemExample
 
     fn __init__(out self):

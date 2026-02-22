@@ -451,7 +451,7 @@ fn mojo98(n: Int):
         a.x = i
 
 
-struct MyStringReturningCtx:
+struct MyStringReturningCtx(Movable):
     var s: String
 
     fn __init__(out self):
