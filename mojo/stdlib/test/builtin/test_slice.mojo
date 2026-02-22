@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.builtin_slice import ContiguousSlice, StridedSlice
+from test_utils import check_write_to
 from testing import assert_equal, assert_true, TestSuite
 
 
@@ -83,96 +84,77 @@ def test_slice_stringable():
     assert_equal(repr(slice(10)), "slice(None, 10, None)")
 
 
-struct StridedSliceStringable:
+struct StridedSliceWritable:
     fn __init__(out self):
         pass
 
     fn __getitem__(self, a: StridedSlice) -> String:
-        return String(a)
+        var s = String()
+        a.write_to(s)
+        return s
 
 
-def test_strided_slice_stringable():
-    var s = StridedSliceStringable()
+def test_strided_slice_write_to():
+    var s = StridedSliceWritable()
     # Positive stride
-    assert_equal(s[1:10:2], "slice(1, 10, 2)")
-    assert_equal(s[0:5:1], "slice(0, 5, 1)")
+    check_write_to(StridedSlice(1, 10, 2), expected="slice(1, 10, 2)", is_repr=False)
+    check_write_to(StridedSlice(0, 5, 1), expected="slice(0, 5, 1)", is_repr=False)
     # Negative stride
-    assert_equal(s[2::-1], "slice(2, None, -1)")
-    assert_equal(s[1:-1:2], "slice(1, -1, 2)")
+    check_write_to(StridedSlice(2, None, -1), expected="slice(2, None, -1)", is_repr=False)
+    check_write_to(StridedSlice(1, -1, 2), expected="slice(1, -1, 2)", is_repr=False)
     # None start or end
-    assert_equal(s[::3], "slice(None, None, 3)")
-    assert_equal(s[:5:2], "slice(None, 5, 2)")
-    assert_equal(s[1::2], "slice(1, None, 2)")
-
-
-struct ContiguousSliceStringable:
-    fn __init__(out self):
-        pass
-
-    fn __getitem__(self, a: ContiguousSlice) -> String:
-        return String(a)
-
-
-def test_contiguous_slice_stringable():
-    var s = ContiguousSliceStringable()
-    # Both bounds present
-    assert_equal(s[1:5], "slice(1, 5, None)")
-    assert_equal(s[0:10], "slice(0, 10, None)")
-    # Only end
-    assert_equal(s[:3], "slice(None, 3, None)")
-    assert_equal(s[:5], "slice(None, 5, None)")
-    # Only start
-    assert_equal(s[3:], "slice(3, None, None)")
-    # Neither
-    assert_equal(s[:], "slice(None, None, None)")
-
-
-struct StridedSliceRepresentable:
-    fn __init__(out self):
-        pass
-
-    fn __getitem__(self, a: StridedSlice) -> String:
-        return repr(a)
-
-
-def test_strided_slice_representable():
-    var s = StridedSliceRepresentable()
-    # Verify exact repr output
+    check_write_to(StridedSlice(None, None, 3), expected="slice(None, None, 3)", is_repr=False)
+    check_write_to(StridedSlice(None, 5, 2), expected="slice(None, 5, 2)", is_repr=False)
+    check_write_to(StridedSlice(1, None, 2), expected="slice(1, None, 2)", is_repr=False)
+    # Also verify via helper struct using slice literal syntax
     assert_equal(s[1:10:2], "slice(1, 10, 2)")
     assert_equal(s[2::-1], "slice(2, None, -1)")
     assert_equal(s[1:-1:2], "slice(1, -1, 2)")
     assert_equal(s[::3], "slice(None, None, 3)")
+
+
+def test_strided_slice_write_repr_to():
     # repr == str for StridedSlice
-    assert_equal(repr(StridedSlice(1, 10, 2)), String(StridedSlice(1, 10, 2)))
-    assert_equal(
-        repr(StridedSlice(None, None, 3)), String(StridedSlice(None, None, 3))
-    )
+    check_write_to(StridedSlice(1, 10, 2), expected="slice(1, 10, 2)", is_repr=True)
+    check_write_to(StridedSlice(2, None, -1), expected="slice(2, None, -1)", is_repr=True)
+    check_write_to(StridedSlice(None, None, 3), expected="slice(None, None, 3)", is_repr=True)
 
 
-struct ContiguousSliceRepresentable:
+struct ContiguousSliceWritable:
     fn __init__(out self):
         pass
 
     fn __getitem__(self, a: ContiguousSlice) -> String:
-        return repr(a)
+        var s = String()
+        a.write_to(s)
+        return s
 
 
-def test_contiguous_slice_representable():
-    var s = ContiguousSliceRepresentable()
-    # Verify exact repr output
+def test_contiguous_slice_write_to():
+    var s = ContiguousSliceWritable()
+    # Both bounds present
+    check_write_to(ContiguousSlice(1, 5, None), expected="slice(1, 5, None)", is_repr=False)
+    check_write_to(ContiguousSlice(0, 10, None), expected="slice(0, 10, None)", is_repr=False)
+    # Only end
+    check_write_to(ContiguousSlice(None, 3, None), expected="slice(None, 3, None)", is_repr=False)
+    check_write_to(ContiguousSlice(None, 5, None), expected="slice(None, 5, None)", is_repr=False)
+    # Only start
+    check_write_to(ContiguousSlice(3, None, None), expected="slice(3, None, None)", is_repr=False)
+    # Neither
+    check_write_to(ContiguousSlice(None, None, None), expected="slice(None, None, None)", is_repr=False)
+    # Also verify via helper struct using slice literal syntax
     assert_equal(s[1:5], "slice(1, 5, None)")
-    assert_equal(s[0:10], "slice(0, 10, None)")
     assert_equal(s[:3], "slice(None, 3, None)")
     assert_equal(s[3:], "slice(3, None, None)")
     assert_equal(s[:], "slice(None, None, None)")
+
+
+def test_contiguous_slice_write_repr_to():
     # repr == str for ContiguousSlice
-    assert_equal(
-        repr(ContiguousSlice(1, 5, None)), String(ContiguousSlice(1, 5, None))
-    )
-    assert_equal(
-        repr(ContiguousSlice(None, 3, None)),
-        String(ContiguousSlice(None, 3, None)),
-    )
+    check_write_to(ContiguousSlice(1, 5, None), expected="slice(1, 5, None)", is_repr=True)
+    check_write_to(ContiguousSlice(None, 3, None), expected="slice(None, 3, None)", is_repr=True)
+    check_write_to(ContiguousSlice(3, None, None), expected="slice(3, None, None)", is_repr=True)
+    check_write_to(ContiguousSlice(None, None, None), expected="slice(None, None, None)", is_repr=True)
 
 
 def test_slice_eq():

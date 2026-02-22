@@ -205,7 +205,7 @@ struct Slice(
         return (start.value(), end.value(), step)
 
 
-struct StridedSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
+struct StridedSlice(ImplicitlyCopyable, Writable):
     """Represents a slice expression that has a stride.
 
     This type is used to support different behavior for strided vs unstrided
@@ -246,35 +246,13 @@ struct StridedSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn __str__(self) -> String:
-        """Gets the string representation of the strided slice.
-
-        Returns:
-            The string representation of the strided slice.
-        """
-        var output = String()
-        self.write_to(output)
-        return output
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Gets the string representation of the strided slice.
-
-        Returns:
-            The string representation of the strided slice.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Write StridedSlice string representation to a `Writer`.
 
         Args:
             writer: The object to write to.
         """
-        writer.write(self._inner)
+        self._inner.write_to(writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -298,7 +276,7 @@ struct StridedSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
         return self._inner.indices(length)
 
 
-struct ContiguousSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
+struct ContiguousSlice(ImplicitlyCopyable, Writable):
     """Represents a slice expression without a stride.
 
     This type is used to support different behavior for strided vs unstrided
@@ -334,28 +312,6 @@ struct ContiguousSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn __str__(self) -> String:
-        """Gets the string representation of the contiguous slice.
-
-        Returns:
-            The string representation of the contiguous slice.
-        """
-        var output = String()
-        self.write_to(output)
-        return output
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Gets the string representation of the contiguous slice.
-
-        Returns:
-            The string representation of the contiguous slice.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Write ContiguousSlice string representation to a `Writer`.
 
@@ -368,13 +324,13 @@ struct ContiguousSlice(ImplicitlyCopyable, Representable, Stringable, Writable):
             if opt:
                 writer.write(repr(opt.value()))
             else:
-                writer.write(repr(None))
+                writer.write_string("None")
 
-        writer.write("slice(")
+        writer.write_string("slice(")
         write_optional(self.start)
-        writer.write(", ")
+        writer.write_string(", ")
         write_optional(self.end)
-        writer.write(", None)")
+        writer.write_string(", None)")
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
