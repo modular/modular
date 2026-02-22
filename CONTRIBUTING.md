@@ -40,6 +40,8 @@ Before you start your first pull request, please complete this checklist:
 
 - Read this entire contributor guide.
 - Read the [Code of Conduct](./CODE_OF_CONDUCT.md).
+- If you are using AI to assist with coding, read our
+  [AI Tool Use Policy](./AI_TOOL_POLICY.md).
 
 ### Step 1: Evaluate and get buy-in on the change
 
