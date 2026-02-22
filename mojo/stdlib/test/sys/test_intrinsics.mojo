@@ -175,5 +175,33 @@ def test_prefetch_options_str():
     )
 
 
+def test_prefetch_locality_repr():
+    assert_equal(repr(PrefetchLocality.NONE), "NONE")
+    assert_equal(repr(PrefetchLocality.HIGH), "HIGH")
+
+
+def test_prefetch_rw_repr():
+    assert_equal(repr(PrefetchRW.READ), "READ")
+    assert_equal(repr(PrefetchRW.WRITE), "WRITE")
+
+
+def test_prefetch_cache_repr():
+    assert_equal(repr(PrefetchCache.INSTRUCTION), "INSTRUCTION")
+    assert_equal(repr(PrefetchCache.DATA), "DATA")
+
+
+def test_prefetch_options_repr():
+    assert_equal(
+        repr(PrefetchOptions()),
+        "PrefetchOptions(rw=READ, locality=HIGH, cache=DATA)",
+    )
+    assert_equal(
+        repr(
+            PrefetchOptions().for_write().no_locality().to_instruction_cache()
+        ),
+        "PrefetchOptions(rw=WRITE, locality=NONE, cache=INSTRUCTION)",
+    )
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
