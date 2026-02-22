@@ -431,6 +431,10 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
+            comptime c_row_stride = c.layout.stride[0].value()
+            comptime assert (
+                c.layout.stride[1].value() == 1
+            ), "the last dim's stride must be 1"
 
             comptime for n_vec in range(num_vecs_n):
                 comptime for m_vec in range(num_vecs_m):
@@ -438,8 +442,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
-                    comptime dst_m_offset = dst_idx // N
-                    comptime dst_n_offset = dst_idx % N
+                    comptime dst_m_offset = dst_idx // c_row_stride
+                    comptime dst_n_offset = dst_idx % c_row_stride
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
