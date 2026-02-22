@@ -2065,12 +2065,7 @@ LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
 
   switch (fn.getSpecialFunctionKind()) {
   default:
-    // Matching by name is a bit gross, but we don't have general synthesized
-    // decls so it should be robust.
-    assert(fn.getSymName()->starts_with("copy(") &&
-           "unknown synthetic function to synthesize");
-    gen.populateExplicitCopy(decl);
-    return success();
+    llvm_unreachable("unknown synthetic function to synthesize");
   case SpecialFunctionKind::kMoveCtor:
     (void)gen.populateMoveCopy(decl, /*isMove*/ true);
     return success();

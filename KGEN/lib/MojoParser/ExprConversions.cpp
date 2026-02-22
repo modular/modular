@@ -599,10 +599,11 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // If we need an explicit copy out, emit a call to .copy() on the result into
   // the ultimate dest.
   if (needsExplicitCopyOut) {
-    callResult = emitter.emitNamedMethodCall(
-        "copy",
-        CallOperands(CallSyntax::kMethodCall, &node, {{callResult, node}}),
-        explicitCopyOutDest);
+    CallOperands operands(CallSyntax::kImplicitCopyCtor, node);
+    operands.add(StringAttr::get(shared.getContext(), "copy"),
+                 {callResult, node});
+    callResult = emitter.emitConstructorCall(
+        callResult.getRValueType(), std::move(operands), explicitCopyOutDest);
   }
 
   // If the callee is async, we got a coroutine. Now await it into the result.

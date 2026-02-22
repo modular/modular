@@ -810,6 +810,7 @@ trait Copyable(Movable):
     fn __init__(out self, *, copy: Self):
         ...
 
+    @always_inline
     fn copy(self) -> Self:
         return Self(copy=self)
 

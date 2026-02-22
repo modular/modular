@@ -872,108 +872,6 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   return success();
 }
 
-FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
-  IREmitter emitter(structDecl, EC_Decorator);
-
-  ASTType selfType = structDecl.getTypeDeclSelf();
-  MLIRContext *ctx = this->shared.getContext();
-  SmallVector<Type> argTypes;
-  SmallVector<ArgConvention> argConventions;
-  SmallVector<StringAttr> argNames;
-  SmallVector<PassingKind> argPassingKinds;
-
-  // Add the `existing` argument
-  //
-  // If the type is register passable trivial, the 'existing' value will
-  // be passed as a register, otherwise a reference.
-  if (structDeclOp.isRegisterPassableTrivial()) {
-    // Self is register trivial
-    argTypes.push_back(selfType);
-    argConventions.push_back(ArgConvention::ReadReg);
-  } else {
-    argTypes.push_back(selfType.getRefForArgument("existing", /*isMut=*/false));
-    argConventions.push_back(ArgConvention::ReadMem);
-  }
-  argNames.push_back(StringAttr::get(ctx, "existing"));
-  argPassingKinds.push_back(PassingKind::PosOnly);
-
-  // Add result slot / return type
-  //
-  // If the type is register passable (trivial or not), the low-level function
-  // return result type is Self. Otherwise, the low-level return type is None,
-  // and the result is returned through a memory output `__result__` slot arg.
-  Type mlirReturnType;
-
-  if (selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
-    // The return type is register passable, so return it directly via the
-    // low-level MLIR-level return type (not via a result slot argument).
-    mlirReturnType = selfType;
-  } else {
-    argNames.push_back(StringAttr::get(ctx, "__result__"));
-    argPassingKinds.push_back(PassingKind::Implicit);
-    argTypes.push_back(
-        selfType.getRefForArgument("__result__", /*isMut=*/true));
-    argConventions.push_back(ArgConvention::ByRefResult);
-    mlirReturnType = shared.getNoneType();
-  }
-
-  assert(mlirReturnType &&
-         "failed to compute return type for synthesized copy()");
-
-  // Construct an empty FnOp for copy() method
-  auto argListAttrs = PogListAttr::get(ctx, argNames, argPassingKinds);
-  auto [copyFunc, funcDecl] = this->synthesizeMethodInStruct(
-      "copy", argTypes, argConventions, argListAttrs,
-      /*resultType=*/mlirReturnType);
-
-  funcDecl->resolvedness = DeclResolvedness::signature;
-
-  // FIXME(MOCO-2288):
-  //  This is a hack to get `ImplicitlyCopyable(Copyable)` inheritance
-  //  to work. We should not have to early populate `copy()` here.
-  populateExplicitCopy(*funcDecl);
-
-  return copyFunc;
-}
-
-void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
-  auto fn = cast<FnOp>(fnDecl.getIfOperation());
-  IREmitter emitter(structDecl, EC_Decorator);
-
-  // Point a `builder` at the end of the new copy() FnOp
-  emitter.builder = OpBuilder::atBlockEnd(fn.getBody());
-
-  // Now generate the body of the copy() method
-  SyntheticNode synthNode(structDecl.getLoc());
-
-  // If the struct is copyable, then just generate a call to the copy
-  // constructor to reduce code size.
-  Value resultToReturn;
-  if (structDecl.getTypeDeclSelf().isImplicitlyCopyable(fnDecl.getLoc(),
-                                                        shared)) {
-    if (structDeclOp.isRegisterPassableTrivial()) {
-      resultToReturn = fn.getArgument(0);
-    } else if (structDeclOp.isRegisterPassable()) {
-      MBValue selfArg = MBValue(fn.getArgument(0));
-      resultToReturn =
-          emitter.emitSRValue({selfArg, synthNode}, EC_ReturnValue);
-    } else {
-      MBValue selfArg = MBValue(fn.getArgument(0));
-      ValueDest resultSlotDest(MLValue(fn.getArgument(1)), EC_ReturnValue);
-      emitter.emitCopyOfValue({selfArg, synthNode}, resultSlotDest);
-      // resultToReturn remains null.
-    }
-  } else {
-    emitError(structDecl.getLoc())
-        << "cannot synthesize explicit 'copy()'"
-        << " for non-copyable struct " << structDecl.getTypeDeclSelf()
-        << "; declare 'copy()' manually";
-  }
-
-  emitter.emitNormalReturn(structDeclOp.getLoc(), resultToReturn);
-  fnDecl.resolvedness = DeclResolvedness::body;
-}
-
 std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
   auto &shared = structDecl.getShared();
   ValueInfo result;
@@ -995,9 +893,7 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
   if (failed(find("__del__", SpecialFunctionKind::kDel, result.del)) ||
       failed(
           find("__init__", SpecialFunctionKind::kCopyCtor, result.copyctor)) ||
-      failed(
-          find("__init__", SpecialFunctionKind::kMoveCtor, result.movector)) ||
-      failed(find("copy", SpecialFunctionKind::kNormal, result.copy)))
+      failed(find("__init__", SpecialFunctionKind::kMoveCtor, result.movector)))
     return {};
 
   return result;
@@ -1026,16 +922,6 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
   if (!valueInfo->movector && !structDeclOp.isRegisterPassable())
     valueInfo->movector = synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
   addCopyOrMoveBuiltinTrait("Movable");
-
-  // NOTE: The  behavior of this is scary: if there is no method named "copy"
-  // with any signature, then this will get called to synthesize the copy()
-  // method and get Copyable.  If there is some method with this name
-  // then it doesn't get added, even if it has nothing to do with
-  // Copyable.
-  // We should just remove @value.
-  if (!valueInfo->copy)
-    valueInfo->copy = synthesizeEmptyExplicitCopy(structDecl);
-
   return valueInfo;
 }
 
