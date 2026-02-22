@@ -44,7 +44,7 @@ from sys.os import abort, sep
 # ===----------------------------------------------------------------------=== #
 
 
-struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Stringable, Writable):
+struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Representable, Stringable, Writable):
     """Represents the termination status of a process.
 
     This struct is returned by `poll()` and `wait()`.
@@ -109,6 +109,24 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Stringable, Writable
             writer.write("ProcessStatus(term_signal: ", self.term_signal.value(), ")")
         else:
             writer.write("ProcessStatus(running)")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Formats the repr of this `ProcessStatus` to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_to(writer)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Constructs a repr of `ProcessStatus`.
+
+        Returns:
+            A string representation of `ProcessStatus`.
+        """
+        return String(self)
 
 
 struct Pipe:
