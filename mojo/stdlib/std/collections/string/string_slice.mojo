@@ -1847,27 +1847,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return False
         return True
 
-    def isdigit(self) -> Bool:
-        """Returns True if all characters in the string are digits and there is
-        at least one character.
-
-        Note that this currently only works with ASCII strings.
+    def is_ascii_alpha(self) -> Bool:
+        """Returns True if all characters in the string are ASCII alphabetic
+        and there is at least one character.
 
         Returns:
-            True if all characters are digits and the string is non-empty,
-            False otherwise.
-        """
-        return self.is_ascii_digit()
-
-    def isalpha(self) -> Bool:
-        """Returns True if all characters in the string are alphabetic and
-        there is at least one character.
-
-        Note that this currently only works with ASCII strings.
-
-        Returns:
-            True if all characters are alphabetic and the string is non-empty,
-            False otherwise.
+            True if all characters are ASCII letters and the string is
+            non-empty, False otherwise.
         """
         if not self:
             return False
@@ -1876,15 +1862,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return False
         return True
 
-    def isalnum(self) -> Bool:
-        """Returns True if all characters in the string are alphanumeric and
-        there is at least one character.
-
-        Note that this currently only works with ASCII strings.
+    def is_ascii_alnum(self) -> Bool:
+        """Returns True if all characters in the string are ASCII alphanumeric
+        and there is at least one character.
 
         Returns:
-            True if all characters are alphanumeric and the string is
-            non-empty, False otherwise.
+            True if all characters are ASCII letters or digits and the string
+            is non-empty, False otherwise.
         """
         if not self:
             return False
