@@ -59,17 +59,11 @@ def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
     return flat[:num_elements].view(buffer.dtype, (rows, cols))
 
 
-class _PersistentKVInputBuffers:
-    """Persistent buffers backing runtime LUT and cache-length inputs."""
+class _PersistentKVDeviceInputBuffers:
+    """Persistent device buffers backing runtime LUT/cache-length inputs."""
 
     max_batch_size: int
     """Maximum number of request rows currently allocated."""
-
-    lut_table_host: Buffer
-    """LUT host buffer."""
-
-    cache_lengths_host: Buffer
-    """Cache lengths host buffer."""
 
     lut_table_by_device: list[Buffer]
     """LUT on each device."""
@@ -84,48 +78,27 @@ class _PersistentKVInputBuffers:
         devices: Sequence[Device],
     ):
         self.max_batch_size = max_batch_size
-        device0 = devices[0]
-        pinned = not device0.is_host
-
-        # Runtime lookup-table shape is [max_batch_size, max_total_num_pages]:
-        # rows map to request slots in the current batch and columns map to
-        # per-request page slots.
-        # [0, total_num_pages) are the valid block ids and total_num_pages
-        # denotes an unassigned block.
-        self.lut_table_host = Buffer(
-            shape=(max_batch_size, max_total_num_pages),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-
-        if pinned:
-            self.lut_table_host.disable_auto_sync()
-
-        self.cache_lengths_host = Buffer(
-            shape=(max_batch_size,),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-
-        if pinned:
-            self.cache_lengths_host.disable_auto_sync()
 
         self.lut_table_by_device = []
         self.cache_lengths_by_device = []
         for device in devices:
             self.lut_table_by_device.append(
-                self.lut_table_host.to(device=device)
+                Buffer(
+                    shape=(max_batch_size, max_total_num_pages),
+                    dtype=DType.uint32,
+                    device=device,
+                )
             )
             self.cache_lengths_by_device.append(
-                self.cache_lengths_host.to(device=device)
+                Buffer(
+                    shape=(max_batch_size,),
+                    dtype=DType.uint32,
+                    device=device,
+                )
             )
 
-    def values(self) -> tuple[Buffer, Buffer, list[Buffer], list[Buffer]]:
+    def values(self) -> tuple[list[Buffer], list[Buffer]]:
         return (
-            self.lut_table_host,
-            self.cache_lengths_host,
             self.lut_table_by_device,
             self.cache_lengths_by_device,
         )
@@ -220,10 +193,12 @@ class _TPPagedKVCacheManager:
 
         max_total_num_pages = self.total_num_pages
 
-        self._persistent_kv_input_buffers = _PersistentKVInputBuffers(
-            max_batch_size=self._max_batch_size,
-            max_total_num_pages=max_total_num_pages,
-            devices=self.devices,
+        self._persistent_kv_device_input_buffers = (
+            _PersistentKVDeviceInputBuffers(
+                max_batch_size=self._max_batch_size,
+                max_total_num_pages=max_total_num_pages,
+                devices=self.devices,
+            )
         )
 
         # Whether prefix caching is enabled.
@@ -373,16 +348,35 @@ class _TPPagedKVCacheManager:
                 f"buffer capacity: {batch_size} > {self._max_batch_size}."
             )
 
-        runtime_inputs = self._persistent_kv_input_buffers
-        # Slice row views from persistent full-capacity buffers so we only
-        # update active requests while preserving stable shapes/pointers for
-        # replayed graphs.
-        lut_table_host = _contiguous_prefix_2d(
-            runtime_inputs.lut_table_host,
-            rows=batch_size,
-            cols=max_total_num_pages,
+        # Allocate pinned host staging each invocation so async H2D submissions
+        # do not race with subsequent host writes to reused staging buffers.
+        device0 = self.devices[0]
+        pinned = not device0.is_host
+
+        # Runtime lookup-table shape is [batch_size, max_total_num_pages]:
+        # rows map to request slots in the current batch and columns map to
+        # per-request page slots.
+        # [0, total_num_pages) are the valid block ids and total_num_pages
+        # denotes an unassigned block.
+        lut_table_host = Buffer(
+            shape=(batch_size, max_total_num_pages),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
         )
-        cache_lengths_host = runtime_inputs.cache_lengths_host[:batch_size]
+
+        cache_lengths_host = Buffer(
+            shape=(batch_size,),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+
+        if pinned:
+            lut_table_host.disable_auto_sync()
+            cache_lengths_host.disable_auto_sync()
+
+        runtime_inputs = self._persistent_kv_device_input_buffers
         # Take a contiguous view of the LUT buffer, which is written to below.
         lut_table_by_device = [
             _contiguous_prefix_2d(
@@ -398,6 +392,7 @@ class _TPPagedKVCacheManager:
         ]
 
         assert lut_table_host.is_contiguous
+        assert cache_lengths_host.is_contiguous
         assert all(buffer.is_contiguous for buffer in lut_table_by_device)
 
         lut_table_np = lut_table_host.to_numpy()
