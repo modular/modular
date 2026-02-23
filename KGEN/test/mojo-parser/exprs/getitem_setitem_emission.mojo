@@ -176,8 +176,7 @@ struct XYZ:
       elif name == "y":
         return 6
       else:
-        # Constrained is not supported with stubs library.
-        #constrained[name == "z", "can only index with x, y, or z"]()
+        comptime assert name == "z", "can only index with x, y, or z"
         return 8
 struct ParamIndex:
   fn __getitem__[a: Int, b: Int](self) -> Int: return 42

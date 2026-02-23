@@ -32,10 +32,9 @@ struct TestStruct:
 fn test_nonexistent_field_index():
     comptime if env_get_bool["TEST_NONEXISTENT_INDEX", False]():
         # CHECK-INDEX: has no field named 'nonexistent'
-        constrained[
-            struct_field_index_by_name[TestStruct, "nonexistent"]() == 0,
-            "should not reach here",
-        ]()
+        comptime assert (
+            struct_field_index_by_name[TestStruct, "nonexistent"]() == 0
+        ), "should not reach here"
 
 
 # Test that struct_field_type_by_name produces an error for non-existent field.
@@ -46,40 +45,36 @@ fn test_nonexistent_field_type():
             TestStruct, "missing_field"
         ]()
         # Force evaluation by using the type
-        constrained[
-            get_type_name[field_type.T]() == "Int",
-            "should not reach here",
-        ]()
+        comptime assert (
+            get_type_name[field_type.T]() == "Int"
+        ), "should not reach here"
 
 
 # Test that offset_of[name=] produces an error for non-existent field.
 fn test_offset_nonexistent_field():
     comptime if env_get_bool["TEST_OFFSET_NONEXISTENT_FIELD", False]():
         # CHECK-OFFSET-NAME: has no field named 'does_not_exist'
-        constrained[
-            offset_of[TestStruct, name="does_not_exist"]() == 0,
-            "should not reach here",
-        ]()
+        comptime assert (
+            offset_of[TestStruct, name="does_not_exist"]() == 0
+        ), "should not reach here"
 
 
 # Test that offset_of[index=] produces an error for out-of-bounds index.
 fn test_offset_out_of_bounds():
     comptime if env_get_bool["TEST_OFFSET_OUT_OF_BOUNDS", False]():
         # CHECK-OFFSET-INDEX: field index 99 is out of bounds for struct with 2 fields
-        constrained[
-            offset_of[TestStruct, index=99]() == 0,
-            "should not reach here",
-        ]()
+        comptime assert (
+            offset_of[TestStruct, index=99]() == 0
+        ), "should not reach here"
 
 
 # Test that offset_of[index=] produces an error for negative index.
 fn test_offset_negative_index():
     comptime if env_get_bool["TEST_OFFSET_NEGATIVE_INDEX", False]():
         # CHECK-OFFSET-NEGATIVE: field index -1 is out of bounds for struct with 2 fields
-        constrained[
-            offset_of[TestStruct, index= -1]() == 0,
-            "should not reach here",
-        ]()
+        comptime assert (
+            offset_of[TestStruct, index= -1]() == 0
+        ), "should not reach here"
 
 
 fn main():
