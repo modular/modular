@@ -48,25 +48,27 @@ static bool isPackageOptedIntoStabilityMarkers(StringRef packageName) {
   return packageName == "std" || packageName == "test_std_mock";
 }
 
-/// Get the package name that contains the given declaration.
-/// Returns std::nullopt if the declaration is not within a package.
-static std::optional<llvm::StringRef> getPackageNameForDecl(ASTDecl &decl) {
-  // Walk up the parent chain to find the enclosing package.
-  if (ASTDecl *pkgDecl = decl.getNearestDeclOfType<PackageOp>()) {
-    if (auto *op = pkgDecl->getIfOperation()) {
+/// Find the nearest ancestor PackageOp that has opted into stability markers.
+/// Walks the full ancestor chain so that e.g. code in `std::builtin::simd`
+/// finds the `std` package.  Returns nullptr if no opted-in package is found.
+static PackageOp findOptedInPackage(ASTDecl &decl) {
+  ASTDecl *cur = decl.getNearestDeclOfType<PackageOp>();
+  while (cur) {
+    if (auto *op = cur->getIfOperation())
       if (auto pkgOp = dyn_cast<PackageOp>(op))
-        return pkgOp.getSymName();
-    }
+        if (isPackageOptedIntoStabilityMarkers(pkgOp.getSymName()))
+          return pkgOp;
+    cur = cur->getParentDecl();
+    if (cur)
+      cur = cur->getNearestDeclOfType<PackageOp>();
   }
-  return std::nullopt;
+  return {};
 }
 
-/// Returns true if the declaration is from a package that has opted into
-/// stability markers.
+/// Returns true if the declaration is inside a package (or sub-package) that
+/// has opted into stability markers.
 static bool isDeclFromOptedInPackage(ASTDecl &decl) {
-  if (auto pkgName = getPackageNameForDecl(decl))
-    return isPackageOptedIntoStabilityMarkers(*pkgName);
-  return false;
+  return static_cast<bool>(findOptedInPackage(decl));
 }
 
 /// Returns true if the declaration is from an opted-in package AND marked
@@ -94,11 +96,12 @@ void M::KGEN::LIT::checkStabilityAndWarn(ASTDecl &decl, SMLoc useLoc,
   if (!isUnstable(decl))
     return;
 
-  // Check if the use site is in the same opted-in package (no warning for
-  // intra-package usage).
-  auto declPkgName = getPackageNameForDecl(decl);
-  auto useSitePkgName = getPackageNameForDecl(useSiteDecl);
-  if (useSitePkgName && declPkgName && *useSitePkgName == *declPkgName)
+  // Don't warn for intra-package usage.  Compare opted-in ancestor package
+  // names so that sub-packages (e.g. std::builtin, std::collections) are
+  // treated as the same package.
+  auto declPkg = findOptedInPackage(decl);
+  auto useSitePkg = findOptedInPackage(useSiteDecl);
+  if (declPkg && useSitePkg && declPkg.getSymName() == useSitePkg.getSymName())
     return;
 
   // Declaration is unstable, emit warning.
