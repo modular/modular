@@ -23,6 +23,7 @@ from reflection import (
 from reflection.type_info import _unqualified_type_name
 
 
+@deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
 fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Asserts that the condition must be true at compile time.
@@ -61,6 +62,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     ]()
 
 
+@deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
 fn constrained[cond: Bool]():
     """Asserts that the condition must be true at compile time.
