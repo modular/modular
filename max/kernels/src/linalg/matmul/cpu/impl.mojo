@@ -753,7 +753,7 @@ fn matmul[
                 num_threads,
             )
         else:
-            constrained[False, "no _run_inner_loop implementation"]()
+            comptime assert False, "no _run_inner_loop implementation"
 
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
@@ -889,4 +889,4 @@ fn _submatmul_sequential_sync[
             sub_matrix_offset,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert False, "no _run_inner_loop implementation"

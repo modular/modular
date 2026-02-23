@@ -16,13 +16,10 @@
 from __future__ import annotations
 
 import importlib
-import json
 import logging
 import os
 import sys
-from enum import Enum
-from pathlib import Path
-from typing import Any, get_type_hints
+from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, load_devices
@@ -90,7 +87,9 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "Maximum batch size to execute with the model. When not specified "
             "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity."
+            "set this higher based on server capacity. When "
+            "device_graph_capture is enabled, overlap pre-captures decode "
+            "graph entries for batch sizes [1..max_batch_size]."
         ),
     )
 
@@ -168,25 +167,6 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "The target number of un-encoded tokens to include in each batch. "
             "This value is used for chunked prefill and memory estimation."
-        ),
-    )
-
-    enable_echo: bool = Field(
-        default=False,
-        description="Whether the model should be built with echo capabilities.",
-    )
-
-    pool_embeddings: bool = Field(
-        default=True, description="Whether to pool embedding outputs."
-    )
-
-    chat_template: Path | None = Field(
-        default=None,
-        description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config. If a path is provided, the file is read "
-            "during config resolution and the content stored as a string. If "
-            "None, the model's default chat template is used."
         ),
     )
 
@@ -547,7 +527,7 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            if self.enable_echo or self.draft_model:
+            if self.model.enable_echo or self.draft_model:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -660,82 +640,6 @@ class PipelineConfig(ConfigFileModel):
 
         return self
 
-    def retrieve_chat_template(self) -> str | None:
-        """Returns the chat template string, or None if not set."""
-        # Read the file content
-        if self.chat_template is None:
-            return None
-
-        try:
-            with open(self.chat_template, encoding="utf-8") as f:
-                template_content = f.read()
-
-            # Try to parse as JSON and extract chat_template if present
-            try:
-                template_json = json.loads(template_content)
-                if (
-                    isinstance(template_json, dict)
-                    and "chat_template" in template_json
-                ):
-                    logger.info(
-                        f"Successfully loaded chat_template from JSON in {self.chat_template} "
-                        f"({len(template_json['chat_template'])} characters)"
-                    )
-                    return template_json["chat_template"]
-                else:
-                    # JSON but no chat_template key, use entire content
-                    logger.info(
-                        f"Successfully loaded custom prompt template from {self.chat_template} "
-                        f"({len(template_content)} characters, JSON without chat_template key)"
-                    )
-                    return template_content
-            except json.JSONDecodeError:
-                # Not valid JSON, use entire content as template
-                logger.info(
-                    f"Successfully loaded custom prompt template from {self.chat_template} "
-                    f"({len(template_content)} characters)"
-                )
-                return template_content
-
-        except (OSError, UnicodeDecodeError) as e:
-            raise ValueError(
-                f"Failed to read prompt template file {self.chat_template}: {str(e)}. "
-                f"Please ensure the file is readable and contains valid UTF-8 text."
-            ) from e
-
-    def _resolve_chat_template(self) -> None:
-        """Resolves chat_template if it is a Path by reading the file content.
-
-        Handles the case where chat_template is a Path object,
-        validates that the file exists, reads its content, and stores the content
-        as a string in the chat_template field.
-
-        Raises:
-            FileNotFoundError: If the specified template file does not exist
-            ValueError: If there's an error reading the template file
-        """
-        if self.chat_template is None:
-            return
-
-        # Expand user home directory if present (e.g., ~/templates/custom.jinja)
-        self.chat_template = self.chat_template.expanduser()
-
-        # Convert relative paths to absolute paths
-        if not self.chat_template.is_absolute():
-            self.chat_template = Path.cwd() / self.chat_template
-
-        # Verify the file exists
-        if not self.chat_template.exists():
-            raise ValueError(
-                f"--chat-template path ({self.chat_template}) does not exist."
-            )
-
-        if not self.chat_template.is_file():
-            raise ValueError(
-                f"Prompt template path is not a file: {self.chat_template}. "
-                f"Please provide a path to a valid template file."
-            )
-
     def _import_custom_architectures(self) -> None:
         """Imports custom model modules and adds them to the registry."""
         for module_spec in self.custom_architectures:
@@ -823,9 +727,6 @@ class PipelineConfig(ConfigFileModel):
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
 
-        # Resolve chat_template if it's a Path
-        self._resolve_chat_template()
-
         self.model.resolve()
 
         # Validation for max_length is handled in MAXModelConfig
@@ -868,6 +769,8 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_overlap_scheduler()
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
+        self._validate_and_resolve_device_graph_capture()
+
         if self.force:
             return
 
@@ -934,10 +837,43 @@ class PipelineConfig(ConfigFileModel):
                     "Overlap scheduler is not supported with CPU models."
                 )
 
+    def _validate_and_resolve_device_graph_capture(self) -> None:
+        if not self.device_graph_capture:
+            return
+
+        # TODO(GENAI-363): Support device graph capture warmup with data
+        # parallelism by capturing per-replica inputs.
+        if self.model.data_parallel_degree > 1:
+            raise ValueError(
+                "device_graph_capture currently requires "
+                "data_parallel_degree=1."
+            )
+        if self.max_batch_size is None:
+            raise ValueError(
+                "device_graph_capture requires max_batch_size to be set."
+            )
+        if not self.enable_overlap_scheduler:
+            logger.info("Enabling overlap scheduling for device graph capture.")
+        self.enable_overlap_scheduler = True
+        if self.max_num_steps != 1:
+            logger.info(
+                "Setting max-num-steps=1 for device graph capture with overlap scheduling."
+            )
+        self.max_num_steps = 1
+
     def _validate_and_resolve_max_num_steps(self) -> None:
         """Validates and resolves the max_num_steps field (platform-specific)."""
+        if self.draft_model is not None and self.max_num_steps > 1:
+            raise ValueError(
+                f"max_num_steps must be 1 when speculative decoding is enabled, "
+                f"got {self.max_num_steps}."
+            )
         if self.max_num_steps < 0:
             if self.model.default_device_spec == DeviceSpec.cpu():
+                self.max_num_steps = 1
+            elif self.draft_model is not None:
+                # Speculative decoding pipelines manage multi-step KV
+                # allocation internally.
                 self.max_num_steps = 1
             else:
                 self.max_num_steps = 10
@@ -1029,7 +965,7 @@ class PipelineConfig(ConfigFileModel):
                         f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
                     )
 
-        if self.enable_echo:
+        if self.model.enable_echo:
             raise ValueError(
                 "enable_echo not currently supported with speculative decoding enabled"
             )
@@ -1479,27 +1415,32 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
         ) from exc
 
 
-class PrependPromptSpeechTokens(str, Enum):
-    NEVER = "never"
-    """Never prepend the prompt speech tokens sent to the audio decoder."""
+PrependPromptSpeechTokens = Literal["never", "once", "rolling"]
+"""Controls whether prompt speech tokens are prepended to the audio decoder.
 
-    ONCE = "once"
-    """Prepend the prompt speech tokens to the first block of the audio decoder."""
+``"never"``
+    Never prepend the prompt speech tokens sent to the audio decoder.
+``"once"``
+    Prepend the prompt speech tokens to the first block of the audio decoder.
+``"rolling"``
+    Prepend the prompt speech tokens to the first block of the audio decoder,
+    and to later blocks to reach the requested buffer size.
+"""
 
-    ROLLING = "rolling"
-    """Prepend the prompt speech tokens to the first block of the audio decoder,
-    and to later blocks to reach the requested buffer size."""
 
+PrometheusMetricsMode = Literal[
+    "instrument_only", "launch_server", "launch_multiproc_server"
+]
+"""Controls the Prometheus metrics mode.
 
-class PrometheusMetricsMode(str, Enum):
-    INSTRUMENT_ONLY = "instrument_only"
-    """Instrument metrics through the Prometheus client library, relying on the application to handle the metrics server."""
-
-    LAUNCH_SERVER = "launch_server"
-    """Launch a Prometheus server to handle metrics requests."""
-
-    LAUNCH_MULTIPROC_SERVER = "launch_multiproc_server"
-    """Launch a Prometheus server in multiprocess mode to report metrics."""
+``"instrument_only"``
+    Instrument metrics through the Prometheus client library, relying on the
+    application to handle the metrics server.
+``"launch_server"``
+    Launch a Prometheus server to handle metrics requests.
+``"launch_multiproc_server"``
+    Launch a Prometheus server in multiprocess mode to report metrics.
+"""
 
 
 class AudioGenerationConfig(PipelineConfig):
@@ -1539,7 +1480,7 @@ class AudioGenerationConfig(PipelineConfig):
     )
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
-        default=PrependPromptSpeechTokens.ONCE,
+        default="once",
         description=(
             "Whether the prompt speech tokens should be forwarded to the audio "
             "decoder. Options: never, once, rolling."
@@ -1561,7 +1502,7 @@ class AudioGenerationConfig(PipelineConfig):
     )
 
     prometheus_metrics_mode: PrometheusMetricsMode = Field(
-        default=PrometheusMetricsMode.INSTRUMENT_ONLY,
+        default="instrument_only",
         description="The mode to use for Prometheus metrics.",
     )
 
@@ -1577,10 +1518,10 @@ class AudioGenerationConfig(PipelineConfig):
         chunk_size: list[int] | None = None,
         buffer: int = 0,
         block_causal: bool = False,
-        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
+        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = "never",
         prepend_prompt_speech_tokens_causal: bool = False,
         run_model_test_mode: bool = False,
-        prometheus_metrics_mode: PrometheusMetricsMode = PrometheusMetricsMode.INSTRUMENT_ONLY,
+        prometheus_metrics_mode: PrometheusMetricsMode = "instrument_only",
         **kwargs: Any,
     ) -> None:
         # Must call the superclass's __init__ first, otherwise PipelineConfig's
@@ -1630,8 +1571,9 @@ class AudioGenerationConfig(PipelineConfig):
             audio_flags.pop("block_causal", "false"), "block_causal"
         )
 
-        prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
-            audio_flags.pop("prepend_prompt_speech_tokens", "never")
+        prepend_prompt_speech_tokens = cast(
+            PrependPromptSpeechTokens,
+            audio_flags.pop("prepend_prompt_speech_tokens", "never"),
         )
 
         prepend_prompt_speech_tokens_causal = _parse_flag_bool(
@@ -1644,7 +1586,8 @@ class AudioGenerationConfig(PipelineConfig):
             "run_model_test_mode",
         )
 
-        prometheus_metrics_mode = PrometheusMetricsMode(
+        prometheus_metrics_mode = cast(
+            PrometheusMetricsMode,
             audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
         )
 

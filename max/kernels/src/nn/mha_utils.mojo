@@ -683,7 +683,7 @@ fn dispatch_mask_and_score_mod[
         ), "You must specify local_window_size for ChunkedCausalMask"
         return outer_wrapper(ChunkedCausalMask[local_window_size]())
     else:
-        constrained[False, "Unsupported mask type: " + mask_type]()
+        comptime assert False, "Unsupported mask type: " + mask_type
 
 
 @always_inline
@@ -734,7 +734,7 @@ fn _dispatch_score_mod[
     elif score_mod_type == IdentityScoreMod.name_str:
         return wrapper(IdentityScoreMod())
     else:
-        constrained[False, "Unsupported score mod type: " + score_mod_type]()
+        comptime assert False, "Unsupported score mod type: " + score_mod_type
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

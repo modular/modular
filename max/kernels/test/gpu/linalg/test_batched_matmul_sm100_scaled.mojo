@@ -16,7 +16,7 @@ from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from memory import LegacyUnsafePointer
@@ -32,6 +32,14 @@ from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from linalg.bmm import (
     bmm_sm100_blockwise_scaled_fp8,
     batched_matmul_dynamic_scaled_fp8_naive,
@@ -312,6 +320,235 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     _ = c
 
 
+def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    umma_shape: IndexList[3],
+    B: Int,
+    N: Int,
+    K: Int,
+    swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    transpose_b: Bool = True,
+](ctx: DeviceContext, m: Int,):
+    comptime BLOCK_SCALE_K = 128
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+
+    comptime assert transpose_b, "transpose_b must be true"
+
+    var M = m
+    var bs = B
+
+    # For small M (e.g. M=1), pad only the scales-M dimension to satisfy the
+    # 16-byte TMA alignment requirement for FP32 scales.
+    var M_aligned_for_scales = ((M + 3) // 4) * 4
+
+    print(
+        "== test_sm100_blockwise_scaled_fp8_matmul_non_row_major_c",
+        a_type,
+        "problem shape: (",
+        bs,
+        "x",
+        M,
+        "x",
+        N,
+        "x",
+        K,
+        ")",
+        "block_tile_shape: (",
+        block_tile_shape[0],
+        "x",
+        block_tile_shape[1],
+        "x",
+        block_tile_shape[2],
+        ")",
+        "transpose_b:",
+        transpose_b,
+    )
+
+    debug_assert(
+        (K % BLOCK_SCALE_K == 0),
+        "K must be divisible by BLOCK_SCALE_K",
+    )
+
+    comptime static_a_shape = DimList(B, Dim(), K)
+    comptime static_b_shape = DimList(B, N, K) if transpose_b else DimList(
+        B, K, N
+    )
+    comptime static_c_shape = DimList(B, Dim(), N)
+
+    comptime static_a_scales_shape = DimList(B, K // BLOCK_SCALE_K, Dim())
+    comptime static_b_scales_shape = DimList(
+        B, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+
+    var dynamic_a_shape = DimList(bs, M, K)
+    var dynamic_b_shape = DimList(bs, N, K) if transpose_b else DimList(
+        bs, K, N
+    )
+    var dynamic_c_shape = DimList(bs, M, N)
+    var dynamic_a_scales_shape = DimList(
+        bs, K // BLOCK_SCALE_K, M_aligned_for_scales
+    )
+    var dynamic_b_scales_shape = DimList(
+        bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+
+    var a_size = bs * M * K
+    var b_size = bs * N * K if transpose_b else bs * K * N
+    var c_size = bs * M * N
+    var a_scales_size = bs * (K // BLOCK_SCALE_K) * M_aligned_for_scales
+    var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
+
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host = NDBuffer[a_type, 3, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
+    )
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host = NDBuffer[b_type, 3, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
+    )
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
+    )
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref = NDBuffer[c_type, 3, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
+    )
+
+    var a_device = ctx.enqueue_create_buffer[a_type](a_size)
+    var a_device_nd = NDBuffer[a_type, 3, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device = ctx.enqueue_create_buffer[b_type](b_size)
+    var b_device_nd = NDBuffer[b_type, 3, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_nd = NDBuffer[c_type, 3, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_ref_nd = NDBuffer[c_type, 3, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    )
+
+    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        a_scales_size
+    )
+    var a_scales_host = NDBuffer[DType.float32, 3, _, static_a_scales_shape](
+        a_scales_host_ptr, dynamic_a_scales_shape
+    )
+    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        b_scales_size
+    )
+    var b_scales_host = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
+        b_scales_host_ptr, dynamic_b_scales_shape
+    )
+
+    var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
+        a_scales_size
+    )
+    var a_scales_device_nd = NDBuffer[
+        DType.float32, 3, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
+        b_scales_size
+    )
+    var b_scales_device_nd = NDBuffer[
+        DType.float32, 3, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
+    c_host.zero()
+    c_host_ref.zero()
+
+    rand(a_scales_host.data, a_scales_host.num_elements())
+    rand(b_scales_host.data, b_scales_host.num_elements())
+
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
+    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
+
+    var a = from_ndbuffer_row_major(a_device_nd)
+    var b = from_ndbuffer_row_major(b_device_nd)
+    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
+
+    comptime c_non_row_major_layout = Layout(
+        IntTuple(B, UNKNOWN_VALUE, N),
+        IntTuple(N, B * N, 1),
+    )
+    var c_runtime_layout = RuntimeLayout[c_non_row_major_layout](
+        RuntimeTuple[c_non_row_major_layout.shape](bs, M, N),
+        RuntimeTuple[c_non_row_major_layout.stride](N, B * N, 1),
+    )
+
+    var c = LayoutTensor[c_type, c_non_row_major_layout](
+        c_device_nd.data, c_runtime_layout
+    )
+    var c_ref = LayoutTensor[c_type, c_non_row_major_layout](
+        c_device_ref_nd.data, c_runtime_layout
+    )
+
+    bmm_sm100_blockwise_scaled_fp8[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=swizzle,
+        b_swizzle=swizzle,
+    ](
+        c,
+        a.get_immutable(),
+        b.get_immutable(),
+        a_scales.get_immutable(),
+        b_scales.get_immutable(),
+        ctx,
+    )
+
+    ctx.synchronize()
+
+    batched_matmul_dynamic_scaled_fp8_naive[
+        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        transpose_b=transpose_b,
+    ](c_ref, a, b, a_scales, b_scales, ctx)
+
+    ctx.synchronize()
+
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.synchronize()
+
+    assert_with_measure[relative_difference](
+        c_host.data, c_host_ref.data, c_host.num_elements(), threshold=0.001
+    )
+
+    assert_almost_equal(
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
+        atol=1e-2,
+        rtol=1e-2,
+    )
+
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    a_scales_host_ptr.free()
+    b_scales_host_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
+    _ = a_scales_device^
+    _ = b_scales_device^
+
+
 def main():
     with DeviceContext() as ctx:
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -447,3 +684,28 @@ def main():
             static[512](),
             dynamic(128),
         )
+
+        # test non-row-major layout for C only
+        test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 64, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+            B = Int(128),
+            N = Int(128),
+            K = Int(512),
+        ](ctx, 12)
+
+        test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 64, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+            B = Int(128),
+            N = Int(512),
+            K = Int(128),
+        ](ctx, 12)

@@ -49,8 +49,7 @@ comptime _target_address_space = (
 
 
 fn _mode_name[direction: Int]() -> String:
-    @parameter
-    if direction == 0:
+    comptime if direction == 0:
         return "unidir-push"
     elif direction == 1:
         return "unidir-pull"
@@ -116,8 +115,7 @@ fn bench_p2p[
     var buf0_read = ctx0.enqueue_create_buffer[dtype](num_elements)
     var buf1_read = ctx1.enqueue_create_buffer[dtype](num_elements)
 
-    @parameter
-    if is_bidir:
+    comptime if is_bidir:
         ctx0.enqueue_memset(buf0_read, Scalar[dtype](10))
         ctx1.enqueue_memset(buf1_read, Scalar[dtype](20))
 
@@ -152,8 +150,7 @@ fn bench_p2p[
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # In unidir mode only GPU 0 does work; GPU 1 is idle.
-            @parameter
-            if not is_bidir:
+            comptime if not is_bidir:
                 if ctx_idx != 0:
                     return
 
@@ -163,11 +160,8 @@ fn bench_p2p[
             var dst: UnsafePointer[Scalar[dtype], MutAnyOrigin]
             var src: UnsafePointer[Scalar[dtype], MutAnyOrigin]
 
-            @parameter
-            if is_bidir:
-
-                @parameter
-                if is_push:
+            comptime if is_bidir:
+                comptime if is_push:
                     if ctx_idx == 0:
                         dst = buf1_write.unsafe_ptr()
                         src = buf0_read.unsafe_ptr()
@@ -182,9 +176,7 @@ fn bench_p2p[
                         dst = buf1_write.unsafe_ptr()
                         src = buf0_read.unsafe_ptr()
             else:
-
-                @parameter
-                if is_push:
+                comptime if is_push:
                     dst = buf1_write.unsafe_ptr()
                     src = buf0_write.unsafe_ptr()
                 else:
@@ -211,15 +203,13 @@ fn bench_p2p[
     # --- Verification ---
     # Run one more copy and check that the data arrived correctly.
     # Reset destination buffers to 0 so we can verify fresh writes.
-    @parameter
-    if is_bidir:
+    comptime if is_bidir:
         ctx0.enqueue_memset(buf0_write, Scalar[dtype](0))
         ctx1.enqueue_memset(buf1_write, Scalar[dtype](0))
         ctx0.synchronize()
         ctx1.synchronize()
 
-        @parameter
-        if is_push:
+        comptime if is_push:
             # GPU 0: buf0_read(10) -> buf1_write, GPU 1: buf1_read(20) -> buf0_write
             ctx0.enqueue_function[copy_kernel, copy_kernel](
                 buf1_write.unsafe_ptr(),
@@ -272,8 +262,7 @@ fn bench_p2p[
         host1.free()
     else:
         # Unidir: reset dst, run one copy, verify.
-        @parameter
-        if is_push:
+        comptime if is_push:
             # src=buf0_write(1) -> dst=buf1_write
             ctx1.enqueue_memset(buf1_write, Scalar[dtype](0))
             ctx1.synchronize()

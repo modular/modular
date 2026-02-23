@@ -100,7 +100,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         self._inner_a_elem = None
         self._initial_inner_b = inner_b^
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, Copyable),
             Parent=Self,
@@ -248,9 +248,6 @@ struct _Product3[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn copy(self) -> Self:
-        return Self(_inner=self._inner.copy())
-
     fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
@@ -382,9 +379,6 @@ struct _Product4[
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    fn copy(self) -> Self:
-        return Self(_inner=self._inner.copy())
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
@@ -534,19 +528,13 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
         self._orig = iterator.copy()
         self._iter = iterator^
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self._orig = copy._orig.copy()
         self._iter = copy._iter.copy()
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    @always_inline
-    fn copy(self) -> Self:
-        var result = Self(self._orig.copy())
-        result._iter = self._iter.copy()
-        return result^
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> Self.Element:
@@ -644,7 +632,7 @@ struct _TakeWhileIterator[
         self._inner = inner^
         self._exhausted = False
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
@@ -764,7 +752,7 @@ struct _DropWhileIterator[
         self._inner = inner^
         self._dropping = True
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
@@ -876,10 +864,6 @@ struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
-
-    @always_inline
-    fn copy(self) -> Self:
-        return Self(self.element.copy(), self.remaining)
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> Self.ElementType:

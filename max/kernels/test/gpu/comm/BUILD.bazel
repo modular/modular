@@ -41,6 +41,12 @@ HIGH_GPU_MEMORY_TESTS = [
     "test_p2p_ep_dispatch.mojo",
 ]
 
+# Tests where assertions push register usage past hardware limits,
+# causing CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on NVIDIA GPUs.
+DISABLE_ASSERTIONS_TESTS = [
+    "test_allreduce_rmsnorm_fp8.mojo",  # MSTDL-2301: 80 regs with assertions vs 62 without (limit 64 at 32 warps)
+]
+
 # Regular tests for all other files
 [
     mojo_test(
@@ -52,6 +58,7 @@ HIGH_GPU_MEMORY_TESTS = [
         ],
         # NOTE: test_allgather.mojo tests deprecated functionality.
         copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
+        enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
         env = {
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",

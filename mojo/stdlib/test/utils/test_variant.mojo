@@ -52,10 +52,10 @@ struct Poison(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         _poison_ptr().init_pointee_move(True)
 
     fn __del__(deinit self):
@@ -244,24 +244,24 @@ def test_variant_trivial_copyinit():
     comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
     comptime no = ConfigureTrivial[copyinit_is_trivial=False]
 
-    assert_true(Variant[yes].__copyinit__is_trivial)
-    assert_false(Variant[no].__copyinit__is_trivial)
-    assert_false(Variant[yes, no].__copyinit__is_trivial)
+    assert_true(Variant[yes].__copy_ctor_is_trivial)
+    assert_false(Variant[no].__copy_ctor_is_trivial)
+    assert_false(Variant[yes, no].__copy_ctor_is_trivial)
 
     # check variant of move-only type
-    assert_false(Variant[MoveOnly[Int]].__copyinit__is_trivial)
+    assert_false(Variant[MoveOnly[Int]].__copy_ctor_is_trivial)
 
 
 def test_variant_trivial_moveinit():
     comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
     comptime no = ConfigureTrivial[moveinit_is_trivial=False]
 
-    assert_true(Variant[yes].__moveinit__is_trivial)
-    assert_false(Variant[no].__moveinit__is_trivial)
-    assert_false(Variant[yes, no].__moveinit__is_trivial)
+    assert_true(Variant[yes].__move_ctor_is_trivial)
+    assert_false(Variant[no].__move_ctor_is_trivial)
+    assert_false(Variant[yes, no].__move_ctor_is_trivial)
 
     # check variant of non-movable type
-    assert_false(Variant[NonMovable].__moveinit__is_trivial)
+    assert_false(Variant[NonMovable].__move_ctor_is_trivial)
 
 
 def test_variant_write_to():

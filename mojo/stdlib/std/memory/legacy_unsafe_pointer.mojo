@@ -56,7 +56,9 @@ struct LegacyUnsafePointer[
     _mlir_origin: _lit_origin_type_of_mut[mut] = AnyOrigin[
         mut=mut
     ]._mlir_origin,
-    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[_mlir_origin](),
+    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[
+        _mlir_origin=_mlir_origin
+    ](),
 ](
     Boolable,
     Comparable,
@@ -630,7 +632,7 @@ struct LegacyUnsafePointer[
               of `T`.
         """
 
-        comptime if U.__moveinit__is_trivial:
+        comptime if U.__move_ctor_is_trivial:
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.
@@ -1344,7 +1346,7 @@ struct LegacyUnsafePointer[
         The pointer must not be null, and the pointer memory location is assumed
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
-        more efficient because it doesn't invoke `__moveinit__`.
+        more efficient because it doesn't invoke the move constructor.
 
         Parameters:
             T: Pointee type that can be destroyed implicitly (without
@@ -1467,7 +1469,7 @@ struct LegacyUnsafePointer[
         `init_pointee_*()` operation.
 
         This transfers the value out of `src` and into `self` using at most one
-        `__moveinit__()` call.
+        move constructor call.
 
         ### Example
 
@@ -1504,52 +1506,6 @@ struct LegacyUnsafePointer[
         __get_address_as_uninit_lvalue(
             self.address
         ) = __get_address_as_owned_value(src.address)
-
-    @deprecated(
-        "Use `lhs_ptr.init_pointee_move_from(rhs_ptr)` instead, which uses "
-        "`LHS = RHS` argument ordering for readability."
-    )
-    @always_inline
-    fn move_pointee_into[
-        T: Movable,
-        //,
-    ](
-        self: LegacyUnsafePointer[
-            mut=True, T, address_space = AddressSpace.GENERIC, ...
-        ],
-        dst: LegacyUnsafePointer[
-            mut=True, T, address_space = AddressSpace.GENERIC, ...
-        ],
-    ):
-        """Moves the value `self` points to into the memory location pointed to by
-        `dst`.
-
-        This performs a consuming move (using `__moveinit__()`) out of the
-        memory location pointed to by `self`. Subsequent reads of this
-        pointer are not valid unless and until a new, valid value has been
-        moved into this pointer's memory location using `init_pointee_move()`.
-
-        This transfers the value out of `self` and into `dest` using at most one
-        `__moveinit__()` call.
-
-        **Safety:**
-
-        * `self` must be non-null
-        * `self` must contain a valid, initialized instance of `T`
-        * `dst` must not be null
-        * The contents of `dst` should be uninitialized. If `dst` was
-            previously written with a valid value, that value will be be
-            overwritten and its destructor will NOT be run.
-
-        Parameters:
-            T: The type the pointer points to, which must be `Movable`.
-
-        Args:
-            dst: Destination pointer that the value will be moved into.
-        """
-        __get_address_as_uninit_lvalue(
-            dst.address
-        ) = __get_address_as_owned_value(self.address)
 
 
 comptime LegacyOpaquePointer = LegacyUnsafePointer[

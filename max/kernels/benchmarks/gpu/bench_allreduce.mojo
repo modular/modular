@@ -110,8 +110,7 @@ fn bench_reduce[
     )
 
     # Initialize buffers for each GPU
-    @parameter
-    for gpu_idx in range(ngpus):
+    comptime for gpu_idx in range(ngpus):
         # Create and store device buffers (outputs)
         out_bufs_list.append(
             list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
@@ -125,8 +124,7 @@ fn bench_reduce[
             for j in range(length):
                 host_buffer[i * stride + j] = _per_gpu_value[dtype](gpu_idx, j)
 
-        @parameter
-        if not use_multimem:
+        comptime if not use_multimem:
             # Create per-GPU input buffers on device and copy from host
             in_bufs_list.append(
                 list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](cache_elems)
@@ -158,14 +156,12 @@ fn bench_reduce[
 
     var multi_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
 
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), cache_elems
         )
 
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             var unicast_buf = multicast_buf.unicast_buffer_for(list_of_ctx[i])
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
 
@@ -178,9 +174,7 @@ fn bench_reduce[
             list_of_ctx[0]
         ).unsafe_ptr()
     else:
-
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             in_bufs[i] = NDBuffer[dtype, rank](
                 in_bufs_list[i].unsafe_ptr(), DimList(length)
             )
@@ -194,8 +188,7 @@ fn bench_reduce[
 
     # Zero device output buffers once before benchmarking so verification isn't
     # affected by any stale data in case a kernel path doesn't overwrite fully.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
 
     # Copy-capture in registers since the lambda will be used on GPU.
@@ -203,8 +196,7 @@ fn bench_reduce[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus
     ](NDBuffer[dtype, rank, MutAnyOrigin]())
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
@@ -215,8 +207,7 @@ fn bench_reduce[
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
     # spawning worker threads.
-    @parameter
-    if use_vendor_ccl:
+    comptime if use_vendor_ccl:
         if not vendor_ccl.is_allreduce_available():
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
@@ -230,15 +221,11 @@ fn bench_reduce[
             # Offset the input buffer if cache_busting
             var offset = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset = (cache_iter * stride) % cache_elems
 
-            @parameter
-            if not use_multimem:
-
-                @parameter
-                for i in range(ngpus):
+            comptime if not use_multimem:
+                comptime for i in range(ngpus):
                     in_bufs[i] = NDBuffer[dtype, rank](
                         in_bufs_list[i].unsafe_ptr() + offset,
                         DimList(length),
@@ -291,8 +278,7 @@ fn bench_reduce[
     )
 
     # Copy results back and verify
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
@@ -301,14 +287,12 @@ fn bench_reduce[
     #  - quantizing each per-GPU term to `dtype` by calling _per_gpu_value[dtype](...)
     #  - accumulating in Float32
     #  - finally casting to `dtype` for the expected value
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         for j in range(length):
             comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
 
-            @parameter
-            for k in range(ngpus):
+            comptime for k in range(ngpus):
                 var term_dtype = _per_gpu_value[dtype](k, j)
                 accum += Scalar[accum_t](term_dtype)
             var expected_sum = Scalar[dtype](accum)
@@ -370,8 +354,7 @@ def main():
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
     comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()
 
     var m = Bench()

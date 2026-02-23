@@ -72,7 +72,7 @@ fn coord_transform[
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
     else:
-        constrained[False, "coordinate_transformation_mode not implemented"]()
+        comptime assert False, "coordinate_transformation_mode not implemented"
         return 0
 
 
@@ -121,7 +121,7 @@ struct Interpolator[mode: InterpolationMode](
         comptime if Self.mode == InterpolationMode.Linear:
             return 1
         else:
-            constrained[False, "InterpolationMode not supported"]()
+            comptime assert False, "InterpolationMode not supported"
             return -1
 
     @always_inline
@@ -129,7 +129,7 @@ struct Interpolator[mode: InterpolationMode](
         comptime if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
-            constrained[False, "InterpolationMode not supported"]()
+            comptime assert False, "InterpolationMode not supported"
             return -1
 
 
@@ -162,7 +162,7 @@ fn resize_nearest_neighbor[
         elif round_mode == RoundMode.Ceil:
             return ceil(val)
         else:
-            constrained[False, "round_mode not implemented"]()
+            comptime assert False, "round_mode not implemented"
             return val
 
     @__copy_capture(scales)

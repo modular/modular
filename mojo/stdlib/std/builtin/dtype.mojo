@@ -722,7 +722,7 @@ struct DType(
         elif dtype == DType.float64:
             return 1024
         else:
-            constrained[False, "unsupported float type"]()
+            comptime assert False, "unsupported float type"
             return {}
 
     @staticmethod
@@ -751,7 +751,7 @@ struct DType(
         elif dtype == DType.float64:
             return 11
         else:
-            constrained[False, "unsupported float type"]()
+            comptime assert False, "unsupported float type"
             return {}
 
     @staticmethod
@@ -1101,6 +1101,6 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
         return "%.17g"
 
     else:
-        constrained[False, "invalid dtype"]()
+        comptime assert False, "invalid dtype"
 
     return ""

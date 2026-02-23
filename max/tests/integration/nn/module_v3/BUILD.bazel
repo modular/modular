@@ -17,12 +17,17 @@ package(default_visibility = [
             "auto",
         ],
         tags = [
-            "no-pydeps",  # TODO: Fix and re-enable
-        ] + (["manual"] if src in [
-            # FIXME: SDLC-2904
-            "test_module_gpt2.py",
-            "rope/test_yarn.py",
-        ] else []),
+                   "no-pydeps",  # TODO: Fix and re-enable
+               ] + (["manual"] if src in [
+                   # FIXME: SDLC-2904
+                   "test_module_gpt2.py",
+                   "rope/test_yarn.py",
+               ] else []) +
+               (["skip-external-ci"] if src in [
+                   # FIXME: SDLC-3032
+                   "rope/test_rope.py",
+                   "test_module.py",
+               ] else []),
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
             "//conditions:default": [],

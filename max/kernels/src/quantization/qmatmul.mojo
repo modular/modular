@@ -1278,4 +1278,4 @@ fn matmul_qint4[
     elif CompilationTarget.has_neon_int8_dotprod():
         kernel_dispatch[_MatmulQInt4Kernel_neon_dotprod]()
     else:
-        constrained[False, "unsupported architecture"]()
+        comptime assert False, "unsupported architecture"

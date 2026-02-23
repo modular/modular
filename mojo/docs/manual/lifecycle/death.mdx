@@ -236,9 +236,10 @@ more in the following section.
 
 :::note Destructors cannot raise errors
 
-Currently a Mojo `__del__()` destructor isn't allowed to raise an error. This means that the
-destructor must be defined as an `fn` function without the `raises` keyword.
-Mojo won't allow you to define `__del__()`  using `fn raises` or `def`.
+Currently a Mojo `__del__()` destructor isn't allowed to raise an error. This
+means that the destructor must be defined as an `fn` function without the
+`raises` keyword. Mojo won't allow you to define `__del__()`  using `fn raises`
+or `def`.
 
 :::
 
@@ -491,7 +492,7 @@ fn use(arg: Balloons):
 fn consume_and_use():
     var balloons = Balloons("blue", 8)
     consume(balloons.color^)
-    # String.__moveinit__() runs here, which invalidates balloons.color
+    # String(take=) runs here, which invalidates balloons.color
     # Now balloons is only partially initialized
 
     # use(balloons)  # This fails because balloons.color is uninitialized
@@ -530,7 +531,7 @@ look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         # Initializes a new `self` by consuming the contents of `take`
     fn __del__(deinit self):
         # Destroys all resources in `self`

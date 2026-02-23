@@ -315,11 +315,9 @@ class KVCacheParams(KVCacheParamInterface):
         """
         assert self.kvcache_quant_config is not None
         shape_per_block = self.shape_per_block
-        # The final dimension is (head_dim / quantization_granularity).
-        shape_per_block[4] = (
-            shape_per_block[4]
-            // self.kvcache_quant_config.quantization_granularity
-        )
+        # The final dimension is ceil(head_dim / quantization_granularity).
+        granularity = self.kvcache_quant_config.quantization_granularity
+        shape_per_block[4] = math.ceil(shape_per_block[4] / granularity)
         return shape_per_block
 
     @property

@@ -75,11 +75,8 @@ fn _init_block_scaled_scales_gpu[
 
     @parameter
     fn apply(values: SIMD[dtype, 4]):
-        @parameter
-        for i in range(4):
-
-            @parameter
-            if i == 3:
+        comptime for i in range(4):
+            comptime if i == 3:
                 if tid >= UInt(len):
                     return
             x[tid] = Scalar[dtype](values[i])
@@ -91,8 +88,7 @@ fn _init_block_scaled_scales_gpu[
     # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
     var rng = Random(offset=UInt64(tid))
 
-    @parameter
-    if dtype == DType.float8_e8m0fnu:
+    comptime if dtype == DType.float8_e8m0fnu:
         var rand_floats = rng.step_uniform() * 4
         var rand_u8 = rand_floats.cast[DType.uint8]() & 3
         var values = bitcast[dtype, 4](rand_u8 + 127)
@@ -286,13 +282,11 @@ fn bench_matmul[
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
 
-    @parameter
-    if not init_on_gpu:
+    comptime if not init_on_gpu:
         var a_host = NDBuffer[dtype, 1](a_host_ptr, cache_a)
         var b_host = NDBuffer[dtype, 1](b_host_ptr, cache_b)
 
-        @parameter
-        if dtype.is_float8():
+        comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
             rand(b_host.data, b_host.num_elements())
         else:
@@ -373,8 +367,7 @@ fn bench_matmul[
             var offset_b = 0
             var offset_c = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_a = (iteration * stride_a) % cache_a
                 offset_b = (iteration * stride_b) % cache_b
                 offset_c = (iteration * stride_c) % cache_c
@@ -414,8 +407,7 @@ fn bench_matmul[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords_prod) if epilogue else None
 
-            @parameter
-            if use_vendor_blas:
+            comptime if use_vendor_blas:
                 run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
 
             else:
@@ -459,8 +451,7 @@ fn bench_matmul[
     # Verification: compare our kernel output against vendor BLAS as reference.
     # The benchmark already wrote our kernel's output to buffer_c at offset 0
     # (iteration 0 uses offset 0), so we just need to run vendor BLAS once.
-    @parameter
-    if not use_vendor_blas and not epilogue:
+    comptime if not use_vendor_blas and not epilogue:
         if verify:
             # Create tensors at offset 0 for verification
             var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
@@ -529,8 +520,7 @@ fn bench_matmul[
             var rtol: Float64
             var atol: Float64
 
-            @parameter
-            if dtype.is_float8():
+            comptime if dtype.is_float8():
                 rtol = 1e-2
                 atol = 1e-2
             else:
@@ -614,8 +604,7 @@ fn get_dtype[micro_scaling_mode: StaticString]() -> DType:
         micro_scaling_mode == "mxfp8" or micro_scaling_mode == "nvfp4"
     ), "invalid micro_scaling_mode"
 
-    @parameter
-    if micro_scaling_mode == "mxfp8":  # micro_scaling_mode == "mxfp8"
+    comptime if micro_scaling_mode == "mxfp8":  # micro_scaling_mode == "mxfp8"
         return DType.float8_e4m3fn
     else:  # micro_scaling_mode == "nvfp4"
         return DType.uint8

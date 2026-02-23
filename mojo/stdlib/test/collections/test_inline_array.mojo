@@ -380,12 +380,12 @@ def test_write_repr_to():
 
 def test_inline_array_triviality():
     assert_true(InlineArray[Int, 1].__del__is_trivial)
-    assert_true(InlineArray[Int, 1].__copyinit__is_trivial)
-    assert_true(InlineArray[Int, 1].__moveinit__is_trivial)
+    assert_true(InlineArray[Int, 1].__copy_ctor_is_trivial)
+    assert_true(InlineArray[Int, 1].__move_ctor_is_trivial)
 
     assert_false(InlineArray[String, 1].__del__is_trivial)
-    assert_false(InlineArray[String, 1].__copyinit__is_trivial)
-    assert_true(InlineArray[String, 1].__moveinit__is_trivial)
+    assert_false(InlineArray[String, 1].__copy_ctor_is_trivial)
+    assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
 
 
 fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:

@@ -1,0 +1,164 @@
+---
+title: Speculative decoding
+description: Use speculative decoding to accelerate LLM inference
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import MDXListing from '@site/src/components/Listing/MDXListing';
+import InstallOpenAI from '@site/docs/_includes/install-openai.mdx';
+
+Speculative decoding is an algorithm designed to accelerate the decoding
+process for large language models without sacrificing the quality of the
+generated text or requiring modifications to the models themselves.
+
+This technique employs a smaller, faster **draft model** to generate several
+potential next tokens in parallel, which are then efficiently validated against
+a larger, more powerful target model using a modified rejection sampling
+technique. This leads to reduced overall latency and improved throughput during
+token generation.
+
+By accepting correct predictions and only resampling when necessary, speculative
+decoding achieves a significant speedup in token generation, effectively
+bypassing memory bandwidth limitations often encountered during standard
+autoregressive decoding.
+
+:::caution
+
+Speculative decoding with MAX is still in preview and some aspects may change
+as we refine the implementation. Expect **ongoing** improvements and potential
+adjustments based on feedback and performance optimizations.
+
+:::
+
+## When to use speculative decoding
+
+You'll want to use speculative decoding when your primary goal is to accelerate
+the decoding process of large language models and reduce latency. For example,
+if you are using a 405 billion parameter model, you can use speculative
+decoding to reduce latency by using a 135 million parameter draft model.
+
+## How speculative decoding works
+
+By default, speculative decoding is disabled in MAX. It can be enabled using
+the `--draft-model-path` flag. This flag takes a path to a model that will be
+used to generate speculative tokens. This is the model name as it appears on
+Hugging Face or as a path to a local directory containing a model.
+
+All model-specific parameters can be prefixed with `--draft-` to configure the
+draft model independently from the main model.
+
+For example:
+
+- `--draft-model-path`: Path to the draft model
+- `--draft-quantization-encoding`: Quantization encoding for the draft model
+- `--draft-weight-path`: Path to draft model weights
+
+The performance of speculative decoding primarily depends on two factors:
+
+- **Acceptance rate**: How often the target model confirms the draft model's
+  predictions.
+- **Token generation pattern**: The system is optimized when more draft tokens
+can be evaluated in a single step of the target model. This is controlled by the
+`--max-num-steps` parameter, which sets the maximum number of tokens the draft
+model generates before verification by the target model.
+
+## Quickstart
+
+You can use speculative decoding with MAX to accelerate model inference by using
+a smaller draft model to predict tokens that are verified by the main model.
+
+Serve your model with MAX and specify the draft model path using the
+`--draft-model-path` flag:
+
+```sh
+max serve --model HuggingFaceTB/SmolLM2-360M-Instruct \
+    --draft-model-path HuggingFaceTB/SmolLM2-135M-Instruct \
+    --device-memory-utilization=0.6 \
+    --max-num-steps=5 \
+    --no-enable-chunked-prefill
+```
+
+The endpoint is ready when you see the URI printed in your terminal:
+
+```output
+Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+Once the model is served, you can make requests to the API endpoints.
+
+<Tabs>
+  <TabItem value="openai" label="Python" default>
+
+To interact with MAX's OpenAI-compatible endpoints, install the OpenAI Python API:
+
+<InstallOpenAI />
+
+Then create a new Python file and import the `openai` package:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",  # Your MAX endpoint
+    api_key="EMPTY",  # API key can be any string when using MAX locally
+)
+
+# Make a chat completion request
+response = client.chat.completions.create(
+    model="HuggingFaceTB/SmolLM2-360M-Instruct",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What are the benefits of speculative decoding?"},
+    ],
+    max_tokens=500,
+)
+
+# Print the response
+print(response.choices[0].message.content)
+```
+
+  </TabItem>
+  <TabItem value="curl" label="curl">
+
+In a new terminal, make a chat completion request using curl:
+
+```sh
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What are the benefits of speculative decoding?"}
+    ],
+    "max_tokens": 500
+  }'
+```
+
+  </TabItem>
+</Tabs>
+
+You can also use the `generate` command to generate text:
+
+```sh
+max generate --model HuggingFaceTB/SmolLM2-360M-Instruct \
+    --draft-model-path HuggingFaceTB/SmolLM-135M \
+    --max-length=200 \
+    --prompt="What are the benefits of speculative decoding?" \
+    --device-memory-utilization=0.6 \
+    --devices=gpu \
+    --no-enable-chunked-prefill
+```
+
+## Next steps
+
+Now that you know the basics of speculative decoding, you can get started with
+MAX on GPUs.
+
+export const docs = [
+  '../../serve/prefix-caching.mdx',
+  '../../deploy/benchmark.mdx',
+  '../../deploy/local-to-cloud.mdx',
+];
+
+<MDXListing mdxList={docs} />

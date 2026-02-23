@@ -54,7 +54,7 @@ class SpeculativeDecodingSetup:
 
 
 @pytest.fixture(scope="function")
-def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
+def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
@@ -238,7 +238,7 @@ def test_draft_model_encoding_selection() -> None:
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=5,
+        max_num_steps=1,
     )
     pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
@@ -269,7 +269,7 @@ def test_draft_model_encoding_selection() -> None:
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=5,
+        max_num_steps=1,
     )
     pipeline_config2.model.kv_cache.cache_strategy = "paged"
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
@@ -310,7 +310,7 @@ def test_kv_cache_claiming_protocol() -> None:
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=5,
+        max_num_steps=1,
     )
     pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128

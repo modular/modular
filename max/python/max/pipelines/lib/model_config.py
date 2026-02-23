@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from functools import cached_property
@@ -39,7 +40,6 @@ from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
 from .config_enums import (
-    RepoType,
     RopeType,
     SupportedEncoding,
     parse_supported_encoding_from_file_name,
@@ -96,6 +96,10 @@ class MAXModelConfig(MAXModelConfigBase):
             "Data-parallelism parameter. The degree to which the model is "
             "replicated is dependent on the model type."
         ),
+    )
+
+    pool_embeddings: bool = Field(
+        default=True, description="Whether to pool embedding outputs."
     )
 
     max_length: int | None = Field(
@@ -214,6 +218,21 @@ class MAXModelConfig(MAXModelConfigBase):
         ),
     )
 
+    enable_echo: bool = Field(
+        default=False,
+        description="Whether the model should be built with echo capabilities.",
+    )
+
+    chat_template: Path | None = Field(
+        default=None,
+        description=(
+            "Optional custom chat template to override the one shipped with the "
+            "Hugging Face model config. If a path is provided, the file is read "
+            "during config resolution and the content stored as a string. If "
+            "None, the model's default chat template is used."
+        ),
+    )
+
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
         description="The KVCache config.",
@@ -313,6 +332,82 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
+    def retrieve_chat_template(self) -> str | None:
+        """Returns the chat template string, or None if not set."""
+        # Read the file content
+        if self.chat_template is None:
+            return None
+
+        try:
+            with open(self.chat_template, encoding="utf-8") as f:
+                template_content = f.read()
+
+            # Try to parse as JSON and extract chat_template if present
+            try:
+                template_json = json.loads(template_content)
+                if (
+                    isinstance(template_json, dict)
+                    and "chat_template" in template_json
+                ):
+                    logger.info(
+                        f"Successfully loaded chat_template from JSON in {self.chat_template} "
+                        f"({len(template_json['chat_template'])} characters)"
+                    )
+                    return template_json["chat_template"]
+                else:
+                    # JSON but no chat_template key, use entire content
+                    logger.info(
+                        f"Successfully loaded custom prompt template from {self.chat_template} "
+                        f"({len(template_content)} characters, JSON without chat_template key)"
+                    )
+                    return template_content
+            except json.JSONDecodeError:
+                # Not valid JSON, use entire content as template
+                logger.info(
+                    f"Successfully loaded custom prompt template from {self.chat_template} "
+                    f"({len(template_content)} characters)"
+                )
+                return template_content
+
+        except (OSError, UnicodeDecodeError) as e:
+            raise ValueError(
+                f"Failed to read prompt template file {self.chat_template}: {str(e)}. "
+                f"Please ensure the file is readable and contains valid UTF-8 text."
+            ) from e
+
+    def _resolve_chat_template(self) -> None:
+        """Resolves chat_template if it is a Path by reading the file content.
+
+        Handles the case where chat_template is a Path object,
+        validates that the file exists, reads its content, and stores the content
+        as a string in the chat_template field.
+
+        Raises:
+            FileNotFoundError: If the specified template file does not exist
+            ValueError: If there's an error reading the template file
+        """
+        if self.chat_template is None:
+            return
+
+        # Expand user home directory if present (e.g., ~/templates/custom.jinja)
+        self.chat_template = self.chat_template.expanduser()
+
+        # Convert relative paths to absolute paths
+        if not self.chat_template.is_absolute():
+            self.chat_template = Path.cwd() / self.chat_template
+
+        # Verify the file exists
+        if not self.chat_template.exists():
+            raise ValueError(
+                f"--chat-template path ({self.chat_template}) does not exist."
+            )
+
+        if not self.chat_template.is_file():
+            raise ValueError(
+                f"Prompt template path is not a file: {self.chat_template}. "
+                f"Please provide a path to a valid template file."
+            )
+
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
     # initialized in the default factory.
@@ -328,9 +423,13 @@ class MAXModelConfig(MAXModelConfigBase):
         default factory.
 
         In order:
-        1. Validate that the device_specs provided are available
-        2. Parse the weight path(s) and initialize the _weights_repo_id
+        1. Resolve chat_template if it's a Path
+        2. Validate that the device_specs provided are available
+        3. Parse the weight path(s) and initialize the _weights_repo_id
         """
+        # Resolve chat_template if it's a Path
+        self._resolve_chat_template()
+
         # Validate that --quantization-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
         if (
             self.allow_safetensors_weights_fp32_bf6_bidirectional_cast
@@ -401,9 +500,9 @@ class MAXModelConfig(MAXModelConfigBase):
         Attempts to find the weights locally first to avoid network
         calls, checking in the following order:
 
-        1. If `repo_type` is :obj:`RepoType.local`, it checks if the path
+        1. If `repo_type` is ``"local"``, it checks if the path
            in `weight_path` exists directly as a local file path.
-        2. Otherwise, if `repo_type` is :obj:`RepoType.online`, it first checks the local
+        2. Otherwise, if `repo_type` is ``"online"``, it first checks the local
            Hugging Face cache using :obj:`huggingface_hub.try_to_load_from_cache()`.
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
@@ -412,7 +511,7 @@ class MAXModelConfig(MAXModelConfigBase):
             The total size of all weight files in bytes.
 
         Raises:
-            FileNotFoundError: If `repo_type` is :obj:`RepoType.local` and a file
+            FileNotFoundError: If `repo_type` is ``"local"`` and a file
                 specified in `weight_path` is not found within the local repo
                 directory.
             ValueError: If :obj:`HuggingFaceRepo.size_of()` fails to retrieve the
@@ -433,13 +532,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 continue
 
             # 2. File not found locally or non-existence is cached.
-            if repo.repo_type == RepoType.local:
+            if repo.repo_type == "local":
                 if not self._local_weight_path(full_file_path):
                     raise FileNotFoundError(
                         f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
                     )
             # If it was an online repo, we need to check the API.
-            elif repo.repo_type == RepoType.online:
+            elif repo.repo_type == "online":
                 # 3. Fallback: File not local/cached, get size via API for online repos.
                 next_size = repo.size_of(file_path_str)
                 if next_size is None:
@@ -557,7 +656,7 @@ class MAXModelConfig(MAXModelConfigBase):
         components = {}
         repo = self.huggingface_model_repo
         repo_root: Path | None = None
-        if repo.repo_type == RepoType.local:
+        if repo.repo_type == "local":
             repo_root = Path(repo.repo_id)
             assert repo_root.exists(), (
                 "Local Hugging Face repository path does not exist: "
@@ -584,7 +683,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     key = component_name
                 if target in ["config.json", f"{key}_config.json"]:
                     try:
-                        if repo.repo_type == RepoType.local:
+                        if repo.repo_type == "local":
                             assert repo_root is not None, (
                                 "repo_root must be set for local repo types."
                             )
@@ -1050,13 +1149,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 continue
 
             # File not found locally.
-            if repo.repo_type == RepoType.local:
+            if repo.repo_type == "local":
                 if not self._local_weight_path(Path(repo.repo_id) / path):
                     # Helper returning None for local repo means not found.
                     raise FileNotFoundError(
                         f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
                     )
-            elif repo.repo_type == RepoType.online:
+            elif repo.repo_type == "online":
                 # Verify that it exists on Huggingface.
                 if not repo.file_exists(path_str):
                     raise ValueError(
@@ -1109,9 +1208,9 @@ class MAXModelConfig(MAXModelConfigBase):
         """Returns the absolute path if the weight file is found locally.
 
         Checks locations based on the repository type:
-        - If `RepoType.local`, try directly using `relative_path` (absolute or
+        - If `"local"`, try directly using `relative_path` (absolute or
           CWD-relative).
-        - If `RepoType.online`, checks the Hugging Face cache via
+        - If `"online"`, checks the Hugging Face cache via
           `try_to_load_from_cache()`.
 
         Args:
@@ -1131,12 +1230,12 @@ class MAXModelConfig(MAXModelConfigBase):
             return str(relative_path.resolve())
 
         # 1. Handle local repository paths.
-        if repo.repo_type == RepoType.local:
+        if repo.repo_type == "local":
             # Not found locally.
             return None
 
         # 2. Handle online repositories: try cache only.
-        elif repo.repo_type == RepoType.online:
+        elif repo.repo_type == "online":
             # `try_to_load_from_cache` checks the HF cache.
             # Returns absolute path string if found in cache, otherwise None.
             cached_result = try_to_load_from_cache(

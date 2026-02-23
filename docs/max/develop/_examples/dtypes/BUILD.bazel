@@ -1,0 +1,155 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+# dtype_intro.py
+modular_py_binary(
+    name = "dtype_intro",
+    srcs = ["dtype_intro.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "dtype_intro_test",
+    binary = "dtype_intro",
+)
+
+# specify_dtype.py
+modular_py_binary(
+    name = "specify_dtype",
+    srcs = ["specify_dtype.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "specify_dtype_test",
+    binary = "specify_dtype",
+)
+
+# check_dtype.py
+modular_py_binary(
+    name = "check_dtype",
+    srcs = ["check_dtype.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "check_dtype_test",
+    binary = "check_dtype",
+)
+
+# cast_dtype.py
+modular_py_binary(
+    name = "cast_dtype",
+    srcs = ["cast_dtype.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "cast_dtype_test",
+    binary = "cast_dtype",
+)
+
+# dtype_properties.py
+modular_py_binary(
+    name = "dtype_properties",
+    srcs = ["dtype_properties.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "dtype_properties_test",
+    binary = "dtype_properties",
+)
+
+# dlpack_conversion.py
+modular_py_binary(
+    name = "dlpack_conversion",
+    srcs = ["dlpack_conversion.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        requirement("numpy"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "dlpack_conversion_test",
+    binary = "dlpack_conversion",
+)
+
+# pytorch_to_max.py
+modular_py_binary(
+    name = "pytorch_to_max",
+    srcs = ["pytorch_to_max.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max/dtype",
+        requirement("torch"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "pytorch_to_max_test",
+    binary = "pytorch_to_max",
+)
+
+# calculate_memory.py
+modular_py_binary(
+    name = "calculate_memory",
+    srcs = ["calculate_memory.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "calculate_memory_test",
+    binary = "calculate_memory",
+)
+
+# validate_dtypes.py
+modular_py_binary(
+    name = "validate_dtypes",
+    srcs = ["validate_dtypes.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "validate_dtypes_test",
+    binary = "validate_dtypes",
+)

@@ -331,18 +331,18 @@ class HuggingFaceRepo:
         # Get repo type.
         if not self.repo_type:
             if os.path.exists(self.repo_id):
-                object.__setattr__(self, "repo_type", RepoType.local)
+                object.__setattr__(self, "repo_type", "local")
             elif huggingface_hub.constants.HF_HUB_OFFLINE:
                 # Respect HF_HUB_OFFLINE, resolve from local cache
                 local_path = generate_local_model_path(
                     self.repo_id, self.revision
                 )
                 object.__setattr__(self, "repo_id", local_path)
-                object.__setattr__(self, "repo_type", RepoType.local)
+                object.__setattr__(self, "repo_type", "local")
             else:
-                object.__setattr__(self, "repo_type", RepoType.online)
+                object.__setattr__(self, "repo_type", "online")
 
-        if self.repo_type == RepoType.online:
+        if self.repo_type == "online":
             validate_hf_repo_access(
                 repo_id=self.repo_id, revision=self.revision
             )
@@ -366,11 +366,11 @@ class HuggingFaceRepo:
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:
         """Returns Hugging Face model info (online repos only)."""
-        if self.repo_type == RepoType.local:
+        if self.repo_type == "local":
             raise ValueError(
                 "using model info, on local repos is not supported."
             )
-        elif self.repo_type == RepoType.online:
+        elif self.repo_type == "online":
             return huggingface_hub.model_info(
                 self.repo_id, files_metadata=False
             )
@@ -384,7 +384,7 @@ class HuggingFaceRepo:
         gguf_search_pattern = "**/*.gguf"
 
         weight_files = {}
-        if self.repo_type == RepoType.local:
+        if self.repo_type == "local":
             safetensor_paths = glob.glob(
                 os.path.join(self.repo_id, safetensor_search_pattern),
                 recursive=True,
@@ -393,7 +393,7 @@ class HuggingFaceRepo:
                 os.path.join(self.repo_id, gguf_search_pattern),
                 recursive=True,
             )
-        elif self.repo_type == RepoType.online:
+        elif self.repo_type == "online":
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
@@ -428,7 +428,7 @@ class HuggingFaceRepo:
 
     def size_of(self, filename: str) -> int | None:
         """Returns file size in bytes for online repos, or None."""
-        if self.repo_type == RepoType.online:
+        if self.repo_type == "online":
             url = huggingface_hub.hf_hub_url(self.repo_id, filename)
             metadata = huggingface_hub.get_hf_file_metadata(url)
             return metadata.size
@@ -448,7 +448,7 @@ class HuggingFaceRepo:
 
         # Get Safetensor Metadata.
         if WeightsFormat.safetensors in self.weight_files:
-            if self.repo_type == RepoType.local:
+            if self.repo_type == "local":
                 # Safetensor repos are assumed to only have one encoding in them.
                 with open(
                     os.path.join(
@@ -473,7 +473,7 @@ class HuggingFaceRepo:
                 ):
                     supported_encodings.add("float4_e2m1fnx2")
 
-            elif self.repo_type == RepoType.online:
+            elif self.repo_type == "online":
                 safetensors_info = self.info.safetensors
 
                 # Workaround for FP8 models that don't have safetensors metadata populated
@@ -601,7 +601,7 @@ class HuggingFaceRepo:
 
     def file_exists(self, filename: str) -> bool:
         """Returns whether the given file exists in the repo."""
-        if self.repo_type == RepoType.local:
+        if self.repo_type == "local":
             return os.path.exists(os.path.join(self.repo_id, filename))
         return huggingface_hub.file_exists(self.repo_id, filename)
 

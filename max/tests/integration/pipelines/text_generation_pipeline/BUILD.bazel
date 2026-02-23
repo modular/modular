@@ -21,7 +21,10 @@ modular_py_test(
 modular_py_test(
     name = "test_overlap_text_generation_pipeline_gpu",
     srcs = ["test_overlap_text_generation_pipeline_gpu.py"],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
     tags = ["gpu"],
     deps = [
         "//max/python/max/config",

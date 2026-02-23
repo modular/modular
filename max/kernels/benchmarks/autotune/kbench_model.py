@@ -96,7 +96,11 @@ def _run_cmdline(
         )
 
     except Exception as exc:
-        raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
+        return ProcessOutput(
+            None,
+            f"Unable to run command {list2cmdline(cmd)}: {exc}",
+            os.EX_OSERR,
+        )
 
 
 @dataclass(frozen=True)
@@ -775,7 +779,7 @@ class BuildItem:
     build_opts: list
     dryrun: bool = False
     output_path: Path = Path()
-    bin_path: Path = Path()
+    bin_path: Path | None = None
 
     build_output: ProcessOutput = field(default_factory=ProcessOutput)
     build_elapsed_time: float = 0
@@ -1049,9 +1053,7 @@ class Scheduler:
         # update all build items with their binary path
         for b in self.build_items:
             bin_name = b.spec_instance.hash(with_variables=False)
-            self.build_items[b.idx].bin_path = unique_build_paths.get(
-                bin_name, Path()
-            )
+            self.build_items[b.idx].bin_path = unique_build_paths.get(bin_name)
 
     @staticmethod
     def execute_item(

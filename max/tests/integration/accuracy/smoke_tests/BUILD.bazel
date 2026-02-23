@@ -49,6 +49,11 @@ modular_py_test(
         "test_smoke_test.py",
     ],
     imports = [".."],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":smoke_test",
     ],

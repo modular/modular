@@ -1,0 +1,151 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# create_first_tensor.py
+modular_py_binary(
+    name = "create_first_tensor",
+    srcs = ["create_first_tensor.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "create_first_tensor_test",
+    binary = "create_first_tensor",
+)
+
+# create_multi_dim.py
+modular_py_binary(
+    name = "create_multi_dim",
+    srcs = ["create_multi_dim.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "create_multi_dim_test",
+    binary = "create_multi_dim",
+)
+
+# create_factory.py
+modular_py_binary(
+    name = "create_factory",
+    srcs = ["create_factory.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "create_factory_test",
+    binary = "create_factory",
+)
+
+# create_random.py
+modular_py_binary(
+    name = "create_random",
+    srcs = ["create_random.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "create_random_test",
+    binary = "create_random",
+)
+
+# properties_shape.py
+modular_py_binary(
+    name = "properties_shape",
+    srcs = ["properties_shape.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "properties_shape_test",
+    binary = "properties_shape",
+)
+
+# properties_rank.py
+modular_py_binary(
+    name = "properties_rank",
+    srcs = ["properties_rank.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "properties_rank_test",
+    binary = "properties_rank",
+)
+
+# properties_dtype.py
+modular_py_binary(
+    name = "properties_dtype",
+    srcs = ["properties_dtype.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "properties_dtype_test",
+    binary = "properties_dtype",
+)
+
+# properties_device.py
+modular_py_binary(
+    name = "properties_device",
+    srcs = ["properties_device.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+    ],
+)
+
+modular_run_binary_test(
+    name = "properties_device_test",
+    binary = "properties_device",
+)
+
+# properties_num_elements.py
+modular_py_binary(
+    name = "properties_num_elements",
+    srcs = ["properties_num_elements.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "properties_num_elements_test",
+    binary = "properties_num_elements",
+)
