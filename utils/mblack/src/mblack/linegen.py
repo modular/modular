@@ -186,6 +186,7 @@ class LineGenerator(Visitor[Line]):
         keywords: set[str],
         parens: set[str],
         nodeTypes: set[int] | None = None,
+        keywords_first_child_only: bool = False,
     ) -> Iterator[Line]:
         """Visit a statement.
 
@@ -197,15 +198,21 @@ class LineGenerator(Visitor[Line]):
 
         `parens` holds a set of string leaf values immediately after which
         invisible parens should be put.
+
+        If `keywords_first_child_only` is True, keyword matching is restricted
+        to the first child of the node.  This prevents false matches when a
+        keyword is used as a function name, e.g. `def fn(self)`, in Mojo.
         """
         if nodeTypes is None:
             nodeTypes = set()
         normalize_invisible_parens(
             node, parens_after=parens, preview=self.mode.preview
         )
-        for child in node.children:
+        for i, child in enumerate(node.children):
             if child.type in nodeTypes or (
-                is_name_token(child) and child.value in keywords
+                is_name_token(child)
+                and child.value in keywords
+                and (not keywords_first_child_only or i == 0)
             ):
                 yield from self.line()
 
@@ -219,6 +226,7 @@ class LineGenerator(Visitor[Line]):
                 keywords={"def"},
                 parens=set(),
                 nodeTypes={token.FN, token.MLIR_REGION},
+                keywords_first_child_only=True,
             )
         else:
             yield from self.line()

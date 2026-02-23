@@ -624,9 +624,14 @@ def generate_tokens(
     # If we know we're parsing lit, we can unconditionally parse various
     # identifiers, like `fn`, as keywords.
     has_mojo_keywords = False if grammar is None else grammar.mojo_keywords
+    # Tracks the value of the last meaningful (non-whitespace) token emitted,
+    # used to decide whether a Mojo keyword token should instead be treated as
+    # an ordinary NAME (e.g. `def fn(...)` where `fn` is the function name).
+    prev_token_value = None
     def_keywords = (
         ("def", "fn", "__mlir_region") if has_mojo_keywords else ("def")
     )
+    # NOTE: If extending also update any lists of keywords in the testsuite.
     mojo_keyword_tokens = {
         "fn": FN,
         "struct": STRUCT,
@@ -792,6 +797,12 @@ def generate_tokens(
         # handled properly as soft tokens.  This returns true if this can be
         # handled as a normal Mojo token.
         def check_mojo_token():  # noqa: ANN202
+            assert grammar is not None
+            # In Mojo, keywords can be used as function/struct names.
+            # After a def-like keyword or '.', treat the token as a
+            # plain NAME so `def fn(...)` or `x.struct` parse correctly.
+            if prev_token_value in grammar.declaration_keywords + ["."]:  # noqa: B023
+                return False
             # Context sensitive arg conventions are only a keyword if followed
             # by an identifier letter or a variadic.
             if token not in ["out", "read", "mut", "deinit"]:  # noqa: B023
@@ -821,6 +832,8 @@ def generate_tokens(
                     if stashed:
                         yield stashed
                         stashed = None
+                    if newline == NEWLINE:
+                        prev_token_value = None
                     yield (newline, token, spos, epos, line)
 
                 elif initial == "#":
@@ -917,6 +930,7 @@ def generate_tokens(
                         and token in mojo_keyword_tokens
                         and check_mojo_token()
                     ):
+                        prev_token_value = token
                         yield (
                             mojo_keyword_tokens[token],
                             token,
@@ -962,9 +976,11 @@ def generate_tokens(
                             stashed = None
 
                     if stashed:
+                        prev_token_value = stashed[1]
                         yield stashed
                         stashed = None
 
+                    prev_token_value = token
                     yield tok
                 elif initial == "\\":  # continued stmt
                     # This yield is new; needed for better idempotency:
@@ -979,8 +995,10 @@ def generate_tokens(
                     elif initial in ")]}":
                         parenlev -= 1
                     if stashed:
+                        prev_token_value = stashed[1]
                         yield stashed
                         stashed = None
+                    prev_token_value = token
                     yield (OP, token, spos, epos, line)
             else:
                 yield (

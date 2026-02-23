@@ -240,6 +240,13 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
     # MOJO+
     mojo_grammar = python_grammar_soft_keywords.copy()
     mojo_grammar.mojo_keywords = True
+    mojo_grammar.declaration_keywords = [
+        "fn",
+        "def",
+        "__mlir_region",
+        "struct",
+        "trait",
+    ]
     mojo_grammar.version = (0, 1)
 
     pattern_grammar = driver.load_packaged_grammar(

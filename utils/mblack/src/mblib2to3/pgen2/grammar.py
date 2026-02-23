@@ -113,6 +113,9 @@ class Grammar:
         self.async_keywords = False
         # Mojo parses several identifiers, such as fn/var/etc., as keywords, not an identifier.
         self.mojo_keywords = False
+        # Keywords that introduce a named declaration that can use a keyword
+        # as a name, e.g. `fn fn()`.
+        self.declaration_keywords: list[str] = []
 
     def dump(self, filename: Path) -> None:
         """Dump the grammar tables to a pickle file."""
@@ -166,6 +169,7 @@ class Grammar:
         new.version = self.version
         new.async_keywords = self.async_keywords
         new.mojo_keywords = self.mojo_keywords
+        new.declaration_keywords = self.declaration_keywords
         return new
 
     def report(self) -> None:
