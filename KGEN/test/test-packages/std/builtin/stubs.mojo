@@ -559,10 +559,12 @@ struct Span[
         return self._data
 
 
+@stable
 @__nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     TrivialRegisterPassable
 ):
+    @stable
     @always_inline("builtin")
     fn __init__(out self):
         pass
