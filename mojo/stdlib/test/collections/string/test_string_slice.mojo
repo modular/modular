@@ -930,30 +930,23 @@ def test_is_ascii_digit():
     assert_false(StringSlice("123asdg").is_ascii_digit())
 
 
-def test_isdigit():
-    assert_false(StringSlice("").isdigit())
-    assert_true(StringSlice("123").isdigit())
-    assert_false(StringSlice("abc").isdigit())
-    assert_false(StringSlice("12a").isdigit())
+def test_is_ascii_alpha():
+    assert_false(StringSlice("").is_ascii_alpha())
+    assert_true(StringSlice("abc").is_ascii_alpha())
+    assert_true(StringSlice("ABC").is_ascii_alpha())
+    assert_true(StringSlice("AbCd").is_ascii_alpha())
+    assert_false(StringSlice("123").is_ascii_alpha())
+    assert_false(StringSlice("abc1").is_ascii_alpha())
+    assert_false(StringSlice("abc!").is_ascii_alpha())
 
 
-def test_isalpha():
-    assert_false(StringSlice("").isalpha())
-    assert_true(StringSlice("abc").isalpha())
-    assert_true(StringSlice("ABC").isalpha())
-    assert_true(StringSlice("AbCd").isalpha())
-    assert_false(StringSlice("123").isalpha())
-    assert_false(StringSlice("abc1").isalpha())
-    assert_false(StringSlice("abc!").isalpha())
-
-
-def test_isalnum():
-    assert_false(StringSlice("").isalnum())
-    assert_true(StringSlice("abc").isalnum())
-    assert_true(StringSlice("123").isalnum())
-    assert_true(StringSlice("abc123").isalnum())
-    assert_false(StringSlice("abc!").isalnum())
-    assert_false(StringSlice("abc 123").isalnum())
+def test_is_ascii_alnum():
+    assert_false(StringSlice("").is_ascii_alnum())
+    assert_true(StringSlice("abc").is_ascii_alnum())
+    assert_true(StringSlice("123").is_ascii_alnum())
+    assert_true(StringSlice("abc123").is_ascii_alnum())
+    assert_false(StringSlice("abc!").is_ascii_alnum())
+    assert_false(StringSlice("abc 123").is_ascii_alnum())
 
 
 def test_capitalize():
