@@ -930,6 +930,50 @@ def test_is_ascii_digit():
     assert_false(StringSlice("123asdg").is_ascii_digit())
 
 
+def test_isdigit():
+    assert_false(StringSlice("").isdigit())
+    assert_true(StringSlice("123").isdigit())
+    assert_false(StringSlice("abc").isdigit())
+    assert_false(StringSlice("12a").isdigit())
+
+
+def test_isalpha():
+    assert_false(StringSlice("").isalpha())
+    assert_true(StringSlice("abc").isalpha())
+    assert_true(StringSlice("ABC").isalpha())
+    assert_true(StringSlice("AbCd").isalpha())
+    assert_false(StringSlice("123").isalpha())
+    assert_false(StringSlice("abc1").isalpha())
+    assert_false(StringSlice("abc!").isalpha())
+
+
+def test_isalnum():
+    assert_false(StringSlice("").isalnum())
+    assert_true(StringSlice("abc").isalnum())
+    assert_true(StringSlice("123").isalnum())
+    assert_true(StringSlice("abc123").isalnum())
+    assert_false(StringSlice("abc!").isalnum())
+    assert_false(StringSlice("abc 123").isalnum())
+
+
+def test_capitalize():
+    assert_equal(StringSlice("").capitalize(), "")
+    assert_equal(StringSlice("hello").capitalize(), "Hello")
+    assert_equal(StringSlice("HELLO").capitalize(), "Hello")
+    assert_equal(StringSlice("hELLO wORLD").capitalize(), "Hello world")
+    assert_equal(StringSlice("123abc").capitalize(), "123abc")
+    assert_equal(StringSlice("a").capitalize(), "A")
+
+
+def test_title():
+    assert_equal(StringSlice("").title(), "")
+    assert_equal(StringSlice("hello world").title(), "Hello World")
+    assert_equal(StringSlice("HELLO WORLD").title(), "Hello World")
+    assert_equal(StringSlice("hello").title(), "Hello")
+    assert_equal(StringSlice("it's a test").title(), "It'S A Test")
+    assert_equal(StringSlice("123abc def").title(), "123Abc Def")
+
+
 def test_is_ascii_printable():
     assert_true(StringSlice("aasdg").is_ascii_printable())
     assert_false(StringSlice("aa\nae").is_ascii_printable())
