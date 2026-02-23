@@ -171,14 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    use_experimental_kernels: str = Field(
-        default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
-        description=(
-            "Enables using experimental mojo kernels with max serve. The "
-            "kernels could be unstable or incorrect."
-        ),
-    )
-
     use_vendor_blas: str = Field(
         default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
         description=(
@@ -319,7 +311,7 @@ class PipelineConfig(ConfigFileModel):
     def configure_session(self, session: InferenceSession) -> None:
         """Configure an InferenceSession with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
-        session._use_experimental_kernels(self.use_experimental_kernels)
+        session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.use_vendor_blas)
         session._pdl_level(self.pdl_level)
 
