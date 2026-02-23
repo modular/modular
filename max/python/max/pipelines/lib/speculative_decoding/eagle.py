@@ -320,15 +320,30 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             hasattr(base_inputs, "batch_context_lengths")
             and base_inputs.batch_context_lengths
         ):
+            page_size = model.kv_cache_config.kv_cache_page_size
+
+            def align_length(length: int) -> int:
+                return (length + page_size - 1) // page_size * page_size
+
             for i, replica_batch in enumerate(replica_batches):
                 device_context_length = sum(
-                    self._draft_kv_start_idx.get(ctx.request_id, 0)
-                    + ctx.tokens.active_length
+                    align_length(
+                        self._draft_kv_start_idx.get(ctx.request_id, 0)
+                        + ctx.tokens.active_length
+                    )
                     for ctx in replica_batch
                 )
-                base_inputs.batch_context_lengths[i] = Buffer.from_numpy(
-                    np.array([device_context_length], dtype=np.int32)
-                )
+
+                base_inputs.batch_context_lengths[i][0] = device_context_length
+
+            if len(replica_batches) != len(self.draft_devices):
+                # We only support either DP=1 or DP=n_devices.
+                assert len(replica_batches) == 1
+                # Duplicate the batch context lengths for each device.
+                for dev_idx in range(1, len(base_inputs.batch_context_lengths)):
+                    base_inputs.batch_context_lengths[dev_idx][0] = (
+                        base_inputs.batch_context_lengths[0][0].item()
+                    )
 
         # --- Update draft KV indices and restore positions ---
         for i, context in enumerate(batch):
