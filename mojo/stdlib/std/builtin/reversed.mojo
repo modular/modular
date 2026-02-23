@@ -221,4 +221,6 @@ fn reversed[
     Returns:
         The reversed iterator of the Span.
     """
-    return value.__reversed__()
+    return rebind[_SpanIter[T, value.origin, forward=False]](
+        value.__reversed__()
+    )

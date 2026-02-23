@@ -443,6 +443,9 @@ what we publish.
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
 
+- `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
+  There are a few restrictions including iteration requiring `T: Copyable`.
+
 - `Int.write_padded` now accounts for a negative sign when calculating the
   width, resulting in a consistent width regardless of sign:
 
