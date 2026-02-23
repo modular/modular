@@ -114,12 +114,12 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Writable):
 
         @parameter
         fn fields(mut w: Some[Writer]):
-            if exit_code := self.exit_code:
+            if self.exit_code:
                 w.write_string("exit_code=")
-                w.write(exit_code[])
-            elif term_signal := self.term_signal:
+                w.write(self.exit_code.unsafe_value())
+            elif self.term_signal:
                 w.write_string("term_signal=")
-                w.write(term_signal[])
+                w.write(self.term_signal.unsafe_value())
             else:
                 w.write_string("running=True")
 
