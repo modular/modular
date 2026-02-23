@@ -238,6 +238,18 @@ def whitespace(
         if not prevp or prevp.type in OPENING_BRACKETS:
             return NO
 
+        # Keep a space after comptime in expression form: comptime (expr)
+        # But not when comptime happens to be a method name: x.comptime()
+        if (
+            t == token.LPAR
+            and p.type == syms.trailer
+            and prevp.type == token.NAME
+            and prevp.value == "comptime"
+            and prevp.parent
+            and prevp.parent.type != syms.trailer
+        ):
+            return SPACE
+
         if t == token.COLON:
             if prevp.type == token.COLON:
                 return NO
