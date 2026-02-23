@@ -58,8 +58,8 @@ f[HTMLTemplateEngine]"""
 <div class="user-profile">
   <h1>User: {user_name}</h1>
   <ul>
-    {% for badge in badges %}
-      <li>{badge}</li>
+    {% for badge in {badges} %}
+      <li>badge</li>
     {% endfor %}
   </ul>
 </div>
@@ -114,7 +114,7 @@ What Python can't deal with however is graphemes. This should work in Mojo
 
 ```mojo
 # 👨‍👩‍👧‍👦 is the union of 4 different unicode codepoints
-print("{:^4}".format("👨‍👩‍👧‍👦")) # " 👨‍👩‍👧‍👦 "
+print("{:^3}".format("👨‍👩‍👧‍👦")) # " 👨‍👩‍👧‍👦 "
 ```
 
 #### Conversion flags
