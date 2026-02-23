@@ -30,6 +30,7 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
     ],
