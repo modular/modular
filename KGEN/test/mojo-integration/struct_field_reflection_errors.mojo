@@ -28,7 +28,7 @@ struct TestStruct:
 
 
 # Test that struct_field_index_by_name produces an error for non-existent field.
-# Use constrained to force compile-time evaluation.
+# Use `comptime assert` to force compile-time evaluation.
 fn test_nonexistent_field_index():
     comptime if env_get_bool["TEST_NONEXISTENT_INDEX", False]():
         # CHECK-INDEX: has no field named 'nonexistent'
