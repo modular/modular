@@ -19,7 +19,6 @@ Measures three variants:
 3. fully fused allreduce+RMSNorm+FP8 (single kernel launch)
 """
 
-from math import align_up
 from sys import (
     env_get_bool,
     env_get_dtype,
@@ -44,6 +43,7 @@ from comm.allreduce import allreduce
 from comm.allreduce_rmsnorm_fp8 import allreduce_rmsnorm_fp8
 from comm.sync import can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from internal_utils import CacheBustingBuffer
 
 from layout._coord import Coord
 from layout._layout import row_major
@@ -55,33 +55,6 @@ from utils.index import Index
 from utils.numerics import max_finite
 
 
-# Cache busting helpers: 512 MiB > 2x the infinity cache on MI300x.
-fn _calculate_stride(tensor_size: Int, alignment: Int) -> Int:
-    return align_up(tensor_size, alignment)
-
-
-fn _calculate_buffer_size[
-    dtype: DType
-](tensor_size: Int, alignment: Int) -> Int:
-    comptime k512m = 512 * 1024 * 1024
-    var stride = _calculate_stride(tensor_size, alignment)
-    return align_up(k512m, stride * size_of[dtype]()) // size_of[dtype]()
-
-
-fn _calculate_offset(iteration: Int, stride: Int, buffer_size: Int) -> Int:
-    return (iteration * stride) % buffer_size
-
-
-@always_inline
-fn _get_offset[
-    cache_busting: Bool
-](cache_iter: Int, data_stride: Int, buf_size: Int) -> Int:
-    @parameter
-    if cache_busting:
-        return _calculate_offset(cache_iter, data_stride, buf_size)
-    return 0
-
-
 @always_inline
 fn _repoint_input_bufs[
     in_dtype: DType,
@@ -90,13 +63,13 @@ fn _repoint_input_bufs[
     num_cols: Int,
 ](
     mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
-    in_dev: List[DeviceBuffer[in_dtype]],
-    offset: Int,
+    cb_inputs: List[CacheBustingBuffer[in_dtype]],
+    iteration: Int,
 ):
     @parameter
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            in_dev[i].unsafe_ptr() + offset, DimList(num_rows, num_cols)
+            cb_inputs[i].offset_ptr(iteration), DimList(num_rows, num_cols)
         )
 
 
@@ -110,12 +83,12 @@ fn _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
-    in_dev: List[DeviceBuffer[in_dtype]],
+    cb_inputs: List[CacheBustingBuffer[in_dtype]],
     ar_out_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
     ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    fused_fp8_out_dev: DeviceBuffer[out_dtype],
-    fully_fused_fp8_out_dev: DeviceBuffer[out_dtype],
+    cb_fused_fp8_out: CacheBustingBuffer[out_dtype],
+    cb_fully_fused_fp8_out: CacheBustingBuffer[out_dtype],
     fused_scales_dev: DeviceBuffer[DType.float32],
     fully_fused_scales_dev: DeviceBuffer[DType.float32],
     gamma_dev: DeviceBuffer[in_dtype],
@@ -132,7 +105,7 @@ fn _verify_results[
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
     _repoint_input_bufs[num_rows=num_rows, num_cols=num_cols](
-        in_bufs, in_dev, 0
+        in_bufs, cb_inputs, 0
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -165,7 +138,7 @@ fn _verify_results[
         return ar_ptr_v.load[width=width, alignment=width](li)
 
     var v_fused_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        fused_fp8_out_dev.unsafe_ptr(), Index(num_rows, num_cols)
+        cb_fused_fp8_out.unsafe_ptr(), Index(num_rows, num_cols)
     )
     var v_fused_scale_shape = IndexList[2](num_rows, 1)
     var v_fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
@@ -197,7 +170,7 @@ fn _verify_results[
         list_of_ctx[i].synchronize()
 
     var v_ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        fully_fused_fp8_out_dev.unsafe_ptr(), DimList(num_rows, num_cols)
+        cb_fully_fused_fp8_out.unsafe_ptr(), DimList(num_rows, num_cols)
     )
     var v_ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
         fully_fused_scales_dev.unsafe_ptr(), DimList(num_rows, 1)
@@ -233,8 +206,8 @@ fn _verify_results[
     # mismatch rate.
     var fused_h = alloc[Scalar[out_dtype]](length)
     var ff_h = alloc[Scalar[out_dtype]](length)
-    ctx0.enqueue_copy(fused_h, fused_fp8_out_dev)
-    ctx0.enqueue_copy(ff_h, fully_fused_fp8_out_dev)
+    ctx0.enqueue_copy(fused_h, cb_fused_fp8_out.device_buffer())
+    ctx0.enqueue_copy(ff_h, cb_fully_fused_fp8_out.device_buffer())
     ctx0.synchronize()
 
     var num_errors = 0
@@ -323,14 +296,9 @@ fn bench_allreduce_rmsnorm_fp8[
 
     # --- Shared buffer setup ---
     comptime simd_size = simd_width_of[in_dtype, target = get_gpu_target()]()
-    var data_stride = _calculate_stride(length, simd_size)
-    var buf_in_size = _calculate_buffer_size[in_dtype](length, simd_size)
-    var buf_out_fp8_size = _calculate_buffer_size[out_dtype](length, simd_size)
-    var alloc_in = buf_in_size if cache_busting else length
-    var alloc_out_fp8 = buf_out_fp8_size if cache_busting else length
 
-    # Per-GPU input buffers (for allreduce).
-    var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    # Per-GPU input CacheBustingBuffers (for allreduce).
+    var cb_inputs = List[CacheBustingBuffer[in_dtype]]()
     var ar_out_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[UnsafePointer[Scalar[in_dtype], MutExternalOrigin]](
         capacity=ngpus
@@ -344,17 +312,21 @@ fn bench_allreduce_rmsnorm_fp8[
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
     for i in range(ngpus):
-        in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_in))
+        cb_inputs.append(
+            CacheBustingBuffer[in_dtype](
+                length, simd_size, list_of_ctx[i], cache_busting
+            )
+        )
         ar_out_dev.append(
             list_of_ctx[i].enqueue_create_buffer[in_dtype](length)
         )
 
-        var h = alloc[Scalar[in_dtype]](alloc_in)
+        var h = alloc[Scalar[in_dtype]](cb_inputs[0].alloc_size())
         host_bufs.append(h)
         # Initialize all cache-busted positions.
-        for j in range(alloc_in):
+        for j in range(cb_inputs[0].alloc_size()):
             h[j] = Scalar[in_dtype](i + 1) + Scalar[in_dtype](j % 251)
-        list_of_ctx[i].enqueue_copy(in_dev[i], h)
+        list_of_ctx[i].enqueue_copy(cb_inputs[i].device_buffer(), h)
 
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
@@ -373,7 +345,7 @@ fn bench_allreduce_rmsnorm_fp8[
     )
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            in_dev[i].unsafe_ptr(), DimList(num_rows, num_cols)
+            cb_inputs[i].unsafe_ptr(), DimList(num_rows, num_cols)
         )
         ar_out_bufs[i] = NDBuffer[in_dtype, 2](
             ar_out_dev[i].unsafe_ptr(), DimList(num_rows, num_cols)
@@ -381,16 +353,16 @@ fn bench_allreduce_rmsnorm_fp8[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    # FP8 output buffers (on GPU 0).
-    var fused_fp8_out_dev = list_of_ctx[0].enqueue_create_buffer[out_dtype](
-        alloc_out_fp8
+    # FP8 output CacheBustingBuffers (on GPU 0).
+    var cb_fused_fp8_out = CacheBustingBuffer[out_dtype](
+        length, simd_size, list_of_ctx[0], cache_busting
     )
     var fused_scales_dev = list_of_ctx[0].enqueue_create_buffer[DType.float32](
         num_rows
     )
-    var fully_fused_fp8_out_dev = list_of_ctx[0].enqueue_create_buffer[
-        out_dtype
-    ](alloc_out_fp8)
+    var cb_fully_fused_fp8_out = CacheBustingBuffer[out_dtype](
+        length, simd_size, list_of_ctx[0], cache_busting
+    )
     var fully_fused_scales_dev = list_of_ctx[0].enqueue_create_buffer[
         DType.float32
     ](num_rows)
@@ -427,8 +399,8 @@ fn bench_allreduce_rmsnorm_fp8[
     )
 
     # Capture base pointers for closures.
-    var fused_fp8_out_ptr_base = fused_fp8_out_dev.unsafe_ptr()
-    var fully_fused_fp8_out_ptr_base = fully_fused_fp8_out_dev.unsafe_ptr()
+    var fused_fp8_out_ptr_base = cb_fused_fp8_out.unsafe_ptr()
+    var fully_fused_fp8_out_ptr_base = cb_fully_fused_fp8_out.unsafe_ptr()
     var fused_scales_ptr_base = fused_scales_dev.unsafe_ptr()
     var fully_fused_scales_ptr_base = fully_fused_scales_dev.unsafe_ptr()
 
@@ -442,11 +414,8 @@ fn bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            var offset = _get_offset[cache_busting](
-                cache_iter, data_stride, buf_in_size
-            )
             _repoint_input_bufs[num_rows=num_rows, num_cols=num_cols](
-                in_bufs, in_dev, offset
+                in_bufs, cb_inputs, cache_iter
             )
             allreduce[ngpus=ngpus](
                 in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner
@@ -470,11 +439,8 @@ fn bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            var offset_in = _get_offset[cache_busting](
-                cache_iter, data_stride, buf_in_size
-            )
             _repoint_input_bufs[num_rows=num_rows, num_cols=num_cols](
-                in_bufs, in_dev, offset_in
+                in_bufs, cb_inputs, cache_iter
             )
 
             # Allreduce.
@@ -541,11 +507,8 @@ fn bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            var offset_in = _get_offset[cache_busting](
-                cache_iter, data_stride, buf_in_size
-            )
             _repoint_input_bufs[num_rows=num_rows, num_cols=num_cols](
-                in_bufs, in_dev, offset_in
+                in_bufs, cb_inputs, cache_iter
             )
 
             var ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
@@ -585,12 +548,12 @@ fn bench_allreduce_rmsnorm_fp8[
         list_of_ctx,
         signal_buffers,
         in_bufs,
-        in_dev,
+        cb_inputs,
         ar_out_bufs,
         ar_out_dev,
         rank_sigs,
-        fused_fp8_out_dev,
-        fully_fused_fp8_out_dev,
+        cb_fused_fp8_out,
+        cb_fully_fused_fp8_out,
         fused_scales_dev,
         fully_fused_scales_dev,
         gamma_dev,
@@ -604,10 +567,10 @@ fn bench_allreduce_rmsnorm_fp8[
     for i in range(ngpus):
         host_bufs[i].free()
     _ = signal_buffers^
-    _ = in_dev^
+    _ = cb_inputs^
     _ = ar_out_dev^
-    _ = fused_fp8_out_dev^
-    _ = fully_fused_fp8_out_dev^
+    _ = cb_fused_fp8_out^
+    _ = cb_fully_fused_fp8_out^
     _ = fused_scales_dev^
     _ = fully_fused_scales_dev^
     _ = gamma_dev^

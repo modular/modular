@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from ._cache_busting import CacheBustingBuffer, CACHE_BUST_BYTES
 from ._measure import correlation, cosine, kl_div
 from ._testing import (
     assert_almost_equal,

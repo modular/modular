@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import align_up
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 from utils.numerics import get_accum_type
 
@@ -30,6 +29,7 @@ from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
+    CacheBustingBuffer,
     arg_parse,
     pytorch_like_tolerances_for,
     human_readable_size,
@@ -105,8 +105,8 @@ fn bench_reducescatter[
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
-    # Create device buffers for all GPUs
-    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    # Create cache busting input buffers for each GPU
+    var cb_inputs = List[CacheBustingBuffer[dtype]]()
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
@@ -118,18 +118,16 @@ fn bench_reducescatter[
         fill={}
     )
 
-    # Cache busting: allocate larger buffer to avoid cache reuse
-    var stride = align_up(input_length, rs_config.simd_width)
-    comptime m512 = 512 * 1024 * 1024
-    var cache_elems = (
-        align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
-    )
-
     # Initialize buffers for each GPU
     for gpu_idx in range(ngpus):
-        # Create input and output device buffers
-        in_bufs_list.append(
-            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](cache_elems)
+        # Create input (cache busting) and output device buffers
+        cb_inputs.append(
+            CacheBustingBuffer[dtype](
+                input_length,
+                rs_config.simd_width,
+                list_of_ctx[gpu_idx],
+                cache_busting,
+            )
         )
         out_bufs_list.append(
             list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](
@@ -138,16 +136,20 @@ fn bench_reducescatter[
         )
 
         # Create and initialize host buffers
-        var host_buffer = alloc[Scalar[dtype]](cache_elems)
+        var host_buffer = alloc[Scalar[dtype]](cb_inputs[0].alloc_size())
         host_buffers.append(host_buffer)
 
         # Fill with repeated GPU-specific values for cache busting
-        for i in range(cache_elems // stride):
+        for i in range(cb_inputs[0].alloc_size() // cb_inputs[0].stride):
             for j in range(input_length):
-                host_buffer[i * stride + j] = _per_gpu_value[dtype](gpu_idx, j)
+                host_buffer[i * cb_inputs[0].stride + j] = _per_gpu_value[
+                    dtype
+                ](gpu_idx, j)
 
         # Copy to device
-        list_of_ctx[gpu_idx].enqueue_copy(in_bufs_list[gpu_idx], host_buffer)
+        list_of_ctx[gpu_idx].enqueue_copy(
+            cb_inputs[gpu_idx].device_buffer(), host_buffer
+        )
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -172,7 +174,7 @@ fn bench_reducescatter[
 
     for i in range(ngpus):
         in_bufs[i if not use_multimem else 0] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(input_length)
+            cb_inputs[i].unsafe_ptr(), DimList(input_length)
         )
         out_bufs[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
@@ -185,15 +187,9 @@ fn bench_reducescatter[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            # Offset the input buffer if cache_busting
-            var offset = 0
-
-            comptime if cache_busting:
-                offset = (cache_iter * stride) % cache_elems
-
             comptime for i in range(ngpus):
                 in_bufs[i] = NDBuffer[dtype, rank](
-                    in_bufs_list[i].unsafe_ptr() + offset,
+                    cb_inputs[i].offset_ptr(cache_iter),
                     DimList(input_length),
                 )
 

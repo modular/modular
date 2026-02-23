@@ -28,6 +28,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu import global_idx, grid_dim, block_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
+    CacheBustingBuffer,
     arg_parse,
     assert_almost_equal,
     assert_with_measure,
@@ -42,7 +43,6 @@ from internal_utils._utils import (
     InitializationType,
     ValOrDim,
     dynamic,
-    init_vector_launch,
     static,
 )
 from layout import Layout, LayoutTensor
@@ -184,26 +184,12 @@ fn bench_matmul[
         return shape[0] * shape[1]
 
     comptime simd_size = 4
-    var stride_a = align_up(get_size(shape_a_dim), simd_size)
-    var stride_b = align_up(get_size(shape_b_dim), simd_size)
-    var stride_c = align_up(get_size(shape_c_dim), simd_size)
-
-    comptime k128 = 512 * 1024 * 1024
-    var cache_a = (
-        align_up(k128, stride_a * size_of[dtype]()) // size_of[dtype]()
+    var cb_a = CacheBustingBuffer[dtype](get_size(shape_a_dim), simd_size, ctx)
+    var cb_b = CacheBustingBuffer[dtype](get_size(shape_b_dim), simd_size, ctx)
+    var cb_c = CacheBustingBuffer[DType.bfloat16](
+        get_size(shape_c_dim), simd_size, ctx
     )
-    var cache_b = (
-        align_up(k128, stride_b * size_of[dtype]()) // size_of[dtype]()
-    )
-    var cache_c = (
-        align_up(k128, stride_c * size_of[DType.bfloat16]())
-        // size_of[DType.bfloat16]()
-    )
-
-    var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
-    var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
-    var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
-    var buffer_c_ref = ctx.enqueue_create_buffer[DType.bfloat16](stride_c)
+    var buffer_c_ref = ctx.enqueue_create_buffer[DType.bfloat16](cb_c.stride)
 
     # MXFP8 scale buffer allocation
     comptime scales_type = MXFP8_SF_DTYPE
@@ -276,15 +262,15 @@ fn bench_matmul[
         )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_a)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_b)
+    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_a.alloc_size())
+    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_b.alloc_size())
 
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cache_a)
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cache_b)
+        var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
+        var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
 
         comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
@@ -305,12 +291,12 @@ fn bench_matmul[
                 for i in range(b_host.num_elements()):
                     b_host.data[i] = Scalar[dtype](i)
 
-        ctx.enqueue_copy(buffer_a, a_host_ptr)
-        ctx.enqueue_copy(buffer_b, b_host_ptr)
+        ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
+        ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
         ctx.synchronize()
     else:
-        init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
-        init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
+        cb_a.init_on_device(init_type, ctx)
+        cb_b.init_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     @parameter
@@ -357,12 +343,9 @@ fn bench_matmul[
 
     @parameter
     @__copy_capture(
-        cache_a,
-        cache_b,
-        cache_c,
-        stride_a,
-        stride_b,
-        stride_c,
+        cb_a,
+        cb_b,
+        cb_c,
         a_scales_size,
         b_scales_size,
         dynamic_a_scales_shape,
@@ -373,22 +356,14 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var offset_a = 0
-            var offset_b = 0
-            var offset_c = 0
-
-            comptime if cache_busting:
-                offset_a = (iteration * stride_a) % cache_a
-                offset_b = (iteration * stride_b) % cache_b
-                offset_c = (iteration * stride_c) % cache_c
             var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
-                buffer_a.unsafe_ptr() + offset_a, shape_a_dim
+                cb_a.offset_ptr(iteration), shape_a_dim
             )
             var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
-                buffer_b.unsafe_ptr() + offset_b, shape_b_dim
+                cb_b.offset_ptr(iteration), shape_b_dim
             )
             var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
-                buffer_c.unsafe_ptr() + offset_c, shape_c_dim
+                cb_c.offset_ptr(iteration), shape_c_dim
             )
 
             @parameter
@@ -451,10 +426,10 @@ fn bench_matmul[
         if verify:
             # Create tensors at offset 0 for verification
             var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
-                buffer_a.unsafe_ptr(), shape_a_dim
+                cb_a.unsafe_ptr(), shape_a_dim
             )
             var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
-                buffer_b.unsafe_ptr(), shape_b_dim
+                cb_b.unsafe_ptr(), shape_b_dim
             )
             var tensor_c_ref = NDBuffer[
                 DType.bfloat16, 2, MutAnyOrigin, shape_c
@@ -470,7 +445,7 @@ fn bench_matmul[
             var c_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
             var c_ref_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
             var c_view = DeviceBuffer[DType.bfloat16](
-                ctx, buffer_c.unsafe_ptr(), c_size, owning=False
+                ctx, cb_c.unsafe_ptr(), c_size, owning=False
             )
             var c_ref_view = DeviceBuffer[DType.bfloat16](
                 ctx, buffer_c_ref.unsafe_ptr(), c_size, owning=False
@@ -539,9 +514,9 @@ fn bench_matmul[
     b_host_ptr.free()
 
     # Consume device buffers
-    _ = buffer_a^
-    _ = buffer_b^
-    _ = buffer_c^
+    _ = cb_a^
+    _ = cb_b^
+    _ = cb_c^
     _ = buffer_c_ref^
     _ = buffer_a_scales^
     _ = buffer_b_scales^
