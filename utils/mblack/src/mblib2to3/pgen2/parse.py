@@ -258,11 +258,13 @@ class Parser:
         self.rootnode: NL | None = None
         self.used_names: set[str] = set()
         self.proxy = proxy
+        self._prev_value: str | None = None
 
     def addtoken(self, type: int, value: str, context: Context) -> bool:
         """Add a token; return True iff this is the end of the program."""
         # Map from token to label
         ilabels = self.classify(type, value, context)
+        self._prev_value = value
         assert len(ilabels) >= 1
 
         # If we have only one state to advance, we'll directly
@@ -366,6 +368,21 @@ class Parser:
             self.used_names.add(value)
             # Check for reserved words
             if value in self.grammar.keywords:
+                is_mojo = getattr(self.grammar, "mojo_keywords", False)
+                if (
+                    is_mojo
+                    and self._prev_value in self.grammar.declaration_keywords
+                ):
+                    # In Mojo, keywords can sometimes be used as names. Force
+                    # the NAME label so the parser treats the keyword as an
+                    # ordinary identifier.
+                    return [self.grammar.tokens[type]]
+                if is_mojo and self._prev_value == ".":
+                    # Member access, `x.keyword()`, treat as a soft keyword.
+                    return [
+                        self.grammar.keywords[value],
+                        self.grammar.tokens[type],
+                    ]
                 return [self.grammar.keywords[value]]
             elif value in self.grammar.soft_keywords:
                 assert type in self.grammar.tokens
