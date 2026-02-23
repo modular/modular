@@ -102,13 +102,8 @@ fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
 
 
 ##===----------------------------------------------------------------------===##
-# Ignore 'constrained' functions (MOCO-2839)
+# Ignore 'comptime assert' (MOCO-2839)
 ##===----------------------------------------------------------------------===##
-
-
-@always_inline("nodebug")
-fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
-    pass
 
 
 fn fold_constrained_func[x: Int]() -> IntT[x]:
