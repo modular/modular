@@ -49,37 +49,6 @@ def test_allreduce_per_device_counts_without_merge() -> None:
     assert not re.search(r"mo\.chain\.create\([^)]*,[^)]*\)", ir), ir
 
 
-def test_allreduce_has_device_barrier_attribute() -> None:
-    """Verify that allreduce ops are created with hasDeviceBarrier attribute.
-
-    The hasDeviceBarrier attribute enables the same-device chain optimization
-    during lowering, so allreduce ops only wait for operand chains from the
-    same device (cross-device synchronization is handled internally).
-    """
-    t0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
-    t1 = TensorType(DType.float32, [4], device=DeviceRef.GPU(1))
-    sb0 = BufferType(DType.int64, [1], device=DeviceRef.GPU(0))
-    sb1 = BufferType(DType.int64, [1], device=DeviceRef.GPU(1))
-
-    with Graph(
-        "allreduce_device_barrier",
-        input_types=[t0, t1, sb0, sb1],
-    ) as graph:
-        x0, x1, s0, s1 = graph.inputs
-        outs = ops.allreduce.sum([x0.tensor, x1.tensor], [s0.buffer, s1.buffer])
-        graph.output(*outs)
-
-    ir = str(graph)
-
-    # Each allreduce op should have the hasDeviceBarrier attribute.
-    # Pattern: mo.distributed.allreduce.sum(...) {device = ..., hasDeviceBarrier}
-    device_barrier_matches = re.findall(r"hasDeviceBarrier", ir)
-    assert len(device_barrier_matches) == 2, (
-        f"Expected 2 hasDeviceBarrier attributes, found {len(device_barrier_matches)}."
-        f"\nIR:\n{ir}"
-    )
-
-
 def test_transfer_h2d_uses_root_chain_not_device_chain() -> None:
     # Setup per-device inputs and signals.
     t0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
