@@ -461,7 +461,7 @@ class OverlapTextGenerationPipeline(
         with self._kv_manager.reserve(
             capture_contexts, replica_idx=0, num_steps=1
         ):
-            kv_cache_inputs = self._kv_manager.get_runtime_inputs(
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
                 [capture_contexts], num_steps=1
             )
             with Tracer("prepare_initial_token_inputs"):
@@ -503,7 +503,7 @@ class OverlapTextGenerationPipeline(
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
         # Prepare the batch.
-        kv_cache_inputs = self._kv_manager.get_runtime_inputs(
+        kv_cache_inputs = self._kv_manager.runtime_inputs(
             inputs.batches, num_steps=1
         )
 

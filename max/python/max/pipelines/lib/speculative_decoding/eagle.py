@@ -284,7 +284,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 model.kv_manager.alloc(
                     ctx, replica_idx=replica_idx, num_steps=num_steps
                 )
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+        kv_cache_inputs = model.kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
 
@@ -384,7 +384,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 model.kv_manager.alloc(
                     ctx, replica_idx=replica_idx, num_steps=num_steps
                 )
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+        kv_cache_inputs = model.kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
 
@@ -428,7 +428,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             merged_offsets: Offsets for merged tokens
             host_merged_offsets: Host-side merged offsets for MTP
             kv_cache_inputs: Pre-computed KV cache inputs. When provided,
-                skips KV alloc/get_runtime_inputs (used when those must run
+                skips KV alloc/runtime_inputs (used when those must run
                 inside a different context than prepare_initial_token_inputs).
 
         Returns:
@@ -440,7 +440,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     model.kv_manager.alloc(
                         ctx, replica_idx=replica_idx, num_steps=num_steps
                     )
-            kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            kv_cache_inputs = model.kv_manager.runtime_inputs(
                 replica_batches, num_steps
             )
 
@@ -637,7 +637,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     self._target_model.kv_manager.alloc(
                         ctx, replica_idx=replica_idx, num_steps=1
                     )
-            kv_cache_inputs = self._target_model.kv_manager.get_runtime_inputs(
+            kv_cache_inputs = self._target_model.kv_manager.runtime_inputs(
                 replica_batches, 1
             )
 

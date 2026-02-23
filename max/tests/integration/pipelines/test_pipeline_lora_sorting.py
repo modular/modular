@@ -108,7 +108,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
         self.kv_manager.claim = MagicMock()
         self.kv_manager.alloc = MagicMock()
         self.kv_manager.step = MagicMock()
-        self.kv_manager.get_runtime_inputs = MagicMock(return_value=[])
+        self.kv_manager.runtime_inputs = MagicMock(return_value=[])
         self.kv_manager.increment_cache_lengths = MagicMock(return_value=[])
 
         self._lora_manager = lora_manager

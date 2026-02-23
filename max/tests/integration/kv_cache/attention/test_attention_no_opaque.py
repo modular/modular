@@ -192,7 +192,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         batch.append(context)
 
     kv_inputs = PagedKVCacheTensorsNoOpaque(
-        *kv_manager.get_runtime_inputs([batch])[0]
+        *kv_manager.runtime_inputs([batch])[0]
     )
     kv_input_symbols = kv_params.get_symbolic_inputs()[0]
 

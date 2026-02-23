@@ -62,7 +62,7 @@ async def test_step() -> None:
     for j in range(3):
         for ctx in batch:
             kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-        kv_manager.get_runtime_inputs([batch])
+        kv_manager.runtime_inputs([batch])
         for ctx in batch:
             ctx.update(42)
         kv_manager.step([batch])
@@ -170,7 +170,7 @@ async def test_fetch_paged() -> None:
     # Fetch 3 of the 5 contexts created above
     for ctx in contexts[:3]:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_collection = kv_manager.get_runtime_inputs([contexts[:3]])[0]
+    kv_collection = kv_manager.runtime_inputs([contexts[:3]])[0]
 
     assert kv_collection is not None
 
@@ -231,12 +231,12 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
     kv_manager.claim(short_context.request_id, replica_idx=0)
 
     kv_manager.alloc(short_context, replica_idx=0, num_steps=1)
-    first_inputs = kv_manager.get_runtime_inputs([[short_context]])[0]
+    first_inputs = kv_manager.runtime_inputs([[short_context]])[0]
     assert tuple(first_inputs.lookup_table.shape) == (1, 1)
 
     long_context = create_text_context(np.zeros(256, dtype=np.int64))
     kv_manager.claim(long_context.request_id, replica_idx=0)
 
     kv_manager.alloc(long_context, replica_idx=0, num_steps=1)
-    second_inputs = kv_manager.get_runtime_inputs([[long_context]])[0]
+    second_inputs = kv_manager.runtime_inputs([[long_context]])[0]
     assert tuple(second_inputs.lookup_table.shape) == (1, 2)

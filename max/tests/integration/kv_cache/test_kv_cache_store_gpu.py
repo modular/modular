@@ -61,7 +61,7 @@ def _allocate_batch(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
-    return kv_manager.get_runtime_inputs([batch])[0]
+    return kv_manager.runtime_inputs([batch])[0]
 
 
 def test_kv_cache_store_ragged_executes() -> None:

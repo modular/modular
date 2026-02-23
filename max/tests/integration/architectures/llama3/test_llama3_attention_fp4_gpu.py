@@ -287,7 +287,7 @@ def generate_max_outputs_fp4(
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0)
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs(
+        kv_manager.runtime_inputs(
             cast(list[list[TextGenerationContext]], [batch])
         )[0]
     )

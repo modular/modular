@@ -47,7 +47,7 @@ class MockKVManager:
     ) -> None:
         pass
 
-    def get_runtime_inputs(
+    def runtime_inputs(
         self, replica_batches: list[list[TextContext]], num_steps: int
     ) -> list[Any]:
         return []

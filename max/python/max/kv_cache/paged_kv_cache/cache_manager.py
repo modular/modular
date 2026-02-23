@@ -49,7 +49,7 @@ class PagedKVCacheManager:
         kv_manager.alloc(ctx2, replica_idx=1, num_steps=10)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.get_runtime_inputs(
+        kv_cache_inputs = kv_manager.runtime_inputs(
             [[ctx1, ctx2]], num_steps=10
         )
 
@@ -189,7 +189,7 @@ class PagedKVCacheManager:
         """
         return self._replica_managers[replica_idx].alloc(data, num_steps)
 
-    def get_runtime_inputs(
+    def runtime_inputs(
         self,
         batches: Sequence[Sequence[TextGenerationContext]],
         num_steps: int = 1,
@@ -205,7 +205,7 @@ class PagedKVCacheManager:
         """
         ret_list: list[RaggedKVCacheInputs] = []
         for replica, ctxs in zip(self._replica_managers, batches, strict=True):
-            ret_list.extend(replica.get_runtime_inputs(ctxs, num_steps))
+            ret_list.extend(replica.runtime_inputs(ctxs, num_steps))
         return ret_list
 
     def release(self, request_id: RequestID, replica_idx: int) -> None:

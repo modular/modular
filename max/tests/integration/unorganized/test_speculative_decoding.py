@@ -332,7 +332,7 @@ def test_kv_cache_claiming_protocol() -> None:
     # Mock the KV cache manager to track method calls
     mock_kv_manager = Mock()
     mock_kv_manager.contains.return_value = False  # Simulate new request
-    mock_kv_manager.get_runtime_inputs.return_value = []
+    mock_kv_manager.runtime_inputs.return_value = []
 
     # Track call order
     call_order: list[
@@ -342,15 +342,15 @@ def test_kv_cache_claiming_protocol() -> None:
     def track_claim(request_id: RequestID, replica_idx: int) -> None:
         call_order.append(("claim", request_id))
 
-    def track_get_runtime_inputs(
+    def track_runtime_inputs(
         batches: list[list[TextContext]], num_steps: int
     ) -> Sequence[RaggedKVCacheInputs]:
         request_ids = [ctx.request_id for batch in batches for ctx in batch]
-        call_order.append(("get_runtime_inputs", request_ids, num_steps))
+        call_order.append(("runtime_inputs", request_ids, num_steps))
         return []
 
     mock_kv_manager.claim.side_effect = track_claim
-    mock_kv_manager.get_runtime_inputs.side_effect = track_get_runtime_inputs
+    mock_kv_manager.runtime_inputs.side_effect = track_runtime_inputs
 
     # Replace the KV manager in both models
     with patch.object(pipeline._draft_model, "kv_manager", mock_kv_manager):
@@ -367,7 +367,7 @@ def test_kv_cache_claiming_protocol() -> None:
                 is_draft=True,
             )
 
-            # Verify that claim was called before get_runtime_inputs
+            # Verify that claim was called before runtime_inputs
             assert len(call_order) >= 2, (
                 f"Expected at least 2 calls, got {len(call_order)}: {call_order}"
             )
@@ -381,12 +381,12 @@ def test_kv_cache_claiming_protocol() -> None:
                 f"claim should be called with request_id {context.request_id}, got {first_call[1]}"
             )
 
-            # Check that get_runtime_inputs was called after claim
-            get_runtime_inputs_calls = [
-                call for call in call_order if call[0] == "get_runtime_inputs"
+            # Check that runtime_inputs was called after claim
+            runtime_inputs_calls = [
+                call for call in call_order if call[0] == "runtime_inputs"
             ]
-            assert len(get_runtime_inputs_calls) > 0, (
-                "get_runtime_inputs should have been called"
+            assert len(runtime_inputs_calls) > 0, (
+                "runtime_inputs should have been called"
             )
 
             # Verify contains was called to check if request was already claimed

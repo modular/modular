@@ -379,7 +379,7 @@ class TextGenerationPipeline(
             num_steps = 1
 
         # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
+        kv_cache_inputs = self._pipeline_model.kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
 

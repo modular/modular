@@ -684,7 +684,7 @@ def test_kv_cache_ragged_rope(
     input_row_offsets[batch_size] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+        kv_manager.runtime_inputs([batch])[0]
     )
 
     # Build provided_inputs with correct indices based on use_position_ids

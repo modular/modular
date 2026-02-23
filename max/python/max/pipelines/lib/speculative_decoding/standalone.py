@@ -82,9 +82,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         for ctx in batch:
             r_idx = self._draft_replica_idx.get(ctx.request_id, 0)
             model.kv_manager.alloc(ctx, replica_idx=r_idx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
-            [batch], num_steps
-        )
+        kv_cache_inputs = model.kv_manager.runtime_inputs([batch], num_steps)
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(

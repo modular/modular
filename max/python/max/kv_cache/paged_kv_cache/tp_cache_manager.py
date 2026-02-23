@@ -338,7 +338,7 @@ class _TPPagedKVCacheManager:
         self.block_manager.allocate_new_blocks(data, num_steps)
 
     @traced
-    def get_runtime_inputs(
+    def runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
         """Gets the graph inputs for a batch of requests.
