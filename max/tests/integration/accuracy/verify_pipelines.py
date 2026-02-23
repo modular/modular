@@ -1573,6 +1573,22 @@ PIPELINES = {
         ssim_threshold=0.60,
         lpips_threshold=0.35,
     ),
+    "black-forest-labs/FLUX.2-dev-t2i-bfloat16": PixelGenerationPipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        pipeline="black-forest-labs/FLUX.2-dev-t2i",
+        encoding="bfloat16",
+        tags=["nvidia-only", "big", "image-generation"],
+        ssim_threshold=0.60,
+        lpips_threshold=0.35,
+    ),
+    "black-forest-labs/FLUX.2-dev-i2i-bfloat16": PixelGenerationPipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        pipeline="black-forest-labs/FLUX.2-dev-i2i",
+        encoding="bfloat16",
+        tags=["nvidia-only", "big", "image-generation", "image-to-image"],
+        ssim_threshold=0.60,
+        lpips_threshold=0.35,
+    ),
 }
 
 
