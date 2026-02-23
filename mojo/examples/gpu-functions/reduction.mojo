@@ -27,6 +27,7 @@ from benchmark import (
 from bit import log2_floor
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.primitives import warp
+from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation
@@ -39,7 +40,6 @@ comptime LOG_TPB = log2_floor(TPB)
 comptime BATCH_SIZE = 8  # needs to be power of 2
 comptime SIZE = 1 << 12
 comptime NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
-comptime WARP_SIZE = 32
 comptime dtype = DType.int32
 
 
@@ -75,14 +75,16 @@ fn sum_kernel[
     active_threads = KERNEL_TPB
     comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
-    comptime for power in range(1, KERNEL_LOG_TPB - 4):
+    comptime for power in range(
+        1, KERNEL_LOG_TPB - UInt(log2_floor(WARP_SIZE)) + 1
+    ):
         active_threads >>= 1
-        if tid < active_threads:
+        if tid < UInt(active_threads):
             sums[tid] += sums[tid + active_threads]
         barrier()
 
     # Reduce the warp and accumulate via atomic addition
-    if tid < WARP_SIZE:
+    if tid < UInt(WARP_SIZE):
         var warp_sum: Int32 = sums[tid][0]
         warp_sum = warp.sum(warp_sum)
 
