@@ -136,6 +136,7 @@ struct NoneType(TrivialRegisterPassable):
         self._value = value
 
 
+@stable
 @__nonmaterializable(Int)
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     TrivialRegisterPassable
@@ -147,6 +148,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         __mlir_attr.`#pop.int_literal<1> : !pop.int_literal`
     ]()
 
+    @stable
     @always_inline("builtin")
     fn __init__(out self):
         """Constructor for any value."""
@@ -337,19 +339,23 @@ struct FloatDyn(TrivialRegisterPassable):
         self = FloatLiteral(value)
 
 
+@stable
 struct Int(Intable, Stringable, TrivialRegisterPassable):
     var _mlir_value: __mlir_type.index
 
+    @stable
     @always_inline("builtin")
     fn __init__(out self):
         self._mlir_value = __mlir_op.`index.constant`[
             value = __mlir_attr.`0:index`
         ]()
 
+    @stable
     @always_inline("builtin")
     fn __init__(out self, *, mlir_value: __mlir_type.index):
         self._mlir_value = mlir_value
 
+    @stable
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral[_]):
@@ -678,13 +684,16 @@ struct String(ImplicitlyCopyable, KeyElement):
         return {}
 
 
+@stable
 struct Bool(TrivialRegisterPassable):
     var _mlir_value: __mlir_type.i1
 
+    @stable
     @always_inline("builtin")
     fn __init__(out self):
         self._mlir_value = __mlir_attr.`0 : i1`
 
+    @stable
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.i1):
