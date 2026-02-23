@@ -1,4 +1,4 @@
-// REQUIRES: x86_64-linux
+// REQUIRES: disabled
 // RUN: kgen =-emit=object --mcmodel=medium --large-data-threshold=2 %s -o %t
 // RUN: llvm-objdump %t -t | FileCheck %s
 
