@@ -14,7 +14,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
-    gpu_constraints = ["//:has_multi_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     imports = ["."],
     tags = [
         "gpu",
