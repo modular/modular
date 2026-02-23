@@ -49,9 +49,9 @@ fn no_parameters():
 
 @no_inline
 fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
-    constrained[
-        param == 2, "param must be 2"
-    ]()  # expected-note {{call expansion failed}}
+    comptime assert (  # expected-note {{constraint failed: param must be 2}}
+        param == 2
+    ), "param must be 2"
 
 
 # This is copied so the note ends up in this file.
@@ -60,7 +60,7 @@ fn constrained[cond: Bool, msg: StaticString]():
     comptime msg_literal = _get_kgen_string[msg]()
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(), message=msg_literal
-    ]()  # expected-note {{constraint failed: param must be 2}}
+    ]()
 
 
 # expected-error @+2{{function instantiation failed}}
