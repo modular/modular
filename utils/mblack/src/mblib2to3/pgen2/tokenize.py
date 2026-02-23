@@ -930,14 +930,16 @@ def generate_tokens(
                         and token in mojo_keyword_tokens
                         and check_mojo_token()
                     ):
+                        tok_type = mojo_keyword_tokens[token]
+                        # comptime followed by '(' is the expression form
+                        # comptime(expr) — emit as NAME so it parses as a
+                        # regular function call.
+                        if tok_type == COMPTIME:
+                            next_chars = line[end:].lstrip()
+                            if next_chars and next_chars[0] == "(":
+                                tok_type = NAME
                         prev_token_value = token
-                        yield (
-                            mojo_keyword_tokens[token],
-                            token,
-                            spos,
-                            epos,
-                            line,
-                        )
+                        yield (tok_type, token, spos, epos, line)
                         continue
 
                     if token in ("async", "await"):

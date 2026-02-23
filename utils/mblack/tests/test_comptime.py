@@ -129,6 +129,56 @@ def test_comptime_on_separate_line():
         pass  # Expected
 
 
+def test_comptime_expr_rhs_of_binop():
+    """comptime(expr) on the right-hand side of a binary operator."""
+    source = "fn foo():\n" "    var y = 1 + comptime(1 * 2)\n"
+    expected = "fn foo():\n" "    var y = 1 + comptime (1 * 2)\n"
+    assert_mojo_format(source, expected)
+
+
+def test_comptime_expr_lhs_of_binop():
+    """comptime(expr) on the left-hand side of a binary operator."""
+    source = "fn foo():\n" "    var y = comptime(1 * 2) + 1\n"
+    expected = "fn foo():\n" "    var y = comptime (1 * 2) + 1\n"
+    assert_mojo_format(source, expected)
+
+
+def test_comptime_expr_as_argument():
+    """comptime(expr) as a function argument."""
+    source = "fn foo():\n" "    print(comptime(42))\n"
+    expected = "fn foo():\n" "    print(comptime (42))\n"
+    assert_mojo_format(source, expected)
+
+
+def test_comptime_expr_multiple():
+    """Multiple comptime(expr) in one expression."""
+    source = "fn foo():\n" "    var z = comptime(1) + comptime(2)\n"
+    expected = "fn foo():\n" "    var z = comptime (1) + comptime (2)\n"
+    assert_mojo_format(source, expected)
+
+
+def test_comptime_expr_in_list_literal():
+    """comptime(expr) inside a list literal."""
+    source = "fn foo():\n" "    var x = [comptime(1), comptime(2)]\n"
+    expected = "fn foo():\n" "    var x = [comptime (1), comptime (2)]\n"
+    assert_mojo_format(source, expected)
+
+
+def test_comptime_expr_in_if_condition():
+    """comptime(expr) used as a condition in an if statement."""
+    source = (
+        "fn foo():\n"
+        "    if comptime(thread_layout.rank() == 1):\n"
+        "        pass\n"
+    )
+    expected = (
+        "fn foo():\n"
+        "    if comptime (thread_layout.rank() == 1):\n"
+        "        pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
 def test_comptime_illegal_keyword():
     """comptime with illegal keyword should be rejected."""
     import mblack
