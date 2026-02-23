@@ -401,7 +401,7 @@ fn join(var path: String, *paths: String) -> String:
     for cur_path in paths:
         if cur_path.startswith(sep):
             joined_path = cur_path
-        elif not joined_path or path.endswith(sep):
+        elif not joined_path or joined_path.endswith(sep):
             joined_path += cur_path
         else:
             joined_path += sep + cur_path
