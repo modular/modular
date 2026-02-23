@@ -246,6 +246,16 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `StringSlice` now has `is_ascii_alpha()`, `is_ascii_alnum()`, `capitalize()`,
+  and `title()` methods:
+
+  ```mojo
+  StringSlice("hello world").capitalize()  # "Hello world"
+  StringSlice("hello world").title()       # "Hello World"
+  StringSlice("abc").is_ascii_alpha()      # True
+  StringSlice("abc123").is_ascii_alnum()   # True
+  ```
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
