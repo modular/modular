@@ -18,7 +18,7 @@ agent_anchors:
     resource_class: "large"
   large_arm: &large_arm
     pool: arm
-    arch: aarch64
+    arch: arm64
     resource_class: "large"
   h100_1x: &h100_1x
     queue: ephemeral
