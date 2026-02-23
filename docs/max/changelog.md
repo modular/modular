@@ -83,6 +83,13 @@ what we publish.
   `PipelineModel` subclasses (advanced use case) should remove the `encoding`
   argument from constructor calls.
 
+- Device-graph APIs now require explicit caller-provided graph keys for
+  capture/replay/verification. Update calls from
+  `model.capture(*inputs)`, `model.replay(*inputs)`, and
+  `model.debug_verify_replay(*inputs)` to
+  `model.capture(graph_key, *inputs)`, `model.replay(graph_key, *inputs)`,
+  and `model.debug_verify_replay(graph_key, *inputs)`.
+
 #### Mojo API {#26-2-max-mojo}
 
 #### Custom ops {#26-2-custom-ops}

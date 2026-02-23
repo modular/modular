@@ -56,6 +56,7 @@ def test_execution_trace_capture_replay() -> None:
         graph.output(graph.inputs[0].tensor + 1)
 
     model = session.load(graph)
+    graph_key = 1
     input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
         model.input_devices[0]
     )
@@ -65,8 +66,8 @@ def test_execution_trace_capture_replay() -> None:
         baseline.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
 
-    (captured_output,) = model.capture(input_tensor)
-    model.replay(input_tensor)
+    (captured_output,) = model.capture(graph_key, input_tensor)
+    model.replay(graph_key, input_tensor)
 
     # (captured_output,) = model.execute(input_tensor)
     np.testing.assert_allclose(
@@ -74,7 +75,7 @@ def test_execution_trace_capture_replay() -> None:
     )
 
     # Replay with original input values and verify output.
-    model.replay(input_tensor)
+    model.replay(graph_key, input_tensor)
     np.testing.assert_allclose(
         captured_output.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
@@ -85,18 +86,14 @@ def test_execution_trace_capture_replay() -> None:
     )
     input_tensor.inplace_copy_from(updated_values)
 
-    model.replay(input_tensor)
+    model.replay(graph_key, input_tensor)
     np.testing.assert_allclose(
         captured_output.to_numpy(), np.arange(4, dtype=np.float32) + 4
     )
 
 
 def test_same_shapes_different_input_buffers() -> None:
-    """Test that graphs captured with same shapes but different buffers are cached separately.
-
-    Without this fix, replaying with different buffers could incorrectly reuse
-    a cached graph that references the wrong memory.
-    """
+    """Test that caller-provided graph keys isolate input-buffer signatures."""
     if accelerator_count() == 0:
         pytest.skip("GPU not available")
 
@@ -111,6 +108,8 @@ def test_same_shapes_different_input_buffers() -> None:
         graph.output(graph.inputs[0].tensor + 10)
 
     model = session.load(graph)
+    graph_key1 = 11
+    graph_key2 = 12
 
     # Create two input buffers with the same shape but different values and underlying memory
     input_tensor1 = Buffer.from_numpy(
@@ -120,14 +119,13 @@ def test_same_shapes_different_input_buffers() -> None:
         np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
     ).to(model.input_devices[0])
 
-    # Capture graphs with each input - these should create separate cached graphs
-    # because the buffer addresses are different (per commit a236dd8126)
-    (captured_output1,) = model.capture(input_tensor1)
-    (captured_output2,) = model.capture(input_tensor2)
+    # Capture with distinct caller keys so each buffer signature is isolated.
+    (captured_output1,) = model.capture(graph_key1, input_tensor1)
+    (captured_output2,) = model.capture(graph_key2, input_tensor2)
 
     # Replay both graphs to populate output buffers
-    model.replay(input_tensor1)
-    model.replay(input_tensor2)
+    model.replay(graph_key1, input_tensor1)
+    model.replay(graph_key2, input_tensor2)
 
     # Verify each replay wrote to its own output buffer
     np.testing.assert_allclose(
@@ -140,7 +138,7 @@ def test_same_shapes_different_input_buffers() -> None:
     )
 
     # Replay input1 again and verify only captured_output1 is updated
-    model.replay(input_tensor1)
+    model.replay(graph_key1, input_tensor1)
     np.testing.assert_allclose(
         captured_output1.to_numpy(),
         np.array([11.0, 12.0, 13.0, 14.0], dtype=np.float32),
@@ -151,13 +149,14 @@ def test_same_shapes_different_input_buffers() -> None:
         np.array([15.0, 16.0, 17.0, 18.0], dtype=np.float32),
     )
 
-    # Update input1 in-place and replay to verify the graph reads from the correct buffer
+    # Update input1 in-place and replay to verify the graph reads from the
+    # correct buffer.
     updated_values1 = Buffer.from_numpy(
         np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
     ).to(model.input_devices[0])
     input_tensor1.inplace_copy_from(updated_values1)
 
-    model.replay(input_tensor1)
+    model.replay(graph_key1, input_tensor1)
     np.testing.assert_allclose(
         captured_output1.to_numpy(),
         np.array([20.0, 30.0, 40.0, 50.0], dtype=np.float32),
@@ -167,6 +166,37 @@ def test_same_shapes_different_input_buffers() -> None:
         captured_output2.to_numpy(),
         np.array([15.0, 16.0, 17.0, 18.0], dtype=np.float32),
     )
+
+
+def test_graph_capture_rejects_unsafe_key_reuse() -> None:
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    accelerator = Accelerator()
+    session = InferenceSession(devices=[accelerator])
+
+    with Graph(
+        "unsafe_graph_key_reuse_test",
+        input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 10)
+
+    model = session.load(graph)
+    graph_key = 21
+    input_tensor1 = Buffer.from_numpy(
+        np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+    ).to(model.input_devices[0])
+    input_tensor2 = Buffer.from_numpy(
+        np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+    ).to(model.input_devices[0])
+
+    model.capture(graph_key, input_tensor1)
+
+    with pytest.raises(RuntimeError, match="Unsafe graph key reuse"):
+        model.replay(graph_key, input_tensor2)
+
+    with pytest.raises(RuntimeError, match="Unsafe graph key reuse"):
+        model.capture(graph_key, input_tensor2)
 
 
 def test_replay_with_external_allocations() -> None:
@@ -210,6 +240,7 @@ def test_replay_with_external_allocations() -> None:
         graph.output(max_linear(graph.inputs[0].tensor))
 
     model = session.load(graph, weights_registry=max_linear.state_dict())
+    graph_key = 1
 
     # Create input buffer using torch for bfloat16 support
     input_tensor = torch.randn(
@@ -217,7 +248,7 @@ def test_replay_with_external_allocations() -> None:
     )
     input_buf = Buffer.from_dlpack(input_tensor)
 
-    results = model.capture(input_buf)
+    results = model.capture(graph_key, input_buf)
 
     external_buffers = []
     for _ in range(10):
@@ -267,19 +298,20 @@ def test_debug_verify_replay() -> None:
         graph.output(graph.inputs[0].tensor + 2)
 
     model = session.load(graph)
+    graph_key = 1
     input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
         model.input_devices[0]
     )
 
     # Capture the graph
-    model.capture(input_tensor)
+    model.capture(graph_key, input_tensor)
 
     # Verify that the captured graph matches eager execution
     # This should succeed since the execution is identical
-    model.debug_verify_replay(input_tensor)
+    model.debug_verify_replay(graph_key, input_tensor)
 
     # Verify the captured output is still correct after verification
-    model.replay(input_tensor)
+    model.replay(graph_key, input_tensor)
     (output,) = model.execute(input_tensor)
     np.testing.assert_allclose(
         output.to_numpy(), np.arange(4, dtype=np.float32) + 2

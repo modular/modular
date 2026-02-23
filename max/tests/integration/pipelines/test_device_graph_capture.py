@@ -37,15 +37,15 @@ class DummyModel:
     def __init__(self, output_buffer: Buffer) -> None:
         self.output_buffer = output_buffer
         self.input_devices = [CPU()]
-        self.capture_calls: list[list[Buffer]] = []
-        self.replay_calls: list[list[Buffer]] = []
+        self.capture_calls: list[tuple[int, list[Buffer]]] = []
+        self.replay_calls: list[tuple[int, list[Buffer]]] = []
 
-    def capture(self, *buffers: Buffer) -> list[Buffer]:
-        self.capture_calls.append(list(buffers))
+    def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
+        self.capture_calls.append((graph_key, list(buffers)))
         return [self.output_buffer]
 
-    def replay(self, *buffers: Buffer) -> None:
-        self.replay_calls.append(list(buffers))
+    def replay(self, graph_key: int, *buffers: Buffer) -> None:
+        self.replay_calls.append((graph_key, list(buffers)))
 
 
 class CapturePipelineModel(MockPipelineModel):
@@ -91,7 +91,7 @@ def test_pipeline_model_capture_replay() -> None:
     trace_inputs = inputs.buffers
     runner.graph_entries[1] = (
         trace_inputs,
-        ModelOutputs(*model.model.capture(*trace_inputs)),
+        ModelOutputs(*model.model.capture(1, *trace_inputs)),
     )
     assert model.model.capture_calls
 

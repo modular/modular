@@ -59,6 +59,7 @@ def test_multi_device_graph_capture_replay() -> None:
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)
+    graph_key = 1
 
     # Create input tensors on each device
     input0 = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(device0)
@@ -74,10 +75,12 @@ def test_multi_device_graph_capture_replay() -> None:
     )
 
     # Capture the graph
-    captured_output0, captured_output1 = model.capture(input0, input1)
+    captured_output0, captured_output1 = model.capture(
+        graph_key, input0, input1
+    )
 
     # Replay and verify outputs match expected values
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     np.testing.assert_allclose(
         captured_output0.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
@@ -86,7 +89,7 @@ def test_multi_device_graph_capture_replay() -> None:
     )
 
     # Replay again to ensure it's stable
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     np.testing.assert_allclose(
         captured_output0.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
@@ -122,14 +125,17 @@ def test_multi_device_graph_capture_with_updated_inputs() -> None:
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)
+    graph_key = 2
 
     # Create initial input tensors
     input0 = Buffer.from_numpy(np.ones(4, dtype=np.float32)).to(device0)
     input1 = Buffer.from_numpy(np.ones(4, dtype=np.float32) * 2).to(device1)
 
     # Capture with initial values
-    captured_output0, captured_output1 = model.capture(input0, input1)
-    model.replay(input0, input1)
+    captured_output0, captured_output1 = model.capture(
+        graph_key, input0, input1
+    )
+    model.replay(graph_key, input0, input1)
 
     # Verify initial outputs
     np.testing.assert_allclose(
@@ -151,7 +157,7 @@ def test_multi_device_graph_capture_with_updated_inputs() -> None:
     input1.inplace_copy_from(updated_values1)
 
     # Replay with updated inputs
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
 
     # Verify outputs reflect updated inputs
     np.testing.assert_allclose(
@@ -194,6 +200,7 @@ def test_multi_device_graph_independent_operations() -> None:
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)
+    graph_key = 3
 
     # Create input tensors
     input0 = Buffer.from_numpy(np.arange(8, dtype=np.float32)).to(device0)
@@ -208,10 +215,12 @@ def test_multi_device_graph_independent_operations() -> None:
     np.testing.assert_allclose(baseline1.to_numpy(), expected1)
 
     # Capture the graph
-    captured_output0, captured_output1 = model.capture(input0, input1)
+    captured_output0, captured_output1 = model.capture(
+        graph_key, input0, input1
+    )
 
     # Replay and verify
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     np.testing.assert_allclose(captured_output0.to_numpy(), expected0)
     np.testing.assert_allclose(captured_output1.to_numpy(), expected1)
 
@@ -221,7 +230,7 @@ def test_multi_device_graph_independent_operations() -> None:
     input0.inplace_copy_from(new_input0)
     input1.inplace_copy_from(new_input1)
 
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     expected0_updated = np.ones(8, dtype=np.float32) * 7 * 2 + 5
     expected1_updated = np.ones(8, dtype=np.float32) * 4 * 3 + 10
 
@@ -261,6 +270,7 @@ def test_multi_device_multiple_replay_cycles() -> None:
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)
+    graph_key = 4
 
     # Create input buffers
     input0 = Buffer.from_numpy(
@@ -271,10 +281,10 @@ def test_multi_device_multiple_replay_cycles() -> None:
     ).to(device1)
 
     # Capture the graph
-    captured0, captured1 = model.capture(input0, input1)
+    captured0, captured1 = model.capture(graph_key, input0, input1)
 
     # First replay cycle
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     np.testing.assert_allclose(
         captured0.to_numpy(),
         np.array([11.0, 12.0, 13.0, 14.0], dtype=np.float32),
@@ -296,7 +306,7 @@ def test_multi_device_multiple_replay_cycles() -> None:
         ).to(device1)
     )
 
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     np.testing.assert_allclose(
         captured0.to_numpy(),
         np.array([20.0, 30.0, 40.0, 50.0], dtype=np.float32),
@@ -314,7 +324,7 @@ def test_multi_device_multiple_replay_cycles() -> None:
         Buffer.from_numpy(np.ones(4, dtype=np.float32) * 15).to(device1)
     )
 
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
     np.testing.assert_allclose(
         captured0.to_numpy(), np.ones(4, dtype=np.float32) * 15
     )
@@ -370,6 +380,7 @@ def test_allreduce_graph_capture_replay() -> None:
 
     session = InferenceSession(devices=[host, *devices])
     model = session.load(graph)
+    graph_key = 5
 
     # Create input tensors - all ones for simplicity
     input_data = np.ones((64, 128), dtype=np.float32)
@@ -391,10 +402,10 @@ def test_allreduce_graph_capture_replay() -> None:
             output.to(host).to_numpy(), expected_output, rtol=1e-5
         )
 
-    captured_outputs = model.capture(*input_tensors, *signal_buffers)
+    captured_outputs = model.capture(graph_key, *input_tensors, *signal_buffers)
 
     # Replay and verify outputs
-    model.replay(*input_tensors, *signal_buffers)
+    model.replay(graph_key, *input_tensors, *signal_buffers)
 
     for captured_output in captured_outputs:
         np.testing.assert_allclose(
@@ -411,7 +422,7 @@ def test_allreduce_graph_capture_replay() -> None:
     # Expected output with new inputs: (2 * 1) + (2 * 2) = 2 + 4 = 6
     expected_output_updated = new_input_data * expected_sum
 
-    model.replay(*input_tensors, *signal_buffers)
+    model.replay(graph_key, *input_tensors, *signal_buffers)
     for captured_output in captured_outputs:
         np.testing.assert_allclose(
             captured_output.to(host).to_numpy(),
@@ -428,7 +439,7 @@ def test_allreduce_graph_capture_replay() -> None:
 
     expected_output_final = new_input_data2 * expected_sum
 
-    model.replay(*input_tensors, *signal_buffers)
+    model.replay(graph_key, *input_tensors, *signal_buffers)
     for captured_output in captured_outputs:
         np.testing.assert_allclose(
             captured_output.to(host).to_numpy(),
@@ -470,20 +481,23 @@ def test_multi_device_debug_verify_replay() -> None:
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)
+    graph_key = 6
 
     # Create input tensors on each device
     input0 = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(device0)
     input1 = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 10).to(device1)
 
     # Capture the graph on both devices
-    captured_output0, captured_output1 = model.capture(input0, input1)
+    captured_output0, captured_output1 = model.capture(
+        graph_key, input0, input1
+    )
 
     # Verify that the captured graphs match eager execution on both devices
     # This validates that the launch traces on both GPUs are correct
-    model.debug_verify_replay(input0, input1)
+    model.debug_verify_replay(graph_key, input0, input1)
 
     # Ensure the captured graphs still work after verification
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
 
     # Verify outputs are still correct
     expected0 = np.arange(4, dtype=np.float32) * 2 + 5
@@ -547,6 +561,7 @@ def test_multi_device_debug_verify_replay_many_outputs() -> None:
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)
+    graph_key = 7
 
     # Create input tensors
     input_data0 = np.arange(1024, dtype=np.float32)
@@ -556,15 +571,15 @@ def test_multi_device_debug_verify_replay_many_outputs() -> None:
     input1 = Buffer.from_numpy(input_data1).to(device1)
 
     # Capture the graph with all 16 outputs
-    captured_outputs = model.capture(input0, input1)
+    captured_outputs = model.capture(graph_key, input0, input1)
     assert len(captured_outputs) == 16
 
     # Verify that the captured graphs match eager execution
     # This validates all 16 operations across both GPUs
-    model.debug_verify_replay(input0, input1)
+    model.debug_verify_replay(graph_key, input0, input1)
 
     # Replay and verify all outputs
-    model.replay(input0, input1)
+    model.replay(graph_key, input0, input1)
 
     # Compute expected outputs
     expected = [

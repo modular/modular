@@ -36,10 +36,10 @@ GraphKey = int
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
 
 
-def _graph_key_from_model_inputs(model_inputs: ModelInputs) -> GraphKey:
+def _graph_key(model_inputs: ModelInputs) -> GraphKey:
     # TODO(SERVOPT-1010): Extend GraphKey with decode_max_cache_length
-    # (kv_cache_inputs.max_lengths[0, 1]) because decode kernel launch
-    # parameters are derived from this value.
+    # (kv_cache_inputs.max_lengths[0, 1]) because decode kernel
+    # launch parameters are derived from this value.
     return int(model_inputs.buffers[0].shape[0])
 
 
@@ -84,10 +84,12 @@ class ServeGraphCaptureRunner:
                 self._execute_model(model_inputs)
 
                 input_buffers = model_inputs.buffers
-                graph_key = _graph_key_from_model_inputs(model_inputs)
+                graph_key = _graph_key(model_inputs)
                 self.graph_entries[graph_key] = (
                     input_buffers,
-                    ModelOutputs(*self._model.capture(*input_buffers)),
+                    ModelOutputs(
+                        *self._model.capture(graph_key, *input_buffers)
+                    ),
                 )
                 for device in self._model.input_devices:
                     Accelerator(id=device.id).synchronize()
@@ -100,7 +102,7 @@ class ServeGraphCaptureRunner:
     def replay(self, *, model_inputs: ModelInputs) -> ModelOutputs:
         """Replays a captured graph entry for a replay-safe decode batch."""
         input_buffers = model_inputs.buffers
-        graph_key = _graph_key_from_model_inputs(model_inputs)
+        graph_key = _graph_key(model_inputs)
         try:
             captured_inputs, outputs = self.graph_entries[graph_key]
         except KeyError as exc:
@@ -114,5 +116,5 @@ class ServeGraphCaptureRunner:
         ):
             dst_value.inplace_copy_from(src_value)
 
-        self._model.replay(*captured_inputs)
+        self._model.replay(graph_key, *captured_inputs)
         return outputs
