@@ -49,10 +49,6 @@ public:
     return filePath.ends_with(".mojo") || filePath.ends_with("🔥");
   }
 
-  const lldb_private::Highlighter *GetHighlighter() const override {
-    return nullptr;
-  }
-
   //===--------------------------------------------------------------------===//
   // Static Functions
   //===--------------------------------------------------------------------===//

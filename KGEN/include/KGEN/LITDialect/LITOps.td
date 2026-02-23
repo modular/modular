@@ -433,9 +433,16 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
   let extraClassDeclaration = [{
     /// Get the field declarations.
-    auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
-    auto field_begin() { return getFieldDecls().begin(); }
-    auto field_end() { return getFieldDecls().end(); }
+    // These are templates to defer the instantiation of op_iterator with
+    // StructFieldOp until the call site, where StructFieldOp is complete.
+    // This avoids an incomplete type error on macOS where libc++'s
+    // invoke_result_t eagerly requires complete types.
+    template <typename FieldOp = StructFieldOp>
+    auto getFieldDecls() { return getFields().template getOps<FieldOp>(); }
+    template <typename FieldOp = StructFieldOp>
+    auto field_begin() { return getFieldDecls<FieldOp>().begin(); }
+    template <typename FieldOp = StructFieldOp>
+    auto field_end() { return getFieldDecls<FieldOp>().end(); }
 
     bool isRegisterPassable() {
       return getConvention() != TypeConvention::MemoryOnly;

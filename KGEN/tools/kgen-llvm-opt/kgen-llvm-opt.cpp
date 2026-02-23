@@ -224,7 +224,7 @@ int main(int argc, char **argv) {
   initializeExpandMemCmpLegacyPassPass(registry);
   initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
   initializeSelectOptimizePass(registry);
-  initializeCallBrPreparePass(registry);
+  initializeInlineAsmPreparePass(registry);
   initializeCodeGenPrepareLegacyPassPass(registry);
   initializeAtomicExpandLegacyPass(registry);
   initializeWinEHPreparePass(registry);
