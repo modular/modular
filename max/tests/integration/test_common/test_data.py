@@ -365,21 +365,18 @@ DEFAULT_PIXEL_GENERATION = [
     for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
 ]
 
-# FLUX2-specific fixtures for pipeline verification
-FLUX2_I2I_SOURCE_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image.jpg"
-
 FLUX2_PIXEL_GENERATION_I2I = [
     MockPixelGenerationRequest.from_prompt(
         prompt="Transform this image into a cinematic nighttime scene with neon reflections, wet streets, and dramatic contrast.",
         seed=42,
-        input_image=FLUX2_I2I_SOURCE_IMAGE,
+        input_image=MULTIMODAL_IMAGE,
         height=1024,
         width=1024,
     ),
     MockPixelGenerationRequest.from_prompt(
         prompt="Restyle this image as a watercolor painting with soft edges, visible brush texture, and warm afternoon light.",
-        seed=123,
-        input_image=FLUX2_I2I_SOURCE_IMAGE,
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
         height=1024,
         width=1024,
     ),
