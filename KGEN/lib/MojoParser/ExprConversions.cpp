@@ -596,7 +596,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   CValue callResult =
       emitter.emitIndirectCall(PValue(calleeParam), std::move(operands), dest);
-  // If we need an explicit copy out, emit a call to .copy() on the result into
+  // If we need an explicit copy out, emit a call to T(copy=) on the result into
   // the ultimate dest.
   if (needsExplicitCopyOut) {
     CallOperands operands(CallSyntax::kImplicitCopyCtor, node);
