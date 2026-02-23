@@ -206,6 +206,16 @@ what we publish.
 
 ### Library changes
 
+- `StringSlice` now has `is_ascii_alpha()`, `is_ascii_alnum()`, `capitalize()`,
+  and `title()` methods:
+
+  ```mojo
+  StringSlice("hello world").capitalize()  # "Hello world"
+  StringSlice("hello world").title()       # "Hello World"
+  StringSlice("abc").is_ascii_alpha()      # True
+  StringSlice("abc123").is_ascii_alnum()   # True
+  ```
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
