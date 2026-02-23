@@ -70,6 +70,7 @@ from gpu.sync import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout._tile_tensor import TileTensor
 from layout.int_tuple import product, to_index_list as int_tuple_to_index_list
+from memory import MutOpaquePointer, UnsafePointer
 from layout.runtime_tuple import (
     coalesce_nested_tuple,
     flatten,
@@ -832,7 +833,9 @@ struct TMATensorTile[
                     eviction_policy=eviction_policy,
                 ](
                     dst.ptr.mut_cast[True]() + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                        to=self.descriptor
+                    ).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -974,7 +977,9 @@ struct TMATensorTile[
                         eviction_policy=eviction_policy
                     ](
                         dst.ptr.mut_cast[True]() + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                            to=self.descriptor
+                        ).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1142,9 +1147,9 @@ struct TMATensorTile[
                             eviction_policy=eviction_policy,
                         ](
                             dst.ptr.mut_cast[True]() + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                                to=self.descriptor
+                            ).bitcast[NoneType](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1342,9 +1347,9 @@ struct TMATensorTile[
                                 eviction_policy=eviction_policy,
                             ](
                                 dst.ptr.mut_cast[True]() + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                                    to=self.descriptor
+                                ).bitcast[NoneType](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -1638,7 +1643,9 @@ struct TMATensorTile[
                     cta_group=cta_group
                 ](
                     dst.ptr.mut_cast[True]() + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                        to=self.descriptor
+                    ).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + UInt(j * copy_dim1),
@@ -1802,7 +1809,9 @@ struct TMATensorTile[
                         cta_group=cta_group
                     ](
                         dst.ptr.mut_cast[True]() + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                            to=self.descriptor
+                        ).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + UInt(j * copy_dim2),
@@ -1959,7 +1968,9 @@ struct TMATensorTile[
 
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                        to=self.descriptor
+                    ).bitcast[NoneType](),
                     Index(
                         coords[0] + UInt(j * copy_dim1),
                         coords[1] + UInt(i * copy_dim0),
@@ -2089,7 +2100,9 @@ struct TMATensorTile[
 
                     cp_async_bulk_tensor_global_shared_cta(
                         src.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                            to=self.descriptor
+                        ).bitcast[NoneType](),
                         Index(
                             coords[0] + UInt(j * copy_dim2),
                             coords[1] + UInt(i * copy_dim1),
@@ -2160,9 +2173,9 @@ struct TMATensorTile[
 
                         cp_async_bulk_tensor_global_shared_cta(
                             src.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                                to=self.descriptor
+                            ).bitcast[NoneType](),
                             Index(
                                 coords[0] + UInt(j * copy_dim3),
                                 coords[1] + UInt(i * copy_dim2),
@@ -2248,9 +2261,9 @@ struct TMATensorTile[
 
                             cp_async_bulk_tensor_global_shared_cta(
                                 src.ptr + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                                    to=self.descriptor
+                                ).bitcast[NoneType](),
                                 Index(
                                     coords[0] + UInt(j * copy_dim4),
                                     coords[1] + UInt(i * copy_dim3),
@@ -2295,7 +2308,9 @@ struct TMATensorTile[
         ), "TMA requires 128B alignment in shared memory"
         cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
             src.ptr,
-            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                to=self.descriptor
+            ).bitcast[NoneType](),
             Index(coords[0], coords[1]),
         )
 
@@ -2326,7 +2341,7 @@ struct TMATensorTile[
     fn smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, _, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -2348,7 +2363,7 @@ struct TMATensorTile[
         # NOTE: Only one thread should call this
 
         var src_desc = (
-            UnsafePointer(to=self.descriptor)
+            UnsafePointer[TMADescriptor, ImmutAnyOrigin](to=self.descriptor)
             .bitcast[UInt8]()
             .address_space_cast[AddressSpace.GLOBAL]()
         )
@@ -2371,7 +2386,7 @@ struct TMATensorTile[
     @always_inline
     fn replace_tensormap_global_address_in_gmem[
         _dtype: DType,
-    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _],):
+    ](self, src_ptr: UnsafePointer[Scalar[_dtype], MutAnyOrigin],):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -2428,7 +2443,9 @@ struct TMATensorTile[
         llvm_intrinsic[
             "llvm.nvvm.fence.proxy.tensormap_generic.acquire.gpu", NoneType
         ](
-            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                to=self.descriptor
+            ).bitcast[NoneType](),
             Int32(128),
         )
 
@@ -2462,10 +2479,10 @@ struct TMATensorTile[
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor,
-            _,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ],
-        src_ptr: UnsafePointer[Scalar[_dtype], _],
+        src_ptr: UnsafePointer[Scalar[_dtype], MutAnyOrigin],
     ):
         """
         Replaces the global memory address in the TMA descriptor stored in shared memory.
@@ -2514,7 +2531,7 @@ struct TMATensorTile[
     fn tensormap_cp_fence_release(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -2540,9 +2557,9 @@ struct TMATensorTile[
         """
         # This fence is needed when modifying tensormap directly in SMEM
         # NOTE: Entire warp must call this function as the instruction is aligned
-        var gmem_tma_descriptor_ptr = UnsafePointer(to=self.descriptor).bitcast[
-            NoneType
-        ]()
+        var gmem_tma_descriptor_ptr = UnsafePointer[
+            TMADescriptor, ImmutAnyOrigin
+        ](to=self.descriptor).bitcast[NoneType]()
 
         inlined_assembly[
             (
@@ -2564,7 +2581,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, ...
+            mut=True, TMADescriptor, address_space = AddressSpace.SHARED
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -2639,7 +2656,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, ...
+            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
         dim_value: UInt32,
         dim_stride: Optional[UInt64] = None,
@@ -3336,13 +3353,14 @@ fn _split_tma_gmem_tensor[
     //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        ptr.origin,
+        origin,
     ],
 ):
     comptime split_rank = len(flatten(ret.layout.shape))
@@ -3362,14 +3380,15 @@ fn _split_tma_gmem_tensor[
     //,
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        ptr.origin,
+        origin,
     ],
 ):
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
@@ -3393,9 +3412,10 @@ fn create_split_tma[
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,
@@ -3415,6 +3435,7 @@ fn create_split_tma[
         smem_shape: The shape of the tile in shared memory.
         gmem_shape: The shape of the global memory tensor.
         swizzle_mode: The swizzling mode for memory access optimization.
+        origin: The memory origin/provenance for the pointer.
 
     Args:
         ctx: The CUDA device context used to create the TMA descriptor.
@@ -3427,7 +3448,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
         ptr, runtime_dim0
     )
     res = create_tensor_tile[
@@ -3446,9 +3467,10 @@ fn create_split_tma[
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    origin: Origin,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], origin],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -3469,6 +3491,7 @@ fn create_split_tma[
         smem_shape: The shape of the tile in shared memory.
         gmem_shape: The shape of the global memory tensor.
         swizzle_mode: The swizzling mode for memory access optimization.
+        origin: The memory origin/provenance for the pointer.
 
     Args:
         ctx: The CUDA device context used to create the TMA descriptor.
@@ -3482,7 +3505,7 @@ fn create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
+    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode, origin](
         ptr, runtime_dim0, runtime_dim1
     )
     res = create_tensor_tile[
@@ -3716,9 +3739,10 @@ struct RaggedTMA3DTile[
     fn create[
         *,
         depth: Int = Self.BN,
+        origin: Origin,
     ](
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[Self.dtype]],
+        ptr: UnsafePointer[Scalar[Self.dtype], origin],
         *,
         rows: Int,
         middle_dim: Int,
@@ -3728,6 +3752,7 @@ struct RaggedTMA3DTile[
 
         Parameters:
             depth: The size of the inner-most, contiguous, dimension.
+            origin: The memory origin/provenance for the pointer.
 
         Args:
             ctx: The device context used to create the TMA descriptors.
@@ -3770,7 +3795,9 @@ struct RaggedTMA3DTile[
     ](
         self,
         dst: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED
+            Scalar[Self.dtype],
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         *,
@@ -3802,7 +3829,9 @@ struct RaggedTMA3DTile[
 
             cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
                 dst.mut_cast[True]() + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                    to=self.descriptor
+                ).bitcast[NoneType](),
                 mem_barrier.unsafe_ptr(),
                 Index(
                     UInt(col * Self.swizzle_granularity),
@@ -3818,7 +3847,9 @@ struct RaggedTMA3DTile[
     ](
         self,
         src: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED
+            Scalar[Self.dtype],
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
         ],
         *,
         ragged_idx: UInt32,
@@ -3849,7 +3880,9 @@ struct RaggedTMA3DTile[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                UnsafePointer[TMADescriptor, ImmutAnyOrigin](
+                    to=self.descriptor
+                ).bitcast[NoneType](),
                 Index(
                     UInt(col * Self.swizzle_granularity),
                     box_idx,
@@ -4016,7 +4049,7 @@ struct RaggedTensorMap[
     fn __init__(
         out self,
         ctx: DeviceContext,
-        global_ptr: UnsafePointer[Scalar[Self.dtype]],
+        global_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         max_length: Int,
         ragged_stride: Int,
         batch_size: Int,
@@ -4106,7 +4139,7 @@ struct RaggedTensorMap[
         self.global_stride = global_stride
 
     @always_inline
-    fn _get_descriptor_ptr(self) -> UnsafePointer[NoneType, MutAnyOrigin]:
+    fn _get_descriptor_ptr(ref self) -> UnsafePointer[NoneType, MutAnyOrigin]:
         return (
             UnsafePointer(to=self.descriptor)
             .bitcast[NoneType]()
@@ -4261,7 +4294,7 @@ struct RaggedTensorMap[
                 tile_iterator._incr()
 
     @always_inline
-    fn prefetch_descriptor(self):
+    fn prefetch_descriptor(ref self):
         """
         Prefetches the TMA descriptor into cache.
         """
