@@ -1413,8 +1413,8 @@ def test_format_conversion_flags():
     with assert_raises(contains='Conversion flag "x" not recognized.'):
         _ = String("{0!x}").format(1)
 
-    with assert_raises(contains='Conversion flag "r:d" not recognized.'):
-        _ = String("{!r:d}").format(1)
+    # "{!r:d}" is now valid: "!r" = repr conversion, ":d" = format spec with no width
+    assert_equal(String("{!r:d}").format(1), "Int(1)")
 
 
 def test_float_conversion():

@@ -164,6 +164,48 @@ struct NullWriter(Writer):
 comptime ALLOC_FUNC = "KGEN_CompilerRT_AlignedAlloc"
 
 
+def test_format_spec_alignment():
+    # Right-align (default when align char given without fill)
+    assert_equal("{:>10}".format(42), "        42")
+    assert_equal("{:>10}".format("hi"), "        hi")
+
+    # Left-align
+    assert_equal("{:<10}".format(42), "42        ")
+    assert_equal("{:<10}".format("hi"), "hi        ")
+
+    # Center
+    assert_equal("{:^10}".format("hi"), "    hi    ")
+    assert_equal("{:^11}".format("hi"), "    hi     ")  # extra padding on right
+
+    # Custom fill character
+    assert_equal("{:*>10}".format(42), "********42")
+    assert_equal("{:*<10}".format("hi"), "hi********")
+    assert_equal("{:*^10}".format("hi"), "****hi****")
+
+    # Value longer than width: no truncation
+    assert_equal("{:>3}".format("hello"), "hello")
+
+    # Exact width: no padding
+    assert_equal("{:>5}".format("hello"), "hello")
+
+
+def test_format_spec_with_conversion():
+    # Conversion flag combined with format spec
+    assert_equal("{!r:>10}".format(42), "   Int(42)")
+    assert_equal("{0!r:<10}".format(42), "Int(42)   ")
+
+
+def test_format_spec_with_manual_index():
+    assert_equal("{0:>8}".format(42), "      42")
+    assert_equal("{1:<8}".format("x", "hi"), "hi      ")
+    assert_equal("{0:^9}".format("abc"), "   abc   ")
+
+
+def test_format_spec_auto_and_manual_mix():
+    # Auto-index with spec
+    assert_equal("{:>5} {:>5}".format(1, 2), "    1     2")
+
+
 def test_format_runtime_does_allocate():
     def runtime_format[
         *Ts: Writable,

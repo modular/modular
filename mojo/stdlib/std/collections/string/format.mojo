@@ -42,13 +42,24 @@ respectively:
 var s = "{!r}".format(myComplicatedObject)
 ```
 
+The replacement fields also support format specifiers for controlling
+alignment and width, using the `[[fill]align][width]` syntax after a `:`:
+
+```mojo
+var s = "{:>10}".format(42)      # "        42"  (right-align in 10-wide field)
+var s = "{:<10}".format("hi")    # "hi        "  (left-align in 10-wide field)
+var s = "{:^10}".format("hi")    # "    hi    "  (center in 10-wide field)
+var s = "{:*^10}".format("hi")   # "****hi****"  (center with '*' fill)
+```
+
 Note that the following features from Python's `str.format()` are
 **not yet supported**:
 
 - Named arguments (for example `"{name} is {adjective}"`).
 - Accessing the attributes of an argument value (for example, `"{0.name}"`.
 - Accessing an indexed value from the argument (for example, `"{1[0]}"`).
-- Format specifiers for controlling output format (width, precision, and so on).
+- Format specifiers beyond `[[fill]align][width]` (for example, precision or
+  type codes like `{:.2f}` or `{:x}`).
 
 Examples:
 
@@ -179,7 +190,7 @@ struct _FormatUtils:
             # offset can equal fmt_len when format ends with a replacement field
             debug_assert(offset <= fmt_len, "offset > format.byte_length()")
             writer.write(_build_slice(ptr, offset, e.first_curly))
-            e._format_entry[len_pos_args](writer, args, auto_arg_index)
+            e._format_entry[len_pos_args](writer, args, auto_arg_index, ptr)
             offset = e.last_curly + 1
 
         writer.write(_build_slice(ptr, offset, fmt_len))
@@ -410,6 +421,33 @@ struct _FormatUtils:
         return {entries^, total_estimated_entry_byte_width, format}
 
 
+struct _CountingWriter(Writer):
+    """A Writer that counts bytes without storing them, used for two-pass
+    format-spec padding to avoid heap allocation."""
+
+    var byte_count: Int
+
+    fn __init__(out self):
+        self.byte_count = 0
+
+    fn write_string(mut self, string: StringSlice):
+        self.byte_count += string.byte_length()
+
+
+fn _write_fill(mut writer: Some[Writer], fill: UInt8, count: Int):
+    """Write `count` copies of `fill` byte to `writer`."""
+    if count <= 0:
+        return
+    comptime CHUNK = 16
+    var chunk = InlineArray[UInt8, CHUNK](fill=fill)
+    var remaining = count
+    while remaining >= CHUNK:
+        writer.write_string(StringSlice(ptr=chunk.unsafe_ptr(), length=CHUNK))
+        remaining -= CHUNK
+    if remaining > 0:
+        writer.write_string(StringSlice(ptr=chunk.unsafe_ptr(), length=remaining))
+
+
 # NOTE(#3765): an interesting idea would be to allow custom start and end
 # characters for formatting (passed as parameters to Formatter), this would be
 # useful for people developing custom templating engines as it would allow
@@ -429,6 +467,11 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     # TODO: ord("a") conversion flag not supported yet
     var conversion_flag: UInt8
     """The type of conversion for the entry: {ord("s"), ord("r")}."""
+    var format_spec_start: Int
+    """Start index of the format spec in the format string (equal to
+    `format_spec_end` when there is no spec)."""
+    var format_spec_end: Int
+    """End index (exclusive) of the format spec in the format string."""
     # TODO: ord("a") conversion flag not supported yet
     comptime supported_conversion_flags = SIMD[DType.uint8, 2](
         UInt8(ord("s")), UInt8(ord("r"))
@@ -455,6 +498,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         last_curly: Int,
         field: Self._FieldVariantType,
         conversion_flag: UInt8 = 0,
+        format_spec_start: Int = 0,
+        format_spec_end: Int = 0,
     ):
         """Construct a format entry.
 
@@ -465,11 +510,17 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                 field.
             field: Store the substitution field.
             conversion_flag: The type of conversion for the entry.
+            format_spec_start: Start index of the format spec in the format
+                string.
+            format_spec_end: End index (exclusive) of the format spec in the
+                format string.
         """
         self.first_curly = first_curly
         self.last_curly = last_curly
         self.field = field
         self.conversion_flag = conversion_flag
+        self.format_spec_start = format_spec_start
+        self.format_spec_end = format_spec_end
 
     @always_inline
     fn is_escaped_brace(ref self) -> Bool:
@@ -529,6 +580,21 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()
         var field_len = i - (start_value + 1)
+
+        # Find ':' to split off the format spec (e.g. "{0!r:>10}" → "0!r" + ">10")
+        var colon_idx = -1
+        for k in range(field_len):
+            if field_ptr[k] == UInt8(ord(":")):
+                colon_idx = k
+                break
+        if colon_idx != -1:
+            # format_spec covers the bytes after ':' up to the closing '}'
+            self.format_spec_start = start_value + 1 + colon_idx + 1
+            self.format_spec_end = i
+            field_len = colon_idx  # only consider the part before ':'
+            # Trim the field slice to only the part before ':'
+            field = _build_slice(field_ptr, 0, colon_idx)
+
         var exclamation_index = -1
         var idx = 0
         while idx < field_len:
@@ -588,7 +654,13 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
 
     fn _format_entry[
         len_pos_args: Int
-    ](self, mut writer: Some[Writer], args: _FormatArgs, mut auto_idx: Int):
+    ](
+        self,
+        mut writer: Some[Writer],
+        args: _FormatArgs,
+        mut auto_idx: Int,
+        fmt_ptr: UnsafePointer[mut=False, UInt8],
+    ):
         # TODO(#3403 and/or #3252): this function should be able to use
         # Writer syntax when the type implements it, since it will give great
         # performance benefits. This also needs to be able to check if the given
@@ -602,18 +674,109 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
             comptime for i in range(len_pos_args):
                 if i == idx:
                     var flag = self.conversion_flag
-                    var empty = flag == 0
-
                     ref arg = trait_downcast[Writable](args[i])
-                    if empty or flag == s_value:
+                    if flag == 0 or flag == s_value:
                         arg.write_to(writer)
                     elif flag == r_value:
                         arg.write_repr_to(writer)
 
+        var has_spec = self.format_spec_end > self.format_spec_start
+
         if self.is_escaped_brace():
             writer.write("}" if self.field[Bool] else "{")
-        elif self.is_manual_indexing():
-            _format(self.field[Int])
+            return
+
+        if not has_spec:
+            if self.is_manual_indexing():
+                _format(self.field[Int])
+            elif self.is_automatic_indexing():
+                _format(auto_idx)
+                auto_idx += 1
+            return
+
+        # --- Apply format spec [[fill]align][width] ---
+        var spec_start = self.format_spec_start
+        var spec_end = self.format_spec_end
+        var spec_len = spec_end - spec_start
+
+        @always_inline("nodebug")
+        fn is_align(c: UInt8) -> Bool:
+            return (
+                c == UInt8(ord("<"))
+                or c == UInt8(ord(">"))
+                or c == UInt8(ord("^"))
+            )
+
+        var fill = UInt8(ord(" "))
+        var align = UInt8(ord(">"))  # default: right-align
+        var width_start = spec_start
+
+        if spec_len >= 2 and is_align(fmt_ptr[spec_start + 1]):
+            # [fill][align] prefix
+            fill = fmt_ptr[spec_start]
+            align = fmt_ptr[spec_start + 1]
+            width_start = spec_start + 2
+        elif spec_len >= 1 and is_align(fmt_ptr[spec_start]):
+            # [align] only
+            align = fmt_ptr[spec_start]
+            width_start = spec_start + 1
+
+        var width = 0
+        for k in range(width_start, spec_end):
+            var c = fmt_ptr[k]
+            if c < UInt8(ord("0")) or c > UInt8(ord("9")):
+                break  # non-digit: stop (unsupported spec component)
+            width = width * 10 + Int(c - UInt8(ord("0")))
+
+        if width == 0:
+            # Spec present but no usable width — write directly
+            if self.is_manual_indexing():
+                _format(self.field[Int])
+            elif self.is_automatic_indexing():
+                _format(auto_idx)
+                auto_idx += 1
+            return
+
+        # Determine the index of the argument to format.
+        var val_idx: Int
+        if self.is_manual_indexing():
+            val_idx = self.field[Int]
         elif self.is_automatic_indexing():
-            _format(auto_idx)
+            val_idx = auto_idx
             auto_idx += 1
+        else:
+            return
+
+        # Two-pass, allocation-free padding:
+        # Pass 1: count the formatted byte length using _CountingWriter.
+        # Pass 2: write fill + value + fill directly to the real writer.
+        var counter = _CountingWriter()
+
+        fn _count(idx: Int) unified {read self, read args, mut counter}:
+            comptime for i in range(len_pos_args):
+                if i == idx:
+                    var flag = self.conversion_flag
+                    ref arg = trait_downcast[Writable](args[i])
+                    if flag == 0 or flag == s_value:
+                        arg.write_to(counter)
+                    elif flag == r_value:
+                        arg.write_repr_to(counter)
+
+        _count(val_idx)
+        var val_len = counter.byte_count
+        if val_len >= width:
+            _format(val_idx)
+            return
+
+        var padding = width - val_len
+        if align == UInt8(ord(">")):
+            _write_fill(writer, fill, padding)
+            _format(val_idx)
+        elif align == UInt8(ord("^")):
+            var left = padding // 2
+            _write_fill(writer, fill, left)
+            _format(val_idx)
+            _write_fill(writer, fill, padding - left)
+        else:  # '<'
+            _format(val_idx)
+            _write_fill(writer, fill, padding)
