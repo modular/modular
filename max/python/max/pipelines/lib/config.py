@@ -171,14 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    use_vendor_blas: str = Field(
-        default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
-        description=(
-            "Enables using vendor BLAS libraries (cublas/hipblas/etc) with max "
-            "serve. Currently, this just replaces matmul calls."
-        ),
-    )
-
     pdl_level: str = Field(
         default=os.environ.get("PDL_LEVEL", "0"),
         description=(
@@ -312,7 +304,7 @@ class PipelineConfig(ConfigFileModel):
         """Configure an InferenceSession with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
-        session._use_vendor_blas(self.use_vendor_blas)
+        session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._pdl_level(self.pdl_level)
 
     @staticmethod
