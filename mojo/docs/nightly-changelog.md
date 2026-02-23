@@ -19,6 +19,15 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice` now has `is_ascii_alpha()`, `is_ascii_alnum()`, `capitalize()`,
+  and `title()` methods:
+  ```mojo
+  StringSlice("hello world").capitalize()  # "Hello world"
+  StringSlice("hello world").title()       # "Hello World"
+  StringSlice("abc").is_ascii_alpha()      # True
+  StringSlice("abc123").is_ascii_alnum()   # True
+  ```
+
 ## Tooling changes
 
 ## GPU programming
