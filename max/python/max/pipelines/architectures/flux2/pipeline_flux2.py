@@ -49,7 +49,7 @@ class Flux2ModelInputs(PixelModelInputs):
     - num_inference_steps: 50
     - num_images_per_prompt: 1
     - input_image: None (optional input image for image-to-image generation)
-
+    - mask: None (optional boolean mask over padded prompt tokens)
     """
 
     width: int = 1024
@@ -59,10 +59,11 @@ class Flux2ModelInputs(PixelModelInputs):
     num_images_per_prompt: int = 1
     input_image: Image.Image | None = None
     """Optional input image for image-to-image generation (PIL.Image.Image).
-    
+
     This field is used for Flux2 image-to-image generation where an input image
     is provided as a condition for the generation process.
     """
+    mask: npt.NDArray[np.bool_] | None = None
 
 
 @dataclass
@@ -144,12 +145,19 @@ class Flux2Pipeline(DiffusionPipeline):
     def build_prepare_prompt_embeddings(self) -> None:
         input_types = [
             TensorType(
-                self.text_encoder.config.dtype,
-                shape=["seq_len", "hidden_dim"],
-                device=self.text_encoder.devices[0],
+                DType.bool,
+                shape=["max_seq_len"],
+                device=DeviceRef.CPU(),
             )
-            for _ in range(3)
         ]
+        for _ in range(3):
+            input_types.append(
+                TensorType(
+                    self.text_encoder.config.dtype,
+                    shape=["seq_len", "hidden_dim"],
+                    device=self.text_encoder.devices[0],
+                )
+            )
 
         self.__dict__["_prepare_prompt_embeddings"] = max_compile(
             self._prepare_prompt_embeddings,
@@ -346,17 +354,20 @@ class Flux2Pipeline(DiffusionPipeline):
     def prepare_prompt_embeddings(
         self,
         tokens: TokenBuffer,
+        mask: npt.NDArray[np.bool_] | None = None,
         num_images_per_prompt: int = 1,
         hidden_states_layers: list[int] | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
         Flux2 uses multiple hidden-state layers from the text encoder. Selected
-        layers are padded/trimmed to a common sequence length, stacked, and then
-        flattened across the layer/hidden dimensions.
+        layers are stacked and left-padded to the tokenizer-padded prompt
+        length, then flattened across the layer/hidden dimensions.
 
         Args:
             tokens: TokenBuffer produced by tokenization / chat templating.
+            mask: Optional boolean mask over `tokens.array` where True indicates
+                a non-padding token. If None, all tokens are treated as valid.
             num_images_per_prompt: Number of image generations per prompt.
             hidden_states_layers: Optional indices of hidden-state layers to use.
 
@@ -366,14 +377,39 @@ class Flux2Pipeline(DiffusionPipeline):
                 - text_ids: Tensor[int64] of shape (B', S, 4)
         """
         layers = hidden_states_layers or [10, 20, 30]
+        token_ids = np.asarray(tokens.array, dtype=np.int64)
+        if token_ids.ndim != 1:
+            raise ValueError(
+                f"Flux2 expects 1D tokens, got shape {token_ids.shape}."
+            )
+        padded_seq_len = int(token_ids.shape[0])
+        if mask is not None:
+            if mask.shape[0] != padded_seq_len:
+                raise ValueError(
+                    "Prompt mask length must match token length. "
+                    f"Got mask={mask.shape[0]}, tokens={padded_seq_len}."
+                )
+            valid_tokens = token_ids[mask]
+        else:
+            mask = np.ones(padded_seq_len, dtype=np.bool_)
+            valid_tokens = token_ids
+
+        valid_seq_len = int(valid_tokens.shape[0])
+        if valid_seq_len > padded_seq_len:
+            raise ValueError(
+                "Tokenized prompt length cannot exceed padded sequence length. "
+                f"Got valid={valid_seq_len}, padded={padded_seq_len}."
+            )
 
         text_input_ids = Tensor.constant(
-            tokens.array, dtype=DType.int64, device=self.text_encoder.devices[0]
+            valid_tokens, dtype=DType.int64, device=self.text_encoder.devices[0]
         )
         hidden_states_all = self.text_encoder(text_input_ids)
         hidden_states_selected = [hidden_states_all[i] for i in layers]
-
-        prompt_embeds = self._prepare_prompt_embeddings(*hidden_states_selected)
+        mask_tensor = Tensor.from_dlpack(mask)
+        prompt_embeds = self._prepare_prompt_embeddings(
+            mask_tensor, *hidden_states_selected
+        )
         batch_size, seq_len, _ = map(int, prompt_embeds.shape)
 
         if num_images_per_prompt != 1:
@@ -396,14 +432,27 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return prompt_embeds, text_ids
 
-    def _prepare_prompt_embeddings(self, *hidden_states: Tensor) -> Tensor:
-        # [B, L, S, D] -> [B, S, L, D] -> [B, S, L*D]
+    def _prepare_prompt_embeddings(
+        self,
+        mask: Tensor,  # [max_seq_len]
+        *hidden_states: Tensor,
+    ) -> Tensor:
+        """Stack selected hidden states and left-pad to the mask length."""
+        # [B, L, S, D] -> [B, S, L, D], then left-pad to mask length.
+        target_seq_len = mask.shape[0]
         stacked = F.stack(hidden_states, axis=0)
         stacked = F.unsqueeze(stacked, axis=0)
         stacked = F.permute(stacked, [0, 2, 1, 3])
         batch_size, seq_len, num_layers, hidden_dim = stacked.shape
+        pad_len = target_seq_len - seq_len
+        left_pad = Tensor.zeros(
+            (batch_size, pad_len, num_layers, hidden_dim),
+            dtype=stacked.dtype,
+            device=stacked.device,
+        )
+        stacked = F.concat([left_pad, stacked], axis=1)
         prompt_embeds = F.reshape(
-            stacked, [batch_size, seq_len, num_layers * hidden_dim]
+            stacked, [batch_size, target_seq_len, num_layers * hidden_dim]
         )
 
         return prompt_embeds
@@ -706,6 +755,7 @@ class Flux2Pipeline(DiffusionPipeline):
         # 1) Encode prompts.
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
+            mask=model_inputs.mask,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
         )
         batch_size = int(prompt_embeds.shape[0])
