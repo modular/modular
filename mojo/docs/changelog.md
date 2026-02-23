@@ -205,7 +205,7 @@ what we publish.
 
 ### Library changes
 
-- `Span.__eq__` now uses `memcmp` for trivially equality-comparable types
+- `Span.__eq__` now uses `memcmp` for `TrivialRegisterPassable` element types
   instead of an element-by-element loop.
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
