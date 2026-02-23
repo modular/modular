@@ -171,14 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    pdl_level: str = Field(
-        default=os.environ.get("PDL_LEVEL", "0"),
-        description=(
-            "Level of overlap of kernel launch via programmatic dependent grid "
-            "control."
-        ),
-    )
-
     custom_architectures: list[str] = Field(
         default_factory=list,
         description=(
@@ -305,7 +297,7 @@ class PipelineConfig(ConfigFileModel):
         session.gpu_profiling(self.profiling.gpu_profiling)
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
-        session._pdl_level(self.pdl_level)
+        session._pdl_level(self.runtime.pdl_level)
 
     @staticmethod
     def _extract_kwargs_for_config(
