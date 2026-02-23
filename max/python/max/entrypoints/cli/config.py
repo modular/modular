@@ -44,6 +44,7 @@ from max.pipelines.lib import (
     LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
+    PipelineRuntimeConfig,
     ProfilingConfig,
     SamplingConfig,
     SpeculativeConfig,
@@ -257,7 +258,19 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 "profiling",
                 "lora",
                 "speculative",
+                "runtime",
             }
+        )
+    elif cls is PipelineRuntimeConfig:
+        # Skip fields that are still duplicated on PipelineConfig to avoid
+        # generating duplicate CLI flags.  As fields are migrated from
+        # PipelineConfig to PipelineRuntimeConfig and removed from
+        # PipelineConfig, they will automatically start being generated
+        # from PipelineRuntimeConfig instead.
+        skip_fields.update(
+            field_name
+            for field_name in cls.model_fields
+            if field_name in PipelineConfig.model_fields
         )
     elif cls is MAXModelConfig:
         skip_fields.add("kv_cache")
@@ -358,6 +371,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
+    @config_to_flag(PipelineRuntimeConfig)
     @config_to_flag(MAXModelConfig)
     @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)

@@ -41,6 +41,10 @@ from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
 from .model_config import MAXModelConfig
+from .pipeline_runtime_config import (
+    DEFAULT_MAX_BATCH_INPUT_TOKENS,
+    PipelineRuntimeConfig,
+)
 from .profiling_config import ProfilingConfig
 from .registry import (
     PIPELINE_REGISTRY,
@@ -51,9 +55,6 @@ from .sampling import SamplingConfig
 from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
-
-# Default max batch input tokens for chunked prefill and memory estimation.
-DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 
 
 class PipelineConfig(ConfigFileModel):
@@ -301,6 +302,11 @@ class PipelineConfig(ConfigFileModel):
         default=None, description="The SpeculativeConfig."
     )
 
+    runtime: PipelineRuntimeConfig = Field(
+        default_factory=PipelineRuntimeConfig,
+        description="Model-agnostic runtime settings for pipeline execution.",
+    )
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -442,6 +448,9 @@ class PipelineConfig(ConfigFileModel):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
+            # NOTE: runtime must come before model so that its
+            # fields are consumed before the model config is built.
+            "runtime",
             # NOTE: model must come before sampling so that
             # SamplingConfig can use generation_config from the model
             "model",
@@ -688,6 +697,7 @@ class PipelineConfig(ConfigFileModel):
 
         config_objects = [
             ("PipelineConfig", self),
+            ("PipelineRuntimeConfig", self.runtime),
             ("MAXModelConfig", self.model),
             ("SamplingConfig", self.sampling),
             ("KVCacheConfig", self.model.kv_cache),
