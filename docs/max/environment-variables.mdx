@@ -1,0 +1,120 @@
+---
+title: Environment variables
+sidebar_label: Environment variables
+description: Reference for all configurable environment variables in MAX
+---
+
+This page documents all environment variables you can use to configure MAX
+behavior. These variables control server settings, logging, telemetry,
+performance, and integrations.
+
+## How to set environment variables
+
+You can set environment variables in several ways:
+
+```bash
+# Export in your shell
+export MAX_SERVE_HOST="0.0.0.0"
+
+# Pass to Docker container
+docker run --env "MAX_SERVE_HOST=0.0.0.0" modular/max-nvidia-full:latest ...
+
+# Use a .env file in your working directory
+echo "MAX_SERVE_HOST=0.0.0.0" >> .env
+```
+
+### Configuration precedence
+
+When the same setting is configured in multiple places, the following precedence
+applies (highest to lowest):
+
+1. **CLI flags or direct Python initialization**: For example, `--port 8080` or
+   `Settings(MAX_SERVE_PORT=8080)`. CLI flags are passed directly to the
+   `Settings` constructor, so they have the same precedence as direct Python
+   initialization.
+2. **Environment variables**: `export MAX_SERVE_HOST="0.0.0.0"`
+3. **`.env` file values**: Values defined in a `.env` file in your working
+   directory
+
+:::note
+
+Environment variables must use the exact names documented below.
+
+:::
+
+## Serving
+
+These variables configure the MAX model serving behavior.
+
+For more information on serving a model with MAX, explore the
+[text to text](/max/inference/text-to-text) and
+[image to text](/max/inference/image-to-text) guides.
+
+| Variable | Description | Values | Default |
+|----------|-------------|--------|---------|
+| `MAX_SERVE_HOST` | Hostname for the MAX server | String | `0.0.0.0` |
+| `MAX_SERVE_PORT` | Port for serving MAX | Integer | `8000` |
+| `MAX_SERVE_METRICS_ENDPOINT_PORT` | Port for the Prometheus metrics endpoint | Integer | `8001` |
+| `MAX_SERVE_ALLOWED_IMAGE_ROOTS` | Allowed root directories for `file://` URI access | Comma-separated paths | Empty |
+| `MAX_SERVE_MAX_LOCAL_IMAGE_BYTES` | Maximum size in bytes for local image files | Integer | `20971520` (20 MiB) |
+
+## Logging
+
+These variables control logging behavior and verbosity.
+
+You can read more about logs when using the [MAX container](/max/container#logs).
+
+| Variable | Description | Values | Default |
+|----------|-------------|--------|---------|
+| `MAX_SERVE_LOGS_CONSOLE_LEVEL` | Console log verbosity level | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG` | `INFO` |
+| `MODULAR_STRUCTURED_LOGGING` | Enable JSON-formatted structured logging for deployed services | `0`, `1` | `1` |
+| `MAX_SERVE_LOGS_FILE_PATH` | Path to write log files | File path | None |
+| `MAX_SERVE_LOG_PREFIX` | Prefix to prepend to all log messages | String | None |
+
+## Telemetry and metrics
+
+These variables control telemetry collection and metrics reporting.
+
+For more information, read about [MAX container telemetry](/max/container#telemetry).
+
+| Variable | Description | Values | Default |
+|----------|-------------|--------|---------|
+| `MAX_SERVE_DISABLE_TELEMETRY` | Disable remote telemetry collection | `0`, `1` | `0` |
+| `MODULAR_USER_ID` | User identifier for telemetry (e.g., your company name) | String | None |
+| `MAX_SERVE_DEPLOYMENT_ID` | Deployment identifier for telemetry (e.g., your application name) | String | None |
+| `MAX_SERVE_METRIC_LEVEL` | Level of detail in metrics emitted | `NONE`, `BASIC`, `DETAILED` | `BASIC` |
+
+## Debugging and profiling
+
+These variables enable debugging and profiling features.
+
+For more information about profiling, see
+[GPU profiling with Nsight Systems](/max/gpu-system-profiling).
+
+| Variable | Description | Values | Default |
+|----------|-------------|--------|---------|
+| `MODULAR_MAX_DEBUG` | Enable stack traces for MAX graph compilation errors | `True`, `False` | `False` |
+| `MODULAR_ENABLE_PROFILING` | Enable runtime profiling and tracing | `off`, `on`, `detailed` | `off` |
+
+## Performance and caching
+
+The following variables configure caching and memory behavior.
+
+| Variable | Description | Values | Default |
+|----------|-------------|--------|---------|
+| `MODULAR_MAX_CACHE_DIR` | Directory to save MAX model cache for reuse | Path | See note below |
+| `MODULAR_CACHE_DIR` | Configure cache directory for all Modular filesystems | Path | See note below |
+| `MODULAR_MAX_SHM_WATERMARK` | Percentage of `/dev/shm` to allocate for shared memory. Set to `0.0` to disable shared memory. | Float (0.0–1.0) | `0.9` |
+
+## Hugging Face
+
+Configure your Hugging Face integration with the following environment variable:
+
+| Variable | Description | Values | Default |
+|----------|-------------|--------|---------|
+| `HF_TOKEN` | Hugging Face authentication token for accessing gated models | String | None |
+
+## Related resources
+
+- [MAX container](/max/container) - Deploy MAX with Docker
+- [`max serve` CLI](/max/cli/serve) - Command-line options for serving

@@ -72,8 +72,12 @@ def _get_files(bazel: Path, query: str) -> set[Path]:
     }
 
 
+# Add more binary suffixes here if needed
+_BINARY_SUFFIXES = {".jpg", ".jpeg", ".png"}
+
+
 def _get_lit_directives(file: Path) -> set[str]:
-    if file.suffix == ".jpg":
+    if file.suffix in _BINARY_SUFFIXES:
         return set()
     with file.open() as f:
         try:

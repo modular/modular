@@ -72,8 +72,8 @@ def test_load():
             _compile_code[
                 load_value[width=64, prefetch_size=128], emission_kind="asm"
             ]()
-        ).count("ld.global.L2::128B.v4.u32 "),
-        16,
+        ).count("ld.global.L2::128B.v8.u32 "),
+        8,
     )
 
     assert_true(

@@ -111,8 +111,7 @@ fn bench_matmul_all_reduce[
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * temp_length
 
     # Initialize buffers for each GPU
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
         A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
         B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
@@ -159,8 +158,7 @@ fn bench_matmul_all_reduce[
     ](fill={})
 
     # Setup the kernel NDBuffers
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
             A_list[i].unsafe_ptr(), DimList(m.value, k.value)
         )
@@ -179,8 +177,7 @@ fn bench_matmul_all_reduce[
         NDBuffer[dtype, 2, MutAnyOrigin]()
     )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
             C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
@@ -201,8 +198,7 @@ fn bench_matmul_all_reduce[
             rebind[IndexList[2]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     @parameter

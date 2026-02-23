@@ -111,9 +111,7 @@ fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
     # Compute lds_frag_width (elements loaded per LDS read)
     comptime mma_frag_width = (MMA_M * MMA_K) // WARP_SIZE
     # FP8 16×16×128 uses split-K with 16-element fragments
-    comptime use_split_k = (
-        dtype == DType.float8_e4m3fn and MMA_M == 16 and MMA_K == 128
-    )
+    comptime use_split_k = (dtype.is_float8() and MMA_M == 16 and MMA_K == 128)
     comptime lds_frag_width = 16 if use_split_k else mma_frag_width
 
     # Compute swizzle parameters
@@ -340,7 +338,7 @@ fn _load_from_lds[
                 _type = SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float8_e4m3fn and width == 8:
+    elif dtype.is_float8() and width == 8:
         # FP8 x8 = 64 bits = ds_read_b64
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -356,7 +354,7 @@ fn _load_from_lds[
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 16:
+    elif dtype.is_float8() and width == 16:
         # FP8 x16 = 128 bits = ds_read_b128
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -372,7 +370,7 @@ fn _load_from_lds[
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 32:
+    elif dtype.is_float8() and width == 32:
         # FP8 x32 = 256 bits = 2 x ds_read_b128
         # Used for 32×32×64 MMA (mfma_scale_f32_32x32x64)
         # Load as two 128-bit chunks using pointer arithmetic
@@ -1252,6 +1250,8 @@ struct AMDPingPongMatmul[
     /,
     # Enable 16×32 swizzle pattern for bank conflict avoidance
     enable_swizzle: Bool,
+    # Optional elementwise epilogue function (e.g., for FP8 per-tensor scaling)
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """8-warp ping-pong matmul for AMD MI355X.
 
@@ -1377,13 +1377,13 @@ struct AMDPingPongMatmul[
         a: LayoutTensor[
             Self.a_type,
             Self.a_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
         b: LayoutTensor[
             Self.b_type,
             Self.b_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
         c: LayoutTensor[
@@ -2122,6 +2122,7 @@ struct AMDPingPongMatmul[
             MMA_M,
             MMA_N,
             output_thread_layout,
+            Self.elementwise_lambda_fn,
         ](
             c_reg_fragment,
             c_gmem_fragment,

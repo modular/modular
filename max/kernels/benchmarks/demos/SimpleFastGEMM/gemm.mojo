@@ -84,22 +84,18 @@ fn kernel(
 
     comptime NR2 = NR // simd_size
 
-    @parameter
-    for idx0 in range(MR):
+    comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
             c_local.store(NR * idx0 + simd_size * idx1, cv)
 
     for pr in range(kc):
-
-        @parameter
-        for i in range(NR2):
+        comptime for i in range(NR2):
             prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](b_ptr + NR * pr + simd_size * (i + 16))
 
-        @parameter
-        for idx0 in range(MR):
+        comptime for idx0 in range(MR):
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
                 var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
@@ -109,8 +105,7 @@ fn kernel(
                 cv += av * bv
                 c_local.store(NR * idx0 + simd_size * idx1, cv)
 
-    @parameter
-    for idx0 in range(MR):
+    comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
             c.store(n * idx0 + simd_size * idx1, cv)

@@ -4885,7 +4885,8 @@ class PointerType(max._core.Type):
     """
     This type represents a pointer. The pointee type is parameterized with a
     `!kgen.type` type. An optional `addressSpace` argument can be
-    specified (default to 0).
+    specified (default to 0). An optional `nonnull` flag can be specified
+    to indicate the pointer is guaranteed to never be null.
 
     Example:
 
@@ -4907,29 +4908,42 @@ class PointerType(max._core.Type):
 
     // The address space also works on parametrized pointers.
     !kgen.pointer<elementType, 5>
+
+    // A non-null pointer with default address space).
+    !kgen.pointer<scalar<f32>, nonnull>
+
+    // A non-null pointer with explicit address space).
+    !kgen.pointer<scalar<f32>, 1, nonnull>
     ```
     """
 
     @overload
     def __init__(
-        self, element_type: max._core.Type, address_space: int = 0
+        self,
+        element_type: max._core.Type,
+        address_space: int = 0,
+        is_non_null: bool = False,
     ) -> None: ...
     @overload
     def __init__(
         self,
         element_type: max._core.Type,
         address_space: max._core.dialects.builtin.TypedAttr,
+        is_non_null: bool = False,
     ) -> None: ...
     @overload
     def __init__(
         self,
         element_type: max._core.Type,
         address_space: max._core.dialects.builtin.TypedAttr,
+        is_non_null: bool,
     ) -> None: ...
     @property
     def element_type(self) -> max._core.Type | None: ...
     @property
     def address_space(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def is_non_null(self) -> bool: ...
 
 class FuncTypeGeneratorType(GeneratorType):
     def __init__(

@@ -281,7 +281,7 @@ def test_errno_message():
     elif CompilationTarget.is_macos():
         _test_errno_message[error_message_macos]()
     else:
-        constrained[False, "test not implemented for the platform"]()
+        comptime assert False, "test not implemented for the platform"
 
 
 def test_errno():

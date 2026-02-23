@@ -302,6 +302,7 @@ def run_sgmv_qkv_lora_kernel(
         params=kv_params,
         session=session,
         total_num_pages=32,
+        max_batch_size=128,
     )
 
     batch = []

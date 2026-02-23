@@ -233,23 +233,6 @@ fn _memcpy_impl(
     vectorize[32](n, copy)
 
 
-@doc_private
-@always_inline
-@deprecated(
-    "`memcpy` without keyword arguments is deprecated. Please use the"
-    " keyword-only arguments version instead."
-)
-fn memcpy[
-    T: AnyType,
-    __disambiguate: NoneType = None,
-](
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
-    count: Int,
-):
-    memcpy(dest=dest, src=src, count=count)
-
-
 @always_inline
 fn memcpy[
     T: AnyType
@@ -618,7 +601,7 @@ fn uninit_move_n[
         behavior.
     """
 
-    comptime if T.__moveinit__is_trivial:
+    comptime if T.__move_ctor_is_trivial:
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
@@ -680,7 +663,7 @@ fn uninit_copy_n[
         behavior.
     """
 
-    comptime if T.__copyinit__is_trivial:
+    comptime if T.__copy_ctor_is_trivial:
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:

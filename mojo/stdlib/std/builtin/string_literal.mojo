@@ -397,20 +397,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return ptr.bitcast[Byte]()
 
     @always_inline
-    @deprecated("Use `StringLiteral.as_c_string_slice()` instead.")
-    fn unsafe_cstr_ptr(
-        self,
-    ) -> UnsafePointer[c_char, StaticConstantOrigin]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be NUL terminated, and not null.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        return self.unsafe_ptr().bitcast[c_char]()
-
-    @always_inline
     fn as_c_string_slice(
         self,
     ) -> CStringSlice[StaticConstantOrigin]:

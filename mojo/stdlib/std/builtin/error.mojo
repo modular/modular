@@ -65,7 +65,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructor - copies the stack trace string.
 
         Args:
@@ -78,7 +78,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move constructor.
 
         Args:
