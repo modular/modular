@@ -357,6 +357,18 @@ what we publish.
 
 ### Library changes
 
+- `String.format()`, `StringSlice.format()`, and format string literals now
+  support format specifiers with the `[[fill]align][width]` mini-language,
+  matching Python's format spec syntax:
+
+  ```mojo
+  "{:>10}".format(42)     # "        42"  (right-align)
+  "{:<10}".format("hi")   # "hi        "  (left-align)
+  "{:^10}".format("hi")   # "    hi    "  (center)
+  "{:*^10}".format("hi")  # "****hi****"  (custom fill char)
+  "{!r:>10}".format(42)   # "   Int(42)"  (conversion + spec)
+  ```
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
