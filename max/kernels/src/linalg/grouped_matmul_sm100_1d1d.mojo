@@ -1146,10 +1146,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         address_space = b_device.address_space,
     ](b_device.ptr)
 
-    constrained[
-        sfb_layout.shape[0].value() == num_experts,
-        "num_experts must be equal to _sfb_layout.shape[0]",
-    ]()
+    comptime assert (
+        sfb_layout.shape[0].value() == num_experts
+    ), "num_experts must be equal to _sfb_layout.shape[0]"
     comptime flat_sfb_layout = Layout.row_major(
         sfb_layout.shape[0].value() * sfb_layout.shape[1].value(),
         sfb_layout.shape[2].value(),
@@ -1288,10 +1287,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     #   - Swapped A↔B when config.AB_swapped is True
     # So here a_layout and b_layout are both 2D, and sfa_layout and
     # sfb_layout are both 5D.
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
         sfa_dtype == sfb_dtype
@@ -1301,8 +1297,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         " scales"
     )
 
-    constrained[a_scales.rank == 5, "a_scales must be 5D tensors"]()
-    constrained[b_scales.rank == 5, "b_scales must be 5D tensors"]()
+    comptime assert a_scales.rank == 5, "a_scales must be 5D tensors"
+    comptime assert b_scales.rank == 5, "b_scales must be 5D tensors"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -1312,56 +1308,44 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
-    constrained[
-        config.k_group_size == 1,
-        "Only support k_group_size == 1",
-    ]()
+    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
 
-    constrained[
-        config.num_split_k == 1,
-        "Only support split_k == 1",
-    ]()
+    comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    comptime assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    constrained[
+    comptime assert (
         sfa_layout.shape[2].value()
         == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0],
-        "",
-    ]()
-    constrained[
+        == SF_ATOM_M[0]
+    ), ""
+    comptime assert (
         sfa_layout.shape[3].value()
         == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1],
-        "",
-    ]()
-    constrained[
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K,
-        "",
-    ]()
+        == SF_ATOM_M[1]
+    ), ""
+    comptime assert (
+        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+    ), ""
 
     comptime if config.cta_group == 2:
-        constrained[
-            MMA_M == 256 and MMA_N in (128, 256),
-            "Only support cta_group == 2 with MMA_M == 256",
-        ]()
+        comptime assert MMA_M == 256 and MMA_N in (
+            128,
+            256,
+        ), "Only support cta_group == 2 with MMA_M == 256"
 
     else:
-        constrained[
-            MMA_M == 128 and MMA_N in (128, 256),
-            (
-                "Only support MMA_M == 128 and MMA_N in (128, 256) when"
-                " cta_group == 1"
-            ),
-        ]()
+        comptime assert MMA_M == 128 and MMA_N in (128, 256), (
+            "Only support MMA_M == 128 and MMA_N in (128, 256) when"
+            " cta_group == 1"
+        )
 
     comptime cluster_shape = config.cluster_shape
 
@@ -1376,10 +1360,9 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var M = c_device.dim[0]()
 
-    constrained[
-        ceildiv(K, BK) % config.k_group_size == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    comptime assert (
+        ceildiv(K, BK) % config.k_group_size == 0
+    ), "K iterations must be a multiple of k_group_size"
 
     a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
@@ -1650,8 +1633,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    constrained[c_type != DType.float32, "c_type cannot be float32"]()
-    constrained[transpose_b, "only support k-major B"]()
+    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
 
@@ -1679,12 +1662,11 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime SFB_NUM_COLS = config.num_sf_k_tiles * (MMA_N // 32)
     comptime stage_stride_cols = config.mma_shape[1]
 
-    constrained[
+    comptime assert (
         config.num_accum_pipeline_stages * MMA_N
         + (SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
-        <= NUM_TMEM_COLS,
-        "sfa_tmem and sfb_tmem exceed tmem_cols",
-    ]()
+        <= NUM_TMEM_COLS
+    ), "sfa_tmem and sfb_tmem exceed tmem_cols"
 
     comptime num_m_mmas = BM // (config.mma_shape[0] // config.cta_group)
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)

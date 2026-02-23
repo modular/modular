@@ -49,7 +49,7 @@ fn bench_decode[
     mode: String,
     ctx: DeviceContext,
 ) raises:
-    constrained[mask_rank in (3, 4), "MLA only supports rank 3 or 4."]()
+    comptime assert mask_rank in (3, 4), "MLA only supports rank 3 or 4."
 
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))

@@ -704,10 +704,9 @@ struct RegisterToGMemWriter[
             tile_coords: Optional tile coordinates for epilogue processing.
             max_row: Optional maximum valid M coordinate (for epilogue).
         """
-        constrained[
-            (Self.epilogue_fn is None) or (Self.compute_lambda_fn is None),
-            "Only one of epilogue_fn or compute_lambda_fn should be set",
-        ]()
+        comptime assert (Self.epilogue_fn is None) or (
+            Self.compute_lambda_fn is None
+        ), "Only one of epilogue_fn or compute_lambda_fn should be set"
 
         # Store destination tensor
         self.dst = dst

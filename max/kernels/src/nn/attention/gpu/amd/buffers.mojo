@@ -1012,10 +1012,9 @@ struct PRegisterBuffer[
                     ].cast[Self.mma_dtype]()
                 return mma_reg_tile
             else:
-                constrained[
-                    False,
-                    String("Unsupported mma shape: ", Self.mma_shape[0]),
-                ]()
+                comptime assert False, String(
+                    "Unsupported mma shape: ", Self.mma_shape[0]
+                )
         else:
             # this is special packing, the pattern here depends on how we load
             # and transpose the v tile when writing to the shared memory

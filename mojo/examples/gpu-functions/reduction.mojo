@@ -129,10 +129,7 @@ fn sum_kernel_benchmark(
 
 
 def main():
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     with DeviceContext() as ctx:
         # Allocate memory on the device

@@ -30,9 +30,9 @@ comptime gray_layout = Layout.row_major(HEIGHT, WIDTH)
 
 
 def main():
-    constrained[
-        has_accelerator(), "This example requires a supported accelerator"
-    ]()
+    comptime assert (
+        has_accelerator()
+    ), "This example requires a supported accelerator"
 
     var ctx = DeviceContext()
 

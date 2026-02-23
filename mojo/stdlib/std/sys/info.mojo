@@ -71,15 +71,11 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         comptime msg = "Current compilation target does not support"
 
         comptime if operation:
-            constrained[
-                False,
-                String(msg, " operation: ", operation.value(), ".", note_text),
-            ]()
+            comptime assert False, String(
+                msg, " operation: ", operation.value(), ".", note_text
+            )
         else:
-            constrained[
-                False,
-                String(msg, " this operation.", note_text),
-            ]()
+            comptime assert False, String(msg, " this operation.", note_text)
 
         os.abort()
 

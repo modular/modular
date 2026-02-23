@@ -766,19 +766,17 @@ struct BlackwellBlockScaledMatmulKernel[
     @staticmethod
     fn validate_config():
         """Validate configuration constraints at compile time."""
-        constrained[Self.transpose_b, "Only support transposed B"]()
-        constrained[
-            Self.sfa_dtype == Self.sfb_dtype,
-            "sfa_dtype and sfb_dtype must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[
-            Self.config.k_group_size == 1,
-            "Only support k_group_size == 1 for block-scaled",
-        ]()
+        comptime assert Self.transpose_b, "Only support transposed B"
+        comptime assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "sfa_dtype and sfb_dtype must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert (
+            Self.config.k_group_size == 1
+        ), "Only support k_group_size == 1 for block-scaled"
 
     # ========== Kernel Entry Point ==========
 

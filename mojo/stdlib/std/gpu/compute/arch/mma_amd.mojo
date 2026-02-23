@@ -99,9 +99,9 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
     comptime if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
-        constrained[
-            False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
-        ]()
+        comptime assert (
+            False
+        ), "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
 
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32

@@ -2276,7 +2276,7 @@ fn flatten_leading[
     Returns:
         A rank-2 TileTensor where dim[0] = old dim[0] * dim[1].
     """
-    constrained[type_of(tensor).rank == 3, "flatten_leading requires rank 3"]()
+    comptime assert type_of(tensor).rank == 3, "flatten_leading requires rank 3"
     var merged = RuntimeInt[DType.int64](
         Int64(tensor.layout.shape[0]().value())
         * Int64(tensor.layout.shape[1]().value())

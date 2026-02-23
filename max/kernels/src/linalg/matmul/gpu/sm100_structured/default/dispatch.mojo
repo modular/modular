@@ -84,7 +84,7 @@ fn matmul_dispatch_sm100[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
-    constrained[a_type == b_type, "a_type and b_type must be the same"]()
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     var m = c.dim[0]()
     comptime static_N = c.shape.get[1]()
@@ -151,10 +151,7 @@ fn matmul_dispatch_sm100[
             else:
                 raise Error("Heuristic and outliers dispatch failed.")
         else:
-            constrained[
-                False,
-                "Unsupported shape for benchmarking mode.",
-            ]()
+            comptime assert False, "Unsupported shape for benchmarking mode."
 
     var epilogue_type = String("None")
 
@@ -1364,10 +1361,10 @@ fn heuristic_and_outliers_dispatch[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn input types",
-    ]()
+    comptime assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn input types"
 
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -2072,10 +2069,9 @@ fn _matmul_dispatch_sm100[
     var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
     var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
-    constrained[
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
-        "Either the epilogue lambda or the compute lambda can be used",
-    ]()
+    comptime assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
         if not c.data:

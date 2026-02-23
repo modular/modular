@@ -31,7 +31,7 @@ fn matmul[
     A: NDBuffer[dtype, 2, _, _],
     B: NDBuffer[dtype, 2, _, _],
 ):
-    # TODO: Add constrained[]?
+    # TODO: Add comptime assert?
     comptime if transpose_b:
         for i in range(N):
             for j in range(K):

@@ -431,9 +431,11 @@ struct VBufferRDNA[
         ],
         total_rows: OptionalReg[Int] = None,
     ):
-        constrained[
-            Self.depth in (64, 128, 256), "depth must be 64, 128, or 256"
-        ]()
+        comptime assert Self.depth in (
+            64,
+            128,
+            256,
+        ), "depth must be 64, 128, or 256"
 
         self.global_base_tile = global_tile
         self.global_iterator = global_tile.tiled_iterator[

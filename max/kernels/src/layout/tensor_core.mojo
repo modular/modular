@@ -379,8 +379,7 @@ struct TensorCore[
             ](lane_id())
             a_reg_tile.vectorize[1, simd_width]().copy_from(a_reg_frags)
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Data type ",
                 String(Self.in_type),
                 " is not supported for loading matrix A fragments on AMD",
@@ -388,7 +387,7 @@ struct TensorCore[
                     " GPUs. Only float32, bfloat16, float16, float8 and bfloat8"
                     " are supported."
                 ),
-            ]()
+            )
         return a_reg_tile
 
     @always_inline
@@ -564,8 +563,7 @@ struct TensorCore[
                 ](lane_id())
                 b_reg_tile.vectorize[simd_width, 1]().copy_from(b_ram_frags)
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Data type ",
                 String(Self.in_type),
                 " is not supported for loading matrix B fragments on AMD",
@@ -573,7 +571,7 @@ struct TensorCore[
                     " GPUs. Only float32, bfloat16, float16, float8 and bfloat8"
                     " are supported."
                 ),
-            ]()
+            )
 
         return b_reg_tile
 
@@ -1417,23 +1415,17 @@ fn get_mma_shape[
     else:
         comptime if _is_amd_rdna():
             comptime if _is_amd_rdna2_or_earlier():
-                constrained[
-                    False,
-                    (
-                        "RDNA1/RDNA2 tensor core support requires fallback"
-                        " paths (not yet implemented)"
-                    ),
-                ]()
+                comptime assert False, (
+                    "RDNA1/RDNA2 tensor core support requires fallback"
+                    " paths (not yet implemented)"
+                )
                 return shape_null
 
             comptime if accum_type == DType.float32 and input_type == DType.float32:
-                constrained[
-                    False,
-                    (
-                        "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
-                        " -> FP32)"
-                    ),
-                ]()
+                comptime assert False, (
+                    "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
+                    " -> FP32)"
+                )
                 return shape_null
             elif accum_type == DType.float32 and input_type.is_half_float():
                 return shape_16x16x16

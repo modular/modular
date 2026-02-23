@@ -62,7 +62,7 @@ fn run_ssd_combined[
     rtol: Float64 = 0.01,
 ) raises:
     """Test SSD combined kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups

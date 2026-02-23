@@ -236,10 +236,9 @@ fn cvt_block_fp8_to_bf16[
     ],
     tid: UInt32,
 ):
-    constrained[
-        input_type == DType.float8_e4m3fn and output_type == DType.bfloat16,
-        "Only support float8_e4m3fn to bfloat16 conversion",
-    ]()
+    comptime assert (
+        input_type == DType.float8_e4m3fn and output_type == DType.bfloat16
+    ), "Only support float8_e4m3fn to bfloat16 conversion"
 
     comptime num_regs = input.layout.size() // WARP_SIZE
     comptime row_stride = type_of(input).stride[0]()

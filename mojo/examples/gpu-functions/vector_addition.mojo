@@ -25,7 +25,7 @@ comptime layout = Layout.row_major(VECTOR_WIDTH)
 
 
 def main():
-    constrained[has_accelerator(), "This example requires a supported GPU"]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Get context for the attached GPU
     var ctx = DeviceContext()

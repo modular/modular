@@ -467,10 +467,13 @@ struct TileScheduler[
         clc_throttle: Self.ThrottleBarrierArray,
     ):
         """Initialize from typed barrier arrays."""
-        constrained[
-            Self.block_swizzle_size in [0, 1, 2, 4, 8],
-            "block_swizzle_size must be 0, 1, 2, 4, or 8",
-        ]()
+        comptime assert Self.block_swizzle_size in [
+            0,
+            1,
+            2,
+            4,
+            8,
+        ], "block_swizzle_size must be 0, 1, 2, 4, or 8"
 
         self.cluster_dim = cluster_dim
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))

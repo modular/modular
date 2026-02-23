@@ -32,17 +32,16 @@ from sys.info import size_of
 def main():
     # Compile-time assertions to verify correct sizes on 32-bit target
     # ILP32: long is 32-bit (4 bytes), long long is 64-bit (8 bytes)
-    constrained[size_of[c_long]() == 4, "c_long should be 4 bytes on 32-bit"]()
-    constrained[
-        size_of[c_ulong]() == 4, "c_ulong should be 4 bytes on 32-bit"
-    ]()
-    constrained[
-        size_of[c_long_long]() == 8, "c_long_long should be 8 bytes on 32-bit"
-    ]()
-    constrained[
-        size_of[c_ulong_long]() == 8,
-        "c_ulong_long should be 8 bytes on 32-bit",
-    ]()
+    comptime assert size_of[c_long]() == 4, "c_long should be 4 bytes on 32-bit"
+    comptime assert (
+        size_of[c_ulong]() == 4
+    ), "c_ulong should be 4 bytes on 32-bit"
+    comptime assert (
+        size_of[c_long_long]() == 8
+    ), "c_long_long should be 8 bytes on 32-bit"
+    comptime assert (
+        size_of[c_ulong_long]() == 8
+    ), "c_ulong_long should be 8 bytes on 32-bit"
 
     # Use the types to ensure they work
     var a: c_long = 1

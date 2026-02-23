@@ -777,10 +777,9 @@ fn tensor_core_matrix_multiplication[
     ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    constrained[
-        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0,
-        "Warp tile should be an integer multiple of instruction shape",
-    ]()
+    comptime assert (
+        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
+    ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object
     mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()

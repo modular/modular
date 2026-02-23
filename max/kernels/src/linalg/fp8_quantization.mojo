@@ -694,13 +694,12 @@ fn matmul_dynamic_scaled_fp8[
         ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
 
     else:
-        constrained[
-            False,
+        comptime assert False, (
             "Unsupported scaling mode: input_scale_granularity="
             + input_scale_granularity
             + ", weight_scale_granularity="
-            + weight_scale_granularity,
-        ]()
+            + weight_scale_granularity
+        )
 
 
 fn naive_blockwise_scaled_fp8_matmul[

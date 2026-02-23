@@ -81,18 +81,15 @@ fn get_amd_bf8_dtype() -> DType:
 
 @always_inline
 fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    constrained[
-        False,
-        # fmt: off
-        String(
+    # fmt: off
+    comptime assert False, String(
         "no valid implementation of mma for a=",
         a.size, "x",  a.dtype,
         ", b=",  b.size, "x",  b.dtype,
         ", c=",  c.size, "x",  c.dtype,
         ", and d=", d.size, "x", d.dtype,
-        ),
-        # fmt: on
-    ]()
+    )
+    # fmt: on
 
 
 @always_inline

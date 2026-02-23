@@ -183,9 +183,9 @@ struct KVCacheMHAOperand[
         """Creates a TMA tile for efficient GPU memory transfers."""
         # Forward to the underlying cache's implementation
         # TODO: remove `comptime assert` when the `where` clause is enough
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0
         tma = rebind[type_of(tma)](
             self.cache.create_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
         )
@@ -208,14 +208,12 @@ struct KVCacheMHAOperand[
         ],
     ) raises:
         # Forward to the underlying cache's implementation
-        constrained[
-            depth == Int(Self.cache_t.kv_params.head_size),
-            "depth must match kv_params.head_size",
-        ]()
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert depth == Int(
+            Self.cache_t.kv_params.head_size
+        ), "depth must match kv_params.head_size"
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         tma = rebind[type_of(tma)](
             self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
         )
@@ -309,9 +307,9 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
@@ -339,9 +337,9 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
             BN=BK,
         ],
     ) raises:
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         var num_heads = self.buffer.dim[2]()
         tma = type_of(tma).create[depth=depth](
@@ -427,10 +425,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     @always_inline
     fn max_context_length(self) -> UInt32:
-        constrained[
-            False,
-            "For RaggedMHAOperand, max_context_length is not implemented.",
-        ]()
+        comptime assert (
+            False
+        ), "For RaggedMHAOperand, max_context_length is not implemented."
         return 0
 
     @always_inline
@@ -456,9 +453,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View as [total_tokens, heads*head_dim]
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0
         var rows = self.buffer.dim[0]()  # total tokens
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
@@ -486,9 +483,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
             BN=BK,
         ],
     ) raises:
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0
         var rows = self.buffer.dim[0]()  # total tokens
         var num_heads = self.buffer.dim[1]()
         tma = type_of(tma).create[depth=depth](

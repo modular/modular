@@ -402,9 +402,9 @@ fn _load_from_lds[
         )
         return bitcast[dtype, width](uint8_vec)
     else:
-        constrained[
-            False, "Unsupported dtype/width combination for _load_from_lds"
-        ]()
+        comptime assert (
+            False
+        ), "Unsupported dtype/width combination for _load_from_lds"
         return SIMD[dtype, width]()
 
 
@@ -456,54 +456,45 @@ fn load_lds_fragment[
     # =========================================================================
 
     # mma_access_layout maps lane_id (0..63) to LDS offsets within one iteration
-    constrained[
-        mma_access_layout.size() == WARP_SIZE,
-        String(
-            "mma_access_layout must map exactly ",
-            WARP_SIZE,
-            " threads, got ",
-            mma_access_layout.size(),
-        ),
-    ]()
+    comptime assert mma_access_layout.size() == WARP_SIZE, String(
+        "mma_access_layout must map exactly ",
+        WARP_SIZE,
+        " threads, got ",
+        mma_access_layout.size(),
+    )
 
     # smem must have enough elements for all iterations
     # Each iteration: WARP_SIZE threads × frag_width elements per thread
     comptime smem_elements = smem_layout.size() * smem_element_layout.size()
     comptime required_smem = num_iterations * WARP_SIZE * frag_width
-    constrained[
-        smem_elements >= required_smem,
-        String(
-            "smem has ",
-            smem_elements,
-            " elements but loading requires ",
-            required_smem,
-            " (iterations=",
-            num_iterations,
-            " × WARP_SIZE=",
-            WARP_SIZE,
-            " × width=",
-            frag_width,
-            ")",
-        ),
-    ]()
+    comptime assert smem_elements >= required_smem, String(
+        "smem has ",
+        smem_elements,
+        " elements but loading requires ",
+        required_smem,
+        " (iterations=",
+        num_iterations,
+        " × WARP_SIZE=",
+        WARP_SIZE,
+        " × width=",
+        frag_width,
+        ")",
+    )
 
     # frag must hold all loaded elements
     comptime frag_elements = frag_layout.size() * frag_element_layout.size()
     comptime required_frag = num_iterations * frag_width
-    constrained[
-        frag_elements == required_frag,
-        String(
-            "frag has ",
-            frag_elements,
-            " elements but expects ",
-            required_frag,
-            " (iterations=",
-            num_iterations,
-            " × width=",
-            frag_width,
-            ")",
-        ),
-    ]()
+    comptime assert frag_elements == required_frag, String(
+        "frag has ",
+        frag_elements,
+        " elements but expects ",
+        required_frag,
+        " (iterations=",
+        num_iterations,
+        " × width=",
+        frag_width,
+        ")",
+    )
 
     # =========================================================================
 
@@ -756,10 +747,10 @@ struct MmaOp[
     @always_inline
     fn __init__(out self):
         """Initialize MMA operation with register tiles."""
-        constrained[Self.WM % Self.MMA_M == 0]()
-        constrained[Self.WN % Self.MMA_N == 0]()
-        constrained[Self.BK % Self.MMA_K == 0]()
-        constrained[(Self.MMA_M * Self.MMA_N) % WARP_SIZE == 0]()
+        comptime assert Self.WM % Self.MMA_M == 0
+        comptime assert Self.WN % Self.MMA_N == 0
+        comptime assert Self.BK % Self.MMA_K == 0
+        comptime assert (Self.MMA_M * Self.MMA_N) % WARP_SIZE == 0
 
         self.a_reg_tile = Self.ARegTile.stack_allocation()
         self.b_reg_tile = Self.BRegTile.stack_allocation()
@@ -1047,14 +1038,12 @@ struct TileBuffers[
         """Initialize LDS tiles and loaders. Layouts inferred from a and b tensors.
         """
         # Validate configuration
-        constrained[
-            Self.loading_warps == 4 or Self.loading_warps == 8,
-            "loading_warps must be 4 or 8",
-        ]()
-        constrained[
-            Self.load_width == simd_width_of[Self.in_type](),
-            "load_width must match simd_width_of[in_type]()",
-        ]()
+        comptime assert (
+            Self.loading_warps == 4 or Self.loading_warps == 8
+        ), "loading_warps must be 4 or 8"
+        comptime assert (
+            Self.load_width == simd_width_of[Self.in_type]()
+        ), "load_width must match simd_width_of[in_type]()"
         # Allocate half-tiles: [stage][warp_group]
         # A: 2 stages × 2 warp_m groups (half_BM == WM, so 1:1 mapping)
         var a_s0_g0 = Self.AHalfTile.stack_allocation()  # stage 0, warp_id_m=0
@@ -1341,31 +1330,30 @@ struct AMDPingPongMatmul[
     @staticmethod
     fn validate_config():
         """Validate the kernel configuration."""
-        constrained[
-            Self.BM % Self.WM == 0, "Block M must be divisible by Warp M"
-        ]()
-        constrained[
-            Self.BN % Self.WN == 0, "Block N must be divisible by Warp N"
-        ]()
-        constrained[
-            Self.BK % Self.WK == 0, "Block K must be divisible by Warp K"
-        ]()
-        constrained[
-            Self.WM % Self.MMA_M == 0, "Warp M must be divisible by MMA M"
-        ]()
-        constrained[
-            Self.WN % Self.MMA_N == 0, "Warp N must be divisible by MMA N"
-        ]()
-        constrained[
-            Self.WK % Self.MMA_K == 0, "Warp K must be divisible by MMA K"
-        ]()
-        constrained[
-            Self.total_warps == 8, "Ping-pong kernel requires exactly 8 warps"
-        ]()
-        constrained[
-            Self.num_warps_m == 2,
-            "Ping-pong kernel requires 2 warps in M dimension",
-        ]()
+        comptime assert (
+            Self.BM % Self.WM == 0
+        ), "Block M must be divisible by Warp M"
+        comptime assert (
+            Self.BN % Self.WN == 0
+        ), "Block N must be divisible by Warp N"
+        comptime assert (
+            Self.BK % Self.WK == 0
+        ), "Block K must be divisible by Warp K"
+        comptime assert (
+            Self.WM % Self.MMA_M == 0
+        ), "Warp M must be divisible by MMA M"
+        comptime assert (
+            Self.WN % Self.MMA_N == 0
+        ), "Warp N must be divisible by MMA N"
+        comptime assert (
+            Self.WK % Self.MMA_K == 0
+        ), "Warp K must be divisible by MMA K"
+        comptime assert (
+            Self.total_warps == 8
+        ), "Ping-pong kernel requires exactly 8 warps"
+        comptime assert (
+            Self.num_warps_m == 2
+        ), "Ping-pong kernel requires 2 warps in M dimension"
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -1399,9 +1387,9 @@ struct AMDPingPongMatmul[
         comptime N = b.layout.shape[0].value()
         comptime K = a.layout.shape[1].value()
 
-        constrained[
-            Self.a_type == Self.b_type, "A and B must have the same type"
-        ]()
+        comptime assert (
+            Self.a_type == Self.b_type
+        ), "A and B must have the same type"
 
         comptime in_type = Self.a_type
 
@@ -2149,11 +2137,10 @@ fn ping_pong_matmul[
     c_device_tensor: LayoutTensor[c_type, c_layout],
     ctx: DeviceContext,
 ) raises:
-    constrained[a_type == b_type, "A and B must have the same type"]()
-    constrained[
-        a_type == DType.bfloat16 or a_type == DType.float8_e4m3fn,
-        "A must be bfloat16 or float8_e4m3fn",
-    ]()
+    comptime assert a_type == b_type, "A and B must have the same type"
+    comptime assert (
+        a_type == DType.bfloat16 or a_type == DType.float8_e4m3fn
+    ), "A must be bfloat16 or float8_e4m3fn"
 
     # Select kernel based on input dtype
     comptime is_fp8 = a_type == DType.float8_e4m3fn

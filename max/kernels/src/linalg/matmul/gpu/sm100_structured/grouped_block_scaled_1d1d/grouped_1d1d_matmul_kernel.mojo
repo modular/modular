@@ -499,19 +499,17 @@ struct Grouped1D1DMatmulKernel[
     @staticmethod
     fn validate_config():
         """Compile-time validation of kernel configuration."""
-        constrained[
-            Self.a_type == Self.b_type,
-            "A and B types must match for block-scaled GEMM",
-        ]()
-        constrained[
-            Self.sfa_dtype == Self.sfb_dtype,
-            "SFA and SFB types must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[Self.transpose_b, "Only support transposed B"]()
+        comptime assert (
+            Self.a_type == Self.b_type
+        ), "A and B types must match for block-scaled GEMM"
+        comptime assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "SFA and SFB types must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert Self.transpose_b, "Only support transposed B"
 
     # ========== Kernel Entry Point ==========
 

@@ -399,11 +399,10 @@ struct MmaOpSM100_SS[
         elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             return UMMAKind.KIND_F8F6F4
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Unsupported/not implemented operand type for UMMA: ",
                 String(dtype),
-            ]()
+            )
 
         return UMMAKind(-1)
 

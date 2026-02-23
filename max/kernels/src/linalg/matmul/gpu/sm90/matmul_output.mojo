@@ -299,13 +299,14 @@ struct MatmulTileWriter[
 
         comptime needs_x2 = needs_x2_swapAB if Self.swapAB else needs_x2_regular
 
-        constrained[
-            needs_x2 == (Self.frag_size % 4 == 0 and Self.frag_size % 8 != 0),
+        comptime assert needs_x2 == (
+            Self.frag_size % 4 == 0 and Self.frag_size % 8 != 0
+        ), (
             "stmatrix and wgmma register count conflict: needs_x2 = "
             + String(needs_x2)
             + " frag_size ="
-            + String(Self.frag_size),
-        ]()
+            + String(Self.frag_size)
+        )
 
         comptime fragment_writer_type[
             sub_wg_id: Int, half_tile: Bool

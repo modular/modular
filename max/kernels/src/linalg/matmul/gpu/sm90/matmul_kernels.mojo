@@ -995,7 +995,7 @@ struct HopperMatmulSM90Kernel[
         comptime num_k_iters = K // Self.BK
 
         # FIXME: this seems to trip some logits tests
-        # constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
+        # comptime assert (K % Self.BK) == 0, "K must be divisible by BK"
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -1182,7 +1182,7 @@ struct HopperMatmulSM90Kernel[
         comptime num_k_iters = K // Self.BK
 
         # FIXME: this seems to trip some logits tests
-        # constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
+        # comptime assert (K % Self.BK) == 0, "K must be divisible by BK"
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -1471,14 +1471,13 @@ struct HopperMatmulSM90Kernel[
             c_reg_tile: Current accumulation from tensor cores.
             final_c_reg_tile: Higher-precision accumulator (updated in place).
         """
-        constrained[
-            c_reg_tile.dtype in (DType.float32, DType.float16),
-            "Only support fp32 and fp16 data type in CUDA Core promotion",
-        ]()
-        constrained[
-            len(c_reg_tile.layout) == 2,
-            "Only support 2D layout in CUDA Core promotion",
-        ]()
+        comptime assert c_reg_tile.dtype in (
+            DType.float32,
+            DType.float16,
+        ), "Only support fp32 and fp16 data type in CUDA Core promotion"
+        comptime assert (
+            len(c_reg_tile.layout) == 2
+        ), "Only support 2D layout in CUDA Core promotion"
 
         comptime num_mma = c_reg_tile.layout.shape[0].value()
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()

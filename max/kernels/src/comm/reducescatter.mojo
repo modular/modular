@@ -126,7 +126,7 @@ struct ReduceScatterConfig[
         num_elements: Int,
         threads_per_gpu: Int,
     ):
-        constrained[Self.ngpus > 1, "ngpus must be greater than 1"]()
+        comptime assert Self.ngpus > 1, "ngpus must be greater than 1"
         self.stride = threads_per_gpu * Self.simd_width
         # --- Data Partitioning ---
         # Data are divided as evenly as possible amongst ngpus.

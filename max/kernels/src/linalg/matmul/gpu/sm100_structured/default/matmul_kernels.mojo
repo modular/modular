@@ -633,29 +633,23 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn validate_constraints():
         """Validate parameter constraints at compile time."""
-        constrained[
-            Self.c_type != DType.float32,
-            "c_type cannot be float32",
-        ]()
-        constrained[
-            Self.transpose_b,
-            "Only support transposed B (K-major)",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
+        comptime assert Self.c_type != DType.float32, "c_type cannot be float32"
+        comptime assert Self.transpose_b, "Only support transposed B (K-major)"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
 
         comptime if Self.cta_group == 2:
-            constrained[
-                Self.MMA_M in (128, 256),
-                "cta_group=2 requires MMA_M == 128 or 256",
-            ]()
+            comptime assert Self.MMA_M in (
+                128,
+                256,
+            ), "cta_group=2 requires MMA_M == 128 or 256"
         else:
-            constrained[
-                Self.MMA_M in (64, 128),
-                "cta_group=1 requires MMA_M == 64 or 128",
-            ]()
+            comptime assert Self.MMA_M in (
+                64,
+                128,
+            ), "cta_group=1 requires MMA_M == 64 or 128"
 
     # ========== Static Helper Methods ==========
 
@@ -1423,15 +1417,13 @@ struct BlackwellMatmulSM100FallbackKernel[
     @always_inline
     fn validate_constraints():
         """Validate compile-time constraints for this kernel configuration."""
-        constrained[Self.num_threads == 128 or Self.num_threads == 256]()
-        constrained[
-            ((Self.a_size * size_of[Self.a_type]()) % 128) == 0,
-            "preserve alignment",
-        ]()
-        constrained[
-            ((Self.b_size * size_of[Self.b_type]()) % 16) == 0,
-            "preserve alignment",
-        ]()
+        comptime assert Self.num_threads == 128 or Self.num_threads == 256
+        comptime assert (
+            (Self.a_size * size_of[Self.a_type]()) % 128
+        ) == 0, "preserve alignment"
+        comptime assert (
+            (Self.b_size * size_of[Self.b_type]()) % 16
+        ) == 0, "preserve alignment"
 
     # ========== Kernel Entry Point ==========
     @staticmethod

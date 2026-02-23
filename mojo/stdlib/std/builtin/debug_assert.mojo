@@ -24,15 +24,33 @@ from sys._build import is_debug_build
 from sys.intrinsics import assume
 from sys.param_env import env_get_string
 
+from collections.string.string_slice import _get_kgen_string
 from reflection import call_location, SourceLocation
 
 comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 """The compile-time assertion mode from the ASSERT environment variable."""
 
 
+@always_inline("nodebug")
+fn _string_free_comptime_assert[
+    cond: Bool, msg: StaticString, *extra: StaticString
+]():
+    """Compile-time assertion that avoids `String` to prevent circular deps.
+
+    This exists because `debug_assert` cannot use `comptime assert` with
+    `String`-based messages — `String` transitively depends on `debug_assert`,
+    which would create infinite recursion in the parameter domain.
+    """
+
+    __mlir_op.`kgen.param.assert`[
+        cond = cond.__mlir_i1__(),
+        message = _get_kgen_string[msg, extra](),
+    ]()
+
+
 @no_inline
 fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
-    constrained[
+    _string_free_comptime_assert[
         ASSERT_MODE == "none"
         or ASSERT_MODE == "warn"
         or ASSERT_MODE == "safe"
@@ -41,7 +59,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         ASSERT_MODE,
         " but must be one of: none, warn, safe, all",
     ]()
-    constrained[
+    _string_free_comptime_assert[
         assert_mode == "none" or assert_mode == "safe",
         "assert_mode=",
         assert_mode,

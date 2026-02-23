@@ -84,7 +84,7 @@ struct ThreadRole(Enum, Stringable, Writable):
 @parameter
 @always_inline
 fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
-    constrained[layout.rank() == 2]()
+    comptime assert layout.rank() == 2
     return blocked_product(
         materialize[layout](),
         Layout.row_major(1, pipeline_stages),
@@ -118,24 +118,16 @@ struct SMemBuffer[
 
     @always_inline
     fn __init__(out self):
-        constrained[
-            Self.layout.rank() == 2,
-            "layout must be 2D",
-        ]()
+        comptime assert Self.layout.rank() == 2, "layout must be 2D"
 
-        constrained[
+        comptime assert (
             prod(Self.layout.shape[0]) == Self.BM
-            and prod(Self.layout.shape[1]) == Self.BN,
-            (
-                "shared memory rows must match block_rows and columns must"
-                " match BN"
-            ),
-        ]()
+            and prod(Self.layout.shape[1]) == Self.BN
+        ), "shared memory rows must match block_rows and columns must match BN"
 
-        constrained[
-            Self.BM % Self.WM == 0 and Self.BN % Self.WN == 0,
-            "BM and BN must be a multiple of WM and WN",
-        ]()
+        comptime assert (
+            Self.BM % Self.WM == 0 and Self.BN % Self.WN == 0
+        ), "BM and BN must be a multiple of WM and WN"
 
         self.buffer = Self.SMemTile.stack_allocation()
 
@@ -353,24 +345,21 @@ struct AmdTileOperator[
 
     @always_inline
     fn __init__(out self):
-        constrained[
+        comptime assert (
             Self.simd_width >= Self._registers_per_thread_a
-            and Self.simd_width >= Self._registers_per_thread_b,
-            (
-                "simd_width must be greater than or equal to required mma"
-                " fragments size"
-            ),
-        ]()
+            and Self.simd_width >= Self._registers_per_thread_b
+        ), (
+            "simd_width must be greater than or equal to required mma"
+            " fragments size"
+        )
 
-        constrained[
-            Self.num_k_tiles % Self.k_group_size_a == 0,
-            "num_k_tiles must be divisible by k_group_size",
-        ]()
+        comptime assert (
+            Self.num_k_tiles % Self.k_group_size_a == 0
+        ), "num_k_tiles must be divisible by k_group_size"
 
-        constrained[
-            Self._k_tiles_per_simd_a == Self._k_tiles_per_simd_b,
-            "k_tiles_per_simd must be equal for A and B",
-        ]()
+        comptime assert (
+            Self._k_tiles_per_simd_a == Self._k_tiles_per_simd_b
+        ), "k_tiles_per_simd must be equal for A and B"
 
         self._a_reg_tile = Self.ARegTile.stack_allocation()
         self._b_reg_tile = Self.BRegTile.stack_allocation()

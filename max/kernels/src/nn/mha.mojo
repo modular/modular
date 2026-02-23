@@ -4716,11 +4716,10 @@ fn mha_splitk_reduce[
     var inv_global_exp_sum = 1.0 / exp_sum
 
     comptime width = next_power_of_two(ceildiv(depth, num_threads))
-    constrained[depth % width == 0, "depth must be divisible by width"]()
-    constrained[
-        width * num_threads >= depth,
-        "width * num_threads must be greater than or equal to depth",
-    ]()
+    comptime assert depth % width == 0, "depth must be divisible by width"
+    comptime assert (
+        width * num_threads >= depth
+    ), "width * num_threads must be greater than or equal to depth"
 
     var acc = SIMD[accum_type, Int(width)](0)
     # Kahan summation compensation for improved precision with many partitions

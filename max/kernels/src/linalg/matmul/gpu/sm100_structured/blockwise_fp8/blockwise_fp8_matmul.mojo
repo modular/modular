@@ -78,20 +78,17 @@ fn blockwise_fp8_matmul[
 
     # Legacy kernel path disabled -- incompatible with TileTensor API.
     # To re-enable, update sm100_warp_specialized_blockwise_fp8 to accept TileTensor.
-    constrained[
-        not env_get_bool["USE_LEGACY_BLOCKWISE_FP8", False](),
-        "Legacy blockwise FP8 kernel not supported with TileTensor API",
-    ]()
+    comptime assert not env_get_bool[
+        "USE_LEGACY_BLOCKWISE_FP8", False
+    ](), "Legacy blockwise FP8 kernel not supported with TileTensor API"
 
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type,
-        "Only support float32 for scales",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
+    comptime assert (
+        a_scales_type == b_scales_type
+    ), "Only support float32 for scales"
 
     if (Int(a_scales.dim[1]()) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -106,10 +103,11 @@ fn blockwise_fp8_matmul[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
-    constrained[not config.AB_swapped, "Swapped AB is not supported"]()
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
+    comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
     # ==== Compute correct max_pipeline_stages for blockwise FP8 ====
     # MatmulConfig._maximize_pipeline_stages_by_default() doesn't account for

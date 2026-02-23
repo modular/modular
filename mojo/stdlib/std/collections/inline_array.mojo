@@ -147,14 +147,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """This constructor will always cause a compile time error if used.
         It is used to steer users away from uninitialized memory.
         """
-        constrained[
-            False,
-            (
-                "Initialize with either a variadic list of arguments, a default"
-                " fill element or pass the keyword argument"
-                " 'uninitialized=True'."
-            ),
-        ]()
+        comptime assert False, (
+            "Initialize with either a variadic list of arguments, a default"
+            " fill element or pass the keyword argument"
+            " 'uninitialized=True'."
+        )
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline

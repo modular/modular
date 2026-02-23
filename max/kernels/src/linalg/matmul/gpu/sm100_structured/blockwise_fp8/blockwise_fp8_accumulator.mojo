@@ -70,7 +70,7 @@ fn get_accumulator_dims[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime stageN = c_smem_dim1
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
@@ -222,11 +222,10 @@ struct BlockwiseFP8Accumulator[
         # Type aliases for readability
         comptime a_scales_type = a_scales_dtype
 
-        constrained[
+        comptime assert (
             a_scales_dtype == b_scales_dtype
-            and Self.accum_type == DType.float32,
-            "Only support float32 for a_scales, b_scales, and accum_type",
-        ]()
+            and Self.accum_type == DType.float32
+        ), "Only support float32 for a_scales, b_scales, and accum_type"
 
         var M = problem_shape[0]
         var N = problem_shape[1]
@@ -244,11 +243,9 @@ struct BlockwiseFP8Accumulator[
         var b_scale_1: Scalar[Self.accum_type]
 
         comptime if Self.MMA_N != Self.BK:
-            constrained[
-                Self.stageN <= gcd(Self.MMA_N, Self.BK)
-                and (gcd(Self.MMA_N, Self.BK) % Self.stageN == 0),
-                "gcd(MMA_N, BK) must be divisible by stageN",
-            ]()
+            comptime assert Self.stageN <= gcd(Self.MMA_N, Self.BK) and (
+                gcd(Self.MMA_N, Self.BK) % Self.stageN == 0
+            ), "gcd(MMA_N, BK) must be divisible by stageN"
 
             var global_bn_start = bn * UInt(Self.MMA_N)
             var begin_n = min(

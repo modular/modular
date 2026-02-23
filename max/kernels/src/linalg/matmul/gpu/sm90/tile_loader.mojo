@@ -417,28 +417,26 @@ fn async_copy_with_bound_check[
         src: Source tensor fragment in global memory.
         dst: Destination tensor fragment in shared memory.
     """
-    constrained[src.layout.rank() == 2, "Global memory tile must be rank 2."]()
+    comptime assert src.layout.rank() == 2, "Global memory tile must be rank 2."
 
-    constrained[
-        src_layout.shape == dst_layout.shape,
+    comptime assert src_layout.shape == dst_layout.shape, (
         "Global memory tile must match source layout: "
         + String(src_layout)
         + " != "
-        + String(dst_layout),
-    ]()
+        + String(dst_layout)
+    )
 
     # Validate swizzle pattern alignment with tile dimensions
     comptime src_shape1 = src.layout.shape[1].value()
     comptime swizzle_bytes = swizzle_mode.bytes()
-    constrained[
-        src_shape1 * src.element_size * size_of[src.dtype]() == swizzle_bytes,
-        String(
-            "Global memory tile shape-1 ",
-            src_shape1 * src.element_size,
-            "must match swizzle bytes.",
-            swizzle_bytes,
-        ),
-    ]()
+    comptime assert (
+        src_shape1 * src.element_size * size_of[src.dtype]() == swizzle_bytes
+    ), String(
+        "Global memory tile shape-1 ",
+        src_shape1 * src.element_size,
+        "must match swizzle bytes.",
+        swizzle_bytes,
+    )
 
     # Distribute work across threads according to thread_layout
     var src_frag = src.distribute[thread_layout](thread_idx.x)

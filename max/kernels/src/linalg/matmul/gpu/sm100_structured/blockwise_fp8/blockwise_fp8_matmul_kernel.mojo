@@ -614,16 +614,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @staticmethod
     fn validate_config():
         """Validate configuration constraints at compile time."""
-        constrained[Self.transpose_b, "Only support transposed B"]()
-        constrained[
-            Self.a_scales_type == Self.b_scales_type,
-            "a_scales_type and b_scales_type must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[Self.BK == 128, "Only support BK = 128"]()
+        comptime assert Self.transpose_b, "Only support transposed B"
+        comptime assert (
+            Self.a_scales_type == Self.b_scales_type
+        ), "a_scales_type and b_scales_type must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert Self.BK == 128, "Only support BK = 128"
 
     # ========== Kernel Entry Point ==========
 
