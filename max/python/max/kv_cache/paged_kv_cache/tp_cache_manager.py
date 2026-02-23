@@ -229,15 +229,12 @@ class _TPPagedKVCacheManager:
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
 
-        # Whether kvcache swapping to host is enabled
+        # Whether kvcache swapping to host is enabled.
         self.enable_kvcache_swapping_to_host = (
             self.params.enable_kvcache_swapping_to_host
         )
 
-        if (
-            self.enable_kvcache_swapping_to_host
-            and not self.enable_prefix_caching
-        ):
+        if total_num_host_pages > 0 and not self.enable_prefix_caching:
             raise ValueError(
                 "KVCache swapping to host is only supported when prefix caching is enabled"
             )
@@ -524,16 +521,6 @@ class _TPPagedKVCacheManager:
     def num_used_host_pages(self) -> int:
         """Number of host blocks currently in use."""
         return self.connector.num_used_host_blocks
-
-    @property
-    def host_tensors(self) -> list[Buffer] | None:
-        """Host tensors for KV cache swapping (owned by connector)."""
-        return self.connector.host_tensors
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Host scale tensors for FP8 quantization (owned by connector)."""
-        return self.connector.host_scale_tensors
 
     def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
         """Get the block ids for a request."""

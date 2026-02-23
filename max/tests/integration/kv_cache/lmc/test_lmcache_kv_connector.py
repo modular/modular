@@ -220,7 +220,7 @@ def test_load_returns_hashes_for_loaded_blocks(
 
     ctx = make_dummy_context()
     connector.lookup(ctx, [100, 200])
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [100, 200]
 
 
@@ -230,7 +230,7 @@ def test_load_without_lookup_returns_empty(
     _, tp_mgr = kv_cache_manager
     connector = _get_connector(tp_mgr)
     ctx = make_dummy_context()
-    loaded_hashes = connector.load(ctx, [0, 1], [])
+    loaded_hashes = connector.load(ctx, [0, 1])
     assert loaded_hashes == []
 
 
@@ -256,7 +256,7 @@ def test_full_prefix_cache_hit(
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 3 * INTEGRATION_PAGE_SIZE
 
-    loaded_hashes = connector.load(ctx, [10, 11, 12], [])
+    loaded_hashes = connector.load(ctx, [10, 11, 12])
     assert loaded_hashes == [100, 200, 300]
 
 
@@ -273,7 +273,7 @@ def test_partial_prefix_hit(
     tokens = connector.lookup(ctx, [2000, 2001, 2002])
     assert tokens == 2 * INTEGRATION_PAGE_SIZE
 
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [2000, 2001]
 
 
@@ -293,8 +293,8 @@ def test_multiple_requests_independent(
     assert tokens1 == 2 * INTEGRATION_PAGE_SIZE
     assert tokens2 == 2 * INTEGRATION_PAGE_SIZE
 
-    loaded1 = connector.load(ctx1, [10, 11], [])
-    loaded2 = connector.load(ctx2, [12, 13], [])
+    loaded1 = connector.load(ctx1, [10, 11])
+    loaded2 = connector.load(ctx2, [12, 13])
     assert loaded1 == [100, 200]
     assert loaded2 == [300, 400]
 
@@ -453,7 +453,7 @@ def test_disk_tier_storage(
     assert tokens == len(block_ids) * INTEGRATION_PAGE_SIZE
 
     target_block_ids = list(range(32, 40))
-    loaded_hashes = connector.load(ctx, target_block_ids, [])
+    loaded_hashes = connector.load(ctx, target_block_ids)
     assert loaded_hashes == block_hashes
 
 
@@ -496,7 +496,7 @@ def test_tiered_storage_roundtrip(
     tokens = connector.lookup(ctx, block_hashes)
     assert tokens == len(block_ids) * INTEGRATION_PAGE_SIZE
 
-    loaded_hashes = connector.load(ctx, block_ids, [])
+    loaded_hashes = connector.load(ctx, block_ids)
     assert loaded_hashes == block_hashes
 
     loaded_data = device_tensor.to_numpy()
@@ -544,7 +544,7 @@ def test_tiered_storage_pattern_verification(
 
     ctx = make_dummy_context()
     connector.lookup(ctx, block_hashes)
-    connector.load(ctx, block_ids, [])
+    connector.load(ctx, block_ids)
 
     loaded_data = device_tensor.to_numpy()
     for block_id in block_ids:
@@ -590,12 +590,12 @@ def test_multiple_requests_with_tiered_storage(
     tokens1 = connector.lookup(ctx1, batch1_hashes)
     assert tokens1 == len(batch1_hashes) * INTEGRATION_PAGE_SIZE
 
-    loaded1 = connector.load(ctx1, list(range(32, 40)), [])
+    loaded1 = connector.load(ctx1, list(range(32, 40)))
     assert loaded1 == batch1_hashes
 
     ctx2 = create_text_context(np.array([4, 5, 6], dtype=np.int64))
     tokens2 = connector.lookup(ctx2, batch2_hashes)
     assert tokens2 == len(batch2_hashes) * INTEGRATION_PAGE_SIZE
 
-    loaded2 = connector.load(ctx2, list(range(40, 48)), [])
+    loaded2 = connector.load(ctx2, list(range(40, 48)))
     assert loaded2 == batch2_hashes
