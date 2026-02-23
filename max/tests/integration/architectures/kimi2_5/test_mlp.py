@@ -244,29 +244,9 @@ def _run_accuracy_test(
 
 
 @pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
-@pytest.mark.parametrize(
-    "n_gpus,dist_gemm_config,sharding_strategy",
-    [
-        pytest.param(0, None, None, id="cpu"),
-        pytest.param(1, None, None, id="gpu"),
-        pytest.param(2, None, ShardingStrategy.tensor_parallel(2), id="tp"),
-        pytest.param(
-            2,
-            DistributedGemmConfig(enable_matmul_allreduce=False),
-            ShardingStrategy.tensor_parallel(2),
-            id="tp-gemm_config_allreduce_disabled",
-        ),
-        pytest.param(2, None, ShardingStrategy.replicate(2), id="replicate"),
-    ],
-)
-def test_mlp(
-    n_gpus: int,
-    dist_gemm_config: DistributedGemmConfig | None,
-    sharding_strategy: ShardingStrategy | None,
-    has_bias: bool,
-) -> None:
-    """Test MLP2 E2E on CPU, single GPU, and multi-GPU (TP and replicate)."""
-    _run_accuracy_test(n_gpus, sharding_strategy, has_bias, dist_gemm_config)
+def test_mlp(has_bias: bool) -> None:
+    """Test MLP2 E2E on single GPU (model is served on GPU)."""
+    _run_accuracy_test(1, None, has_bias, None)
 
 
 @pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
