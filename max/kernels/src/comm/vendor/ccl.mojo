@@ -296,7 +296,6 @@ fn allreduce[
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
-    use_quickreduce: Bool = False,
 ](
     input_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
@@ -307,7 +306,6 @@ fn allreduce[
     ],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
-    iteration: Int = 0,
 ) raises:
     """Per-GPU allreduce for use in multi-threaded contexts.
 
@@ -320,9 +318,6 @@ fn allreduce[
     comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
-    comptime assert (
-        not use_quickreduce
-    ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
     var count = input_buffers[0].num_elements()

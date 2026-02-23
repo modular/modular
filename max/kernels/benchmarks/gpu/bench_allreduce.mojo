@@ -64,7 +64,6 @@ fn bench_reduce[
     ngpus: Int,
     *,
     use_multimem: Bool,
-    use_quickreduce: Bool,
     cache_busting: Bool,
     use_vendor_ccl: Bool = False,
 ](
@@ -209,9 +208,6 @@ fn bench_reduce[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
-    # Monotonic counter to color quickreduce flags across launches.
-    var quickreduce_iter = 0
-
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
     # spawning worker threads.
@@ -242,14 +238,12 @@ fn bench_reduce[
             allreduce_kernel[
                 ngpus=ngpus,
                 use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
             ](
                 in_bufs,
                 out_bufs[ctx_idx],
                 rank_sigs,
                 ctx_inner,
                 max_num_blocks,
-                quickreduce_iter,
             )
 
         b.iter_custom[call_fn](ctx)
@@ -350,7 +344,6 @@ def main():
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)
     comptime use_multimem = env_get_bool["use_multimem", False]()
-    comptime use_quickreduce = env_get_bool["use_quickreduce", False]()
     comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
 
@@ -384,7 +377,6 @@ def main():
         rank=rank,
         ngpus=num_gpus,
         use_multimem=use_multimem,
-        use_quickreduce=use_quickreduce,
         cache_busting=cache_busting,
         use_vendor_ccl=use_vendor_ccl,
     ](m, ctx, num_bytes, max_num_blocks, ragged)

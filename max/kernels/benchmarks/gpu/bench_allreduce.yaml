@@ -24,12 +24,10 @@ commons: &commons
 params:
 - <<: *commons
   use_multimem: [False, True]
-  use_quickreduce: [False]
   use_vendor_ccl: [False]
 
 - <<: *commons
   use_multimem: [False]
-  use_quickreduce: [False]
   use_vendor_ccl: [True]
 
 # Ragged testing for bandwidth-bound sizes only (2-stage path)
@@ -39,6 +37,5 @@ params:
   $num_bytes: "[2**i for i in range(20, 28)]"  # 1MB to 128MB
   TUNE_MAX_NUM_BLOCKS: [0]
   use_multimem: [False]
-  use_quickreduce: [False]
   use_vendor_ccl: [False]
   ragged: [True]
