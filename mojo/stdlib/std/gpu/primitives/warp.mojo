@@ -195,10 +195,10 @@ fn _dpp_reduce_and_broadcast[
         The reduction result across the lane group, broadcast to every lane
         in the group.
     """
-    constrained[
-        num_lanes >= 2 and num_lanes.is_power_of_two(),
-        "num_lanes must be a power of 2 >= 2",
-    ]()
+    comptime assert (
+        num_lanes >= 2 and num_lanes.is_power_of_two()
+    ), "num_lanes must be a power of 2 >= 2"
+
     comptime assert num_lanes <= WARP_SIZE, "num_lanes cannot exceed WARP_SIZE"
 
     # DPP control constants for the reduction pattern.
