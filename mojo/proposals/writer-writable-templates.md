@@ -1,9 +1,13 @@
-# `Writable` and `Writer` and template engines
+# `Writable` & `Writer` & Template Engines
 
-#### Status
+## Overview
+
+### Status
+
 - 2026/02/23: proposed
 
-#### Description
+### Description
+
 There are many ways we can implement each step of this, so I'm purposefully
 keeping it vague in the present document to leave the more detailed and
 technical discussions for another time. The goal is to agree on the
@@ -11,7 +15,9 @@ general direction and greenlit community-led efforts in this area (given
 it doesn't fully align with Modular's needs). This is not supposed to be stable
 nor be completed before Mojo 1.0
 
-## End-goal
+## Proposal
+
+### End-goal
 
 Let's start at the end and what all of this would allow.
 
@@ -23,23 +29,26 @@ pain-points.
 
 For some classic examples we would be able to do some things that many Python
 users know:
+
 ```mojo
 print("{:^4}".format("hi") # " hi "
 print("{!r}".format("hi") # "'hi'" it's the same as using repr("hi")
 ```
 
-### A dream come true
+#### A dream come true
 
 Once we somehow get support for the equivalent of Python's `f"{some_var}"`,
 we would use this. This is imaginary placeholder syntax.
 
 JSON templating:
+
 ```mojo
 print("!j".format({"some": True})) # "{"some":true}"
 print("!j:p".format({"some": True})) # "{\n\t"some":true\n}" pretty printing
 ```
 
 HTML templating:
+
 ```mojo
 # This would be fully type-checked and compiled html
 # making errors in the templating string at runtime
@@ -59,6 +68,7 @@ f[HTMLTemplateEngine]"""
 ```
 
 SQL templating:
+
 ```mojo
 struct Table:
   var some_col: String
@@ -85,6 +95,7 @@ f-string pretty print indentation for you 🤯
 We could also have template engines that e.g. remove newline and/or leading
 space characters in the format strings themselves, that way we avoid common
 ugly patterns of using
+
 ```mojo
 def some_fn(a: str) -> str:
   return f"""\
@@ -95,11 +106,12 @@ something: {a}\
 Bonus points, if somebody wants to build a Python syntax to Mojo template
 engine I think this would have some interesting results.
 
-## How do we get there?
+### How do we get there?
 
 #### Graphemes
 
 What Python can't deal with however is graphemes. This should work in Mojo
+
 ```mojo
 # 👨‍👩‍👧‍👦 is the union of 4 different unicode codepoints
 print("{:^4}".format("👨‍👩‍👧‍👦")) # " 👨‍👩‍👧‍👦 "
@@ -108,6 +120,7 @@ print("{:^4}".format("👨‍👩‍👧‍👦")) # " 👨‍👩‍👧‍👦
 #### Conversion flags
 
 Python has 3 conversion flags:
+
 - `!s` is the same as calling `str(elem)`
 - `!r` is same as calling `repr(elem)`
 - `!a` is the same as calling `ascii(elem)`
