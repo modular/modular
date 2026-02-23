@@ -51,7 +51,9 @@ class PatternRewriter:
     ) -> None:
         """Replace an operation with a list of values."""
 
-    def erase_op(self, op: max._mlir._mlir_libs._mlir.ir.Operation) -> None:
+    def erase_op(
+        self, op: max._mlir._mlir_libs._mlir.ir._OperationBase
+    ) -> None:
         """Erase an operation."""
 
 class RewritePatternSet:
