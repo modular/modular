@@ -35,6 +35,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     upper_bounded_default,
 )
+from max.pipelines.lib.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
 
@@ -158,7 +159,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
                 upper_bound=getattr(
                     huggingface_config, "max_position_embeddings", 2048
                 ),
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
@@ -333,7 +334,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         n_devices = len(pipeline_config.model.device_specs)
         config = cls.generate(
             pipeline_config=pipeline_config,

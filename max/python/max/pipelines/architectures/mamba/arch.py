@@ -15,9 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
 )
 
 from . import weight_adapters
@@ -30,15 +28,15 @@ mamba_arch = SupportedArchitecture(
     example_repo_ids=[
         "state-spaces/mamba-130m-hf",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [],
-        SupportedEncoding.float32: [],
+        "bfloat16": [],
+        "float32": [],
     },
     pipeline_model=MambaModel,
     tokenizer=MambaTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
