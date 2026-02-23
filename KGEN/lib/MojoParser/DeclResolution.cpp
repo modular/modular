@@ -1736,7 +1736,13 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   for (ParamDeclAttr param : paramList.paramDeclAttrs)
     shared.getClosureEmitter().collectClosureExternalRefs(param,
                                                           closureExternalRefs);
-
+  ClosureParamCaptures closureParamCaptures;
+  for (const ClosureExternalRef &ref : closureExternalRefs) {
+    AliasDeclOp aliasOp = ref.aliasOp;
+    ClosureParamCapture capturedParam{aliasOp.getName(), aliasOp.getType()};
+    closureParamCaptures[ref.closureParam.getName()].push_back(capturedParam);
+  }
+  shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
   // Emit type equality constraints for closure external references.
   // Add to tcSignature.fnConstraints so they become part of the function type.
   for (const ClosureExternalRef &ref : closureExternalRefs) {

@@ -81,6 +81,11 @@ private:
   StringRef spelling;
 };
 
+/// Store a list of parameter captures per closure type.
+using ClosureParamCapture = std::pair<StringAttr, Type>;
+using ClosureParamCaptures =
+    DenseMap<StringAttr, SmallVector<ClosureParamCapture>>;
+
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : uint8_t {
@@ -539,6 +544,11 @@ public:
   /// Override the default capture convention for captures in this scope.
   void setDefaultCaptureForScope(ASTDecl &scope,
                                  CaptureConvention defaultConvention);
+
+  ClosureParamCaptures *
+  getClosureParamCapturesForFunction(ASTDecl &functionDecl);
+  void setClosureParamCaptures(ASTDecl &functionDecl,
+                               ClosureParamCaptures closureParamCaptures);
 
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.
