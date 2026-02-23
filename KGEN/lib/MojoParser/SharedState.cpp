@@ -330,6 +330,7 @@ struct SharedState::Impl {
   /// the key ASTDecl wraps.
   DenseMap<ASTDecl *, llvm::MapVector<StringRef, Capture>> capturesInScope;
   DenseMap<ASTDecl *, CaptureConvention> captureConventionForScope;
+  DenseMap<ASTDecl *, ClosureParamCaptures> closureParamCaptures;
 
   /// Function type conversion thunks in each module.
   // The key is an ArrayAttr containing two elements:
@@ -2173,6 +2174,20 @@ bool SharedState::captureInstanceExistsInScope(ASTDecl &scope,
     return false;
   auto capturePtr = ptr->second.find(spelling);
   return capturePtr != ptr->second.end();
+}
+
+ClosureParamCaptures *
+SharedState::getClosureParamCapturesForFunction(ASTDecl &functionDecl) {
+  auto ptr = getImpl().closureParamCaptures.find(&functionDecl);
+  if (ptr == getImpl().closureParamCaptures.end())
+    return nullptr;
+  return &ptr->second;
+}
+
+void SharedState::setClosureParamCaptures(
+    ASTDecl &functionDecl, ClosureParamCaptures closureParamCaptures) {
+  getImpl().closureParamCaptures[&functionDecl] =
+      std::move(closureParamCaptures);
 }
 
 //===----------------------------------------------------------------------===//

@@ -623,6 +623,43 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   return OverloadFitness(bindings);
 }
 
+static StringAttr paramNameOfTypeIfApplicable(CValue selfCValue) {
+  auto paramType = sugarDynCast<ParamType>(selfCValue.getRValueType().mlirType);
+  if (!paramType)
+    return {};
+  auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
+  if (!paramRef)
+    return {};
+  return paramRef.getName();
+}
+
+static SmallVectorImpl<ClosureParamCapture> *
+closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
+                              const CallOperands &operands,
+                              const OverloadSet &callable) {
+  if (!funcIfDirect)
+    return nullptr;
+  if (operands.empty())
+    return nullptr;
+  ASTDecl &declScope = callable.paramBindings.declScope;
+  ClosureParamCaptures *closureParamCaptures =
+      funcIfDirect->getShared().getClosureParamCapturesForFunction(declScope);
+  if (!closureParamCaptures)
+    return nullptr;
+
+  auto selfCValue = operands[0].ir.getIfCValue();
+  if (!selfCValue)
+    return nullptr;
+  StringAttr closureParamName = paramNameOfTypeIfApplicable(selfCValue);
+  if (closureParamName) {
+    auto ptr = closureParamCaptures->find(closureParamName);
+    if (ptr == closureParamCaptures->end())
+      return nullptr;
+    return &ptr->second;
+  }
+  return nullptr;
+}
+
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `callOperands`.
@@ -714,7 +751,24 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(), allowImplicitConversions,
                      /*partial=*/false, getDiag, funcIfDirect);
-
+  // Check if we're calling a closure's __call__ method and need to set
+  // captured closure parameters.
+  SmallVectorImpl<ClosureParamCapture> *implicitParams =
+      closureParamCapturesIfClosure(funcIfDirect, operands, callable);
+  if (implicitParams) {
+    size_t paramIdx =
+        signature.getInputParamTypes().size() - implicitParams->size();
+    for (const auto &[paramName, paramType] : *implicitParams) {
+      TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
+      if (failed(inference.setInitialInferredValue(paramIdx, paramValue))) {
+        if (diag)
+          return std::move(*diag);
+        assert(!inference.unprovableConstraints.empty());
+        return std::move(inference.unprovableConstraints);
+      }
+      ++paramIdx;
+    }
+  }
   // TODO: inferForCall will eventually be separated. We will eventually blend
   // parameter inference into overload resolution have something like:
   //

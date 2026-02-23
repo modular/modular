@@ -64,6 +64,11 @@ public:
     return evaluator.getIndexBindings();
   }
 
+  /// Pre-seed an inferred parameter value by index.
+  LogicalResult setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
+    return setInferredValue(paramIdx, paramVal);
+  }
+
   // Debug util.
   void dump() const;
 

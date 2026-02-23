@@ -450,12 +450,12 @@ populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
 /// Given a wrapper function, the wrapper type, and the wrapped field, populate
 /// the operands and implicit origins necessary to bind the arguments of the
 /// wrapped function.
-static void
-getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
-                     StructFieldOp wrappedField,
-                     llvm::SmallDenseSet<StringRef> const &explicitParameters,
-                     SmallVector<Value> &operands,
-                     SmallVector<TypedAttr> &origins) {
+static void getUnwrappedOperands(
+    ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
+    StructFieldOp wrappedField,
+    llvm::SmallDenseSet<StringRef> const &explicitParameters,
+    SmallVector<Value> &operands, SmallVector<TypedAttr> &origins,
+    std::optional<std::function<Value(Value)>> transform = {}) {
   MLIRContext *ctx = b.getContext();
   // If we map a value to its field, save the lifetime name so we can map the
   // origins as well.
@@ -478,7 +478,10 @@ getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
       originToField[originReference.getName().getValue()] =
           wrappedField.getNameAttr();
     } else {
-      operands.push_back(arg);
+      if (transform.has_value())
+        operands.push_back((*transform)(arg));
+      else
+        operands.push_back(arg);
     }
   }
 
@@ -774,24 +777,74 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     llvm::SmallDenseSet<StringRef> explicitParameters;
     for (auto explicitParam : parameters)
       explicitParameters.insert(explicitParam.getName().getValue());
-    getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
-                         operands, origins);
+
+    // For __call__ methods with captured parameters (aliases), we need to
+    // rebind non-self arguments from the wrapper's parameter types to the
+    // impl's expected types (using GetWitnessAttr lookups).
+    bool needsRebinding =
+        closureParent.getClosureMethod() == ClosureMethod::CALL &&
+        !aliases.empty();
+
+    // Create rebinding transform to cast call operands.
+    DenseMap<StringRef, TypedAttr> paramToAliasValue;
+    for (auto [paramName, aliasPair] :
+         llvm::zip(parameters.take_back(aliases.size()), aliases))
+      paramToAliasValue.insert({paramName.getName(), aliasPair.second.second});
+    mlir::AttrTypeReplacer aliasReplacer;
+    aliasReplacer.addReplacement([&](ParamDeclRefAttr paramRef) -> TypedAttr {
+      auto it = paramToAliasValue.find(paramRef.getName().getValue());
+      if (it != paramToAliasValue.end())
+        return it->second;
+      return paramRef;
+    });
+    std::function<Value(Value)> rebindToSelfTypes =
+        [&](Value valueOverSelf) -> Value {
+      Type implArgType =
+          cast<Type>(aliasReplacer.replace(valueOverSelf.getType()));
+      if (implArgType != valueOverSelf.getType())
+        return RebindOp::create(b, implArgType, valueOverSelf);
+      return valueOverSelf;
+    };
+    SmallVector<TypedAttr> paramArgs;
+    FnTypeGeneratorType implCallSig = wrappedSignature;
+    if (needsRebinding) {
+      // Bind the alias parameters to the auxiliary parameters
+      SmallVector<TypedAttr> auxiliary = llvm::to_vector(
+          llvm::map_range(parameters, [&](ParamDeclAttr p) -> TypedAttr {
+            auto ptr = paramToAliasValue.find(p.getName());
+            if (ptr != paramToAliasValue.end())
+              return ptr->getSecond();
+            paramArgs.push_back(ParamDeclRefAttr::get(p));
+            return UnboundAttr::get(ctx, p.getType());
+          }));
+      // remove the auxiliary parameters from the impl call function type by
+      // specializing on aliases.
+      implCallSig = wrappedSignature.getSpecializedGenerator(
+          auxiliary, &shared.getEvaluationContext(), op.getLoc());
+    } else {
+      llvm::append_range(
+          paramArgs,
+          llvm::map_range(parameters, [&](ParamDeclAttr p) -> TypedAttr {
+            return ParamDeclRefAttr::get(p);
+          }));
+    }
     StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
+    getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
+                         operands, origins, rebindToSelfTypes);
     TypedAttr symbol = GetWitnessAttr::get(
         ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
-        parentName, traitFnOp.getSymNameAttr(), wrappedSignature);
-    SmallVector<TypedAttr> paramArgs;
-    llvm::append_range(
-        paramArgs,
-        llvm::map_range(parameters, [](ParamDeclAttr p) -> TypedAttr {
-          return ParamDeclRefAttr::get(p);
-        }));
+        parentName, traitFnOp.getSymNameAttr(), implCallSig);
 
     auto callOp = LIT::CallOp::create(
-        b, result,
+        b, implCallSig.getResultType(),
         BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext()),
         origins, operands);
-    IREmitter::emitNormalReturn(b, callOp.getResult(0));
+    Value returnValue = callOp.getResult(0);
+    if (implCallSig.getResultType() !=
+        op.getFuncTypeGenerator().getResultType())
+      returnValue = RebindOp::create(
+          b, op.getFuncTypeGenerator().getResultType(), returnValue);
+    IREmitter::emitNormalReturn(b, returnValue);
     return op;
   };
   DenseMap<StringRef, FnOp> nameToImpl;
@@ -842,6 +895,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(
       for (auto [name, value] : aliases)
         WitnessOp::create(b, name, value.second);
     }
+    ASTDecl &conformDecl = shared.getDeclResolver().addDecl(
+        witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
+    conformDecl.resolvedness = DeclResolvedness::signature;
   };
 
   for (ClosureParent &closureParent : closureParents) {
@@ -1202,21 +1258,47 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
     RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
     FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
         refType, ArgConvention::ReadMem, signatureNoSelf);
-    SmallVector<ParamDeclAttr> parameters(
-        populateParametersFromFnGeneratorType(sig));
+    // Augment the call function with auxiliary parameters. These auxiliary
+    // parameters enable rebinding argument types in terms of external
+    // parameters (e.g. "T") in terms of the alias members of closure type C
+    // (e.g. "C.T")
+    SmallVector<ParamDeclAttr> parameters;
+    SmallVector<PogMetadataAttr> extendedPogs;
+    llvm::append_range(parameters, populateParametersFromFnGeneratorType(sig));
+    llvm::append_range(extendedPogs, sig.getParamListAttrs().getPogs());
+    DenseMap<StringRef, ParamDeclAttr> aliasNameToParam;
+    for (auto [aliasName, aliasType] : aliasMembers) {
+      StringAttr nameAttr = builder.getStringAttr("_" + Twine(aliasName));
+      ParamDeclAttr param = ParamDeclAttr::get(ctx, nameAttr, aliasType);
+      parameters.push_back(param);
+      aliasNameToParam[aliasName] = param;
+      extendedPogs.push_back(
+          PogMetadataAttr::get(nameAttr, PassingKind::Implicit));
+    }
+    PogListAttr extendedParamListAttrs = PogListAttr::get(ctx, extendedPogs);
     auto callName = StringAttr::get(ctx, "__call__");
     // Calculate the argument types and result types in terms of the named
-    // parameters.
+    // parameters. Also replace GetWitnessAttr references to aliases with
+    // references to auxiliary parameters.
     ParamRefRemapper replacer(parameters);
+    mlir::AttrTypeReplacer aliasReplacer;
+    aliasReplacer.addReplacement([&](GetWitnessAttr getWitness) -> TypedAttr {
+      StringRef witnessName = getWitness.getWitnessName().getValue();
+      auto it = aliasNameToParam.find(witnessName);
+      if (it != aliasNameToParam.end())
+        return ParamDeclRefAttr::get(it->second);
+      return getWitness;
+    });
     SmallVector<Type> argumentTypes;
-    llvm::append_range(argumentTypes,
-                       llvm::map_range(sig.getArguments(), [&](Type original) {
-                         return replacer.replace(original);
-                       }));
-    Type result = replacer.replace(sig.getResults().front());
+    llvm::append_range(
+        argumentTypes, llvm::map_range(sig.getArguments(), [&](Type original) {
+          return cast<Type>(aliasReplacer.replace(replacer.replace(original)));
+        }));
+    Type result = cast<Type>(
+        aliasReplacer.replace(replacer.replace(sig.getResultType())));
     // TODO: remove capturing when legacy closures are removed.
     auto [fnOp, fnDecl] = synthesizeFunction(
-        decl, callName, parameters, sig.getParamListAttrs(), argumentTypes,
+        decl, callName, parameters, extendedParamListAttrs, argumentTypes,
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
         sig.getFnEffects()
