@@ -35,6 +35,7 @@ import io
 import logging
 import os
 import pkgutil
+import re
 import sys
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -55,6 +56,38 @@ from mblib2to3.pytree import NL
 from . import grammar, parse, pgen, token, tokenize
 
 Path = Union[str, "os.PathLike[str]"]
+
+_COLON_ONLY_LINE = re.compile(r"^\s+:\s*$")
+
+
+def _normalize_mojo_colon_on_next_line(text: str) -> str:
+    """Move a standalone colon from its own indented line to the previous line.
+
+    In Mojo, this is valid syntax:
+
+        def foo()  # comment
+            :
+            pass
+
+    but the lib2to3-based parser requires the colon on the same line as
+    the signature.
+    """
+    lines = text.split("\n")
+    result: list[str] = []
+    in_multiline_string = False
+    for line in lines:
+        if not in_multiline_string and result and _COLON_ONLY_LINE.match(line):
+            # Insert colon before any trailing comment (or at end of line).
+            code, sep, comment = result[-1].partition("  #")
+            result[-1] = code + ":" + sep + comment
+        else:
+            result.append(line)
+        # Heuristic: toggle on odd triple-quote counts. This doesn't handle
+        # triple-quotes embedded in single-quoted strings, but that combination
+        # cannot precede a block-opening colon in practice.
+        if line.count('"""') % 2 == 1 or line.count("'''") % 2 == 1:
+            in_multiline_string = not in_multiline_string
+    return "\n".join(result)
 
 
 @dataclass
@@ -225,6 +258,8 @@ class Driver:
 
     def parse_string(self, text: str, debug: bool = False) -> NL:
         """Parse a string and return the syntax tree."""
+        if self.grammar.mojo_keywords:
+            text = _normalize_mojo_colon_on_next_line(text)
         tokens = tokenize.generate_tokens(
             io.StringIO(text).readline, grammar=self.grammar
         )
