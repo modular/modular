@@ -2058,7 +2058,7 @@ VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,
 /// Given a value of !lit.origin type, return an instance of
 /// Origin[mut, lit.origin]().
 PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
-  assert(sugarIsa<OriginType>(litOrigin.getType()));
+  assert(sugarIsa<OriginType>(litOrigin.getType()) && "Need a !lit.origin");
   SyntheticNode expr(loc);
 
   // Convert to Origin type, start by looking it up.
@@ -2086,6 +2086,29 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 
   // Bind the Origin parameters.
   originType = litStruct.bindReference({mutBool, litOrigin});
+
+  // If we are referencing an origin parameter, we need to find the
+  // Origin it corresponds to and use that. Consider:
+  //   fn test[X: Origin[mut=False]](ref [X] a: Int):
+  // turns into:
+  //   fn test[X._mlir_origin, //, X: Origin](ref [X._mlir_origin] a: Int)
+  // as such, we'll see references to the mlir_origin, but we want to find
+  // X. Scrub around to try to figure this out.
+  TypedAttr paramVal;
+  if (auto paramRef = sugarDynCast<ParamDeclRefAttr>(
+          OriginType::stripMutCastAndRebind(litOrigin))) {
+    auto [curDecl, paramDecls, paramIdx] =
+        getDeclScope().lookupParamReference(paramRef);
+    // We found the MLIR origin, but it is an autoparam at the start of
+    // the list.  Find the Origin which can be explicitly declared
+    // anywhere later.
+    if (curDecl) {
+      for (size_t i = paramIdx + 1, e = paramDecls.size(); i < e; ++i) {
+        if (isEqualCanon(paramDecls[i].getType(), originType))
+          return ParamDeclRefAttr::get(paramDecls[i]);
+      }
+    }
+  }
 
   // There is no actual reason to construct the stateless Origin type here, just
   // directly make the same attribute the ctor will fold to.

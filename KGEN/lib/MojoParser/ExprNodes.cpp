@@ -4085,13 +4085,25 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
   // Gather the origins of each subexpression value. If any of the origins
   // are immutable, then we mutcast the rest to immutable.
   SmallVector<TypedAttr> origins;
+  CValue singleOrigin;
+
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithOutEvaluatingIt(
         subExpr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+          // If this is a value of std.Origin type, remember it.
+          if (auto origin = ASTType(result.getType()).isOriginStruct())
+            singleOrigin = result;
+
           if (auto origin = emitter.extractOriginOf(subExpr, result))
             origins.push_back(origin);
         });
   }
+
+  // If we had a single value of Origin type, use it directly. This allows
+  // parameters to match up more successfully when the origin is a parameter,
+  // rather than getting an UnknownAttr.
+  if (origins.size() == 1 && singleOrigin)
+    return emitter.emitResult(singleOrigin, this, dest);
 
   // Form the final value of !lit.origin type.
   auto resultLitOrigin = OriginUnionAttr::get(emitter.getContext(), origins);

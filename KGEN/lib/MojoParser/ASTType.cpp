@@ -458,6 +458,41 @@ bool ASTType::isTypeCheckErrorType() const {
   return sugarIsa<TypeCheckErrorType>(mlirType);
 }
 
+/// If this type is a standard library Origin struct, return the !lit.origin
+/// parameter, otherwise return null.
+TypedAttr ASTType::isOriginStruct() const {
+  auto structType = sugarDynCast<LIT::StructType>(mlirType);
+  if (structType &&
+      structType.getSymbol().getLeafReference().strref() == "Origin" &&
+      structType.getParamValues().size() == 2) {
+    auto result = structType.getParamValues()[1];
+    if (sugarIsa<TypeCheckErrorType>(result.getType()))
+      return {};
+    assert(sugarIsa<OriginType>(result.getType()) &&
+           "Origin struct should have a !lit.origin parameter");
+    return result;
+  }
+
+  // Not the origin struct.
+  return {};
+}
+
+/// Given a parameter that is a !lit.origin or an Origin, return the
+/// underlying !lit.origin.  This returns null on failure.
+TypedAttr ASTType::extractOriginOf(TypedAttr value) {
+  // If this is the Origin[mut, litorigin] type, take the origin from the 2nd
+  // parameter.
+  if (auto originParam = ASTType(value.getType()).isOriginStruct())
+    return originParam;
+
+  // A raw !lit.origin always works.
+  if (isa<OriginType>(value.getType()))
+    return value;
+  if (auto type = dyn_cast<OriginType>(getCanonicalType(value.getType())))
+    return ParamOperatorAttr::getRebind(value, type);
+  return {};
+}
+
 /// Return the @__nonmaterializable decorator target for the type, or null if
 /// there is none.
 ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {

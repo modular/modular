@@ -270,10 +270,14 @@ public:
   static TypedAttr extractStructField(TypedAttr value, StringRef fieldName,
                                       llvm::SMLoc loc, SharedState &shared);
 
+  /// Return the !lit.origin parameter if this type is a standard library
+  /// `Origin` struct, otherwise return null.
+  TypedAttr isOriginStruct() const;
+
   /// Given a parameter that is a !lit.origin or an Origin, return the
-  /// underlying !lit.origin.  This returns null on failure.
-  static TypedAttr extractOriginOf(llvm::SMLoc loc, TypedAttr value,
-                                   SharedState &shared);
+  /// underlying !lit.origin.  This returns null on failure.  This does not
+  /// resolve the origin type, so it may be a !lit.origin or an Origin type.
+  static TypedAttr extractOriginOf(TypedAttr value);
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 

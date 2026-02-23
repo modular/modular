@@ -8,12 +8,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "IREmitter.h"
+#include "ParserEvaluationContext.h"
+
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-
-#include "ParserEvaluationContext.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -1055,26 +1056,12 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     // about x._mlir_origin.
     if (ASTDecl *ctxDecl =
             diagShared->declResolver->getDeclCurrentlyProcessing()) {
-      auto [curDecl, paramDecls, paramIdx] =
-          ctxDecl->lookupParamReference(declRef);
-      if (curDecl) {
-        // The Origin may be any later parameter in the list, it just refers to
-        // this mlir_origin parameter.
-        for (size_t i = paramIdx + 1, e = paramDecls.size(); i < e; ++i) {
-          auto paramType =
-              sugarDynCast<LIT::StructType>(paramDecls[i].getType());
-          ParamDeclRefAttr paramDeclRef;
-          if (paramType &&
-              paramType.getSymbol().getLeafReference().strref() == "Origin" &&
-              paramType.getParamValues().size() == 2) {
-            if ((paramDeclRef = dyn_cast<ParamDeclRefAttr>(
-                     paramType.getParamValues()[1])) &&
-                paramDeclRef.getName() == declRef.getName()) {
-              declRef = ParamDeclRefAttr::get(paramDecls[i]);
-              break;
-            }
-          }
-        }
+      if (sugarIsa<OriginType>(declRef.getType())) {
+        IREmitter emitter(*ctxDecl, ExprContext::EC_Origin);
+        TypedAttr paramVal =
+            emitter.getStdlibOriginOf(declRef, ctxDecl->getLoc());
+        if (auto result = dyn_cast<ParamDeclRefAttr>(paramVal))
+          declRef = result;
       }
     }
 
