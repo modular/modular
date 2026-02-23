@@ -33,9 +33,9 @@ fn test_for_list():
     # Test for strings
     concated = ""
 
+    # MOCO-2091
     comptime for str in ["a", "b", "c"]:
-        var str2 = str  # Work around origin issue.
-        concated += str2
+        concated += str
     debug_assert(concated == "abc")
 
 
