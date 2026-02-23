@@ -205,6 +205,9 @@ what we publish.
 
 ### Library changes
 
+- `Span.__eq__` now uses `memcmp` for `TrivialRegisterPassable` element types
+  instead of an element-by-element loop.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 

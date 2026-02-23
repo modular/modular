@@ -23,9 +23,9 @@ from builtin.builtin_slice import ContiguousSlice
 from reflection import call_location
 from bit._mask import splat
 from bit import pop_count
-from memory import pack_bits, uninit_copy_n
+from memory import memcmp, pack_bits, uninit_copy_n
 from collections._index_normalization import normalize_index
-from sys import align_of
+from sys import align_of, size_of
 from sys.info import simd_width_of
 
 from algorithm import vectorize
@@ -555,6 +555,16 @@ struct Span[
         # same pointer and length, so equal
         if self.unsafe_ptr() == rhs.unsafe_ptr():
             return True
+        # Fast path: use memcmp for TrivialRegisterPassable types.
+        comptime if conforms_to(_T, TrivialRegisterPassable):
+            return (
+                memcmp(
+                    self.unsafe_ptr().bitcast[Byte](),
+                    rhs.unsafe_ptr().bitcast[Byte](),
+                    len(self) * size_of[_T](),
+                )
+                == 0
+            )
         for i in range(len(self)):
             if self[i] != rhs[i]:
                 return False
