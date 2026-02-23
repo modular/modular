@@ -7,17 +7,29 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-modular_py_test(
-    name = "nn",
-    srcs = glob(["*.py"]),
-    mojo_deps = ["//max:MOGGKernelAPI"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/mlir",
-        "//max/python/max/nn",
-        requirement("numpy"),
-    ],
-)
+[
+    modular_py_test(
+        name = src.replace(".py", ""),
+        srcs = [
+            "__init__.py",
+            "conftest.py",
+            "norm_test_utils.py",
+            src,
+        ],
+        mojo_deps = ["//max:MOGGKernelAPI"],
+        tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
+            # FIXME: SDLC-3032
+            "test_module.py",
+        ] else []),
+        deps = [
+            "//max/python/max/driver",
+            "//max/python/max/dtype",
+            "//max/python/max/engine",
+            "//max/python/max/graph",
+            "//max/python/max/mlir",
+            "//max/python/max/nn",
+            requirement("numpy"),
+        ],
+    )
+    for src in glob(["test_*.py"])
+]

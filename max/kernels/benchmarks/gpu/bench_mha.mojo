@@ -153,8 +153,7 @@ fn run_mha[
                 var offset_v = 0
                 var offset_o = 0
 
-                @parameter
-                if cache_busting:
+                comptime if cache_busting:
                     offset_q = _calculate_offset(iteration, stride_q, buf_q)
                     offset_k = _calculate_offset(iteration, stride_k, buf_k)
                     offset_v = _calculate_offset(iteration, stride_v, buf_v)

@@ -147,8 +147,7 @@ fn bench_rms_norm_fused_fp8[
             var offset_in = 0
             var offset_out = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_in = _calculate_offset(
                     iteration, stride_data, buf_data_in
                 )
@@ -231,8 +230,7 @@ fn bench_rms_norm_fused_fp8[
             var offset_in = 0
             var offset_out = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_in = _calculate_offset(
                     iteration, stride_data, buf_data_in
                 )
@@ -307,8 +305,7 @@ fn bench_rms_norm_fused_fp8[
             var offset_in = 0
             var offset_out = 0
 
-            @parameter
-            if cache_busting:
+            comptime if cache_busting:
                 offset_in = _calculate_offset(
                     iteration, stride_data, buf_data_in
                 )

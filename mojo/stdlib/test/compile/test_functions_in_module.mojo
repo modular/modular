@@ -33,7 +33,10 @@ def main():
         "test_functions_in_module::foo()",
         "test_functions_in_module::bar(::Int)",
         "test_functions_in_module::bar(::Int,::Int)",
-        "test_functions_in_module::foobar(::SIMD[::DType(float64), ::Int(1)])",
+        (
+            "test_functions_in_module::foobar(z:::SIMD[::DType(float64),"
+            " ::Int(1)])"
+        ),
     ]
 
     comptime for i in range(len(funcs)):

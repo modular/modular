@@ -59,6 +59,7 @@ def register_all_models() -> None:
     from .olmo2 import olmo2_arch
     from .olmo3 import olmo3_arch
     from .phi3 import phi3_arch
+    from .phi3_legacy import phi3_legacy_arch
     from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
@@ -93,6 +94,7 @@ def register_all_models() -> None:
         olmo2_arch,
         olmo3_arch,
         phi3_arch,
+        phi3_legacy_arch,
         pixtral_arch,
         qwen2_arch,
         qwen2_5_vl_arch,

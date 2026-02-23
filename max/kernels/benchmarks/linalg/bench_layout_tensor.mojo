@@ -99,8 +99,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
             @parameter
             fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
-                @parameter
-                for _k in range(tile_y):
+                comptime for _k in range(tile_y):
                     var k = _k + y
                     var A_val = A[m, k]
 
@@ -152,11 +151,8 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                 var dst_view = dst.tile[tile_m, tile_n](m_1, n_1)
                 var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1)
 
-                @parameter
-                for m in range(tile_m):
-
-                    @parameter
-                    for k in range(tile_k):
+                comptime for m in range(tile_m):
+                    comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
@@ -223,11 +219,8 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
 
                 rhs_cache.copy_from(rhs_view)
 
-                @parameter
-                for m in range(tile_m):
-
-                    @parameter
-                    for k in range(tile_k):
+                comptime for m in range(tile_m):
+                    comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:

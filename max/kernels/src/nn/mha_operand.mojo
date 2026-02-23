@@ -32,6 +32,8 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
 
     comptime dtype: DType
     comptime page_size: Int
+    comptime quantization_enabled: Bool
+    comptime quantization_granularity: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -97,6 +99,16 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         through the MMA reduction."""
         ...
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+        """Returns the base pointer to the quantization scales tensor.
+
+        Returns a null pointer for operands without quantization support.
+        """
+        ...
+
 
 struct KVCacheMHAOperand[
     cache_t: KVCacheT,
@@ -109,6 +121,8 @@ struct KVCacheMHAOperand[
 
     comptime dtype = Self.cache_t.dtype
     comptime page_size = Self.cache_t.page_size_
+    comptime quantization_enabled = Self.cache_t.quantization_enabled
+    comptime quantization_granularity = Self.cache_t.quantization_granularity
     var cache: Self.cache_t
 
     comptime device_type: AnyType = Self
@@ -206,6 +220,15 @@ struct KVCacheMHAOperand[
             self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
         )
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+        """Returns the base pointer to the quantization scales tensor."""
+        return rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+            self.cache.scales_raw_ptr()
+        )
+
 
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
     MHAOperand, TrivialRegisterPassable
@@ -214,6 +237,8 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
+    comptime quantization_enabled = False
+    comptime quantization_granularity = 0
     var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
 
     comptime device_type: AnyType = Self
@@ -323,6 +348,14 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
             ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+        """Returns a null pointer. LayoutTensor operands do not support
+        quantization."""
+        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()
+
 
 struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     MHAOperand, TrivialRegisterPassable
@@ -331,6 +364,8 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
+    comptime quantization_enabled = False
+    comptime quantization_granularity = 0
     var buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
         DType.uint32, Self.cache_layout, ImmutAnyOrigin
@@ -459,3 +494,11 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         tma = type_of(tma).create[depth=depth](
             ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
+
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+        """Returns a null pointer. Ragged operands do not support
+        quantization."""
+        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()

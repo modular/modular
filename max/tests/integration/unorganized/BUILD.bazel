@@ -248,10 +248,10 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_eagle_hidden_states_ops",
+    name = "test_eagle_hidden_state_manager",
     size = "large",
     srcs = [
-        "test_eagle_hidden_states_ops.py",
+        "test_eagle_hidden_state_manager.py",
     ],
     env = {"MODULAR_PATH": "."},
     gpu_constraints = ["//:has_multi_gpu"],
@@ -262,7 +262,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("torch"),
@@ -300,6 +301,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",
         "no-sandbox",
         "requires-network",
     ],

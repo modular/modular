@@ -401,7 +401,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        if self.pipeline_config.enable_echo:
+        if self.pipeline_config.model.enable_echo:
             raise ValueError(
                 "Pixtral model does not currently implement enable echo."
             )

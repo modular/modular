@@ -210,7 +210,9 @@ from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.mla_graph import (
     mla_prefill_branch_fp8,
+    mla_prefill_branch_bf16,
     mla_decode_branch_fp8,
+    mla_decode_branch_bf16,
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
 )
@@ -3085,7 +3087,7 @@ struct PadConstant:
                 ctx.get_device_context(),
             )
         else:
-            constrained[False, "Unknown target " + target]()
+            comptime assert False, "Unknown target " + target
 
     @staticmethod
     fn shape[
@@ -7254,7 +7256,7 @@ struct Struct_kv_cache_get_max_seq_len_paged:
         max_seq_len[0] = kv_collection.max_seq_length
 
 
-@compiler.register("mo.mla.graph.prefill.paged")
+@compiler.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
     @always_inline
     @staticmethod
@@ -7280,8 +7282,8 @@ struct Struct_mla_prefill_graph_paged:
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
-        kv_b_proj: InputTensor[dtype=fp8_dtype, rank=2],
-        kv_b_proj_scale: InputTensor[dtype=fp8_scale_dtype, rank=2],
+        w_k: InputTensor[dtype=fp8_dtype, rank=2],
+        w_uv: InputTensor[dtype=fp8_dtype, rank=3],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
@@ -7289,6 +7291,8 @@ struct Struct_mla_prefill_graph_paged:
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
+        w_k_scale: InputTensor[dtype=fp8_scale_dtype, rank=2],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7300,10 +7304,11 @@ struct Struct_mla_prefill_graph_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.prefill.paged is only supported on GPU"
+        ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.paged", task_id=get_safe_task_id(context)
+            "mo.mla.graph.prefill.paged.fp8",
+            task_id=get_safe_task_id(context),
         ):
             mla_prefill_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
@@ -7325,13 +7330,15 @@ struct Struct_mla_prefill_graph_paged:
                 buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
-                kv_b_proj.to_tile_tensor[DType.int64](),
-                kv_b_proj_scale.to_tile_tensor[DType.int64](),
+                w_k.to_tile_tensor[DType.int64](),
+                w_k_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
 
-@compiler.register("mo.mla.graph.decode.paged")
+@compiler.register("mo.mla.graph.decode.paged.fp8")
 struct Struct_mla_decode_graph_paged:
     @always_inline
     @staticmethod
@@ -7355,9 +7362,7 @@ struct Struct_mla_decode_graph_paged:
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3],
-        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3],
-        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
@@ -7365,6 +7370,8 @@ struct Struct_mla_decode_graph_paged:
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
+        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7376,10 +7383,11 @@ struct Struct_mla_decode_graph_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.decode.paged is only supported on GPU"
+        ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged", task_id=get_safe_task_id(context)
+            "mo.mla.graph.decode.paged.fp8",
+            task_id=get_safe_task_id(context),
         ):
             mla_decode_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
@@ -7406,7 +7414,141 @@ struct Struct_mla_decode_graph_paged:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.decode.paged")
+@compiler.register("mo.mla.graph.prefill.paged")
+struct Struct_mla_prefill_graph_bf16_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype = DType.bfloat16, rank=3],
+        q: InputTensor[dtype = DType.bfloat16, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
+        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype = DType.bfloat16, rank=2],
+        w_uv: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.prefill.paged is only supported on GPU"
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_prefill_branch_bf16[
+                mask_str=mask_str,
+                score_mod_str=score_mod_str,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
+                Int(buffer_length),
+                w_k.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.decode.paged")
+struct Struct_mla_decode_graph_bf16_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype = DType.bfloat16, rank=3],
+        q: InputTensor[dtype = DType.bfloat16, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
+        w_uk: InputTensor[dtype = DType.bfloat16, rank=3],
+        w_uv: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.decode.paged is only supported on GPU"
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.decode.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_decode_branch_bf16[
+                mask_str=mask_str,
+                score_mod_str=score_mod_str,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.prefill.decode.paged.fp8")
 struct Struct_mla_prefill_graph_decode_paged:
     @always_inline
     @staticmethod
@@ -7433,12 +7575,9 @@ struct Struct_mla_prefill_graph_decode_paged:
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
-        kv_b_proj: InputTensor[dtype=fp8_dtype, rank=2],
-        kv_b_proj_scale: InputTensor[dtype=fp8_scale_dtype, rank=2],
+        w_k: InputTensor[dtype=fp8_dtype, rank=2],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3],
-        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3],
-        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
@@ -7446,6 +7585,9 @@ struct Struct_mla_prefill_graph_decode_paged:
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
+        w_k_scale: InputTensor[dtype=fp8_scale_dtype, rank=2],
+        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7457,10 +7599,10 @@ struct Struct_mla_prefill_graph_decode_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
+        ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged",
+            "mo.mla.graph.prefill.decode.paged.fp8",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_fp8[
@@ -7484,8 +7626,8 @@ struct Struct_mla_prefill_graph_decode_paged:
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
                 Int(kv_collection.max_seq_length),
-                kv_b_proj.to_tile_tensor[DType.int64](),
-                kv_b_proj_scale.to_tile_tensor[DType.int64](),
+                w_k.to_tile_tensor[DType.int64](),
+                w_k_scale.to_tile_tensor[DType.int64](),
                 w_uk.to_tile_tensor[DType.int64](),
                 w_uk_scale.to_tile_tensor[DType.int64](),
                 w_uv.to_tile_tensor[DType.int64](),
@@ -7494,29 +7636,31 @@ struct Struct_mla_prefill_graph_decode_paged:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.decode.bf16.paged")
+@compiler.register("mo.mla.graph.prefill.decode.paged")
 struct Struct_mla_prefill_graph_decode_bf16_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        q: InputTensor[dtype=dtype, rank=3],
+        output: OutputTensor[dtype = DType.bfloat16, rank=3],
+        q: InputTensor[dtype = DType.bfloat16, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
-        kv_norm_gamma: InputTensor[dtype=dtype, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
-        kv_b_proj: InputTensor[dtype=dtype, rank=2],
-        w_uk: InputTensor[dtype=dtype, rank=3],
-        w_uv: InputTensor[dtype=dtype, rank=3],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        w_k: InputTensor[dtype = DType.bfloat16, rank=2],
+        w_uk: InputTensor[dtype = DType.bfloat16, rank=3],
+        w_uv: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
@@ -7534,10 +7678,10 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 
         comptime assert is_gpu[
             target
-        ](), "mo.mla.graph.prefill.decode.bf16.paged is only supported on GPU"
+        ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
         with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.bf16.paged",
+            "mo.mla.graph.prefill.decode.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_bf16[
@@ -7558,7 +7702,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
                 Int(kv_collection.max_seq_length),
-                kv_b_proj.to_tile_tensor[DType.int64](),
+                w_k.to_tile_tensor[DType.int64](),
                 w_uk.to_tile_tensor[DType.int64](),
                 w_uv.to_tile_tensor[DType.int64](),
                 context.get_device_context(),

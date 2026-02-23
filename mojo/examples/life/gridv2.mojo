@@ -33,7 +33,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
         self.data = alloc[Int8](self.num_cells)
         memset_zero(self.data, self.num_cells)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.data = alloc[Int8](self.num_cells)
         memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged

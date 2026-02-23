@@ -1,0 +1,25 @@
+---
+title: Context encoding
+meta_title: What is context encoding?
+---
+
+Context encoding (also known as "prefill") is the first phase in a [transformer
+model](transformer.mdx) that converts input data into a cached numerical
+representation ([KV cache](kv-cache.mdx)) and predicts the first token. It
+occurs after the input has already been [tokenized](tokenization.mdx)
+(preprocessed).
+
+Context encoding is then followed by the [autoregressive](autoregression.mdx)
+token generation phase, which produces one token at a time. If it weren't for
+the KV cache built during context encoding, the model would have to recalculate
+the [self-attention](self-attention.mdx) score for each token in the original
+input, every time it starts to predict a new token.
+
+Context encoding is usually the most computationally expensive phase in an LLM,
+because it must calculate attention scores for every token in the input
+sequence. Although this process may be parallelized across thousands of GPU
+threads (because each token can be processed separately), it is still a
+significant latency factor for time-to-first-token (TTFT). The model can
+usually produce subsequent tokens much faster than the first one because each
+round of token generation needs to calculate an attention score for only one
+token (the new one).

@@ -47,8 +47,7 @@ fn simd_sqrt(x: SIMD) -> type_of(x):
 fn _simd_load_internal[
     simd_width: Int
 ](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
-    @parameter
-    if buffer.type == DType.bool:
+    comptime if buffer.type == DType.bool:
         var v = buffer.data.bitcast[UInt8]().load[width=simd_width](index)
         return v.cast[buffer.type]()
     return buffer.data.load[width=simd_width](index)
@@ -92,8 +91,7 @@ fn simd_store[
     var flat_index = _compute_ndbuffer_offset(buffer, index)
 
     # We have to cast bools into their runtime storage type.
-    @parameter
-    if buffer.type == DType.bool:
+    comptime if buffer.type == DType.bool:
         buffer.data.bitcast[UInt8]().store(flat_index, val.cast[DType.uint8]())
     else:
         buffer.data.store(flat_index, val)
@@ -180,8 +178,7 @@ fn run_elementwise[
             ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
 
-                @parameter
-                if emulate_graph_compiler:
+                comptime if emulate_graph_compiler:
                     # In this mode we use the simd_store / simd_load that are copied
                     # from MOGG.mojo. This is used to emulate what the graph compiler
                     # would generate for the elementwise operations.
@@ -238,8 +235,7 @@ fn run_elementwise[
 fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
     return t
@@ -262,9 +258,7 @@ def main():
 
     var m = Bench()
     with DeviceContext() as ctx:
-
-        @parameter
-        if emulate_graph_compiler and aligned_memory_config:
+        comptime if emulate_graph_compiler and aligned_memory_config:
             # The graph compiler simd_load and store are not
             # compatible with aligned load/store since it
             # does a dynamic check on the stride.

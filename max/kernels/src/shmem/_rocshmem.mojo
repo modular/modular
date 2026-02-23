@@ -162,7 +162,7 @@ struct ROCSHMEMUniqueID(ImplicitlyCopyable):
     fn __init__(out self):
         self.data = InlineArray[Byte, 128](fill=0)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.data = copy.data.copy()
 
 

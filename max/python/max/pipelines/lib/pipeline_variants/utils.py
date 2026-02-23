@@ -26,7 +26,6 @@ from max.interfaces import (
 )
 from transformers import AutoConfig
 
-from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
 
 if TYPE_CHECKING:
@@ -172,7 +171,7 @@ def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
         List of paths to weight files (local or downloaded).
     """
     weight_repo = model_config.huggingface_weight_repo
-    if weight_repo.repo_type == RepoType.online:
+    if weight_repo.repo_type == "online":
         # Download weight files if not existent.
         return download_weight_files(
             huggingface_model_id=weight_repo.repo_id,

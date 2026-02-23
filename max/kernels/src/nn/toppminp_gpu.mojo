@@ -234,7 +234,7 @@ fn normalize(
     elif dtype == DType.bfloat16:
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
-        constrained[False, "unhandled normalize type"]()
+        comptime assert False, "unhandled normalize type"
         return 0
 
 
@@ -481,7 +481,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._selection = 0
         self._size = size
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self._d_buffers = copy._d_buffers.copy()
         self._selection = copy._selection
         self._size = copy._size

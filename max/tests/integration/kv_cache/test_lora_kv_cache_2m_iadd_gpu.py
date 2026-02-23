@@ -148,6 +148,7 @@ def run_kv_cache_2m_iadd(
         params=kv_params,
         session=session,
         total_num_pages=16,
+        max_batch_size=128,
     )
 
     batch = []

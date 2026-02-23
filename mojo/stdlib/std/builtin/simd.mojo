@@ -869,7 +869,7 @@ struct SIMD[dtype: DType, size: Int](
             self = Scalar[Self.dtype](Int(py=py))
         else:
             self = Scalar[Self.dtype]()
-            constrained[False, "unsupported dtype"]()
+            comptime assert False, "unsupported dtype"
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -3242,7 +3242,7 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
         return _tbl1(lookup_table, indices)
     else:
         # TODO: Change the error message when we allow SSE3
-        constrained[False, "To call _pshuf_or_tbl1() you need sse4 or neon."]()
+        comptime assert False, "To call _pshuf_or_tbl1() you need sse4 or neon."
         return {}
 
 
@@ -3312,7 +3312,7 @@ fn _pow[
         comptime for i in range(width):
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
     else:
-        constrained[False, "unsupported type combination"]()
+        comptime assert False, "unsupported type combination"
         return {}
 
 

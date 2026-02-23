@@ -52,8 +52,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var output_dims = IndexList[spec.static_info.rank](1)
 
-    @parameter
-    for i in range(spec.static_info.rank):
+    comptime for i in range(spec.static_info.rank):
         output_dims[i] = (
             spec.input_dims[i]
             + spec.pad[2 * i]
@@ -64,8 +63,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var packed_filter_shape = IndexList[spec.static_info.rank + 3](1)
 
-    @parameter
-    for i in range(spec.static_info.rank):
+    comptime for i in range(spec.static_info.rank):
         packed_filter_shape[i + 1] = output_dims[i]
     packed_filter_shape[0] = spec.num_groups * ceildiv(
         f_per_group, micro_kernel_f_size
@@ -111,8 +109,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if spec.static_info.rank == 1:
+    comptime if spec.static_info.rank == 1:
         pad_w = Index(spec.pad[0], spec.pad[1])
     elif spec.static_info.rank == 2:
         pad_h = Index(spec.pad[0], spec.pad[1])
@@ -242,8 +239,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
     fn flops(self) -> Int:
         var output_dims = IndexList[Self.static_info.rank](1)
 
-        @parameter
-        for i in range(Self.static_info.rank):
+        comptime for i in range(Self.static_info.rank):
             output_dims[i] = (
                 self.input_dims[i]
                 + self.pad[2 * i]
@@ -357,8 +353,7 @@ def main():
         return rebind[IndexList[3 * fp32_3d.rank]](idx)
 
     # 1D benchmarks for wavlm
-    @parameter
-    if env_get_string["model", "walvm"]() == "wavlm":
+    comptime if env_get_string["model", "walvm"]() == "wavlm":
         bench_conv(m, spec1d(2, 16000, 1, 10, 512, 5, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 3199, 512, 3, 512, 2, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 1599, 512, 3, 512, 2, 1, Index(0, 0), 1))

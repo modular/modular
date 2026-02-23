@@ -115,11 +115,6 @@ trait Writer(ImplicitlyDestructible):
     ```
     """
 
-    @deprecated("Writer only supports valid UTF-8, use `write_string` instead")
-    @doc_private
-    fn write_bytes(mut self, bytes: Span[Byte]):
-        self.write_string(StringSlice(unsafe_from_utf8=bytes))
-
     fn write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `Writer`.
