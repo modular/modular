@@ -218,7 +218,15 @@ def test_replay_with_external_allocations() -> None:
 
     del external_buffers
     accelerator.synchronize()
+
     del results
+    accelerator.synchronize()
+
+    del input_tensor
+    del input_buf
+    accelerator.synchronize()
+
+    del model
     accelerator.synchronize()
 
 
@@ -227,18 +235,17 @@ def test_debug_verify_replay() -> None:
     if accelerator_count() == 0:
         pytest.skip("GPU not available")
 
-    # TODO: Fix this
-    pytest.skip("This test causes stateful issues due to the previous test")
-
     accelerator = Accelerator()
+    accelerator.synchronize()
+
     session = InferenceSession(devices=[accelerator])
 
-    # Create a simple graph that adds 1 to the input
+    # Create a simple graph that adds 2 to the input
     with Graph(
         "debug_verify_test",
         input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
     ) as graph:
-        graph.output(graph.inputs[0].tensor + 1)
+        graph.output(graph.inputs[0].tensor + 2)
 
     model = session.load(graph)
     input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
@@ -256,5 +263,5 @@ def test_debug_verify_replay() -> None:
     model.replay(input_tensor)
     (output,) = model.execute(input_tensor)
     np.testing.assert_allclose(
-        output.to_numpy(), np.arange(4, dtype=np.float32) + 1
+        output.to_numpy(), np.arange(4, dtype=np.float32) + 2
     )
