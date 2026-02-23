@@ -81,7 +81,10 @@ def test_slice_stringable():
     assert_equal(repr(slice(None, 2, 3)), "slice(None, 2, 3)")
     assert_equal(repr(slice(10)), "slice(None, 10, None)")
 
-
+def test_slice_write_repr_to():
+    assert_equal(repr(slice(1, 5, 2)), "slice(1, 5, 2)")
+    assert_equal(repr(slice(None, None, None)), "slice(None, None, None)")
+    
 def test_slice_eq():
     assert_equal(slice(1, 2, 3), slice(1, 2, 3))
     assert_equal(slice(None, 1, None), slice(1))
