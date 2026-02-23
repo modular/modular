@@ -190,6 +190,25 @@ def test_equality() raises:
     assert_true(sp[0:0] == sp3[0:0])
 
 
+def test_byte_span_equality() raises:
+    # equal spans (same content, different pointers)
+    var a: List[Byte] = [1, 2, 3, 4]
+    var b: List[Byte] = [1, 2, 3, 4]
+    assert_true(Span(a) == Span(b))
+    assert_false(Span(a) != Span(b))
+    # not equal
+    var c: List[Byte] = [1, 2, 3, 5]
+    assert_false(Span(a) == Span(c))
+    assert_true(Span(a) != Span(c))
+    # different lengths
+    var d: List[Byte] = [1, 2, 3]
+    assert_false(Span(a) == Span(d))
+    # empty spans
+    var e: List[Byte] = []
+    var f: List[Byte] = []
+    assert_true(Span(e) == Span(f))
+
+
 def test_fill() raises:
     var a = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     var s = Span(a)
