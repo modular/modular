@@ -14,8 +14,9 @@
 from math import ceildiv
 from sys.info import num_physical_cores
 
-from algorithm import map, parallelize, sync_parallelize
+from algorithm import map, parallelize, sync_parallelize, parallelize_over_rows
 from testing import TestSuite
+from utils import IndexList
 
 
 # CHECK-LABEL: test_sync_parallelize
@@ -112,6 +113,18 @@ def test_parallelize_negative_work():
     print("== test_parallelize_negative_work")
     # This should do nothing
     parallelize[printme](-1, 4)
+
+
+# CHECK-LABEL: test_parallelize_over_rows_zero_work
+def test_parallelize_over_rows_zero_work():
+    print("== test_parallelize_over_rows_zero_work")
+
+    # This should do nothing
+    @parameter
+    fn noop(start: Int, end: Int):
+        pass
+
+    parallelize_over_rows[noop](IndexList[1](0), 0, 1)
 
 
 def main():
