@@ -1606,34 +1606,15 @@ LogicalResult ParamInf::inferFromDefaults() {
         auto origin = // Get the Origin value.
             evaluator.getReboundAttribute(paramType.getParamValues()[1]);
 
-        // If we are referencing an origin parameter, we need to find the
-        // Origin it corresponds to and use that. Consider:
-        //   fn test[X: Origin[mut=False]](ref [X] a: Int):
-        // turns into:
-        //   fn test[X._mlir_origin, //, X: Origin](ref [X._mlir_origin] a: Int)
-        // as such, we'll see references to the mlir_origin, but we want to find
-        // X. Scrub around to try to figure this out.
-        TypedAttr paramVal;
-        if (auto paramRef = sugarDynCast<ParamDeclRefAttr>(
-                OriginType::stripMutCastAndRebind(origin))) {
-          auto [curDecl, paramDecls, paramIdx] =
-              getDeclScope().lookupParamReference(paramRef);
-          // We found the MLIR origin, but it is an autoparam at the start of
-          // the list.  Find the Origin which can be explicitly declared
-          // anywhere later.
-          if (curDecl) {
-            for (size_t i = paramIdx + 1, e = paramDecls.size(); i < e; ++i) {
-              if (isEqualCanon(paramDecls[i].getType(), paramType)) {
-                paramVal = ParamDeclRefAttr::get(paramDecls[i]);
-                break;
-              }
-            }
-          }
-        }
+        // If the !lit.origin is unbound, then we have a partial binding - don't
+        // bind a concrete Origin around an unbound Origin, just let other
+        // things leave it unbound also.  We don't want things like
+        // Span[mut=False] to bind the Origin.
+        if (isa<UnboundAttr>(origin))
+          continue;
 
-        if (!paramVal)
-          paramVal = emitter.getStdlibOriginOf(origin, getDeclScope().getLoc());
-
+        TypedAttr paramVal =
+            emitter.getStdlibOriginOf(origin, getDeclScope().getLoc());
         if (failed(setInferredValue(idx, paramVal)))
           return failure();
         continue;

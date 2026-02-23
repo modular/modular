@@ -57,39 +57,13 @@ TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
   return LIT::StructExtractAttr::get(value, fieldOp);
 }
 
-/// Given a parameter that is a !lit.origin or an Origin, return the
-/// underlying !lit.origin.  This returns null on failure.
-TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
-                                   SharedState &shared) {
-  // If this is the Origin[mut, litorigin] type, take the origin from the 2nd
-  // parameter.
-  if (auto structType = sugarDynCast<LIT::StructType>(value.getType())) {
-    if (structType.getSymbol().getLeafReference().strref() == "Origin" &&
-        structType.getParamValues().size() == 2) {
-      auto result = structType.getParamValues()[1];
-      if (sugarIsa<TypeCheckErrorType>(result.getType()))
-        return {};
-      assert(sugarIsa<OriginType>(result.getType()));
-      return result;
-    }
-  }
-
-  // A raw !lit.origin always works.
-  if (isa<OriginType>(value.getType()))
-    return value;
-  if (auto type = dyn_cast<OriginType>(getCanonicalType(value.getType())))
-    return ParamOperatorAttr::getRebind(value, type);
-  return {};
-}
-
 /// Given an expression that can be used in `origin_of` or a ref expression,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
 TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
   // Check for !lit.origin and Origin struct.
   if (auto pv = value.getIfPValue()) {
-    if (TypedAttr result =
-            ASTType::extractOriginOf(expr->getLoc(), pv.get(), shared))
+    if (TypedAttr result = ASTType::extractOriginOf(pv.get()))
       return result;
   }
 
