@@ -39,6 +39,7 @@ from max.nn.legacy.float8_config import (
 from max.nn.legacy.float8_ops import matmul_float4, matmul_float8
 from max.support.math import ceildiv
 
+from .activation import activation_function_from_name
 from .clamp import clamp
 from .layer import Module, Shardable
 
@@ -732,16 +733,6 @@ class GPTQLinear(Linear):
         return res
 
 
-_ACTIVATION_FUNCTIONS = {
-    "silu": ops.silu,
-    "gelu": ops.gelu,
-    "gelu_tanh": partial(ops.gelu, approximate="tanh"),
-    "relu": ops.relu,
-    "tanh": ops.tanh,
-    "sigmoid": ops.sigmoid,
-}
-
-
 @dataclass
 class DistributedGemmConfig:
     """Configure how distributed GEMM is executed.
@@ -849,9 +840,10 @@ class MLP(Module, Shardable):
 
         self.quantization_encoding = quantization_encoding
         self.float8_config = float8_config
-        assert activation_function in _ACTIVATION_FUNCTIONS
         self._activation_function_name = activation_function
-        self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
+        self.activation_function = activation_function_from_name(
+            activation_function
+        )
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
