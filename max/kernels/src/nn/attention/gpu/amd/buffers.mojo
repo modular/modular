@@ -39,6 +39,7 @@ from .utils import (
     get_fragment_layout,
     get_warp_coords,
     get_warp_layout,
+    load_b_tile,
     pad,
 )
 import itertools
@@ -184,43 +185,16 @@ struct KVBufferImpl[
     )
     comptime simd_width = simd_width_of[Self.dtype]()
 
-    comptime num_repeats = Self.config.btile_dim1 // Self.simd_width
+    # Shared memory layout: row_major(btile_dim0, btile_dim1)
+    # All vector columns within a row are contiguous, enabling effective
+    # swizzle-based bank conflict reduction.
+    #
+    # For BN=128, BK=32: row_major(128, 32) with stride (32, 1)
+    # Row i, column j is at offset i*32 + j
+    # Vector columns at offsets {0, 8, 16, 24} within each row hit
+    # different banks when swizzle is applied.
 
-    # Shared memory layout
-    # Layout construction for standard memory access:
-    # - base_layout: Layout.row_major(BN, simd_width) -> BNxsimd_width tiles
-    # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
-    # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
-    #
-    # Resulting shape: BNx(simd_width x num_repeats) = BNxBK tensor
-    # Where BK = simd_width x num_repeats, typically simd_width=8, num_repeats=BK/8
-    #
-    # This creates num_repeats blocks of BNxsimd_width arranged horizontally:
-    # Within each simd_width-column block, elements are consecutive (stride 1)
-    # Between blocks: stride = BN x simd_width
-    #
-    # ASCII diagram for BN=128, simd_width=8, BK=32 (showing first 2 of 4 blocks):
-    # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-    # │        Block 0 (128x8)                     │        Block 1 (128x8)                     │     ... 2 more blocks           │
-    # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
-    # │   0    1    2    3    4    5    6    7     │ 1024 1025 1026 1027 1028 1029 1030 1031    │ (Block 2: 2048-3071)            │
-    # │   8    9   10   11   12   13   14   15     │ 1032 1033 1034 1035 1036 1037 1038 1039    │ (Block 3: 3072-4095)            │
-    # │  16   17   18   19   20   21   22   23     │ 1040 1041 1042 1043 1044 1045 1046 1047    │                                 │
-    # │  24   25   26   27   28   29   30   31     │ 1048 1049 1050 1051 1052 1053 1054 1055    │                                 │
-    # │ ...                                        │  ...                                       │                                 │
-    # │1016 1017 1018 1019 1020 1021 1022 1023     │ 2040 2041 2042 2043 2044 2045 2046 2047    │                                 │
-    # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-    # stride between blocks = BN x simd_width = 128 x 8 = 1024
-
-    comptime base_layout = Layout.row_major(
-        Self.config.btile_dim0, Self.simd_width
-    )
-    comptime tiler_layout = Layout.row_major(1, Self.num_repeats)
-    comptime smem_layout = blocked_product(
-        Self.base_layout,
-        Self.tiler_layout,
-        coalesce_output=True,
-    ) if not Self.token_gen else Layout.row_major(
+    comptime smem_layout = Layout.row_major(
         Self.config.btile_dim0, Self.config.btile_dim1
     )
 
@@ -369,11 +343,35 @@ struct KVBufferImpl[
             wtile_coord0, wtile_coord1
         )
 
-        Self.tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
-            warp_tile,
-            self.get_mma_tile().vectorize[1, Self.simd_width](),
-            UInt(k_mma),
-        )
+        comptime if Self.swizzle and not Self.token_gen:
+            # Use load_b_tile which handles distribute + swizzle correctly.
+            # Each frag_tile keeps the full K width so load_b_tile computes
+            # distance from frag_tile.ptr; the frag offset has bits above
+            # the swizzle range so XOR is applied correctly.
+            #
+            # Adjust mma_shape K dimension by group_size so load_b_tile tiles
+            # by the full K_slice (MMA_K * group_size) per k_mma iteration,
+            # matching the thread distribution across the warp.
+            comptime adjusted_shape = IndexList[3](
+                Self.tensor_core_mma.shape[0],
+                Self.tensor_core_mma.shape[1],
+                Self.MMA_K * Self.tensor_core_mma.group_size,
+            )
+            var mma_vec = self.mma_tile.vectorize[1, Self.simd_width]()
+            comptime for frag_i in range(Self.num_mmas):
+                var frag_tile = warp_tile.tile[Self.MMA_N, Self.wtile_dim1](
+                    frag_i, 0
+                )
+                var result = load_b_tile[adjusted_shape, Self.swizzle, k_mma](
+                    frag_tile
+                )
+                mma_vec[frag_i, 0] = rebind[type_of(mma_vec[frag_i, 0])](result)
+        else:
+            Self.tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
+                warp_tile,
+                self.get_mma_tile().vectorize[1, Self.simd_width](),
+                UInt(k_mma),
+            )
 
 
 comptime KBuffer[
