@@ -314,6 +314,11 @@ struct Codepoint(
         """
         w.write(self.__str__())
 
+    fn write_repr_to(self, mut w: Some[Writer]):
+        w.write("Codepoint(")
+        w.write(Int(self._scalar_value))
+        w.write(")")
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
