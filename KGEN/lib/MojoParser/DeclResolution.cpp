@@ -3635,9 +3635,13 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  // Check for unsupported conditional conformance to RegisterPassable or
-  // TrivialRegisterPassable. These traits affect the type's ABI/convention
-  // which is a per-declaration decision that cannot vary per instantiation.
+  // Check for unsupported conditional conformance to RegisterPassable,
+  // TrivialRegisterPassable, or ImplicitlyDestructible. RegisterPassable
+  // traits affect the type's ABI/convention which cannot vary per
+  // instantiation. ImplicitlyDestructible is rejected because
+  // CheckLifetimes does not consult where-clause constraints when
+  // auto-destroying fields, so conditional destructibility silently
+  // miscompiles.
   if (TraitType canonTrait = structOp.getCanonicalTrait()) {
     ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
     if (!traitConstraints.empty()) {
@@ -3652,6 +3656,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
               << "conditional conformance to '" << traitName
               << "' is not supported; register passability affects the "
                  "type's ABI and cannot vary per instantiation";
+          structDecl.setErroneous();
+          return failure();
+        }
+        if (traitName == "ImplicitlyDestructible") {
+          shared.emitError(traitConstraints[i].getLoc())
+              << "conditional conformance to 'ImplicitlyDestructible' is "
+                 "not supported; CheckLifetimes does not consult "
+                 "where-clause constraints when auto-destroying fields";
           structDecl.setErroneous();
           return failure();
         }

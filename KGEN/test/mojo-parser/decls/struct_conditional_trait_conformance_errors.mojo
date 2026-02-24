@@ -141,6 +141,26 @@ struct ConditionalRegPassable[T: Movable](
 
 
 # ===========================================================================
+# Conditional conformance to ImplicitlyDestructible is not supported
+# ===========================================================================
+# CheckLifetimes does not consult where-clause constraints when
+# auto-destroying fields, so conditional destructibility silently miscompiles.
+
+struct ConditionalImplicitlyDestructible[T: Movable](
+    # expected-error @below {{conditional conformance to 'ImplicitlyDestructible' is not supported}}
+    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
+    Movable,
+):
+    var data: Self.T
+
+    fn __init__(out self, var data: Self.T):
+        self.data = data^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.data = take.data^
+
+
+# ===========================================================================
 # Unconditional conformance with conditional method
 # ===========================================================================
 # A struct that unconditionally claims to conform to a trait, but the method
