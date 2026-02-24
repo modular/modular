@@ -2357,8 +2357,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 if not prev_was_cased:
                     ptr[i] = c - 32
                 prev_was_cased = True
-            elif UInt8(ord("A")) <= c <= UInt8(ord("Z")):
-                prev_was_cased = True
             else:
                 prev_was_cased = False
         return result^
