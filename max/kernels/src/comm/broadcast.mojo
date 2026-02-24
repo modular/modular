@@ -179,6 +179,8 @@ def broadcast_pull_1stage_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
+
     comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
@@ -193,6 +195,15 @@ def broadcast_pull_1stage_kernel[
 
     var num_elements = input.num_elements()
     var num_simd_vectors = num_elements // simd_width
+
+    # Use raw pointers with invariant loads and explicit alignment for
+    # better codegen (matching the 2-stage kernel's approach).
+    var in_ptr = input_buffer.data.address_space_cast[
+        _target_address_space
+    ]()
+    var out_ptr = output_buffer.data.address_space_cast[
+        _target_address_space
+    ]()
 
     # Grid-strided loop to cover all elements (vectorized).
     for idx in range(global_tid, num_simd_vectors, stride):
