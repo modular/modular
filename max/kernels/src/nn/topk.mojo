@@ -1289,10 +1289,17 @@ fn _topk_gpu[
     if batch_size == 0:
         return
 
-    # Define the number of blocks per grid
-    var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    # Define the number of blocks per grid.
+    # Target enough total blocks to saturate the GPU's SMs.
+    var num_blocks_per_input_: Int
+    if num_blocks_per_input:
+        num_blocks_per_input_ = num_blocks_per_input.value()
+    else:
+        comptime target_total_blocks = 128
+        num_blocks_per_input_ = min(
+            ceildiv(N, block_size),
+            max(ceildiv(target_total_blocks, batch_size), 1),
+        )
     # Calculate largest num bytes of shmem for each stage
     if block_size % WARP_SIZE != 0:
         # TODO: Need to pad in this case
