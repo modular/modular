@@ -603,7 +603,7 @@ async def run_single_turn_benchmark(
     api_url: str,
     max_output_len: int | None,
     temperature: float,
-    top_p: float,
+    top_p: float | None,
     top_k: int | None,
     lora_manager: LoRABenchmarkManager | None,
 ) -> list[RequestFuncOutput]:
@@ -866,7 +866,7 @@ async def benchmark(
     skip_first_n_requests: int,
     max_output_len: int | None,
     temperature: float,
-    top_p: float,
+    top_p: float | None,
     top_k: int | None,
     max_benchmark_duration_s: int | None,
     warmup_delay_ms: float,

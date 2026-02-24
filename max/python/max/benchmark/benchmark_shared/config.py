@@ -350,7 +350,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Temperature for sampling."""
 
-    top_p: float = field(default=1.0, metadata={"group": "Output Control"})
+    top_p: float | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
     """Top-p for sampling."""
 
     top_k: int | None = field(
