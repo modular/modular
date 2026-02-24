@@ -30,6 +30,24 @@ struct FormatOptTable : public llvm::opt::PrecomputedOptTable {
 };
 } // namespace
 
+/// Resolve the path to the mblack formatter binary via modular.cfg.
+/// On success, writes the path to \p outPath and returns 0.
+/// On failure, reports the error and returns a non-zero exit code.
+static int resolveMBlackPath(const State &state, std::string &outPath) {
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr))
+    return state.reportError(Twine("failed to parse 'modular.cfg': ") +
+                             configOr.getError());
+  StringRef mblackPath = configOr->getMBlackPath();
+  std::error_code ec;
+  if (!std::filesystem::exists(mblackPath.str(), ec) || ec ||
+      !llvm::sys::fs::can_execute(mblackPath))
+    return state.reportError(
+        "unable to resolve Mojo formatter in PATH, try installing `mojo`.");
+  outPath = mblackPath.str();
+  return 0;
+}
+
 /// Format a set of Mojo source files. Returns an integer representing a
 /// successful exit code if formatting succeeded, otherwise returns a failure
 /// code.
@@ -53,6 +71,15 @@ static int format(const State &state) {
 
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
+
+  // Handle --print-cache-dir by forwarding to mblack.
+  if (args.hasArg(options::OPT_print_cache_dir)) {
+    std::string mblackPath;
+    if (int result = resolveMBlackPath(state, mblackPath))
+      return result;
+    SmallVector<StringRef> printArgs = {mblackPath, "--print-cache-dir"};
+    return llvm::sys::ExecuteAndWait(mblackPath, printArgs);
+  }
 
   // Process the input files.
   std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
@@ -111,21 +138,9 @@ static int format(const State &state) {
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
-  // Read the mojo configuration.
-  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
-  if (failed(configOr)) {
-    return state.reportError(Twine("failed to parse 'modular.cfg': ") +
-                             configOr.getError());
-  }
-  KGEN::MojoConfig config = std::move(*configOr);
-
-  // Resolve the path to mblack.
-  StringRef mblack = config.getMBlackPath();
-  if (!std::filesystem::exists(mblack.str(), ec) || ec ||
-      !llvm::sys::fs::can_execute(mblack)) {
-    return state.reportError(
-        "unable to resolve Mojo formatter in PATH, try installing `mojo`.");
-  }
+  std::string mblack;
+  if (int result = resolveMBlackPath(state, mblack))
+    return result;
 
   // Forward the curated options to mblack.
   SmallVector<StringRef> mblackArgs = {mblack, "--fast", "--preview"};

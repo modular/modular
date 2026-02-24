@@ -2034,6 +2034,12 @@ class TestCaching:
             two = mblack.read_cache(short_mode)
             assert str(path) not in two
 
+    def test_print_cache_dir(self) -> None:
+        runner = BlackRunner()
+        result = runner.invoke(mblack.main, ["--print-cache-dir"])
+        assert result.exit_code == 0
+        assert result.output.strip() == str(mblack.CACHE_DIR)
+
 
 def assert_collected_sources(
     src: Sequence[Union[str, Path]],
