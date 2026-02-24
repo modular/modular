@@ -30,6 +30,7 @@ from max.pipelines.lib import (
     LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
+    PipelineRuntimeConfig,
     SamplingConfig,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
@@ -1090,7 +1091,7 @@ def test_pipeline_config_with_flux_1_dev_model() -> None:
             model_path=flux_model,
             device_specs=[DeviceSpec.cpu()],
         ),
-        defer_resolve=True,
+        runtime=PipelineRuntimeConfig(defer_resolve=True),
     )
 
     # Verify that the config was created successfully
@@ -1143,7 +1144,7 @@ def test_pipeline_config_with_tiny_stable_diffusion() -> None:
             model_path=diffusion_model,
             device_specs=[DeviceSpec.cpu()],
         ),
-        defer_resolve=True,
+        runtime=PipelineRuntimeConfig(defer_resolve=True),
     )
 
     # Verify that the config was created successfully

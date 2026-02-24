@@ -245,13 +245,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
-    # config fields are validated.
-    defer_resolve: bool = Field(
-        default=False,
-        description="Whether to defer resolving the pipeline config.",
-    )
-
     model: MAXModelConfig = Field(
         default_factory=MAXModelConfig, description="The model config."
     )
@@ -593,7 +586,7 @@ class PipelineConfig(ConfigFileModel):
         defer_resolve_env = os.getenv(
             "MODULAR_PIPELINE_DEFER_RESOLVE", ""
         ).lower()
-        should_defer = self.defer_resolve or defer_resolve_env in {
+        should_defer = self.runtime.defer_resolve or defer_resolve_env in {
             "1",
             "true",
             "yes",
