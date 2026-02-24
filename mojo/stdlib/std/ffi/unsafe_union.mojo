@@ -268,7 +268,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_get_ref[T: AnyType](ref self) -> ref[self] T:
+    @always_inline("nodebug")
+    fn unsafe_get[T: AnyType](ref self) -> ref[self] T:
         """Get a reference to the stored value as type T.
 
         Parameters:
@@ -285,7 +286,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
         ```mojo
         var u = UnsafeUnion[Int32, Float32](Int32(42))
-        ref val = u.unsafe_get_ref[Int32]()
+        ref val = u.unsafe_get[Int32]()
         print(val)  # => 42
         ```
         """
@@ -326,32 +327,6 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    @always_inline("nodebug")
-    fn unsafe_get[T: ImplicitlyCopyable](self) -> T:
-        """Get a copy of the stored value interpreted as type T.
-
-        Parameters:
-            T: The type to interpret the stored value as. Must be one of the
-                union's element types and must be `ImplicitlyCopyable`.
-
-        Returns:
-            A copy of the storage interpreted as type T.
-
-        Safety:
-            Reading as the wrong type is undefined behavior.
-
-        Example:
-
-        ```mojo
-        var u = UnsafeUnion[Int32, Float32](Int32(42))
-        var val = u.unsafe_get[Int32]()  # => 42
-        ```
-        """
-        comptime assert Self._is_element[
-            T
-        ](), "type is not a union element type"
-        return self._get_ptr[T]()[]
 
     @always_inline("nodebug")
     fn unsafe_take[T: Movable](mut self) -> T:
