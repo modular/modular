@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import torch
 from max.driver import Accelerator, Buffer, accelerator_count
@@ -122,7 +124,7 @@ def test_ep_moe(
         n_experts=NUM_EXPERTS,
         max_tokens_per_rank=max_tokens_per_rank,
         n_gpus_per_node=n_devices,
-        n_nodes=1,  # Single node test
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
     )
 
     # Initialize EP communication

@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import torch
 from max.driver import Accelerator, Buffer, accelerator_count
@@ -48,7 +50,7 @@ def test_ep_comm(n_devices: int) -> None:
         n_experts=min(256, n_devices * 32),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
-        n_nodes=1,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
     )
     ep_initializer = EPCommInitializer(config)
     ep_initializer.ep_init(session)

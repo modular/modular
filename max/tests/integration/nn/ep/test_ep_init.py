@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
 
 import numpy as np
 import pytest
@@ -41,7 +42,7 @@ def test_init_ep(n_devices: int) -> None:
         n_experts=min(256, n_devices * (1024 // gpu_warp_size())),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
-        n_nodes=1,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
     )
     ep_initializer = EPCommInitializer(config)
     ep_initializer.ep_init(session)

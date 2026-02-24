@@ -27,7 +27,7 @@ from collections import OptionalReg
 
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from sys.info import align_of, simd_width_of, size_of
+from sys.info import align_of, simd_width_of, size_of, has_amd_gpu_accelerator
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
@@ -37,7 +37,8 @@ from tensor.managed_tensor_slice import (
 )
 
 from shmem import (
-    shmem_init_thread,
+    shmem_init_thread_mpi,
+    shmem_init_thread_tcp,
     shmem_malloc,
     shmem_my_pe,
 )
@@ -214,7 +215,11 @@ struct Struct_ep_init:
 
         comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
-            shmem_init_thread(gpu_ctx, n_gpus_per_node)
+            @parameter
+            if has_amd_gpu_accelerator():
+                shmem_init_thread_tcp(gpu_ctx, gpus_per_node=n_gpus_per_node)
+            else:
+                shmem_init_thread_mpi(gpu_ctx, gpus_per_node=n_gpus_per_node)
 
             # Allocate SHMEM buffers for dispatch phase
             dispatch_send_p = shmem_malloc[DType.uint8](

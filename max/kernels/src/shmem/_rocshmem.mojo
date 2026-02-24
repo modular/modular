@@ -32,6 +32,8 @@ from ffi import (
     RTLD,
 )
 
+from .shmem_api import SHMEMUniqueID
+
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
@@ -154,18 +156,6 @@ comptime ROCSHMEM_TEAM_INDEX_MAX: rocshmem_team_id_t = rocshmem_team_id_t.MAX
 
 
 # Structs
-struct ROCSHMEMUniqueID(ImplicitlyCopyable):
-    """Unique ID for a process (ROCSHMEM_UNIQUE_ID_BYTES = 128 bytes)."""
-
-    var data: InlineArray[Byte, 128]
-
-    fn __init__(out self):
-        self.data = InlineArray[Byte, 128](fill=0)
-
-    fn __init__(out self, *, copy: Self):
-        self.data = copy.data.copy()
-
-
 struct ROCSHMEMInitAttr(ImplicitlyCopyable):
     """Data structure used for attribute based initialization.
 
@@ -180,7 +170,7 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
 
     var rank: Int32
     var nranks: Int32
-    var uid: ROCSHMEMUniqueID
+    var uid: SHMEMUniqueID
     var mpi_comm: UnsafePointer[NoneType, ImmutAnyOrigin]
 
     fn __init__(out self):
@@ -189,10 +179,10 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
         ), "ROCSHMEMInitAttr must be 144 bytes"
         self.rank = 0
         self.nranks = 0
-        self.uid = ROCSHMEMUniqueID()
+        self.uid = SHMEMUniqueID()
         self.mpi_comm = UnsafePointer[NoneType, ImmutAnyOrigin]()
 
-    fn __init__(out self, rank: Int32, nranks: Int32, uid: ROCSHMEMUniqueID):
+    fn __init__(out self, rank: Int32, nranks: Int32, uid: SHMEMUniqueID):
         self.rank = rank
         self.nranks = nranks
         self.uid = uid
@@ -282,12 +272,12 @@ fn _rocshmem_init() raises:
     ]()()
 
 
-fn rocshmem_init_thread(
+fn rocshmem_init_thread_tcp(
     ctx: DeviceContext,
-    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
-    var node_id: Int = -1,
-    var total_nodes: Int = -1,
-    var gpus_per_node: Int = -1,
+    uid: UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
+    node_id: Int = -1,
+    total_nodes: Int = -1,
+    gpus_per_node: Int = -1,
 ) raises:
     """Initialize rocSHMEM for the given device using a unique ID for TCP bootstrap.
 
@@ -301,7 +291,7 @@ fn rocshmem_init_thread(
     Args:
         ctx: The device context to initialize rocSHMEM on. This device is set
             as the current device before initialization.
-        uid: Pointer to a `ROCSHMEMUniqueID` shared across all participating
+        uid: Pointer to a `SHMEMUniqueID` shared across all participating
             PEs, typically created by `rocshmem_create_uniqueid` on one PE
             and broadcast to the others.
         node_id: The ID of this node in the cluster. Defaults to -1, which
@@ -313,16 +303,6 @@ fn rocshmem_init_thread(
             detected devices.
     """
     ctx.set_as_current()
-    # Check env vars if the defaults are not overridden
-    if total_nodes == -1:
-        total_nodes = atol(getenv("SHMEM_TOTAL_NODES", "1"))
-    if node_id == -1:
-        node_id = atol(getenv("SHMEM_NODE_ID", "0"))
-    if gpus_per_node == -1:
-        gpus_per_node = atol(getenv("SHMEM_GPUS_PER_NODE", "-1"))
-        # If not defined by argument or env var, use the number of attached GPUs
-        if gpus_per_node == -1:
-            gpus_per_node = DeviceContext.number_of_devices()
 
     var global_rank = node_id * gpus_per_node + Int(ctx.id())
     var total_gpus = gpus_per_node * total_nodes
@@ -334,37 +314,38 @@ fn rocshmem_init_thread(
     rocshmem_init_attr(ROCSHMEM_INIT_WITH_UNIQUEID, UnsafePointer(to=attr))
 
 
-fn rocshmem_create_uniqueid() raises -> ROCSHMEMUniqueID:
+fn rocshmem_create_uniqueid(
+    var server_ip: String, server_port: c_int
+) raises -> SHMEMUniqueID:
     """Create a unique ID for rocSHMEM TCP bootstrap.
 
-    Generates a `ROCSHMEMUniqueID` that must be identical across all participating
-    PEs to establish communication. One PE should call this function and
-    broadcast the result to all others before calling `rocshmem_init_thread`.
+    Generates a `SHMEMUniqueID` that must be identical across all participating
+    PEs to establish communication. If using the same server IP and port, it will
+    be identical.
 
-    - `SHMEM_SERVER_IP`: Bootstrap server IP address (default: "0.0.0.0" for running on single node).
-    - `SHMEM_SERVER_PORT`: Bootstrap server port (default: 44434).
+    Arguments:
+        server_ip: the TCP bootstrap server that participating nodes connect to.
+        server_port: the TCP bootstrap server port that participating nodes communicate over.
 
     Returns:
-        A `ROCSHMEMUniqueID` to be passed to `rocshmem_init_thread`.
+        A `SHMEMUniqueID` to be passed to `rocshmem_init_thread_tcp`.
     """
-    var ip = getenv("SHMEM_SERVER_IP", "0.0.0.0")
-    var port = c_int(atol(getenv("SHMEM_SERVER_PORT", "44434")))
-    var uid = ROCSHMEMUniqueID()
+    var uid = SHMEMUniqueID()
     _get_rocshmem_function[
         "rocshmem_create_uniqueid",
         fn(
-            CStringSlice[origin_of(ip)],
+            CStringSlice[origin_of(server_ip)],
             c_int,
-            UnsafePointer[ROCSHMEMUniqueID, origin_of(uid)],
+            UnsafePointer[SHMEMUniqueID, origin_of(uid)],
         ) -> None,
-    ]()(ip.as_c_string_slice(), port, UnsafePointer(to=uid))
+    ]()(server_ip.as_c_string_slice(), server_port, UnsafePointer(to=uid))
     return uid
 
 
 fn rocshmem_set_attr_uniqueid_args(
     rank: c_int,
     nranks: c_int,
-    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+    uid: UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
     attr: UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
 ) raises:
     """Populate a `ROCSHMEMInitAttr` with rank, size, and unique ID for
@@ -373,7 +354,7 @@ fn rocshmem_set_attr_uniqueid_args(
     Args:
         rank: The global rank of this PE.
         nranks: The total number of PEs across all nodes.
-        uid: Pointer to the shared `ROCSHMEMUniqueID` obtained from
+        uid: Pointer to the shared `SHMEMUniqueID` obtained from
             `rocshmem_create_uniqueid`.
         attr: Pointer to a `ROCSHMEMInitAttr` to be populated. The resulting
             attr is passed to `rocshmem_init_attr`.
@@ -386,7 +367,7 @@ fn rocshmem_set_attr_uniqueid_args(
         fn(
             c_int,
             c_int,
-            UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
+            UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
             UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
         ) -> c_int,
     ]()(rank, nranks, uid, attr)
@@ -409,11 +390,11 @@ fn rocshmem_init_attr(
 
 
 fn rocshmem_get_uniqueid(
-    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]
+    uid: UnsafePointer[SHMEMUniqueID, MutAnyOrigin]
 ) raises:
     var result = _get_rocshmem_function[
         "rocshmem_get_uniqueid",
-        fn(UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
+        fn(UnsafePointer[SHMEMUniqueID, MutAnyOrigin]) -> c_int,
     ]()(uid)
     if result:
         raise Error("rocshmem_get_uniqueid failed with error code:", result)
