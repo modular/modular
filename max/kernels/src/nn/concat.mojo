@@ -790,7 +790,6 @@ fn _concat_gpu_elementwise[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
-        in_index[axis] = out_index[axis]
         var out_coord = Coord(out_index)
         comptime assert out_coord.flat_rank == output.flat_rank
 
@@ -816,11 +815,6 @@ fn _concat_gpu_elementwise[
 
             in_index[axis] -= input_shape[axis]
 
-    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
-    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
-    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
-    # Because the inner dim is contiguous we will get coalesced memory access
-    # using the elementwise generator with simd_width=1.
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
     # dimension, so all elements belong to the same input and we can safely
     # use vectorized loads/stores (float4 = 128-bit transactions).
@@ -1030,7 +1024,6 @@ fn _fused_concat_gpu_elementwise[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
-        in_index[axis] = out_index[axis]
 
         comptime for i in range(num_inputs):
             var input_shape = input_shapes[i]
@@ -1044,14 +1037,16 @@ fn _fused_concat_gpu_elementwise[
 
             in_index[axis] -= input_shape[axis]
 
-    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
-    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
-    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
-    # Because the inner dim is contiguous we will get coalesced memory access
-    # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="gpu"](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    # When axis != rank-1, the SIMD group spans the innermost (non-concat)
+    # dimension, so we can safely use vectorized loads/stores.
+    comptime if axis != rank - 1:
+        elementwise[per_output_elem, 4, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
+    else:
+        elementwise[per_output_elem, 1, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
 
 
 @always_inline
