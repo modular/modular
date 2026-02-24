@@ -26,7 +26,7 @@ from contextlib import AbstractContextManager
 
 from max.driver import Accelerator, Buffer
 from max.engine import Model
-from max.nn.legacy.kv_cache import KVCacheInputsSequence, RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheInputsSequence, RaggedKVCacheInputs
 
 from .interfaces import ModelInputs, ModelOutputs
 
