@@ -16,7 +16,7 @@ The MAX neural network API provides two namespaces:
 - **max.nn.module_v3**: Eager-style execution with PyTorch-style syntax.
 
 For functional operations like relu, softmax, and more, see the
-:code_link:`/max/api/python/functional|functional` module.
+:code_link:`/max/api/python/experimental/functional|functional` module.
 
 Graph API
 =========

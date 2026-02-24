@@ -11,13 +11,13 @@ max.experimental
 The ``max.experimental`` package contains eager-execution APIs available for
 experimentation. These APIs may change in future releases.
 
-* :code_link:`/max/api/python/functional|functional`: Functional tensor operations (relu, softmax, and more).
-* :code_link:`/max/api/python/random|random`: Random tensor generation utilities.
-* :code_link:`/max/api/python/tensor|tensor`: Tensor class with eager execution.
+* :code_link:`/max/api/python/experimental/functional|functional`: Functional tensor operations (relu, softmax, and more).
+* :code_link:`/max/api/python/experimental/random|random`: Random tensor generation utilities.
+* :code_link:`/max/api/python/experimental/tensor|tensor`: Tensor class with eager execution.
 
 .. toctree::
    :hidden:
 
-   ../tensor
-   ../functional
-   ../random
+   tensor
+   functional
+   random
