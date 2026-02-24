@@ -80,17 +80,9 @@ fn block_reduce[
         1, dtype, address_space = AddressSpace.SHARED
     ]()
 
-    var tid = thread_idx.x
-    for i in range(tid, max_warps_per_block, block_dim.x):
-        m2_shared[i] = 0
-
-    if tid == 0:
-        m2_broadcast[0] = 0
-
-    barrier()
-
     var warp_m2 = warp.sum(val)
 
+    var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
@@ -101,7 +93,9 @@ fn block_reduce[
     if warp_id == 0:
         var block_m2 = Scalar[dtype](0)
 
-        if lane_idx < UInt(max_warps_per_block):
+        # Only read lanes corresponding to active warps to avoid
+        # reading uninitialized shared memory.
+        if lane_idx < block_dim.x // UInt(WARP_SIZE):
             block_m2 = m2_shared[lane_idx]
 
         # On some GPUs, the warp-level reduction implicitly requires all lanes
