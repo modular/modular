@@ -502,7 +502,7 @@ fn gemv_gpu_dispatch[
         logger.info("Executing: GEMV_SPLIT_K kernel")
         comptime num_threads = 128
         comptime tile_m = 1
-        comptime tile_n = 2
+        comptime tile_n = 4
         comptime check_bounds = static_N % tile_n != 0
 
         comptime kernel = gemv_split_k[
