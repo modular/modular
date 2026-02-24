@@ -530,7 +530,7 @@ def _test_kernel_impl[
             AB_swapped=swapAB,
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
-            c_swizzle_for_AB_swapped=TensorMapSwizzle.SWIZZLE_32B,
+            is_gmm=True,
         )
 
         # Construct scale TileTensors from raw pointers with explicit
@@ -1043,6 +1043,83 @@ def main():
                     4,
                     [0, 3, 1, 2],
                     [-1, 2, -1, 0],
+                    ctx,
+                )
+
+            # 2SM tests (new structured kernel only, swapAB=True required)
+            @parameter
+            if structured:
+                comptime umma_shape_2sm = Index(2 * bm, 2 * bn, MMA_K)
+
+                # 2SM: Large token counts
+                _test_kernel_impl[
+                    "new",
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape_2sm,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=6,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=True,
+                ](
+                    4,
+                    [512, 1000, 2000, 3000],
+                    [0, 3, 2, 4],
+                    ctx,
+                )
+
+                # 2SM: Unaligned token counts
+                _test_kernel_impl[
+                    "new",
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape_2sm,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=4,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=True,
+                ](
+                    3,
+                    [64 + 1, 1024 + 3, 128 * 3 + 2],
+                    [2, 0, 1],
+                    ctx,
+                )
+
+                # 2SM: Small token counts
+                _test_kernel_impl[
+                    "new",
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape_2sm,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=4,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=True,
+                ](
+                    3,
+                    [31, 97, 63],
+                    [2, 0, 1],
                     ctx,
                 )
 

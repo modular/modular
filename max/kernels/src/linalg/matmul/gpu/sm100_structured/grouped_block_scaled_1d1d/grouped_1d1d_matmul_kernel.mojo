@@ -35,7 +35,15 @@ from math import ceildiv
 from memory import UnsafePointer, Pointer
 from sys import size_of
 
-from gpu import WARP_SIZE, block_idx, grid_dim, lane_id, thread_idx, warp_id
+from gpu import (
+    WARP_SIZE,
+    block_id_in_cluster,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
+    warp_id,
+)
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -580,19 +588,37 @@ struct Grouped1D1DMatmulKernel[
             block_rank_in_cluster() % 2 == 0 if Self.cta_group == 2 else True
         )
 
-        # Peer CTA coordinates for multicast
-        var peer_rank_n = UInt(block_rank_in_cluster() % UInt32(Self.CLUSTER_N))
-        var peer_rank_m = UInt(
-            block_rank_in_cluster()
-            // UInt32(Self.CLUSTER_N)
-            % UInt32(Self.CLUSTER_M)
-        )
-        var peer_m_rank = peer_rank_m % UInt(Self.cta_group)
-        var peer_cta_coord = (peer_rank_n, peer_rank_m, peer_m_rank)
+        # CTA coordinates in cluster (matches KernelContext pattern)
+        var rank_m = UInt(block_id_in_cluster.x)
+        var rank_n = UInt(block_id_in_cluster.y)
 
-        # Multicast masks
-        var a_multicast_mask = UInt16((1 << Self.CLUSTER_M) - 1)
-        var b_multicast_mask = UInt16((1 << Self.CLUSTER_N) - 1)
+        # Peer CTA coordinates: (peer_m_rank, mma_coord_m, rank_n)
+        # load_input_tiles unpacks as: peer_rank_n=[0], peer_rank_m=[1],
+        # peer_m_rank=[2].  With this ordering the SMEM offsets
+        # (peer_m_rank * a_tma_load_size, peer_rank_m * b_tma_load_size)
+        # are always 0 for both CTAs, avoiding buffer overflow.
+        var peer_cta_coord = (
+            rank_m % UInt(Self.cta_group),
+            rank_m // UInt(Self.cta_group),
+            rank_n,
+        )
+
+        # Per-CTA multicast masks (following KernelContext)
+        var a_multicast_mask = UInt16(0)
+
+        @parameter
+        for i in range(Self.CLUSTER_N):
+            a_multicast_mask |= UInt16(1 << (i * Self.CLUSTER_M))
+        a_multicast_mask <<= UInt16(rank_m)
+
+        var b_multicast_mask = UInt16(0)
+
+        @parameter
+        for i in range(Self.CLUSTER_M // Self.cta_group):
+            b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
+        b_multicast_mask <<= UInt16(rank_m % UInt(Self.cta_group))
+        b_multicast_mask <<= UInt16(rank_n * UInt(Self.CLUSTER_M))
+
         var mma_complete_mask = UInt16((1 << Self.cta_group) - 1)
 
         # K iteration count
@@ -643,6 +669,12 @@ struct Grouped1D1DMatmulKernel[
         )
 
         # ===== TMA LOAD WARP =====
+        # For cta_group=2: BOTH CTAs run the production loop to keep
+        # pipeline state in sync.  UMMA multicast arrives on both
+        # CTAs' EMPTY barriers, so both must advance through stages
+        # to match.  Inside load_input_tiles, elect_one_cta gates
+        # expect_bytes and the cta_group parameter on TMA ops ensures
+        # only the leader CTA issues loads.
         if WarpRole1D1D.is_load():
             with input_pipeline.producer() as producer:
                 while True:
@@ -669,6 +701,8 @@ struct Grouped1D1DMatmulKernel[
                                 a_scale_offsets,
                                 UInt32(k_tile),
                                 elect_one_cta,
+                                a_multicast_mask,
+                                b_multicast_mask,
                             )
                         next_ready = True
                         if k_tile + 1 < num_k_iters:
@@ -794,6 +828,8 @@ struct Grouped1D1DMatmulKernel[
         a_scale_offsets: Self.AScaleOffsetsTile,
         iter_idx: UInt32,
         elect_one_cta: Bool,
+        a_multicast_mask: UInt16,
+        b_multicast_mask: UInt16,
     ):
         """Load A, B, SFA, SFB tiles using TMA."""
         var peer_rank_n = peer_cta_coord[0]
@@ -863,13 +899,13 @@ struct Grouped1D1DMatmulKernel[
                     a_peer_tt,
                     barrier[0],
                     (k_coord, a_gmem_m_coord),
-                    UInt16((1 << Self.CLUSTER_M) - 1),
+                    a_multicast_mask,
                 )
                 b_tma_op.async_multicast_load[Self.cta_group](
                     b_peer_tt,
                     barrier[0],
                     (k_coord, b_gmem_n_coord),
-                    UInt16((1 << Self.CLUSTER_N) - 1),
+                    b_multicast_mask,
                 )
 
                 # Scale factor load with offset
