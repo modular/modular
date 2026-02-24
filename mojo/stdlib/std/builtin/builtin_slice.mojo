@@ -15,6 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from format._utils import FormatStruct, Named
+
 
 struct Slice(
     Equatable,
@@ -94,7 +96,7 @@ struct Slice(
         """
         var output = String()
         self.write_to(output)
-        return output
+        return output^
 
     @no_inline
     fn __repr__(self) -> String:
@@ -103,7 +105,9 @@ struct Slice(
         Returns:
             The string representation of the span.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -112,21 +116,20 @@ struct Slice(
         Args:
             writer: The object to write to.
         """
+        FormatStruct(writer, "Slice").fields(self.start, self.end, self.step)
 
-        @parameter
-        fn write_optional(opt: Optional[Int]):
-            if opt:
-                writer.write(repr(opt.value()))
-            else:
-                writer.write(repr(None))
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write Slice string representation to a `Writer`.
 
-        writer.write("slice(")
-        write_optional(self.start)
-        writer.write(", ")
-        write_optional(self.end)
-        writer.write(", ")
-        write_optional(self.step)
-        writer.write(")")
+        Args:
+            writer: The object to write to.
+        """
+        FormatStruct(writer, "Slice").fields(
+            Named("start", self.start),
+            Named("end", self.end),
+            Named("step", self.step),
+        )
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -205,7 +208,7 @@ struct Slice(
         return (start.value(), end.value(), step)
 
 
-struct StridedSlice(ImplicitlyCopyable):
+struct StridedSlice(ImplicitlyCopyable, Writable):
     """Represents a slice expression that has a stride.
 
     This type is used to support different behavior for strided vs unstrided
@@ -241,6 +244,28 @@ struct StridedSlice(ImplicitlyCopyable):
 
         self._inner = Slice(start, end, stride)
 
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write StridedSlice string representation to a `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._inner.write_to(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write StridedSlice debug representation to a `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._inner.write_repr_to(writer)
+
     fn indices(self, length: Int) -> Tuple[Int, Int, Int]:
         """Returns a tuple of 3 integers representing start, end, and step
         of the slice if applied to a container of given length.
@@ -254,7 +279,7 @@ struct StridedSlice(ImplicitlyCopyable):
         return self._inner.indices(length)
 
 
-struct ContiguousSlice(ImplicitlyCopyable):
+struct ContiguousSlice(ImplicitlyCopyable, Writable):
     """Represents a slice expression without a stride.
 
     This type is used to support different behavior for strided vs unstrided
@@ -284,6 +309,28 @@ struct ContiguousSlice(ImplicitlyCopyable):
         """
         self.start = start
         self.end = end
+
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write ContiguousSlice string representation to a `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+        Slice(self.start, self.end, None).write_to(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write ContiguousSlice debug representation to a `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+        Slice(self.start, self.end, None).write_repr_to(writer)
 
     fn indices(self, length: Int) -> Tuple[Int, Int]:
         """Returns a tuple of 2 integers representing the start, and end
