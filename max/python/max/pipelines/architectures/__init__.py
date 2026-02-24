@@ -47,6 +47,7 @@ def register_all_models() -> None:
     from .gpt_oss import gpt_oss_arch
     from .gpt_oss_legacy import gpt_oss_legacy_arch
     from .granite import granite_arch
+    from .granite_legacy import granite_legacy_arch
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
     from .llama3 import llama_arch
@@ -79,6 +80,7 @@ def register_all_models() -> None:
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
+        granite_legacy_arch,
         gpt_oss_arch,
         gpt_oss_legacy_arch,
         internvl_arch,
