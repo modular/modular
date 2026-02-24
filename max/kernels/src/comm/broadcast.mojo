@@ -185,7 +185,9 @@ def broadcast_pull_1stage_kernel[
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+    # Skip barriers for single-GPU case (no peers to synchronize with).
+    comptime if ngpus > 1:
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
     var in_ptr = input.ptr.address_space_cast[_target_address_space]()
@@ -210,7 +212,8 @@ def broadcast_pull_1stage_kernel[
         var data = in_ptr.load[width=1, invariant=True](tail_idx)
         out_ptr.store(tail_idx, data)
 
-    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+    comptime if ngpus > 1:
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @__llvm_metadata(
