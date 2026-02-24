@@ -419,12 +419,13 @@ fn _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     """Determine if 2-stage broadcast should be used based on GPU count and size.
 
     Crossover points determined empirically:
+    - 1 GPU: Always use 1-stage (no peers to scatter/gather)
     - 2 GPUs: Always use 1-stage (2-stage has no benefit)
     - 4 GPUs: 2-stage wins for >= 6 MiB
     - 8 GPUs: 2-stage wins for >= 2 MiB
     """
 
-    comptime if ngpus == 2:
+    comptime if ngpus <= 2:
         return False
     elif ngpus == 4:
         return num_bytes >= 6 * 1024 * 1024  # 6 MiB
