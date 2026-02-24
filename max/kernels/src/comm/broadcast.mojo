@@ -486,7 +486,7 @@ def broadcast[
     if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
 
-    comptime BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 1024
     # Default max blocks if not specified.
     comptime sm_version = get_sm_version()
     # TODO: _dispatch_max_num_blocks was tuned for allreduce; may need separate tuning for broadcast
@@ -612,7 +612,7 @@ def broadcast_2stage[
         output_tensor.num_elements() == input_tensor.num_elements()
     ), "Tensor shapes don't match"
 
-    comptime BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 1024
     # Limit blocks - tuning parameter
     comptime MAX_BLOCKS = 384
 
