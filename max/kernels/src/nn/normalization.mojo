@@ -70,6 +70,67 @@ from .reshape import reshape
 
 
 @always_inline
+fn block_reduce_sum_and_max[
+    dtype: DType, max_warps_per_block: Int
+](sum_val: Scalar[dtype], max_val: Scalar[dtype]) -> Tuple[
+    Scalar[dtype], Scalar[dtype]
+]:
+    """Combined block reduction for sum and max in a single barrier pass.
+
+    Performs both sum and max reductions across the block using only 2
+    barriers (vs 4 for separate block.sum + block.max with broadcast).
+    """
+    var sum_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+    ]()
+    var max_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+    ]()
+    var sum_broadcast = stack_allocation[
+        1, dtype, address_space = AddressSpace.SHARED
+    ]()
+    var max_broadcast = stack_allocation[
+        1, dtype, address_space = AddressSpace.SHARED
+    ]()
+
+    # Warp-level reductions (no barrier needed)
+    var warp_sum = warp.sum(sum_val)
+    var warp_max = warp.max(max_val)
+
+    var tid = thread_idx.x
+    var wid = warp.broadcast(tid // UInt(WARP_SIZE))
+    var lid = lane_id()
+
+    # Warp leaders write both results to shared memory
+    if lid == 0:
+        sum_shared[wid] = warp_sum
+        max_shared[wid] = warp_max
+    barrier()  # Single barrier for both
+
+    # First warp reduces all warp results
+    if wid == 0:
+        var block_sum = Scalar[dtype](0)
+        var block_max = Scalar[dtype](0)
+
+        if lid < block_dim.x // UInt(WARP_SIZE):
+            block_sum = sum_shared[lid]
+            block_max = max_shared[lid]
+
+        block_sum = warp.lane_group_sum[num_lanes=max_warps_per_block](
+            block_sum
+        )
+        block_max = warp.lane_group_max[num_lanes=max_warps_per_block](
+            block_max
+        )
+
+        if lid == 0:
+            sum_broadcast[0] = block_sum
+            max_broadcast[0] = block_max
+    barrier()  # Single barrier for broadcast of both
+    return (sum_broadcast[0], max_broadcast[0])
+
+
+@always_inline
 fn block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
@@ -2405,13 +2466,12 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
                 apply_gamma[simd_width](vec_data, idx)
             ).reduce_max()
 
-        # Both reductions issued back-to-back for potential PDL overlap
-        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
-            thread_m2
-        )
-        var row_abs_max_gamma_x = block.max[
-            block_size=threads_per_block, broadcast=True
-        ](thread_abs_max_gamma_x)
+        # Combined reduction: sum for m2 and max for scaling in a single
+        # 2-barrier pass (vs 4 barriers for separate block.sum + block.max).
+        comptime max_warps = threads_per_block // WARP_SIZE
+        var row_m2, row_abs_max_gamma_x = block_reduce_sum_and_max[
+            max_warps_per_block=max_warps
+        ](thread_m2, thread_abs_max_gamma_x)
 
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
@@ -2610,18 +2670,18 @@ fn _rms_norm_fused_fp8_kernel_block[
                     thread_abs_max_gamma_x, abs(gamma_x).reduce_max()
                 )
 
-        # Reduce across threads to get row mean square
-        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
-            thread_m2
-        )
+        # Combined reduction: sum for m2 and max for scaling in a single
+        # 2-barrier pass (vs 4 barriers for separate block.sum + block.max).
+        comptime max_warps = threads_per_block // WARP_SIZE
+        var row_m2, row_abs_max_gamma_x = block_reduce_sum_and_max[
+            max_warps_per_block=max_warps
+        ](thread_m2, thread_abs_max_gamma_x)
+
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Reduce max(|gamma*x|) across threads, then scale by norm_factor
-        var row_abs_max_gamma_x = block.max[
-            block_size=threads_per_block, broadcast=True
-        ](thread_abs_max_gamma_x)
+        # Derive max of normalized values: max(|gamma*x|) * norm_factor
         var row_max = row_abs_max_gamma_x * norm_factor
 
         # Compute scale factor
