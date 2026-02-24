@@ -3,14 +3,18 @@ title: Quickstart
 description: A quickstart guide to run a GenAI model locally with Modular.
 ---
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-import ModelDropdownTabs from '@site/src/components/ModelDropdownTabs';
-import ContactSection from '@site/src/components/ContactSection';
-import Requirements from '@site/src/components/Requirements';
-import { requirementsNoMacWithGPU } from './requirements';
-import InstallModular from '@site/docs/_includes/install-modular.mdx';
-import { ModelSelector, DynamicCode, ConditionalContent } from '@site/src/components/ModelSelector';
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import ModelDropdownTabs from "@site/src/components/ModelDropdownTabs";
+import ContactSection from "@site/src/components/ContactSection";
+import Requirements from "@site/src/components/Requirements";
+import { requirementsNoMacWithGPU } from "./requirements";
+import InstallModular from "@site/docs/_includes/install-modular.mdx";
+import {
+  ModelSelector,
+  DynamicCode,
+  ConditionalContent,
+} from "@site/src/components/ModelSelector";
 
 A major component of the Modular Platform is MAX, our developer framework that
 abstracts away the complexity of building and serving high-performance GenAI
@@ -19,26 +23,24 @@ models on a wide range of hardware, including NVIDIA and AMD GPUs.
 In this quickstart, you'll create an endpoint for an open-source LLM using MAX,
 run an inference from a Python client, and then benchmark the endpoint.
 
-:::caution GPU required
+If you'd rather create an endpoint with Docker, see our
+[tutorial to benchmark MAX](/max/deploy/benchmark).
 
-We recommend using on an **NVIDIA B200 / H200 / H100** or **AMD MI355X / MI325X
-/ MI300X**.
+:::caution GPU strongly recommended
 
-MAX can serve models on a wide range of CPUs and GPUs, but the LLMs most
-customers want require a lot of memory, which is why we suggest
-production-grade GPUs. This guide does offer some smaller models, but to use
-the latest LLMs, you'll still need a [compatible
-GPU](/max/packages#gpu-compatibility).
+To see MAX perform as intended, we strongly recommend running on a
+datacenter-grade GPU, such as **NVIDIA B200 / H200 / H100** or **AMD MI355X /
+MI325X / MI300X**. You do have the option to follow along on consumer-grade
+systems (including Macs)—just expect fewer compatible models and slower performance.
 
 :::
 
 System requirements:
 
-<Requirements requirementsData={requirementsNoMacWithGPU}
-url="/max/packages#system-requirements" />
-
-If you'd rather create an endpoint with Docker, see our
-[tutorial to benchmark MAX](/max/deploy/benchmark).
+<Requirements
+  requirementsData={requirementsNoMacWithGPU}
+  url="/max/packages#system-requirements"
+/>
 
 ## Set up your project
 
@@ -54,13 +56,10 @@ For the most reliable experience, we recommend installing with `pixi`.
 
 ## Start a model endpoint
 
-Now you'll serve an LLM from a local endpoint using [`max
-serve`](/max/cli/serve).
-
-First, pick whether you want to perform text-to-text inference or image-to-text
-(multimodal) inference, and then select a model size. We've included a small
-number of model options to keep it simple, but you can explore more models in
-our [model repository](https://builds.modular.com/?category=models).
+Now you'll serve an LLM from a local endpoint using
+[`max serve`](/max/cli/serve). Choose whether you want **text-to-text** or
+**image-to-text (multimodal)** inference by switching tabs below, then use the
+dropdown to select a model that fits your hardware's memory constraints.
 
 <ModelDropdownTabs groupId="inference" sticky dropdownOptions={allModelOptions}>
 <TabItem value="text" label="Text to text">
@@ -71,56 +70,63 @@ Select a model to change the code below:
 
 export const textModelOptions = [
   {
-    label: 'gemma-3-4b-it',
-    value: 'google/gemma-3-4b-it',
-    description: 'Requires >8 GiB of GPU RAM — works on most compatible GPUs'
+    label: "gemma-3-4b-it",
+    value: "google/gemma-3-4b-it",
+    description: "Requires >8 GiB of GPU RAM — works on most compatible GPUs",
   },
   {
-    label: 'gemma-3-12b-it',
-    value: 'google/gemma-3-12b-it',
-    description: 'Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better'
+    label: "gemma-3-12b-it",
+    value: "google/gemma-3-12b-it",
+    description:
+      "Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better",
   },
   {
-    label: 'gemma-3-27b-it',
-    value: 'google/gemma-3-27b-it',
-    description: 'Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better',
-    default: true
+    label: "gemma-3-27b-it",
+    value: "google/gemma-3-27b-it",
+    description:
+      "Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better",
+    default: true,
   },
   {
-    label: 'Llama-3.1-8B-Instruct',
-    value: 'meta-llama/Llama-3.1-8B-Instruct',
-    description: 'Requires >15 GiB of RAM (GPU or CPU) — use this if you\'re on a Mac'
+    label: "Llama-3.1-8B-Instruct",
+    value: "meta-llama/Llama-3.1-8B-Instruct",
+    description:
+      "Requires >15 GiB of RAM (GPU or CPU) — use this if you're on a Mac",
   },
 ];
 
 export const imageModelOptions = [
   {
-    label: 'gemma-3-12b-it',
-    value: 'google/gemma-3-12b-it',
-    description: 'Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better'
+    label: "gemma-3-12b-it",
+    value: "google/gemma-3-12b-it",
+    description:
+      "Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better",
   },
   {
-    label: 'gemma-3-27b-it',
-    value: 'google/gemma-3-27b-it',
-    description: 'Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better',
-    default: true
+    label: "gemma-3-27b-it",
+    value: "google/gemma-3-27b-it",
+    description:
+      "Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better",
+    default: true,
   },
   {
-    label: 'InternVL3-8B-Instruct',
-    value: 'OpenGVLab/InternVL3-8B-Instruct',
-    description: 'Requires >22 GiB of GPU RAM — we suggest an A100, MI300, or better',
+    label: "InternVL3-8B-Instruct",
+    value: "OpenGVLab/InternVL3-8B-Instruct",
+    description:
+      "Requires >22 GiB of GPU RAM — we suggest an A100, MI300, or better",
   },
   {
-    label: 'InternVL3-14B-Instruct',
-    value: 'OpenGVLab/InternVL3-14B-Instruct',
-    description: 'Requires >36 GiB of GPU RAM — we suggest an H100, MI300, or better',
+    label: "InternVL3-14B-Instruct",
+    value: "OpenGVLab/InternVL3-14B-Instruct",
+    description:
+      "Requires >36 GiB of GPU RAM — we suggest an H100, MI300, or better",
   },
 ];
 
 export const allModelOptions = {
   text: textModelOptions,
-  image: imageModelOptions
-}
+  image: imageModelOptions,
+};
 
 <ModelSelector modelOptions={allModelOptions} variableName="text" />
 
@@ -562,7 +568,7 @@ options, see the [`max benchmark` documentation](/max/cli/benchmark).
 
 :::caution GPU ran out of memory
 
-If the server log says, `GPU ran out of memory during model execution`, try
+If the server log says `GPU ran out of memory during model execution`, try
 reducing the benchmark input length with the option corresponding to your
 dataset (`--sonnet-input-len` or `--random-input-len`). Also consider
 restarting `max serve` and adding `--device-memory-utilization` with a value as
@@ -572,41 +578,23 @@ low as `0.5` (the default is `0.9`).
 
 ## Next steps
 
-Now that you have an endpoint, connect to it with our [Agentic
-Cookbook](https://modul.ar/cookbook)—an
-open-source project for building React-based interfaces for any model endpoint.
-Just clone the repo, run it with npm, and pick a recipe such as a chat
-interface, a drag-and-drop image caption tool, or build your own.
+Now that you've completed this quickstart, try serving and benchmarking a
+different model from our
+[model repository](https://builds.modular.com/?category=models)!
 
-To get started, see the
-[project README](https://modul.ar/cookbook).
+Then, you can try to connect to your endpoint with our
+[Agentic Cookbook](https://modul.ar/cookbook)—an open-source project for
+building React-based interfaces for any model endpoint. Just clone the repo, run
+it with npm, and pick a recipe such as a chat interface, a drag-and-drop image
+caption tool, or build your own.
 
-<img src={require('./images/cookbook-captioning.png').default}
-     alt="" width="704" />
+To get started, see the [project README](https://modul.ar/cookbook).
 
-{/*
-### Keep reading
-
-Here are some features you can try with your endpoint:
-
-import SmallCards from '@site/src/components/SmallCards';
-
-export const docs = [
-  {
-    title: 'Function calling',
-    link: '/max/serve/function-calling',
-    description: `Learn how to use LLMs that support function calling and
-    tool use, such as to retrieve data and execute external tasks.`,
-  },
-  {
-    title: 'Structured output',
-    link: '/max/serve/structured-output',
-    description: `Learn how to use structured output (constrained decoding)
-    to enforce the output format from a model using an input schema.`,
-  },
-];
-
-<SmallCards data={docs} analyticsName="Quickstart: docs" cols={2} /> */}
+<img
+  src={require("./images/cookbook-captioning.png").default}
+  alt=""
+  width="704"
+/>
 
 ## Stay in touch
 
