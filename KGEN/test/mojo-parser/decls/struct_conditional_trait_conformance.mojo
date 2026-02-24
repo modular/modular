@@ -241,3 +241,107 @@ struct CompoundMethodConstraint[T: Movable](
     fn process(self)
         where not conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
         pass
+
+
+# ===========================================================================
+# Trait composition with conditional conformance
+# ===========================================================================
+# When a trait composition `A & B` has a conditional conformance, both A and B
+# should get the same constraint. Verify both conformance ops have constraints.
+#
+# CHECK: lit.struct.decl @CompositionConditional<T: !Movable>
+# CHECK: kgen.conformance @"{{.*}}CompTraitA"
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+# CHECK: kgen.conformance @"{{.*}}CompTraitB"
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+
+trait CompTraitA:
+    fn comp_a_method(self): ...
+
+trait CompTraitB:
+    fn comp_b_method(self): ...
+
+struct CompositionConditional[T: Movable](
+    CompTraitA & CompTraitB where conforms_to(T, Copyable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    fn comp_a_method(self) where conforms_to(Self.T, Copyable):
+        pass
+
+    fn comp_b_method(self) where conforms_to(Self.T, Copyable):
+        pass
+
+
+# ===========================================================================
+# Duplicate trait with same constraint (valid - no conflict)
+# ===========================================================================
+# Listing the same trait twice with the same constraint is redundant but valid.
+#
+# CHECK: lit.struct.decl @DuplicateSameConstraint<T: !Movable>
+# CHECK: kgen.conformance @"{{.*}}DupSameTrait"
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+
+trait DupSameTrait:
+    fn dup_method(self): ...
+
+struct DuplicateSameConstraint[T: Movable](
+    DupSameTrait where conforms_to(T, Copyable),
+    DupSameTrait where conforms_to(T, Copyable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    fn dup_method(self) where conforms_to(Self.T, Copyable):
+        pass
+
+
+# ===========================================================================
+# Composition + standalone with same constraint (valid - no conflict)
+# ===========================================================================
+# A & B where cond, A where cond — A appears twice but with the same
+# constraint, which is valid.
+#
+# CHECK: lit.struct.decl @CompositionStandaloneSameConstraint<T: !Movable>
+# CHECK: kgen.conformance @"{{.*}}CSTraitA"
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+# CHECK: kgen.conformance @"{{.*}}CSTraitB"
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+
+trait CSTraitA:
+    fn cs_a_method(self): ...
+
+trait CSTraitB:
+    fn cs_b_method(self): ...
+
+struct CompositionStandaloneSameConstraint[T: Movable](
+    CSTraitA & CSTraitB where conforms_to(T, Copyable),
+    CSTraitA where conforms_to(T, Copyable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    fn cs_a_method(self) where conforms_to(Self.T, Copyable):
+        pass
+
+    fn cs_b_method(self) where conforms_to(Self.T, Copyable):
+        pass

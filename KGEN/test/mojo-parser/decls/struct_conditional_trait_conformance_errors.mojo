@@ -4,11 +4,113 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Test errors for conditional trait conformance method constraint checking.
-# These errors are detected when verifying that methods implementing trait
-# requirements have constraints provable from the conformance constraint.
+# Test errors for conditional trait conformance.
+# These errors are detected during struct declaration parsing and conformance
+# verification, before any instantiation occurs.
+#
+# NOTE: Declaration-time errors (diamond, ancestor) are tested first because
+# they are emitted before method constraint errors during parsing.
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
+
+
+# ===========================================================================
+# Diamond with different constraints requires explicit Base
+# ===========================================================================
+# When a struct conditionally conforms to DerivedA and DerivedB with different
+# constraints, and both inherit from Base, the user must explicitly list Base.
+
+
+trait DiamondBase:
+    pass
+
+
+trait DiamondDerivedA(DiamondBase):
+    pass
+
+
+trait DiamondDerivedB(DiamondBase):
+    pass
+
+
+struct DiamondMissingExplicitBase[T: Movable](
+    # expected-error @below {{ancestor trait}}
+    DiamondDerivedA where conforms_to(T, Copyable),
+    DiamondDerivedB where conforms_to(T, Intable),
+    Movable,
+):
+    var data: Self.T
+
+    fn __init__(out self, var data: Self.T):
+        self.data = data^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.data = take.data^
+
+
+# ===========================================================================
+# Derived constraint must imply ancestor constraint
+# ===========================================================================
+# When both a derived trait and its ancestor are explicitly listed with
+# constraints, the derived constraint must logically imply the ancestor's.
+
+
+trait AncestorImplicationBase:
+    pass
+
+
+trait AncestorImplicationDerived(AncestorImplicationBase):
+    pass
+
+
+struct DerivedDoesNotImplyAncestor[T: Movable](
+    # Base requires Intable
+    AncestorImplicationBase where conforms_to(T, Intable),
+    # But Derived only requires Copyable - this doesn't imply Intable!
+    # expected-error @below {{constraint for}}
+    AncestorImplicationDerived where conforms_to(T, Copyable),
+    Movable,
+):
+    var data: Self.T
+
+    fn __init__(out self, var data: Self.T):
+        self.data = data^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.data = take.data^
+
+
+# ===========================================================================
+# Unconditional derived with conditional ancestor
+# ===========================================================================
+# When a derived trait is listed unconditionally but its ancestor is explicitly
+# listed conditionally, this is inconsistent: the derived trait always requires
+# the ancestor, so the ancestor cannot be conditional.
+
+
+trait UnconditionalDerivedBase:
+    pass
+
+
+trait UnconditionalDerivedChild(UnconditionalDerivedBase):
+    pass
+
+
+struct UnconditionalDerivedConditionalAncestor[T: Movable](
+    # Derived is unconditional - always conforms
+    # expected-error @below {{constraint for}}
+    UnconditionalDerivedChild,
+    # But ancestor is conditional - inconsistent!
+    UnconditionalDerivedBase where conforms_to(T, Copyable),
+    Movable,
+):
+    var data: Self.T
+
+    fn __init__(out self, var data: Self.T):
+        self.data = data^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.data = take.data^
 
 
 # ===========================================================================
