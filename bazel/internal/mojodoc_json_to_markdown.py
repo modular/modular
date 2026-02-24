@@ -386,6 +386,16 @@ def generateMarkdown(
         output_file.write("\n".join(lines))
 
 
+def pad_backticks(value: str) -> str:
+    """Jinja2 filter for Markdown backticks, adds space around strings that
+    start or end with backticks so they do not interfere with the enclosing
+    backtick delimiters."""
+    if value.startswith("`") or value.endswith("`"):
+        return " " + value + " "
+    else:
+        return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -403,6 +413,7 @@ def main() -> None:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        environment.filters["pad_backticks"] = pad_backticks
         template = environment.get_template("mojodoc_module.md")
         docJson = json.load(jsonFile)
 
