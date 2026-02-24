@@ -123,6 +123,19 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
             print("Boolean:", item[Bool])
     ```
 
+    ## Layout
+
+    The layout of `Variant` is not guaranteed and may change at any time. The
+    implementation may apply niche optimizations (for example, encoding the
+    discriminant inside spare bits of one of the types in `Ts`) that alter the
+    resulting layout. Do not rely on `size_of[Variant[...]]()` or
+    `align_of[Variant[...]]()` being stable across language versions. The only
+    guarantee is that the size and alignment will be at least as large as those
+    of the largest type among `Ts`.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
+
     Parameters:
         Ts: The possible types that this variant can hold. All types must
             implement `Copyable`.
