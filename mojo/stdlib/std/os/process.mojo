@@ -96,7 +96,9 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Writable):
             writer: The object to write to.
         """
         if self.exit_code:
-            writer.write("ProcessStatus(exit_code: ", self.exit_code.value(), ")")
+            writer.write(
+                "ProcessStatus(exit_code: ", self.exit_code.value(), ")"
+            )
         elif self.term_signal:
             writer.write(
                 "ProcessStatus(term_signal: ", self.term_signal.value(), ")"
@@ -114,12 +116,12 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Writable):
 
         @parameter
         fn fields(mut w: Some[Writer]):
-            if exit_code := self.exit_code:
+            if self.exit_code:
                 w.write_string("exit_code=")
-                w.write(exit_code[])
-            elif term_signal := self.term_signal:
+                w.write(self.exit_code.value())
+            elif self.term_signal:
                 w.write_string("term_signal=")
-                w.write(term_signal[])
+                w.write(self.term_signal.value())
             else:
                 w.write_string("running=True")
 
