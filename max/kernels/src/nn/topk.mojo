@@ -871,7 +871,6 @@ fn _topk_stage1[
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
     in_buffer_tmp: UnsafePointer[Scalar[T], MutAnyOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[T], MutAnyOrigin
@@ -887,6 +886,9 @@ fn _topk_stage1[
     Each thread block processes a portion of the input data and finds its local top-K elements.
     The local top-K results are stored in global memory for further processing in stage 2.
 
+    The input data must be pre-copied into in_buffer_tmp before launching this kernel
+    (via device-to-device DMA copy), allowing the copy engine to operate in parallel.
+
     Parameters:
         T: Data type of the elements.
         out_idx_type: DType - The data dtype of the output indices.
@@ -897,8 +899,7 @@ fn _topk_stage1[
         max_k: Largest number of top elements to keep for each batch element.
         num_elements: Size of last dimension of input buffer (vocab size).
         num_blocks_per_input: Number of blocks used to process the input data.
-        in_buffer: Input buffer containing the elements to process.
-        in_buffer_tmp: Temporary input buffer to store the elements to process.
+        in_buffer_tmp: Pre-copied input buffer to read and modify during top-K.
         local_topk_vals: Output buffer to store the local top-K values.
         local_topk_idxs: Output buffer to store the indices of local top-K elements.
 
@@ -916,12 +917,7 @@ fn _topk_stage1[
     var block_offset = block_lane * block_size
     var stride = block_size * UInt(num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * UInt(num_elements)
     _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
-
-    # Copy input values to temp buffer
-    for i in range(tid + block_offset, num_elements, stride):
-        _in_buffer_tmp[i] = _in_buffer[i]
 
     var k_batch = max_k
     if K:
@@ -1336,13 +1332,14 @@ fn _topk_gpu[
         )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
+        # Use DMA copy engine instead of kernel-based copy
+        ctx.enqueue_copy(input_buf_tmp, input_buf.to_device_buffer(ctx))
         comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
         ctx.enqueue_function_experimental[kernel_1](
             k_device,
             max_k,
             N,
             num_blocks_per_input_,
-            input_buf.to_device_buffer(ctx),
             input_buf_tmp,
             device_local_topk_vals.to_device_buffer(ctx),
             device_local_topk_idxs.to_device_buffer(ctx),
